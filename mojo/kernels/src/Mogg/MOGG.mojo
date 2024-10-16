@@ -79,7 +79,7 @@ from nn.gather_scatter import (
 from nn.gather_scatter import scatter_elements_shape as scatter_shape
 from nn.gather_scatter import scatter_nd as _scatter_nd
 from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
-from nn.index_tensor import index_tensor_1d as _index_tensor
+from nn.index_tensor import index_tensor as _index_tensor
 from nn.kv_cache import (
     contiguous_kv_cache_collection_h1_d16_bshd,
     contiguous_kv_cache_collection_h6_d48_bshd,
@@ -3500,6 +3500,7 @@ fn index_tensor[
     indices_rank: Int,
     output_rank: Int,
     batch_dims: Int,
+    target: StringLiteral = "cpu",
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
@@ -3507,8 +3508,14 @@ fn index_tensor[
     ctx: MojoCallContextPtr,
 ):
     _index_tensor[
-        type, indices_type, data_rank, indices_rank, output_rank, batch_dims
-    ](data, indices, output)
+        type,
+        indices_type,
+        data_rank,
+        indices_rank,
+        output_rank,
+        batch_dims,
+        target=target,
+    ](data, indices, output, ctx)
 
 
 # Wrappers that take `num_groups` as a parameter.
