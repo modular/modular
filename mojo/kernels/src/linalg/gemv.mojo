@@ -22,7 +22,7 @@ from gpu.host import (
 )
 from gpu.host._compile import _get_nvptx_target
 from gpu.memory import AddressSpace, CacheOperation, load
-from gpu.shuffle import ReductionMethod, block_sum, warp_sum
+from gpu.shuffle import ReductionMethod, warp_sum
 from gpu.tensor_ops import tc_reduce_gevm_4x, tc_reduce_gevm_8x
 from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
 
@@ -103,7 +103,7 @@ fn gemv_kernel[
                 * b.load(idx).cast[s_type]()
             )
 
-    accum = block_sum[
+    accum = warp_sum[
         a_type, reduction_method=reduction_method, output_type=s_type
     ](accum)
 
@@ -181,7 +181,7 @@ fn gemv_kernel_vector[
         idx += step
         a_ptr += step
 
-    var accum = block_sum[
+    var accum = warp_sum[
         a_type, reduction_method=reduction_method, output_type=s_type
     ](local_accum)
 
