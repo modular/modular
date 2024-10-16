@@ -18,7 +18,6 @@ from ..value import TensorValue, TensorValueLike
 def concat(
     original_vals: Iterable[TensorValueLike],
     axis: int = 0,
-    new_dim: Optional[DimLike] = None,
 ) -> TensorValue:
     """Concatenates a list of symbolic tensors along an axis.
 
@@ -29,10 +28,6 @@ def concat(
         axis: The axis to concatenate along. If negative, indexes relative
             to the end of the tensor shape. For instance, ``concat(vs, -1)``
             will concat along the last dimension.
-        new_dim: The expected output dimension of the concat ``axis``.
-          If provided, this will add a runtime assertion to the graph.
-          If the resulting dimension can't be known statically, new_dim
-          _must_ be provided.
 
     Returns:
         A new symbolic tensor representing the concatenation result. It will
@@ -55,20 +50,8 @@ def concat(
             raise ValueError(
                 f"Concat inputs differ on non-concat axis {i}: {vals=}"
             )
-    if (
-        new_dim is None
-        and len(vals) > 1
-        and not all(val.shape[axis].is_static() for val in vals)
-    ):
-        raise ValueError("Must pass new_dim to name dynamic concat dimension.")
-
     axis_attr = mlir.IntegerAttr.get(mlir.IndexType.get(), axis)
 
     result = Graph.current._add_op(rmo.concat, vals, axis=axis_attr)[0].tensor
-
-    if new_dim is not None:
-        shape = Shape(vals[0].shape)
-        shape[axis] = Dim(new_dim)
-        result = result.rebind(shape)
 
     return result

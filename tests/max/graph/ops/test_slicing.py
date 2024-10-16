@@ -57,7 +57,7 @@ def test_slice_with_tensor_value():
 def dim_indexes(dim: Dim):
     assume(dim != 0)  # still need to test attempting to index with 0 dim
     # Can index symbolic dims at any index, checked at runtime.
-    bound = dim.dim if dim.is_static() else (2**63 - 1)
+    bound = dim.dim if isinstance(dim, StaticDim) else (2**63 - 1)
     return st.one_of(
         # `:` include whole dim.
         st.just(slice(None, None, None)),

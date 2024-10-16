@@ -12,6 +12,7 @@ import math
 import re
 import sys
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import Any, Iterable, Union
 
 if sys.version_info >= (3, 10):
@@ -83,22 +84,6 @@ class Dim:
             return super().__new__(AlgebraicDim)
         raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
 
-    def is_static(self) -> bool:
-        """Determines whether the dimension is a static dimension.
-
-        Returns:
-            True if the dimension is static, false otherwise.
-        """
-        raise NotImplementedError
-
-    def is_symbolic(self) -> bool:
-        """Whether or not the dimension is a symbolic dimension.
-
-        Returns:
-            True if the dimension is symbolic, false otherwise.
-        """
-        raise NotImplementedError
-
     def __eq__(self, other: Any) -> bool:
         """Checks whether two dimensions are equal.
 
@@ -128,6 +113,56 @@ class Dim:
         """
         return not self == other
 
+    @staticmethod
+    def _algebraic_op(op: AlgebraicDim._Opcode, lhs: Dim, rhs: Dim) -> Dim:
+        if not mlir.Context.current:
+            raise RuntimeError("No active mlir Context.")
+        return Dim.from_mlir(
+            _graph.algebraic_dim(
+                mlir.Context.current,
+                op,
+                lhs.to_mlir(),
+                rhs.to_mlir(),
+            )
+        )
+
+    def __add__(self, rhs: DimLike) -> Dim:
+        rhs = Dim(rhs)
+        return Dim._algebraic_op(AlgebraicDim._Opcode.Add, self, rhs)
+
+    # hitting https://github.com/python/mypy/issues/11595 which causes mypy to fail to typecheck.
+    def __radd__(self, lhs: DimLike) -> Dim:  # type: ignore
+        lhs = Dim(lhs)
+        return lhs + self
+
+    def __mul__(self, rhs: DimLike) -> Dim:
+        rhs = Dim(rhs)
+        return Dim._algebraic_op(AlgebraicDim._Opcode.MulNuw, self, rhs)
+
+    # hitting https://github.com/python/mypy/issues/11595 which causes mypy to fail to typecheck.
+    def __rmul__(self, lhs: DimLike) -> Dim:  # type: ignore
+        lhs = Dim(lhs)
+        return lhs * self
+
+    def __neg__(self) -> Dim:
+        return -1 * self
+
+    def __sub__(self, rhs: DimLike) -> Dim:
+        rhs = Dim(rhs)
+        return self + -rhs
+
+    def __rsub__(self, lhs: DimLike) -> Dim:
+        lhs = Dim(lhs)
+        return lhs + -self
+
+    def __floordiv__(self, rhs: DimLike) -> Dim:
+        rhs = Dim(rhs)
+        return Dim._algebraic_op(AlgebraicDim._Opcode.Div, self, rhs)
+
+    def __rfloordiv__(self, lhs: DimLike) -> Dim:
+        lhs = Dim(lhs)
+        return lhs // self
+
     def to_mlir(self) -> mlir.Attribute:
         """Creates an ``mlir.Attribute`` representing this dimension.
 
@@ -152,8 +187,8 @@ class Dim:
             return StaticDim.from_mlir(dim_attr)
         elif _graph.is_symbolic_dim(dim_attr):
             return SymbolicDim.from_mlir(dim_attr)
-        elif _graph.is_symbolic_expression_dim(dim_attr):
-            return Dim(dim_attr)
+        elif _graph.is_algebraic_dim(dim_attr):
+            return AlgebraicDim.from_mlir(dim_attr)
         else:
             raise ValueError("graph api does not support unknown dimensions")
 
@@ -202,22 +237,6 @@ class SymbolicDim(Dim):
 
     def __str__(self) -> str:
         return self.name
-
-    def is_static(self) -> bool:
-        """Checks whether or not the dimension is a static dimension.
-
-        Returns:
-            True if the dimension is static, false otherwise.
-        """
-        return False
-
-    def is_symbolic(self) -> bool:
-        """Whether or not the dimension is a symbolic dimension.
-
-        Returns:
-            True if the dimension is symbolic, false otherwise.
-        """
-        return True
 
     def __eq__(self, other: Any) -> bool:
         """Whether the dimension is the same as another symbolic dimension.
@@ -271,14 +290,35 @@ class AlgebraicDim(Dim):
 
     attr: mlir.Attribute
 
+    class _Opcode(IntEnum):
+        # This is only the part of KGEN::POC that seems relevant to python.
+        # On top of that, this is starting extra slim to keep things simple.
+        # We can expand at any time if needed.
+        Add = 0
+        # Mul = 1 : We probably never want Mul, instead we want MulNuw which blocks overflow.
+        MulNuw = 2
+        # And = 3
+        # Or = 4
+        # Xor = 5
+        # Max = 6
+        # Min = 7
+        # Shl = 8
+        # Shr = 9
+        Div = 10
+        Mod = 11
+
     def __init__(self, attr: mlir.Attribute | AlgebraicDim):
+        if isinstance(attr, mlir.Attribute) and not _graph.is_algebraic_dim(
+            attr
+        ):
+            raise TypeError(
+                f"Cannot create AlgebraicDim from mlir attribute: {attr}"
+            )
+
         # Can't assign directly to frozen dataclasses.
         super().__setattr__(
             "attr", attr.attr if isinstance(attr, AlgebraicDim) else attr
         )
-
-    def is_static(self) -> bool:
-        return False
 
     def __eq__(self, other: Any) -> bool:
         return isinstance(other, AlgebraicDim) and self.attr == other.attr
@@ -317,28 +357,11 @@ class StaticDim(Dim):
     def __init__(self, dim: int | StaticDim):
         # Can't assign directly to frozen dataclasses.
         super().__setattr__("dim", int(dim))
-        if not -1 <= self.dim < 2**63:
-            raise ValueError("Dim value must be -1 <= dim < 2**63")
+        if not -(2**63) <= self.dim < 2**63:
+            raise ValueError("Dim value must be -2**63 <= dim < 2**63")
 
     def __int__(self) -> int:
         return self.dim
-
-    def is_static(self) -> bool:
-        """Checks whether or not the dimension is a static dimension.
-
-        Returns:
-            True if the dimension is static, false otherwise.
-        """
-        # Consider -1 a special dim that is not statically known.
-        return self.dim != -1
-
-    def is_symbolic(self) -> bool:
-        """Whether or not the dimension is a symbolic dimension.
-
-        Returns:
-            True if the dimension is symbolic, false otherwise.
-        """
-        return False
 
     def __eq__(self, other: Any) -> bool:
         """Whether the dimension has the same size as another dimension.
@@ -385,7 +408,7 @@ class StaticDim(Dim):
 
 
 def _is_static_shape(dims: Shape) -> TypeGuard[StaticShape]:
-    return all(dim.is_static() for dim in dims)
+    return all(isinstance(dim, StaticDim) and dim.dim >= 0 for dim in dims)
 
 
 class Shape(list[Dim]):
@@ -400,11 +423,6 @@ class Shape(list[Dim]):
         return _graph.shape_attr(
             mlir.Context.current, [dim.to_mlir() for dim in self]
         )
-
-    @property
-    def is_static(self) -> bool:
-        """Returns true if this is a static shape."""
-        return _is_static_shape(self)
 
     @property
     def static_dims(self) -> list[int]:
@@ -520,17 +538,6 @@ class TensorType(Type):
     # ===------------------------------------------------------------------=== #
     # Basic accessors
     # ===------------------------------------------------------------------=== #
-
-    def is_static(self) -> bool:
-        """Checks whether the tensor type has a fully static shape or not.
-
-        A tensor must have all of its dimensions be ``static`` (or be 0-dimensional)
-        in order to be ``static``.
-
-        Returns:
-            True if the tensor has a fully static shape, false otherwise.
-        """
-        return all(d.is_static() for d in self.shape)
 
     @property
     def rank(self) -> int:
@@ -672,17 +679,6 @@ class BufferType(Type):
     # ===------------------------------------------------------------------=== #
     # Basic accessors
     # ===------------------------------------------------------------------=== #
-
-    def is_static(self) -> bool:
-        """Checks whether the buffer type has a fully static shape or not.
-
-        A buffer must have all of its dimensions be ``static`` (or be 0-dimensional)
-        in order to be ``static``.
-
-        Returns:
-            True if the buffer has a fully static shape, false otherwise.
-        """
-        return all(d.is_static() for d in self.shape)
 
     @property
     def rank(self) -> int:

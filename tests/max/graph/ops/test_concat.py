@@ -12,7 +12,15 @@ from conftest import axes, shapes, tensor_types
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Dim, Graph, Shape, StaticDim, TensorType, ops
+from max.graph import (
+    AlgebraicDim,
+    Dim,
+    Graph,
+    Shape,
+    StaticDim,
+    TensorType,
+    ops,
+)
 
 shared_dtypes = st.shared(st.from_type(DType))
 shared_shapes = st.shared(shapes())
@@ -80,7 +88,7 @@ def test_concat__bad_dtype(type_a: TensorType, type_b: TensorType, axis: int):
     assume(type_a.dtype != type_b.dtype)
     assert type_a.shape == type_b.shape
     assume(
-        not type_a.shape[axis].is_static()
+        not isinstance(type_a.shape[axis], StaticDim)
         or 2 * type_a.shape[axis].dim < 2**63
     )
 
@@ -146,36 +154,11 @@ def test_concat__mismatched_dims(
             out = ops.concat(graph.inputs, axis)
 
 
-@given(
-    base_type=shared_tensor_types,
-    axis=axes(shared_tensor_types),
-    axis_dims=st.lists(st.from_type(Dim), min_size=1, max_size=MAX_CONCAT_SIZE),
-)
-# TODO(MSDK-847): fix the perf here and re-enable the deadline.
-@settings(deadline=None)
-def test_concat__symbolic__size_gt_1__no_new_dim(
-    base_type: TensorType, axis: int, axis_dims: list[Dim]
-):
-    assume(len(axis_dims) > 1)
-    assume(not all(dim.is_static() for dim in axis_dims))
-    merged_static_size = sum(dim.dim for dim in axis_dims if dim.is_static())
-    assume(merged_static_size < 2**63)
-
-    input_types = [
-        TensorType(base_type.dtype, with_dim(base_type.shape, axis, dim))
-        for dim in axis_dims
-    ]
-
-    with Graph("concat", input_types=input_types) as graph:
-        with pytest.raises(ValueError):
-            out = ops.concat(graph.inputs, axis)
-
-
 @given(base_type=shared_tensor_types, axis=axes(shared_tensor_types))
 # TODO(MSDK-847): fix the perf here and re-enable the deadline.
 @settings(deadline=None)
 def test_concat__symbolic__size_1(base_type: TensorType, axis: int):
-    assume(not base_type.shape[axis].is_static())
+    assume(not isinstance(base_type.shape[axis], StaticDim))
 
     with Graph("concat", input_types=[base_type]) as graph:
         out = ops.concat(graph.inputs, axis)
@@ -187,19 +170,19 @@ def test_concat__symbolic__size_1(base_type: TensorType, axis: int):
     base_type=shared_tensor_types,
     axis=axes(shared_tensor_types),
     axis_dims=st.lists(st.from_type(Dim), min_size=1, max_size=MAX_CONCAT_SIZE),
-    new_dim=...,
 )
 # TODO(MSDK-847): fix the perf here and re-enable the deadline.
 @settings(deadline=None)
-def test_concat__symbolic__new_dim(
+def test_concat__symbolic__algebraic_result(
     base_type: TensorType,
     axis: int,
     axis_dims: list[Dim],
-    new_dim: Dim,
 ):
-    assume(axis_dims)
-    assume(not all(dim.is_static() for dim in axis_dims))
-    merged_static_size = sum(dim.dim for dim in axis_dims if dim.is_static())
+    assume(len(axis_dims) > 1)
+    assume(not all(isinstance(dim, StaticDim) for dim in axis_dims))
+    merged_static_size = sum(
+        dim.dim for dim in axis_dims if isinstance(dim, StaticDim)
+    )
     assume(merged_static_size < 2**63)
 
     input_types = [
@@ -208,6 +191,5 @@ def test_concat__symbolic__new_dim(
     ]
 
     with Graph("concat", input_types=input_types) as graph:
-        out = ops.concat(graph.inputs, axis, new_dim=new_dim)
-        assert out.shape == with_dim(base_type.shape, axis, new_dim)
-        graph.output(out)
+        out = ops.concat(graph.inputs, axis)
+        assert out.shape == with_dim(base_type.shape, axis, sum(axis_dims))

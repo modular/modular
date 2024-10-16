@@ -9,7 +9,7 @@ import numpy as np
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import Shape, ShapeLike
+from ..type import Shape, ShapeLike, StaticDim
 from ..value import TensorValue, TensorValueLike
 
 
@@ -43,11 +43,14 @@ def reshape(x: TensorValueLike, shape: ShapeLike) -> TensorValue:
     x = TensorValue(x)
     shape = Shape(shape)
 
+    def is_static(dims):
+        return all(isinstance(dim, StaticDim) and dim.dim >= 0 for dim in dims)
+
     # TODO(GRA-1015): Remove once static dims are int64 in the Graph compiler.
     if (
         # Leave checking shapes with -1 or symbolic dims to param expr folding.
-        x.shape.is_static
-        and shape.is_static
+        is_static(x.shape)
+        and is_static(shape)
         and (np.prod(x.shape.static_dims) != np.prod(shape.static_dims))
     ):
         msg = (

@@ -9,14 +9,14 @@ import pytest
 from conftest import shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from max.graph import Graph, TensorType, ops
+from max.graph import Graph, SymbolicDim, TensorType, ops
 
 shared_shapes = st.shared(shapes().filter(lambda shape: 0 not in shape))
 tensor_types_nd = tensor_types(shapes=shared_shapes)
 
 
 def valid_repeat_counts(dim):
-    if dim.is_symbolic():
+    if isinstance(dim, SymbolicDim):
         return st.just(1)
     else:
         return st.integers(min_value=1, max_value=(2**63 - 1) // dim.dim)
@@ -40,14 +40,16 @@ def test_tile__valid(input_type: TensorType, repeats: list[int]):
 
 
 def invalid_symbolic_repeat_counts(dim):
-    if dim.is_symbolic():
+    if isinstance(dim, SymbolicDim):
         return st.integers().filter(lambda x: x != 1)
     else:
         return st.integers(min_value=1, max_value=(2**63 - 1) // dim.dim)
 
 
 invalid_symbolic_repeats = (
-    shared_shapes.filter(lambda shape: any(dim.is_symbolic() for dim in shape))
+    shared_shapes.filter(
+        lambda shape: any(isinstance(dim, SymbolicDim) for dim in shape)
+    )
     .flatmap(
         lambda shape: st.tuples(
             *(invalid_symbolic_repeat_counts(dim) for dim in shape)
