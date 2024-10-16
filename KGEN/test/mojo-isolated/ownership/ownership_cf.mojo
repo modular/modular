@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
-# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics | FileCheck %s
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
 # Control flow related CheckLifetimes tests.
@@ -174,7 +174,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
 
-    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
     # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
     # CHECK-NEXT: lit.ref.store [[ERR]], [[DTORTMP]]
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
@@ -207,7 +207,7 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
 
-    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
     # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
     # CHECK-NEXT: lit.ref.store [[ERR]], [[DTORTMP]]
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])

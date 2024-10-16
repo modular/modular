@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
-# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics | FileCheck %s
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
 # Test for CheckLifetimes optimizations.
@@ -336,11 +336,11 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R3]])
     r3.noop()
-    # CHECK-NEXT: %__dtor_tmp__ = lit.var.decl
-    # CHECK-NEXT: lit.var.lifetime.start %__dtor_tmp__
-    # CHECK-NEXT: lit.ref.store [[R3]], %__dtor_tmp__
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%__dtor_tmp__)
-    # CHECK-NEXT: lifetime.end %__dtor_tmp__
+    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
+    # CHECK-NEXT: lit.ref.store [[R3]], [[DTORTMP]]
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
+    # CHECK-NEXT: lifetime.end [[DTORTMP]]
 
     # CHECK-NEXT: %v1 = lit.var.decl
     # CHECK-NEXT: lifetime.start %v1
@@ -370,7 +370,7 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
     v3.noop()
 
-    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
     # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
     # CHECK-NEXT: lit.ref.store [[TMP]], [[DTORTMP]]
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])

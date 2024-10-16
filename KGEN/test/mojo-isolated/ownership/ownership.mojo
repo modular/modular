@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo -o %t.mlir
-# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
+# RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics | FileCheck %s
 # RUN: %parse-mojo-isolated %s --mlir-print-debuginfo --debug-level full -o /dev/null
 
 # CHECK-LABEL: lit.struct.decl @MemExample
@@ -137,7 +137,7 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: [[REG:%.*]] = kgen.param.materialize: !RegExample
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[REG]])
 
-  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
   # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
   # CHECK-NEXT: lit.ref.store [[REG]], [[DTORTMP]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
@@ -159,7 +159,7 @@ fn destructors(owned arg0: MemExample):
 
   # CHECK-NEXT: [[BIGREG:%.*]] = lit.struct.create(a=[[REG2C]], b=[[REG]])
 
-  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
   # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
   # CHECK-NEXT: lit.ref.store [[BIGREG]], [[DTORTMP]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
@@ -1060,7 +1060,7 @@ fn caught_eh_cleanup():
       # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[EH2]])
       eh2.use()
 
-    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__"
+    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
     # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
     # CHECK-NEXT: lit.ref.store [[EH2]], [[DTORTMP]]
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
