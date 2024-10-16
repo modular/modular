@@ -13,12 +13,10 @@
 
 namespace M {
 
-struct Debugger {
-  /// Print the executable name and process ID to standard output, then pause
-  /// for the specified number of seconds (default to 30 seconds) and wait. This
-  /// should allow a debugger to be attached.
-  static void attach(int timeoutSeconds = 30);
-};
+/// Print the executable name and process ID to standard output, then pause
+/// for the specified number of seconds (default to 120 seconds) and wait.
+/// This should allow a debugger to be attached.
+void waitForDebuggerToAttach(int timeoutSeconds = 120);
 
 } // namespace M
 
