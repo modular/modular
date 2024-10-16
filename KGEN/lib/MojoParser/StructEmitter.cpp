@@ -456,44 +456,24 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
   auto builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
 
-  // Figure out the type of the 'self' argument.  It is the struct's `Self`
-  // type for @register_passable("trivial") things, or indirect for other types.
+  // Figure out the type of the 'self' argument, which is always indirect since
+  // it is owned.
   ASTType selfType = structDecl.getTypeDeclSelf();
-  // The argument is always owned.
-  ArgConvention convention = ArgConvention::OwnedInReg;
-  if (!selfType.isTrivial(structDecl.getLoc(), shared)) {
-    selfType = selfType.getRefForArgument("self", /*isMut*/ true);
-    convention = ArgConvention::OwnedInMem;
-  }
+  selfType = selfType.getRefForArgument("self", /*isMut*/ true);
 
   StringAttr selfName = builder.getStringAttr("self");
 
   // Create the FuncOp and ASTDecl for the method.
   StructEmitter emitter(shared);
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
-      "__del__", selfType.mlirType, convention,
+      "__del__", selfType.mlirType, ArgConvention::OwnedInMem,
       PogListAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
       shared.getNoneType(), structDecl, structDecl.getLoc(),
       SpecialFunctionKind::kDel);
 
-  // Set up the body.
-  Block *body = funcOp.getBody();
-  BlockArgument arg = body->getArgument(0);
-
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
-
-  // We need to make a var box + store for register_passable values since that
-  // is what origin tracking expects.  It does not track the individual
-  // fields of register passable values since they cannot be transferred and
-  // cannot be lit.ownership.mark_destroyed.
-  if (convention == ArgConvention::OwnedInReg) {
-    builder.setInsertionPointToStart(body);
-    ExprEmitter emitter(shared, *funcDecl, builder);
-    (void)emitter.makeArgLValueVarSlot(SRValue(arg), selfName,
-                                       structDecl.getLoc());
-  }
 
   // Finish off the function with a return + lit.endfunc.
   appendDefaultReturnAndEndOp(*funcDecl);
