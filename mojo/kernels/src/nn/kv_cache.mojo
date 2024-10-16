@@ -26,7 +26,9 @@ from linalg import transpose
 from linalg.matmul import _matmul_cpu, elementwise_epilogue_type
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer, memcpy
-from nn.flash_attention import flash_attention as cpu_flash_attention
+from nn.flash_attention import (
+    flash_attention_kv_cache as flash_attention_kv_cache_cpu,
+)
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import NullMask, CausalMask
@@ -1916,77 +1918,11 @@ fn _flash_attention_kv_cache_impl[
 
     @parameter
     if target == "cpu":
-        return _flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
+        return flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
     else:
         return _flash_attention_kv_cache_gpu[target=target](
             q, k, v, mask, valid_lengths, scale, output, context.value()
         )
-
-
-@always_inline
-fn _flash_attention_kv_cache_cpu[
-    type: DType, cache_t: KVCacheT, //
-](
-    q: NDBuffer[type, 4, *_],
-    k: cache_t,
-    v: cache_t,
-    mask: NDBuffer[type, *_],
-    scale: Float32,
-    output: NDBuffer[type, 4, *_],
-):
-    @parameter
-    fn input_k_fn[
-        width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
-        var bs = idx[0]
-        var head_idx = idx[2]
-        var seq = idx[1]
-        var head_d_idx = idx[3]
-        var retval = k.load[type, width=width](bs, head_idx, seq, head_d_idx)
-        return retval
-
-    @parameter
-    fn input_v_fn[
-        width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
-        var bs = idx[0]
-        var head_idx = idx[2]
-        var seq = idx[1]
-        var head_d_idx = idx[3]
-        var retval = v.load[type, width=width](bs, head_idx, seq, head_d_idx)
-        return retval
-
-    @parameter
-    fn input_mask_fn[
-        width: Int, rank: Int
-    ](idx: IndexList[rank]) -> SIMD[type, width]:
-        return mask.load[width=width](rebind[IndexList[mask.rank]](idx))
-
-    alias kv_params = cache_t.get_kv_params()
-
-    var batch_size = q.dim[0]()
-    var depth = q.dim[3]()
-    var new_seq_len = q.dim[1]()
-    var cache_seq_len = int(k.cache_length(0))
-    var seq_len = new_seq_len + cache_seq_len
-    var fa_kv_shape = Index(
-        batch_size, seq_len, int(kv_params.num_heads), depth
-    )
-
-    cpu_flash_attention[
-        input_k_fn,
-        input_v_fn,
-        input_mask_fn,
-        transpose_k=True,
-        layout_bshd=True,
-    ](
-        q.make_dims_unknown(),
-        fa_kv_shape,
-        fa_kv_shape,
-        mask.get_shape(),
-        output,
-        scale,
-    )
 
 
 # TODO: Change this as needed when plumbed with pipelines.

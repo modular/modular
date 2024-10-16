@@ -18,11 +18,13 @@ from algorithm.reduction import (
 )
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
+from kv_cache.types import KVCacheT
 from linalg.accumulate import _Accumulator
 from linalg.apple_accelerate import _cblas_f32, use_apple_accelerate_lib
 from linalg.transpose import transpose_inplace
 from linalg.utils import partition_work
 from memory import UnsafePointer, memset_zero, stack_allocation
+from nn.mha_mask import MHAMask
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -516,19 +518,22 @@ struct _FlashAttentionConfig[
 struct _FlashAttention[
     type: DType,
     rank: Int,
-    mask_rank: Int,
     output_static_shape: DimList, //,
-    simd_width: Int,
     input_k_fn: fn[simd_width: Int, rank: Int] (
-        IndexList[rank]
+        idx: IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
     input_v_fn: fn[simd_width: Int, rank: Int] (
-        IndexList[rank]
+        idx: IndexList[rank]
     ) capturing -> SIMD[type, simd_width],
-    input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
-        IndexList[mask_rank]
+    mask_fn: fn[simd_width: Int, mask_rank: Int] (
+        idx: IndexList[mask_rank],
+        score_vec: SIMD[type, simd_width],
+        kv_cache_length: Int,
     ) capturing -> SIMD[type, simd_width],
+    mask_rank: Int,
+    kv_cache_length_fn: fn (batch: Int) capturing -> Int,
     *,
+    simd_width: Int = simdwidthof[type](),
     transpose_k: Bool = False,
     layout_bshd: Bool = False,
 ]:
@@ -540,9 +545,9 @@ struct _FlashAttention[
 
     @staticmethod
     fn _online_softmax[
-        input_mask_fn: fn[simd_width: Int] (m: Int, n: Int) capturing -> SIMD[
-            type, simd_width
-        ],
+        mask_fn: fn[simd_width: Int] (
+            m: Int, n: Int, score_vec: SIMD[type, simd_width]
+        ) capturing -> SIMD[type, simd_width],
     ](
         qk_block_ptr: UnsafePointer[Scalar[type]],
         o_block_ptr: UnsafePointer[Scalar[type]],
@@ -565,10 +570,7 @@ struct _FlashAttention[
                 _type: DType, _simd_width: Int
             ](idx: Int) -> SIMD[_type, _simd_width]:
                 var val = qk_row_ptr.load[width=_simd_width](idx)
-                var mask = input_mask_fn[_simd_width](m, idx)
-                return rebind[SIMD[_type, _simd_width]](
-                    val * scale.cast[type]() + mask
-                )
+                return mask_fn(m, idx, val * scale.cast[type]()).cast[_type]()
 
             # Update the row with the scale and mask. Find the maximum value
             # of the row to bias the exponential function below for numeric
@@ -623,9 +625,7 @@ struct _FlashAttention[
     @staticmethod
     fn run(
         q: NDBuffer[type, rank, *_],
-        k_shape: IndexList[rank],
-        v_shape: IndexList[rank],
-        mask_shape: IndexList[mask_rank],
+        num_kv_heads: Int,
         output: NDBuffer[type, rank, output_static_shape, *_],
         scale: Float32,
     ):
@@ -636,9 +636,7 @@ struct _FlashAttention[
         var num_heads = output.dim[head_dim_index]() if rank == 4 else 1
         var seq_len = output.dim[seq_dim_index]()
         var depth_dim = output.dim[rank - 1]()
-        var kv_seq_len = v_shape[seq_dim_index]
 
-        var num_kv_heads = k_shape[head_dim_index] if rank == 4 else 1
         var kv_group_count = num_heads // num_kv_heads
 
         # Compute the maximum size in elements for the common packed buffer.
@@ -659,7 +657,6 @@ struct _FlashAttention[
             num_blocks_m,
             packed_size,
             kv_group_count,
-            kv_seq_len,
             depth_dim,
             seq_len,
             num_heads,
@@ -704,6 +701,8 @@ struct _FlashAttention[
                 var head = batch_head % num_heads
                 var batch = batch_head // num_heads
                 var kv_head = head // kv_group_count
+                var kv_cache_len = kv_cache_length_fn(batch)
+                var kv_seq_len = kv_cache_len + seq_len
 
                 @parameter
                 @__copy_capture(batch, batch_head, kv_head, head)
@@ -787,14 +786,18 @@ struct _FlashAttention[
 
                     @parameter
                     @always_inline
-                    fn input_mask_2d_fn[
+                    fn mask_2d_fn[
                         _simd_width: Int
-                    ](_m: Int, _n: Int) -> SIMD[type, _simd_width]:
-                        return input_mask_fn[_simd_width, mask_rank](
-                            get_mask_nd_index(_m + m, _n + kv_seq_idx)
+                    ](
+                        _m: Int, _n: Int, score_vec: SIMD[type, _simd_width]
+                    ) -> SIMD[type, _simd_width]:
+                        return mask_fn[_simd_width, mask_rank](
+                            get_mask_nd_index(_m + m, _n + kv_seq_idx),
+                            score_vec,
+                            kv_cache_len,
                         )
 
-                    Self._online_softmax[input_mask_2d_fn](
+                    Self._online_softmax[mask_2d_fn](
                         qk_block_ptr,
                         o_block_ptr,
                         max_vals.data,
@@ -875,14 +878,38 @@ fn flash_attention[
     output: NDBuffer[type, rank, *_],
     scale: Float32,
 ):
+    alias seq_dim_index = 1 if layout_bshd else rank - 2
+    alias head_dim_index = rank - 2 if layout_bshd else 1
+
+    var kv_cache_len = v_shape[seq_dim_index] - output.dim[seq_dim_index]()
+    var num_kv_heads = k_shape[head_dim_index] if rank == 4 else 1
+
+    @always_inline
+    @parameter
+    fn mask_fn[
+        simd_width: Int, rank: Int
+    ](
+        idx: IndexList[rank],
+        score_vec: SIMD[type, simd_width],
+        kv_cache_len: Int,
+    ) -> SIMD[type, simd_width]:
+        return score_vec + input_mask_fn[simd_width, rank](idx)
+
+    @always_inline
+    @__copy_capture(kv_cache_len)
+    @parameter
+    fn kv_cache_length_fn(batch: Int) -> Int:
+        return kv_cache_len
+
     _FlashAttention[
-        simdwidthof[type](),
         input_k_fn,
         input_v_fn,
-        input_mask_fn,
+        mask_fn,
+        mask_rank,
+        kv_cache_length_fn,
         transpose_k=transpose_k,
         layout_bshd=layout_bshd,
-    ].run(q, k_shape, v_shape, mask_shape, output, scale)
+    ].run(q, num_kv_heads, output, scale)
 
 
 fn flash_attention_split_kv[
@@ -950,17 +977,8 @@ fn flash_attention_split_kv[
     ):
         alias kv_rank = rank + 1
 
-        var num_batches = v_cache_shape[1]
-        var num_heads = v_cache_shape[2]
-        var prev_seq_len = v_cache_shape[3]
-        var depth_dim = v_cache_shape[4]
-        var seq_len = v_shape[1]
-
-        # Wrap `input_{k,v}_cache_fn` with lambdas that operate on indices of
-        # rank 4, as expected by `_FlashAttention.run()`.
-        var kv_shape_new = IndexList[rank](
-            num_batches, prev_seq_len + seq_len, num_heads, depth_dim
-        )
+        var num_kv_heads = v_cache_shape[2]
+        var kv_cache_len = v_cache_shape[3]
 
         @always_inline
         @parameter
@@ -969,7 +987,7 @@ fn flash_attention_split_kv[
             return IndexList[kv_rank](0, idx[0], idx[2], idx[1], idx[3])
 
         @always_inline
-        @__copy_capture(prev_seq_len)
+        @__copy_capture(kv_cache_len)
         @parameter
         fn load_from_split_cache[
             curr_fn: fn[simd_width: Int, rank: Int] (
@@ -987,10 +1005,10 @@ fn flash_attention_split_kv[
             # the last dim `depth_dim` is contiguous.
             var seq_idx = idx[1]
 
-            if seq_idx >= prev_seq_len:
+            if seq_idx >= kv_cache_len:
                 return curr_fn[simd_width, rank](
                     IndexList[rank](
-                        idx[0], seq_idx - prev_seq_len, idx[2], idx[3]
+                        idx[0], seq_idx - kv_cache_len, idx[2], idx[3]
                     )
                 )
 
@@ -1016,11 +1034,131 @@ fn flash_attention_split_kv[
                 input_v_fn, input_v_cache_fn, rank, simd_width
             ](idx)
 
+        @always_inline
+        @parameter
+        fn mask_fn[
+            simd_width: Int,
+            rank: Int,
+        ](
+            idx: IndexList[rank],
+            score_vec: SIMD[type, simd_width],
+            kv_cache_len: Int,
+        ) -> SIMD[type, simd_width]:
+            return score_vec + input_mask_fn[simd_width, rank](idx)
+
+        @always_inline
+        @__copy_capture(kv_cache_len)
+        @parameter
+        fn kv_cache_length_fn(batch: Int) -> Int:
+            return kv_cache_len
+
         _FlashAttention[
-            simdwidthof[type](),
             input_k_cache_fn_wrapper,
             input_v_cache_fn_wrapper,
-            input_mask_fn,
+            mask_fn,
+            mask_rank,
+            kv_cache_length_fn,
             transpose_k=True,
             layout_bshd=True,
-        ].run(q, kv_shape_new, kv_shape_new, mask_shape, output, scale)
+        ].run(q, num_kv_heads, output, scale)
+
+
+@always_inline
+fn _flash_attention_kv_cache[
+    type: DType,
+    cache_t: KVCacheT, //,
+    mask_fn: fn[simd_width: Int, mask_rank: Int] (
+        idx: IndexList[mask_rank],
+        score_vec: SIMD[type, simd_width],
+        kv_cache_length: Int,
+    ) capturing -> SIMD[type, simd_width],
+    mask_rank: Int,
+](
+    q: NDBuffer[type, 4, *_],
+    k: cache_t,
+    v: cache_t,
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+):
+    alias kv_params = cache_t.get_kv_params()
+
+    @parameter
+    fn input_k_fn[
+        width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
+        # Unwrap BSHD->BHSD indices.
+        return k.load[type, width=width](idx[0], idx[2], idx[1], idx[3])
+
+    @parameter
+    fn input_v_fn[
+        width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[type, width]:
+        # Unwrap BSHD->BHSD indices.
+        return v.load[type, width=width](idx[0], idx[2], idx[1], idx[3])
+
+    @always_inline
+    @parameter
+    fn kv_cache_length_fn(batch: Int) -> Int:
+        return k.cache_length(batch)
+
+    _FlashAttention[
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
+        mask_rank,
+        kv_cache_length_fn,
+        transpose_k=True,
+        layout_bshd=True,
+    ].run(q, int(kv_params.num_heads), output, scale)
+
+
+fn flash_attention_kv_cache[
+    type: DType, cache_t: KVCacheT, //
+](
+    q: NDBuffer[type, 4, *_],
+    k: cache_t,
+    v: cache_t,
+    mask: NDBuffer[type, *_],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+):
+    @always_inline
+    @parameter
+    fn mask_fn[
+        simd_width: Int, rank: Int
+    ](
+        idx: IndexList[rank],
+        score_vec: SIMD[type, simd_width],
+        kv_cache_len: Int,
+    ) -> SIMD[type, simd_width]:
+        return score_vec + mask.load[width=simd_width](idx)
+
+    _flash_attention_kv_cache[mask_fn, mask.rank](q, k, v, scale, output)
+
+
+fn flash_attention_kv_cache[
+    type: DType, cache_t: KVCacheT, mask_t: MHAMask, //
+](
+    q: NDBuffer[type, 4, *_],
+    k: cache_t,
+    v: cache_t,
+    mask: mask_t,
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+):
+    @always_inline
+    @parameter
+    fn mask_fn[
+        simd_width: Int,
+        rank: Int,
+    ](
+        idx: IndexList[rank],
+        score_vec: SIMD[type, simd_width],
+        kv_cache_len: Int,
+    ) -> SIMD[type, simd_width]:
+        # Shift the mask index from local->global space.
+        return mask.mask[type, simd_width](
+            Index(idx[0], idx[1], idx[2] + kv_cache_len, idx[3]), score_vec
+        )
+
+    _flash_attention_kv_cache[mask_fn, 4](q, k, v, scale, output)
