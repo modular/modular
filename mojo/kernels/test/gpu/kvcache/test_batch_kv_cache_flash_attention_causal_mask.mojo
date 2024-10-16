@@ -13,7 +13,7 @@ from gpu.host import DeviceContext
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from math import isqrt, isclose
 from memory import UnsafePointer
-from nn.mha import mha_gpu_naive, flash_attention
+from nn.mha import flash_attention
 from nn.mha_mask import NullMask, CausalMask
 from internal_utils import (
     HostNDBuffer,
