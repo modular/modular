@@ -299,14 +299,22 @@ static int linkOutput(OutputType outputType, const State &state,
     // archive to be included in the resulting library.  In the generated Python
     // bindings case, the exported function symbols otherwise wouldn't appeared
     // "used" by the linker, and so it would get aggressively removed.
-    return SmallVector<StringRef>{*linker,
-                                  "-shared",
-                                  "-Wl,--whole-archive",
-                                  archivePath,
-                                  "-Wl,--no-whole-archive",
-                                  compilerRTPath,
-                                  "-o",
-                                  outputName};
+
+    SmallVector<StringRef> linkerInvocation{*linker, "-shared"};
+
+#if defined(__APPLE__)
+    linkerInvocation.push_back("-Wl,-force_load");
+    linkerInvocation.push_back(archivePath);
+#else
+    linkerInvocation.push_back("-Wl,--whole-archive");
+    linkerInvocation.push_back(archivePath);
+    linkerInvocation.push_back("-Wl,--no-whole-archive");
+#endif
+
+    linkerInvocation.push_back(compilerRTPath);
+    linkerInvocation.push_back("-o");
+    linkerInvocation.push_back(outputName);
+    return linkerInvocation;
   }();
 
   // Add other shared libs
