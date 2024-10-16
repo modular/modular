@@ -761,3 +761,42 @@ fn topk_gpu[
 
     _ = internal_vals_buf^
     _ = internal_idxs_buf^
+
+
+@always_inline
+fn topk_fused_sampling_gpu[
+    type: DType,
+    rank: Int,
+    out_idx_type: DType,
+](
+    ctx: DeviceContext,
+    K: Int,  # num top elements to keep
+    input: NDBuffer[type, rank],
+    out_idxs: NDBuffer[out_idx_type, rank],
+    block_size: OptionalReg[Int] = None,
+    num_blocks_per_input: OptionalReg[Int] = None,
+) raises:
+    """
+    Top K algorithm with fused sampling.
+    Returns the sampled indices from the Top-K of the innermost
+    dimension of the input tensor for each row/subvolume.
+    """
+
+    var out_vals_shape = input.get_shape()
+    out_vals_shape[rank - 1] = K
+    var out_vals_buf = ctx.create_buffer[type](
+        out_vals_shape.flattened_length()
+    )
+    var out_vals = NDBuffer[type, rank](out_vals_buf.ptr, out_vals_shape)
+
+    topk_gpu[sampling=True, largest=True](
+        ctx,
+        K,
+        input,
+        out_vals,
+        out_idxs,
+        block_size=block_size,
+        num_blocks_per_input=num_blocks_per_input,
+    )
+
+    _ = out_vals_buf^

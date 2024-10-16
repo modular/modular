@@ -231,12 +231,56 @@ fn _top_k[
     parallelize_over_rows[process_rows](shape, axis, parallelism_grain_size)
 
 
+@always_inline
+fn top_k_fused_sampling[
+    type: DType,
+    rank: Int,
+    out_idx_type: DType,
+](
+    k: Int,
+    input: NDBuffer[type, rank],
+    out_idxs: NDBuffer[out_idx_type, rank],
+) raises:
+    """
+    Generalized implementation of the Top K algorithm with sampling.
+    Returns the sampled index from the innermost dimension of the input
+    tensor for each row/subvolume.
+
+    Parameters:
+        type: Data type of the input buffer.
+        rank: Rank of the input.
+        out_idx_type: Data type of the output indices.
+
+    Args:
+        k: Int - Represents the K largest values to consider for sampling.
+        input: NDBuffer[type, rank] (Any shape)- The input tensor.
+        out_idxs: NDBuffer[out_idx_type, rank] (shape of [input_shape[:-1]] + [1]) - The output indices.
+    """
+    constrained[out_idx_type == DType.int64, "out_idx_type must be int64"]()
+    # materialize the out_vals which is of shape [input[:-1]] + [k]
+    var out_vals_shape = input.get_shape()
+    out_vals_shape[rank - 1] = k
+    var out_vals = NDBuffer[type, rank](
+        UnsafePointer[Scalar[type]].alloc(out_vals_shape.flattened_length()),
+        out_vals_shape,
+    )
+
+    _top_k_sampling(
+        k,
+        input,
+        out_vals,
+        rebind[NDBuffer[DType.int64, rank]](out_idxs),
+    )
+
+    out_vals.data.free()
+
+
 fn _top_k_sampling[
     type: DType,
     rank: Int,
 ](
-    input: NDBuffer[type, rank],
     k: Int,
+    input: NDBuffer[type, rank],
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[DType.int64, rank],
 ) raises:
@@ -250,8 +294,8 @@ fn _top_k_sampling[
         rank: Rank of the input.
 
     Args:
-        input: NDBuffer[type, rank] (Any shape)- The input tensor.
         k: Int - Represents the K largest values to consider for sampling.
+        input: NDBuffer[type, rank] (Any shape)- The input tensor.
         out_vals: NDBuffer[type, rank] (shape of [input[:-1]] + [k]) - The output values.
         out_idxs: NDBuffer[DType.int64, rank] (shape of [input[:-1]] + [1]) - The output indices.
     """
@@ -313,10 +357,11 @@ fn _top_k_sampling[
 
         # Sample using the normalized probabilities
         var r = sum_exp * random_float64().cast[type]()
-        var sampled_index = -1
         for i in range(k):
             r -= exp_vals[i]
             if r <= 0 or i == k - 1:
                 # Store the sampled index and value
                 internal_out_idxs[batch, 0] = out_idxs_tmp[batch, i]
                 break
+
+    out_idxs_tmp.data.free()

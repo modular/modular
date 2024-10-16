@@ -13,7 +13,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from random import seed
 from memory import UnsafePointer
-from nn.topk import _top_k, _top_k_sampling
+from nn.topk import _top_k, _top_k_sampling, top_k_fused_sampling
 from internal_utils import HostNDBuffer
 
 from utils import IndexList
@@ -83,8 +83,8 @@ fn test_case_sampling[
     # input.fill(4)
 
     _top_k_sampling(
-        input,
         K,
+        input,
         out_vals,
         out_idxs,
     )
