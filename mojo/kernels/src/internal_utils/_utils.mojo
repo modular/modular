@@ -54,7 +54,22 @@ struct HostNDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        dynamic_shape: IndexList[rank, *_] = _make_tuple[rank](shape),
+    ):
+        constrained[
+            shape.all_known[rank](),
+            (
+                "Must provided dynamic_shape as argument to constructor if not"
+                " all shapes are statically known"
+            ),
+        ]()
+        self.tensor = NDBuffer[type, rank, shape](
+            UnsafePointer[Scalar[type]].alloc(shape.product().get()),
+        )
+
+    @always_inline
+    fn __init__(
+        inout self,
+        dynamic_shape: IndexList[rank, **_],
     ):
         self.tensor = NDBuffer[type, rank, shape](
             UnsafePointer[Scalar[type]].alloc(product(dynamic_shape, rank)),
@@ -72,6 +87,15 @@ struct HostNDBuffer[
     fn __del__(owned self):
         self.tensor.data.free()
 
+    def copy_to_device(
+        self, ctx: DeviceContext
+    ) -> DeviceNDBuffer[type, rank, shape]:
+        var retval = DeviceNDBuffer[type, rank, shape](
+            self.tensor.dynamic_shape, ctx=ctx
+        )
+        ctx.enqueue_copy_to_device(retval.buffer, self.tensor.data)
+        return retval^
+
 
 @value
 struct DeviceNDBuffer[
@@ -86,7 +110,26 @@ struct DeviceNDBuffer[
     @always_inline
     fn __init__(
         inout self,
-        dynamic_shape: IndexList[rank] = _make_tuple[rank](shape),
+        *,
+        ctx: DeviceContext,
+    ) raises:
+        constrained[
+            shape.all_known[rank](),
+            (
+                "Must provided dynamic_shape as argument to constructor if not"
+                " all shapes are statically known"
+            ),
+        ]()
+        # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
+        self.buffer = ctx.create_buffer[type](shape.product().get())
+        self.tensor = NDBuffer[type, rank, shape](
+            self.buffer.ptr,
+        )
+
+    @always_inline
+    fn __init__(
+        inout self,
+        dynamic_shape: IndexList[rank, **_],
         *,
         ctx: DeviceContext,
     ) raises:
