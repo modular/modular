@@ -328,10 +328,10 @@ struct Dim(CollectionElement):
             return Dim.symbolic(str(_c.dim_symbolic_name(dim_attr)))
         else:
             debug_assert(
-                _c.dim_is_symbolic_expression(dim_attr),
+                _c.dim_is_algebraic(dim_attr),
                 "unknown dim variant",
             )
-            raise "Unsupported dim type: symbolic expression"
+            raise "Unsupported dim type: algebraic dimension"
 
     fn __str__(self) -> String:
         """Creates a string representation of the dimension.

@@ -315,10 +315,10 @@ fn dim_is_symbolic(a: _mlir.Attribute) -> Bool:
     )
 
 
-fn dim_is_symbolic_expression(a: _mlir.Attribute) -> Bool:
-    return cfunc[
-        "MAXG_dimIsSymbolicExpression", fn (_mlir.Attribute.cType) -> Bool
-    ]()(a.c)
+fn dim_is_algebraic(a: _mlir.Attribute) -> Bool:
+    return cfunc["MAXG_dimIsAlgebraic", fn (_mlir.Attribute.cType) -> Bool]()(
+        a.c
+    )
 
 
 fn dim_static_value(a: _mlir.Attribute) -> Int64:
