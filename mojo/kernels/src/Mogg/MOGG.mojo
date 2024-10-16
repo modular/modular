@@ -52,8 +52,11 @@ from nn.argmaxmin import argmin as _argmin
 from nn.argmaxmin_gpu import argmax_gpu as _argmax_gpu
 from nn.argmaxmin_gpu import argmin_gpu as _argmin_gpu
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
-from nn.concat import concat as _concat, _concat_cpu
+from nn.concat import (
+    concat as _concat,
+)
 from nn.concat import concat_shape as concat_from_list_shape
+from nn.concat import _concat_cpu, test_concat_fusion
 from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as _pack_conv_filter_shape
@@ -1260,17 +1263,25 @@ fn concat[
     type: DType,
     rank: Int,
     single_thread_blocking_override: Bool,
-    lambdas_have_fusion: Bool,
+    # A tuple of callbacks, one per input.
+    input_1_fn_tuple: StaticTuple[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank]) capturing -> SIMD[type, width], *_
+    ],
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         IndexList[rank], SIMD[type, width]
     ) capturing -> None,
     target: StringLiteral = "cpu",
 ](
     axis: Scalar,
-    inputs: StaticTuple[NDBuffer[type, rank], *_],
+    input_shapes: StaticTuple[IndexList[rank], input_1_fn_tuple.size],
+    # TODO: we should probably take output shape here.
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
+    var normalized_axis = int(normalize_neg_index(axis, rank))
+
     @always_inline
     @parameter
     fn epilogue_wrapper[
@@ -1281,15 +1292,14 @@ fn concat[
             rebind[SIMD[type, width]](value),
         )
 
-    _concat[
-        rank,
+    return test_concat_fusion[
         type,
+        rank,
         single_thread_blocking_override,
+        input_1_fn_tuple,
+        epilogue_wrapper,
         target,
-        OptionalReg[concat_elementwise_epilogue_type](
-            epilogue_wrapper
-        ) if lambdas_have_fusion else None,
-    ](output, int(normalize_neg_index(axis, rank)), inputs, context=ctx)
+    ](normalized_axis, input_shapes, output, ctx)
 
 
 @mogg_register_shape_func("mo.concat")
