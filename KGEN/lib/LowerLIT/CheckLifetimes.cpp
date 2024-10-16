@@ -1370,6 +1370,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
       continue;
     }
 
+    bool hasAnyOrigin = false;
+
     // Handle all the normal operand and result effects.
     for (auto [operand, effect] : operandEffects) {
       switch (effect) {
@@ -1380,6 +1382,8 @@ void UninitializedValueScan::scanBlock(Block &block) {
         checkConsume(operand, op, /*isDeref=*/false);
         break;
       case OperandEffect::memLoad:
+        hasAnyOrigin |=
+            isa<AnyOriginAttr>(cast<RefType>(operand.getType()).getOrigin());
         checkUse(operand, op, /*isDeref=*/true);
         break;
       case OperandEffect::memStoreOwned:
@@ -1387,13 +1391,19 @@ void UninitializedValueScan::scanBlock(Block &block) {
         definedOrigins.push_back(cast<RefType>(operand.getType()).getOrigin());
         break;
       case OperandEffect::memInOut:
+        hasAnyOrigin |=
+            isa<AnyOriginAttr>(cast<RefType>(operand.getType()).getOrigin());
         checkUse(operand, op, /*isDeref=*/true);
         checkDef(operand, op, /*isDeref=*/true);
         break;
       case OperandEffect::memConsume:
+        hasAnyOrigin |=
+            isa<AnyOriginAttr>(cast<RefType>(operand.getType()).getOrigin());
         checkConsume(operand, op, /*isDeref=*/true);
         break;
       case OperandEffect::memMarkDestroyed:
+        hasAnyOrigin |=
+            isa<AnyOriginAttr>(cast<RefType>(operand.getType()).getOrigin());
         checkMarkDestroyed(operand, op);
         break;
       }
@@ -1461,7 +1471,6 @@ void UninitializedValueScan::scanBlock(Block &block) {
     }
 
     // Process any indirect origins accessed.
-    bool hasAnyOrigin = false;
     for (auto origin : originEffects) {
       checkOriginEffect(origin, op);
       hasAnyOrigin |= isa<AnyOriginAttr>(origin);
