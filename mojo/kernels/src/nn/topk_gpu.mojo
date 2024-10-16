@@ -28,8 +28,10 @@ from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
 from gpu.shuffle import _floorlog2, _static_log2, warp_reduce
 from memory import UnsafePointer, stack_allocation
+from nn.reshape import reshape
 
 from utils.numerics import min_or_neg_inf, max_or_inf
+from utils import IndexList
 
 alias SEED = 0
 alias DEBUG_FILE = False
@@ -487,13 +489,13 @@ fn _topk_gpu[
         K: Int - The number of top elements to keep.
         input_buf: NDBuffer[type, rank, DimList(batch_size,N)]
             Input tensor as a device NDBuffer.
-        device_local_topk_vals: NDBuffer[type, 1, DimList(batch_size, num_blocks_per_input * K)]
+        device_local_topk_vals: NDBuffer[type, 2, DimList(batch_size, num_blocks_per_input * K)]
             Temporary buffer for locally reduced top-K values from stage 1.
-        device_local_topk_idxs: NDBuffer[DType.index, 1, DimList(batch_size, num_blocks_per_input * K)]
+        device_local_topk_idxs: NDBuffer[DType.index, 2, DimList(batch_size, num_blocks_per_input * K)]
             Temporary buffer for locally reduced top-K indices from stage 1.
-        out_vals: NDBuffer[type, 1, DimList(batch_size, K)]
+        out_vals: NDBuffer[type, 2, DimList(batch_size, K)]
             Output buffer on device for the K largest values.
-        out_idxs: NDBuffer[DType.index, 1, DimList(batch_size, 1 if sampling else K)]
+        out_idxs: NDBuffer[DType.index, 2, DimList(batch_size, 1 if sampling else K)]
             Output buffer on device for the indices of the K largest values, or sampled token indices.
         block_size: Int
             The number of threads per block (default is 256 from TRT and empirical testing).
@@ -508,7 +510,6 @@ fn _topk_gpu[
     and [TRT-LLM]
     (https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/tensorrt_llm/kernels/samplingTopKKernels.cu).
 
-    Note: Currently supports only 1D tensors. Higher rank tensor support is planned shortly.
     """
     constrained[rank == 2, "rank must be 2"]()
     constrained[
@@ -605,3 +606,158 @@ fn _topk_gpu[
         block_dim=blockdim_stage2,
         shared_mem_bytes=shared_mem_bytes_2,
     )
+
+
+@always_inline
+fn topk_gpu[
+    type: DType,
+    rank: Int,
+    out_idx_type: DType = DType.index,
+    sampling: Bool = True,
+    largest: Bool = True,
+](
+    ctx: DeviceContext,
+    K: Int,  # num top elements to keep
+    input: NDBuffer[type, rank],
+    out_vals: NDBuffer[type, rank],
+    out_idxs: NDBuffer[out_idx_type, rank],
+    block_size: OptionalReg[Int] = None,
+    num_blocks_per_input: OptionalReg[Int] = None,
+) raises:
+    """
+    Generalized implementation of the Top K algorithm with/without sampling.
+    Returns the sampled index from the innermost dimension of the input
+    tensor for each row/subvolume or the top K values and indices across the tensor.
+
+    Parameters:
+        type: DType - The data type of the input tensor.
+        rank: Int - The rank of the input tensor.
+        out_idx_type: DType - The data type of the output indices (default is DType.index).
+        sampling: Bool - Whether to return token samples from topK dist (default is True).
+        largest: Bool - Whether to find the maximum or minimum value.
+
+    Args:
+        ctx: DeviceContext
+            The context for GPU execution.
+        K: Int - The number of top elements to keep.
+        input: NDBuffer[type, rank]
+            Input tensor as a device NDBuffer.
+        out_vals: NDBuffer[type, rank]
+            Output buffer on device for the K largest values.
+        out_idxs: NDBuffer[DType.index, rank]
+            Output buffer on device for the indices of the K largest values, or sampled token indices.
+            Last dimension is 1 if sampling is True, otherwise K.
+        block_size: Int
+            The number of threads per block (default is 256 from TRT and empirical testing).
+        num_blocks_per_input: OptionalReg[Int]
+            Number of blocks per input (default computed from input size and block size).
+            This is the equivalent of "BLOCKS_PER_BEAM" in TRT-LLM kernel allowing for much larger
+            batch sizes through packing several elements per thread in the first stage.
+    """
+    constrained[rank > 0, "Input rank must be positive"]()
+    var orig_in_shape: IndexList[rank] = input.get_shape()
+    var N = orig_in_shape[rank - 1]
+    var last_idx_dim = 1 if sampling else K
+
+    # heuristic to set block size
+    var block_size_: Int
+    if input.size() <= 1024 * 64 * 3:
+        block_size_ = 256
+    elif input.size() <= 32000 * 256:
+        block_size_ = 512
+    else:
+        block_size_ = 1024
+    block_size_ = block_size.value() if block_size else block_size_
+
+    # This section handles different input ranks by reshaping to a 2D tensor
+    var internal_bs: Int  # Internal batch size
+    alias internal_rank = 2  # We always reshape to 2D for internal processing
+    var internal_input: NDBuffer[type, internal_rank]
+    var internal_out_idxs: NDBuffer[out_idx_type, internal_rank]
+    var internal_out_vals: NDBuffer[type, internal_rank]
+
+    @parameter
+    if rank == 1:
+        # Handle 1D input: treat it as a single batch with one element
+        internal_bs = 1
+        var internal_in_shape = IndexList[internal_rank](1, input.size())
+        var internal_out_vals_shape = IndexList[internal_rank](1, K)
+        var internal_out_idxs_shape = IndexList[internal_rank](1, last_idx_dim)
+
+        # Reshape 1D inputs to 2D
+        internal_input = reshape(input, internal_in_shape)
+        internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
+        internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+    elif rank == internal_rank:
+        # Input is already 2D, no reshaping needed
+        internal_bs = orig_in_shape[0]
+        internal_input = rebind[NDBuffer[type, internal_rank]](input)
+        internal_out_idxs = rebind[NDBuffer[out_idx_type, internal_rank]](
+            out_idxs
+        )
+        internal_out_vals = rebind[NDBuffer[type, internal_rank]](out_vals)
+    else:  # rank > 2
+        # Handle higher dimensional inputs by flattening all but the last dimension
+        var _last_dim = orig_in_shape[rank - 1]
+        internal_bs = int(orig_in_shape.flattened_length() / _last_dim)
+
+        var internal_in_shape = IndexList[internal_rank](internal_bs, _last_dim)
+        var internal_out_idxs_shape = IndexList[internal_rank](
+            internal_bs, last_idx_dim
+        )
+        var internal_out_vals_shape = IndexList[internal_rank](internal_bs, K)
+
+        # Reshape higher dimensional inputs to 2D
+        internal_input = reshape(input, internal_in_shape)
+        internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
+        internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+
+    # Calculate the number of blocks per input
+    var num_blocks_per_input_ = min(
+        ceildiv(N, block_size_), 8
+    ) if not num_blocks_per_input else num_blocks_per_input.value()
+
+    # Define shape for the kernel's internal cache buffers
+    var internal_cache_shape = DimList(internal_bs, num_blocks_per_input_ * K)
+
+    # Create temporary buffer for local top-K values
+    var internal_vals_buf = ctx.create_buffer[type](
+        int(internal_cache_shape.product())
+    )
+    var device_local_topk_vals = NDBuffer[type, internal_rank](
+        internal_vals_buf.ptr, internal_cache_shape
+    )
+
+    # Create temporary buffer for local top-K indices
+    var internal_idxs_buf = ctx.create_buffer[DType.index](
+        int(internal_cache_shape.product())
+    )
+    var device_local_topk_idxs = NDBuffer[DType.index, internal_rank](
+        internal_idxs_buf.ptr, internal_cache_shape
+    )
+
+    @parameter
+    if DEBUG_FILE:
+        print("[DEBUG] internal_input shape: ", internal_input.get_shape())
+        print(
+            "[DEBUG] internal_out_vals shape: ", internal_out_vals.get_shape()
+        )
+        print(
+            "[DEBUG] internal_out_idxs shape: ", internal_out_idxs.get_shape()
+        )
+        print("[DEBUG] internal_cache_shape: ", internal_cache_shape)
+
+    _topk_gpu[sampling=sampling, largest=largest](
+        ctx,
+        K,
+        internal_input,
+        device_local_topk_vals,
+        device_local_topk_idxs,
+        internal_out_vals,
+        internal_out_idxs,
+        block_size=block_size_,
+        num_blocks_per_input=num_blocks_per_input_,
+    )
+
+    _ = internal_vals_buf^
+    _ = internal_idxs_buf^
