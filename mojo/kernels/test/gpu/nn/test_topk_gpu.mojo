@@ -19,13 +19,14 @@ from random import random_float64
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from memory import UnsafePointer
-from nn.topk_gpu import _topk_gpu
+from nn.topk_gpu import _topk_gpu, topk_gpu
 from nn.topk import _top_k
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 
 alias DEBUG_BENCH = False
+alias PRINT_OUTPUT = False
 
 
 fn time_kernel[
@@ -137,7 +138,7 @@ fn test_case_batched[
         alias msg = "tk-smpl-gpu" if sampling else "tk-gpu"
         time_kernel[run_func](m, ctx, msg)
 
-    topk_kernel(
+    _topk_gpu[sampling=sampling, largest=largest,](
         ctx,
         K,
         device_in.tensor,
@@ -148,7 +149,6 @@ fn test_case_batched[
         block_size=block_size,
         num_blocks_per_input=num_blocks_per_input,
     )
-    ctx.synchronize()
 
     # Copy results back to host
     ctx.enqueue_copy_from_device(topk_vals.tensor.data, device_out_vals.buffer)
@@ -159,10 +159,10 @@ fn test_case_batched[
     var _msg2 = "Sample token index: " if sampling else "Top K indices: "
 
     @parameter
-    if sampling:
+    if sampling and PRINT_OUTPUT:
         print(_msg2, topk_idxs.tensor)
         print(_msg1, topk_vals.tensor)
-    else:
+    elif PRINT_OUTPUT:
         print(_msg1, topk_vals.tensor)
         print(_msg2, topk_idxs.tensor)
 
@@ -183,7 +183,7 @@ fn test_case_batched[
                 _top_k[rank=rank, type=type](
                     in_buffer.tensor,
                     K,
-                    1,
+                    rank - 1,
                     largest,
                     topk_vals_cpu.tensor,
                     topk_idxs_cpu.tensor,
@@ -196,7 +196,7 @@ fn test_case_batched[
         _top_k[rank=rank, type=type](
             in_buffer.tensor,
             K,
-            1,
+            rank - 1,
             largest,
             topk_vals_cpu.tensor,
             topk_idxs_cpu.tensor,
@@ -229,6 +229,90 @@ fn test_case_batched[
     @parameter
     if DEBUG_BENCH:
         m.dump_report()
+
+
+fn test_case_multi_rank[
+    type: DType,
+    fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
+        _
+    ] -> None,
+    rank: Int,
+    out_idx_type: DType = DType.index,
+](ctx: DeviceContext, test_case: TestCaseMultiRank[rank=rank, *_]) raises:
+    # Fetch arguments
+    var input_shape = test_case.input_shape
+    var K = test_case.K
+    var block_size = test_case.block_size
+    var num_blocks_per_input = test_case.num_blocks_per_input
+    alias largest = test_case.largest
+    alias sampling = test_case.sampling
+    # Instantiate data in host memory
+    var out_idx_len = 1 if sampling else K
+    var out_vals_shape = input_shape
+    out_vals_shape[rank - 1] = K
+    var out_idxs_shape = input_shape
+    out_idxs_shape[rank - 1] = out_idx_len
+
+    var in_buffer = HostNDBuffer[type, rank](input_shape)
+    var topk_vals = HostNDBuffer[type, rank](out_vals_shape)
+    var topk_idxs = HostNDBuffer[out_idx_type, rank](out_idxs_shape)
+
+    # Fill the buffer with consecutive values
+    fill_fn(in_buffer.tensor)
+
+    # Move data to device
+    var device_in = DeviceNDBuffer[type, rank](input_shape, ctx=ctx)
+    var device_out_vals = DeviceNDBuffer[type, rank](out_vals_shape, ctx=ctx)
+    var device_out_idxs = DeviceNDBuffer[out_idx_type, rank](
+        out_idxs_shape, ctx=ctx
+    )
+
+    ctx.enqueue_copy_to_device(device_in.buffer, in_buffer.tensor.data)
+
+    topk_gpu[sampling=sampling, largest=largest](
+        ctx,
+        K,
+        device_in.tensor,
+        device_out_vals.tensor,
+        device_out_idxs.tensor,
+        block_size=block_size,
+        num_blocks_per_input=num_blocks_per_input,
+    )
+
+    # Copy results back to host
+    ctx.enqueue_copy_from_device(topk_vals.tensor.data, device_out_vals.buffer)
+    ctx.enqueue_copy_from_device(topk_idxs.tensor.data, device_out_idxs.buffer)
+    ctx.synchronize()
+
+    # ASSERT equality with CPU topk kernel reference
+    @parameter
+    if not sampling:
+        var topk_vals_cpu = HostNDBuffer[type, rank](out_vals_shape)
+        var topk_idxs_cpu = HostNDBuffer[DType.int64, rank](out_idxs_shape)
+
+        _top_k[rank=rank, type=type](
+            in_buffer.tensor,
+            K,
+            rank - 1,
+            largest,
+            topk_vals_cpu.tensor,
+            topk_idxs_cpu.tensor,
+            1,
+            True,
+        )
+
+        for i in range(topk_vals.tensor.num_elements()):
+            assert_almost_equal(
+                topk_vals.tensor.data[i],
+                topk_vals_cpu.tensor.data[i],
+            )
+
+            @parameter
+            if type == DType.float32:
+                assert_equal(
+                    topk_idxs.tensor.data[i],
+                    topk_idxs_cpu.tensor.data[i].cast[out_idx_type](),
+                )
 
 
 @parameter
@@ -272,6 +356,28 @@ struct TestCase[_sampling: Bool, _largest: Bool = True]:
         self.num_blocks_per_input = None
 
 
+@value
+struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True]:
+    alias sampling = _sampling
+    alias largest = _largest
+    var input_shape: IndexList[rank]
+    var K: Int
+    var block_size: OptionalReg[Int]
+    var num_blocks_per_input: OptionalReg[Int]
+
+    fn __init__(
+        inout self,
+        input_shape: IndexList[rank],
+        K: Int,
+        block_size: OptionalReg[Int] = None,
+        num_blocks_per_input: OptionalReg[Int] = None,
+    ):
+        self.input_shape = input_shape
+        self.K = K
+        self.block_size = block_size
+        self.num_blocks_per_input = num_blocks_per_input
+
+
 fn print_test_case(test_case: TestCase):
     var num_blocks_per_in_msg = str("auto")
     if test_case.num_blocks_per_input:
@@ -287,6 +393,27 @@ fn print_test_case(test_case: TestCase):
         test_case.block_size,
         ", batch_size=",
         test_case.batch_size,
+        ", num_blocks_per_input=",
+        num_blocks_per_in_msg,
+    )
+
+
+fn print_test_case(test_case: TestCaseMultiRank):
+    var num_blocks_per_in_msg = str("auto")
+    if test_case.num_blocks_per_input:
+        num_blocks_per_in_msg = str(test_case.num_blocks_per_input.value())
+    var block_size_msg = str("auto")
+    if test_case.block_size:
+        block_size_msg = str(test_case.block_size.value())
+    print(
+        "==== Running Top-K sampling=",
+        test_case.sampling,
+        ", input_shape=",
+        test_case.input_shape,
+        ", K=",
+        test_case.K,
+        ", block_size=",
+        block_size_msg,
         ", num_blocks_per_input=",
         num_blocks_per_in_msg,
     )
@@ -333,6 +460,40 @@ fn test_min_topk[type: DType](ctx: DeviceContext) raises:
         type,
         fill_random,
     ](ctx, test_case2)
+
+
+fn test_multi_rank[type: DType, sampling: Bool](ctx: DeviceContext) raises:
+    alias llama3_vocab_size = 128256
+
+    alias test_case_multi_rank1 = TestCaseMultiRank[
+        _sampling=sampling, rank=1, _largest=True
+    ](
+        input_shape=IndexList[1](4096),
+        K=10,
+        block_size=256,
+    )
+    print_test_case(test_case_multi_rank1)
+    test_case_multi_rank[type, fill_iota](ctx, test_case_multi_rank1)
+
+    alias test_case_multi_rank2 = TestCaseMultiRank[
+        _sampling=sampling, rank=2, _largest=True
+    ](
+        input_shape=IndexList[2](10, 1024),
+        K=5,
+        block_size=512,
+    )
+    print_test_case(test_case_multi_rank2)
+    test_case_multi_rank[type, fill_iota](ctx, test_case_multi_rank2)
+
+    alias test_case_multi_rank3 = TestCaseMultiRank[
+        _sampling=sampling, rank=3, _largest=True
+    ](
+        input_shape=IndexList[3](2, 128, llama3_vocab_size),
+        K=5,
+        num_blocks_per_input=2,
+    )
+    print_test_case(test_case_multi_rank3)
+    test_case_multi_rank[type, fill_iota](ctx, test_case_multi_rank3)
 
 
 fn main() raises:
@@ -556,3 +717,9 @@ fn main() raises:
 
         # Run minimum top-k tests
         test_min_topk[type](ctx)
+
+        # Run multi-rank tests
+        test_multi_rank[type, False](ctx)
+        test_multi_rank[type, True](ctx)
+        test_multi_rank[bf16_type, False](ctx)
+        test_multi_rank[bf16_type, True](ctx)
