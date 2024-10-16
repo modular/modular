@@ -305,7 +305,7 @@ fn _static_log2[n: Int]() -> Int:
     return 0 if n <= 1 else _floorlog2[n - 1]() + 1
 
 
-@always_inline("nodebug")
+@always_inline
 fn lane_group_reduce[
     shuffle: fn[type: DType, simd_width: Int] (
         val: SIMD[type, simd_width], offset: UInt32
@@ -331,7 +331,7 @@ fn lane_group_reduce[
     return res
 
 
-@always_inline("nodebug")
+@always_inline
 fn warp_reduce[
     shuffle: fn[type: DType, simd_width: Int] (
         val: SIMD[type, simd_width], offset: UInt32
@@ -354,7 +354,7 @@ fn warp_reduce[
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@always_inline
 fn lane_group_sum[
     val_type: DType,
     simd_width: Int,
@@ -367,7 +367,7 @@ fn lane_group_sum[
     return lane_group_reduce[shuffle_down, _reduce_add, nthreads=nthreads](val)
 
 
-@always_inline("nodebug")
+@always_inline
 fn lane_group_max[
     val_type: DType,
     simd_width: Int,
@@ -380,14 +380,14 @@ fn lane_group_max[
     return lane_group_reduce[shuffle_down, _reduce_max, nthreads=nthreads](val)
 
 
-@always_inline("nodebug")
+@always_inline
 fn warp_sum[
     val_type: DType, simd_width: Int
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     return lane_group_sum[nthreads=WARP_SIZE](val)
 
 
-@always_inline("nodebug")
+@always_inline
 fn warp_max[
     val_type: DType, simd_width: Int
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
@@ -420,13 +420,13 @@ struct ReductionMethod:
 
 
 @always_inline
-fn block_sum[
+fn warp_sum[
     intermediate_type: DType,
     *,
     reduction_method: ReductionMethod,
     output_type: DType,
 ](x: SIMD) -> Scalar[output_type]:
-    """Performs a blockwise reduction using either a warp shuffle or tensor
+    """Performs a warp level reduction using either a warp shuffle or tensor
     core operation. If the tensor core method is chosen, then the input value
     is cast to the intermediate type to make the value consumable by the
     tensor core op."""
@@ -437,7 +437,7 @@ fn block_sum[
             output_type == x.type,
             (
                 "the output type must match the input value for warp-level"
-                " blockwise reduction"
+                " reduction"
             ),
         ]()
 
