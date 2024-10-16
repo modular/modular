@@ -197,18 +197,21 @@ struct Complicated:
 
 # This exercises turning a pop.pointer into an RValue, which produces an 'owned'
 # pointer magically from memory.
-# CHECK-LABEL: lit.func @"testTakePointeeAsOwned
-fn testTakePointeeAsOwned(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
-                          i1ptr: __mlir_type.`!kgen.pointer<i1>`):
+# CHECK-LABEL: lit.func @"testTakePointeeAsOwned1
+fn testTakePointeeAsOwned1(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
   # This should run the destructor.
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr end_uninit :
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF]])
+  # CHECK-NEXT: [[REF1:%.*]] = lit.ref.from_pointer %ptr end_uninit :
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF1]])
   _ = __get_address_as_owned_value(ptr)
 
   # This should run the destructor and not get omitted.
-  # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr end_uninit :
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF]])
+  # CHECK-NEXT: [[REF2:%.*]] = lit.ref.from_pointer %ptr end_uninit :
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REF2]])
   _ = __get_address_as_owned_value(ptr)
+
+# CHECK-LABEL: lit.func @"testTakePointeeAsOwned2
+fn testTakePointeeAsOwned2(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`],
+                          i1ptr: __mlir_type.`!kgen.pointer<i1>`):
 
   # The RValue can be consumed directly.
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.from_pointer %ptr end_uninit :
@@ -1129,3 +1132,22 @@ fn handleAnyLifetime4():
   # CHECK: lit.call {{.*}}take_pack
   # CHECK: lit.call {{.*}}__del__{{.*}}(%str)
   # CHECK: lit.var.lifetime.end %str
+
+
+struct A:
+    var data: UnsafePointer[Int]
+    fn __init__(inout self):
+        self.data = UnsafePointer[Int]()
+    fn __del__(owned self): pass
+
+fn use_int(a: Int): pass
+
+# CHECK-LABEL: lit.func @"handleAnyLifetime5
+fn handleAnyLifetime5():
+    # lit.ref.load needs to extend the lifetime of A.
+    a = A()
+    # CHECK: [[INT_REF:%.*]] = {{.*}}UnsafePointer::@"__getitem__
+    # CHECK-NOT: lit.call {{.*}}__del__
+    # CHECK: lit.ref.load [[INT_REF]]
+    # CHECK: lit.call {{.*}}__del__{{.*}}(%a)
+    use_int(a.data[0])
