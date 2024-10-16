@@ -620,7 +620,7 @@ fn multistage_b2b_gemm[
             B,
             C,
             grid_dim=config.grid_dim(
-                runtime_tuple.to_int(D.runtime_layout.shape[0])
+                int(runtime_tuple.to_int(D.runtime_layout.shape[0]))
             ),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
