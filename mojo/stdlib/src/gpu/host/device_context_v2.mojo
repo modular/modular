@@ -164,7 +164,7 @@ struct DeviceBufferV2[type: DType](Sized):
         """
         # void AsyncRT_DeviceBuffer_release(const DeviceBuffer *buffer)
         external_call[
-            "AsyncRT_DeviceBuffer_release", NoneType, _DeviceContextPtr
+            "AsyncRT_DeviceBuffer_release", NoneType, _DeviceBufferPtr
         ](
             self._handle,
         )
@@ -368,11 +368,6 @@ struct DeviceFunctionV2[
                 "DeviceFunctionV2._call_with_pack: cluster_dim"
             ]()
 
-        if len(attributes) != 0:
-            not_implemented_yet[
-                "DeviceFunctionV2._call_with_pack: attributes"
-            ]()
-
         if constant_memory:
             for i in range(len(constant_memory)):
                 self._copy_to_constant_memory(constant_memory[i])
@@ -380,7 +375,8 @@ struct DeviceFunctionV2[
         # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(const DeviceContext *ctx, const DeviceFunction *func,
         #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
         #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ,
-        #                                                         uint32_t sharedMemBytes, void **args)
+        #                                                         uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
+        #                                                         void **args)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enqueueFunctionDirect",
@@ -394,6 +390,8 @@ struct DeviceFunctionV2[
                 UInt32,
                 UInt32,
                 UInt32,
+                UnsafePointer[LaunchAttribute],
+                UInt32,
                 UnsafePointer[UnsafePointer[NoneType]],
             ](
                 ctx._handle,
@@ -405,12 +403,32 @@ struct DeviceFunctionV2[
                 block_dim.y(),
                 block_dim.z(),
                 shared_mem_bytes.or_else(0),
+                attributes.unsafe_ptr(),
+                len(attributes),
                 dense_args_addrs,
             )
         )
 
     fn test_only_num_captures(self) -> Int:
         return self._func_impl.num_captures
+
+    fn test_only_get_attribute(self, attr: Attribute) raises -> Int:
+        var result: Int32 = 0
+        # const char *AsyncRT_DeviceFunction_TEST_ONLY_getAttribute(int32_t *result, const DeviceFunction *func, int32_t attr_code)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceFunction_TEST_ONLY_getAttribute",
+                _CharPtr,
+                UnsafePointer[Int32],
+                _DeviceFunctionPtr,
+                Int32,
+            ](
+                UnsafePointer.address_of(result),
+                self._handle,
+                attr.code,
+            )
+        )
+        return int(result)
 
 
 struct DeviceContextV2:
@@ -424,7 +442,7 @@ struct DeviceContextV2:
     fn __init__(
         inout self, device_kind: StringLiteral = "cuda", device_id: Int = 0
     ) raises:
-        # const char * AsyncRT_DeviceContext_create(const DeviceContext **result, const char *kind, int id)
+        # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *kind, int id)
         var result = _DeviceContextPtr()
         _checked(
             external_call[
