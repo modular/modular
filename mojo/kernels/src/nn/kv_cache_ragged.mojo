@@ -18,6 +18,177 @@ from linalg.matmul import _matmul_cpu, elementwise_epilogue_type
 from linalg.matmul_gpu import _matmul_gpu
 from sys.intrinsics import _type_is_eq
 from utils.index import IndexList, Index
+from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel
+from register import mogg_register
+
+
+@mogg_register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_packed")
+@export
+fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_packed[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, _],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    k_cache: ContinuousBatchingKVCache[
+        type,
+        KVCacheStaticParams(num_heads=8, head_size=128),
+    ],
+    v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        prefix_sum: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        k_cache: The historical ContinuousBatchingKVCache for keys, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        v_cache: The historical ContinuousBatchingKVCache for values, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+            Shape: (sum(seq_lens), num_heads * head_size).
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qkv_matmul_kv_cache_h8_d128_cont_batch_packed"
+    ):
+        return _fused_qkv_matmul_kv_cache_packed[target=target](
+            hidden_state, weight, prefix_sum, k_cache, v_cache, output, ctx
+        )
+
+
+@mogg_register("fused_qkv_matmul_kv_cache_h8_d64_cont_batch_packed")
+@export
+fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_packed[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, _],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    k_cache: ContinuousBatchingKVCache[
+        type,
+        KVCacheStaticParams(num_heads=8, head_size=64),
+    ],
+    v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        prefix_sum: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        k_cache: The historical ContinuousBatchingKVCache for keys, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        v_cache: The historical ContinuousBatchingKVCache for values, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+            Shape: (sum(seq_lens), num_heads * head_size).
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qkv_matmul_kv_cache_h8_d64_cont_batch_packed"
+    ):
+        return _fused_qkv_matmul_kv_cache_packed[target=target](
+            hidden_state, weight, prefix_sum, k_cache, v_cache, output, ctx
+        )
+
+
+@mogg_register("fused_qkv_matmul_kv_cache_h1_d16_cont_batch_packed")
+@export
+fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_packed[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, _],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    k_cache: ContinuousBatchingKVCache[
+        type,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+    v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        prefix_sum: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        k_cache: The historical ContinuousBatchingKVCache for keys, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        v_cache: The historical ContinuousBatchingKVCache for values, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+            Shape: (sum(seq_lens), num_heads * head_size).
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qkv_matmul_kv_cache_h1_d16_cont_batch_packed"
+    ):
+        return _fused_qkv_matmul_kv_cache_packed[target=target](
+            hidden_state, weight, prefix_sum, k_cache, v_cache, output, ctx
+        )
+
+
+@always_inline
+fn _fused_qkv_matmul_kv_cache_packed[
+    type: DType,
+    cache_t: KVCacheT, //,
+    *,
+    target: StringLiteral,
+](
+    hidden_state: NDBuffer[type, 2, _],
+    weight: NDBuffer[type, 2, _],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    k_cache: cache_t,
+    v_cache: cache_t,
+    output: NDBuffer[type, 2, _],
+    context: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        prefix_sum: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        k_cache: The historical ContiguousKVCache for keys, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        v_cache: The historical ContiguousKVCache for values, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+        context: The call context pointer, passed by the graph compiler.
+    """
+    var cuda_ctx: Optional[DeviceContext] = None
+
+    @parameter
+    if target != "cpu":
+        cuda_ctx = context.get_device_context()
+
+    return _fused_qkv_matmul_kv_cache_packed_impl[target=target](
+        hidden_state, weight, prefix_sum, k_cache, v_cache, output, cuda_ctx
+    )
 
 
 @always_inline
