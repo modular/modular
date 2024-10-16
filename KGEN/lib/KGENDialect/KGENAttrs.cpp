@@ -1461,10 +1461,7 @@ static std::pair<TypedAttr, TypedAttr> decomposeAddend(TypedAttr operand) {
   return {operand, TypedAttr()};
 }
 
-static Attribute getOneOfType(Type type) {
-  size_t width = type.isIndex() ? 64 : type.getIntOrFloatBitWidth();
-  return IntegerAttr::get(type, APInt(width, 1));
-}
+static Attribute getOneOfType(Type type) { return IntegerAttr::get(type, 1); }
 
 static Attribute simplifyAdd(SmallVectorImpl<TypedAttr> &operands) {
   if (auto result = simplifyAssocOp(

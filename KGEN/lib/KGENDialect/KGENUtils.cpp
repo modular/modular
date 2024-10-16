@@ -78,14 +78,14 @@ void KGEN::printStringParam(AsmPrinter &p, Operation *op, Attribute value) {
 static ParseResult parseParameterSpec(AsmParser &parser,
                                       ParamDeclArrayAttr &inputParamDecls,
                                       ParamDeclArrayAttr &resultParamDecls,
-                                      ParamDeclParseHookTy parseInputElt) {
+                                      ParamDeclParseHookTy parseDeclElt) {
   // Parse the input list.
-  if (parseParamDecls(parser, inputParamDecls, parseInputElt))
+  if (parseParamDecls(parser, inputParamDecls, parseDeclElt))
     return failure();
 
   // Check to see if we have results and parse them if so.
   if (succeeded(parser.parseOptionalArrow())) {
-    if (parseParamDecls(parser, resultParamDecls))
+    if (parseParamDecls(parser, resultParamDecls, parseDeclElt))
       return failure();
   } else {
     resultParamDecls = ParamDeclArrayAttr::get(parser.getContext(), {});
@@ -250,24 +250,37 @@ static OptionalParseResult parseOptionalColonType(AsmParser &parser,
   return OptionalParseResult(parseKGENType(parser, type));
 }
 
-/// Parse a "colon type" production if present or default to index if not.  This
-/// is commonly used in our parameter representation.
-ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
+/// Parse a "colon type" production if present or default to `defaultType` type
+/// if not.
+ParseResult KGEN::parseColonTypeOrDefault(AsmParser &parser, Type &type,
+                                          Type defaultType) {
   auto result = parseOptionalColonType(parser, type);
   if (!result.has_value()) {
-    type = parser.getBuilder().getIndexType();
+    type = defaultType;
     return success();
   }
   return result.value();
 }
 
+/// Parse a "colon type" production if present or default to index if not.  This
+/// is commonly used in our parameter representation.
+ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
+  return parseColonTypeOrDefault(parser, type,
+                                 parser.getBuilder().getIndexType());
+}
+
 /// print `: <type>` or elide it entirely if type is an `index` type.
-void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
+void KGEN::printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType) {
   // Index type is the default so it doesn't print.
-  if (type.isIndex())
+  if (type == defaultType)
     return;
   p << ": ";
   printKGENType(p, type);
+}
+
+/// print `: <type>` or elide it entirely if type is an `index` type.
+void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
+  return printColonTypeOrDefault(p, type, IndexType::get(type.getContext()));
 }
 
 /// print `:<type> ` or elide it entirely if type is an `index` type.
@@ -605,7 +618,8 @@ ParseResult KGEN::parseOptionalParameterSpec(
 void KGEN::printOptionalParameterSpec(AsmPrinter &p,
                                       ArrayRef<ParamDeclAttr> inputParamDecls,
                                       ArrayRef<ParamDeclAttr> resultParams,
-                                      ParamDeclPrintHookTy printInputElt) {
+                                      ParamDeclPrintHookTy printInputElt,
+                                      ParamDeclPrintHookTy printResultElt) {
   if (inputParamDecls.empty() && resultParams.empty())
     return;
 
@@ -614,7 +628,7 @@ void KGEN::printOptionalParameterSpec(AsmPrinter &p,
 
   if (!resultParams.empty()) {
     p << " -> ";
-    printParamDecls(p, resultParams);
+    printParamDecls(p, resultParams, printResultElt);
   }
   p << '>';
 }
@@ -1439,9 +1453,10 @@ void KGEN::printSignatureValues(AsmPrinter &p,
 ParseResult KGEN::parseFunctionSignature(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
-    FunctionType &functionType, SignatureType &signature) {
+    FunctionType &functionType, SignatureType &signature,
+    ParamDeclParseHookTy parseDeclElt) {
   llvm::SMLoc loc = p.getCurrentLocation();
-  if (parseOptionalParameterSpec(p, inputParams, resultParams))
+  if (parseOptionalParameterSpec(p, inputParams, resultParams, parseDeclElt))
     return failure();
 
   SmallVector<ArgConvention> argConventions;
@@ -1477,7 +1492,9 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region *region,
                                   ArrayRef<ParamDeclAttr> inputParams,
                                   ArrayRef<ParamDeclAttr> resultParams,
                                   FunctionType functionType,
-                                  SignatureType signature) {
+                                  SignatureType signature,
+                                  ParamDeclPrintHookTy printInputElt,
+                                  ParamDeclPrintHookTy printResultElt) {
   // Print the function arguments.
   auto printElt = [&](unsigned i) {
     if (!region)
@@ -1488,7 +1505,8 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region *region,
     printArgConvention(p, signature.getArgConvention(i));
   };
 
-  printOptionalParameterSpec(p, inputParams, resultParams);
+  printOptionalParameterSpec(p, inputParams, resultParams, printInputElt,
+                             printResultElt);
   printSignatureValues(p, printElt, functionType, signature,
                        /*optionalResultList=*/true);
 }
