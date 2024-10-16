@@ -188,7 +188,7 @@ struct LayoutTensor[
 
     var ptr: UnsafePointer[Scalar[dtype], address_space]
 
-    var runtime_layout: RuntimeLayout[layout]
+    var runtime_layout: RuntimeLayout[layout, **_]
 
     var runtime_element_layout: RuntimeLayout[element_layout]
 
@@ -981,7 +981,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn _getOffset[
         rank: Int
-    ](stride: IndexList[rank], vals: VariadicList[Int]) -> Int:
+    ](stride: IndexList[rank, **_], vals: VariadicList[Int]) -> Int:
         var offset = 0
 
         @parameter
@@ -993,7 +993,7 @@ struct LayoutTensor[
     @always_inline("nodebug")
     fn _getOffset[
         rank_1: Int, rank_2: Int
-    ](stride: IndexList[rank_1], vals: IndexList[rank_2]) -> Int:
+    ](stride: IndexList[rank_1, **_], vals: IndexList[rank_2]) -> Int:
         # In theory we should be able to verify this at compile time but it not happening now!
         constrained[
             rank_1 == rank_2, "shape and stride should be the same rank!"
@@ -1196,7 +1196,7 @@ struct LayoutTensor[
             var cur_dim = runtime_shape[i].get_int() - (
                 tile_coords[i] * tile_sizes[i]
             )
-            tile_shape[i] = min(tile_sizes[i], cur_dim)
+            tile_shape[i] = min(tile_sizes[i], int(cur_dim))
 
         return tile_shape
 
@@ -1255,7 +1255,7 @@ struct LayoutTensor[
                 stride=stride,
                 offset=0,
                 runtime_layout=RuntimeLayout[result.layout](),
-                dim_bound=self.runtime_layout.shape[axis].get_int(),
+                dim_bound=int(self.runtime_layout.shape[axis].get_int()),
                 idx=tile_coords[axis],
             )
 
@@ -1287,7 +1287,7 @@ struct LayoutTensor[
                 stride=iter_stride,
                 offset=0,
                 runtime_layout=RuntimeLayout(runtime_shape, runtime_stride),
-                dim_bound=self.runtime_layout.shape[axis].get_int(),
+                dim_bound=int(self.runtime_layout.shape[axis].get_int()),
                 idx=tile_coords[axis],
             )
 
@@ -1424,9 +1424,9 @@ struct LayoutTensor[
             alias thread_stride_i = to_int(thread_stride[i])
             alias thread_shape_i = to_int(thread_shape[i])
             var tile_idx = (thread_id // thread_stride_i) % thread_shape_i
-            var runtime_dim = runtime_shape[i].get_int()
-            var tile_shape_i = ceildiv(runtime_dim, thread_shape_i)
-            var bound_i = (tile_shape_i - 1) * thread_shape_i + tile_idx
+            var runtime_dim = int(runtime_shape[i].get_int())
+            var tile_shape_i = int(ceildiv(runtime_dim, thread_shape_i))
+            var bound_i = int((tile_shape_i - 1) * thread_shape_i + tile_idx)
             tile_shape[i] = tile_shape_i if bound_i < runtime_dim else (
                 runtime_dim // thread_shape_i
             )
