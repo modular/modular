@@ -435,6 +435,7 @@ fn flash_attention[
                 alias WN = 32
                 # num warps in M and N, multipled by warp size.
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask.rank,
@@ -479,11 +480,12 @@ fn flash_attention[
                     shared_mem_bytes=80 * 1024,
                 )
             else:
-                mha_gpu_naive[mask.rank, rank](
+                mha_gpu_naive[mask.rank, rank, use_mask_tensor=add_attn_mask,](
                     q,
                     k,
                     v,
                     mask.data,
+                    mask_functor,
                     output.data,
                     valid_length,
                     scale,
@@ -503,11 +505,12 @@ fn flash_attention[
             alias kv_num_heads = k.get_kv_params().num_heads
             alias group = num_heads // kv_num_heads
 
-            mha_gpu_naive[mask.rank, rank](
+            mha_gpu_naive[mask.rank, rank, use_mask_tensor=add_attn_mask,](
                 q,
                 k,
                 v,
                 mask.data,
+                mask_functor,
                 output.data,
                 valid_length,
                 scale,
@@ -2099,14 +2102,17 @@ fn mha_decoding_single_batch[
 fn mha_gpu_naive[
     mask_type: DType,
     output_type: DType,
-    cache_t: KVCacheT, //,
+    cache_t: KVCacheT,
+    mask_t: MHAMask, //,
     mask_rank: Int,
     rank: Int,
+    use_mask_tensor: Bool = True,
 ](
     q: NDBuffer[_, rank, *_],
     k: cache_t,
     v: cache_t,
     mask_ptr: UnsafePointer[Scalar[mask_type], *_],
+    mask_functor: mask_t,
     output_ptr: UnsafePointer[Scalar[output_type], *_],
     valid_length: NDBuffer[DType.uint32, 1],
     scale: Float32,
@@ -2139,9 +2145,11 @@ fn mha_gpu_naive[
         _bmm0_bs[
             __type_of(k),
             mask_rank,
+            mask_t,
             q_type,
             p_type,
             mask_type,
+            use_mask_tensor,
         ]
     ]()
     ctx.enqueue_function(
@@ -2158,6 +2166,7 @@ fn mha_gpu_naive[
         num_heads,
         depth,
         group,
+        mask_functor,
         grid_dim=(
             ceildiv(num_keys, 32),
             ceildiv(max_prompt_len, 16),
@@ -2214,9 +2223,11 @@ fn mha_gpu_naive[
 fn _bmm0_bs[
     cache_t: KVCacheT,
     mask_rank: Int,
+    mask_t: MHAMask,
     q_type: DType,
     p_type: DType,
     mask_type: DType,
+    use_mask_tensor: Bool = True,
 ](
     p_ptr: UnsafePointer[Scalar[p_type]],
     q_ptr: UnsafePointer[Scalar[q_type]],
@@ -2230,6 +2241,7 @@ fn _bmm0_bs[
     num_heads: Int,
     depth: Int,
     group: Int,
+    mask_functor: mask_t,
 ):
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
@@ -2289,12 +2301,37 @@ fn _bmm0_bs[
         vectorize[accum_fn, simdwidthof[p_type]()](depth)
         accum += accum_vec.reduce_add()
 
-    p[y * num_keys + x] = (
-        accum * scale.cast[p_type]() + mask[y * num_keys + x].cast[p_type]()
-    )
+    @parameter
+    if use_mask_tensor:
+        p[y * num_keys + x] = (
+            accum * scale.cast[p_type]() + mask[y * num_keys + x].cast[p_type]()
+        )
 
-    if x >= cur_query_len + k_cache.cache_length(batch) or y >= cur_query_len:
-        p[y * num_keys + x] = min_or_neg_inf[p_type]()
+        if (
+            x >= cur_query_len + k_cache.cache_length(batch)
+            or y >= cur_query_len
+        ):
+            p[y * num_keys + x] = min_or_neg_inf[p_type]()
+    else:
+        var score_row = x
+        var score_col = y
+        p[y * num_keys + x] = mask_functor.mask(
+            Index(
+                int(batch),
+                int(head),
+                int(score_row),
+                int(score_col),
+            ),
+            accum * scale.cast[p_type](),
+        )
+        p[y * num_keys + x] = _kernel_mask(
+            Index(score_row, score_col),
+            Index(
+                k_cache.cache_length(batch) + cur_query_len,
+                k_cache.cache_length(batch) + cur_query_len,
+            ),
+            p[y * num_keys + x],
+        )
 
 
 @always_inline
