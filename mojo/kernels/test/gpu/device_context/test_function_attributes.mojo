@@ -22,7 +22,7 @@ def test_function_attributes():
     with DeviceContext() as ctx:
         var func = ctx.compile_function[kernel, dump_ptx=True]()
         assert_equal(
-            func.v1().cuda_function.get_attribute(Attribute.CONST_SIZE_BYTES), 0
+            func.test_only_get_attribute(Attribute.CONST_SIZE_BYTES), 0
         )
 
 
