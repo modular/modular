@@ -238,6 +238,9 @@ class SymbolicDim(Dim):
     def __str__(self) -> str:
         return self.name
 
+    def __repr__(self):
+        return f"Dim({repr(self.name)})"
+
     def __eq__(self, other: Any) -> bool:
         """Whether the dimension is the same as another symbolic dimension.
 
@@ -305,7 +308,7 @@ class AlgebraicDim(Dim):
         # Shl = 8
         # Shr = 9
         Div = 10
-        Mod = 11
+        # Mod = 11
 
     def __init__(self, attr: mlir.Attribute | AlgebraicDim):
         if isinstance(attr, mlir.Attribute) and not _graph.is_algebraic_dim(
@@ -319,6 +322,39 @@ class AlgebraicDim(Dim):
         super().__setattr__(
             "attr", attr.attr if isinstance(attr, AlgebraicDim) else attr
         )
+
+    def __str__(self):
+        return self.to_str(False)
+
+    def __repr__(self):
+        return self.to_str(True)
+
+    def to_str(self, use_repr: bool):
+        opcode = _graph.algebraic_dim_opcode(self.attr)
+        operands = _graph.algebraic_dim_operands(self.attr)
+        operand_dims = (Dim.from_mlir(operand) for operand in operands)
+
+        # Make sure to wrap nested expression.
+        def str_fn(x) -> str:
+            if use_repr:
+                return repr(x)
+            else:
+                return str(x)
+
+        operand_reprs = (
+            f"({str_fn(dim)})" if isinstance(dim, AlgebraicDim) else str_fn(dim)
+            for dim in operand_dims
+        )
+
+        # For the opcodes we support in the graph api, print with python math.
+        if opcode == AlgebraicDim._Opcode.Add:
+            return " + ".join(operand_reprs)
+        elif opcode == AlgebraicDim._Opcode.MulNuw:
+            return " * ".join(operand_reprs)
+        elif opcode == AlgebraicDim._Opcode.Div:
+            return " // ".join(operand_reprs)
+        else:
+            return str_fn(self.attr)
 
     def __eq__(self, other: Any) -> bool:
         return isinstance(other, AlgebraicDim) and self.attr == other.attr
@@ -359,6 +395,12 @@ class StaticDim(Dim):
         super().__setattr__("dim", int(dim))
         if not -(2**63) <= self.dim < 2**63:
             raise ValueError("Dim value must be -2**63 <= dim < 2**63")
+
+    def __str__(self):
+        return str(self.dim)
+
+    def __repr__(self):
+        return f"Dim({repr(self.dim)})"
 
     def __int__(self) -> int:
         return self.dim

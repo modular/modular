@@ -69,6 +69,19 @@ def test_algebraic_dim_simplify_and_comparison(mlir_context):
     assert -Dim("x") - 4 == -(Dim("x") + 4)
 
 
+def test_dims_print_reasonably(mlir_context):
+    assert str(Dim(23)) == "23"
+    assert str(Dim("test")) == "test"
+    assert str((Dim("x") + "y" - 4) // 5) == "(x + y + -4) // 5"
+
+    assert repr(Dim(23)) == "Dim(23)"
+    assert repr(Dim("test")) == "Dim('test')"
+    assert (
+        repr((Dim("x") + "y" - 4) // 5)
+        == "(Dim('x') + Dim('y') + Dim(-4)) // Dim(5)"
+    )
+
+
 # TODO(MSDK-695): less restrictive dim names
 @given(
     name=st.text(
