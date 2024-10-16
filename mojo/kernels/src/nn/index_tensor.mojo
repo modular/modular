@@ -4,14 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import Optional
 from math import ceildiv
+from sys import simdwidthof
+from sys.info import _current_target
 
-from algorithm import sync_parallelize
+from algorithm import sync_parallelize, elementwise
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host._compile import _get_nvptx_target
 from memory import UnsafePointer, memcpy, memset_zero
 from nn.gather_scatter import normalize_neg_index
-from runtime.asyncrt import parallelism_level
+from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 
 from utils import Index, IndexList
 
@@ -133,22 +138,83 @@ fn index_tensor_shape[
 # FOLLOW-UP: Simplify if not needed to be that complex.
 # Note: We could have used original gather_nd but then would need to materialize
 # an unneded huge index tensor (would broadcast to : dimension(s)).
+# Note: Currently, the `_index_tensor_1d` is retained as the CPU implemetation
+# (see PR #38365). The `_index_tensor_impl` is introduced as the gpu implemetation.
+# We intend to merge `index_tensor` with the `gather_nd` operations in the future.
 
 
-# Note: this is an extremely specialized version of the kernel that only handles
-# the [:, :, x, y] case where x and y are are 1D tensors.
-# Batch dims refer to the number of sliced dimensions at the beginning
-fn index_tensor_1d[
+fn index_tensor[
     type: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
     output_rank: Int,
     batch_dims: Int,
+    target: StringLiteral = "cpu",
+    single_thread_blocking_override: Bool = False,
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
     output: NDBuffer[type, output_rank],
+    ctx: MojoCallContextPtr,
+):
+    """
+    Index_tensor operation; based on modified implementation of gather_nd.
+
+    Parameters:
+        type: Type of data tensor.
+        indices_type: Type of indices tensor.
+        data_rank: Rank of data tensor (data_rank >= 1).
+        indices_rank: Rank of indices tensor (indices_rank >= 1).
+        output_rank: Rank of output tensor.
+        batch_dims: Number of batch dimensions. The gather of indexing
+                    starts from dimension of data[batch_dims:].
+        target: The target architecture to execute on.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+
+    Args:
+        data: Tensor of rank data_rank >= 1.
+        indices: Tensor of rank indices_rank >= 1. All index values are expected
+                 to be within bounds [-s, s-1] along axis of size s. It is an
+                 error if any of the index values are out of bounds.
+        output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1 - b.
+        ctx: The MojoCallContextPtr as prepared by the graph compiler.
+
+    """
+
+    @parameter
+    if target == "cpu":
+        return _index_tensor_1d[
+            batch_dims,
+            target=target,
+            single_thread_blocking_override=single_thread_blocking_override,
+        ](data, indices, output)
+    else:
+        return _index_tensor_impl[
+            batch_dims,
+            target=target,
+            single_thread_blocking_override=single_thread_blocking_override,
+        ](data, indices, output, ctx.get_device_context())
+
+
+# Note: this is an extremely specialized version of the kernel that only handles
+# the [:, :, x, y] case where x and y are are 1D tensors.
+# Batch dims refer to the number of sliced dimensions at the beginning
+fn _index_tensor_1d[
+    type: DType,
+    indices_type: DType,
+    data_rank: Int,
+    indices_rank: Int,
+    output_rank: Int, //,
+    batch_dims: Int,
+    target: StringLiteral = "cpu",
+    single_thread_blocking_override: Bool = False,
+](
+    data: NDBuffer[type, data_rank],
+    indices: NDBuffer[indices_type, indices_rank],
+    output: NDBuffer[type, output_rank],
+    ctx: Optional[DeviceContext] = None,
 ):
     constrained[
         data_rank >= 2 and indices_rank == 2,
@@ -219,180 +285,109 @@ fn index_tensor_1d[
     sync_parallelize[calc_batch_dim](num_tasks)
 
 
-fn index_tensor[
+fn _index_tensor_impl[
     type: DType,
     indices_type: DType,
     data_rank: Int,
     indices_rank: Int,
-    output_rank: Int,
+    output_rank: Int, //,
     batch_dims: Int,
+    target: StringLiteral = "cpu",
+    single_thread_blocking_override: Bool = False,
 ](
     data: NDBuffer[type, data_rank],
     indices: NDBuffer[indices_type, indices_rank],
     output: NDBuffer[type, output_rank],
+    ctx: Optional[DeviceContext] = None,
 ):
-    """
-    Index_tensor operation; based on modified implementation of gather_nd.
-
-    Parameters:
-        type: Type of data tensor.
-        indices_type: Type of indices tensor.
-        data_rank: Rank of data tensor (data_rank >= 1).
-        indices_rank: Rank of indices tensor (indices_rank >= 1).
-        output_rank: Rank of output tensor.
-        batch_dims: Number of batch dimensions. The gather of indexing
-                    starts from dimension of data[batch_dims:].
-
-    Args:
-        data: Tensor of rank data_rank >= 1.
-        indices: Tensor of rank indices_rank >= 1. All index values are expected
-                 to be within bounds [-s, s-1] along axis of size s. It is an
-                 error if any of the index values are out of bounds.
-        output: Tensor of rank data_rank + indices_rank - indices_shape[-1] - 1 - b.
-
-    """
-
     constrained[
         data_rank >= 2 and indices_rank >= 2,
         "Constraint: data_rank >= 2 and indices_rank >= 2",
     ]()
 
-    # Since we pass indices without the batch_dims dimensions (since they do
-    # not need to be materialized), we need to construct the indices_shape as
-    # follows for the purposes of calculating the index.tensor shape:
-    alias combined_indices_rank = batch_dims + indices_rank
-    var indices_shape = IndexList[combined_indices_rank]()
-
+    # This is modeled as an elementwise function mapping an index in the
+    # output to an index in the input
     @parameter
-    for i in range(batch_dims):
-        indices_shape[i] = data.get_shape()[i]
+    fn index_tensor_elementwise_fn[
+        simd_width: Int, rank: Int
+    ](output_idx_arg: IndexList[rank]) capturing -> None:
+        var output_idx = rebind[IndexList[output_rank]](output_idx_arg)
+        var data_idx = IndexList[data_rank]()
+        var indices_idx = IndexList[indices_rank]()
+        var indices_last_dim = indices.dim[indices_rank - 1]()
 
-    @parameter
-    for i in range(indices_rank):
-        indices_shape[batch_dims + i] = indices.get_shape()[i]
-    debug_assert(
-        2 <= indices_shape[combined_indices_rank - 1] <= data_rank - batch_dims,
-        "Constraint: 2 <= indices_shape[-1] <= data_rank - batch_dims",
-    )
+        # Fill in the known dimensions in our batch_dim
+        @parameter
+        for i in range(batch_dims):
+            data_idx[i] = output_idx[i]
 
-    # The number of elements in the batch_dims for data/indices array.
-    # E.g., if batch_dims = 2 (always is the outermost dimensions), and the
-    #       dimensions of data are [2,3,...], then batch_dims_size = 6
-    var batch_dims_size = 1
-    for i in range(batch_dims):
-        batch_dims_size = batch_dims_size * indices_shape[i]
+        # Start filling in the index into the indices buffer
+        @parameter
+        for i in range(0, indices_rank - 1):
+            indices_idx[i] = output_idx[batch_dims + i]
 
-    var last_shape_of_indices = indices_shape[combined_indices_rank - 1]
+        # walk the last dimensions, which are the slices we're gathering
+        for i in range(indices_last_dim):
+            indices_idx[indices_rank - 1] = i
+            data_idx[batch_dims + i] = int(indices[indices_idx])
 
-    # Number of elements is equal to the product of the number of elements on
-    # each dimension of indices, and this needs to be multiplied by the implied
-    # indices in the batch dimensions.
-    var num_elems = indices.num_elements()
-    for i in range(batch_dims):
-        num_elems *= data.get_shape()[i]
+        # fill in the last slices in the input
+        num_tail_elems = data_rank - batch_dims - indices_last_dim
+        output_start = output_rank - num_tail_elems
+        src_start = indices_last_dim + batch_dims
+        for i in range(0, num_tail_elems):
+            data_idx[src_start + i] = output_idx[output_start + i]
 
-    # Conceptually reshape indices array, as 3D array. All batch_dims_size
-    # elements go to the outermost dimension, and elements of amount equal to
-    # indices.shape[-1] go to the innermost.
-    # Equivalent to numpy:
-    # reshaped_indices = indices.reshape(batch_dims_size, -1, indices.shape[-1])
-    # Note: In normal gather_nd, we would construct a reshaped_indices NDBuffer
-    #       with the shape below. In the case of index_tensor, we don't need to
-    #       it since the first batch_dims dimensions are the same and we don't
-    #       want to waste memory.
-    var reshaped_indices_shape = IndexList[3](
-        batch_dims_size,
-        num_elems // (batch_dims_size * last_shape_of_indices),
-        last_shape_of_indices,
-    )
-
-    var data_shape = data.get_shape()
-
-    # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
-    alias reshaped_data_rank = data_rank - batch_dims + 1
-    var reshaped_data_tuple = IndexList[reshaped_data_rank]()
-    # Calculate the dimensions of reshaped_data.
-    reshaped_data_tuple[0] = batch_dims_size
-    var counter = 1
-    for i in range(batch_dims, data_rank):
-        reshaped_data_tuple[counter] = data_shape[i]
-        counter += 1
-
-    # Do the actual reshaping.
-    var reshaped_data = reshape.reshape[reshaped_data_rank](
-        data.make_dims_unknown(), reshaped_data_tuple
-    )
-    var reshaped_data_shape = reshaped_data.get_shape()
-
-    # idx[] stores the index from where to gather the requested elements.
-    var idx_ptr = UnsafePointer[Scalar[DType.index]].alloc(
-        reshaped_indices_shape[2]
-    )
-    var idx = NDBuffer[DType.index, 1](
-        idx_ptr, Index(reshaped_indices_shape[2])
-    )
-
-    # Depending on r_minus_m = data_rank - last_shape_of_indices - batch_dims,
-    # we will be copying (gather):
-    #   element (r_minus_m = 0),
-    #   row (r_minus_m = 1),
-    #   sheet (r_minus_m = 2),
-    #   cuboid (r_minus_m = 3), etc.
-    var r_minus_m = data_rank - last_shape_of_indices - batch_dims
-    # Calculate how many elements to copy (this is from the innermost
-    # dimensions, and is continuous memory locations).
-    var count_copy = 1
-    for i in range(r_minus_m):
-        count_copy = (
-            count_copy * reshaped_data_shape[reshaped_data_rank - 1 - i]
+        output.store[width=simd_width](
+            output_idx, data.load[width=simd_width](data_idx)
         )
-    # Stores the full index on reshaped_data, where to copy from.
-    # It is constructed within the nested loop below.
-    var start_tensor = NDBuffer[
-        DType.index,
-        1,
-        DimList(reshaped_data_rank),
-    ]().stack_allocation()
-    # Zeroing here to avoid doing it selectively within the nested loop below.
-    memset_zero(start_tensor.data, reshaped_data_rank)
 
-    var output_buffer_copy_ind = 0
-    for batch_dim in range(reshaped_indices_shape[0]):
-        for outer_dim in range(reshaped_indices_shape[1]):
-            # Construct the tuple (all dimensions except outermost, which is
-            # the batches dimension - recall all batch dimensions are reshaped
-            # into one - the outermost).
-            for constr in range(reshaped_indices_shape[2]):
-                var input_ax_dim = reshaped_data.get_shape()[constr + 1]
-                # Note here that the batch_dim index is implied; since we have
-                # ':' on batch_dims, the SAME indices[outer_dim, constr] is
-                # reused.
-                var idx_on_axis = indices[outer_dim, constr]
-                idx[constr] = int(
-                    normalize_neg_index(idx_on_axis, input_ax_dim)
-                )
+    alias compile_target = _current_target() if target == "cpu" else _get_nvptx_target()
+    alias target_simd_width = simdwidthof[type, target=compile_target]()
 
-            # Construct the full index on reshaped_data, where to copy from.
-            start_tensor[0] = batch_dim
-            var start_index = 1
-            for dim in range(len(idx)):
-                start_tensor[start_index] = idx[dim]
-                start_index = start_index + 1
+    # Only use SIMD if:
+    #   - the input data is contiguous
+    #   - the slices at the end of the input are not scalars
+    #   - the last dimension of the slices are evenly divisible by simd_width
+    var slice_rank = data_rank - batch_dims - indices.dim[indices_rank - 1]()
+    var slice_last_dim = output.dim[output_rank - 1]() if slice_rank > 0 else 1
 
-            # Calculate the input_offset from where to copy the data.
-            var input_offset = 0
-            for i in range(reshaped_data_rank):
-                input_offset = input_offset + reshaped_data.stride(i) * int(
-                    start_tensor[i]
-                )
-            # Calculate the output_offset where to copy the data.
-            var output_offset = output_buffer_copy_ind * (count_copy)
-            output_buffer_copy_ind = output_buffer_copy_ind + 1
+    var use_simd = data.stride[data_rank - 1]() == 1 and (
+        slice_last_dim % target_simd_width
+    ) == 0
 
-            # Perform the actual copy of element/slice/sheet/cuboid/etc.
-            memcpy(
-                output.data + output_offset,
-                reshaped_data.data + input_offset,
-                count_copy,
-            )
-    idx_ptr.free()
+    @parameter
+    if target == "cpu":
+        if use_simd:
+            elementwise[
+                index_tensor_elementwise_fn,
+                target_simd_width,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output.get_shape())
+        else:
+            elementwise[
+                index_tensor_elementwise_fn,
+                1,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output.get_shape())
+    else:
+        debug_assert(
+            bool(ctx), "Must provide DeviceContext if executing on GPU."
+        )
+        var cuda_ctx = ctx.value()
+        if use_simd:
+            elementwise[
+                index_tensor_elementwise_fn,
+                target_simd_width,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output.get_shape(), cuda_ctx)
+        else:
+            elementwise[
+                index_tensor_elementwise_fn,
+                1,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
+            ](output.get_shape(), cuda_ctx)

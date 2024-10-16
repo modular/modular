@@ -11,7 +11,11 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import stack_allocation
 from nn.gather_scatter import gather, gather_nd, gather_nd_shape, gather_shape
-from nn.index_tensor import index_tensor, index_tensor_1d, index_tensor_shape
+from nn.index_tensor import (
+    _index_tensor_impl,
+    _index_tensor_1d,
+    index_tensor_shape,
+)
 from runtime.asyncrt import MojoCallContextPtr
 
 from utils import IndexList
@@ -105,14 +109,7 @@ fn test_index_tensor_DLRM() raises:
         output_data_data, output_shape
     )
 
-    index_tensor_1d[
-        input_type,
-        DType.uint64,
-        input_rank,
-        indices_rank,
-        output_rank,
-        batch_dims,
-    ](
+    _index_tensor_1d[batch_dims,](
         input.make_dims_unknown(),
         indices.make_dims_unknown(),
         output_data_buffer,
@@ -223,14 +220,7 @@ fn test_index_tensor_DLRM_batch() raises:
         output_data_data, output_shape
     )
 
-    index_tensor[
-        input_type,
-        DType.uint64,
-        input_rank,
-        indices_rank,
-        output_rank,
-        batch_dims,
-    ](
+    _index_tensor_impl[batch_dims,](
         input.make_dims_unknown(),
         indices.make_dims_unknown(),
         output_data_buffer,
