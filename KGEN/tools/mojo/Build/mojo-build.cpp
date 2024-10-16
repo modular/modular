@@ -194,13 +194,20 @@ static int generateDSYM(const State &state, StringRef binaryOutputPath) {
 }
 #endif
 
-/// Given a static archive generated from a mojo module, link an executable from
-/// that archive. Returns a successful exit code if the executable was linked
+enum class OutputType {
+  executable,
+  pythonExtensionModule,
+};
+
+/// Given a static archive generated from a mojo module, either
+/// 1. Link an executable from that archive.
+/// 2. Produce a dynamic library for the Python extension module from that
+///    archive.
+/// Returns a successful exit code if the executable was linked
 /// successfully, otherwise returns a failure code.
-static int linkExecutable(const State &state,
-                          const llvm::opt::InputArgList &args,
-                          const CompilationOptions &options,
-                          BufferRef &archive) {
+static int linkOutput(OutputType outputType, const State &state,
+                      const llvm::opt::InputArgList &args,
+                      const CompilationOptions &options, BufferRef &archive) {
   // For now we just use the system C++ compiler as the linker on non-windows,
   // which makes it a tad bit easier to link in the necessary system and runtime
   // dependencies of KGENCompilerRT.
@@ -213,6 +220,10 @@ static int linkExecutable(const State &state,
   StringRef binaryExt = "";
   StringRef libExt = ".a";
 #endif
+
+  // Only used for Python modules which requires a .so suffix on all platforms.
+  StringRef dynamicLibraryExtension = ".so";
+
   // Read the mojo configuration.
   ErrorOr<MojoConfig> configOr = MojoConfig::open();
   if (failed(configOr)) {
@@ -231,14 +242,19 @@ static int linkExecutable(const State &state,
   // Build a default output name based on the input file and the current working
   // directory.
   StringRef inputName = args.getLastArgValue(options::OPT_INPUT);
+
+  StringRef outputSuffix = outputType == OutputType::executable
+                               ? binaryExt
+                               : dynamicLibraryExtension;
   std::string defaultOutputName =
-      std::filesystem::path((inputName.rsplit('.').first + binaryExt).str())
+      std::filesystem::path((inputName.rsplit('.').first + outputSuffix).str())
           .filename();
   std::filesystem::path cwd = std::filesystem::current_path(ec);
   if (!ec)
     defaultOutputName = cwd.append(defaultOutputName);
 
-  // Invoke the system linker to link the archive into an executable. The
+  // Invoke the system linker to link the archive into an executable or produce
+  // a dynamic library using the provided output filename argument. The
   // checked linked depends on the target platform.
   StringRef outputName =
       args.getLastArgValue(options::OPT_o, defaultOutputName);
@@ -275,7 +291,23 @@ static int linkExecutable(const State &state,
   std::string archivePath = archiveFileOr->getPath().string();
 
   // Invoke the linker command.
-  SmallVector<StringRef> linkerArgs = {*linker, archivePath, compilerRTPath};
+  SmallVector<StringRef> linkerArgs = [&] {
+    if (outputType == OutputType::executable)
+      return SmallVector<StringRef>{*linker, archivePath, compilerRTPath};
+
+    // Here, we use `--whole-archive` to force every symbol from the `.a` static
+    // archive to be included in the resulting library.  In the generated Python
+    // bindings case, the exported function symbols otherwise wouldn't appeared
+    // "used" by the linker, and so it would get aggressively removed.
+    return SmallVector<StringRef>{*linker,
+                                  "-shared",
+                                  "-Wl,--whole-archive",
+                                  archivePath,
+                                  "-Wl,--no-whole-archive",
+                                  compilerRTPath,
+                                  "-o",
+                                  outputName};
+  }();
 
   // Add other shared libs
   config.getSharedLibraryLinkArgs(linkerArgs);
@@ -358,7 +390,9 @@ static int linkExecutable(const State &state,
   if (linkExitCode) {
     if (!errorMsg.empty())
       errorMsg.insert(0, ": ");
-    return state.reportError("failed to link executable" + errorMsg);
+    if (outputType == OutputType::executable)
+      return state.reportError("failed to link executable" + errorMsg);
+    return state.reportError("failed to produce dynamic library" + errorMsg);
   }
 
 #if defined(__APPLE__)
@@ -406,6 +440,9 @@ static int build(const State &subcommandState) {
       telemetryCtx, StringRef(state.subcommand), args, /*privateArgs=*/
       {options::OPT_D, options::OPT_I, options::OPT_o});
 
+  bool generatePythonBindings =
+      args.hasArg(options::OPT_generate_python_extension_module);
+
   // Lower the input file to an MLIR module.
   AsyncRT::Runtime &runtime = *ctx->get<AsyncRT::Runtime>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
@@ -414,7 +451,8 @@ static int build(const State &subcommandState) {
       options::OPT_diagnose_missing_doc_strings,
       options::OPT_validate_doc_strings, options::OPT_max_notes, options::OPT_D,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        return LIT::importMojoFile(runtime, sourceMgr, parserConfig, ts);
+        return LIT::importMojoFile(runtime, sourceMgr, parserConfig, ts,
+                                   nullptr, generatePythonBindings);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
@@ -425,8 +463,16 @@ static int build(const State &subcommandState) {
           state, runtime, mlirCtx, options, **moduleOp, target, archive))
     return *exitCode;
 
-  // Link an executable from the archive.
-  return linkExecutable(state, args, options, archive);
+  OutputType outputType = [generatePythonBindings] {
+    // We have a static archive at this point, go ahead and turn it into a
+    // dynamic library.
+    if (generatePythonBindings)
+      return OutputType::pythonExtensionModule;
+    // Link an executable from the archive.
+    return OutputType::executable;
+  }();
+
+  return linkOutput(outputType, state, args, options, archive);
 }
 
 void M::registerBuildSubcommand(SubcommandRegistry &registry) {
