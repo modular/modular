@@ -1028,6 +1028,36 @@ fn reshape_contiguous_buffer[
     return NDBuffer[type, new_rank](buffer.data, shape, stride_tuple)
 
 
+@mogg_register("split_dim_indices")
+@mogg_view_op
+@always_inline
+fn split_dim_indices[
+    rank: Int, axis: Int
+](indices: IndexList[rank], new_shape_dim: Int) -> IndexList[rank + 1]:
+    var out = IndexList[rank + 1]()
+
+    # This op is transforming the INDICES of an access into a reshaped tensor.
+    # Consider the tensor is [40, 30, 2] and we reshape it to [5, 8, 30, 2].
+    # If we are accessing the index [21, 16, 1] in the original shape then to
+    # preserve the reshape we would need to transform the indices into [2, 5, 16, 1].
+    # Or [21 // 8, 21 % 8, ...old dims...].
+
+    @parameter
+    for i in range(rank + 1):
+
+        @parameter
+        if i == axis:
+            out[i] = indices[axis] // new_shape_dim
+        elif i == axis + 1:
+            out[i] = indices[axis] % new_shape_dim
+        elif i < axis:
+            out[i] = indices[i]
+        elif i > axis:
+            out[i] = indices[i - 1]
+
+    return out
+
+
 @mogg_register("insert_index")
 @mogg_view_op
 @always_inline
