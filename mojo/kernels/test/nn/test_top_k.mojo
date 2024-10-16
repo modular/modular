@@ -10,8 +10,11 @@ from collections import List
 from math import iota
 
 from buffer import NDBuffer
+from buffer.dimlist import DimList
+from random import seed
 from memory import UnsafePointer
-from nn.topk import _top_k
+from nn.topk import _top_k, _top_k_sampling
+from internal_utils import HostNDBuffer
 
 from utils import IndexList
 
@@ -35,6 +38,65 @@ struct TestTensor[rank: Int, type: DType]:
         return NDBuffer[type, rank](
             rebind[UnsafePointer[Scalar[type]]](self.storage.data), self.shape
         )
+
+
+fn test_case_sampling[
+    rank: Int,
+    type: DType,
+    fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
+        _
+    ] -> None,
+](K: Int, axis: Int, input_shape: DimList,) raises:
+    var input_ptr = UnsafePointer[Scalar[type]].alloc(
+        int(input_shape.product())
+    )
+    var input = NDBuffer[type, rank](input_ptr, input_shape)
+
+    var output_shape: DimList
+    var output_idxs_shape: DimList
+
+    @parameter
+    if rank == 1:
+        output_shape = DimList(K)
+        output_idxs_shape = DimList(1)
+    elif rank == 2:
+        output_shape = DimList(input_shape.get[0](), K)
+        output_idxs_shape = DimList(input_shape.get[0](), 1)
+    else:
+        output_shape = DimList(input_shape.get[0](), input_shape.get[1](), K)
+        output_idxs_shape = DimList(
+            input_shape.get[0](), input_shape.get[1](), 1
+        )
+
+    var output_vals_ptr = UnsafePointer[Scalar[type]].alloc(
+        int(output_shape.product())
+    )
+    var output_idxs_ptr = UnsafePointer[Scalar[DType.int64]].alloc(
+        int(output_idxs_shape.product())
+    )
+    var out_vals = NDBuffer[type, rank](output_vals_ptr, output_shape)
+    var out_idxs = NDBuffer[DType.int64, rank](
+        output_idxs_ptr, output_idxs_shape
+    )
+
+    fill_fn[rank, type](input)
+    # input.fill(4)
+
+    _top_k_sampling(
+        input,
+        K,
+        out_vals,
+        out_idxs,
+    )
+
+    var xxx_no_lifetimes = input  # intentionally bad name
+    var xx_no_lifetimes = out_vals
+    var x_no_lifetimes = out_idxs
+
+    for i in range(out_idxs.size()):
+        print(out_idxs.data[i], end="")
+        print(",", end="")
+    print("")
 
 
 fn test_case[
@@ -83,7 +145,9 @@ fn test_case[
     print("")
 
 
-fn main():
+fn main() raises:
+    seed(1)
+
     @parameter
     fn fill_iota[rank: Int, type: DType](inout buf: NDBuffer[type, rank]):
         iota(buf.data, buf.get_shape().flattened_length())
@@ -198,3 +262,40 @@ fn main():
     # CHECK: 17.0,22.0,21.0,20.0,19.0,18.0,
     # CHECK-NEXT: 1,0,0,0,0,0,
     test_5d()
+
+    fn test_1d_sorted_sampling() raises:
+        print("== test_1d_sorted_sampling")
+        alias rank = 1
+        test_case_sampling[1, DType.float32, fill_iota](
+            5,
+            0,
+            DimList(10),
+        )
+
+    # CHECK-LABEL: test_1d_sorted_sampling
+    # CHECK: 9,
+    test_1d_sorted_sampling()
+
+    fn test_2d_sorted_sampling() raises:
+        print("== test_2d_sorted_sampling")
+        test_case_sampling[2, DType.float32, fill_iota](
+            5,
+            1,
+            DimList(5, 10),
+        )
+
+    # CHECK-LABEL: test_2d_sorted_sampling
+    # CHECK: 9,9,8,7,9,
+    test_2d_sorted_sampling()
+
+    fn test_3d_sorted_sampling() raises:
+        print("== test_3d_sorted_sampling")
+        test_case_sampling[3, DType.float32, fill_iota](
+            5,
+            2,
+            DimList(3, 5, 10),
+        )
+
+    # CHECK-LABEL: test_3d_sorted_sampling
+    # 9,9,9,9,8,7,9,8,8,8,9,9,8,9,6,
+    test_3d_sorted_sampling()

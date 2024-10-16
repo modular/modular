@@ -6,7 +6,7 @@
 
 
 from collections import List
-from math import iota
+from math import iota, exp
 
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
@@ -14,8 +14,11 @@ from buffer import NDBuffer
 from builtin.sort import _quicksort
 from memory import UnsafePointer
 from register import mogg_register_shape_func
+from random import random_float64
 
 from utils import IndexList, Span
+
+from nn.reshape import reshape
 
 
 @always_inline
@@ -226,3 +229,94 @@ fn _top_k[
                 out_idxs[indices] = idxs[i]
 
     parallelize_over_rows[process_rows](shape, axis, parallelism_grain_size)
+
+
+fn _top_k_sampling[
+    type: DType,
+    rank: Int,
+](
+    input: NDBuffer[type, rank],
+    k: Int,
+    out_vals: NDBuffer[type, rank],
+    out_idxs: NDBuffer[DType.int64, rank],
+) raises:
+    """
+    Generalized implementation of the Top K algorithm with sampling.
+    Returns the sampled index from the innermost dimension of the input
+    tensor for each row/subvolume.
+
+    Parameters:
+        type: Data type of the input buffer.
+        rank: Rank of the input.
+
+    Args:
+        input: NDBuffer[type, rank] (Any shape)- The input tensor.
+        k: Int - Represents the K largest values to consider for sampling.
+        out_vals: NDBuffer[type, rank] (shape of [input[:-1]] + [k]) - The output values.
+        out_idxs: NDBuffer[DType.int64, rank] (shape of [input[:-1]] + [1]) - The output indices.
+    """
+    # Now reshape for sampling
+    var orig_in_shape: IndexList[rank] = input.get_shape()
+    var last_dim = orig_in_shape[rank - 1]
+
+    alias internal_rank = 2
+    var internal_bs: Int
+    var internal_in_shape: IndexList[internal_rank]
+
+    @parameter
+    if rank == 1:
+        internal_bs = 1
+        internal_in_shape = IndexList[internal_rank](1, input.size())
+    elif rank == internal_rank:
+        internal_bs = orig_in_shape[0]
+        internal_in_shape = rebind[IndexList[internal_rank]](orig_in_shape)
+    elif rank > internal_rank:
+        internal_bs = int(orig_in_shape.flattened_length() / last_dim)
+        internal_in_shape = IndexList[internal_rank](internal_bs, last_dim)
+    else:
+        raise Error("Unsupported input rank. Must be >= 1.")
+
+    internal_out_shape = IndexList[internal_rank](internal_bs, k)
+    internal_out_vals = reshape(out_vals, internal_out_shape)  # internal view
+    internal_out_idxs_shape = IndexList[internal_rank](internal_bs, 1)
+    internal_out_idxs = reshape(
+        out_idxs, internal_out_idxs_shape
+    )  # internal view
+    # End reshape to internal rank
+
+    var out_idxs_tmp = NDBuffer[DType.int64, internal_rank](
+        UnsafePointer[Int64].alloc(int(out_vals.size())),
+        internal_out_shape,  # topk returns K as last dim
+    )
+    _top_k[rank=internal_rank, type=type](
+        reshape(input, internal_in_shape),
+        k,
+        axis=internal_rank - 1,  # Always operate on the last axis
+        largest=True,
+        out_vals=internal_out_vals,
+        out_idxs=out_idxs_tmp,
+        sorted=True,
+        parallelism_grain_size=1,
+    )
+
+    # Sample from the top K elements
+    for batch in range(internal_bs):
+        # Calculate softmax normalization
+        var max_val = internal_out_vals[batch, 0]
+        var sum_exp = Scalar[type](0)
+        var exp_vals = List[Scalar[type]](capacity=k)
+        for i in range(k):
+            var val = internal_out_vals[batch, i]
+            var exp_val = exp(val - max_val)
+            exp_vals.append(exp_val)
+            sum_exp += exp_val
+
+        # Sample using the normalized probabilities
+        var r = sum_exp * random_float64().cast[type]()
+        var sampled_index = -1
+        for i in range(k):
+            r -= exp_vals[i]
+            if r <= 0 or i == k - 1:
+                # Store the sampled index and value
+                internal_out_idxs[batch, 0] = out_idxs_tmp[batch, i]
+                break
