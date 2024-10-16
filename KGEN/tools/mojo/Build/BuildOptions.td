@@ -24,3 +24,8 @@ defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
     "outputs the executable to the same location as the Mojo file, with the "
     "same name and no extension."
   >>;
+
+def generate_python_extension_module :  Flag<["--"], "gen-py">,
+  Group<OutputOptionGroup>, Index<1>,
+  HelpText<"Whether to generate a Python extension module (dynamic library). Defaults to false.">,
+  Flags<[HelpHidden]>;
