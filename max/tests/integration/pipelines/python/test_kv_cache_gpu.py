@@ -21,7 +21,6 @@ async def _test_kv_cache_gpu():
         n_kv_heads=8,
         head_dim=128,
         dtype=DType.bfloat16,
-        device=device,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
     )
     kv_manager = load_kv_manager(
