@@ -52,7 +52,7 @@ async def test_step():
 async def test_claim_and_release():
     # Initialize llama like params
     # claim and release are both cache_type independent,
-    # so we can test with the KVCacheType.CONTIGUOUS default
+    # so we can test with the KVCacheType.CONTINUOUS default
     device = CPU()
     params = KVCacheParams(
         dtype=DType.float32, n_kv_heads=8, head_dim=128, device=device
@@ -98,38 +98,6 @@ async def test_fetch_continuous():
         head_dim=16,
         device=device,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
-    )
-
-    kv_manager = load_kv_manager(
-        params=params,
-        max_cache_batch_size=16,
-        max_seq_len=100,
-        num_layers=10,
-        device=device,
-    )
-
-    # Raise on fetch when nothing has been claimed
-    with pytest.raises(ValueError):
-        kv_collection = kv_manager.fetch(seq_ids=[0])
-
-    # Claim 5 items
-    seq_ids = await kv_manager.claim(n=5)
-
-    # Fetch 3 of the 5 ids
-    kv_collection = kv_manager.fetch(seq_ids[:3])
-    assert kv_collection is not None
-
-
-@pytest.mark.asyncio
-async def test_fetch_contiguous():
-    # Initialize llama like params
-    device = CPU()
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=8,
-        head_dim=128,
-        device=device,
-        cache_strategy=KVCacheStrategy.CONTIGUOUS,
     )
 
     kv_manager = load_kv_manager(
