@@ -14,19 +14,17 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     BufferValue,
-    _ChainType,
-    _ChainValue,
     Graph,
     TensorType,
     TensorValue,
     Value,
+    _ChainType,
+    _ChainValue,
     ops,
 )
 
 shared_dtypes = st.shared(st.from_type(DType))
-shared_shapes = st.shared(
-    shapes(min_rank=1, max_rank=100).filter(lambda shape: 0 not in shape)
-)
+shared_shapes = st.shared(shapes().filter(lambda shape: 0 not in shape))
 tensor_type = tensor_types(shapes=shared_shapes, dtypes=shared_dtypes)
 buffer_type = buffer_types(shapes=shared_shapes, dtypes=shared_dtypes)
 

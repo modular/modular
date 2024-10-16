@@ -27,6 +27,7 @@ from .cast import cast
 from .complex import as_interleaved_complex
 from .concat import concat
 from .constant import constant
+from .conv import conv2d
 from .cumsum import cumsum
 from .custom import custom, inplace_custom
 from .debug import print

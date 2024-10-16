@@ -15,6 +15,7 @@ from conftest import (
     axes,
     shapes,
     static_dims,
+    static_known_shape_size,
     symbolic_dims,
     tensor_types,
 )
@@ -47,11 +48,6 @@ def test_reshape() -> None:
             symbolic_reshape,
             symbolic_reshape_neg_one,
         )
-
-
-def static_known_shape_size(shape: ShapeLike):
-    """Returns the size of a shape only considering static dims"""
-    return math.prod(dim.dim for dim in shape if isinstance(dim, StaticDim))
 
 
 def subseqs(c: Collection):
