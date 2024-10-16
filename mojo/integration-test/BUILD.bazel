@@ -9,6 +9,7 @@ lit_tests(
     data = glob(["**/*.mojo"]) + [
         # Provides MODULAR_MOJO_MAX_COMPILERRT_STATIC_PATH to mojo-pybind
         "//KGEN:CompilerRT.distributable",
+        "//KGEN:CompilerRT",
     ],
     env = {},
     mojo_deps = [
@@ -23,6 +24,7 @@ lit_tests(
     tools = [
         "//KGEN/tools/kgen",
         "//KGEN/tools/kgen-translate",
+        "//KGEN/tools/mojo",
     ],
     deps = [
         # Adds path/to/mojo-pybind/.. to the PYTHONPATH so we can invoke it as:

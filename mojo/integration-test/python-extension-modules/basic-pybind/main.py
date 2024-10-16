@@ -6,7 +6,7 @@
 # TODO(MSTDL-894): Support running this test on Linux
 # REQUIRES: system-darwin
 
-# RUN: python3 -m mojo-pybind.main %S/mojo_module.mojo
+# RUN: %bare-mojo build %S/mojo_module.mojo --gen-py
 # RUN: python3 %s
 
 import sys

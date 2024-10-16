@@ -7,3 +7,7 @@
 
 fn arg_reg_trivial_borrowed(arg: Int):
     pass
+
+
+def main():
+    pass

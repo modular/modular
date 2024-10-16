@@ -5,13 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-import platform
-import shutil
-
-from pathlib import Path
 
 import lit.formats
 import lit.llvm
+
+from lit.llvm import llvm_config
 
 # Configuration file for the 'lit' test runner.
 
@@ -30,3 +28,11 @@ config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = os.path.join(
     config.modular_obj_root, "open-source", "mojo", "integration-test"
 )
+
+tool_dirs = [
+    config.modular_tools_dir,
+    config.mlir_tools_dir,
+    config.llvm_tools_dir,
+]
+tools = ["mojo"]
+llvm_config.add_tool_substitutions(tools, tool_dirs)
