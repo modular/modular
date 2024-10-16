@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import math
+
 import numpy as np
 import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
-
 from llama3.collate_batch import (
     PaddingDirection,
     batch_padded_tokens_and_mask,
@@ -61,7 +61,7 @@ def test_collate_batch(arrays: list[list[int]], pad_value: int):
     assert len(unpadded_last_token_indices) == batch_size
     # Padding left means the last token index should always just be the overall
     # last index.
-    assert unpadded_last_token_indices == [-1] * len(arrays)
+    assert all(unpadded_last_token_indices == [-1] * len(arrays))
 
     for array, padded in zip(arrays, result):
         # Use pad_len rather than len(array) since slicing from -0 doesn't do what you want.
@@ -98,7 +98,7 @@ def test_collate_batch__pad_right(arrays: list[list[int]], pad_value: int):
 
         assert len(unpadded_last_token_indices) == batch_size
         # Padding right means the last index should always just be token length - 1.
-        assert unpadded_last_token_indices == [len(a) - 1 for a in arrays]
+        assert all(unpadded_last_token_indices == [len(a) - 1 for a in arrays])
 
         for array, padded in zip(arrays, result):
             np.testing.assert_array_equal(np.array(array), padded[: len(array)])
