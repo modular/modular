@@ -6,6 +6,7 @@
 
 #include "KGEN/Support/Debugging.h"
 #include "KGEN/Support/Configuration.h"
+#include "Support/Debugger.h"
 #include "Support/ErrorOr.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
@@ -16,18 +17,6 @@
 #endif
 
 using namespace M;
-
-void M::waitForDebuggerToAttach() {
-  llvm::errs() << "Waiting for debugger to attach...\nCurrent pid is "
-               << llvm::sys::Process::getProcessId() << ".\n";
-
-#ifdef _WIN32
-  while (!IsDebuggerPresent())
-    Sleep(1000);
-#else
-  std::raise(SIGSTOP);
-#endif
-}
 
 void M::attachToNewRemoteDebugSession() {
   StringRef initializationError =
