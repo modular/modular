@@ -213,6 +213,9 @@ struct TypeDeclInfo {
     return it != funcMap.end() ? it->second : LIT::FuncOp();
   }
 
+  /// The next anonymous origin number to use in this function.
+  size_t nextAnonOriginNumber = 0;
+
 private:
   DenseMap<SymbolRefAttr, StructDeclOp> structMap;
   DenseMap<SymbolRefAttr, LIT::FuncOp> funcMap;
@@ -1764,7 +1767,6 @@ public:
 
 private:
   ValueSet &valueSet;
-  size_t nextAnonOriginNumber = 0;
 
   /// During the core op-processing loop, this is the set of values that need to
   /// be destroyed.
@@ -1963,10 +1965,12 @@ void DestructorInserter::emitDestructorCall(Value value, bool isIndirect,
   // var).  If so, it needs to be stored into a temporary to invoke the
   // destructor, because it takes it by-ref.
   if (!isa<RefType>(value.getType())) {
+    size_t originNum = valueSet.typeDeclInfo.nextAnonOriginNumber++;
     StringAttr originAttr =
-        builder.getStringAttr("__dtor_tmp__`" + Twine(nextAnonOriginNumber++));
+        builder.getStringAttr("__dtor_tmp__`" + Twine(originNum));
     auto tmpVar = builder.create<VarDeclOp>(
-        value.getType(), builder.getStringAttr("__dtor_tmp__"), originAttr,
+        value.getType(),
+        builder.getStringAttr("__dtor_tmp__" + Twine(originNum)), originAttr,
         VarDeclKind::Implicit);
     builder.create<VarLifetimeStartOp>(tmpVar);
     builder.create<RefStoreOp>(value, tmpVar);
