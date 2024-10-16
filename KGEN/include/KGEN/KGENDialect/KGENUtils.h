@@ -77,9 +77,17 @@ ParseResult parseKGENType(AsmParser &parser, T &type) {
 void printKGENType(AsmPrinter &p, Type type);
 void printKGENType(raw_ostream &os, Type type);
 
+/// Parse a "colon type" production if present or default to `defaultType` type
+/// if not.
+ParseResult parseColonTypeOrDefault(AsmParser &parser, Type &type,
+                                    Type defaultType);
+
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.
 ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
+
+/// Print `: <type>` or elide it entirely if type is `defaultType` type.
+void printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType);
 
 /// Print `: <type>` or elide it entirely if type is an `index` type.
 void printColonTypeOrIndex(AsmPrinter &p, Type type);
@@ -272,7 +280,8 @@ ParseResult parseOptionalParameterSpec(AsmParser &parser,
 void printOptionalParameterSpec(AsmPrinter &p,
                                 ArrayRef<ParamDeclAttr> inputParamDecls,
                                 ArrayRef<ParamDeclAttr> resultParams = {},
-                                ParamDeclPrintHookTy printInputElt = {});
+                                ParamDeclPrintHookTy printInputElt = {},
+                                ParamDeclPrintHookTy printResultElt = {});
 
 /// Parse an optional argument convention, or use the given default.
 ParseResult parseArgConvention(AsmParser &p, ArgConvention &convention);
@@ -327,13 +336,16 @@ ParseResult parseFunctionSignature(OpAsmParser &p,
                                    ParamDeclArrayAttr &inputParams,
                                    ParamDeclArrayAttr &resultParams,
                                    FunctionType &functionType,
-                                   SignatureType &signature);
+                                   SignatureType &signature,
+                                   ParamDeclParseHookTy parseDeclElt = {});
 /// Print a function signature with optional metadata. If `region` is non-null,
 /// then the SSA value names of the region arguments are printed.
 void printFunctionSignature(OpAsmPrinter &p, Region *region,
                             ArrayRef<ParamDeclAttr> inputParams,
                             ArrayRef<ParamDeclAttr> resultParams,
-                            FunctionType functionType, SignatureType signature);
+                            FunctionType functionType, SignatureType signature,
+                            ParamDeclPrintHookTy printInputElt = {},
+                            ParamDeclPrintHookTy printResultElt = {});
 
 /// Parse the always_inline related keywords if present.
 ParseResult parseOptionalInline(OpAsmParser &parser, InlineLevelAttr &attr);
