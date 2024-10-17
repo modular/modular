@@ -1,5 +1,4 @@
-load("@pip_deps//:requirements.bzl", "requirement")
-load("//bazel:api.bzl", "modular_py_binary")
+load("//bazel:api.bzl", "modular_py_binary", "requirement")
 
 package(default_visibility = ["//visibility:public"])
 
