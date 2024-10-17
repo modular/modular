@@ -21,7 +21,7 @@ from testing import assert_almost_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
-from mha_warp_shuffle import mha_decoding_cpu, mha_decoding_gpu
+from nn.mha_warp_shuffle import mha_decoding_cpu, mha_decoding_warp_shuffle
 from memory import memset, memset_zero
 
 
@@ -136,8 +136,8 @@ fn test[
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device_ptr)
     fn kernel_launch(ctx: DeviceContext) raises:
-        mha_decoding_gpu[
-            mask_rank, head_size=depth, num_heads=num_heads, group=group
+        mha_decoding_warp_shuffle[
+            head_size=depth, num_heads=num_heads, group=group
         ](
             ctx,
             q_device_ptr.ptr,
@@ -146,6 +146,7 @@ fn test[
             output_device_ptr.ptr,
             scale,
             num_keys,
+            CausalMask(),
             batch_size,
         )
 
@@ -162,15 +163,14 @@ fn test[
     else:
         kernel_launch(ctx)
 
-    mha_decoding_cpu[
-        mask_rank, head_size=depth, num_heads=num_heads, group=group
-    ](
+    mha_decoding_cpu[head_size=depth, num_heads=num_heads, group=group](
         q_ptr,
         k_ptr,
         v_ptr,
         output_ptr_cpu,
         scale,
         num_keys,
+        CausalMask(),
         batch_size,
     )
 
