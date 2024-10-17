@@ -36,6 +36,9 @@ struct BenchMetric(CollectionElement):
     alias elements = BenchMetric(0, "throughput", "GElems/s")
     alias bytes = BenchMetric(1, "DataMovement", "GB/s")
     alias flops = BenchMetric(2, "Arithmetic", "GFLOPS/s")
+    alias theoretical_flops = BenchMetric(
+        3, "TheoreticalArithmetic", "GFLOPS/s"
+    )
 
     alias DEFAULTS = List[BenchMetric](Self.elements, Self.bytes, Self.flops)
     """Default set of benchmark metrics."""
@@ -667,7 +670,7 @@ struct Bench:
 
     fn bench_function[
         bench_fn: fn (inout Bencher) capturing [_] -> None
-    ](inout self, bench_id: BenchId, *measures: ThroughputMeasure,) raises:
+    ](inout self, bench_id: BenchId, *measures: ThroughputMeasure) raises:
         """Benchmarks or Tests an input function.
 
         Parameters:
