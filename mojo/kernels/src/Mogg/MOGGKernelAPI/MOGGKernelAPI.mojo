@@ -493,7 +493,7 @@ struct Pow:
         @always_inline
         fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
             var lhs = rebind[SIMD[z.type, width]](x._fused_load[width](idx))
-            var rhs = y.load[width](idx)
+            var rhs = y._fused_load[width](idx)
             return _pow(lhs, rhs)
 
         foreach[func, synchronous, target](z, ctx)
