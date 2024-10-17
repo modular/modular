@@ -29,12 +29,12 @@ fn makeClosure(x: int):
 
     @__copy_capture(z)
     @parameter
-    fn formatter() -> int:
+    fn writer() -> int:
         # expected-error @below {{expression must be mutable in assignment}}
         z = __mlir_op.`index.add`(z, z)
         return z
 
-    var y = formatter()
+    var y = writer()
 
 
 @value
@@ -63,7 +63,7 @@ fn makeClosure(x: MemType):
     # expected-error @below {{'NoCopyType' is not copyable because it has no '__copyinit__'}}
     @__copy_capture(rp)
     @parameter
-    fn formatter() -> int:
+    fn writer() -> int:
         pass
 
 

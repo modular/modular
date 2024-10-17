@@ -14,7 +14,7 @@ from collections import List
 struct MTuple[T: CollectionElement](
     CollectionElement,
     Stringable,
-    Formattable,
+    Writable,
 ):
     alias Element = Variant[T, Self]
     var elts: List[Self.Element]
@@ -55,7 +55,7 @@ struct MTuple[T: CollectionElement](
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         writer.write("(")
 
         for i in range(len(self.elts)):

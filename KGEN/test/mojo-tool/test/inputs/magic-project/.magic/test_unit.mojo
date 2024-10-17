@@ -6,6 +6,7 @@
 
 from testing import assert_true
 
+
 fn test_unit_fail() raises:
     assert_true(False)
     return

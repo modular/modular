@@ -147,17 +147,17 @@ fn deep_runtime_capture(
         raise Error("unreachable")
 
 
-fn takeClosure(formatter: fn (v: Int) escaping -> Int, value: Int):
-    print(formatter(value))
+fn takeClosure(writer: fn (v: Int) escaping -> Int, value: Int):
+    print(writer(value))
 
 
 fn makeEscapingClosure[
     parametricClosure: fn (v: Int) capturing -> Int
 ](x: Int) -> fn (v: Int) escaping -> Int:
-    fn formatter(v: Int) -> Int:
+    fn writer(v: Int) -> Int:
         return parametricClosure(x + v)
 
-    return formatter
+    return writer
 
 
 fn main():
@@ -210,19 +210,19 @@ fn main():
 
         @__copy_capture(x)
         @parameter
-        fn formatter(v: Int) -> Int:
+        fn writer(v: Int) -> Int:
             return x + v
 
-        var f = makeEscapingClosure[formatter](y)
+        var f = makeEscapingClosure[writer](y)
         # CHECK: 8
         takeClosure(f, y)
 
         @__copy_capture(y)
         @parameter
-        fn formatter2(v: Int) -> Int:
-            return y + formatter(v)
+        fn writer2(v: Int) -> Int:
+            return y + writer(v)
 
-        var f2 = makeEscapingClosure[formatter2](y)
+        var f2 = makeEscapingClosure[writer2](y)
         # CHECK: 11
         takeClosure(f2, y)
     except e:

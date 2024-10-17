@@ -52,11 +52,11 @@ fn makeClosure[p: int](x: int) -> int:
     # CHECK: %index = kgen.param.constant = <p>
     @__copy_capture(z, p)
     @parameter
-    fn formatter() -> int:
+    fn writer() -> int:
         # CHECK: lit.return [[COPY_VAL]] : index
         return z
 
-    return formatter()
+    return writer()
 
 
 fn foo():
