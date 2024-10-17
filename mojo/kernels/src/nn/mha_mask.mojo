@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import iota
+from sys import bitwidthof
 
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
@@ -34,10 +35,18 @@ trait MHAMask:
     """The MHAMask trait desctribes mask for mha kernel like causal mask."""
 
     fn mask[
-        type: DType, width: Int
-    ](self, coord: IndexList[4], score_vec: SIMD[type, width]) -> SIMD[
-        type, width
-    ]:
+        type: DType,
+        width: Int, //,
+        *,
+        element_bitwidth: Int = bitwidthof[Int](),
+        unsigned: Bool = False,
+    ](
+        self,
+        coord: IndexList[
+            4, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        score_vec: SIMD[type, width],
+    ) -> SIMD[type, width]:
         """Return mask vector at given coordinates.
 
         Arguments:
@@ -48,10 +57,16 @@ trait MHAMask:
         """
         ...
 
-    fn status(
+    fn status[
+        *, element_bitwidth: Int = bitwidthof[Int](), unsigned: Bool = False
+    ](
         self,
-        tile_offset: IndexList[2],
-        tile_size: IndexList[2],
+        tile_offset: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        tile_size: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
     ) -> TileMaskStatus:
         """Given a tile' index range, return its masking status."""
         ...
@@ -64,10 +79,18 @@ struct CausalMask(MHAMask):
 
     @always_inline
     fn mask[
-        type: DType, width: Int
-    ](self, coord: IndexList[4], score_vec: SIMD[type, width]) -> SIMD[
-        type, width
-    ]:
+        type: DType,
+        width: Int, //,
+        *,
+        element_bitwidth: Int = bitwidthof[Int](),
+        unsigned: Bool = False,
+    ](
+        self,
+        coord: IndexList[
+            4, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        score_vec: SIMD[type, width],
+    ) -> SIMD[type, width]:
         var masked_score_vec = score_vec
 
         # coord[2] and coord[3] are the token index in query and key respectively.
@@ -83,10 +106,16 @@ struct CausalMask(MHAMask):
         return masked_score_vec
 
     @always_inline
-    fn status(
+    fn status[
+        *, element_bitwidth: Int = bitwidthof[Int](), unsigned: Bool = False
+    ](
         self,
-        tile_offset: IndexList[2],
-        tile_size: IndexList[2],
+        tile_offset: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        tile_size: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
     ) -> TileMaskStatus:
         # If false, the tile is not masked.
         var min_q_lt_max_k = UInt(
@@ -112,17 +141,31 @@ struct NullMask(MHAMask):
 
     @always_inline
     fn mask[
-        type: DType, width: Int
-    ](self, coord: IndexList[4], score_vec: SIMD[type, width]) -> SIMD[
-        type, width
-    ]:
+        type: DType,
+        width: Int, //,
+        *,
+        element_bitwidth: Int = bitwidthof[Int](),
+        unsigned: Bool = False,
+    ](
+        self,
+        coord: IndexList[
+            4, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        score_vec: SIMD[type, width],
+    ) -> SIMD[type, width]:
         return score_vec
 
     @always_inline
-    fn status(
+    fn status[
+        *, element_bitwidth: Int = bitwidthof[Int](), unsigned: Bool = False
+    ](
         self,
-        tile_offset: IndexList[2],
-        tile_size: IndexList[2],
+        tile_offset: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        tile_size: IndexList[
+            2, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
     ) -> TileMaskStatus:
         # no mask
         return TileMaskStatus(0)

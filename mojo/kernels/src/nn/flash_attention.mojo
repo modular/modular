@@ -1157,7 +1157,7 @@ fn flash_attention_kv_cache[
         kv_cache_len: Int,
     ) -> SIMD[type, simd_width]:
         # Shift the mask index from local->global space.
-        return mask.mask[type, simd_width](
+        return mask.mask(
             Index(idx[0], idx[1], idx[2] + kv_cache_len, idx[3]), score_vec
         )
 
