@@ -7,6 +7,7 @@
 
 Can also be used as a standalone binary to save out the golden values as a JSON.
 """
+
 import asyncio
 import base64
 import itertools
@@ -26,6 +27,7 @@ from huggingface_hub import hf_hub_download
 from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3, Llama3Context
 from max.driver import CPU, CUDA
+from nn.kv_cache import KVCacheStrategy
 
 
 def find_runtime_path(fname: str, testdata_directory: Path) -> Path:
@@ -237,6 +239,23 @@ class _SupportedModelEncoding:
                 repo_id=repo_id,
                 filename=self.encoding.hf_model_name(version),
             )
+
+        if "cache_strategy" in config_kwargs:
+            if config_kwargs[
+                "cache_strategy"
+            ] == KVCacheStrategy.CONTINUOUS and self.encoding not in [
+                SupportedEncodings.float32,
+                SupportedEncodings.bfloat16,
+            ]:
+                config_kwargs["cache_strategy"] = KVCacheStrategy.NAIVE
+        else:
+            if self.encoding in [
+                SupportedEncodings.float32,
+                SupportedEncodings.bfloat16,
+            ]:
+                config_kwargs["cache_strategy"] = KVCacheStrategy.CONTINUOUS
+            else:
+                config_kwargs["cache_strategy"] = KVCacheStrategy.NAIVE
 
         return InferenceConfig(
             version=version,
