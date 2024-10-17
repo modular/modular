@@ -43,3 +43,12 @@ fn for_each[
     func: fn[_width: Int] (IndexList[rank]) capturing -> SIMD[type, _width],
 ](arr: ManagedTensorSlice[type, rank]):
     pass
+
+
+fn uses_opaque():
+    """
+    Dummy registration decorator for testing.
+
+    TODO(GRA-1145): Remove the need for this.
+    """
+    return

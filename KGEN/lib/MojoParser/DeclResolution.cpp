@@ -221,6 +221,7 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "mogg_register_custom",
       "mogg_register_custom_shape",
       "mogg_register_shape_func",
+      "uses_opaque",
 
       "register",
       "elementwise",
@@ -595,17 +596,25 @@ void FnDecorators::applyOp(const CallNode *node) {
 /// information about each argument and result type.
 static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
                                           const ExprNode *decorator) {
+  using namespace MOGGPreElab::Decorators;
   StringRef spelling;
   if (auto callNode = dyn_cast<CallNode>(decorator))
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee))
       spelling = declRef->spelling;
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    spelling = declRef->spelling;
+
+    // Decl Refs are only used by opaque type conformance hints
+    if (spelling != USES_OPAQUE)
+      return;
+  }
+
   if (spelling.empty())
     return;
 
-  using namespace MOGGPreElab::Decorators;
-  if (!llvm::is_contained(
-          {REGISTER_KERNEL, REGISTER_OVERRIDE, REGISTER_PUBLIC_OVERRIDE},
-          spelling))
+  if (!llvm::is_contained({REGISTER_KERNEL, REGISTER_OVERRIDE,
+                           REGISTER_PUBLIC_OVERRIDE, USES_OPAQUE},
+                          spelling))
     return;
 
   // For each argument and result type, generate the set of explicit trait
