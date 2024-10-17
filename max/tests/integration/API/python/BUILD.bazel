@@ -51,6 +51,7 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("sentencepiece"),
         requirement("gguf"),
+        requirement("safetensors"),
     ],
 )
 
