@@ -1,5 +1,4 @@
-load("@pip_deps//:requirements.bzl", "requirement")
-load("//bazel:api.bzl", "modular_py_library")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 modular_py_library(
     name = "engine",
