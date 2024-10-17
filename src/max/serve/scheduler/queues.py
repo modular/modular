@@ -110,9 +110,10 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
 
     async def submit(
         self, req_id: BatchReqId, data: BatchReqInput
-    ) -> BatchReqOutput:
+    ) -> tuple[BatchReqOutput, bool]:
         async with self.open_channel(req_id, data) as queue:
-            return await queue.get()
+            token = await queue.get()
+            return token, token != STOP_STREAM
 
     async def stream(
         self, req_id: BatchReqId, data: BatchReqInput

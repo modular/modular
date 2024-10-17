@@ -171,7 +171,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             # fully processed.
             if self.context_enc_queue:
                 with timers.context_encoding:
-                    await self.context_enc_queue.submit(request.id, context)
+                    (token, valid) = await self.context_enc_queue.submit(
+                        request.id, context
+                    )
+                    if valid:
+                        yield token
                 self.logger.debug(
                     "%s: Context-Encoding: %0.2f ms, Elapsed: %0.2f ms",
                     request.id,
