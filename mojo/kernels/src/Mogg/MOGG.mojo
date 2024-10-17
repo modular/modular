@@ -3725,6 +3725,26 @@ fn pack_conv_transpose_filter_shape[
 
 
 # ===----------------------------------------------------------------------===#
+# MOGG distributed.allreduce.sum
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("mo.distributed.allreduce.sum")
+@always_inline
+@export
+fn allreduce_sum[
+    type: DType,
+    rank: Int,
+    target: StringLiteral = "cpu",
+](
+    inputs: StaticTuple[NDBuffer[type, rank, *_], *_],
+    outputs: StaticTuple[NDBuffer[type, rank, *_], *_],
+    ctx: MojoCallContextPtr,
+) raises:
+    pass
+
+
+# ===----------------------------------------------------------------------===#
 # Elementwise Ops
 # ===----------------------------------------------------------------------===#
 
