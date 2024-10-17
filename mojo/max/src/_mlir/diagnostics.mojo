@@ -37,7 +37,7 @@ struct DiagnosticSeverity:
 
 
 @value
-struct Diagnostic(Stringable, Formattable):
+struct Diagnostic(Stringable, Writable):
     """An opaque reference to a diagnostic, always owned by the diagnostics engine
     (context). Must not be stored outside of the diagnostic handler."""
 
@@ -49,7 +49,7 @@ struct Diagnostic(Stringable, Formattable):
             self.c
         )
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         writer.write(str(self))
 
     fn get_severity(self) -> DiagnosticSeverity:

@@ -239,7 +239,7 @@ struct Location(CollectionElement, Stringable):
 
 @value
 @register_passable("trivial")
-struct Module(Stringable, Formattable):
+struct Module(Stringable, Writable):
     alias cType = _c.IR.MlirModule
     var c: Self.cType
 
@@ -281,7 +281,7 @@ struct Module(Stringable, Formattable):
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         writer.write(self.as_op())
 
 
@@ -332,7 +332,7 @@ struct _WriteState:
 # TODO: how to correctly destroy "owned" Operations?
 @value
 @register_passable("trivial")
-struct Operation(CollectionElement, Stringable, Formattable):
+struct Operation(CollectionElement, Stringable, Writable):
     alias cType = _c.IR.MlirOperation
     var c: Self.cType
 
@@ -604,7 +604,7 @@ struct Operation(CollectionElement, Stringable, Formattable):
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         # TODO: Avoid this intermediate String allocation.
         var string = _to_string[Self.cType, _c.IR.mlirOperationPrint](self.c)
 
@@ -627,7 +627,7 @@ struct Identifier(CollectionElement, Stringable):
 
 @value
 @register_passable("trivial")
-struct Type(CollectionElement, Stringable, Formattable):
+struct Type(CollectionElement, Stringable, Writable):
     alias cType = _c.IR.MlirType
     var c: Self.cType
 
@@ -648,7 +648,7 @@ struct Type(CollectionElement, Stringable, Formattable):
     fn __str__(self) -> String:
         return _to_string[Self.cType, _c.IR.mlirTypePrint](self.c)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         # TODO: Avoid this intermediate String allocation.
         writer.write(str(self))
 

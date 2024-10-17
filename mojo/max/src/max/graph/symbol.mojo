@@ -34,7 +34,7 @@ from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 
 @value
-struct Symbol(CollectionElement, Stringable, Formattable):
+struct Symbol(CollectionElement, Stringable, Writable):
     """Represents a symbolic value within a `Graph`.
 
     A `Symbol` can represent the output of a node, the arguments of a `Graph`
@@ -114,12 +114,15 @@ struct Symbol(CollectionElement, Stringable, Formattable):
         """
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
-        Formats this symbol to the provided formatter.
+        Formats this symbol to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
 
         writer.write(str(self.handle))

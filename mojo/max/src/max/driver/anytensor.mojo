@@ -169,12 +169,15 @@ struct AnyTensor:
 
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
-        Formats this Tensor to the provided formatter.
+        Formats this Tensor to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
 
         writer.write("Tensor(")
@@ -200,7 +203,7 @@ struct AnyTensor:
             return
 
         @parameter
-        fn serialize[T: Formattable](val: T):
+        fn serialize[T: Writable](val: T):
             writer.write(val)
 
         @parameter
@@ -482,13 +485,16 @@ struct AnyMemory:
         """Gets this value as a string."""
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
         Formats the string representation of this value to the provided
-        formatter.
+        Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
         if self._value.isa[AnyTensor]():
             return writer.write(self._value[AnyTensor])
