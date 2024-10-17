@@ -22,7 +22,7 @@ from utils import IndexList, StaticTuple, unroll
 
 @value
 @register_passable("trivial")
-struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
+struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
     """A static or dynamic dimension modeled with an optional integer.
 
     This class is meant to represent an optional static dimension. When a value
@@ -240,16 +240,19 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
-        Formats this DimList to the provided formatter.
+        Formats this DimList to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
 
         if self.is_dynamic():
-            return writer.write_str("?")
+            return writer.write("?")
         else:
             return writer.write(int(self))
 
@@ -277,7 +280,7 @@ struct Dim(Intable, Stringable, Formattable, ImplicitlyBoolable):
 struct DimList(
     Sized,
     Stringable,
-    Formattable,
+    Writable,
 ):
     """This type represents a list of dimensions. Each dimension may have a
     static value or not have a value, which represents a dynamic dimension."""
@@ -538,22 +541,25 @@ struct DimList(
 
         return True
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
-        Formats this DimList to the provided formatter.
+        Formats this DimList to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
 
-        writer.write_str("[")
+        writer.write("[")
 
         for i in range(len(self)):
             if i:
-                writer.write_str(", ")
+                writer.write(", ")
             writer.write(self.value[i])
 
-        writer.write_str("]")
+        writer.write("]")
 
 
 @always_inline

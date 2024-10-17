@@ -487,7 +487,7 @@ struct NDBuffer[
     alignment: Int = 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
-](Sized, Stringable, Formattable):
+](Sized, Stringable, Writable):
     """An N-dimensional Buffer.
 
     NDBuffer can be parametrized on rank, static dimensions and Dtype. It does
@@ -774,17 +774,20 @@ struct NDBuffer[
         """
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
-        Formats this buffer to the provided formatter.
+        Formats this buffer to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
         writer.write("NDBuffer(")
 
         @parameter
-        fn serialize[T: Formattable](val: T):
+        fn serialize[T: Writable](val: T):
             writer.write(val)
 
         var shape = List[Int, hint_trivial_type=True]()
