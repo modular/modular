@@ -25,7 +25,7 @@ alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 
 @value
 @register_passable("trivial")
-struct ComplexSIMD[type: DType, size: Int](Stringable, Formattable):
+struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
     """Represents a complex SIMD value.
 
     The class provides basic methods for manipulating complex values.
@@ -57,17 +57,20 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Formattable):
         """
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
-        Formats this complex value to the provided formatter.
+        Formats this complex value to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
 
         # TODO(MSTDL-700):
-        #   Add a Formatter.reserve() method, to afford format implementions
-        #   to request reservation of additional space from `Formatter`
+        #   Add a Writer.reserve() method, to afford writer implementions
+        #   to request reservation of additional space from `Writer`
         #   implementations that support that. Then use the logic below to
         #   call that method here.
 
