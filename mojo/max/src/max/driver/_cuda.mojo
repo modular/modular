@@ -11,7 +11,6 @@ from sys.ffi import DLHandle
 from ._driver_library import DriverLibrary
 from gpu.host import (
     DeviceContext,
-    KernelProfilingInfo,
     DeviceFunction as CUDAFunction,
     Dim,
     FuncAttribute,
