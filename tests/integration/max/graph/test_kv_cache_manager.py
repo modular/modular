@@ -6,7 +6,6 @@
 
 import pytest
 from nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
-from max.engine import InferenceSession
 from max.driver import CPU
 from max.dtype import DType
 
@@ -16,11 +15,7 @@ async def test_step():
     # Initialize llama like params
     # Step is cache_type agnostic, so we can test with contiguous
     device = CPU()
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=8,
-        head_dim=128,
-    )
+    params = KVCacheParams(dtype=DType.float32, n_kv_heads=8, head_dim=128)
 
     kv_manager = load_kv_manager(
         params=params,
@@ -56,11 +51,7 @@ async def test_claim_and_release():
     # claim and release are both cache_type independent,
     # so we can test with the KVCacheType.CONTINUOUS default
     device = CPU()
-    params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=8,
-        head_dim=128,
-    )
+    params = KVCacheParams(dtype=DType.float32, n_kv_heads=8, head_dim=128)
 
     kv_manager = load_kv_manager(
         params=params,
