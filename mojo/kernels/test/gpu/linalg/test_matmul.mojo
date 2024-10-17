@@ -7,7 +7,7 @@
 
 from collections.optional import Optional, OptionalReg
 from math import ceildiv
-from sys import simdwidthof
+from sys import simdwidthof, alignof
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
@@ -166,7 +166,10 @@ fn test[
     @always_inline
     @__copy_capture(c_tensor, M, N)
     fn epilogue_fn[
-        _type: DType, width: Int, *, alignment: Int = 1
+        _type: DType,
+        width: Int,
+        *,
+        alignment: Int = alignof[SIMD[_type, width]](),
     ](idx: IndexList[2], val: SIMD[_type, width]) capturing -> None:
         var update_val: SIMD[_type, width] = val
 
@@ -174,7 +177,9 @@ fn test[
         if lambda_fn:
             alias func = lambda_fn.value()
             update_val = func(idx, (M, N), update_val)
-        c_tensor.store(idx, rebind[SIMD[type, width]](update_val))
+        c_tensor.store[alignment=alignment](
+            idx, rebind[SIMD[type, width]](update_val)
+        )
 
     @parameter
     if lambda_fn:
