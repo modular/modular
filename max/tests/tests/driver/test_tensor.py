@@ -297,6 +297,20 @@ def test_from_dlpack():
             assert array[0] == np_dtype(7)
 
 
+def test_from_dlpack_short_circuit():
+    tensor = Tensor((4,), DType.int8)
+    for i in range(4):
+        tensor[i] = i
+
+    # Test short circuiting.
+    same_tensor = Tensor.from_dlpack(tensor)
+    assert tensor is same_tensor
+    copy_tensor = Tensor.from_dlpack(tensor, copy=True)
+    assert tensor is not copy_tensor
+    assert tensor.dtype == copy_tensor.dtype
+    assert tensor.shape == copy_tensor.shape
+
+
 def test_from_dlpack_copy():
     tensor = Tensor((4,), DType.int8)
     for i in range(4):
