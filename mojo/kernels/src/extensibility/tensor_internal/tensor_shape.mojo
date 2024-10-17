@@ -80,7 +80,7 @@ struct _RepKind(EqualityComparable):
 
 
 @register_passable("trivial")
-struct _Rep16(Stringable, Formattable, EqualityComparable):
+struct _Rep16(Stringable, Writable, EqualityComparable):
     """A representation which can hold up to 6 dimensions with each dim
     occupying at most 16-bits."""
 
@@ -200,7 +200,7 @@ struct _Rep16(Stringable, Formattable, EqualityComparable):
         """
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         for i in range(self.get_rank()):
             if i != 0:
                 writer.write("x")
@@ -208,7 +208,7 @@ struct _Rep16(Stringable, Formattable, EqualityComparable):
 
 
 @register_passable("trivial")
-struct _Rep32(Formattable, EqualityComparable):
+struct _Rep32(Writable, EqualityComparable):
     """A representation which can hold up to 4 dimensions with the first three
     occupying at most 32-bits and the last occupying at most 8 bits."""
 
@@ -342,7 +342,7 @@ struct _Rep32(Formattable, EqualityComparable):
 
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         for i in range(self.get_rank()):
             if i != 0:
                 writer.write("x")
@@ -350,7 +350,7 @@ struct _Rep32(Formattable, EqualityComparable):
 
 
 @register_passable("trivial")
-struct _RepOutOfLine(Formattable, EqualityComparable):
+struct _RepOutOfLine(Writable, EqualityComparable):
     """A general storage kind which stores the dimensions on the heap."""
 
     alias _padding_size = (13 - sizeof[UnsafePointer[NoneType]]())
@@ -495,7 +495,7 @@ struct _RepOutOfLine(Formattable, EqualityComparable):
 
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         for i in range(self.get_rank()):
             if i != 0:
                 writer.write("x")
@@ -683,9 +683,7 @@ fn _as_rep_out_of_line(rep0: _Rep32) -> _RepOutOfLine:
 
 
 @value
-struct TensorShape(
-    Stringable, Formattable, CollectionElement, EqualityComparable
-):
+struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
     """A space efficient representation of a tensor shape. This struct
     implements value semantics and owns its underlying data."""
 
@@ -1034,12 +1032,15 @@ struct TensorShape(
 
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
-        Formats this TensorShape to the provided formatter.
+        Formats this TensorShape to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
 
         var rep_kind = self._get_rep_kind()

@@ -162,7 +162,7 @@ fn _sub(x: SIMD[*_], y: __type_of(x)) -> __type_of(x):
 @value
 struct Tensor[type: DType](
     Stringable,
-    Formattable,
+    Writable,
     CollectionElement,
     EqualityComparable,
 ):
@@ -853,18 +853,21 @@ struct Tensor[type: DType](
 
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
-        Formats this Tensor to the provided formatter.
+        Formats this Tensor to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
 
         writer.write("Tensor(")
 
         @parameter
-        fn serialize[T: Formattable](val: T):
+        fn serialize[T: Writable](val: T):
             writer.write(val)
 
         var shape = List[Int, hint_trivial_type=True]()

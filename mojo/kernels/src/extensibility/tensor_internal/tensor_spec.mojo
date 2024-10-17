@@ -29,7 +29,7 @@ from .tensor_shape import TensorShape, _as_rep16
 @value
 struct TensorSpec(
     Stringable,
-    Formattable,
+    Writable,
     CollectionElement,
     EqualityComparable,
 ):
@@ -197,12 +197,15 @@ struct TensorSpec(
         """
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """
-        Formats this TensorSpec to the provided formatter.
+        Formats this TensorSpec to the provided Writer.
+
+        Parameters:
+            W: A type conforming to the Writable trait.
 
         Args:
-            writer: The formatter to write to.
+            writer: The object to write to.
         """
 
         writer.write(self.shape, "x", self.dtype())
