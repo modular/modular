@@ -16,6 +16,7 @@ from gpu.host.nvtx import _end_range as _end_nvtx_range
 from gpu.host.nvtx import _is_enabled as _nvtx_is_enabled
 from gpu.host.nvtx import _is_enabled_details as _nvtx_is_enabled_details
 from gpu.host.nvtx import _start_range as _start_nvtx_range
+from gpu.host.nvtx import _mark as _mark_nvtx
 
 
 fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
@@ -389,24 +390,24 @@ struct Trace[
 
         @parameter
         if _is_nvtx_enabled[category, level]():
-            # Convert to String since nvtx range APIs copy messages anyway.
-            # TODO(KERN-1052): optimize by exposing explicit string registration.
-            message = str(self.name[StringLiteral]) if self.name.isa[
-                StringLiteral
-            ]() else self.name[String]
 
             @parameter
             if _nvtx_is_enabled_details():
+                # Convert to String since nvtx range APIs copy messages anyway.
+                # TODO(KERN-1052): optimize by exposing explicit string
+                # registration.
                 self.event_id = int(
                     _start_nvtx_range(
-                        message=message
+                        message=self._get_name_as_str()
                         + (("/" + self.detail) if self.detail else ""),
                         category=int(category),
                     )
                 )
             else:
                 self.event_id = int(
-                    _start_nvtx_range(message=message, category=int(category))
+                    _start_nvtx_range(
+                        message=self._get_name_as_str(), category=int(category)
+                    )
                 )
             return
 
@@ -479,6 +480,28 @@ struct Trace[
         external_call[
             "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
         ](0)
+
+    @always_inline
+    fn mark(self):
+        """Marks the tracer with the info at the specific point of time."""
+
+        @parameter
+        if _is_nvtx_enabled[category, level]():
+            var message = self._get_name_as_str()
+
+            @parameter
+            if _nvtx_is_enabled_details():
+                if self.detail:
+                    message += "/" + self.detail
+
+            _mark_nvtx(message=message)
+
+    @always_inline
+    fn _get_name_as_str(self) -> String:
+        message = str(self.name[StringLiteral]) if self.name.isa[
+            StringLiteral
+        ]() else self.name[String]
+        return message
 
     # WAR: passing detail_fn to __init__ causes internal compiler crash
     @staticmethod
