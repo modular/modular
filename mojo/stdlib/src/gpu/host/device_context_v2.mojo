@@ -16,6 +16,7 @@ alias _DeviceBufferPtr = UnsafePointer[NoneType]
 alias _DeviceFunctionPtr = UnsafePointer[NoneType]
 alias _DeviceTimerPtr = UnsafePointer[NoneType]
 alias _CharPtr = UnsafePointer[UInt8]
+alias _IntPtr = UnsafePointer[Int32]
 alias _VoidPtr = UnsafePointer[NoneType]
 alias _SizeT = UInt
 
@@ -917,15 +918,27 @@ struct DeviceContextV2:
         ]()
 
     fn is_compatible(self) raises:
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceContextV2.is_compatible"
-        ]()
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_isCompatibleWithMAX",
+                _CharPtr,
+                _DeviceContextPtr,
+            ](
+                self._handle,
+            )
+        )
 
     fn compute_capability(self) raises -> Int:
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceContextV2.compute_capability"
-        ]()
-        return 0  # FIXME
+        var compute_capability: Int32 = 0
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_computeCapability",
+                _CharPtr,
+                _DeviceContextPtr,
+                _IntPtr,
+            ](self._handle, UnsafePointer.address_of(compute_capability))
+        )
+        return int(compute_capability)
 
     fn get_memory_info(self) raises -> (_SizeT, _SizeT):
         var free = _SizeT(0)
