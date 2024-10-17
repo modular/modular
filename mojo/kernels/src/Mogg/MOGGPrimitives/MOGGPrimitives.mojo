@@ -19,7 +19,6 @@ from gpu.host import (
     DeviceBuffer,
     DeviceContext,
     Event,
-    KernelProfilingInfo,
 )
 from gpu.host._utils import _check_error
 from gpu.host.cuda_instance import *
@@ -870,7 +869,6 @@ fn mgp_device_context_profile_end[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     # Call into device_context here....
-    dev_ctx[].dump_kernel_timing_info()
     return 1
 
 
