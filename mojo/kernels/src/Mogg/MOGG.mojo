@@ -185,6 +185,7 @@ from nn.tile import tile, tile_shape
 from nn.topk import top_k as _top_k
 from nn.topk import top_k_fused_sampling as _topk_fused_sampling
 from nn.topk import top_k_shape
+from nn.topk_gpu import topk_gpu as _topk_gpu
 from nn.topk_gpu import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
 from quantization import (
     Q4sym,
@@ -3450,24 +3451,61 @@ fn test_abort[
 fn bottom_k[
     type: DType,
     rank: Int,
+    out_idxs_type: DType = DType.int64,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[type, rank],
     k_buf: Scalar,
     axis: Scalar,
     sorted: NDBuffer[DType.bool, 1],
     out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[DType.int64, rank],
+    out_idxs: NDBuffer[out_idxs_type, rank],
     ctx: MojoCallContextPtr,
-):
-    _top_k[rank, type](
-        input,
-        int(k_buf[0]),
-        int(axis),
-        False,
-        rebind[NDBuffer[type, rank]](out_vals),
-        out_idxs,
-        sorted[0],
-    )
+) raises:
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    with Trace[TraceLevel.OP, target=target]("bottom_k"):
+
+        @parameter
+        if target == "cpu":
+            constrained[
+                out_idxs_type == DType.int64,
+                "out_idxs_type must be int64 for cpu",
+            ]()
+            _top_k[rank, type](
+                input,
+                int(k_buf),
+                int(axis),
+                False,
+                rebind[NDBuffer[type, rank]](out_vals),
+                rebind[NDBuffer[DType.int64, rank]](out_idxs),
+                sorted[0],
+            )
+
+        else:
+            var axis = int(normalize_neg_index(axis, rank))
+            if axis != rank - 1:
+                raise Error("axis other than -1 not supported on GPU")
+            if not sorted[0]:
+                print(
+                    "Warning: Unsorted top-k is not supported on GPU. Falling"
+                    " back to sorted top-k."
+                )
+
+            var cuda_ctx = ctx.get_device_context()
+            _topk_gpu[
+                type,
+                rank,
+                out_idxs_type,
+                sampling=False,
+                largest=False,
+            ](
+                cuda_ctx,
+                int(k_buf),
+                input,
+                out_vals,
+                out_idxs,
+            )
 
 
 @mogg_register("mo.top_k")
@@ -3476,24 +3514,55 @@ fn bottom_k[
 fn top_k[
     type: DType,
     rank: Int,
+    out_idxs_type: DType = DType.int64,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[type, rank],
     k_buf: Scalar,
     axis: Scalar,
     sorted: NDBuffer[DType.bool, 1],
     out_vals: NDBuffer[type, rank],
-    out_idxs: NDBuffer[DType.int64, rank],
+    out_idxs: NDBuffer[out_idxs_type, rank],
     ctx: MojoCallContextPtr,
-):
-    _top_k[rank, type](
-        input,
-        int(k_buf[0]),
-        int(axis),
-        True,
-        rebind[NDBuffer[type, rank]](out_vals),
-        out_idxs,
-        sorted[0],
-    )
+) raises:
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    with Trace[TraceLevel.OP, target=target]("top_k"):
+
+        @parameter
+        if target == "cpu":
+            constrained[
+                out_idxs_type == DType.int64,
+                "out_idxs_type must be int64 for cpu",
+            ]()
+            _top_k[rank, type](
+                input,
+                int(k_buf),
+                int(axis),
+                True,
+                rebind[NDBuffer[type, rank]](out_vals),
+                rebind[NDBuffer[DType.int64, rank]](out_idxs),
+                sorted[0],
+            )
+
+        else:
+            var axis = int(normalize_neg_index(axis, rank))
+            if axis != rank - 1:
+                raise Error("axis other than -1 not supported on GPU")
+            if not sorted[0]:
+                print(
+                    "Warning: Unsorted top-k is not supported on GPU. Falling"
+                    " back to sorted top-k."
+                )
+
+            var cuda_ctx = ctx.get_device_context()
+            _topk_gpu[type, rank, out_idxs_type, sampling=False, largest=True,](
+                cuda_ctx,
+                int(k_buf),
+                input,
+                out_vals,
+                out_idxs,
+            )
 
 
 # ===----------------------------------------------------------------------===#
