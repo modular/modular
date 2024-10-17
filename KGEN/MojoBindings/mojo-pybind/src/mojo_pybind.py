@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import platform
 import os
 import subprocess
 
@@ -189,16 +190,32 @@ def link_mojo_archive_to_dylib(
     #   Python's dylib module loading logic looks for .so even on macOS
     #   (not .dylib!), so that's why .so is hard-coded here.
     clang_cmd = [
-        "clang",
+        "clang++",
         "-shared",
-        "-Wl,-force_load",
-        archive_path,
-        mojo_libs,
-        "-lc++",
-        "-o",
-        filestem + ".so",
     ]
+    if platform.system() == "Linux":
+        clang_cmd.extend(
+            [
+                "-Wl,--whole-archive",
+                archive_path,
+                "-Wl,--no-whole-archive",
+            ]
+        )
+    elif platform.system() == "Darwin":
+        clang_cmd.extend(
+            [
+                "-Wl,-force_load",
+                archive_path,
+            ]
+        )
 
+    clang_cmd.extend(
+        [
+            mojo_libs,
+            "-o",
+            filestem + ".so",
+        ]
+    )
     _run_command(clang_cmd, verbose=verbose)
 
 
