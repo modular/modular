@@ -24,3 +24,5 @@ def test_profiling() -> None:
 
     foo()
     bar()
+
+    Trace("I'm here").mark()
