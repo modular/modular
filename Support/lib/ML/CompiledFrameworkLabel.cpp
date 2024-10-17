@@ -14,7 +14,6 @@ const char *CompiledFrameworkLabel::getAsOpNameOrNull() const {
   switch (value) {
   case kUnknown:
     return nullptr;
-  case kTensorFlowModel:
   case kONNXModel:
   case kPyTorchModel:
   case kModularModel:
@@ -51,8 +50,6 @@ CompiledFrameworkLabel::getLabelForOpName(StringRef opName,
     // TODO(#6190): Support mgp.model for faux.
     return CompiledFrameworkLabel{kFauxModel};
   if (opName == "mgp.model") {
-    if (frameworkName == "tf")
-      return CompiledFrameworkLabel{kTensorFlowModel};
     if (frameworkName == "onnx")
       return CompiledFrameworkLabel{kONNXModel};
     if (frameworkName == "pytorch")
@@ -68,8 +65,6 @@ const char *CompiledFrameworkLabel::getAsString() const {
   switch (value) {
   case kUnknown:
     return "unknown";
-  case kTensorFlowModel:
-    return "compiled TensorFlow model";
   case kFauxModel:
     return "compiled Faux model";
   case kONNXModel:
@@ -87,8 +82,6 @@ CompiledFrameworkLabel::asLabelString(CompiledFrameworkLabel::Cases label) {
   switch (label) {
   case kUnknown:
     return nullptr;
-  case kTensorFlowModel:
-    return "tf";
   case kFauxModel:
     // TODO(#6190): Support mgp.model for faux.
     return nullptr;
