@@ -346,6 +346,23 @@ async def test_pipeline_heterogeneous_batch_logits(
         expected_results,
     )
 
+    # Send in A, B, C out of order
+    # This evaluates if the order of the batch can be mutated
+    next_token_with_logits(
+        pipeline_model,
+        {"C": context_c, "B": context_b, "A": context_a},
+        stored_logits,
+    )
+
+    compare_values(
+        [
+            {"prompt": prompt_a, "values": stored_logits["A"]},
+            {"prompt": prompt_b, "values": stored_logits["B"]},
+            {"prompt": prompt_c, "values": stored_logits["C"]},
+        ],
+        expected_results,
+    )
+
     await pipeline_model.release(context_a)
     await pipeline_model.release(context_b)
     await pipeline_model.release(context_c)
