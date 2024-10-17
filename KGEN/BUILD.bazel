@@ -936,7 +936,6 @@ modular_cc_library(
         "//AsyncRT:CompilerSupport",
         "//Support:DebugInfoTransforms",
         "//Support:Telemetry",
-        "//bazel:mojo.linkstamp",
         "@llvm-project//llvm:OrcJIT",
     ],
 )
@@ -1237,7 +1236,6 @@ modular_cc_library(
         ":KGENToLLVM",
         ":Pipeline",
         "//AsyncRT:CompilerSupport",
-        "//bazel:mojo.linkstamp",
         "@llvm-project//mlir:BytecodeWriter",
     ],
 )
