@@ -1,6 +1,5 @@
-load("@pip_deps//:requirements.bzl", "requirement")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 exports_files(["pyproject.toml"])
 
