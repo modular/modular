@@ -25,7 +25,7 @@ from kv_cache.types import (
 )
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
-from nn.kv_cache_packed import _fused_qkv_matmul_kv_cache_packed_impl
+from nn.kv_cache_ragged import _fused_qkv_matmul_kv_cache_ragged_impl
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
@@ -94,32 +94,32 @@ def execute_fused_qkv_matmul[
 
     prefix_sum_device = prefix_sum_host.copy_to_device(ctx)
 
-    # initialize packed hidden state
-    hidden_state_packed_host = HostNDBuffer[
+    # initialize ragged hidden state
+    hidden_state_ragged_host = HostNDBuffer[
         type, 2, DimList(Dim(), hidden_size)
     ](IndexList[2](total_length, hidden_size))
 
-    random(hidden_state_packed_host.tensor)
-    hidden_state_packed_device = hidden_state_packed_host.copy_to_device(ctx)
+    random(hidden_state_ragged_host.tensor)
+    hidden_state_ragged_device = hidden_state_ragged_host.copy_to_device(ctx)
 
     # initialize padded hidden state
     hidden_state_padded_host = HostNDBuffer[
         type, 2, DimList(Dim(), hidden_size)
     ](IndexList[2](batch_size * max_seq_length_batch, hidden_size))
 
-    # copy over the packed values to the padded tensor.
+    # copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
     for bs in range(batch_size):
         unpadded_seq_len = prompt_lens[bs]
-        packed_start_idx = int(prefix_sum_host.tensor[bs])
+        ragged_start_idx = int(prefix_sum_host.tensor[bs])
         for s in range(unpadded_seq_len):
             padded_ptr = hidden_state_padded_host.tensor._offset(
                 (bs * max_seq_length_batch + s, 0)
             )
-            packed_ptr = hidden_state_packed_host.tensor._offset(
-                (packed_start_idx + s, 0)
+            ragged_ptr = hidden_state_ragged_host.tensor._offset(
+                (ragged_start_idx + s, 0)
             )
-            memcpy(padded_ptr, packed_ptr, hidden_size)
+            memcpy(padded_ptr, ragged_ptr, hidden_size)
 
     hidden_state_padded_device = hidden_state_padded_host.copy_to_device(ctx)
 
@@ -224,8 +224,8 @@ def execute_fused_qkv_matmul[
     )
 
     # execute the matmul
-    _fused_qkv_matmul_kv_cache_packed_impl[target="cuda",](
-        hidden_state_packed_device.tensor,
+    _fused_qkv_matmul_kv_cache_ragged_impl[target="cuda",](
+        hidden_state_ragged_device.tensor,
         weight_device.tensor,
         prefix_sum_device.tensor,
         k_cache_device,
@@ -256,7 +256,7 @@ def execute_fused_qkv_matmul[
     test_out = test_output_host.tensor
     for bs in range(batch_size):
         prompt_len = prompt_lens[bs]
-        packed_offset = int(prefix_sum_host.tensor[bs])
+        ragged_offset = int(prefix_sum_host.tensor[bs])
         for s in range(prompt_len):
             for q_dim in range(hidden_size):
                 assert_almost_equal(
@@ -264,7 +264,7 @@ def execute_fused_qkv_matmul[
                         bs * max_seq_length_batch + s,
                         q_dim,
                     ],
-                    test_out[packed_offset + s, q_dim],
+                    test_out[ragged_offset + s, q_dim],
                 )
 
             for k_dim in range(kv_hidden_size):
@@ -299,8 +299,8 @@ def execute_fused_qkv_matmul[
                     ),
                 )
 
-    _ = hidden_state_packed_device^
-    _ = hidden_state_packed_host^
+    _ = hidden_state_ragged_device^
+    _ = hidden_state_ragged_host^
     _ = weight_device^
     _ = weight_host^
     _ = ref_output_device^
