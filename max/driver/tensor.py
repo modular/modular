@@ -250,9 +250,7 @@ class Tensor(DLPackArray):
         return self._impl.__dlpack__(stream=stream)
 
     @classmethod
-    def from_dlpack(
-        cls: Type[_T], arr: Any, *, copy: Optional[bool] = None
-    ) -> _T:
+    def from_dlpack(cls, arr: Any, *, copy: Optional[bool] = None) -> Tensor:
         """Create a tensor from an object implementing the dlpack protocol.
 
         This usually does not result in a copy, and the producer of the object
@@ -290,10 +288,16 @@ class Tensor(DLPackArray):
 
             return tensor.view(DType.bool) if is_bool else tensor  # type: ignore
 
+        # Short circuit if it's our type.
+        if isinstance(arr, cls):
+            if copy:
+                return arr.copy()
+            return arr
+
         if copy is not None:
             raise ValueError(
-                "`Tensor.from_dlpack` support the `copy` flag only for numpy"
-                " array inputs"
+                "`Tensor.from_dlpack` supports the `copy` flag only for numpy"
+                " array and `Tensor` inputs"
             )
 
         return cls._from_impl(_Tensor.from_dlpack(arr))
