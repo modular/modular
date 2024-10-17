@@ -23,9 +23,9 @@ from runtime.tracing import Trace, TraceLevel
 from register import mogg_register
 
 
-@mogg_register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_packed")
+@mogg_register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
 @export
-fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_packed[
+fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -58,16 +58,16 @@ fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_packed[
         ctx: The call context pointer, passed by the graph compiler.
     """
     with Trace[TraceLevel.OP, target=target](
-        "fused_qkv_matmul_kv_cache_h8_d128_cont_batch_packed"
+        "fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged"
     ):
-        return _fused_qkv_matmul_kv_cache_packed[target=target](
+        return _fused_qkv_matmul_kv_cache_ragged[target=target](
             hidden_state, weight, prefix_sum, k_cache, v_cache, output, ctx
         )
 
 
-@mogg_register("fused_qkv_matmul_kv_cache_h8_d64_cont_batch_packed")
+@mogg_register("fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged")
 @export
-fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_packed[
+fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -100,16 +100,16 @@ fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_packed[
         ctx: The call context pointer, passed by the graph compiler.
     """
     with Trace[TraceLevel.OP, target=target](
-        "fused_qkv_matmul_kv_cache_h8_d64_cont_batch_packed"
+        "fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged"
     ):
-        return _fused_qkv_matmul_kv_cache_packed[target=target](
+        return _fused_qkv_matmul_kv_cache_ragged[target=target](
             hidden_state, weight, prefix_sum, k_cache, v_cache, output, ctx
         )
 
 
-@mogg_register("fused_qkv_matmul_kv_cache_h1_d16_cont_batch_packed")
+@mogg_register("fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged")
 @export
-fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_packed[
+fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -142,15 +142,15 @@ fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_packed[
         ctx: The call context pointer, passed by the graph compiler.
     """
     with Trace[TraceLevel.OP, target=target](
-        "fused_qkv_matmul_kv_cache_h1_d16_cont_batch_packed"
+        "fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged"
     ):
-        return _fused_qkv_matmul_kv_cache_packed[target=target](
+        return _fused_qkv_matmul_kv_cache_ragged[target=target](
             hidden_state, weight, prefix_sum, k_cache, v_cache, output, ctx
         )
 
 
 @always_inline
-fn _fused_qkv_matmul_kv_cache_packed[
+fn _fused_qkv_matmul_kv_cache_ragged[
     type: DType,
     cache_t: KVCacheT, //,
     *,
@@ -186,13 +186,13 @@ fn _fused_qkv_matmul_kv_cache_packed[
     if target != "cpu":
         cuda_ctx = context.get_device_context()
 
-    return _fused_qkv_matmul_kv_cache_packed_impl[target=target](
+    return _fused_qkv_matmul_kv_cache_ragged_impl[target=target](
         hidden_state, weight, prefix_sum, k_cache, v_cache, output, cuda_ctx
     )
 
 
 @always_inline
-fn _fused_qkv_matmul_kv_cache_packed_impl[
+fn _fused_qkv_matmul_kv_cache_ragged_impl[
     type: DType,
     cache_t: KVCacheT, //,
     *,
@@ -206,14 +206,14 @@ fn _fused_qkv_matmul_kv_cache_packed_impl[
     output: NDBuffer[type, 2, *_],
     context: Optional[DeviceContext],
 ) raises:
-    """Performs a fused QKV matmul on packed tensors. Q outputs are written to the output argument
+    """Performs a fused QKV matmul on ragged tensors. Q outputs are written to the output argument
     while K and V outputs are written in-place into k_cache and v_cache.
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, (num_heads + 2 * num_kv_heads) * head_size).
         prefix_sum: Tensor with shape (batch_size + 1,)
-            denoting the start of each sequence along the packed dimension.
+            denoting the start of each sequence along the seq_len dimension.
         k_cache: The historical ContiguousKVCache for keys, with logical shape:
             (batch_size, max_seq_len, num_kv_heads, head_size).
         v_cache: The historical ContiguousKVCache for values, with logical shape:
