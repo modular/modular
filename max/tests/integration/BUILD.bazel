@@ -1,5 +1,4 @@
-load("@pip_deps//:requirements.bzl", "requirement")
-load("//bazel:api.bzl", "lit_tests", "mojo_library")
+load("//bazel:api.bzl", "lit_tests", "mojo_library", "requirement")
 
 filegroup(
     name = "inputs",
