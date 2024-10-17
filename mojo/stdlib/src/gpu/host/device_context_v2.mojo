@@ -899,24 +899,6 @@ struct DeviceContextV2:
             )
         )
 
-    fn print_kernel_timing_info(self):
-        """Print profiling info associated with this DeviceContext."""
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceContextV2.print_kernel_timing_info"
-        ]()
-
-    fn dump_kernel_timing_info(self) raises:
-        """Prints out profiling info associated with this DeviceContext."""
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceContextV2.dump_kernel_timing_info"
-        ]()
-
-    fn clear_kernel_timing_info(self):
-        """Clear profiling info associated with this DeviceContext."""
-        not_implemented_yet[
-            "##### UNIMPLEMENTED: DeviceContextV2.clear_kernel_timing_info"
-        ]()
-
     fn is_compatible(self) raises:
         _checked(
             external_call[

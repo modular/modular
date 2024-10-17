@@ -566,27 +566,6 @@ struct DeviceContextVariant:
         else:
             self.v1().synchronize()
 
-    fn print_kernel_timing_info(self):
-        @parameter
-        if _device_ctx_v2():
-            self.v2().print_kernel_timing_info()
-        else:
-            self.v1().print_kernel_timing_info()
-
-    fn dump_kernel_timing_info(self) raises:
-        @parameter
-        if _device_ctx_v2():
-            self.v2().dump_kernel_timing_info()
-        else:
-            self.v1().dump_kernel_timing_info()
-
-    fn clear_kernel_timing_info(self):
-        @parameter
-        if _device_ctx_v2():
-            self.v2().clear_kernel_timing_info()
-        else:
-            self.v1().clear_kernel_timing_info()
-
     fn is_compatible(self) raises:
         @parameter
         if _device_ctx_v2():

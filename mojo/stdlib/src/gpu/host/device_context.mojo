@@ -8,7 +8,6 @@ from collections import List, Optional
 from os import abort
 from sys import external_call, sizeof
 from sys.ffi import c_size_t
-from sys.param_env import env_get_int, is_defined
 
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.context import Context
@@ -30,93 +29,6 @@ from ._utils import _check_error, _StreamHandle
 # gpu.host.device_context. Eventually, device_context_v2.mojo will be renamed to
 # replace this file.
 from .device_context_variant import DeviceBuffer, DeviceContext, DeviceFunction
-
-
-# TODO: Figure a way to resolve circular dependency between the gpu and runtime
-# packages in the corresponding CMakes and sub below from runtime.tracing
-fn _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
-    @parameter
-    if not is_defined["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]():
-        return None
-    return env_get_int["MODULAR_ASYNCRT_MAX_PROFILING_LEVEL"]()
-
-
-@value
-struct KernelProfilingInfoElement(CollectionElement):
-    """Struct to handle kernel profiling info for a single kernel.
-    Objects of this type form a list that belongs to the KernelProfilingInfo
-    object along with a pointer to it.
-
-    Supported operations include: initialization, printing all elements of a
-    list, clearing all elements of a list.
-
-    This struct can be extended with further information down the road (e.g.,
-    record host-to-device, device-to-host copies timing info).
-    """
-
-    var name: String
-    var time: Int
-
-    fn __init__(inout self, name: String, time: Int):
-        self.name = name
-        self.time = time
-
-    fn __init__(inout self, *, other: Self):
-        """Explicitly construct a deep copy of the provided value.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
-
-
-@value
-struct KernelProfilingInfo:
-    """Struct that incorporates a list of KernelProfilingInfoElement's and a
-    pointer to it.
-
-    This is passed to DeviceContext and through the pointer and list append
-    operation the list of KernelProfilingInfoElements is constructed and
-    operated upon.
-    """
-
-    # TODO: Make this parameterizable. KERN-636.
-    alias out_file = "kernel_profile_info.log"
-
-    var kernelProfilingList: List[KernelProfilingInfoElement]
-
-    fn __init__(inout self):
-        self.kernelProfilingList = List[KernelProfilingInfoElement]()
-
-    fn append(inout self, element: KernelProfilingInfoElement):
-        self.kernelProfilingList.append(element)
-
-    fn print(self):
-        for m in self.kernelProfilingList:
-            print(
-                "Function: ",
-                m[].name,
-                " Time (nsec): ",
-                m[].time,
-            )
-
-    fn write(self, path: Path = Self.out_file) raises:
-        var report = String("Function name, Time (nsec)\n")
-        for m in self.kernelProfilingList:
-            report += m[].name + ", " + str(m[].time) + "\n"
-
-        path.write_text(report)
-
-    fn clear(inout self):
-        self.kernelProfilingList.clear()
-
-    fn get_kernel_from_list(
-        self, name: String
-    ) -> OptionalReg[UnsafePointer[KernelProfilingInfoElement]]:
-        for i in reversed(range(len(self.kernelProfilingList))):
-            if self.kernelProfilingList[i].name == name:
-                return UnsafePointer.address_of(self.kernelProfilingList[i])
-        return None
 
 
 @value
@@ -276,13 +188,6 @@ struct DeviceContextV1:
     var cuda_stream: Stream
     var cuda_context: Context
     var cuda_instance: CudaInstance
-    var profiling_info_ptr: UnsafePointer[KernelProfilingInfo]
-    # Profiling is enabled only when the optional returned by the below call is
-    # not None and has a non-zero value (this will be True for a
-    # cmake-modular-profiling build).
-    alias profiling_enabled = _build_info_asyncrt_max_profiling_level().or_else(
-        -1
-    ) > 0
 
     # We only support CUDA architectures sm_80 and above.
     alias MIN_COMPUTE_CAPABILITY = 80
@@ -306,15 +211,6 @@ struct DeviceContextV1:
         self.cuda_instance = CudaInstance()
         self.cuda_context = Context(Device(self.cuda_instance, gpu_id))
         self.cuda_stream = Stream(self.cuda_context)
-
-        @parameter
-        if self.profiling_enabled:
-            self.profiling_info_ptr = UnsafePointer[KernelProfilingInfo].alloc(
-                1
-            )
-            self.profiling_info_ptr.init_pointee_move(KernelProfilingInfo())
-        else:
-            self.profiling_info_ptr = UnsafePointer[KernelProfilingInfo]()
 
     fn __enter__(owned self) -> Self:
         return self^
@@ -429,50 +325,16 @@ struct DeviceContextV1:
         ](),
     ) raises:
         self.cuda_context.set_current()
-
-        var kernel_time: Int
         var stream = self.cuda_stream
-
-        @parameter
-        if self.profiling_enabled:
-            var start = Event(self.cuda_context)
-            var end = Event(self.cuda_context)
-            kernel_time = 0
-            start.record(stream)
-            f.cuda_function._call_pack(
-                args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                stream=stream,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-            )
-            end.record(stream)
-            end.sync()
-            kernel_time = int(start.elapsed(end) * 1e6)
-            var list_item = self.profiling_info_ptr[].get_kernel_from_list(
-                f.fn_name
-            )
-            # If kernel (as found by name) exists in the list, add the timing
-            # info in the existing entry. Otherwise, create a new entry.
-            if list_item:
-                (list_item.value())[].time += kernel_time
-            else:
-                self.profiling_info_ptr[].append(
-                    KernelProfilingInfoElement(f.fn_name, kernel_time)
-                )
-        else:
-            f.cuda_function._call_pack(
-                args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                stream=stream,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-            )
+        f.cuda_function._call_pack(
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            stream=stream,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+        )
 
     fn execution_time[
         func: fn (Self) raises capturing [_] -> None
@@ -581,42 +443,6 @@ struct DeviceContextV1:
     fn synchronize(self) raises:
         self.cuda_context.set_current()
         self.cuda_stream.synchronize()
-
-    fn print_kernel_timing_info(self):
-        """Print profiling info associated with this DeviceContext."""
-
-        @parameter
-        if self.profiling_enabled:
-            self.profiling_info_ptr[].print()
-        else:
-            print(
-                "<print_kernel_timing_info>: Kernel profiling has not been"
-                " enabled."
-            )
-
-    fn dump_kernel_timing_info(self) raises:
-        """Prints out profiling info associated with this DeviceContext."""
-
-        @parameter
-        if self.profiling_enabled:
-            self.profiling_info_ptr[].write()
-        else:
-            print(
-                "<dump_kernel_timing_info>: Kernel profiling has not been"
-                " enabled."
-            )
-
-    fn clear_kernel_timing_info(self):
-        """Clear profiling info associated with this DeviceContext."""
-
-        @parameter
-        if self.profiling_enabled:
-            self.profiling_info_ptr[].clear()
-        else:
-            print(
-                "<clear_kernel_timing_info>: Kernel profiling has not been"
-                " enabled."
-            )
 
     fn is_compatible(self) raises:
         """Returns whether the current CUDA device is compatible with MAX."""
