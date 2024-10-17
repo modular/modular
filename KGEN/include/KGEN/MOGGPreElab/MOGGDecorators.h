@@ -172,6 +172,9 @@ static constexpr StringLiteral kMOGGOutputRankParameterName = "output_rank";
 static constexpr StringLiteral kMOGGElementFunction = "mogg.elementwise";
 static constexpr StringLiteral kMOGGViewKernel = "mogg.view_kernel";
 
+// The number of DPS (Destination Passing Style) output operands there are.
+static constexpr StringLiteral kMOGGNumDPSOutputs = "mogg.num_dps_outputs";
+
 // Annotations which indicate whether a fusion lambda is present. Needed for
 // accumulation-type ops like matmul and conv where only the last store should
 // be to the lambda.

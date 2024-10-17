@@ -41,23 +41,32 @@ static constexpr std::array<StringLiteral, 4> kMaxStaticTuple = {
 
 // Check if the decorator correspond to a function call:
 // eg @foo(arg)
+//
 // Also check that foo is marked with the attribute `expectedFuncAttr`.
 // Returns arg (or nullptr if invalid).
-static TypedAttr getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
-                                            StringRef expectedFuncAttr) {
+static std::optional<SmallVector<TypedAttr>>
+getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
+                           StringRef expectedFuncAttr,
+                           ArrayRef<size_t> indicesToFetch) {
   auto apply = dyn_cast<ParamOperatorAttr>(decorator);
-  if (!apply || apply.getNumOperands() != 2)
-    return nullptr;
+  if (!apply)
+    return std::nullopt;
 
   auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
   if (!sym)
-    return nullptr;
+    return std::nullopt;
 
   auto decoratorFunc = mod.lookupSymbol<LIT::FuncOp>(sym.getSymbol());
   if (!decoratorFunc || !decoratorFunc->hasAttr(expectedFuncAttr))
-    return nullptr;
+    return std::nullopt;
 
-  return apply.getOperand(1);
+  SmallVector<TypedAttr> answer;
+  for (size_t i : indicesToFetch) {
+    if (i >= apply.getNumOperands())
+      return std::nullopt;
+    answer.push_back(apply.getOperand(i));
+  }
+  return answer;
 }
 
 static void annotateTypes(LIT::FuncOp func) {
@@ -244,6 +253,9 @@ struct ExtensibilityAPIStructInfo {
   // Whether the operation is marked as a view kernel.
   bool isViewKernel = false;
 
+  // The number of Destination Passing Style result operands to expect.
+  IntegerAttr numDPSOperands{};
+
   // The name of the operation this struct is registered to
   StringAttr registrationName{};
 };
@@ -279,19 +291,29 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
       }
     }
 
-    TypedAttr registerOperand = getDecoratorLambdaArgument(
-        moduleOp, decorator, MOGG_INTRINSIC_REGISTER);
-    if (!registerOperand)
+    std::optional<SmallVector<TypedAttr>> registerOperand =
+        getDecoratorLambdaArgument(moduleOp, decorator, MOGG_INTRINSIC_REGISTER,
+                                   SmallVector<size_t>{1, 2});
+    if (!registerOperand.has_value())
       continue;
 
-    auto [_, nameAttr] =
-        cast<LIT::LITStructAttr>(registerOperand).getValues().front();
+    auto [_, nameAttr] = cast<LIT::LITStructAttr>(registerOperand.value()[0])
+                             .getValues()
+                             .front();
     auto name = dyn_cast<StringAttr>(nameAttr);
     assert(name);
     if (registrationInfo.registrationName) {
       return Error("Only one op can be registered per kernel struct");
     }
     registrationInfo.registrationName = name;
+
+    auto [__, numDPSOperandsAttr] =
+        cast<LIT::LITStructAttr>(registerOperand.value()[1])
+            .getValues()
+            .front();
+    auto numDPSOperands = dyn_cast<IntegerAttr>(numDPSOperandsAttr);
+    assert(numDPSOperands);
+    registrationInfo.numDPSOperands = numDPSOperands;
   }
 
   return registrationInfo.registrationName != nullptr;
@@ -360,12 +382,15 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
     func->setAttr(kMOGGElementFunction, UnitAttr::get(func->getContext()));
   if (registrationInfo.isViewKernel)
     func->setAttr(kMOGGViewKernel, UnitAttr::get(func->getContext()));
+  func->setDiscardableAttr(kMOGGNumDPSOutputs, registrationInfo.numDPSOperands);
 
   // Iterate over the decorators to find enable_fusion_for
   for (auto decorator : func.getDecorators()) {
-    TypedAttr enableFusionOperand = getDecoratorLambdaArgument(
-        moduleOp, decorator, MOGG_INTRINSIC_ENABLE_FUSION_FOR);
-    if (!enableFusionOperand)
+    std::optional<SmallVector<TypedAttr>> enableFusionOperand =
+        getDecoratorLambdaArgument(moduleOp, decorator,
+                                   MOGG_INTRINSIC_ENABLE_FUSION_FOR,
+                                   SmallVector<size_t>{1});
+    if (!enableFusionOperand.has_value())
       continue;
 
     ArrayAttr argSrcNamesAttr =
@@ -374,7 +399,7 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
       continue;
 
     SmallVector<Attribute> argIdxsAttrs;
-    auto nameArgs = cast<KGEN::VariadicAttr>(enableFusionOperand);
+    auto nameArgs = cast<KGEN::VariadicAttr>(enableFusionOperand.value()[0]);
     for (TypedAttr operandAttr : nameArgs.getValues()) {
       auto [_, nameAttr] =
           cast<LIT::LITStructAttr>(operandAttr).getValues().front();
@@ -436,7 +461,6 @@ public:
       // Is not extensibility struct, but maybe some regular mojo object
       if (!isExtensibilityStruct.takeValue())
         return WalkResult::advance();
-
       LIT::FuncOp executeOp, shapeOp, initializeOutputOp;
       for (auto &curOp : structDeclOp.getFields().front()) {
         auto func = dyn_cast<LIT::FuncOp>(curOp);

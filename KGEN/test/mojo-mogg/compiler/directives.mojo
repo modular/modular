@@ -14,7 +14,7 @@ fn __mogg_intrinsic_attr(intrin: StringLiteral):
 
 
 @__mogg_intrinsic_attr("mogg.intrinsic_register")
-fn register(name: StringLiteral):
+fn register(name: StringLiteral, num_dps_outputs: Int = 1):
     pass
 
 
