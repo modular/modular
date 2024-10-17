@@ -9,7 +9,7 @@ from os import abort
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 
-from utils import Formatter, Index
+from utils import Writer, Index
 from utils.variant import Variant
 
 
@@ -21,8 +21,8 @@ trait ElementDelegate:
 
     @staticmethod
     fn format_element_to[
-        T: CollectionElement
-    ](inout writer: Formatter, a: Variant[T]):
+        T: CollectionElement, W: Writer
+    ](inout writer: W, a: Variant[T]):
         pass
 
 
@@ -33,14 +33,14 @@ struct DefaultDelegate(ElementDelegate):
 
     @staticmethod
     fn format_element_to[
-        T: CollectionElement
-    ](inout writer: Formatter, a: Variant[T]):
-        writer.write_str("#")
+        T: CollectionElement, W: Writer
+    ](inout writer: W, a: Variant[T]):
+        writer.write("#")
 
 
 struct DynamicTupleBase[
     T: CollectionElement, D: ElementDelegate = DefaultDelegate
-](CollectionElement, Sized, Stringable, Formattable, EqualityComparable):
+](CollectionElement, Sized, Stringable, Writable, EqualityComparable):
     alias Element = Variant[T, Self]
 
     var _elements: List[Self.Element]
@@ -102,19 +102,19 @@ struct DynamicTupleBase[
         return len(self._elements)
 
     @staticmethod
-    fn format_element_to(inout writer: Formatter, v: Self.Element):
+    fn format_element_to[W: Writer, //](inout writer: W, v: Self.Element):
         if v.isa[T]():
             return D.format_element_to[T](writer, v[T])
         else:
-            writer.write_str("(")
+            writer.write("(")
             if v.isa[Self]():
                 var _elements = v[Self]._elements
                 for i in range(len(_elements)):
                     var e: Self.Element = _elements[i]
                     Self.format_element_to(writer, e)
                     if i < len(_elements) - 1:
-                        writer.write_str(", ")
-            writer.write_str(")")
+                        writer.write(", ")
+            writer.write(")")
 
     @staticmethod
     fn is_equal(a: Self.Element, b: Self.Element) -> Bool:
@@ -135,7 +135,7 @@ struct DynamicTupleBase[
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer, //](self, inout writer: W):
         Self.format_element_to(writer, self)
 
     @always_inline
@@ -331,7 +331,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer, //](self, inout writer: W):
         Self.BaseType.format_element_to(writer, self._value)
 
 

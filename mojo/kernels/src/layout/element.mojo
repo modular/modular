@@ -44,7 +44,7 @@ fn __get_offset[
 # Element is a wrapper around SIMD type, it extends the SIMD type to define
 # a vectorized load / store that is driven by the layout of the element.
 #
-struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
+struct Element[dtype: DType, layout: Layout](Stringable, Writable):
     alias element_data_type = SIMD[dtype, size = layout.size()]
 
     var element_data: Self.element_data_type
@@ -450,5 +450,5 @@ struct Element[dtype: DType, layout: Layout](Stringable, Formattable):
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         writer.write(self.element_data)

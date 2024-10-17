@@ -231,7 +231,7 @@ fn shiftl(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
 
 @value
 @register_passable("trivial")
-struct Swizzle(LayoutTrait, Stringable, Formattable):
+struct Swizzle(LayoutTrait, Stringable, Writable):
     var bits: Int
     var base: Int
     var shift: Int
@@ -281,7 +281,7 @@ struct Swizzle(LayoutTrait, Stringable, Formattable):
     fn has_shape() -> Bool:
         return False
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         writer.write("(")
         writer.write(str(self.bits))
         writer.write(",")

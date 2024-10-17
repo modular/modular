@@ -152,23 +152,23 @@ struct RuntimeTuple[
     ) -> RuntimeTuple[flatten(S), element_bitwidth=element_bitwidth] as result:
         return __type_of(result)(self.value)
 
-    fn format_to(self, inout f: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         @parameter
         if S.is_value():
-            self.get_int().format_to(f)
+            writer.write(self.get_int())
         else:
-            f.write_str("(")
+            writer.write("(")
 
             alias size = len(S)
 
             @parameter
             for i in range(size):
-                self[i].format_to(f)
+                self[i].write_to(writer)
 
                 @parameter
                 if i != size - 1:
-                    f.write_str(", ")
-            f.write_str(")")
+                    writer.write(", ")
+            writer.write(")")
 
     @always_inline
     fn __len__(self) -> Int:

@@ -167,7 +167,7 @@ struct LayoutTensor[
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
     __experimental_non_homogeneous_tile: Bool = False,
-](CollectionElement, CollectionElementNew, Stringable, Formattable):
+](CollectionElement, CollectionElementNew, Stringable, Writable):
     """This is a Tensor type that has a specified memory layout and rank. The
     following example demonstrate a LayoutTensor of float32 with a row major
     layout of shape (5, 4).
@@ -2641,7 +2641,7 @@ struct LayoutTensor[
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         """Format 2D tensor in 2D, otherwise print all values in column major
         coordinate order."""
 

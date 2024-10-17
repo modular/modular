@@ -7,10 +7,11 @@
 from collections import InlineArray
 from collections.string import _calc_initial_buffer_size_int32
 from os import abort
+import sys
 
 from buffer.dimlist import DimList
 
-from utils import Formattable, Formatter
+from utils import Writable, Writer
 
 from .dynamic_tuple import *
 from .int_tuple import (
@@ -126,7 +127,7 @@ struct Layout(
     LayoutTrait,
     Sized,
     Stringable,
-    Formattable,
+    Writable,
     CollectionElement,
     EqualityComparable,
 ):
@@ -241,7 +242,7 @@ struct Layout(
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         writer.write("(", self.shape, ":", self.stride, ")")
 
     fn __eq__(self, other: Layout) -> Bool:
@@ -547,18 +548,18 @@ fn print_layout(layout: Layout):
         abort("print_layout only supports 2D layouts")
 
     print(layout)
+    # make stdout mutable
+    var stdout = sys.stdout
+    format_layout(layout, stdout)
 
-    var writer = Formatter.stdout()
 
-    format_layout(layout, writer)
-
-
-fn format_layout(layout: Layout, inout writer: Formatter):
+fn format_layout[W: Writer](layout: Layout, inout writer: W):
     @parameter
     fn _write_divider(column_count: Int, cell_width: Int):
         for _ in range(column_count):
             writer.write("+")
-            writer._write_repeated("-".as_string_slice(), cell_width)
+            for _ in range(cell_width):
+                writer.write("-")
         writer.write("+\n")
 
     var idx_width = _calc_initial_buffer_size_int32(layout.cosize()) + 2
@@ -567,7 +568,7 @@ fn format_layout(layout: Layout, inout writer: Formatter):
     writer.write("    ")
     for n in range(layout[1].size()):
         writer.write("  ")
-        writer._write_int_padded(n, width=idx_width - 2)
+        n.write_padded(writer, width=idx_width - 2)
 
         var is_last_column = n + 1 == layout[1].size()
 
@@ -581,13 +582,13 @@ fn format_layout(layout: Layout, inout writer: Formatter):
         _write_divider(layout[1].size(), idx_width)
 
         # Print row label
-        writer._write_int_padded(m, width=2)
+        m.write_padded(writer, width=2)
         writer.write("  ")
 
         for n in range(layout[1].size()):
             writer.write("| ")
-            writer._write_int_padded(
-                int(layout(IntTuple(m, n))),
+            int(layout(IntTuple(m, n))).write_padded(
+                writer,
                 width=idx_width - 2,
             )
             writer.write(" ")

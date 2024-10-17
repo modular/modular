@@ -313,7 +313,7 @@ fn __to_static_tuple[*sizes: Int, rank: Int]() -> IndexList[rank]:
 struct ElementLayout[rank: Int, shape: IndexList[rank]](
     CollectionElement,
     Stringable,
-    Formattable,
+    Writable,
 ):
     var stride: IndexList[rank]
 
@@ -333,7 +333,7 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         writer.write(shape, ":", self.stride)
 
 

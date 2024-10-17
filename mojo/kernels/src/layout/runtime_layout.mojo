@@ -19,7 +19,7 @@ from .runtime_tuple import RuntimeTuple, crd2idx, product
 
 
 @register_passable("trivial")
-struct RuntimeLayout[layout: Layout](Stringable, Formattable):
+struct RuntimeLayout[layout: Layout](Stringable, Writable):
     var shape: RuntimeTuple[layout.shape]
     var stride: RuntimeTuple[layout.stride]
 
@@ -83,12 +83,12 @@ struct RuntimeLayout[layout: Layout](Stringable, Formattable):
         return RuntimeLayout[layout](shape, stride)
 
     @no_inline
-    fn format_to(self, inout f: Formatter):
-        f.write_str("(")
-        self.shape.format_to(f)
-        f.write_str(":")
-        self.stride.format_to(f)
-        f.write_str(")")
+    fn write_to[W: Writer](self, inout writer: W):
+        writer.write("(")
+        writer.write(self.shape)
+        writer.write(":")
+        writer.write(self.stride)
+        writer.write(")")
 
     fn sublayout[i: Int](self) -> RuntimeLayout[layout[i]]:
         return RuntimeLayout[layout[i]](

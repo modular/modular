@@ -9,7 +9,7 @@ from os import abort
 
 from layout.dynamic_tuple import *
 
-from utils import Formatter, Variant
+from utils import Writer, Variant
 
 # IntTuple definition
 # TODO: Consider a different approch https://linear.app/modularml/issue/KERN-638
@@ -30,8 +30,8 @@ struct IntDelegate(ElementDelegate):
     @always_inline
     @staticmethod
     fn format_element_to[
-        T: CollectionElement
-    ](inout writer: Formatter, a: Variant[T]):
+        T: CollectionElement, W: Writer
+    ](inout writer: W, a: Variant[T]):
         if a.isa[Int]():
             writer.write(a[Int])
         else:

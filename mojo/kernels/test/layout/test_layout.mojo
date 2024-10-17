@@ -445,15 +445,14 @@ fn test_format_layout_grid() raises:
     +----+----+----+----+
 """
 
-    var string = String()
-    var fmt = Formatter(string)
+    var output = String()
 
     format_layout(
         Layout(IntTuple(4, 4), IntTuple(1, 2)),
-        fmt,
+        output,
     )
 
-    assert_equal(string, expected)
+    assert_equal(output, expected)
 
 
 # CHECK-LABEL: test_zipped_divide
