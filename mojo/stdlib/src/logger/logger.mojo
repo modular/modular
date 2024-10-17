@@ -8,8 +8,6 @@ import sys
 from os import abort
 from sys.param_env import env_get_string
 
-from utils import Formatter
-
 # ===----------------------------------------------------------------------===#
 # DEFAULT_LEVEL
 # ===----------------------------------------------------------------------===#
@@ -75,19 +73,19 @@ struct Level:
             return Self.CRITICAL
         return Self.NOTSET
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         if self is Self.NOTSET:
-            writer.write_str("NOTSET")
+            writer.write("NOTSET")
         elif self is Self.DEBUG:
-            writer.write_str("DEBUG")
+            writer.write("DEBUG")
         elif self is Self.INFO:
-            writer.write_str("INFO")
+            writer.write("INFO")
         elif self is Self.WARNING:
-            writer.write_str("WARNING")
+            writer.write("WARNING")
         elif self is Self.ERROR:
-            writer.write_str("ERROR")
+            writer.write("ERROR")
         elif self is Self.CRITICAL:
-            writer.write_str("CRITICAL")
+            writer.write("CRITICAL")
 
     @no_inline
     fn __str__(self) -> String:
@@ -116,19 +114,19 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
             return False
         return level > target_level
 
-    fn debug[*Ts: Formattable](self, *values: *Ts):
+    fn debug[*Ts: Writable](self, *values: *Ts):
         alias target_level = Level.DEBUG
 
         @parameter
         if Self._is_active[target_level]():
             return
 
-        var writer = Formatter(fd=self._fd)
+        var writer = self._fd
 
         writer.write(str(target_level), "::: ")
 
         @parameter
-        fn print_with_separator[i: Int, T: Formattable](value: T):
+        fn print_with_separator[i: Int, T: Writable](value: T):
             writer.write(value)
 
             @parameter
@@ -139,19 +137,19 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         writer.write("\n")
 
-    fn info[*Ts: Formattable](self, *values: *Ts):
+    fn info[*Ts: Writable](self, *values: *Ts):
         alias target_level = Level.INFO
 
         @parameter
         if Self._is_active[target_level]():
             return
 
-        var writer = Formatter(fd=self._fd)
+        var writer = self._fd
 
         writer.write(str(target_level), "::: ")
 
         @parameter
-        fn print_with_separator[i: Int, T: Formattable](value: T):
+        fn print_with_separator[i: Int, T: Writable](value: T):
             writer.write(value)
 
             @parameter
@@ -162,19 +160,19 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         writer.write("\n")
 
-    fn warning[*Ts: Formattable](self, *values: *Ts):
+    fn warning[*Ts: Writable](self, *values: *Ts):
         alias target_level = Level.WARNING
 
         @parameter
         if Self._is_active[target_level]():
             return
 
-        var writer = Formatter(fd=self._fd)
+        var writer = self._fd
 
         writer.write(str(target_level), "::: ")
 
         @parameter
-        fn print_with_separator[i: Int, T: Formattable](value: T):
+        fn print_with_separator[i: Int, T: Writable](value: T):
             writer.write(value)
 
             @parameter
@@ -185,19 +183,19 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         writer.write("\n")
 
-    fn error[*Ts: Formattable](self, *values: *Ts):
+    fn error[*Ts: Writable](self, *values: *Ts):
         alias target_level = Level.CRITICAL
 
         @parameter
         if Self._is_active[target_level]():
             return
 
-        var writer = Formatter(fd=self._fd)
+        var writer = self._fd
 
         writer.write(str(target_level), "::: ")
 
         @parameter
-        fn print_with_separator[i: Int, T: Formattable](value: T):
+        fn print_with_separator[i: Int, T: Writable](value: T):
             writer.write(value)
 
             @parameter
@@ -208,19 +206,19 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
 
         writer.write("\n")
 
-    fn critical[*Ts: Formattable](self, *values: *Ts):
+    fn critical[*Ts: Writable](self, *values: *Ts):
         alias target_level = Level.CRITICAL
 
         @parameter
         if Self._is_active[target_level]():
             return
 
-        var writer = Formatter(fd=self._fd)
+        var writer = self._fd
 
         writer.write(str(target_level), "::: ")
 
         @parameter
-        fn print_with_separator[i: Int, T: Formattable](value: T):
+        fn print_with_separator[i: Int, T: Writable](value: T):
             writer.write(value)
 
             @parameter
@@ -237,15 +235,15 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
     # forwarding variadics does not work with mojo atm so we are forced to
     # copy/paste code :(
     # fn _log[
-    #     target_level: Level, *Ts: Formattable
-    # ](self, *values: VariadicPack[_, Formattable, Ts]):
+    #     target_level: Level, *Ts: Writable
+    # ](self, *values: VariadicPack[_, Writable, Ts]):
     #     @parameter
     #     fn get_length() -> Int:
     #         return len(values)
 
     #     alias variadic_length = get_length()
 
-    #     var writer = Formatter(fd=sys.stdout)
+    #     var writer = sys.stdout
 
     #     writer.write(target_level, "::: ")
 
