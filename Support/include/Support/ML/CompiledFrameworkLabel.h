@@ -40,8 +40,6 @@ public:
   enum Cases {
     /// Framework is unknown.
     kUnknown,
-    /// A compiled TensorFlow model.
-    kTensorFlowModel,
     /// A compiled Faux test case.
     kFauxModel,
     // A compiled ONNX model.
