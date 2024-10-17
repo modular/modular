@@ -12,8 +12,8 @@ from runtime.asyncrt import run
 
 
 @no_inline
-fn takeClosure(owned formatter: Coroutine[Int]) -> Int:
-    return run(formatter^)
+fn takeClosure(owned writer: Coroutine[Int]) -> Int:
+    return run(writer^)
 
 
 @no_inline
@@ -22,10 +22,10 @@ fn makeClosure(x: Int) -> Coroutine[Int, __origin_of()]:
 
     @__copy_capture(z)
     @parameter
-    async fn formatter() -> Int:
+    async fn writer() -> Int:
         return z
 
-    return formatter()
+    return writer()
 
 
 fn main():
@@ -33,8 +33,8 @@ fn main():
         var x = atol(String(argv()[1]))
         var y = atol(String(argv()[2]))
 
-        var formatter = makeClosure(x)
-        var w = takeClosure(formatter^)
+        var writer = makeClosure(x)
+        var w = takeClosure(writer^)
         # CHECK: 4
         print(w)
     except e:

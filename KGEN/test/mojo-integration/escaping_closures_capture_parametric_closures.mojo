@@ -43,18 +43,18 @@ fn use(lhs: Int, rhs: Int) -> Int:
 
 
 @no_inline
-fn takeClosure(formatter: fn (v: Int) escaping -> Int, value: Int):
-    _ = formatter(value)
+fn takeClosure(writer: fn (v: Int) escaping -> Int, value: Int):
+    _ = writer(value)
 
 
 @no_inline
 fn makeEscapingClosure[
     parametricClosure: fn[x: Int] (v: Int) capturing -> Int
 ](x: Int) -> fn (v: Int) escaping -> Int:
-    fn formatter(v: Int) -> Int:
+    fn writer(v: Int) -> Int:
         return parametricClosure[__mlir_attr.`2 : index`](use(x, v))
 
-    return formatter
+    return writer
 
 
 @export
@@ -65,14 +65,14 @@ fn top(a: Int, b: Int):
     @no_inline
     @__copy_capture(x)
     @parameter
-    fn formatter(v: Int) -> Int:
+    fn writer(v: Int) -> Int:
         return use(x, v)
 
     @no_inline
     @__copy_capture(y)
     @parameter
-    fn formatter2[x: Int](v: Int) -> Int:
-        return use(y, formatter(v))
+    fn writer2[x: Int](v: Int) -> Int:
+        return use(y, writer(v))
 
-    var f = makeEscapingClosure[formatter2](y)
+    var f = makeEscapingClosure[writer2](y)
     takeClosure(f, y)
