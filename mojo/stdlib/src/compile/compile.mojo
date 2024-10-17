@@ -14,7 +14,7 @@ from sys.info import _current_target
 
 from memory import UnsafePointer
 
-from utils import Formatter
+from utils import Writer
 
 from .reflection import get_linkage_name
 
@@ -48,7 +48,7 @@ struct Info:
     var is_error: Bool
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         return writer.write(self.asm)
 
     fn __str__(self) -> String:
