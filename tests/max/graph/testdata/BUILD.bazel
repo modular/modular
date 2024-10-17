@@ -20,5 +20,6 @@ modular_py_binary(
         requirement("gguf"),
         requirement("click"),
         requirement("numpy"),
+        requirement("safetensors"),
     ],
 )

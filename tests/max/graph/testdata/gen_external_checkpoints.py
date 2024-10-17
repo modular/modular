@@ -13,6 +13,7 @@ from pathlib import Path
 
 import click
 import numpy as np
+import safetensors.torch as safe_torch
 import torch
 from gguf import GGMLQuantizationType, GGUFReader, GGUFWriter
 
@@ -70,11 +71,24 @@ def write_pytorch(filename):
     torch.save(data, filename)
 
 
+def write_safetensors(filename):
+    data = {
+        "a": torch.arange(10, dtype=torch.int32).reshape(5, 2),
+        "b": torch.full((1, 2, 3), 3.5, dtype=torch.float64),
+        "c": torch.tensor(5432.1, dtype=torch.float32),
+        "fancy/name": torch.tensor([1, 2, 3], dtype=torch.int64),
+        "bf16": torch.tensor([123, 45], dtype=torch.bfloat16),
+    }
+
+    safe_torch.save_file(data, filename)
+
+
 @click.command()
 @click.argument("output_directory", type=Path)
 def main(output_directory):
     write_pytorch(output_directory / "example_data.pt")
     write_gguf(output_directory / "example_data.gguf")
+    write_safetensors(output_directory / "example_data.safetensors")
 
 
 if __name__ == "__main__":

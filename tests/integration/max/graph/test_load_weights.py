@@ -6,9 +6,10 @@
 """Test the Python weight loading interface."""
 
 import numpy as np
+import torch
 from max.dtype import DType
 from max.graph import Graph, Weight
-from max.graph.weights import GGUFWeights, PytorchWeights
+from max.graph.weights import GGUFWeights, PytorchWeights, SafetensorWeights
 
 
 def test_weight(session) -> None:
@@ -56,7 +57,7 @@ def _test_data():
         "c": np.array(5432.1, dtype=np.float32),
         "fancy/name": np.array([1, 2, 3], dtype=np.int64),
         # This is actually saved as bf16 in gen_external_checkpoints.
-        "bf16": np.array([123, 45], dtype=np.float16),
+        "bf16": torch.tensor([123, 45], dtype=torch.bfloat16),
     }
 
 
@@ -73,15 +74,14 @@ def test_load_pytorch(session, graph_testdata) -> None:
         compiled = session.load(
             graph, weights_registry=weights.allocated_weights
         )
-        output = compiled.execute_legacy()
+        output = compiled.execute()
 
         assert len(expected) == len(output)
         for n, expected in enumerate(expected):
-            # TODO(MSDK-732): Skip bfloat16 weight for now, since np doesn't
-            # support it.
             if flat_keys[n] == "bf16":
-                continue
-            np.testing.assert_array_equal(expected, output[f"output{n}"])
+                torch.equal(expected, torch.from_dlpack(output[n]))
+            else:
+                np.testing.assert_array_equal(expected, output[n].to_numpy())
 
 
 def test_load_gguf(session, graph_testdata) -> None:
@@ -101,12 +101,33 @@ def test_load_gguf(session, graph_testdata) -> None:
         compiled = session.load(
             graph, weights_registry=weights.allocated_weights
         )
-        output = compiled.execute_legacy()
+        output = compiled.execute()
 
         assert len(expected) == len(output)
         for n, expected in enumerate(expected):
-            # TODO(MSDK-732): Skip bfloat16 weight for now, since np doesn't
-            # support it.
             if flat_keys[n] == "bf16":
-                continue
-            np.testing.assert_array_equal(expected, output[f"output{n}"])
+                torch.equal(expected, torch.from_dlpack(output[n]))
+            else:
+                np.testing.assert_array_equal(expected, output[n].to_numpy())
+
+
+def test_load_safetensors(session, graph_testdata) -> None:
+    """Tests adding an external weight to a graph."""
+    expected_dict = _test_data()
+    flat_keys = list(expected_dict.keys())
+    expected = [expected_dict[k] for k in flat_keys]
+
+    weights = SafetensorWeights(graph_testdata / "example_data.safetensors")
+    with Graph("graph_with_pt_weights") as graph:
+        loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
+        graph.output(*[loaded[k] for k in flat_keys])
+        compiled = session.load(
+            graph, weights_registry=weights.allocated_weights
+        )
+        output = compiled.execute()
+        assert len(expected) == len(output)
+        for n, expected in enumerate(expected):
+            if flat_keys[n] == "bf16":
+                torch.equal(expected, torch.from_dlpack(output[n]))
+            else:
+                np.testing.assert_array_equal(expected, output[n].to_numpy())
