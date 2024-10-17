@@ -721,11 +721,12 @@ fn multistage_gemm_kernel[
 
                 var m = int((thread_offset + dst_idx) // N)
                 var n = int((thread_offset + dst_idx) % N)
+                alias alignment = alignof[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
-                    epilogue(
+                    epilogue[alignment=alignment](
                         (m, n),
                         accum_smem_warp_tile.ptr.load[
-                            width=simd_size, alignment=src_align
+                            width=simd_size, alignment=alignment
                         ](swizzled_idx).cast[c_type](),
                     )
         else:
@@ -777,13 +778,14 @@ fn multistage_gemm_kernel[
                 else:
                     dst_idx = c_gmem_frag.runtime_layout(i)
 
+                alias alignment = alignof[SIMD[c_type, 2]]()
                 var m = int((thread_offset + dst_idx) // N)
                 var n = int((thread_offset + dst_idx) % N)
                 if m < M and n < N:
                     var vec = c_reg_frag.ptr.offset(src_idx).load[
                         width=2, alignment = alignof[SIMD[c_type, 2]]()
                     ]()
-                    epilogue((m, n), vec)
+                    epilogue[alignment=alignment]((m, n), vec)
 
         else:
             copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](

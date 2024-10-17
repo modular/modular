@@ -462,12 +462,16 @@ fn split_k_reduce[
                 Index(k, c_coord[0], c_coord[1])
             )
 
+        alias alignment = alignof[SIMD[c_type, simd_width]]()
+
         @parameter
         if elementwise_lambda_fn:
             alias epilogue = elementwise_lambda_fn.value()
-            epilogue(rebind[IndexList[2]](c_coord), vec.cast[c_type]())
+            epilogue[alignment=alignment](
+                rebind[IndexList[2]](c_coord), vec.cast[c_type]()
+            )
         else:
-            c.store[width=simd_width](
+            c.store[width=simd_width, alignment=alignment](
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
 
