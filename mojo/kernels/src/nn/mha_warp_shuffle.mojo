@@ -44,14 +44,15 @@ from gpu import (
     GridDim,
 )
 from layout.tensor_core import get_accum_type
+from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
 
 
 fn mha_decoding_cpu_seq[
-    mask_rank: Int,
     q_type: DType,
     k_type: DType,
     v_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
     *,
     head_size: Int,
     num_heads: Int,
@@ -67,6 +68,7 @@ fn mha_decoding_cpu_seq[
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     num_keys: Int,
+    mask: mask_t,
     head_idx: Int,
     batch_idx: Int,
 ):
@@ -114,7 +116,10 @@ fn mha_decoding_cpu_seq[
                 k[0, 0, 0, d][0].cast[accum_type]()
                 * qi[0, 0, 0, d][0].cast[accum_type]()
             )
-        logits_i = logits_i * scale.cast[logits_i.type]()
+        logits_i = mask.mask(
+            Index(batch_idx, head_idx, num_keys - 1, key_idx),
+            logits_i * scale.cast[logits_i.type](),
+        )
         logits[key_idx] = logits_i
         qk_max = max(logits_i, qk_max)
 
@@ -143,11 +148,11 @@ fn mha_decoding_cpu_seq[
 
 
 fn mha_decoding_cpu[
-    mask_rank: Int,
     q_type: DType,
     k_type: DType,
     v_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
     *,
     head_size: Int,
     num_heads: Int,
@@ -163,12 +168,13 @@ fn mha_decoding_cpu[
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     num_keys: Int,
+    mask: mask_t,
     batch_size: Int,
 ):
     for head_idx in range(num_heads):
         for batch_idx in range(batch_size):
             mha_decoding_cpu_seq[
-                mask_rank, head_size=head_size, num_heads=num_heads, group=group
+                head_size=head_size, num_heads=num_heads, group=group
             ](
                 q_ptr,
                 k_ptr,
@@ -176,6 +182,7 @@ fn mha_decoding_cpu[
                 output_ptr,
                 scale,
                 num_keys,
+                mask,
                 head_idx,
                 batch_idx,
             )
@@ -225,12 +232,12 @@ fn inner_product[
     return out
 
 
-fn mha_decoding_gpu_seq[
-    mask_rank: Int,
+fn mha_decoding_single_batch_warp_shuffle[
     q_type: DType,
     k_type: DType,
     v_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
     head_size: Int,
     num_heads: Int,
     group: Int,
@@ -249,6 +256,7 @@ fn mha_decoding_gpu_seq[
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     num_keys: Int,
+    mask: mask_t,
 ):
     alias accum_type = get_accum_type[q_type]()
     alias k_simdwidth = simdwidthof[k_type]()
@@ -267,11 +275,7 @@ fn mha_decoding_gpu_seq[
 
     var warp_idx = ThreadIdx.x() // WARP_SIZE
 
-    # check that block_size == 1
-    debug_assert(GridDim.y() == 1)
-    # var batch_idx = BlockIdx.y()
-
-    var head_idx = BlockIdx.z()
+    var head_idx = BlockIdx.y()
     var kv_head_idx = head_idx // group
 
     # logits shared memory, used to store intermediate calculations
@@ -362,6 +366,13 @@ fn mha_decoding_gpu_seq[
         qk = (
             lane_group_sum[nthreads=thread_group_size](qk)
             * scale.cast[qk.type]()
+        )
+
+        qk = mask.mask(
+            Index(
+                int(BlockIdx.z()), int(BlockIdx.y()), num_keys - 1, int(key_idx)
+            ),
+            qk,
         )
 
         # 0th thread of the thread group writes to the shared memory and also
@@ -546,12 +557,12 @@ fn mha_decoding_gpu_seq[
             )
 
 
-fn mha_decoding_gpu[
-    mask_rank: Int,
+fn mha_decoding_warp_shuffle[
     q_type: DType,
     k_type: DType,
     v_type: DType,
     output_type: DType,
+    mask_t: MHAMask,
     *,
     head_size: Int,
     num_heads: Int,
@@ -568,17 +579,18 @@ fn mha_decoding_gpu[
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     num_keys: Int,
+    mask: mask_t,
     batch_size: Int,
 ) raises:
     alias num_threads = 128
     alias block_size = 32
     var func = ctx.compile_function[
-        mha_decoding_gpu_seq[
-            mask_rank,
+        mha_decoding_single_batch_warp_shuffle[
             q_type,
             k_type,
             v_type,
             output_type,
+            mask_t,
             head_size,
             num_heads,
             group,
@@ -604,7 +616,8 @@ fn mha_decoding_gpu[
         output_ptr,
         scale,
         num_keys,
-        grid_dim=(1, batch_size, num_heads),
+        mask,
+        grid_dim=(1, num_heads, batch_size),
         block_dim=num_threads,
         shared_mem_bytes=shared_mem_bytes,
     )

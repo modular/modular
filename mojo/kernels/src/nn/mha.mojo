@@ -53,6 +53,7 @@ from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
 from .softmax import _online_softmax_iter_for_mma_output, _softmax_gpu, softmax
+from .mha_warp_shuffle import mha_decoding_single_batch_warp_shuffle
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
@@ -455,6 +456,7 @@ fn flash_attention[
                         num_pipeline_stages=4,
                         group=group,
                         use_mask_tensor=add_attn_mask,
+                        use_tensor_core=use_tensor_core,
                     ]
                 ](
                     # TODO: Avoid hard coding shared memory needed.
@@ -700,6 +702,7 @@ fn flash_attention[
                         num_pipeline_stages=4,
                         group=group,
                         use_mask_tensor=add_attn_mask,
+                        use_tensor_core=use_tensor_core,
                     ]
                 ](
                     # TODO: Avoid hard coding shared memory needed.
@@ -1550,6 +1553,7 @@ fn mha_decoding[
     num_pipeline_stages: UInt,
     group: UInt = 1,
     use_mask_tensor: Bool = True,
+    use_tensor_core: Bool = True,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: cache_t,
@@ -1586,30 +1590,49 @@ fn mha_decoding[
     var k_ptr = k_nd_buffer.data
     var v_ptr = v_nd_buffer.data
 
-    mha_decoding_single_batch[
-        mask_rank,
-        BM=BM,
-        BN=BN,
-        BK=BK,
-        WM=WM,
-        WN=WN,
-        depth=depth,
-        num_heads=num_heads,
-        num_threads=num_threads,
-        num_pipeline_stages=num_pipeline_stages,
-        group=group,
-        use_mask_tensor=use_mask_tensor,
-    ](
-        q_ptr.offset(q_batch_offset),
-        k_ptr,
-        v_ptr,
-        mask_ptr.offset(mask_batch_offset),
-        output_ptr.offset(q_batch_offset),
-        scale,
-        num_keys,
-        max_cache_valid_length,
-        mask,
-    )
+    @parameter
+    if use_tensor_core:
+        mha_decoding_single_batch[
+            mask_rank,
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            depth=depth,
+            num_heads=num_heads,
+            num_threads=num_threads,
+            num_pipeline_stages=num_pipeline_stages,
+            group=group,
+            use_mask_tensor=use_mask_tensor,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k_ptr,
+            v_ptr,
+            mask_ptr.offset(mask_batch_offset),
+            output_ptr.offset(q_batch_offset),
+            scale,
+            num_keys,
+            max_cache_valid_length,
+            mask,
+        )
+    else:
+        mha_decoding_single_batch_warp_shuffle[
+            head_size=depth,
+            num_heads=num_heads,
+            group=group,
+            num_threads=num_threads,
+            # TODO: select block_size based on num_keys, 32 is better for large num_keys ~ 512
+            block_size=16,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k_ptr,
+            v_ptr,
+            output_ptr.offset(q_batch_offset),
+            scale,
+            num_keys,
+            mask,
+        )
 
 
 @__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
@@ -1632,6 +1655,7 @@ fn mha_decoding[
     num_pipeline_stages: UInt,
     group: UInt = 1,
     use_mask_tensor: Bool = True,
+    use_tensor_core: Bool = True,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_ptr: UnsafePointer[Scalar[k_type]],
@@ -1650,30 +1674,49 @@ fn mha_decoding[
         num_heads if mask_rank == 4 else 1
     )
 
-    mha_decoding_single_batch[
-        mask_rank,
-        BM=BM,
-        BN=BN,
-        BK=BK,
-        WM=WM,
-        WN=WN,
-        depth=depth,
-        num_heads=num_heads,
-        num_threads=num_threads,
-        num_pipeline_stages=num_pipeline_stages,
-        group=group,
-        use_mask_tensor=use_mask_tensor,
-    ](
-        q_ptr.offset(q_batch_offset),
-        k_ptr.offset(kv_batch_offset),
-        v_ptr.offset(kv_batch_offset),
-        mask_ptr.offset(mask_batch_offset),
-        output_ptr.offset(q_batch_offset),
-        scale,
-        num_keys,
-        num_keys,
-        mask,
-    )
+    @parameter
+    if use_tensor_core:
+        mha_decoding_single_batch[
+            mask_rank,
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            depth=depth,
+            num_heads=num_heads,
+            num_threads=num_threads,
+            num_pipeline_stages=num_pipeline_stages,
+            group=group,
+            use_mask_tensor=use_mask_tensor,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k_ptr.offset(kv_batch_offset),
+            v_ptr.offset(kv_batch_offset),
+            mask_ptr.offset(mask_batch_offset),
+            output_ptr.offset(q_batch_offset),
+            scale,
+            num_keys,
+            num_keys,
+            mask,
+        )
+    else:
+        mha_decoding_single_batch_warp_shuffle[
+            head_size=depth,
+            num_heads=num_heads,
+            group=group,
+            num_threads=num_threads,
+            # TODO: select block_size based on num_keys, 32 is better for large num_keys ~ 512
+            block_size=16,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k_ptr.offset(kv_batch_offset),
+            v_ptr.offset(kv_batch_offset),
+            output_ptr.offset(q_batch_offset),
+            scale,
+            num_keys,
+            mask,
+        )
 
 
 @always_inline
