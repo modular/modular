@@ -5,7 +5,7 @@
 // RUN: kgen-opt %s --mogg-annotate | FileCheck %s
 
 // Hard coded registration function, has special `mogg.intrinsic_register`
-lit.func @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>) -> !kgen.none attributes {mogg.intrinsic_register, sourceName = "register", specialFnKind = 0 : i8} {
+lit.func @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, %num_dps_outputs: !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none attributes {mogg.intrinsic_register, sourceName = "register", specialFnKind = 0 : i8} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -13,7 +13,7 @@ lit.func @"register(::StringLiteral)"(%name: !lit.struct<@stdlib::@builtin::@str
 // A basic case with an "execute" and "shape" function that take only tensors
 // CHECK-LABEL: lit.struct.decl @test_execute_and_shape
 lit.struct.decl @test_execute_and_shape(trait<@stdlib::@builtin::@anytype::@AnyType>)
-  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"})> {
+  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, "num_dps_outputs": !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"}, {1})> {
 
   // CHECK: lit.func export @execute
   // CHECK: mogg.arg_params = [unit, [#kgen.param.decl.ref<"dtype"> : !lit.struct<@DType>], unit]
@@ -45,7 +45,7 @@ lit.struct.decl @test_execute_and_shape(trait<@stdlib::@builtin::@anytype::@AnyT
 
 // CHECK-LABEL: lit.struct.decl @test_initialize_output
 lit.struct.decl @test_initialize_output(trait<@stdlib::@builtin::@anytype::@AnyType>)
-  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"})> {
+  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, "num_dps_outputs": !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"}, {1})> {
 
   // CHECK: lit.func export @initialize_output
   // CHECK: mogg.arg_params = [unit, [#kgen.param.decl.ref<"dtype"> : !lit.struct<@DType>], unit]
@@ -66,8 +66,7 @@ lit.struct.decl @test_initialize_output(trait<@stdlib::@builtin::@anytype::@AnyT
 // CHECK-LABEL: lit.struct.decl @annotate_synchronous
 !Bool = !lit.struct<@stdlib::@builtin::@bool::@Bool>
 lit.struct.decl @annotate_synchronous(trait<@stdlib::@builtin::@anytype::@AnyType>)
-  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"})> {
-
+  decorators <:none apply(:!lit.signature<("name": !lit.struct<@stdlib::@builtin::@string_literal::@StringLiteral>, "num_dps_outputs": !lit.struct<@stdlib::@builtin::@int::@Int> = {1}) -> !kgen.none> @"register(::StringLiteral)", {:string "imposter_add"}, {1})> {
   // CHECK: lit.func export @execute
   // CHECK: mogg.synchronous = #kgen<param.decl synchronous : !Bool>
   lit.func export @"execute"<synchronous: !Bool>(%z: !lit.struct<@test1>, %x: !lit.struct<@test2<:@DType *"dtype">>, %y: !lit.struct<@test3>) -> !kgen.none
