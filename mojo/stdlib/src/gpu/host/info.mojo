@@ -68,7 +68,7 @@ alias A100 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    flops=Flops(fp16=312, i8=624, i4=1248),
+    flops=Flops(fp16=312, tf32=156, fp64=19.5, i8=624, i4=1248),
 )
 
 # ===----------------------------------------------------------------------===#
@@ -120,7 +120,7 @@ alias A10 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    flops=Flops(fp16=125, i8=250, i4=500),
+    flops=Flops(fp16=125, tf32=62.5, i8=250, i4=500),
 )
 
 # ===----------------------------------------------------------------------===#
@@ -223,7 +223,7 @@ alias H100 = Info(
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    flops=Flops(fp16=1979, i8=3958, i4=7916),
+    flops=Flops(fp8=3958, fp16=1979, tf32=989, fp64=67, i8=3958, i4=7916),
 )
 
 # ===----------------------------------------------------------------------===#
@@ -279,13 +279,39 @@ alias MI300X = Info(
 @value
 @register_passable
 struct Flops:
-    var fp16: Int
-    var i8: Int
-    var i4: Int
+    var fp8: Float64
+    var fp16: Float64
+    var tf32: Float64
+    var fp64: Float64
+    var i8: Float64
+    var i4: Float64
+
+    fn __init__(
+        inout self,
+        *,
+        fp16: Float64,
+        i8: Float64,
+        i4: Float64,
+        fp8: Float64 = 0,
+        tf32: Float64 = 0,
+        fp64: Float64 = 0,
+    ):
+        self.fp8 = fp8
+        self.fp16 = fp16
+        self.tf32 = tf32
+        self.fp64 = fp64
+        self.i8 = i8
+        self.i4 = i4
 
     @no_inline
     fn format_to(self, inout writer: Formatter):
+        if self.fp8:
+            writer.write("flops_fp8: ", self.fp8, "\n")
         writer.write("flops_fp16: ", self.fp16, "\n")
+        if self.tf32:
+            writer.write("flops_tf32: ", self.tf32, "\n")
+        if self.fp64:
+            writer.write("flops_fp64: ", self.fp64, "\n")
         writer.write("flops_i8: ", self.i8, "\n")
         writer.write("flops_i4: ", self.i4)
 
