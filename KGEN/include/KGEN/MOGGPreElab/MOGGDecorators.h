@@ -92,6 +92,10 @@ constexpr StringLiteral REGISTER_KERNEL = "mogg_register";
 constexpr StringLiteral REGISTER_OVERRIDE = "mogg_register_override";
 constexpr StringLiteral REGISTER_PUBLIC_OVERRIDE = "op";
 
+// Decorator to indicate opaque use and we should generate conformances
+// TODO(GRA-1145): Remove the need for this.
+constexpr StringLiteral USES_OPAQUE = "uses_opaque";
+
 constexpr StringLiteral REGISTER_SHAPE_FUNC = "mogg_register_shape_func";
 
 // Allow new attrs to be added without needing explicit decorator.
