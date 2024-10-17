@@ -100,7 +100,6 @@ def run_llama3(llama3: Llama3, prompts=PROMPTS, num_steps=NUM_STEPS):
     results = []
     # Evaluate prompts individually (not batched).
     for prompt in prompts:
-        asyncio.run(llama3.reset_cache())
         context = asyncio.run(llama3.new_context(prompt))
         curr_req_id = str(uuid.uuid4())
         values: dict[str, list[Any]] = {curr_req_id: []}
