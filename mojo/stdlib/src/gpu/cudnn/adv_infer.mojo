@@ -223,7 +223,7 @@ struct cudnnForwardMode_t:
         return self != other
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         if self is Self.CUDNN_FWD_MODE_INFERENCE:
             return writer.write("CUDNN_FWD_MODE_INFERENCE")
         if self is Self.CUDNN_FWD_MODE_TRAINING:
@@ -785,7 +785,7 @@ struct cudnnSeqDataAxis_t:
         return self != other
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         if self is Self.CUDNN_SEQDATA_TIME_DIM:
             return writer.write("CUDNN_SEQDATA_TIME_DIM")
         if self is Self.CUDNN_SEQDATA_BATCH_DIM:

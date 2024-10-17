@@ -304,10 +304,10 @@ struct Flops:
         self.i4 = i4
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         if self.fp8:
             writer.write("flops_fp8: ", self.fp8, "\n")
-        writer.write("flops_fp16: ", self.fp16, "\n")
+            writer.write("flops_fp16: ", self.fp16, "\n")
         if self.tf32:
             writer.write("flops_tf32: ", self.tf32, "\n")
         if self.fp64:
@@ -490,7 +490,7 @@ struct Info:
         return self != other
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         writer.write("name: ", self.name, "\n")
         writer.write("arch_name: ", self.arch_name, "\n")
         writer.write("compute: ", self.compute, "\n")

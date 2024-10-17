@@ -513,21 +513,21 @@ struct MemLocationType:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
-        writer.write_str("(MemLocationType = ")
+    fn write_to[W: Writer](self, inout writer: W):
+        writer.write("(MemLocationType = ")
         if self == Self.INVALID:
-            writer.write_str("INVALID")
+            writer.write("INVALID")
         elif self == Self.DEVICE:
-            writer.write_str("DEVICE")
+            writer.write("DEVICE")
         elif self == Self.HOST:
-            writer.write_str("HOST")
+            writer.write("HOST")
         elif self == Self.HOST_NUMA:
-            writer.write_str("HOST_NUMA")
+            writer.write("HOST_NUMA")
         elif self == Self.HOST_NUMA_CURRENT:
-            writer.write_str("HOST_NUMA_CURRENT")
+            writer.write("HOST_NUMA_CURRENT")
         else:
-            writer.write_str("MAX")
-        writer.write_str(")")
+            writer.write("MAX")
+        writer.write(")")
 
 
 @value
@@ -550,15 +550,15 @@ struct MemAllocationType:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
-        writer.write_str("(MemAllocationType = ")
+    fn write_to[W: Writer](self, inout writer: W):
+        writer.write("(MemAllocationType = ")
         if self == Self.INVALID:
-            writer.write_str("INVALID")
+            writer.write("INVALID")
         elif self == Self.PINNED:
-            writer.write_str("PINNED")
+            writer.write("PINNED")
         else:
-            writer.write_str("MAX")
-        writer.write_str(")")
+            writer.write("MAX")
+        writer.write(")")
 
 
 @value
@@ -584,21 +584,21 @@ struct MemAllocationHandleType:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
-        writer.write_str("(MemAllocationHandleType = ")
+    fn write_to[W: Writer](self, inout writer: W):
+        writer.write("(MemAllocationHandleType = ")
         if self == Self.NONE:
-            writer.write_str("NONE")
+            writer.write("NONE")
         elif self == Self.POSIX_FILE_DESCRIPTOR:
-            writer.write_str("POSIX_FILE_DESCRIPTOR")
+            writer.write("POSIX_FILE_DESCRIPTOR")
         elif self == Self.WIN32:
-            writer.write_str("WIN32")
+            writer.write("WIN32")
         elif self == Self.WIN32_KMT:
-            writer.write_str("WIN32_KMT")
+            writer.write("WIN32_KMT")
         elif self == Self.FABRIC:
-            writer.write_str("FABRIC")
+            writer.write("FABRIC")
         else:
-            writer.write_str("MAX")
-        writer.write_str(")")
+            writer.write("MAX")
+        writer.write(")")
 
 
 @value
@@ -615,12 +615,12 @@ struct MemLocation:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
-        writer.write_str("[MemLocation = ")
+    fn write_to[W: Writer](self, inout writer: W):
+        writer.write("[MemLocation = ")
         writer.write(self.type.__str__())
-        writer.write_str(", id=")
+        writer.write(", id=")
         writer.write(self.id)
-        writer.write_str("]")
+        writer.write("]")
 
 
 @value
@@ -648,14 +648,14 @@ struct MemAllocationProp:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
-        writer.write_str("[type = ")
+    fn write_to[W: Writer](self, inout writer: W):
+        writer.write("[type = ")
         writer.write(self.type)
-        writer.write_str(", requested_handle_types = ")
+        writer.write(", requested_handle_types = ")
         writer.write(self.requested_handle_types)
-        writer.write_str(", location = ")
+        writer.write(", location = ")
         writer.write(self.location)
-        writer.write_str("]")
+        writer.write("]")
 
 
 @value

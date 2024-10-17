@@ -359,7 +359,7 @@ struct AccessProperty:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         if self is Self.NORMAL:
             return writer.write("NORMAL")
         if self is Self.STREAMING:
@@ -430,7 +430,7 @@ struct AccessPolicyWindow:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         return writer.write(
             "base_ptr: ",
             self.base_ptr,
@@ -527,7 +527,7 @@ struct LimitProperty:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         return writer.write(self._value)
 
 
@@ -757,7 +757,7 @@ struct LaunchAttributeID:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         return writer.write(self._value)
 
 
@@ -870,7 +870,7 @@ struct CacheMode:
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         return writer.write(self._value)
 
 

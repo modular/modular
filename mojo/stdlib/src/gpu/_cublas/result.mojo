@@ -9,7 +9,7 @@ from os import abort
 
 @value
 @register_passable("trivial")
-struct Result(Formattable):
+struct Result(Writable):
     var _value: Int32
     alias SUCCESS = Self(0)
     alias NOT_INITIALIZED = Self(1)
@@ -36,7 +36,7 @@ struct Result(Formattable):
         return String.format_sequence(self)
 
     @no_inline
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         if self == Self.SUCCESS:
             return writer.write("SUCCESS")
         if self == Self.NOT_INITIALIZED:
