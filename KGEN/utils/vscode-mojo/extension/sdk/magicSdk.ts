@@ -15,6 +15,7 @@ import axios from 'axios';
 import { Logger } from '../logging';
 const execFile = util.promisify(require('child_process').execFile);
 import { MojoSDKVersion as MaxSDKVersion } from './sdkVersion';
+import { quote } from 'shell-quote';
 
 async function downloadFile(
   url: string,
@@ -278,15 +279,22 @@ async function doInstallMagicAndMAXSDK(
     "Couldn't download magic",
     logger
   );
-  logger.main.logInfo('Successfully downloaded');
+  logger.main.logInfo('Successfully downloaded magic.');
   await chmod(downloadSpec.magicPath, 0o755);
   logger.main.logInfo(
-    `The permissions for ${downloadSpec.magicPath} have been changed.`
+    `The permissions for ${downloadSpec.magicPath} have been changed and it's now executable.`
   );
 
-  logger.main.logInfo(`Will install MAX`);
+  logger.main.logInfo(`Will prepare the MAX SDK installation.`);
   const env = { ...process.env };
   env['MAGIC_DATA_HOME'] = downloadSpec.magicDataHome;
+  // We remove data home before installing again in case another process is
+  // trying to write to it for some weird reason.
+  logger.main.logInfo(`Removing magic-data-home`);
+  await rm(downloadSpec.magicDataHome, {
+    recursive: true,
+    force: true,
+  });
 
   const args = [
     'global',
@@ -298,8 +306,9 @@ async function doInstallMagicAndMAXSDK(
     `max==${downloadSpec.version}`,
     'python>=3.11,<3.12',
   ];
+  logger.main.logInfo(`Installing the MAX SDK.`);
   await execFile(downloadSpec.magicPath, args, { env });
-  logger.main.logInfo(`Successfully installed MAX`);
+  logger.main.logInfo(`Successfully installed MAX.`);
 
   await mkdirp(downloadSpec.doneDirectory);
   await mkdirp(downloadSpec.versionDoneDir);
