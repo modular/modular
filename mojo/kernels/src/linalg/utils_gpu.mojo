@@ -74,7 +74,7 @@ fn _block_swizzle_by_scale[
 @register_passable("trivial")
 struct MatmulConfig[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-](Stringable, Formattable):
+](Stringable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -149,7 +149,7 @@ struct MatmulConfig[
     fn __str__(self) -> String:
         return String.format_sequence(self)
 
-    fn format_to(self, inout writer: Formatter):
+    fn write_to[W: Writer](self, inout writer: W):
         writer.write("ampere_")
         writer.write(a_type, "_")
         writer.write(c_type, "_")
