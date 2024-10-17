@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -49,75 +50,92 @@ class OpenAIResponseGenerator(ABC):
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
-        request: TokenGeneratorRequest,
+        request_limiter: Optional[asyncio.BoundedSemaphore] = None,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.pipeline = pipeline
-        self.request = request
+        self.request_limiter = request_limiter
+
+    async def create_request(
+        self, id: str, prompt: str, max_new_tokens: Optional[int] = None
+    ):
+        if self.request_limiter:
+            await self.request_limiter.acquire()
+        return TokenGeneratorRequest(
+            id=id, prompt=prompt, max_new_tokens=max_new_tokens
+        )
 
     @abstractmethod
-    async def stream(self) -> AsyncGenerator[str, None]:
+    async def stream(
+        self, request: TokenGeneratorRequest
+    ) -> AsyncGenerator[str, None]:
         pass
 
     @abstractmethod
-    async def complete(self) -> str:
+    async def complete(self, request: TokenGeneratorRequest) -> str:
         pass
 
 
 class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
-    async def stream(self):
+    async def stream(self, request: TokenGeneratorRequest):
         self.logger.debug(
             "Streaming: Start: %s",
-            self.request,
+            request,
         )
-        response_idx = 0
-        async for token in self.pipeline.next_token(self.request):
-            self.logger.debug(
-                "Streaming: %s, TOKEN: %d, %s",
-                self.request.id,
-                response_idx,
-                token,
-            )
-            # We support N = 1 at the moment and will generate a single choice.
-            # The choice index is set to 0.
-            # https://platform.openai.com/docs/api-reference/chat/object
-            choices = [
-                Choice3(
-                    index=0,
-                    delta=ChatCompletionStreamResponseDelta(
-                        content=token,
-                        function_call=None,
-                        role="assistant",
-                        refusal=None,
-                    ),
-                    logprobs=None,
-                    finish_reason="stop",
+        try:
+            response_idx = 0
+            async for token in self.pipeline.next_token(request):
+                self.logger.debug(
+                    "Streaming: %s, TOKEN: %d, %s",
+                    request.id,
+                    response_idx,
+                    token,
                 )
-            ]
-            # Each chunk is expected to have the same id
-            # https://platform.openai.com/docs/api-reference/chat/streaming
-            response = CreateChatCompletionStreamResponse(
-                id=self.request.id,
-                choices=choices,
-                created=int(datetime.now().timestamp()),
-                model="",
-                object="chat.completion.chunk",
-                system_fingerprint=None,
-                usage=None,
-                service_tier=None,
+                # We support N = 1 at the moment and will generate a single choice.
+                # The choice index is set to 0.
+                # https://platform.openai.com/docs/api-reference/chat/object
+                choices = [
+                    Choice3(
+                        index=0,
+                        delta=ChatCompletionStreamResponseDelta(
+                            content=token,
+                            function_call=None,
+                            role="assistant",
+                            refusal=None,
+                        ),
+                        logprobs=None,
+                        finish_reason="stop",
+                    )
+                ]
+                # Each chunk is expected to have the same id
+                # https://platform.openai.com/docs/api-reference/chat/streaming
+                response = CreateChatCompletionStreamResponse(
+                    id=request.id,
+                    choices=choices,
+                    created=int(datetime.now().timestamp()),
+                    model="",
+                    object="chat.completion.chunk",
+                    system_fingerprint=None,
+                    usage=None,
+                    service_tier=None,
+                )
+                response_idx += 1
+                yield response.model_dump_json()
+
+            logger.debug(
+                "Streaming: Done: %s, %d tokens",
+                request,
+                response_idx,
             )
-            response_idx += 1
-            yield response.model_dump_json()
+            yield "[DONE]"
+        finally:
+            if self.request_limiter:
+                self.request_limiter.release()
 
-        logger.debug(
-            "Streaming: Done: %s, %d tokens",
-            self.request,
-            response_idx,
-        )
-        yield "[DONE]"
-
-    async def complete(self) -> CreateChatCompletionResponse:
-        completed_tokens = await self.pipeline.all_tokens(self.request)
+    async def complete(
+        self, request: TokenGeneratorRequest
+    ) -> CreateChatCompletionResponse:
+        completed_tokens = await self.pipeline.all_tokens(request)
 
         response_message = "".join(completed_tokens)
         response_choices = [
@@ -134,7 +152,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             )
         ]
         response = CreateChatCompletionResponse(
-            id=self.request.id,
+            id=request.id,
             choices=response_choices,
             created=int(datetime.now().timestamp()),
             model="",
@@ -191,8 +209,10 @@ async def openai_create_chat_completion(
             }
             for message in completion_request.messages
         ]
-        request_prompt = pipeline.tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+        request_prompt = str(
+            pipeline.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
         )
     else:
         request_prompt = " ".join(
@@ -203,21 +223,20 @@ async def openai_create_chat_completion(
             ]
         )
 
-    token_request = TokenGeneratorRequest(
+    response_generator = OpenAIChatResponseGenerator(
+        pipeline, request_limiter=request.app.state.request_limiter
+    )
+    token_request = await response_generator.create_request(
         id=request_id,
         prompt=request_prompt,
         max_new_tokens=completion_request.max_tokens,
     )
-    response_generator = OpenAIChatResponseGenerator(
-        pipeline,
-        token_request,
-    )
     if completion_request.stream:
-        return EventSourceResponse(response_generator.stream())
+        return EventSourceResponse(response_generator.stream(token_request))
 
     try:
-        response = await response_generator.complete()
-    except ValueError as e:
+        response = await response_generator.complete(token_request)
+    except ValueError:
         raise HTTPException(
             status_code=400, detail="Failed to complete response."
         )
@@ -249,49 +268,55 @@ class CompletionStreamResponse(BaseModel):
 
 
 class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
-    async def stream(self):
-        response_idx = 0
+    async def stream(self, request: TokenGeneratorRequest):
         logger.debug(
             "Streaming: Start: %s",
-            self.request,
+            request,
         )
-        async for token in self.pipeline.next_token(self.request):
-            self.logger.debug(
-                "Streaming: %s, TOKEN: %d, %s",
-                self.request.id,
-                response_idx,
-                token,
-            )
-            # We support N = 1 at the moment and will generate a single choice.
-            # The choice index is set to 0.
-            # https://platform.openai.com/docs/api-reference/chat/object
-            choices = [
-                CompletionResponseStreamChoice(
-                    index=0,
-                    text=token,
+        try:
+            response_idx = 0
+            async for token in self.pipeline.next_token(request):
+                self.logger.debug(
+                    "Streaming: %s, TOKEN: %d, %s",
+                    request.id,
+                    response_idx,
+                    token,
                 )
-            ]
-            # Each chunk is expected to have the same id
-            # https://platform.openai.com/docs/api-reference/chat/streaming
-            response = CompletionStreamResponse(
-                id=self.request.id,
-                choices=choices,
-                created=int(datetime.now().timestamp()),
-                model="",
-                object="text_completion",
+                # We support N = 1 at the moment and will generate a single choice.
+                # The choice index is set to 0.
+                # https://platform.openai.com/docs/api-reference/chat/object
+                choices = [
+                    CompletionResponseStreamChoice(
+                        index=0,
+                        text=token,
+                    )
+                ]
+                # Each chunk is expected to have the same id
+                # https://platform.openai.com/docs/api-reference/chat/streaming
+                response = CompletionStreamResponse(
+                    id=request.id,
+                    choices=choices,
+                    created=int(datetime.now().timestamp()),
+                    model="",
+                    object="text_completion",
+                )
+                response_idx += 1
+                yield response.model_dump_json()
+
+            logger.debug(
+                "Streaming: Done: %s, %d tokens",
+                request,
+                response_idx,
             )
-            response_idx += 1
-            yield response.model_dump_json()
+            yield "[DONE]"
+        finally:
+            if self.request_limiter:
+                self.request_limiter.release()
 
-        logger.debug(
-            "Streaming: Done: %s, %d tokens",
-            self.request,
-            response_idx,
-        )
-        yield "[DONE]"
-
-    async def complete(self) -> CreateCompletionResponse:
-        completed_tokens = await self.pipeline.all_tokens(self.request)
+    async def complete(
+        self, request: TokenGeneratorRequest
+    ) -> CreateCompletionResponse:
+        completed_tokens = await self.pipeline.all_tokens(request)
 
         response_message = "".join(completed_tokens)
         response_choices = [
@@ -303,7 +328,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             )
         ]
         response = CreateCompletionResponse(
-            id=self.request.id,
+            id=request.id,
             choices=response_choices,
             created=int(datetime.now().timestamp()),
             model="",
@@ -343,19 +368,18 @@ async def openai_create_completion(
     request_prompt = openai_get_prompt_from_completion_request(
         completion_request
     )
-    token_request = TokenGeneratorRequest(
+    response_generator = OpenAICompletionResponseGenerator(
+        pipeline, request_limiter=request.app.state.request_limiter
+    )
+    token_request = await response_generator.create_request(
         id=request_id,
         prompt=request_prompt,
         max_new_tokens=completion_request.max_tokens,
     )
-    response_generator = OpenAICompletionResponseGenerator(
-        pipeline,
-        token_request,
-    )
     if completion_request.stream:
-        return EventSourceResponse(response_generator.stream())
+        return EventSourceResponse(response_generator.stream(token_request))
 
-    response = await response_generator.complete()
+    response = await response_generator.complete(token_request)
     return JSONResponse(response.model_dump_json())
 
 

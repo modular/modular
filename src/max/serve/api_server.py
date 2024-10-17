@@ -76,10 +76,17 @@ def fastapi_app(
 
     app.mount("/metrics", make_metrics_app())
 
-    register_debug(app, debug_settings)
-    register_request(app)
+    request_limiter: Optional[asyncio.BoundedSemaphore] = None
+    if settings.request_limit > 0:
+        request_limiter = asyncio.BoundedSemaphore(settings.request_limit)
+        logger.info("Configured request limiter to %d", settings.request_limit)
+    app.state.request_limiter = request_limiter
+
     app.state.settings = settings
+    register_request(app)
+
     app.state.debug_settings = debug_settings
+    register_debug(app, debug_settings)
     return app
 
 

@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     runner_type: RunnerType = Field(
         description="Type of execution runner.", default=RunnerType.PYTORCH
     )
+    request_limit: int = Field(
+        description="Max number of accepted requests, or 0 for no limits.",
+        default=0,
+    )
 
 
 def api_prefix(settings: Settings, api_type: APIType):
