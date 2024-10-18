@@ -281,9 +281,7 @@ ParseResult LIT::parseConventionAndVariadicness(
       if (argPackIndex == ssize_t(idx)) {
         argPackIndex = idx;
         origArgPackConvention = convention;
-        if (convention == ArgConvention::OwnedInMem)
-          convention = ArgConvention::OwnedInReg;
-        else
+        if (convention != ArgConvention::OwnedInMem)
           convention = ArgConvention::BorrowedInReg;
       }
       return success();
@@ -295,9 +293,7 @@ ParseResult LIT::parseConventionAndVariadicness(
         return p.emitError(loc, "multiple packs not supported");
       argPackIndex = idx;
       origArgPackConvention = convention;
-      if (convention == ArgConvention::OwnedInMem)
-        convention = ArgConvention::OwnedInReg;
-      else
+      if (convention != ArgConvention::OwnedInMem)
         convention = ArgConvention::BorrowedInReg;
     } else
       return p.emitError(loc, "expected convention|variadicnes, got: ") << str;

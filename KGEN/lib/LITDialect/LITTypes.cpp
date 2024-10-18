@@ -1027,6 +1027,7 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     ArgConvention argConv = signature.getArgConvention(i);
     if (variadicness[i] == Variadicness::kPack) {
       assert(argConv == ArgConvention::BorrowedInReg ||
+             argConv == ArgConvention::OwnedInMem ||
              argConv == ArgConvention::OwnedInReg);
       argConv = signature.getPackVarArgConvention(i);
     }
@@ -1150,7 +1151,12 @@ bool LITSignatureType::isPackVarArg(size_t index) {
 Type LITSignatureType::getIfVariadicPack(size_t index) {
   if (!isPackVarArg(index))
     return {};
-  return getArguments()[index];
+
+  // Look through references to the VariadicPack type.
+  auto type = getArguments()[index];
+  if (hasAddress(getArgConvention(index)))
+    type = ::cast<RefType>(type).getElementType();
+  return type;
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For

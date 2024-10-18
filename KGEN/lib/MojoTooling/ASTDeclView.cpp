@@ -145,6 +145,9 @@ generateTypeString(Type type, VariadicKind varKind,
   } else if (varKind == VariadicKind::kPack && !isa<PackType>(type)) {
     // VariadicPack needs special printing, because its argument isn't a type.
     os << "*";
+    if (convention && SignatureType::hasAddress(*convention))
+      astType = astType.getReferenceElementType();
+
     ASTType::printParam(os, astType.getVariadicPackInfo().getVariadic(),
                         /*forDiag=*/true, /*demangleParams=*/true);
     return os.str();

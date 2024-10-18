@@ -326,6 +326,7 @@ ASTType ASTType::getVariadicElementType() const {
 
 /// Return the RefPackType that corresponds to the VariadicPack instance.
 RefPackType ASTType::getVariadicPackInfo() const {
+  assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
   auto bindings = getParamBindings();
   assert(bindings.size() == 4 && bindings[0].getType().isInteger(1) &&
          isa<OriginType>(bindings[1].getType()) &&
