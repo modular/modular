@@ -132,7 +132,7 @@ struct DynamicTupleBase[
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn write_to[W: Writer, //](self, inout writer: W):
@@ -329,7 +329,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer, //](self, inout writer: W):
         Self.BaseType.format_element_to(writer, self._value)

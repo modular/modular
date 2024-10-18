@@ -2639,7 +2639,7 @@ struct LayoutTensor[
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         """Format 2D tensor in 2D, otherwise print all values in column major

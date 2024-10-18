@@ -50,7 +50,7 @@ struct RuntimeLayout[layout: Layout](Stringable, Writable):
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @staticmethod
     fn row_major[

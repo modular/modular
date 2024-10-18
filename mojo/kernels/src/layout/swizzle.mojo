@@ -291,7 +291,7 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
         writer.write(")")
 
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
 
 @always_inline
