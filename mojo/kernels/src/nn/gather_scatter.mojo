@@ -21,6 +21,7 @@ from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
+from tensor_utils_internal import ManagedTensorSlice
 
 from utils import Index, IndexList, StaticTuple, unroll
 
@@ -1104,11 +1105,11 @@ fn scatter_elements[
     input_type: DType,
     indices_type: DType,
 ](
-    input: NDBuffer[input_type, rank],
-    indices: NDBuffer[indices_type, rank],
-    updates: NDBuffer[input_type, rank],
+    input: ManagedTensorSlice[input_type, rank],
+    indices: ManagedTensorSlice[indices_type, rank],
+    updates: ManagedTensorSlice[input_type, rank],
     _axis: Int,
-    output: NDBuffer[input_type, rank],
+    output: ManagedTensorSlice[input_type, rank],
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
@@ -1118,12 +1119,12 @@ fn scatter_elements[
         "indices in scatter_elements must be int32 or int64",
     ]()
 
-    if input.get_shape() != output.get_shape():
+    if input.get_static_spec().shape != output.get_static_spec().shape:
         raise Error(
             "input and output shape in scatter_elements must be the same"
         )
 
-    if indices.get_shape() != updates.get_shape():
+    if indices.get_static_spec().shape != updates.get_static_spec().shape:
         raise Error(
             "inidices and updates shape in scatter_elements must be the same"
         )
@@ -1136,9 +1137,9 @@ fn scatter_elements[
     var axis = _axis if _axis >= 0 else _axis + rank
 
     # Do serial or parallel memcpy depending on output size.
-    parallel_memcpy(output.data, input.data, output.size())
+    parallel_memcpy(output.unsafe_ptr(), input.unsafe_ptr(), output.size())
 
-    var input_ax_dim = input.get_shape()[axis]
+    var input_ax_dim = input.get_static_spec().shape[axis]
 
     @__copy_capture(axis, input_ax_dim)
     @parameter
@@ -1157,7 +1158,7 @@ fn scatter_elements[
         )
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1](indices.get_shape())
+    elementwise[update_func, 1](indices.get_static_spec().shape)
 
 
 @mogg_register_shape_func("mo.scatter.max")

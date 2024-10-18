@@ -46,11 +46,11 @@ fn test_case[
     var output_ref = output
 
     scatter_elements[reduce_fn](
-        data.ndbuffer,
-        indices.ndbuffer,
-        updates.ndbuffer,
+        data.to_managed_tensor_slice(),
+        indices.to_managed_tensor_slice(),
+        updates.to_managed_tensor_slice(),
         axis,
-        output.ndbuffer,
+        output.to_managed_tensor_slice(),
     )
 
     assert_equal(output, output_ref)
