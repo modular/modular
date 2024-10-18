@@ -16,6 +16,7 @@ from memory import UnsafePointer
 from runtime.asyncrt import MojoCallContextPtr
 from tensor_internal import StaticTensorSpec, TensorSpec
 
+from buffer import NDBuffer
 from utils import IndexList
 
 from .indexing import _dot_prod, _row_major_strides, _slice_to_tuple
@@ -105,6 +106,13 @@ struct ManagedTensorSlice[
             0,
             strides,
         )
+
+    fn __init__(inout self, ndbuffer: NDBuffer[type, rank]):
+        """Initializes a ManagedTensorSlice from an NDBuffer.
+
+        Note that forwarding of static shape, strides, and lambdas won't work.
+        """
+        self = Self(ndbuffer.data, ndbuffer.get_shape())
 
     fn get_static_spec(self) -> StaticTensorSpec[type, rank]:
         """Gets the static spec of the slice.
