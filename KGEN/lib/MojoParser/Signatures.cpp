@@ -1083,7 +1083,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       llvm_unreachable("not a pack arg convention");
     case ParsedArgument::kConventionOwned:
       arg.kgenVariadicConvention = ArgConvention::OwnedInMem;
-      arg.kgenConvention = ArgConvention::OwnedInReg;
+      arg.kgenConvention = ArgConvention::OwnedInMem;
       break;
     case ParsedArgument::kConventionBorrowed:
       arg.kgenVariadicConvention = ArgConvention::BorrowedInMem;

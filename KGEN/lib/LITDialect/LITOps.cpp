@@ -686,6 +686,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
     if (variadicness[i] == Variadicness::kPack) {
       assert(argConv == ArgConvention::BorrowedInReg ||
+             argConv == ArgConvention::OwnedInMem ||
              argConv == ArgConvention::OwnedInReg);
       argConv = signature.getPackVarArgConvention(i);
     }

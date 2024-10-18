@@ -1561,8 +1561,6 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       if (convention == ArgConvention::InOut ||
           convention == ArgConvention::BorrowedInMem)
         convention = ArgConvention::BorrowedInReg;
-      else if (convention == ArgConvention::OwnedInMem)
-        convention = ArgConvention::OwnedInReg;
     }
 
     if (SignatureType::isResultSlot(convention)) {
@@ -1597,6 +1595,18 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     if (!arg)
       return {};
 
+    // VariadicPack also includes the implicit origin for the elements, which
+    // is different than the origin for the pack itself (when passed through
+    // memory).
+    if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
+      ASTType argRVType = arg.getType();
+      if (SignatureType::hasAddress(convention))
+        argRVType = argRVType.getReferenceElementType();
+
+      // Use the union origin that covers all the values.
+      implicitOrigins.push_back(argRVType.getVariadicPackInfo().getOrigin());
+    }
+
     // See if we have an implicit origin bound for this argument.
     if (SignatureType::hasImplicitOrigin(convention)) {
       implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
@@ -1605,10 +1615,6 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       auto eltType = ASTType(arg.getType()).getVariadicElementType();
       if (auto refType = dyn_cast<RefType>(eltType))
         implicitOrigins.push_back(refType.getOrigin());
-    } else if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-      // Use the union origin that covers all the values.
-      RefPackType packType = ASTType(arg.getType()).getVariadicPackInfo();
-      implicitOrigins.push_back(packType.getOrigin());
     }
 
     // If the address space of a by-ref argument mismatches, then we need to

@@ -247,12 +247,19 @@ Value OriginTrackable::findUnderlyingValueFromField(Value value) {
 /// origins for these values (in the owned case) instead of relying on this.
 static Value findRefPackCreate(Value val) {
   Value loadOperand;
-  if (auto load = val.getDefiningOp<RefLoadOp>())
-    loadOperand = load.getOperand();
-  else if (auto load = val.getDefiningOp<LoadConsumeOp>())
-    loadOperand = load.getOperand();
-  else
-    return {};
+
+  // If the operand is already a reference to a pack, then use it.  Otherwise
+  // we must have a register pack.  Figure out how it is formed.
+  if (isa<RefType>(val.getType())) {
+    loadOperand = val;
+  } else {
+    if (auto load = val.getDefiningOp<RefLoadOp>())
+      loadOperand = load.getOperand();
+    else if (auto load = val.getDefiningOp<LoadConsumeOp>())
+      loadOperand = load.getOperand();
+    else
+      return {};
+  }
 
   auto varDecl = loadOperand.getDefiningOp<VarDeclOp>();
   if (!varDecl)
@@ -261,9 +268,14 @@ static Value findRefPackCreate(Value val) {
   for (Operation *user : varDecl.getResult().getUsers()) {
     auto call = dyn_cast<LIT::CallOp>(user);
     if (!call ||
-        // Ignore calls to __del__
-        call.getNumOperands() == 1)
+        // Ignore calls to __del__.
+        call.getNumOperands() == 1 ||
+        // Ignore calls that pass the pack to a function by reference, but don't
+        // initialize it.
+        call.getOperand(0) != varDecl.getResult() ||
+        call.getCalleeType().getArgConvention(0) != ArgConvention::InitSelf)
       continue;
+
     // Make sure any change to the API forces this code to get updated.
     assert(call.getNumOperands() == 3 &&
            "VariadicPack::init currently takes 3 arguments");
@@ -400,6 +412,8 @@ static void getCallOpEffects(
     // TODO: It would be nice to handle more fine grain effects in a general way
     // on calls.  This is a hack.
     // TODO(field-sensitive origins): remove this hack.
+    // TODO: This should be removed. This is disabled for packs passed by-ref
+    // when they are owned.
     if (signature.isPackVarArg(idx)) {
       auto packVal = findRefPackCreate(arg);
       assert(packVal && "couldn't decode variadic pack information!");

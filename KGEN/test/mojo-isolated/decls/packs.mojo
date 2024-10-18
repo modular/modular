@@ -40,17 +40,17 @@ fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
 # CHECK-LABEL: lit.func @"takeOwnedAnyTypePack[*::AnyType](*$0)"
 
 # Test implicit lifetimes / param list.
-# CHECK-SAME: <Ts: variadic<!AnyType> var>[mut *"rest`"]
+# CHECK-SAME: <Ts: variadic<!AnyType> var>[mut *"rest`"
 
 # Check the argument pack.
-# CHECK-SAME: (%rest: !lit.struct<#VariadicPack <:i1 1, :origin<1> *"rest`",
-# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>> owned_in_mem|pack)
+# CHECK-SAME: (%rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:i1 1, :origin<1> *"rest`",
+# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>, mut *"rest`1"> owned_in_mem|pack
 
 
 # Check the argument pack.
 # CHECK-LABEL: lit.func @"takeOwnedSomeTraitPack
-# CHECK-SAME: (%rest: !lit.struct<#VariadicPack <:i1 1, :origin<1> *"rest`",
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>> owned_in_mem|pack)
+# CHECK-SAME: (%rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:i1 1, :origin<1> *"rest`",
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>, mut *"rest`1"> owned_in_mem|pack)
 fn takeOwnedSomeTraitPack[*Ts: SomeTrait](owned *rest: *Ts):
     pass
 
@@ -79,9 +79,8 @@ fn test_owned_trait():
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
     # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
-    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.load.consume [[PACKTMP]]
 
-    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[VARIADICPACK]])
+    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[PACKTMP]])
     takeOwnedAnyTypePack(value1^, value2)
 
     # Test register types.
@@ -101,9 +100,7 @@ fn test_owned_trait():
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
     # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
-    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.load.consume [[PACKTMP]]
-
-    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[VARIADICPACK]])
+    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[PACKTMP]])
     takeOwnedAnyTypePack(value3^, SomeReg())
 
 
