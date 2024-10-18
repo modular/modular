@@ -144,10 +144,6 @@ from nn.kv_cache import (
     kv_cache_length_h8_d128_bshd_bf16_continuous_batch,
     kv_cache_length_h8_d128_bshd_f32,
     kv_cache_length_h8_d128_bshd_f32_continuous_batch,
-    matmul_kv_cache_h1_d16_bshd,
-    matmul_kv_cache_h6_d48_bshd,
-    matmul_kv_cache_h8_d64_bshd,
-    matmul_kv_cache_h8_d128_bshd,
     value_cache_for_layer_h1_d16_bshd_bf16,
     value_cache_for_layer_h1_d16_bshd_bf16_continuous_batch,
     value_cache_for_layer_h1_d16_bshd_f32,
@@ -305,10 +301,6 @@ fn MOGGExport():
     alias _value_cache_for_layer_h8_d128_bshd_f32_continuous_batch = value_cache_for_layer_h8_d128_bshd_f32_continuous_batch
     alias _value_cache_for_layer_h8_d64_bshd_bf16_continuous_batch = value_cache_for_layer_h8_d64_bshd_bf16_continuous_batch
     alias _value_cache_for_layer_h8_d64_bshd_f32_continuous_batch = value_cache_for_layer_h8_d64_bshd_f32_continuous_batch
-    alias _matmul_kv_cache_h6_d48_bshd = matmul_kv_cache_h6_d48_bshd
-    alias _matmul_kv_cache_h8_d128_bshd = matmul_kv_cache_h8_d128_bshd
-    alias _matmul_kv_cache_h1_d16_bshd = matmul_kv_cache_h1_d16_bshd
-    alias _matmul_kv_cache_h8_d64_bshd = matmul_kv_cache_h8_d64_bshd
     alias _fused_qkv_matmul_kv_cache_h6_d48_bshd = fused_qkv_matmul_kv_cache_h6_d48_bshd
     alias _fused_qkv_matmul_kv_cache_h8_d128_bshd = fused_qkv_matmul_kv_cache_h8_d128_bshd
     alias _fused_qkv_matmul_kv_cache_h1_d16_bshd = fused_qkv_matmul_kv_cache_h1_d16_bshd
