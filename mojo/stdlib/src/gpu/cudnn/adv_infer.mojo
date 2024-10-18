@@ -232,7 +232,7 @@ struct cudnnForwardMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -798,7 +798,7 @@ struct cudnnSeqDataAxis_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:

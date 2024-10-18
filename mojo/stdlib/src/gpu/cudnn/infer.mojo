@@ -104,7 +104,7 @@ struct cudnnSoftmaxMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -167,7 +167,7 @@ struct cudnnReduceTensorIndices_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -374,7 +374,7 @@ struct cudnnReduceTensorOp_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -466,7 +466,7 @@ struct cudnnDeterminism_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -552,7 +552,7 @@ struct cudnnStatus_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -594,7 +594,7 @@ struct cudnnCTCLossAlgo_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -662,7 +662,7 @@ struct cudnnTensorFormat_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -827,7 +827,7 @@ struct cudnnNormAlgo_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -881,7 +881,7 @@ struct cudnnOpTensorOp_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1183,7 +1183,7 @@ struct cudnnActivationMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1270,7 +1270,7 @@ struct cudnnConvolutionBwdDataAlgo_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1356,7 +1356,7 @@ struct cudnnSamplerType_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1425,7 +1425,7 @@ struct cudnnNormMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1544,7 +1544,7 @@ struct cudnnNormOps_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1621,7 +1621,7 @@ struct cudnnSoftmaxAlgorithm_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1710,7 +1710,7 @@ struct cudnnBatchNormOps_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1775,7 +1775,7 @@ struct cudnnConvolutionFwdAlgo_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2001,7 +2001,7 @@ struct cudnnLRNMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2128,7 +2128,7 @@ struct cudnnFoldingDirection_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2194,7 +2194,7 @@ struct cudnnErrQueryMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2354,7 +2354,7 @@ struct cudnnBatchNormMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2446,7 +2446,7 @@ struct cudnnSeverity_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2497,7 +2497,7 @@ struct cudnnMathType_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2539,7 +2539,7 @@ struct cudnnNanPropagation_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2593,7 +2593,7 @@ struct cudnnRNNAlgo_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2752,7 +2752,7 @@ struct cudnnDataType_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2920,7 +2920,7 @@ struct cudnnIndicesType_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -3221,7 +3221,7 @@ struct cudnnConvolutionBwdFilterAlgo_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -3367,7 +3367,7 @@ struct cudnnPoolingMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -3459,7 +3459,7 @@ struct cudnnDivNormMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:

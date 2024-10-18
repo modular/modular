@@ -33,7 +33,7 @@ struct Result(Writable):
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):

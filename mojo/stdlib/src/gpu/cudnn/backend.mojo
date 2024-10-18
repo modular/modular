@@ -197,7 +197,7 @@ struct cudnnBackendKnobType_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -383,7 +383,7 @@ struct cudnnPointwiseMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -552,7 +552,7 @@ struct cudnnBackendDescriptorType_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -629,7 +629,7 @@ struct cudnnBackendBehaviorNote_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -680,7 +680,7 @@ struct cudnnBackendLayoutType_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -722,7 +722,7 @@ struct cudnnBackendNormFwdPhase_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -773,7 +773,7 @@ struct cudnnBackendHeurMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -847,7 +847,7 @@ struct cudnnBackendNumericalNote_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -985,7 +985,7 @@ struct cudnnBackendAttributeType_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1030,7 +1030,7 @@ struct cudnnRngDistribution_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1081,7 +1081,7 @@ struct cudnnBackendTensorReordering_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1849,7 +1849,7 @@ struct cudnnBackendAttributeName_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1900,7 +1900,7 @@ struct cudnnBackendNormMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1942,7 +1942,7 @@ struct cudnnSignalMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1987,7 +1987,7 @@ struct cudnnBnFinalizeStatsMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2026,7 +2026,7 @@ struct cudnnGenStatsMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2104,7 +2104,7 @@ struct cudnnResampleMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -2180,7 +2180,7 @@ struct cudnnPaddingMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:

@@ -451,7 +451,7 @@ struct cudnnFusedOpsConstParamLabel_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -505,7 +505,7 @@ struct cudnnReorderType_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -665,7 +665,7 @@ struct cudnnFusedOps_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -728,7 +728,7 @@ struct cudnnFusedOpsPointerPlaceHolder_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -915,7 +915,7 @@ struct cudnnFusedOpsVariantParamLabel_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:
@@ -1351,7 +1351,7 @@ struct cudnnConvolutionMode_t:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn __repr__(self) -> String:

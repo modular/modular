@@ -356,7 +356,7 @@ struct AccessProperty:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
@@ -427,7 +427,7 @@ struct AccessPolicyWindow:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
@@ -524,7 +524,7 @@ struct LimitProperty:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
@@ -754,7 +754,7 @@ struct LaunchAttributeID:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
@@ -867,7 +867,7 @@ struct CacheMode:
 
     @no_inline
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
