@@ -147,6 +147,17 @@ struct MHAConfig:
         self.WM = WM.or_else(32 if type is DType.float32 else 16)
         self.WN = WN.or_else(32 if type is DType.float32 else depth)
 
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to[W: Writer](self, inout writer: W):
+        writer.write("ampere_")
+        writer.write(self.type, "_")
+        # Use BNxBM to match MatmulConfig, which matches cublas
+        writer.write(self.block_n(), "x", self.block_m(), "_")
+        writer.write(self.block_k(), "x")
+        writer.write(self.num_pipeline_stages)
+
 
 fn fused_attention[
     rank: Int,
