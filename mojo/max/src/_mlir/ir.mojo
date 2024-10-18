@@ -482,11 +482,7 @@ struct Operation(CollectionElement, Stringable, Writable):
 
         fn callback(buf: StringRef, _data: UnsafePointer[NoneType]):
             var state = _data.bitcast[_WriteState]()[]
-
-            try:
-                state.handle[].write(buf)
-            except e:
-                state.errors.append(str(e))
+            state.handle[].write(buf)
 
         var result = _c.IR.mlirOperationWriteBytecodeWithConfig(
             self.c,
