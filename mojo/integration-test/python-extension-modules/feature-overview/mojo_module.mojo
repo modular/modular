@@ -17,8 +17,11 @@ from python import Python, PythonObject, TypedPythonObject
 from python._bindings import (
     create_wrapper_function,
     PyMojoObject,
+)
+from builtin._pybind import (
     check_arguments_arity,
     check_argument_type,
+    check_and_get_arg,
 )
 from python._cpython import (
     PyMethodDef,
@@ -225,12 +228,8 @@ fn incr_int__wrapper(
 ) raises -> PythonObject:
     check_arguments_arity("incr_int", 1, py_args)
 
-    var arg_0_obj = py_args[0]
-
-    var arg_0: UnsafePointer[Int] = check_argument_type[Int](
-        "incr_int",
-        "Int",
-        arg_0_obj,
+    var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
+        "incr_int", "Int", py_args, 0
     )
 
     # Note: Pass an `inout` reference to the wrapped function
