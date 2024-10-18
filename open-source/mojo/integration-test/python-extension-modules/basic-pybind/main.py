@@ -32,6 +32,10 @@ class TestMojoPythonInterop(unittest.TestCase):
 
         self.assertEqual(repr(mojo_int), "0")
 
+        mojo_module.incr_int(mojo_int)
+
+        self.assertEqual(repr(mojo_int), "1")
+
 
 if __name__ == "__main__":
     unittest.main()
