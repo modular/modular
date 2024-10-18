@@ -67,52 +67,52 @@ struct MHAConfig:
     var type: DType
 
     # Q, K, V, output should have the same type.
-    var num_heads: Int
-    var depth: Int
-    var num_queries_per_block: Int
-    var num_keys_per_block: Int
-    var BK: Int  # tile size in depth dimension
-    var WM: Int
-    var WN: Int
-    var num_pipeline_stages: Int
+    var num_heads: UInt
+    var depth: UInt
+    var num_queries_per_block: UInt
+    var num_keys_per_block: UInt
+    var BK: UInt  # tile size in depth dimension
+    var WM: UInt
+    var WN: UInt
+    var num_pipeline_stages: UInt
 
-    fn block_m(self) -> Int:
+    fn block_m(self) -> UInt:
         return self.num_queries_per_block
 
-    fn block_n(self) -> Int:
+    fn block_n(self) -> UInt:
         return self.num_keys_per_block
 
-    fn block_k(self) -> Int:
+    fn block_k(self) -> UInt:
         return self.BK
 
-    fn warp_m(self) -> Int:
+    fn warp_m(self) -> UInt:
         return self.WM
 
-    fn warp_n(self) -> Int:
+    fn warp_n(self) -> UInt:
         return self.WN
 
-    fn num_warps_m(self) -> Int:
+    fn num_warps_m(self) -> UInt:
         return self.block_m() // self.warp_m()
 
-    fn num_warps_n(self) -> Int:
+    fn num_warps_n(self) -> UInt:
         return self.block_n() // self.warp_n()
 
-    fn num_threads(self) -> Int:
+    fn num_threads(self) -> UInt:
         return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
 
-    fn q_smem_size(self) -> Int:
+    fn q_smem_size(self) -> UInt:
         return self.block_m() * self.depth
 
-    fn k_smem_size(self) -> Int:
+    fn k_smem_size(self) -> UInt:
         return self.num_pipeline_stages * self.block_n() * self.block_k()
 
-    fn p_smem_size(self) -> Int:
+    fn p_smem_size(self) -> UInt:
         return self.block_m() * self.block_n()
 
-    fn warp_scratch_smem_size(self) -> Int:
+    fn warp_scratch_smem_size(self) -> UInt:
         return 2 * self.num_warps_n() * self.block_m()
 
-    fn shared_mem_elements(self) -> Int:
+    fn shared_mem_elements(self) -> UInt:
         var num_smem_elements = self.q_smem_size() + self.k_smem_size() + self.warp_scratch_smem_size()
 
         if self.num_warps_n() > 1:
@@ -123,14 +123,14 @@ struct MHAConfig:
     fn __init__(
         inout self,
         type: DType,
-        num_heads: Int,
-        depth: Int,
-        num_queries_per_block: OptionalReg[Int] = None,
-        num_keys_per_block: OptionalReg[Int] = None,
-        BK: OptionalReg[Int] = None,
-        WM: OptionalReg[Int] = None,
-        WN: OptionalReg[Int] = None,
-        num_pipeline_stages: Int = 4,
+        num_heads: UInt,
+        depth: UInt,
+        num_queries_per_block: OptionalReg[UInt] = None,
+        num_keys_per_block: OptionalReg[UInt] = None,
+        BK: OptionalReg[UInt] = None,
+        WM: OptionalReg[UInt] = None,
+        WN: OptionalReg[UInt] = None,
+        num_pipeline_stages: UInt = 4,
     ):
         self.type = type
         self.num_heads = num_heads
@@ -504,12 +504,12 @@ fn flash_attention[
                     valid_length,
                     mask_functor,
                     grid_dim=(
-                        ceildiv(seq_len, config.block_m()),
-                        config.num_heads,
-                        batch_size,
+                        Int(ceildiv(seq_len, config.block_m())),
+                        Int(config.num_heads),
+                        Int(batch_size),
                     ),
-                    block_dim=(config.num_threads(), 1, 1),
-                    shared_mem_bytes=smem_use,
+                    block_dim=(Int(config.num_threads()), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
                 )
 
             # Decoding impl only support half precision.
@@ -561,7 +561,7 @@ fn flash_attention[
                     max_cache_valid_length,
                     valid_length,
                     mask_functor,
-                    grid_dim=(1, num_heads, batch_size),
+                    grid_dim=(1, Int(num_heads), Int(batch_size)),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=80 * 1024,
                 )
@@ -730,12 +730,12 @@ fn flash_attention[
                     seq_len,
                     mask_functor,
                     grid_dim=(
-                        ceildiv(seq_len, config.block_m()),
-                        num_heads,
-                        batch_size,
+                        Int(ceildiv(seq_len, config.block_m())),
+                        Int(num_heads),
+                        Int(batch_size),
                     ),
-                    block_dim=(config.num_threads(), 1, 1),
-                    shared_mem_bytes=smem_use,
+                    block_dim=(Int(config.num_threads()), 1, 1),
+                    shared_mem_bytes=Int(smem_use),
                 )
 
             # Decoding impl only support half precision.
@@ -1139,12 +1139,15 @@ fn mha_single_batch[
     # Query global memory iterator
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
     var q_gmem_block = LayoutTensor[
-        q_type, Layout(IntTuple(BM, depth), IntTuple(num_heads * depth, 1))
+        q_type,
+        Layout(
+            IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
+        ),
     ](q_ptr + q_offset)
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
-    var q_tile_num_rows = min(BM, seq_len - q_tile_idx * BM)
+    var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
 
     alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
     alias MMA_M = mma_shape[0]
@@ -1178,7 +1181,7 @@ fn mha_single_batch[
     var rowsum = stack_allocation[WM, accum_type, alignment=row_alignment]()
 
     @parameter
-    for i in range(0, WM, 2):
+    for i in range(0, Int(WM), 2):
         rowmax.store(i, SIMD[accum_type, 2](min_or_neg_inf[accum_type]()))
         rowsum.store(i, SIMD[accum_type, 2](0))
 
@@ -1226,7 +1229,10 @@ fn mha_single_batch[
 
         var k_gmem_block = LayoutTensor[
             k_type,
-            Layout(IntTuple(BN, depth), IntTuple(kv_num_heads * depth, 1)),
+            Layout(
+                IntTuple(Int(BN), Int(depth)),
+                IntTuple(Int(kv_num_heads * depth), 1),
+            ),
         ](k_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
@@ -1305,10 +1311,10 @@ fn mha_single_batch[
         if use_mask_tensor:
             # TODO: Construct mask tensor with runtime layout.
             @parameter
-            for m_mma in range(num_m_mmas):
+            for m_mma in range(Int(num_m_mmas)):
 
                 @parameter
-                for n_mma in range(num_n_mmas):
+                for n_mma in range(Int(num_n_mmas)):
                     alias mma_id = n_mma * num_m_mmas + m_mma
 
                     # Coordinates in mask for current mma tile.
@@ -1361,10 +1367,10 @@ fn mha_single_batch[
             @parameter
             fn _apply_mask[masked: Bool]():
                 @parameter
-                for m_mma in range(num_m_mmas):
+                for m_mma in range(Int(num_m_mmas)):
 
                     @parameter
-                    for n_mma in range(num_n_mmas):
+                    for n_mma in range(Int(num_n_mmas)):
                         alias mma_id = n_mma * num_m_mmas + m_mma
 
                         # Coordinates in mask for current mma tile.
@@ -1489,12 +1495,12 @@ fn mha_single_batch[
 
     # Apply softmax denumerator.
     @parameter
-    for m_mma in range(num_m_mmas):
+    for m_mma in range(Int(num_m_mmas)):
         var rowsum_inv0 = recip(rowsum[2 * m_mma])
         var rowsum_inv1 = recip(rowsum[2 * m_mma + 1])
 
         @parameter
-        for n_mma in range(num_n_mmas):
+        for n_mma in range(Int(num_n_mmas)):
 
             @parameter
             for i in range(p_frag_size // 2):
@@ -1505,7 +1511,9 @@ fn mha_single_batch[
 
     var output_gmem_tile = LayoutTensor[
         output_type,
-        Layout(IntTuple(BM, depth), IntTuple(num_heads * depth, 1)),
+        Layout(
+            IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
+        ),
     ](output_ptr + q_offset)
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
