@@ -118,7 +118,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     return evaluateApplyLike(op, /*withResultSlot=*/false);
   case POC::ApplyResultSlot:
     return evaluateApplyLike(op, /*withResultSlot=*/true);
-  case POC::InstantiateStruct:
+  case POC::InstantiateStructRef:
     return evaluateInstantiateStruct(op);
   case POC::Rebind:
     // Catch unfolded rebinds to emit a nicer error message.

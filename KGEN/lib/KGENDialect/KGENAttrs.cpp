@@ -1099,7 +1099,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetLinkageName:
   case POC::GetTypeMethod:
   case POC::PtrBitcast:
-  case POC::InstantiateStruct:
+  case POC::InstantiateStructRef:
   case POC::VariadicPtrMap:
   case POC::VariadicPtrRemoveMap:
     break;
@@ -1302,9 +1302,9 @@ LogicalResult ParamOperatorAttr::verify(
     if (operands.size() != 1)
       return emitError() << "'load_from_mem' expects one operand";
     break;
-  case POC::InstantiateStruct:
+  case POC::InstantiateStructRef:
     if (operands.size() != 1)
-      return emitError() << "'inst_struct' expects one operand";
+      return emitError() << "'inst_struct_ref' expects one operand";
     break;
   case POC::VariadicPtrMap:
     return verifyVariadicPtrMap(operands, type, emitError);
@@ -2569,7 +2569,7 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::LoadFromMem:
     result = simplifyLoadFromMem(operands, resultType);
     break;
-  case POC::InstantiateStruct:
+  case POC::InstantiateStructRef:
     result = {};
     break;
   case POC::VariadicPtrMap:
