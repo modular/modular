@@ -20,7 +20,7 @@ struct TalkativeMem(Stringable, Writable):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         writer.write("talkative ", self.state)
@@ -39,7 +39,7 @@ struct TalkativeReg(Stringable, Writable):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         writer.write("talkative ", self.state)
@@ -62,7 +62,7 @@ struct TalkativeCopableReg(Stringable, Writable):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         writer.write("talkative ", self.state)
@@ -88,7 +88,7 @@ struct TalkativeCopableMovableMem(Stringable, Writable, CollectionElement):
         print("destroying", self.state)
 
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         writer.write("talkative ", self.state)
