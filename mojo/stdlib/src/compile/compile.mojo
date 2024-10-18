@@ -52,7 +52,7 @@ struct Info:
         return writer.write(self.asm)
 
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn write_text[path_like: PathLike](self, path: path_like) raises:
