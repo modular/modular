@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug -debug-level full %s | FileCheck %s
+# COM: This test should be deleted once we switch to DeviceContextV2
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V1 -debug-level full %s | FileCheck %s
 
 
 from pathlib import Path, _dir_of_current_file
