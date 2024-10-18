@@ -17,7 +17,7 @@ from memory import UnsafePointer
 from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
 from nn.mha_mask import NullMask
 from runtime.asyncrt import MojoCallContextPtr
-from testing import assert_almost_equal
+from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList
 from utils.index import Index
@@ -266,6 +266,12 @@ def execute_flash_attention[
             kv_params.head_size,
             num_pipeline_stages=nps,
         )
+        var config_str = "ampere_" + type.__str__() + "_"
+        config_str += kv_params.head_size.__str__() + "x"
+        config_str += (32 if type is DType.float32 else 64).__str__() + "_"
+        config_str += (16 if type is DType.float32 else 32).__str__()
+        config_str += "x" + nps.__str__()
+        assert_equal(config.__str__(), config_str)
         flash_attention[target="cuda", config=config](
             test_output_device.tensor,
             q_device.tensor,
