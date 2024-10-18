@@ -55,7 +55,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable, Writable):
         Returns:
             A string representation.
         """
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         """
