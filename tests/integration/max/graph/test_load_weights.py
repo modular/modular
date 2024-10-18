@@ -79,7 +79,7 @@ def test_load_pytorch(session, graph_testdata) -> None:
         assert len(expected) == len(output)
         for n, expected in enumerate(expected):
             if flat_keys[n] == "bf16":
-                torch.equal(expected, torch.from_dlpack(output[n]))
+                assert torch.equal(expected, torch.from_dlpack(output[n]))
             else:
                 np.testing.assert_array_equal(expected, output[n].to_numpy())
 
@@ -106,7 +106,7 @@ def test_load_gguf(session, graph_testdata) -> None:
         assert len(expected) == len(output)
         for n, expected in enumerate(expected):
             if flat_keys[n] == "bf16":
-                torch.equal(expected, torch.from_dlpack(output[n]))
+                assert torch.equal(expected, torch.from_dlpack(output[n]))
             else:
                 np.testing.assert_array_equal(expected, output[n].to_numpy())
 
@@ -128,6 +128,6 @@ def test_load_safetensors(session, graph_testdata) -> None:
         assert len(expected) == len(output)
         for n, expected in enumerate(expected):
             if flat_keys[n] == "bf16":
-                torch.equal(expected, torch.from_dlpack(output[n]))
+                assert torch.equal(expected, torch.from_dlpack(output[n]))
             else:
                 np.testing.assert_array_equal(expected, output[n].to_numpy())

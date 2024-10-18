@@ -42,7 +42,9 @@ def write_gguf(filename):
     # Separately add Bfloat16 tensor.
     gguf_writer.add_tensor(
         "bf16",
-        np.array([123, 45], dtype=np.float16),
+        torch.tensor([123, 45], dtype=torch.bfloat16)
+        .view(torch.float16)
+        .numpy(),
         raw_dtype=GGMLQuantizationType.BF16,
     )
 
