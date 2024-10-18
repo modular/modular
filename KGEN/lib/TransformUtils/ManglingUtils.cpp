@@ -12,6 +12,49 @@
 using namespace M;
 using namespace KGEN;
 
+void KGEN::prettyPrintParameter(TypedAttr value, raw_ostream &os) {
+  if (auto typeCst = dyn_cast<TypeConstantAttr>(value)) {
+    // Pretty print common type values.
+    Type typeValue = typeCst.getTypeValue();
+    if (auto structInst = dyn_cast<StructInstanceType>(typeValue)) {
+      // Print full struct type name with its parameters recursively.
+      os << structInst.getName().strref();
+      if (!structInst.getParamValues().empty()) {
+        os << '[';
+        llvm::interleave(
+            structInst.getParamValues(), os,
+            [&](TypedAttr paramValue) { prettyPrintParameter(paramValue, os); },
+            ",");
+        os << ']';
+      }
+    } else if (auto typeValueType = dyn_cast<TypeValueType>(typeValue)) {
+      // Print the wrapped type parameter.
+      prettyPrintParameter(typeValueType.getTypeValue(), os);
+    } else {
+      os << getParamAsString(value);
+    }
+    return;
+  }
+
+  if (auto typeref = dyn_cast<TypeConstantRefAttr>(value)) {
+    // Print type symbol references with its name and its parameters
+    // recursively.
+    os << typeref.getSymbol().getLeafReference().strref();
+    if (!typeref.getParamValues().empty()) {
+      os << '[';
+      llvm::interleave(
+          typeref.getParamValues(), os,
+          [&](TypedAttr paramValue) { prettyPrintParameter(paramValue, os); },
+          ",");
+      os << ']';
+    }
+    return;
+  }
+
+  // Fallback to default format.
+  os << getParamAsString(value);
+}
+
 //===----------------------------------------------------------------------===//
 // mangleParameterValues
 //===----------------------------------------------------------------------===//

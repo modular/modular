@@ -42,14 +42,16 @@ TEST(StackTraceTest, testStackTraceFormat) {
                             R"( stack_trace.mojo:15:13)"));
   EXPECT_THAT(
       frameDescs[1],
-      ContainsRegex(R"(stack_trace::Foo<index, index>)"
-                    R"(::getParametrized<scalar<f32>>\(self=.* @ 0x.*,)"
-                    R"( val=\(\[0] = 105.25\)\) at stack_trace.mojo:17:31)"));
-  EXPECT_THAT(frameDescs[2],
-              ContainsRegex(
-                  R"(stack_trace::Foo<index, index>)"
-                  R"(::getFloat\(self=.* @ 0x.*, x=\(\[0\] = 1.125\), y=100\))"
-                  R"( at stack_trace.mojo:20:45)"));
+      ContainsRegex(
+          R"(stack_trace::Foo<stdlib::builtin::int::Int, stdlib::builtin::int::Int>)"
+          R"(::getParametrized<stdlib::builtin::simd::SIMD,type=f32,size=1>\(self=.* @ 0x.*,)"
+          R"( val=\(\[0] = 105.25\)\) at stack_trace.mojo:17:31)"));
+  EXPECT_THAT(
+      frameDescs[2],
+      ContainsRegex(
+          R"(stack_trace::Foo<stdlib::builtin::int::Int, stdlib::builtin::int::Int>)"
+          R"(::getFloat\(self=.* @ 0x.*, x=\(\[0\] = 1.125\), y=100\))"
+          R"( at stack_trace.mojo:20:45)"));
   EXPECT_THAT(frameDescs[3],
               HasSubstr("stack_trace::main() at stack_trace.mojo:24:35"));
 }

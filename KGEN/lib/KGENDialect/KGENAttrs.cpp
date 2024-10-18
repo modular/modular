@@ -221,10 +221,21 @@ TypedAttr TypeConstantAttr::get(MLIRContext *ctx, Type typeValue, Type mlirType,
   // If this is a trivial mlir Type (i.e. has identical type & value
   // representation), and the trivial type is a ParamRefType, then we're
   // unwrapping a wrapper. Remove this to keep the types canonical.
-  if (mlirType == typeValue && vtable.getEntries().empty())
+  if (mlirType == typeValue && vtable.getEntries().empty()) {
     if (auto refType = ::dyn_cast<ParamRefType>(mlirType))
       if (refType.getParam().getType() == metaType)
         return refType.getParam();
+    if (auto typeValueType = ::dyn_cast<TypeValueType>(mlirType))
+      if (typeValueType.getTypeValue().getType() == metaType)
+        return typeValueType.getTypeValue();
+  }
+
+  // Unwrap immediately-nested TypeConstantAttr as the typeValue. This is
+  // casting the metatype of the inner type constant.
+  if (auto typeValueType = ::dyn_cast<TypeValueType>(typeValue))
+    if (auto innerTypeConstant =
+            ::dyn_cast<TypeConstantAttr>(typeValueType.getTypeValue()))
+      typeValue = innerTypeConstant.getTypeValue();
 
   return Base::get(ctx, typeValue, mlirType, metaType, vtable);
 }
@@ -282,9 +293,10 @@ TypeConstantRefAttr::verifySymbolUses(Operation *module,
   StructGeneratorOp structGen;
   {
     VerboseCompilerTimeTraceScope traceScope("lookupSymbolIn");
+    // TODO(MOCO-1360): Implement ExternStructGeneratorOp to support graph
+    // compiler "forward decls".
     if (!(structGen = symtab.lookupSymbolIn<StructGeneratorOp>(module, symbol)))
-      return emitError(loc)
-             << symbol << " does not reference a struct generator";
+      return success();
   }
 
   ParameterEvaluator evaluator;
@@ -2414,9 +2426,11 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
   SmallVector<TypedAttr> results;
   // Map each type to PointerType of their type.
   for (auto elt : variadic.getValues()) {
-    results.push_back(TypeConstantAttr::get(
-        PointerType::get(ParamRefType::get(elt), addrSpaceOperand),
-        resultEltType));
+    Type typeValue =
+        PointerType::get(TypeValueType::get(elt), addrSpaceOperand);
+    Type mlirType = PointerType::get(ParamRefType::get(elt), addrSpaceOperand);
+    results.push_back(
+        TypeConstantAttr::get(typeValue, mlirType, resultEltType));
   }
 
   return VariadicAttr::get(results, cast<VariadicType>(resultType));
