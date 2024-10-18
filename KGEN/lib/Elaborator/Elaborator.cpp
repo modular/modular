@@ -1425,8 +1425,12 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   if (auto newFunc = dyn_cast<FuncOp>(*instance)) {
     if (auto scope = newFunc.getSubprogramScope()) {
       SmallVector<StringAttr> paramValues;
-      for (TypedAttr value : inputParamValues)
-        paramValues.push_back(getParamTypeAsString(value));
+      for (TypedAttr value : inputParamValues) {
+        std::string result;
+        llvm::raw_string_ostream os(result);
+        prettyPrintParameter(value, os);
+        paramValues.push_back(b.getStringAttr(result));
+      }
       DebugInfo::SourceNameAttr sourceName = scope.getSourceName();
       sourceName = DebugInfo::SourceNameAttr::get(
           sourceName.getName(), sourceName.getParamTypes(),
@@ -1435,9 +1439,8 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
       StringRef linkageName = newFunc.getSymName();
       if (inputParamValues.empty())
         linkageName.consume_back("_concrete");
-      DebugInfo::updateSubprogram(
-          newFunc, StringAttr::get(sourceName.getContext(), linkageName),
-          sourceName);
+      DebugInfo::updateSubprogram(newFunc, b.getStringAttr(linkageName),
+                                  sourceName);
     }
   }
 

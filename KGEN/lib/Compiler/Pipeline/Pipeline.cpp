@@ -171,15 +171,15 @@ void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
   // Then immediately resolve compiler promises.
   pm.addPass(createResolveCompilerPromises());
 
-#ifndef MODULAR_PRODUCTION
-  // Ensure no illegal parameters remain.
-  pm.addNestedPass<FuncOp>(createEnsureNoParameters());
-#endif
-
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());
   pm.addNestedPass<FuncOp>(createLowerCallingConventions());
   pm.addNestedPass<FuncOp>(createMem2Reg());
+
+#ifndef MODULAR_PRODUCTION
+  // Ensure no illegal parameters remain.
+  pm.addNestedPass<FuncOp>(createEnsureNoParameters());
+#endif
 
   // Run the AutomaticInline pass with an inner function pass pipeline.
   auto buildAutomaticInlineFuncPasses = [options](mlir::OpPassManager &pm) {

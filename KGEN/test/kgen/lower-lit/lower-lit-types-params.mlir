@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -verify-parameters -lower-lit-types -verify-parameters | FileCheck %s
+// RUN: kgen-opt %s -verify-parameters -lower-lit-types -verify-parameters -kgen-print-inline-type-values | FileCheck %s
 
 lit.struct.decl @Coro<T: type> register_passable {
   lit.struct.field coro : !kgen.struct<(T)>
@@ -21,13 +21,16 @@ lit.struct.decl @Bar<size, dt: dtype> register_passable {
   lit.struct.field value: !pop.simd<size, dt>
 }
 
-// CHECK-LABEL: kgen.generator @anystructs
+// CHECK: kgen.struct.generator @[[STRUCT_BAR:.+]]<size, dt: dtype>
+// CHECK-NEXT:    kgen.struct.info :type [struct_inst<"Bar"[size, dt]<size, :dtype dt>(value: simd<size, dt>)>, simd<size, dt>]
+
+// CHECK: kgen.generator @anystructs
 kgen.generator @anystructs() {
   // COM: Partially bound types will not have uses at the KGEN level.
-  // CHECK-NEXT: declare Partial: type = <simd<?, f32>>
+  // CHECK-NEXT: declare Partial: type = <[typevalue<inst_struct(#kgen.typeref<@Bar<?, :dtype f32>>)>, simd<?, f32>]>
   kgen.param.declare Partial: anystruct<@Bar<?, :dtype f32>, <index>> = <#lit.bind_type<:anystruct<@Bar<?, :dtype ?>, <index, dtype>> ?, [?, f32]>>
 
-  // CHECK-NEXT: declare BoundFromPartial: type = <simd<16, f32>>
+  // CHECK-NEXT: declare BoundFromPartial: type = <[typevalue<inst_struct(#kgen.typeref<@[[STRUCT_BAR]]<16, :dtype f32>>)>, simd<16, f32>]>
   kgen.param.declare BoundFromPartial: anystruct<@Bar<16, :dtype f32>> = <#lit.bind_type<:anystruct<@Bar<?, :dtype f32>, <index>> Partial, [16]>>
   kgen.return
 }

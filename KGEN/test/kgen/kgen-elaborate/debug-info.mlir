@@ -5,7 +5,7 @@
 #file = #debuginfo.file<"test.mlir" in "">
 !unresolved = !debuginfo.unresolved<!kgen.paramref<ty>>
 
-// CHECK-DAG: #takeFnContextualType_name = #debuginfo.source_name<"takeFnContextualType"<":type index", ":() -> index @sillyFn">>
+// CHECK-DAG: #takeFnContextualType_name = #debuginfo.source_name<"takeFnContextualType"<"index", "@sillyFn">>
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<sourceName = #takeFnContextualType_name, linkageName = "takeFnContextualType,ty=index,fn=_sillyFn",
 #callerSp = #debuginfo.subprogram<file = #file, sourceName = <"takeFnContextualType">> : !debuginfo.subroutine<() -> (!unresolved): DW_CC_normal>
 
