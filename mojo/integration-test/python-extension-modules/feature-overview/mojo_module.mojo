@@ -148,7 +148,7 @@ struct Person:
 
     # Required by Pythonable
     fn __repr__(self) -> String:
-        return String.format_sequence(
+        return String.write(
             "Person(",
             repr(self.name),
             ", ",
