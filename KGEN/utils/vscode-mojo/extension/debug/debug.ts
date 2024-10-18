@@ -41,6 +41,7 @@ export type MojoDebugConfiguration = {
   customFrameFormat?: string;
   runInTerminal?: boolean;
   buildArgs?: string[];
+  enableSyntheticChildDebugging?: boolean;
 };
 
 /**
@@ -239,6 +240,10 @@ class MojoDebugConfigurationResolver
       // emit opt for -O0.
       debugConfiguration.customFrameFormat =
         '${function.name-with-args}{${frame.is-artificial} [artificial]}';
+    }
+
+    if (debugConfiguration.enableSyntheticChildDebugging === undefined) {
+      debugConfiguration.enableSyntheticChildDebugging = true;
     }
 
     // This setting indicates LLDB to generate a useful summary for each
