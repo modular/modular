@@ -195,7 +195,7 @@ struct TensorSpec(
         Returns:
           The string representation of the spec.
         """
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         """

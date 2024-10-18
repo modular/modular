@@ -198,7 +198,7 @@ struct _Rep16(Stringable, Writable, EqualityComparable):
         Returns:
           The string representation of the shape.
         """
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         for i in range(self.get_rank()):
@@ -340,7 +340,7 @@ struct _Rep32(Writable, EqualityComparable):
           The string representation of the shape.
         """
 
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         for i in range(self.get_rank()):
@@ -493,7 +493,7 @@ struct _RepOutOfLine(Writable, EqualityComparable):
           The string representation of the shape.
         """
 
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         for i in range(self.get_rank()):
@@ -1030,7 +1030,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
           The string representation of the shape.
         """
 
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         """
