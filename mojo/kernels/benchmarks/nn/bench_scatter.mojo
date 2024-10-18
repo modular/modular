@@ -15,6 +15,7 @@ from buffer import NDBuffer
 from memory import UnsafePointer
 from buffer.dimlist import Dim, DimList
 from nn.gather_scatter import scatter_elements
+from tensor_utils_internal import ManagedTensorSlice
 
 from utils.index import Index
 
@@ -46,7 +47,9 @@ fn bench_scatter(inout bencher: Bencher, spec: ScatterSpec):
 
     var data_ptr = UnsafePointer[Float32].alloc(input_shape.flattened_length())
     rand(data_ptr, input_shape.flattened_length())
-    var data_tensor = NDBuffer[DType.float32, 2](data_ptr, input_shape)
+    var data_tensor = ManagedTensorSlice[DType.float32, 2](
+        data_ptr, input_shape
+    )
 
     var indices_ptr = UnsafePointer[Int32].alloc(
         indices_shape.flattened_length()
@@ -57,18 +60,24 @@ fn bench_scatter(inout bencher: Bencher, spec: ScatterSpec):
         index_rand_min,
         index_rand_max,
     )
-    var indices_tensor = NDBuffer[DType.int32, 2](indices_ptr, indices_shape)
+    var indices_tensor = ManagedTensorSlice[DType.int32, 2](
+        indices_ptr, indices_shape
+    )
 
     var updates_ptr = UnsafePointer[Float32].alloc(
         indices_shape.flattened_length()
     )
     rand(updates_ptr, indices_shape.flattened_length())
-    var updates_tensor = NDBuffer[DType.float32, 2](updates_ptr, indices_shape)
+    var updates_tensor = ManagedTensorSlice[DType.float32, 2](
+        updates_ptr, indices_shape
+    )
 
     var output_ptr = UnsafePointer[Float32].alloc(
         input_shape.flattened_length()
     )
-    var output_tensor = NDBuffer[DType.float32, 2](output_ptr, input_shape)
+    var output_tensor = ManagedTensorSlice[DType.float32, 2](
+        output_ptr, input_shape
+    )
 
     @always_inline
     @parameter
