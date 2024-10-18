@@ -32,27 +32,18 @@ struct DeviceFunctionVariant[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     *,
-    dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
-    dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-    dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
     alias V1 = DeviceFunctionV1[
         func,
-        dump_ptx=dump_ptx,
-        dump_llvm=dump_llvm,
-        dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
     ]
     alias V2 = DeviceFunctionV2[
         func,
-        dump_ptx=dump_ptx,
-        dump_llvm=dump_llvm,
-        dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
@@ -295,9 +286,6 @@ struct DeviceContextVariant:
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises -> DeviceFunctionVariant[
         func,
-        dump_ptx=dump_ptx,
-        dump_llvm=dump_llvm,
-        dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,

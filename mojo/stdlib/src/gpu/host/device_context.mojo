@@ -130,9 +130,6 @@ struct DeviceFunctionV1[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     *,
-    dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
-    dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-    dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
@@ -140,9 +137,6 @@ struct DeviceFunctionV1[
     var ctx_ptr: UnsafePointer[DeviceContextV1]
     var cuda_function: Function[
         func,
-        dump_ptx=dump_ptx,
-        dump_llvm=dump_llvm,
-        dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
@@ -166,9 +160,6 @@ struct DeviceFunctionV1[
         self.ctx_ptr = UnsafePointer[DeviceContextV1].address_of(ctx)
         self.cuda_function = Function[
             func,
-            dump_ptx=dump_ptx,
-            dump_llvm=dump_llvm,
-            dump_sass=dump_sass,
             target=target,
             _is_failable=_is_failable,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -180,6 +171,15 @@ struct DeviceFunctionV1[
             cache_config=cache_config,
             func_attribute=func_attribute,
         )
+
+    fn dump_rep[
+        dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+    ](self) raises:
+        self.cuda_function.dump_rep[
+            dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
+        ]()
 
 
 @value
@@ -265,14 +265,11 @@ struct DeviceContextV1:
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises -> DeviceFunctionV1[
         func,
-        dump_ptx=dump_ptx,
-        dump_llvm=dump_llvm,
-        dump_sass=dump_sass,
         target=target,
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
     ] as result:
-        return __type_of(result)(
+        result = __type_of(result)(
             self,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
@@ -280,6 +277,9 @@ struct DeviceContextV1:
             cache_config=cache_config,
             func_attribute=func_attribute,
         )
+        result.dump_rep[
+            dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
+        ]()
 
     @parameter
     fn enqueue_function[

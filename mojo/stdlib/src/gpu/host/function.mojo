@@ -321,9 +321,6 @@ struct Function[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     *,
-    dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
-    dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-    dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
@@ -385,9 +382,6 @@ struct Function[
 
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
-
-        Self._dump_rep()
-
         self.info = Self._get_cached_function_info[func_type, func](
             device_context_ptr=device_context_ptr,
             max_registers=max_registers,
@@ -413,9 +407,6 @@ struct Function[
 
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
-
-        Self._dump_rep()
-
         var function_handle = module.load(name)
         if not function_handle:
             raise "Unable to load the CUDA function"
@@ -433,7 +424,11 @@ struct Function[
 
     @no_inline
     @staticmethod
-    fn _dump_rep() raises:
+    fn dump_rep[
+        dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+    ]() raises:
         @parameter
         if _ptxas_info_verbose:
             alias ptx = Self._impl.asm
