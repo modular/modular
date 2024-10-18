@@ -24,6 +24,7 @@ from compile import _internal_compile_code
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal, assert_true
+from tensor_utils_internal import ManagedTensorSlice
 
 from utils import Index, IndexList
 from utils.index import product
@@ -211,6 +212,9 @@ struct TestTensor[type: DType, rank: Int]:
 
     fn __del__(owned self):
         self.ndbuffer.data.free()
+
+    fn to_managed_tensor_slice(self) -> ManagedTensorSlice[type, rank]:
+        return ManagedTensorSlice[type, rank](self.ndbuffer)
 
 
 @parameter
