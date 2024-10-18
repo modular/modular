@@ -16,6 +16,7 @@ from benchmark import (
     BenchMetric,
     ThroughputMeasure,
     keep,
+    clobber_memory,
 )
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
@@ -257,11 +258,11 @@ fn bench_compile_time[
                 ]()
                 keep(s.unsafe_ptr())
             elif emission_kind == "ptx":
-                # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
                 with DeviceContext() as ctx:
                     var func = ctx.compile_function[func]()
-                    var s: String = func.v1().cuda_function._impl.asm
-                    keep(s.unsafe_ptr())
+                    # Ensure that the compilation step is not optimized away.
+                    keep(UnsafePointer.address_of(func))
+                    clobber_memory()
 
         b.iter[bench_iter]()
 
