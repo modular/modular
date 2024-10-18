@@ -570,7 +570,7 @@ struct Device(Writable):
 
     @no_inline
     fn __repr__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
 
 @value
