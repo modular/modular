@@ -47,6 +47,7 @@ from memory.unsafe import bitcast
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
+from sys import sizeof
 
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf, neg_inf
@@ -58,6 +59,93 @@ from .mha_warp_shuffle import mha_decoding_single_batch_warp_shuffle
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
 # ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct MHAConfig:
+    var type: DType
+
+    # Q, K, V, output should have the same type.
+    var num_heads: Int
+    var depth: Int
+    var num_queries_per_block: Int
+    var num_keys_per_block: Int
+    var BK: Int  # tile size in depth dimension
+    var WM: Int
+    var WN: Int
+    var num_pipeline_stages: Int
+
+    fn block_m(self) -> Int:
+        return self.num_queries_per_block
+
+    fn block_n(self) -> Int:
+        return self.num_keys_per_block
+
+    fn block_k(self) -> Int:
+        return self.BK
+
+    fn warp_m(self) -> Int:
+        return self.WM
+
+    fn warp_n(self) -> Int:
+        return self.WN
+
+    fn num_warps_m(self) -> Int:
+        return self.block_m() // self.warp_m()
+
+    fn num_warps_n(self) -> Int:
+        return self.block_n() // self.warp_n()
+
+    fn num_threads(self) -> Int:
+        return self.num_warps_m() * self.num_warps_n() * WARP_SIZE
+
+    fn q_smem_size(self) -> Int:
+        return self.block_m() * self.depth
+
+    fn k_smem_size(self) -> Int:
+        return self.num_pipeline_stages * self.block_n() * self.block_k()
+
+    fn p_smem_size(self) -> Int:
+        return self.block_m() * self.block_n()
+
+    fn warp_scratch_smem_size(self) -> Int:
+        return 2 * self.num_warps_n() * self.block_m()
+
+    fn shared_mem_elements(self) -> Int:
+        var num_smem_elements = self.q_smem_size() + self.k_smem_size() + self.warp_scratch_smem_size()
+
+        if self.num_warps_n() > 1:
+            num_smem_elements += self.p_smem_size()
+
+        return num_smem_elements
+
+    fn __init__(
+        inout self,
+        type: DType,
+        num_heads: Int,
+        depth: Int,
+        num_queries_per_block: OptionalReg[Int] = None,
+        num_keys_per_block: OptionalReg[Int] = None,
+        BK: OptionalReg[Int] = None,
+        WM: OptionalReg[Int] = None,
+        WN: OptionalReg[Int] = None,
+        num_pipeline_stages: Int = 4,
+    ):
+        self.type = type
+        self.num_heads = num_heads
+        self.depth = depth
+        self.num_pipeline_stages = num_pipeline_stages
+        # Not all of these have to be `OptionalReg`, only
+        # those that depend on `depth`.
+        # Currently, all are `OptionalReg` for consistency.
+        self.num_queries_per_block = num_queries_per_block.or_else(
+            32 if type is DType.float32 else 64
+        )
+        self.num_keys_per_block = num_keys_per_block.or_else(depth)
+        self.BK = BK.or_else(16 if type is DType.float32 else 32)
+        self.WM = WM.or_else(32 if type is DType.float32 else 16)
+        self.WN = WN.or_else(32 if type is DType.float32 else depth)
 
 
 fn fused_attention[
@@ -218,13 +306,16 @@ fn fused_attention[
 
 # Using 32 bits index for GPU kernel.
 fn flash_attention[
-    rank: Int, //,
+    rank: Int,
+    type: DType,
+    q_shape: DimList, //,
     add_attn_mask: Bool = True,
     target: StringLiteral = "cuda",
     use_tensor_core: Bool = False,
+    config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[_, rank, *_],
+    q: NDBuffer[type, rank, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
     mask: NDBuffer,
@@ -251,6 +342,7 @@ fn flash_attention[
             add_attn_mask=add_attn_mask,
             target=target,
             use_tensor_core=use_tensor_core,
+            config=config,
         ](
             output,
             q,
@@ -268,13 +360,16 @@ fn flash_attention[
 fn flash_attention[
     rank: Int,
     cache_t: KVCacheT,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    type: DType,
+    q_shape: DimList, //,
     add_attn_mask: Bool = True,
     target: StringLiteral = "cuda",
     use_tensor_core: Bool = True,
+    config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[_, rank, *_],
+    q: NDBuffer[type, rank, q_shape, *_],
     k: cache_t,
     v: cache_t,
     mask: NDBuffer,
@@ -361,49 +456,39 @@ fn flash_attention[
         alias q_half_float = q.type in (DType.float16, DType.bfloat16)
         # fmt: on
 
+        alias num_heads = config.num_heads
+        alias depth = config.depth
+        constrained[depth == q.shape.get[3]()]()
+        constrained[num_heads == q.shape.get[2]()]()
+
         @parameter
         if flash_attention_applicable:
-            alias depth = q.shape.get[3]()
-            alias num_heads = q.shape.get[2]()
             alias kv_num_heads = k.get_kv_params().num_heads
-            alias group = num_heads // kv_num_heads
+            alias group = config.num_heads // kv_num_heads
 
             # Attention mask tensor needs to be aligned to even length. This
             # is not needed when computing mask on the fly.
             if is_context_encoding and (seq_len % 2 == 0 or not add_attn_mask):
                 # Choose matmul parameters based on dtype.
-                alias BM = 32 if q.type is DType.float32 else 64
-                alias BN = depth
-                alias BK = 16 if q.type is DType.float32 else 32
-                alias WM = 32 if q.type is DType.float32 else 16
-                alias WN = 32 if q.type is DType.float32 else depth
-                # num warps in M and N, multipled by warp size.
-                alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+                alias smem_use = config.shared_mem_elements() * sizeof[
+                    config.type
+                ]()
 
                 var func = ctx.compile_function[
                     mha[
                         mask.rank,
-                        q.type,
+                        config.type,
                         __type_of(k),
                         mask.type,
                         output.type,
                         mask_t,
-                        BM=BM,
-                        BN=BN,
-                        BK=BK,
-                        WM=WM,
-                        WN=WN,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=num_threads,
-                        num_pipeline_stages=4,
+                        config,
                         group=group,
                         use_mask_tensor=add_attn_mask,
                     ]
                 ](
-                    # TODO: Avoid hard coding shared memory needed. KERN-747
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80 * 1024
+                        smem_use
                     )
                 )
                 ctx.enqueue_function(
@@ -419,12 +504,12 @@ fn flash_attention[
                     valid_length,
                     mask_functor,
                     grid_dim=(
-                        ceildiv(seq_len, BM),
-                        num_heads,
+                        ceildiv(seq_len, config.block_m()),
+                        config.num_heads,
                         batch_size,
                     ),
-                    block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=80 * 1024,
+                    block_dim=(config.num_threads(), 1, 1),
+                    shared_mem_bytes=smem_use,
                 )
 
             # Decoding impl only support half precision.
@@ -459,7 +544,6 @@ fn flash_attention[
                         use_tensor_core=use_tensor_core,
                     ]
                 ](
-                    # TODO: Avoid hard coding shared memory needed.
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         80 * 1024
                     ),
@@ -528,13 +612,16 @@ fn flash_attention[
 
 fn flash_attention[
     rank: Int,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
+    type: DType,
+    q_shape: DimList, //,
     add_attn_mask: Bool = True,
     target: StringLiteral = "cuda",
     use_tensor_core: Bool = True,
+    config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
     output: NDBuffer[_, rank, *_],
-    q: NDBuffer[_, rank, *_],
+    q: NDBuffer[type, rank, q_shape, *_],
     k: NDBuffer[_, rank, *_],
     v: NDBuffer[_, rank, *_],
     mask: NDBuffer,
@@ -566,14 +653,6 @@ fn flash_attention[
     constrained["cuda" in target, "only valid on Nvidia GPUs"]()
     constrained[rank == 4, "only support rank 4 inputs."]()
     constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
-    constrained[
-        q.type == k.type == v.type == output.type,
-        "Q, K, V, output should have same type.",
-    ]()
-    constrained[
-        q.type == DType.float32 or q.type.is_half_float(),
-        "Only support single and half precision.",
-    ]()
 
     # TODO docstring
     @always_inline
@@ -616,13 +695,9 @@ fn flash_attention[
             # input outside the model.
             if seq_len == num_keys and seq_len % 2 == 0:
                 # Choose matmul parameters based on dtype.
-                alias BM = 32 if q.type is DType.float32 else 64
-                alias BN = depth
-                alias BK = 16 if q.type is DType.float32 else 32
-                alias WM = 32 if q.type is DType.float32 else 16
-                alias WN = 32 if q.type is DType.float32 else depth
-                # num warps in M and N, multipled by warp size.
-                alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+                alias smem_use = config.shared_mem_elements() * sizeof[
+                    config.type
+                ]()
 
                 var func = ctx.compile_function[
                     mha[
@@ -633,22 +708,13 @@ fn flash_attention[
                         mask.type,
                         output.type,
                         mask_t,
-                        BM=BM,
-                        BN=BN,
-                        BK=BK,
-                        WM=WM,
-                        WN=WN,
-                        depth=depth,
-                        num_heads=num_heads,
-                        num_threads=num_threads,
-                        num_pipeline_stages=4,
+                        config=config,
                         group=group,
                         use_mask_tensor=add_attn_mask,
                     ]
                 ](
-                    # TODO: Avoid hard coding shared memory needed. KERN-747
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80 * 1024
+                        smem_use
                     )
                 )
 
@@ -664,12 +730,12 @@ fn flash_attention[
                     seq_len,
                     mask_functor,
                     grid_dim=(
-                        ceildiv(seq_len, BM),
+                        ceildiv(seq_len, config.block_m()),
                         num_heads,
                         batch_size,
                     ),
-                    block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=80 * 1024,
+                    block_dim=(config.num_threads(), 1, 1),
+                    shared_mem_bytes=smem_use,
                 )
 
             # Decoding impl only support half precision.
@@ -862,7 +928,7 @@ fn _copy_frag_to_smem[
 
 
 # Entry point for mha with batch_size > 1.
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
 fn mha[
     mask_rank: Int,
     q_type: DType,
@@ -870,15 +936,7 @@ fn mha[
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
-    BM: Int,  # number of queries per block
-    BN: Int,  # number of keys per block
-    BK: Int,  # tile size in depth dimension
-    WM: Int,
-    WN: Int,
-    depth: Int,
-    num_heads: Int,
-    num_threads: Int,
-    num_pipeline_stages: Int,
+    config: MHAConfig,
     group: Int = 1,
     use_mask_tensor: Bool = True,
 ](
@@ -895,9 +953,9 @@ fn mha[
 ):
     var batch_idx = BlockIdx.z()
     var seq_len: Int = int(valid_length[batch_idx])
-    var q_batch_offset = depth * num_heads * max_seq_len * batch_idx
+    var q_batch_offset = config.depth * config.num_heads * max_seq_len * batch_idx
     var mask_batch_offset = batch_idx * max_seq_len * max_seq_len * (
-        num_heads if mask_rank == 4 else 1
+        config.num_heads if mask_rank == 4 else 1
     )
 
     var k_nd_buffer = k.block[k.get_type(), k.get_block_static_shape()](
@@ -912,15 +970,7 @@ fn mha[
 
     mha_single_batch[
         mask_rank,
-        BM=BM,
-        BN=BN,
-        BK=BK,
-        WM=WM,
-        WN=WN,
-        depth=depth,
-        num_heads=num_heads,
-        num_threads=num_threads,
-        num_pipeline_stages=num_pipeline_stages,
+        config=config,
         group=group,
         use_mask_tensor=use_mask_tensor,
     ](
@@ -936,7 +986,7 @@ fn mha[
     )
 
 
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
 fn mha[
     mask_rank: Int,
     q_type: DType,
@@ -946,15 +996,7 @@ fn mha[
     output_type: DType,
     mask_t: MHAMask,
     *,
-    BM: Int,  # number of queries per block
-    BN: Int,  # number of keys per block
-    BK: Int,  # tile size in depth dimension
-    WM: Int,
-    WN: Int,
-    depth: Int,
-    num_heads: Int,
-    num_threads: Int,
-    num_pipeline_stages: Int,
+    config: MHAConfig,
     group: Int = 1,
     use_mask_tensor: Bool = True,
 ](
@@ -968,24 +1010,18 @@ fn mha[
     seq_len: Int,
     mask: mask_t,
 ):
+    alias depth = config.depth
+    alias num_heads = config.num_heads
     var batch_idx = BlockIdx.z()
     var q_batch_offset = depth * num_heads * seq_len * batch_idx
     var kv_batch_offset = depth * (num_heads // group) * seq_len * batch_idx
     var mask_batch_offset = batch_idx * seq_len * seq_len * (
-        num_heads if mask_rank == 4 else 1
+        config.num_heads if mask_rank == 4 else 1
     )
 
     mha_single_batch[
         mask_rank,
-        BM=BM,
-        BN=BN,
-        BK=BK,
-        WM=WM,
-        WN=WN,
-        depth=depth,
-        num_heads=num_heads,
-        num_threads=num_threads,
-        num_pipeline_stages=num_pipeline_stages,
+        config=config,
         group=group,
         use_mask_tensor=use_mask_tensor,
     ](
@@ -1001,7 +1037,7 @@ fn mha[
     )
 
 
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](config.num_threads()))
 fn mha_single_batch[
     mask_rank: Int,
     q_type: DType,
@@ -1011,15 +1047,7 @@ fn mha_single_batch[
     output_type: DType,
     mask_t: MHAMask,
     *,
-    BM: Int,  # number of queries per block
-    BN: Int,  # number of keys per block
-    BK: Int,  # tile size in depth dimension
-    WM: Int,
-    WN: Int,
-    depth: Int,
-    num_heads: Int,
-    num_threads: Int,
-    num_pipeline_stages: Int,
+    config: MHAConfig,
     group: Int = 1,
     use_mask_tensor: Bool = True,
 ](
@@ -1048,8 +1076,14 @@ fn mha_single_batch[
 
     alias simd_size = simdwidthof[q_type]()
 
-    alias num_warps_m = BM // WM
-    alias num_warps_n = BN // WN
+    alias num_warps_m = config.num_warps_m()
+    alias num_warps_n = config.num_warps_n()
+    alias num_threads = config.num_threads()
+    alias BM = config.block_m()
+    alias BN = config.block_n()
+    alias BK = config.block_k()
+    alias num_heads = config.num_heads
+    alias depth = config.depth
 
     constrained[
         num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
@@ -1064,7 +1098,7 @@ fn mha_single_batch[
     warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
 
     # The entire query block (BM x depth) is tiled in shared memory.
-    alias q_smem_size = BM * depth
+    alias q_smem_size = config.q_smem_size()
     var q_smem = external_memory[
         Scalar[q_type],
         address_space = AddressSpace.SHARED,
@@ -1090,7 +1124,7 @@ fn mha_single_batch[
     )
     # There is one pre-allocated dynamic shared buffer.
     # Need to explicitly offset key after at query's end.
-    alias k_smem_size = num_pipeline_stages * BN * BK
+    alias k_smem_size = config.k_smem_size()
     var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
     var k_smem_iter = LayoutTensorIter[
         k_type,
@@ -1116,6 +1150,8 @@ fn mha_single_batch[
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
+    alias WM = config.WM
+    alias WN = config.WN
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
@@ -1158,7 +1194,11 @@ fn mha_single_batch[
         accum_type,
         Layout.row_major(2 * num_warps_n, BM),
         address_space = AddressSpace.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    ](
+        (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
+            Scalar[accum_type]
+        ]()
+    )
 
     # Mask global memory iterator.
     var mask_block_row = q_tile_idx * BM
@@ -1172,6 +1212,8 @@ fn mha_single_batch[
     # Account for group query.
     alias kv_num_heads = num_heads // group
     var kv_offset = depth * (head_idx // group)
+
+    alias num_pipeline_stages = config.num_pipeline_stages
 
     for kv_tile_start_row in range(0, seq_len, BN):
         if (
@@ -1190,11 +1232,14 @@ fn mha_single_batch[
 
         var v_gmem_block = LayoutTensor[
             v_type,
-            Layout(IntTuple(BN, depth), IntTuple(kv_num_heads * depth, 1)),
+            Layout(
+                IntTuple(Int(BN), Int(depth)),
+                IntTuple(Int(kv_num_heads * depth), 1),
+            ),
         ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
-        var kv_tile_num_rows = min(BN, seq_len - kv_tile_start_row)
+        var kv_tile_num_rows = min(Int(BN), seq_len - kv_tile_start_row)
 
         _ = p_reg_tile.fill(0)
 
