@@ -347,8 +347,13 @@ public:
       attachMetadataToGenerator(slicedComputeFunction, inputLambdaNames,
                                 outputLambdaNames);
 
-      // Remove the kernel attr from the user kernel.
+      // Remove attributes that would cause MojoLibraryAnalysis to treat the
+      // sliced function as a registered kernel.
+      userKernel->removeAttr(kernelRegistrationAttr);
       userKernel->removeAttr(kMOGGExecuteFunctionLabel);
+      userKernel->removeAttr(shapeFuncRegistrationAttr);
+      userKernel->removeAttr(kMOGGShapeFunctionLabel);
+      userKernel->removeAttr(kMOGGPyTorchFallbackFunctionLabel);
     }
   }
 };
