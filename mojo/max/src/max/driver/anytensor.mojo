@@ -167,7 +167,7 @@ struct AnyTensor:
           A compact string of the tensor.
         """
 
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         """
@@ -483,7 +483,7 @@ struct AnyMemory:
     @no_inline
     fn __str__(self) -> String:
         """Gets this value as a string."""
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         """

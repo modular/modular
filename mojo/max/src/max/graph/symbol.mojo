@@ -112,7 +112,7 @@ struct Symbol(CollectionElement, Stringable, Writable):
         Returns:
             A textual representation of this `Symbol`.
         """
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         """

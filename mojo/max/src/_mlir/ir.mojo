@@ -279,7 +279,7 @@ struct Module(Stringable, Writable):
         return self.as_op().debug_str(pretty_print)
 
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         writer.write(self.as_op())
@@ -602,7 +602,7 @@ struct Operation(CollectionElement, Stringable, Writable):
         ](self.c, flags)
 
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         # TODO: Avoid this intermediate String allocation.

@@ -278,7 +278,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
           A compact string of the tensor.
         """
 
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         """

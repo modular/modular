@@ -288,7 +288,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         Returns:
             A human-readable string representation of the graph.
         """
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         writer.write(self._module())
