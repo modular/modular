@@ -14,7 +14,7 @@ from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
 from memory import UnsafePointer
-from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
 from nn.mha_mask import NullMask
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
@@ -240,19 +240,6 @@ def execute_flash_attention[
         batch_size,
     )
 
-    flash_attention[target="cuda"](
-        test_output_device.tensor,
-        q_device.tensor,
-        k_cache_device,
-        v_cache_device,
-        mask_device.tensor,
-        NullMask(),
-        valid_length_device.tensor,
-        # TODO take scale from argument GRA-750
-        isqrt(Float32(kv_params.head_size)),
-        ctx,
-    )
-
     mha_gpu_naive[4, 4, use_mask_tensor=True](
         q_device.tensor,
         k_cache_device,
@@ -271,26 +258,47 @@ def execute_flash_attention[
         ctx,
     )
 
-    ctx.enqueue_copy_from_device(
-        test_output_host.tensor.data, test_output_device.buffer
-    )
-    ctx.enqueue_copy_from_device(
-        ref_output_host.tensor.data, ref_output_device.buffer
-    )
-    ctx.synchronize()
+    @parameter
+    for nps in range(2, 5):
+        alias config = MHAConfig(
+            type,
+            num_q_heads,
+            kv_params.head_size,
+            num_pipeline_stages=nps,
+        )
+        flash_attention[target="cuda", config=config](
+            test_output_device.tensor,
+            q_device.tensor,
+            k_cache_device,
+            v_cache_device,
+            mask_device.tensor,
+            NullMask(),
+            valid_length_device.tensor,
+            # TODO take scale from argument GRA-750
+            isqrt(Float32(kv_params.head_size)),
+            ctx,
+        )
 
-    ref_out = ref_output_host.tensor
-    test_out = test_output_host.tensor
-    for bs in range(int(batch_size)):
-        for s in range(int(valid_length[bs])):
-            for h in range(int(kv_params.num_heads)):
-                for hd in range(kv_params.head_size):
-                    assert_almost_equal(
-                        ref_out[bs, s, h, hd],
-                        test_out[bs, s, h, hd],
-                        atol=1e-5,
-                        rtol=8e-3,
-                    )
+        ctx.enqueue_copy_from_device(
+            test_output_host.tensor.data, test_output_device.buffer
+        )
+        ctx.enqueue_copy_from_device(
+            ref_output_host.tensor.data, ref_output_device.buffer
+        )
+        ctx.synchronize()
+
+        ref_out = ref_output_host.tensor
+        test_out = test_output_host.tensor
+        for bs in range(int(batch_size)):
+            for s in range(int(valid_length[bs])):
+                for h in range(int(kv_params.num_heads)):
+                    for hd in range(kv_params.head_size):
+                        assert_almost_equal(
+                            ref_out[bs, s, h, hd],
+                            test_out[bs, s, h, hd],
+                            atol=1e-5,
+                            rtol=8e-3,
+                        )
 
     _ = q_device^
     _ = q_host^
