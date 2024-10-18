@@ -29,8 +29,6 @@ namespace M::KGEN::MOGGPreElab {
 
 static constexpr llvm::StringLiteral kExecuteFuncName = "execute";
 static constexpr llvm::StringLiteral kShapeFuncName = "shape";
-static constexpr llvm::StringLiteral kInitializeOutputFuncName =
-    "initialize_output";
 static constexpr llvm::StringLiteral kPyTorchFallbackFuncName =
     "pytorch_fallback";
 
@@ -461,7 +459,7 @@ public:
       // Is not extensibility struct, but maybe some regular mojo object
       if (!isExtensibilityStruct.takeValue())
         return WalkResult::advance();
-      LIT::FuncOp executeOp, shapeOp, initializeOutputOp;
+      LIT::FuncOp executeOp, shapeOp;
       for (auto &curOp : structDeclOp.getFields().front()) {
         auto func = dyn_cast<LIT::FuncOp>(curOp);
         if (!func)
@@ -478,12 +476,6 @@ public:
                                        kMOGGShapeFunctionLabel, builder))
             return WalkResult::interrupt();
           shapeOp = func;
-        } else if (func.getSourceName() == kInitializeOutputFuncName) {
-          if (!processStructFuncCommon(structDeclOp, registrationInfo, func,
-                                       kMOGGInitializeOutputFunctionLabel,
-                                       builder))
-            return WalkResult::interrupt();
-          initializeOutputOp = func;
         } else if (func.getSourceName() == kPyTorchFallbackFuncName) {
           if (!processStructFuncCommon(structDeclOp, registrationInfo, func,
                                        kMOGGPyTorchFallbackFunctionLabel,
@@ -493,21 +485,8 @@ public:
       }
 
       // Some struct verifiers
-      if (!executeOp && !initializeOutputOp) {
-        structDeclOp.emitError("Struct based extensibility needs execute or "
-                               "initialize_output!");
-        return WalkResult::interrupt();
-      }
-
-      if (executeOp && initializeOutputOp) {
-        structDeclOp.emitError("Struct based extensibility cannot have "
-                               "execute and initialize_output op!");
-        return WalkResult::interrupt();
-      }
-
-      if (initializeOutputOp && shapeOp) {
-        structDeclOp.emitError("Struct based extensibility cannot have "
-                               "initialize_output and shape op!");
+      if (!executeOp) {
+        structDeclOp.emitError("Struct based extensibility needs execute!");
         return WalkResult::interrupt();
       }
 
