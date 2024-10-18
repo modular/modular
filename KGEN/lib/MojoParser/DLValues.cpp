@@ -360,21 +360,26 @@ DefArgumentWrapperDLValue::prepareForInoutAccess(SMLoc loc,
                            OpBuilder::atBlockBegin(func.getBody()));
   StringAttr argName = func.getSignature().getArgName(argIndex);
 
-  // Create the shadow box and copy the argument into it.  This will emit an
-  // error at the specified location if the underlying type isn't copyable.
-  VarDeclOp declOp = entryEmitter.makeArgLValueVarSlot(argRef, argName, loc);
+  // Create the shadow box that has an address and copy the argument into it.
+  VarDeclOp varDecl = entryEmitter.emitVarDecl(argName, argRef.getRValueType(),
+                                               emitter.translateLocation(loc),
+                                               VarDeclKind::Arg);
 
-  // Emission can fail when the type is non-copyable.
-  if (!declOp) {
+  // Expr to provide location information.
+  ValueDest dest(MLValue(varDecl), EC_OwnedRegArgShadow);
+  if (!entryEmitter.emitBValue({argRef, SyntheticNode(loc)}, dest)) {
+    // This can fail if not copyable/movable.
+    dest.resetForError();
     argDecl->setErroneous();
     return LValue();
   }
 
-  declOp.setArgShadowIndex(argIndex);
+  // This helps debug info and QoI.
+  varDecl.setArgShadowIndex(argIndex);
 
   // Update the representation so we don't do this again.
-  argDecl->setIRValue(MLValue(declOp));
-  return MLValue(declOp);
+  argDecl->setIRValue(MLValue(varDecl));
+  return MLValue(varDecl);
 }
 
 CValue DefArgumentWrapperDLValue::emitLoad(ValueDest &dest,
