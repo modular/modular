@@ -339,6 +339,57 @@ void VerifyingParameterCollector::verifyRefType(StructTypeInterface refType) {
 }
 
 //===----------------------------------------------------------------------===//
+// ParamIndexRefAttrFinder
+//===----------------------------------------------------------------------===//
+
+template <typename T>
+static bool
+hasReferencesImpl(T value, size_t depth,
+                  DenseMap<std::pair<size_t, const void *>, bool> &cache) {
+  if (!value)
+    return false;
+
+  // If we've already processed this value, just reuse the memoized result.
+  std::pair<size_t, const void *> cacheKey(depth, value.getAsOpaquePointer());
+  auto it = cache.find(cacheKey);
+  if (it != cache.end())
+    return it->second;
+
+  // Signatures push a parameter scope.
+  if constexpr (std::is_base_of_v<Type, T>)
+    if (isa<ParameterScopeTypeInterface>(value))
+      ++depth;
+
+  bool hasReference = false;
+  // Check to see if this is locally an index with the right depth.
+  if constexpr (std::is_base_of_v<Attribute, T>)
+    if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value))
+      if (indexRef.getDepth() == depth)
+        hasReference = true;
+
+  if (!hasReference) {
+    value.walkImmediateSubElements(
+        [&](Attribute attr) {
+          hasReference |= hasReferencesImpl(attr, depth, cache);
+        },
+        [&](Type type) {
+          hasReference |= hasReferencesImpl(type, depth, cache);
+        });
+  }
+
+  cache[cacheKey] = hasReference;
+  return hasReference;
+}
+
+bool ParamIndexRefAttrFinder::hasReferences(TypedAttr value) {
+  return hasReferencesImpl(value, 0, cached);
+}
+
+bool ParamIndexRefAttrFinder::hasReferences(Type type) {
+  return hasReferencesImpl(type, 0, cached);
+}
+
+//===----------------------------------------------------------------------===//
 // ParameterUseDefGraph Implementation
 //===----------------------------------------------------------------------===//
 

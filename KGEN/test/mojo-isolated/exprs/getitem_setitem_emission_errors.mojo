@@ -85,6 +85,6 @@ struct Issue3142IntList:
     fn __setitem__[idx: Int](inout self, value: Int): pass
 
 fn test(lst: Issue3142IntList):
-    # expected-error @+1 {{invalid call to '__setitem__': could not deduce parameter 'idx' of callee '__setitem__'}}
+    # expected-error @+2 {{invalid call to '__setitem__': could not deduce parameter 'idx' of callee '__setitem__'}}
+    # expected-note @+1 {{failed to infer parameter 'idx', parameter isn't used in any argument}}
     lst[0] = 0
-

@@ -628,6 +628,15 @@ LogicalResult
 ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
                                          ASTType expectedType,
                                          ArgConvention expectedConvention) {
+  // Early return if this operand will not help with inferring parameters. This
+  // avoids unnecessary checks & dealing with errors unrelated to parameter
+  // inference here. The only operands that can contribute to param inference
+  // are either those whose expected types contain param references, or InitSelf
+  // operands, since they may specialize the self type.
+  if (expectedConvention != ArgConvention::InitSelf &&
+      !paramFinder.hasReferences(expectedType.mlirType))
+    return success();
+
   AnyValue value = operand.ir;
   curArgExpr = operand.expr;
 

@@ -8,6 +8,7 @@
 #define KGEN_MOJOPARSER_PARAMETERINFERENCE_H
 
 #include "CallEmission.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 
 namespace M::KGEN::LIT {
@@ -166,6 +167,9 @@ private:
   /// argument in an initializer call. These parameters can forward reference
   /// non-Self parameters. We need to refine them again at the end of inference.
   SmallVector<unsigned> initSelfParams;
+
+  /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
+  ParamIndexRefAttrFinder paramFinder;
 };
 
 } // namespace M::KGEN::LIT

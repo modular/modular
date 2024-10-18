@@ -141,6 +141,22 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// ParamIndexRefAttrFinder
+//===----------------------------------------------------------------------===//
+
+// Class to determine if there are any parameter references in the attribute
+// value.
+class ParamIndexRefAttrFinder {
+public:
+  bool hasReferences(TypedAttr value);
+  bool hasReferences(Type type);
+
+private:
+  // Depth aware cache to avoid visiting the same attr twice.
+  DenseMap<std::pair<size_t, const void *>, bool> cached;
+};
+
+//===----------------------------------------------------------------------===//
 // ParameterUseDefGraph
 //===----------------------------------------------------------------------===//
 

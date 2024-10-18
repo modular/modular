@@ -260,6 +260,18 @@ fn capture_exclusivity(owned x: MemExample):
     capture_and_read(x)
 
 
+# expected-note @below {{function declared here}}
+fn param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral):
+    pass
+
+
+fn call_param_inference_unrelated_error():
+    var x : StringLiteral = "hello"
+    var y : StringLiteral = "world"
+    # expected-error @below {{invalid call to 'param_inference_unrelated_error': argument #1 cannot be converted from 'StringLiteral' to 'FloatLiteral'}}
+    param_inference_unrelated_error(x, y)
+
+
 @value
 @register_passable
 struct MyRPStruct:
@@ -280,3 +292,4 @@ fn rp_exclusivity(inout x: MyRPStruct2):
     # expected-error @below {{argument of 'take_owned_and_mutate_rp' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'inout' argument}}
     take_owned_and_mutate_rp(x^, x)
+
