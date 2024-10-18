@@ -53,7 +53,7 @@ struct MTuple[T: CollectionElement](
         return new
 
     fn __str__(self) -> String:
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         writer.write("(")
