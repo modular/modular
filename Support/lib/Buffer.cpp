@@ -184,7 +184,14 @@ llvm::MemoryBufferRef Buffer::getMemBufferRef() const {
 ErrorOr<WriteableBufferRef>
 WriteableBuffer::getFile(const std::filesystem::path &filepath, size_t size,
                          size_t offset) {
-  auto availableSizeOr = M::getAvailableDiskSpace(filepath.parent_path());
+  auto parent_path = filepath.parent_path();
+  // For cases where the file doesn't exist, the `openFile` below can create it,
+  // but the root path will not exist, so we will default to the current working
+  // directory to get the available size.
+  if (parent_path.empty())
+    parent_path = std::filesystem::current_path();
+
+  auto availableSizeOr = M::getAvailableDiskSpace(parent_path);
   if (availableSizeOr.isError())
     return availableSizeOr.takeError();
 
