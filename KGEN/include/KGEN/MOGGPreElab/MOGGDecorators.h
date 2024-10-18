@@ -134,8 +134,6 @@ constexpr MOGGDecorator OUTPUT_FUSION{"mogg_output_fusion_hook",
 // Supported static methods under the registered structs.
 static constexpr StringLiteral kMOGGExecuteFunctionLabel = "mogg.execute";
 static constexpr StringLiteral kMOGGShapeFunctionLabel = "mogg.shape";
-static constexpr StringLiteral kMOGGInitializeOutputFunctionLabel =
-    "mogg.initialize_output";
 static constexpr StringLiteral kMOGGPyTorchFallbackFunctionLabel =
     "mogg.pytorch_fallback";
 
@@ -205,8 +203,7 @@ inline bool isShapeFunc(Operation *gen) {
 
 inline bool isDPSKernel(Operation *gen) {
   return gen != nullptr && (gen->hasAttr(kMOGGExecuteFunctionLabel) ||
-                            gen->hasAttr(kMOGGShapeFunctionLabel) ||
-                            gen->hasAttr(kMOGGInitializeOutputFunctionLabel));
+                            gen->hasAttr(kMOGGShapeFunctionLabel));
 }
 
 //===----------------------------------------------------------------------===//
