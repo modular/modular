@@ -35,7 +35,9 @@ public:
   LogicalResult genPyInitImplFunc();
   void finalizePyInit();
   LogicalResult genPyInitHook();
-  void genModuleBinding();
+  void genModuleBinding(
+      const ArrayRef<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>>
+          &userFuncs);
 
 private:
   ErrorOrSuccess genFunctionBinding(ASTDecl &funcDecl, LIT::FuncOp func);
@@ -66,6 +68,8 @@ private:
   ASTDecl &pythonModule;
   /// The builtin `PythonObject` type.
   ASTType pyObjType;
+  /// The builtin `TypedPythonObject["Tuple"]` type.
+  ASTType tupleTypedPyObjType;
 
   /// The `PyInit_impl_*` function where function and type declarations are
   /// added.
@@ -80,6 +84,53 @@ private:
 };
 } // namespace
 
+static StringAttr getTypeName(MLIRContext *ctx, const ASTType &type) {
+  // TODO: Figure out if the name needs to be globally unique.
+  auto typeName = StringAttr::get(
+      type.getAsString(/*forDiag=*/true, /*demangleParam=*/true),
+      StringType::get(ctx));
+  return typeName;
+}
+
+/// Instantiates TypedPythonObject["Tuple"]
+static ASTType makeTupleTypedPythonObj(SharedState &shared, ASTDecl &moduleDecl,
+                                       ASTDecl &pythonModule, SMLoc moduleLoc,
+                                       ::mlir::MLIRContext *context) {
+  auto typedPyObjType =
+      shared.lookupNamedType("TypedPythonObject", pythonModule, moduleLoc);
+  if (typedPyObjType.isTypeCheckErrorType())
+    return {};
+
+  PValue tupleNameStrPValue =
+      PValue(StringAttr::get("Tuple", StringType::get(context)));
+  ArrayRef<PValue> inputParams = {tupleNameStrPValue};
+
+  ASTDecl *typedPyObjTypeDecl = ASTType(typedPyObjType).getDecl(shared);
+  auto structOp = dyn_cast_or_null<StructDeclOp>(typedPyObjTypeDecl);
+  if (!structOp) {
+    mlir::emitError(
+        shared.translateLocation(moduleLoc),
+        "internal error: TypedPythonObject type not found or not a struct");
+    return {};
+  }
+
+  SyntheticNode synth(moduleLoc);
+  ParamBindings bindings(TypeCheckScopeInfo{*typedPyObjTypeDecl, shared});
+  for (PValue inputParam : inputParams) {
+    bindings.add(&synth, inputParam);
+  }
+
+  // Check the bindings.
+  auto metaType = cast<AnyStructType>(typedPyObjType.getMetaType());
+  auto bindingsAttr = bindings.verifyBindings(structOp, metaType.getSignature(),
+                                              moduleLoc, /*partial=*/false);
+  if (!bindingsAttr)
+    return {};
+
+  // Ok, we succeeded at reparameterizing the type.
+  return ASTType(BindTypeAttr::get(PValue(typedPyObjType), bindingsAttr));
+}
+
 BindingGenerator::BindingGenerator(SharedState &shared, ASTDecl &moduleDecl)
     : SharedStateUser(shared), ctx(getContext()),
       moduleLoc(moduleDecl.getLoc()), moduleDecl(moduleDecl),
@@ -90,7 +141,9 @@ BindingGenerator::BindingGenerator(SharedState &shared, ASTDecl &moduleDecl)
       pythonModule(shared.importModule("stdlib.python.python_object",
                                        /*currentPackage=*/nullptr, moduleLoc)),
       pyObjType(
-          shared.lookupNamedType("PythonObject", pythonModule, moduleLoc)) {}
+          shared.lookupNamedType("PythonObject", pythonModule, moduleLoc)),
+      tupleTypedPyObjType(makeTupleTypedPythonObj(
+          shared, moduleDecl, pythonModule, moduleLoc, ctx)) {}
 
 LogicalResult BindingGenerator::genPyInitImplFunc() {
   ImplicitLocOpBuilder b(moduleOp.getLoc(), moduleDecl.getDeclEndBuilder());
@@ -229,17 +282,23 @@ LogicalResult BindingGenerator::genPyInitHook() {
     return failure();
   b.setInsertionPointToEnd(pyInitHook.getBody());
   b.create<KGEN::ReturnOp>(result);
+
+  // Note that genFunctionBinding and genTypeBinding later append to this init
+  // function too.
+
   return success();
 }
 
-void BindingGenerator::genModuleBinding() {
+void BindingGenerator::genModuleBinding(
+    const ArrayRef<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>>
+        &userFuncs) {
   // Scan all the functions in the module. Find functions for which generation
   // is currently supported. Keep track of all decls that were rejected and for
   // what reason. The binding generator will add an erroneous decl to the
   // generated module so that users accessing them from Python will receive the
   // error message.
   SmallVector<std::pair<StringAttr, StringRef>> rejectedDecls;
-  for (auto [name, decls] : moduleDecl.getDeclsInScope()) {
+  for (auto [name, decls] : userFuncs) {
     assert(!decls.empty() && "name mapped to empty decl?");
     auto func = dyn_cast<LIT::FuncOp>(decls.front());
     if (!func) {
@@ -293,6 +352,219 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
     if (auto err = it->second.copy())
       return err.takeError();
   }
+
+  //------------------------------------
+  // Next, generate the wrapper function
+  //------------------------------------
+
+  //
+  // NOTE:
+  //  This code needs to emit the equivalent to the Mojo code in
+  //  feature-overview/mojo_module.mojo#incr_int__wrapper(), i.e.
+  //  for a Mojo function with a signature like:
+  //
+  //      fn incr_int(inout value: Int):
+  //          value += 1
+  //
+  //  we must emit a wrapper that exposes that Mojo function to CPython:
+  //
+  //    fn incr_int__wrapper(
+  //        py_self: PythonObject,
+  //        py_args: TypedPythonObject["Tuple"],
+  //    ) raises -> PythonObject:
+  //        check_arguments_arity("incr_int", 1, py_args)
+  //
+  //        var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
+  //            "incr_int",
+  //            "Int",
+  //            py_args,
+  //            0
+  //        )
+  //
+  //        incr_int(arg_0[])
+  //
+  //        return PythonObject(None)
+  //
+  //  TODO(MSTDL-997): Generate bindings for non-`None` returning Mojo functions
+  //    The current outline of this logic will only work for wrapping Mojo
+  //    functions that return None. Returning new values will require
+  //    implementing lookup of the runtime generated PyTypeBinding values
+  //    (not impossible, just not as easy).
+  //
+
+  auto originalFuncName = func.getDeclName().str();
+  auto wrapperFuncName = originalFuncName + "__wrapper";
+
+  auto [wrapperFunc, wrapperDecl] =
+      createFunction(wrapperFuncName, moduleDecl,
+                     /*argTypes=*/{pyObjType, tupleTypedPyObjType}, /*convs=*/
+                     {ArgConvention::BorrowedInMem,
+                      ArgConvention::BorrowedInMem}, // DO NOT SUBMIT
+                     /*resultType=*/pyObjType, FnEffects().setThrows());
+
+  mlir::ImplicitLocOpBuilder builder(
+      shared.translateLocation(funcDecl.getLoc()),
+      wrapperDecl->getDeclEndBuilder());
+
+  // Export the function.
+  NamedAttrList attrs = wrapperFunc->getAttrDictionary();
+  attrs.set(wrapperFunc.getExportKindAttrName(),
+            ExportKindAttr::get(ctx, ExportKind::CExported));
+  attrs.set(wrapperFunc.getLinkageNameAttrName(),
+            builder.getStringAttr(wrapperFuncName));
+  wrapperFunc->setAttrs(attrs.getDictionary(ctx));
+
+  if (sig.getResultType() != shared.getNoneType()) {
+    return Error("functions that return values are not supported");
+  }
+
+  AnyValue pyArgsTuple = MBValue(wrapperFunc.getArgument(1));
+
+  ExprEmitter emitter(shared, *wrapperDecl, builder);
+
+  SyntheticNode synth(funcDecl.getLoc());
+
+  // Bind the type and name parameters. Since parametric functions are
+  // forbidden, the type and its parameters will be concrete.
+  // FIXME(MOCO-1306): The name parameter should not be required.
+  // TODO: Figure out if the name needs to be globally unique.
+  PValue originalFuncNameStrAttr =
+      StringAttr::get(originalFuncName, StringType::get(ctx));
+
+  //
+  // Emit `check_arguments_arity("<func name>", <arg count>, <2nd arg>)
+  //
+
+  {
+    OverloadSet checkArgumentsArityOv =
+        lookupPyBindFunction("check_arguments_arity", *wrapperDecl, synth);
+
+    AnyValue funcArityAttr =
+        IntegerAttr::get(IndexType::get(ctx), func.getArgumentTypes().size());
+
+    ValueDest noneDest(EC_PyBindGen);
+    checkArgumentsArityOv.emitCall(CallOperands({
+                                       {originalFuncNameStrAttr, synth},
+                                       {funcArityAttr, synth},
+                                       {pyArgsTuple, synth},
+                                   }),
+                                   noneDest, emitter);
+  }
+
+  //
+  // For each arg, emit:
+  //     var arg_<N>: UnsafePointer[<N arg type>] =
+  //         check_and_get_arg[<N arg type>](
+  //             "<func name>",
+  //             "<arg type name>",
+  //             py_args,
+  //             <N>
+  //         )
+  //
+
+  std::vector<VarDeclOp> argUnsafePointerVars;
+  for (auto [argIndex, type, conv] :
+       llvm::enumerate(func.getArgumentTypes(), sig.getArgConventions())) {
+    ASTType rvType = getFunctionArgumentRValueType(type, conv);
+
+    ArrayRef<ASTDecl *> checkAndGetArgFnDecls = shared.getBuiltinFunction(
+        *pyBindDecl, "check_and_get_arg", (*wrapperDecl).getLoc());
+    ParamBindings bindings(TypeCheckScopeInfo{*wrapperDecl, shared});
+    bindings.add(synth, PValue(rvType));
+    OverloadSet checkAndGetArgOv("check_and_get_arg", checkAndGetArgFnDecls,
+                                 std::move(bindings), &synth,
+                                 CallSyntax::kDirectCall);
+
+    PValue argTypeNameStr = getTypeName(ctx, rvType);
+
+    AnyValue argIndexAttr = IntegerAttr::get(IndexType::get(ctx), argIndex);
+
+    std::string varName = std::string("arg_") + std::to_string(argIndex);
+    VarDeclOp argUnsafePointerVar =
+        emitter.emitVarDecl(varName, UnresolvedType::get(shared.getContext()),
+                            builder.getLoc(), VarDeclKind::Synthesized);
+
+    ValueDest argUnsafePointerDest(argUnsafePointerVar, EC_PyBindGen);
+    checkAndGetArgOv.emitCall(CallOperands({{originalFuncNameStrAttr, synth},
+                                            {argTypeNameStr, synth},
+                                            {pyArgsTuple, synth},
+                                            {argIndexAttr, synth}}),
+                              argUnsafePointerDest, emitter);
+
+    argUnsafePointerVars.emplace_back(std::move(argUnsafePointerVar));
+  }
+
+  //
+  // For each arg, call __getitem__ on it to dereference the UnsafePointer into
+  // a reference.
+  //
+
+  std::vector<ASTExprAnd<AnyValue>> funcCallArgs;
+  for (auto &argUnsafePointerVar : argUnsafePointerVars) {
+    ValueDest argUnsafeRefDest(EC_PyBindGen);
+    CValue cvalue = emitter.emitNamedMethodCall(
+        "__getitem__", CallOperands({{MLValue(argUnsafePointerVar), synth}}),
+        argUnsafeRefDest, CallSyntax::kMethodCall, synth);
+    funcCallArgs.push_back({cvalue, synth});
+  }
+
+  //
+  // Finally, call the user's function with all those dereferenced args.
+  //
+
+  OverloadSet funcOv(func.getDeclName(), {&funcDecl},
+                     ParamBindings({funcDecl, shared}), synth,
+                     CallSyntax::kDirectCall);
+  ValueDest funcCallNoneDest(EC_PyBindGen);
+  funcOv.emitCall(CallOperands(funcCallArgs), funcCallNoneDest, emitter);
+
+  // TODO: get this and below in sync with createFunction, this only supports
+  // memory only results so far.
+  assert(wrapperFunc.getSignature().hasMemoryOnlyResult());
+
+  //
+  // Emit a return None
+  //
+
+  ValueDest returnDest(pyObjType, EC_PyBindGen);
+  returnDest =
+      ValueDest(MLValue(wrapperFunc.getArguments().back()), EC_ReturnValue);
+  AnyValue noneThing =
+      emitter.emitPValue({shared.getNoneAttr(), synth}, EC_PyBindGen);
+  CValue ctorResult = emitter.emitConstructorCall(
+      pyObjType, CallOperands{ASTExprAnd<AnyValue>{noneThing, synth}}, synth,
+      CallSyntax::kTypeCall, returnDest);
+  if (!ctorResult) {
+    return {};
+  }
+
+  Value zero = builder.create<ParamConstantOp>((BoolAttr::get(ctx, 0)));
+  emitter.emitNormalReturn(builder, zero, wrapperFunc);
+
+  builder.create<LIT::EndFuncOp>();
+
+  //
+  // Into PyInit_my_module, emit:
+  //     add_wrapper_to_module[wrapperFunc, "incr_int"](module)
+  //
+  // Above here we were emitting into the wrapper function for the user's
+  // function, but we're emitting this call into e.g. PyInit_my_module.
+
+  OverloadSet pyTypeOv =
+      lookupPyBindFunction("add_wrapper_to_module", *pyInitDecl, synth);
+
+  // Bind the type and name parameters. Since parametric functions are
+  // forbidden, the type and its parameters will be concrete.
+  // FIXME(MOCO-1306): The name parameter should not be required.
+  pyTypeOv.paramBindings.add(synth, wrapperDecl->getFuncAsPValue());
+  pyTypeOv.paramBindings.add(synth, originalFuncNameStrAttr);
+
+  ExprEmitter pyInitEmitter(shared, *pyInitDecl,
+                            OpBuilder::atBlockEnd(pyInitFunc.getBody()));
+  ValueDest addWrapperToModuleCallDest(EC_PyBindGen);
+  pyTypeOv.emitCall(CallOperands({{pyModule, synth}}),
+                    addWrapperToModuleCallDest, pyInitEmitter);
+
   return success();
 }
 
@@ -332,11 +604,7 @@ ErrorOrSuccess BindingGenerator::genTypeBinding(ASTType type) {
   // forbidden, the type and its parameters will be concrete.
   // FIXME(MOCO-1306): The name parameter should not be required.
   pyTypeOv.paramBindings.add(node, PValue(type));
-  // TODO: Figure out if the name needs to be globally unique.
-  auto typeName = StringAttr::get(
-      type.getAsString(/*forDiag=*/true, /*demangleParam=*/true),
-      StringType::get(ctx));
-  pyTypeOv.paramBindings.add(node, typeName);
+  pyTypeOv.paramBindings.add(node, getTypeName(ctx, type));
 
   ExprEmitter emitter(shared, *pyInitDecl,
                       OpBuilder::atBlockEnd(pyInitFunc.getBody()));
@@ -432,11 +700,14 @@ LogicalResult LIT::generatePythonBindings(SharedState &shared,
 
   BindingGenerator gen(shared, moduleDecl);
 
+  ArrayRef<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>> userFuncs =
+      moduleDecl.getDeclsInScope();
+
   if (failed(gen.genPyInitImplFunc()))
     return failure();
   if (failed(gen.genPyInitHook()))
     return failure();
-  gen.genModuleBinding();
+  gen.genModuleBinding(userFuncs);
   gen.finalizePyInit();
 
   return success();

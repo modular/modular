@@ -15,6 +15,8 @@
 # CHECK-NEXT: call {{.*}}PythonObject::@"__init__{{.*}}(%result, [[MODULE]])
 # CHECK-NEXT: [[NONE_DEST:%.*]] = lit.var.decl
 # CHECK-NEXT: call {{.*}}gen_pytype_wrapper{{.*}}<:!Pythonable #Int{{[0-9]}}, :!StringLiteral {:string "Int"}>(%result, %error, [[NONE_DEST]])
+# CHECK-NEXT: [[NONE_DEST2:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<none, mut *"anonymous*`2">
+# CHECK-NEXT: lit.call {{.*}}add_wrapper_to_module{{.*}}@pybind::@"arg_reg_trivial_borrowed__wrapper({{.*}}:!StringLiteral {:string "arg_reg_trivial_borrowed"}>(%result, %error, [[NONE_DEST2]])
 # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
 # CHECK-NEXT: return [[FALSE]]
 
