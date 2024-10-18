@@ -89,7 +89,7 @@ from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_utils import ManagedTensorSlice, foreach
+from tensor_utils_internal import ManagedTensorSlice, foreach
 
 from utils import IndexList, StaticTuple
 from utils.index import Index
@@ -103,7 +103,6 @@ from utils.numerics import isinf, isnan
 alias ScalarTensor = ManagedTensorSlice[rank=1]
 
 
-# Until the kernel translation is complete, this is copied from MOGG.mojo.
 @always_inline
 fn managed_tensor_slice_to_ndbuffer[
     type: DType,
@@ -1176,11 +1175,6 @@ struct Scatter:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
 
         @always_inline
@@ -1191,11 +1185,11 @@ struct Scatter:
             return rhs  # always return the latest update element
 
         scatter_elements[reduce_func](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
+            input,
+            indices,
+            updates,
             int(normalize_neg_index(scalar_axis, output.rank)),
-            output_ndbuffer,
+            output,
         )
 
     @staticmethod
@@ -1232,11 +1226,6 @@ struct ScatterAdd:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
 
         @always_inline
@@ -1247,11 +1236,11 @@ struct ScatterAdd:
             return lhs + rhs
 
         scatter_elements[reduce_func](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
+            input,
+            indices,
+            updates,
             int(normalize_neg_index(scalar_axis, output.rank)),
-            output_ndbuffer,
+            output,
         )
 
     @staticmethod
@@ -1288,11 +1277,6 @@ struct ScatterMax:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
 
         @always_inline
@@ -1303,11 +1287,11 @@ struct ScatterMax:
             return max(lhs, rhs)
 
         scatter_elements[reduce_func](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
+            input,
+            indices,
+            updates,
             int(normalize_neg_index(scalar_axis, output.rank)),
-            output_ndbuffer,
+            output,
         )
 
     @staticmethod
@@ -1344,11 +1328,6 @@ struct ScatterMin:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
 
         @always_inline
@@ -1359,11 +1338,11 @@ struct ScatterMin:
             return min(lhs, rhs)
 
         scatter_elements[reduce_func](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
+            input,
+            indices,
+            updates,
             int(normalize_neg_index(scalar_axis, output.rank)),
-            output_ndbuffer,
+            output,
         )
 
     @staticmethod
@@ -1401,10 +1380,6 @@ struct ScatterMul:
         ctx: MojoCallContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
         var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
 
         @always_inline
@@ -1415,11 +1390,11 @@ struct ScatterMul:
             return lhs * rhs
 
         scatter_elements[reduce_func](
-            input_ndbuffer,
-            indices_ndbuffer,
-            updates_ndbuffer,
+            input,
+            indices,
+            updates,
             int(normalize_neg_index(scalar_axis, output.rank)),
-            output_ndbuffer,
+            output,
         )
 
     @staticmethod

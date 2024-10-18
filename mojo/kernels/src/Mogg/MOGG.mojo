@@ -43,6 +43,9 @@ from linalg.utils import GemmShape
 from memory import AddressSpace, UnsafePointer, memcpy, memset_zero
 from memory.unsafe import bitcast
 from MOGGIntList import IntList
+from MOGGKernelAPI import (
+    managed_tensor_slice_to_ndbuffer as managed_tensor_slice_to_ndbuffer_impl,
+)
 from MOGGTensor import Tensor
 from nn._optional_param import OptionalParamInt
 from nn.activations import gelu, relu
@@ -491,14 +494,15 @@ fn create_known_dim[known_val: Int]() -> Dim:
 # ===----------------------------------------------------------------------===#
 
 
+# This function is used in some MLIR tests, so we need to define it here to
+# register it as a kernel. However the _real_ implementation is in MOGGKernelAPI.mojo,
+# we forward to that definition here.
 @mogg_register("managed_tensor_slice_to_ndbuffer")
 @always_inline
 fn managed_tensor_slice_to_ndbuffer[
     type: DType, rank: Int
 ](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank]:
-    return NDBuffer[type, rank](
-        tensor._ptr, tensor.get_static_spec().shape, tensor._strides
-    )
+    return managed_tensor_slice_to_ndbuffer_impl(tensor)
 
 
 @mogg_register("to_buffer")
