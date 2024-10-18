@@ -107,9 +107,7 @@ fn test_gpu_print_formattable() raises:
         # Test printing some non-primitive types
         # ==============================
 
-        alias layout_str = _FixedString[50].format_sequence(
-            Layout.row_major(2, 3)
-        )
+        alias layout_str = _FixedString[50].write(Layout.row_major(2, 3))
 
         # CHECK: layout from GPU: ((2, 3):(3, 1))
         print("layout from GPU: ", layout_str)
