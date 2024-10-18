@@ -28,13 +28,6 @@ struct MyCustomScalarReg[type: DType]:
         print("MyCustomScalarReg.__del__", self.val)
 
 
-@compiler.register("tensor_to_custom_scalar_reg")
-struct OpaqueToCustomScalarReg:
-    @staticmethod
-    fn initialize_output(x: ManagedTensorSlice) -> MyCustomScalarReg[x.type]:
-        return MyCustomScalarReg(x[0])
-
-
 # Adds two custom scalar types (one of which is register passable) and writes
 # to a tensor
 @compiler.register("opaque_add_to_tensor")
