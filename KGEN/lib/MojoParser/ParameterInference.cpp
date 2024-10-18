@@ -661,6 +661,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   // We'll bind the next provided value.
   switch (expectedConvention) {
+  case ArgConvention::OwnedInReg:
+    llvm_unreachable("not used by the mojo parser");
   case ArgConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for type checking,
     // match up the types, but otherwise let it pass.
@@ -735,7 +737,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // from the convention.
     expectedType = expectedType.getReferenceElementType();
     break;
-  case ArgConvention::OwnedInReg:
   case ArgConvention::BorrowedInReg:
     break;
   }
@@ -1010,14 +1011,16 @@ ParameterInferenceState::infer(LITSignatureType signature,
 
     if (signature.isKwVarArg(expectedArgIdx)) {
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
+      auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
       for (auto operand : variadicKwOperands) {
-        // TODO: Passing OwnedInReg is a hack that is needed because the value
+        // TODO: Passing OwnedInMem is a hack that is needed because the value
         // type is not a reference type (and doesn't have a origin), but we
         // still want to type check it. So, passing it as if it was reg-passable
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Reference` does not
         // (and in fact cannot) conform to `CollectionElement`.
-        if (failed(inferOneOperand(operand, valTy, ArgConvention::OwnedInReg)))
+        if (failed(inferOneOperand(operand, refValType,
+                                   ArgConvention::OwnedInMem)))
           return failure();
       }
       // This is always last in the operand list.

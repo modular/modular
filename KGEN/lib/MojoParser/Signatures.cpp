@@ -1184,6 +1184,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
   DeclIRValue argIRValue;
   switch (arg.kgenConvention) {
+  case ArgConvention::OwnedInReg:
+    llvm_unreachable("not used by the mojo parser");
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     llvm_unreachable("should never need to handle result slots");
@@ -1194,10 +1196,6 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ArgConvention::Ref:
   case ArgConvention::MutRef:
     argIRValue = CValue::getMValueForRef(bbArg);
-    break;
-  case ArgConvention::OwnedInReg:
-    // NOTE: This will get wrapped and turned into an SLValue within the body.
-    argIRValue = SRValue(bbArg);
     break;
   case ArgConvention::BorrowedInReg:
     argIRValue = SBValue(bbArg);

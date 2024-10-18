@@ -401,6 +401,8 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     -> std::pair<ArgTypeMismatchKind, ASTType> {
   SharedState &shared = scopeInfo.shared;
   switch (expectedConvention) {
+  case ArgConvention::OwnedInReg:
+    llvm_unreachable("not used by the mojo parser");
   case ArgConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for 'self' which will
     // ultimately be an lvalue of the indicated type.
@@ -493,8 +495,7 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     payload.numMismatchedConventions +=
         expectedType.isRegisterPassable(loc, shared);
     [[fallthrough]];
-  case ArgConvention::BorrowedInReg:
-  case ArgConvention::OwnedInReg: {
+  case ArgConvention::BorrowedInReg: {
     // Get the argument if it has a concrete type.
     CValue argVal = operand.ir.getIfCValue();
 
@@ -1006,7 +1007,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
     if (signature.isKwVarArg(expectedArgIdx)) {
       expectedType = ASTType(expectedType).getKwargsDictRefValueType();
-
+      auto refExpType = RefType::getAnyOrigin(expectedType, /*isMut=*/true);
       for (auto operand : variadicKwOperands) {
         // TODO: Passing OwnedInMem is a hack that is needed because the value
         // type is not a reference type (and doesn't have a origin), but we
@@ -1014,7 +1015,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Reference` does not
         // (and in fact cannot) conform to `CollectionElement`.
-        auto refExpType = RefType::getAnyOrigin(expectedType, /*isMut=*/true);
         ssize_t operandIdx = -1;
         auto [kind, ty] = checkAnOperand(operand, operandIdx,
                                          ArgConvention::OwnedInMem, refExpType);

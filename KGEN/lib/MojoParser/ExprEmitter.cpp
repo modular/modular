@@ -2137,9 +2137,6 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 
   if (markLastArgDestroyed) {
     Value argToDestroy = func.getBody()->getArguments().back();
-    assert(func.getSignature().getArgConventions().back() !=
-               ArgConvention::OwnedInReg &&
-           "Mojo parser doesn't use owned_in_reg for non-trivial types");
     builder.create<LIT::OwnershipMarkDestroyedOp>(argToDestroy);
   }
 

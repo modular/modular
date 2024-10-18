@@ -565,7 +565,6 @@ public:
   VarDeclOp emitVarDecl(StringAttr name, Type type, Location loc,
                         VarDeclKind kind);
 
-  // Emit the vardecl shadow for an OwnedInReg argument.
   VarDeclOp makeArgLValueVarSlot(CValue argValue, StringAttr argName,
                                  SMLoc loc);
 
