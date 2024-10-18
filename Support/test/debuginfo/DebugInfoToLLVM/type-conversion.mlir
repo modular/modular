@@ -57,7 +57,7 @@
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
-  name = <"foo">,
+  sourceName = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 10,

@@ -66,7 +66,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
     // DISubroutineType from the concretized signature of the stub (this is ok
     // since the stub is a compiler-synthesized function).
     auto stubSourceName =
-        DebugInfo::SourceNameAttr::get("asm_stub", sp.getName());
+        DebugInfo::SourceNameAttr::get("asm_stub", sp.getSourceName());
     FunctionType stubFuncType = sig.getValues();
     DebugInfo::DIUnresolvedMLIRType (*mapToDIUnresolvedType)(Type) =
         &DebugInfo::DIUnresolvedMLIRType::get;

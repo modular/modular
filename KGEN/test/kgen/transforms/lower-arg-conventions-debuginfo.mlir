@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-arg-conventions -mlir-print-debuginfo %s | FileCheck %s
 
-#sp = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#sp = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc(fused<#sp>["a":0:0])
 

@@ -4,7 +4,7 @@
 // CHECK: ![[DI_S_TYPE:.*]] = !debuginfo.unresolved<!lit.struct<@S>>
 // CHECK: #[[DIEXPR_IRVALUE:.*]] = #debuginfo.expr.irvalue : ![[DI_PTR_TYPE]]
 // CHECK: #[[DIEXPR_DEREF:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE]]> : ![[DI_S_TYPE]]
-// CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"test">, linkageName = "test", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
+// CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, sourceName = <"test">, linkageName = "test", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 // CHECK: #[[DIVAR_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10, flags = Zero> : ![[DI_S_TYPE]]
 // CHECK: #[[DIVAR_Y:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "y", file = #{{.*}}, line = 13, flags = Zero> : ![[DI_S_TYPE]]
 // CHECK: #[[DIARG_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10, arg = 1, flags = Zero> : ![[DI_S_TYPE]]
@@ -13,7 +13,7 @@
 
 #file = #debuginfo.file<"test.mlir" in "">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "LIT", isOptimized = true, emissionKind = Full>
-#sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = <"test">, linkageName = "test", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, sourceName = <"test">, linkageName = "test", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #locX = loc(fused<#sp>["test.mlir":10:10])
 #locUse = loc(fused<#sp>["test.mlir":12:10])

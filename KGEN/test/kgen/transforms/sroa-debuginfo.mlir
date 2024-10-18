@@ -6,7 +6,7 @@
 !member1 = !debuginfo.member<second: index>
 !struct = !debuginfo.struct<Foo(!member0, !member1)>
 !ptr = !debuginfo.ti.ptr<!struct>
-#subprogram = #debuginfo.subprogram<name = <"__next__">> : !subroutine
+#subprogram = #debuginfo.subprogram<sourceName = <"__next__">> : !subroutine
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "self"> : !ptr
 
 #fileLoc = loc("foo.mlir":0:0)
@@ -40,7 +40,7 @@ kgen.func @sroa_valueop() {
 
 // -----
 
-#sp = #debuginfo.subprogram<name = <"max">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#sp = #debuginfo.subprogram<sourceName = <"max">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 !member0 = !debuginfo.member<first: index>
 !member1 = !debuginfo.member<second: index>
 !struct = !debuginfo.struct<Foo(!member0, !member1)>

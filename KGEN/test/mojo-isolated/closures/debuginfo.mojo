@@ -16,7 +16,7 @@
 # CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%__result__, %myclosure){{.*}} loc(#[[LOC26:.*]])
 
 # CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<(fn)"makes_escaping_closure"(<"index">, <"index">) from <(module)"debuginfo">>
-# CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<{{.*}}, name = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", {{.*}}, line = [[#LN42:]],
+# CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", {{.*}}, line = [[#LN42:]],
 # CHECK-DAG: #[[LOC26]] = loc(fused<#[[SP9]]>[#
 
 
@@ -43,7 +43,7 @@ fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
 # CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__call__({{.*}}) : {{.*}} loc(#[[LOC1]])
 
 # CHECK-DAG: #closure_in_block_name = #debuginfo.source_name<(fn)"closure_in_block"(<"index">, <"index">, #Bool_name) from <(module)"debuginfo">>
-# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, name = #closure_in_block_name, linkageName = "closure_in_block{{.*}}",
+# CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = #closure_in_block_name, linkageName = "closure_in_block{{.*}}",
 # CHECK-DAG: #[[LEXBLOCK:.*]] = #debuginfo.lexical_block<scope = #[[SP]],
 # CHECK-DAG: #[[LOC0]] = loc(fused<#[[LEXBLOCK]]>[#
 # CHECK-DAG: #[[LOC1]] = loc(fused<#[[LEXBLOCK]]>[#

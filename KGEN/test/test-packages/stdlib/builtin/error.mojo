@@ -5,6 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 
 
-@export("__mojo_debugger_raise_hook")
 fn __mojo_debugger_raise_hook():
     pass

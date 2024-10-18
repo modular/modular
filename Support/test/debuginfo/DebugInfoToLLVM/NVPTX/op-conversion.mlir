@@ -4,7 +4,7 @@
 #sp = #debuginfo.subprogram<
   file = #file,
   scope = #file,
-  name = <"foo">
+  sourceName = <"foo">
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #loc0 = loc(fused<#sp>["foo.mlir":0:0])
 #loc1 = loc(fused<#sp>["foo.mlir":1:0])

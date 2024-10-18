@@ -58,7 +58,7 @@ kgen.func @foo_over_threshold(%arg0: index) -> index {
   kgen.return %10 : index
 }
 
-#subprogram = #debuginfo.subprogram<name = <"foo_debug_over_threshold">> : !debuginfo.subroutine<(index) -> (index): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo_debug_over_threshold">> : !debuginfo.subroutine<(index) -> (index): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "arg0"> : !debuginfo.unresolved<index>
 
 // CHECK-NOT: kgen.func @foo_debug_over_threshold(%arg0: index) -> index {

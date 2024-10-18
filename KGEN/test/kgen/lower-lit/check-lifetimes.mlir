@@ -231,7 +231,7 @@ lit.func @global_ref_no_use() {
 // COM: not cause an error in the pass.
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<!lit.ref<@MyStruct, mut #lit.any.origin>>
 
 #fileLoc = loc("foo.mlir":0:0)

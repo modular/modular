@@ -92,7 +92,7 @@ kgen.generator @main() {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"fake_larger_callee">> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.paramref<T>>) -> (!debuginfo.unresolved<!kgen.paramref<T>>): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"fake_larger_callee">> : !debuginfo.subroutine<(!debuginfo.unresolved<!kgen.paramref<T>>) -> (!debuginfo.unresolved<!kgen.paramref<T>>): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "arg0"> : !debuginfo.unresolved<!kgen.paramref<T>>
 
 // CHECK-LABEL: kgen.generator @inline_heuristic

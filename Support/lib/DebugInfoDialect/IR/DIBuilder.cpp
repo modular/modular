@@ -55,7 +55,7 @@ DILexicalBlockAttr DIBuilder::createNestedLexicalBlock(DIFileAttr file,
   return DILexicalBlockAttr::get(scope, file, line, column);
 }
 
-DISubprogramAttr DIBuilder::createSubprogram(SourceNameAttr name,
+DISubprogramAttr DIBuilder::createSubprogram(SourceNameAttr sourceName,
                                              StringAttr linkageName,
                                              DIFileAttr file, unsigned int line,
                                              unsigned int scopeLine,
@@ -63,8 +63,8 @@ DISubprogramAttr DIBuilder::createSubprogram(SourceNameAttr name,
                                              DISubroutineType type) {
   // The only non-local scope we have is the file scope.
   // TODO(MOCO-834): Properly handle nested function.
-  return DISubprogramAttr::get(compileUnit, file, name, linkageName, file, line,
-                               scopeLine, subprogramFlags, type);
+  return DISubprogramAttr::get(compileUnit, file, sourceName, linkageName, file,
+                               line, scopeLine, subprogramFlags, type);
 }
 
 DIFileAttr DIBuilder::createFile(StringRef name, StringRef directory) {

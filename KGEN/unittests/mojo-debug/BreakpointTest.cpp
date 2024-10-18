@@ -37,3 +37,27 @@ TEST(BreakpointTest, testDontAutomaticallyBreakOnRaise) {
   ctx.process.Continue();
   EXPECT_EQ(ctx.process.GetState(), lldb::eStateExited);
 }
+
+TEST(BreakpointTest, testSymbolBreakpoints) {
+  StopContext ctx = buildAndLaunch("symbol_breakpoints.mojo");
+  ctx.runCommand("b simple_fn");
+  ctx.runCommand("b parametrized_fn");
+  ctx.runCommand("b parametrized_method");
+  ctx.resume();
+
+  int expectedLine =
+      ctx.binary.getSource().findLinesWithText("# simple_fn stop")[0];
+  EXPECT_EQ(ctx.frame.GetLineEntry().GetLine(), expectedLine);
+
+  ctx.resume();
+
+  expectedLine =
+      ctx.binary.getSource().findLinesWithText("# parametrized_fn stop")[0];
+  EXPECT_EQ(ctx.frame.GetLineEntry().GetLine(), expectedLine);
+
+  ctx.resume();
+
+  expectedLine =
+      ctx.binary.getSource().findLinesWithText("# parametrized_method stop")[0];
+  EXPECT_EQ(ctx.frame.GetLineEntry().GetLine(), expectedLine);
+}

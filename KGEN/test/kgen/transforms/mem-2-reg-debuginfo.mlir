@@ -1,11 +1,11 @@
 // RUN: kgen-opt -split-input-file -mem-2-reg -allow-unregistered-dialect -mlir-print-debuginfo %s | FileCheck %s
 
-// CHECK-DAG: #[[CALLER_SP:.*]] = #debuginfo.subprogram<name = <"mem2reg_valueop">>
-// CHECK-DAG: #[[CALLEE_SP:.*]] = #debuginfo.subprogram<name = <"mem2reg_valueop_callee">>
-// CHECK-DAG: #[[NESTED_CALLEE_SP:.*]] = #debuginfo.subprogram<name = <"mem2reg_valueop_nested_callee">>
-#callerSp = #debuginfo.subprogram<name = <"mem2reg_valueop">> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
-#calleeSp = #debuginfo.subprogram<name = <"mem2reg_valueop_callee">> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
-#nestedCalleeSp = #debuginfo.subprogram<name = <"mem2reg_valueop_nested_callee">> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
+// CHECK-DAG: #[[CALLER_SP:.*]] = #debuginfo.subprogram<sourceName = <"mem2reg_valueop">>
+// CHECK-DAG: #[[CALLEE_SP:.*]] = #debuginfo.subprogram<sourceName = <"mem2reg_valueop_callee">>
+// CHECK-DAG: #[[NESTED_CALLEE_SP:.*]] = #debuginfo.subprogram<sourceName = <"mem2reg_valueop_nested_callee">>
+#callerSp = #debuginfo.subprogram<sourceName = <"mem2reg_valueop">> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
+#calleeSp = #debuginfo.subprogram<sourceName = <"mem2reg_valueop_callee">> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
+#nestedCalleeSp = #debuginfo.subprogram<sourceName = <"mem2reg_valueop_nested_callee">> : !debuginfo.subroutine<(index) -> (): DW_CC_normal>
 
 // Caller locs
 #loc0 = loc(fused<#callerSp>["foo.mlir":0:0])

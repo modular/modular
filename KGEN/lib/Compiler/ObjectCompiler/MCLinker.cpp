@@ -87,12 +87,6 @@ ErrorOrSuccess MCLinker::linkLLVMModules(StringRef moduleName) {
   }
 
   for (llvm::Function &fn : linkedModule->functions()) {
-    // FIXME(MOTO-696) This is a temporary hack for mojo_debugger_raise_hook
-    if (fn.getName() == "__mojo_debugger_raise_hook") {
-      fn.setLinkage(llvm::GlobalValue::LinkageTypes::WeakAnyLinkage);
-      continue;
-    }
-
     if (!fn.hasWeakLinkage())
       continue;
 
@@ -142,13 +136,6 @@ void MCLinker::prepareMachineModuleInfo() {
 
         machineModInfoPass->getMMI().insertFunction(
             fn, std::move(mfPtrIter->second));
-
-        // FIXME(MOTO-696) This is a temporary hack for
-        // mojo_debugger_raise_hook
-        if (origFn.getName() == "__mojo_debugger_raise_hook") {
-          origFn.setLinkage(llvm::GlobalValue::LinkageTypes::WeakAnyLinkage);
-          continue;
-        }
 
         // Restore function linkage types.
         if (!origFn.hasWeakLinkage())

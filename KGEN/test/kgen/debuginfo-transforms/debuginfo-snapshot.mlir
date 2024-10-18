@@ -1,7 +1,7 @@
 // RUN: kgen-opt -debuginfo-snapshot -mlir-print-debuginfo -split-input-file %s | FileCheck %s
 
 // CHECK: ![[SP_INNER_TYPE:.+]] = !debuginfo.subroutine<() -> (): DW_CC_normal>
-// CHECK: #[[SP_INNER:.+]] = #debuginfo.subprogram<{{.*}}name = <"kgen.param.declare.region">{{.*}}> : ![[SP_INNER_TYPE]]
+// CHECK: #[[SP_INNER:.+]] = #debuginfo.subprogram<{{.*}}sourceName = <"kgen.param.declare.region">{{.*}}> : ![[SP_INNER_TYPE]]
 
 // CHECK: kgen.generator @subprogram_scoped_op
 kgen.generator @subprogram_scoped_op() always_inline_no_debug {
@@ -22,7 +22,7 @@ kgen.generator @subprogram_scoped_op() always_inline_no_debug {
 // CHECK-DAG: #[[LOC_RET]] = loc(fused<#[[SP_INNER]]>
 // CHECK-DAG: #[[LOC_SP_OP]] = loc(fused<#[[SP_INNER]]>
 
-// CHECK-DAG: #[[SP_OUTER:.+]] = #debuginfo.subprogram<{{.*}}name = <"subprogram_scoped_op">{{.*}}>
+// CHECK-DAG: #[[SP_OUTER:.+]] = #debuginfo.subprogram<{{.*}}sourceName = <"subprogram_scoped_op">{{.*}}>
 // CHECK-DAG: #[[LOC_OUTER_RET]] = loc(fused<#[[SP_OUTER]]>
 
 // -----
@@ -39,8 +39,8 @@ kgen.func @inlined_subprogram_scoped_op() always_inline {
   kgen.return
 }
 
-// CHECK-DAG: #[[SP_OUTER:.+]] = #debuginfo.subprogram<{{.*}}name = <"inlined_subprogram_scoped_op">{{.*}}>
-// CHECK-DAG: #[[SP_INNER:.+]] = #debuginfo.subprogram<{{.*}}name = <"kgen.stage_closure">{{.*}}>
+// CHECK-DAG: #[[SP_OUTER:.+]] = #debuginfo.subprogram<{{.*}}sourceName = <"inlined_subprogram_scoped_op">{{.*}}>
+// CHECK-DAG: #[[SP_INNER:.+]] = #debuginfo.subprogram<{{.*}}sourceName = <"kgen.stage_closure">{{.*}}>
 
 // CHECK-DAG: #[[LOC_RET]] = loc(fused<#[[SP_INNER]]>
 

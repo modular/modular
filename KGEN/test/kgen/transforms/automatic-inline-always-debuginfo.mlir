@@ -7,10 +7,10 @@
 // COM: getting confused with CHECK-DAG statements (and to reduce duplicate test
 // COM: code), we also don't use -split-file.
 
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = <"inline_me">
-#calleeSp = #debuginfo.subprogram<name = <"inline_me">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
-#callerSp = #debuginfo.subprogram<name = <"caller">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
-#asyncCallerSp = #debuginfo.subprogram<name = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!co.routine>): DW_CC_normal>
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<sourceName = <"inline_me">
+#calleeSp = #debuginfo.subprogram<sourceName = <"inline_me">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+#callerSp = #debuginfo.subprogram<sourceName = <"caller">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
+#asyncCallerSp = #debuginfo.subprogram<sourceName = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!co.routine>): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #calleeSp, name = "foo"> : !debuginfo.unresolved<index>
 
 #locAsyncCaller = loc(fused<#asyncCallerSp>["bar.mlir":18:7])
@@ -125,10 +125,10 @@ kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
 // CHECK-DAG: #[[LOC_ASYNC_CALLER]] = loc("bar.mlir":18:7)
 // CHECK-DAG: #[[LOC_SCOPED_CALLER]] = loc(fused<#[[SP_ASYNC:.*]]>[#[[LOC_ASYNC_CALLER]]])
 // CHECK-DAG: #[[LOC_CALLSITE_FILE:.*]] = loc("bar.mlir":27:8)
-// CHECK-DAG: #[[SP_CALLER:.*]] = #debuginfo.subprogram<name = <"caller">
+// CHECK-DAG: #[[SP_CALLER:.*]] = #debuginfo.subprogram<sourceName = <"caller">
 // CHECK-DAG: #[[LOC_CALLSITE:.*]] = loc(fused<#[[SP_CALLER]]>[#[[LOC_CALLSITE_FILE]]
 
-// CHECK-DAG: #[[SP_ASYNC]] = #debuginfo.subprogram<name = <"call_async">
+// CHECK-DAG: #[[SP_ASYNC]] = #debuginfo.subprogram<sourceName = <"call_async">
 // CHECK-DAG: #[[LOC:loc[0-9]+]] = loc("foo.mlir":13:1)
 // CHECK-DAG: #[[LOC_ARG:loc[0-9]+]] = loc("foo.mlir":13:12)
 
@@ -144,7 +144,7 @@ kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc(fused<#subprogram>["foo.mlir":0:0])
 

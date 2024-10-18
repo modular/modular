@@ -6,8 +6,8 @@
 !unresolved = !debuginfo.unresolved<!kgen.paramref<ty>>
 
 // CHECK-DAG: #takeFnContextualType_name = #debuginfo.source_name<"takeFnContextualType"<":type index", ":() -> index @sillyFn">>
-// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = #takeFnContextualType_name, linkageName = "takeFnContextualType,ty=index,fn=_sillyFn",
-#callerSp = #debuginfo.subprogram<file = #file, name = <"takeFnContextualType">> : !debuginfo.subroutine<() -> (!unresolved): DW_CC_normal>
+// CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<sourceName = #takeFnContextualType_name, linkageName = "takeFnContextualType,ty=index,fn=_sillyFn",
+#callerSp = #debuginfo.subprogram<file = #file, sourceName = <"takeFnContextualType">> : !debuginfo.subroutine<() -> (!unresolved): DW_CC_normal>
 
 // CHECK-DAG: #[[VAR:.*]] = #debuginfo.local_variable<scope = #[[SP]], name = "0"
 #local_variable = #debuginfo.local_variable<scope = #callerSp, name = "0"> : !unresolved
@@ -69,7 +69,7 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 // -----
 
 // CHECK: linkageName = "entry"
-#sp = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#sp = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #loc = loc(fused<#sp>["a.mlir":0:0])
 
 kgen.generator @entry() {
@@ -90,7 +90,7 @@ kgen.generator @entry() {
   compileUnit = #compile_unit,
   scope = #file,
   file = #file,
-  name = <"kernel">,
+  sourceName = <"kernel">,
   subprogramFlags = Definition
 > : !debuginfo.subroutine<(!pop.simd<4, dtype>) -> (!pop.simd<4, dtype>): DW_CC_normal>
 #locKernel = loc(fused<#kernelSP>["test.mlir":0:0])

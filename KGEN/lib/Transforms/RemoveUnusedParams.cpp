@@ -553,7 +553,7 @@ void RemoveUnusedParams::runOnOperation() {
       if (newType != subroutineType) {
         mlir::AttrTypeReplacer replacer;
         // Replace occurrences of the current subprogram with a new type & name.
-        auto newScope = oldScope.cloneWith(oldScope.getName(),
+        auto newScope = oldScope.cloneWith(oldScope.getSourceName(),
                                            newFunc.getSymNameAttr(), newType);
         replacer.addReplacement([=](DebugInfo::DISubprogramAttr scope) {
           if (scope == oldScope)

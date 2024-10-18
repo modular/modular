@@ -3,8 +3,8 @@
 // COM: Check that constant are only hoisted from subprogram regions if there is
 // COM: no debuginfo scope given.
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<name = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<sourceName = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)
@@ -109,4 +109,3 @@ kgen.func @await_invoke(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.point
   %1:3 = co.await %0, %arg1, %arg0 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<i1>) -> (i1, index, index)
   kgen.return %1#0, %1#1, %1#2 : i1, index, index
 }
-

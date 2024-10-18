@@ -1,6 +1,6 @@
 // RUN: kgen-opt -lower-calling-conventions %s -mlir-print-debuginfo -split-input-file | FileCheck %s
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (!kgen.none): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (!kgen.none): DW_CC_normal>
 #loc = loc(fused<#subprogram>["foo.mlir":0:0])
 
 kgen.func @main() -> !kgen.none {
@@ -12,7 +12,7 @@ kgen.func @main() -> !kgen.none {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"regtype_create_reg_stub">> : !debuginfo.subroutine<() -> (!kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"regtype_create_reg_stub">> : !debuginfo.subroutine<() -> (!kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>): DW_CC_normal>
 #loc = loc(fused<#subprogram>["regtype_create_reg_stub.mlir":0:0])
 
 // CHECK: #[[LOC_RAW:.+]] = loc("regtype_create_reg_stub.mlir":0:0)

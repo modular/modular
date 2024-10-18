@@ -101,17 +101,17 @@ public:
 
   /// Create a new subprogram. The parent scope is the current scope on the
   /// stack within the builder.
-  DISubprogramAttr createSubprogram(SourceNameAttr name, StringAttr linkageName,
-                                    DIFileAttr file, unsigned line,
-                                    unsigned scopeLine,
+  DISubprogramAttr createSubprogram(SourceNameAttr sourceName,
+                                    StringAttr linkageName, DIFileAttr file,
+                                    unsigned line, unsigned scopeLine,
                                     SubprogramFlags subprogramFlags,
                                     DISubroutineType type);
   /// Create and push a new subprogram scope.
-  ScopeGuard pushSubprogram(SourceNameAttr name, StringAttr linkageName,
+  ScopeGuard pushSubprogram(SourceNameAttr sourceName, StringAttr linkageName,
                             DIFileAttr file, unsigned line, unsigned scopeLine,
                             SubprogramFlags subprogramFlags,
                             DISubroutineType type) {
-    return pushScopeGuard(createSubprogram(name, linkageName, file, line,
+    return pushScopeGuard(createSubprogram(sourceName, linkageName, file, line,
                                            scopeLine, subprogramFlags, type));
   }
 

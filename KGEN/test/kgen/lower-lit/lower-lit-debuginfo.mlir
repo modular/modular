@@ -22,8 +22,8 @@ lit.globalvar.decl @foo : index {
 // CHECK-DAG: #[[FILE:.*]] = #debuginfo.file<"foo.mlir" in "/">
 // CHECK-DAG: #[[COMPILE_UNIT:.*]] = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #[[FILE]], producer = "kgen", isOptimized = true, emissionKind = Full
 // CHECK-DAG: ![[SP_TYPE:.*]] = !debuginfo.subroutine<() -> (): DW_CC_normal>
-// CHECK-DAG: #[[SP_CTOR:.*]] = #debuginfo.subprogram<compileUnit = #[[COMPILE_UNIT]], scope = #[[FILE]], name = <"(ctor_fn)foo">, linkageName = "(ctor_fn)foo", file = #[[FILE]], line = 8, scopeLine = 8, subprogramFlags = Definition> : ![[SP_TYPE]]
-// CHECK-DAG: #[[SP_DTOR:.*]] = #debuginfo.subprogram<compileUnit = #[[COMPILE_UNIT]], scope = #[[FILE]], name = <"(dtor_fn)foo">, linkageName = "(dtor_fn)foo", file = #[[FILE]], line = 8, scopeLine = 8, subprogramFlags = Definition> : ![[SP_TYPE]]
+// CHECK-DAG: #[[SP_CTOR:.*]] = #debuginfo.subprogram<compileUnit = #[[COMPILE_UNIT]], scope = #[[FILE]], sourceName = <"(ctor_fn)foo">, linkageName = "(ctor_fn)foo", file = #[[FILE]], line = 8, scopeLine = 8, subprogramFlags = Definition> : ![[SP_TYPE]]
+// CHECK-DAG: #[[SP_DTOR:.*]] = #debuginfo.subprogram<compileUnit = #[[COMPILE_UNIT]], scope = #[[FILE]], sourceName = <"(dtor_fn)foo">, linkageName = "(dtor_fn)foo", file = #[[FILE]], line = 8, scopeLine = 8, subprogramFlags = Definition> : ![[SP_TYPE]]
 
 // CHECK-DAG: #[[LOC1:.*]] = loc("foo.mlir":8:4)
 // CHECK-DAG: #[[LOC2:.*]] = loc("foo.mlir":9:4)
