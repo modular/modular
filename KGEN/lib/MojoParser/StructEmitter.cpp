@@ -327,9 +327,6 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     switch (argConventions[idx + 1]) {
     default:
       llvm_unreachable("unknown convention");
-    case ArgConvention::OwnedInReg:
-      argVal = SRValue(arg);
-      break;
     case ArgConvention::BorrowedInReg:
       argVal = SBValue(arg);
       break;
@@ -460,7 +457,6 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
   // it is owned.
   ASTType selfType = structDecl.getTypeDeclSelf();
   selfType = selfType.getRefForArgument("self", /*isMut*/ true);
-
   StringAttr selfName = builder.getStringAttr("self");
 
   // Create the FuncOp and ASTDecl for the method.

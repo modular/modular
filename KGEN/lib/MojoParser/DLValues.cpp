@@ -353,8 +353,8 @@ void DefArgumentWrapperDLValue::print(raw_ostream &os) const {
 LValue
 DefArgumentWrapperDLValue::prepareForInoutAccess(SMLoc loc,
                                                  ExprEmitter &emitter) const {
-  // Okay, if the def argument is mutated, we need to snap into action and
-  // lazily build a shadow in the function entry.
+  // Okay, if the by-reg def argument is mutated, we need to snap into action
+  // and lazily build a shadow in the function entry.
   auto func = cast<FuncOp>(argDecl->getParentDecl());
   ExprEmitter entryEmitter(emitter.shared, *argDecl->getParentDecl(),
                            OpBuilder::atBlockBegin(func.getBody()));

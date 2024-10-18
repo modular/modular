@@ -243,6 +243,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   }
 
   switch (convention) {
+  case ArgConvention::OwnedInReg:
+    llvm_unreachable("not used by the mojo parser");
   case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
@@ -250,7 +252,6 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // By-ref arguments, must be lvalues.
     assert(operand.ir.getIfLValue() && "Call should already be type checked");
     return operand.ir;
-  case ArgConvention::OwnedInReg:
   case ArgConvention::OwnedInMem:
     // Owned conventions pass rvalues.
     if (convention == ArgConvention::OwnedInMem)
@@ -796,8 +797,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   Value arg;
   switch (convention) {
   case ArgConvention::OwnedInReg:
-    // Promote PValue's if needed.
-    return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
+    llvm_unreachable("not used by the mojo parser");
   case ArgConvention::OwnedInMem:
     // Promote PValue's if needed.
     return emitter.emitMRValue(argValAndExpr, EC_CallArgValue);
@@ -820,8 +820,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
   case ArgConvention::BorrowedInMem: {
     if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
-      // "Convert" an SBValue to an MBValue by performing a bitcopy of the value
-      // into a vardecl that is marked as consumed after the call.
+      // "Convert" an SBValue to an MBValue by performing a bitcopy of the
+      // value into a vardecl that is marked as consumed after the call.
       // FIXME(MOCO-725): This doesn't work in async functions, because the
       // borrowed argument is captured.
       if (calleeSig.isAsync()) {

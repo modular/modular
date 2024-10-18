@@ -1256,8 +1256,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     }
     elementType = sigType.getArguments()[setValueIdx];
     auto setValueConvention = sigType.getArgConvention(setValueIdx);
-    if (setValueConvention != ArgConvention::OwnedInReg &&
-        setValueConvention != ArgConvention::BorrowedInReg)
+    if (setValueConvention != ArgConvention::BorrowedInReg)
       elementType = elementType.getReferenceElementType();
   }
 

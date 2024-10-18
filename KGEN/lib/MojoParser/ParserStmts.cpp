@@ -1582,9 +1582,9 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
       // One error that people hit is defining a context manager with both an
       // owned enter method and an exit method.  This will generate a terrible
       // error message in CheckLifetimes, so cut that off here.
-      if ((firstArgConvention == ArgConvention::OwnedInReg ||
-           firstArgConvention == ArgConvention::OwnedInMem) &&
-          hasExitMethod) {
+      assert(firstArgConvention != ArgConvention::OwnedInReg &&
+             "not used by the mojo parser");
+      if (firstArgConvention == ArgConvention::OwnedInMem && hasExitMethod) {
         auto diag =
             emitError(contextExp->getLoc(), "context manager of type ")
             << contextRVType

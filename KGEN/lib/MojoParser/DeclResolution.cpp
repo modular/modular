@@ -1205,20 +1205,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       continue;
     }
 
-    // If this is an owned argument in a register, we project it into a vardecl
-    // so that it is mutable in the callee.
-    if (convention == ArgConvention::OwnedInReg) {
-      VarDeclOp declOp = emitter.makeArgLValueVarSlot(SRValue(bbArg), argName,
-                                                      argDecl.getLoc());
-      if (declOp) {
-        declOp.setArgShadowIndex(bbArg.getArgNumber());
-        setDecl(MLValue(declOp));
-      } else {
-        argDecl.setErroneous();
-      }
-      continue;
-    }
-
     // Ref convention works with registers and def functions without any funny
     // business.
     if (convention == ArgConvention::Ref ||

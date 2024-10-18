@@ -109,11 +109,10 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
       rhs = getFunctionArgumentRValueType(expectedType, expectedConv);
       break;
 
-    case ArgConvention::OwnedInMem:
     case ArgConvention::OwnedInReg:
-      if (!llvm::is_contained(
-              {ArgConvention::OwnedInMem, ArgConvention::OwnedInReg},
-              actualConv))
+      llvm_unreachable("not used by the mojo parser");
+    case ArgConvention::OwnedInMem:
+      if (actualConv != ArgConvention::OwnedInMem)
         return false;
       lhs = getFunctionArgumentRValueType(actualType, actualConv);
       rhs = getFunctionArgumentRValueType(expectedType, expectedConv);
@@ -255,10 +254,11 @@ LIT::FuncOp LIT::generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
        llvm::zip(thunk.getArguments(), expected.getArgConventions())) {
     AnyValue value;
     switch (conv) {
+    case ArgConvention::OwnedInReg:
+      llvm_unreachable("not used by the mojo parser");
     case ArgConvention::InitSelf:
       value = MLValue(arg);
       break;
-
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
       continue; // Ignore this, it will be assigned to later.
@@ -269,9 +269,6 @@ LIT::FuncOp LIT::generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       break;
     case ArgConvention::OwnedInMem:
       value = MRValue(arg);
-      break;
-    case ArgConvention::OwnedInReg:
-      value = SRValue(arg);
       break;
     case ArgConvention::BorrowedInReg:
       value = SBValue(arg);

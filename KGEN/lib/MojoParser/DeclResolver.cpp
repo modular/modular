@@ -942,6 +942,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {
     case ArgConvention::OwnedInReg:
+      llvm_unreachable("not used by the parser");
     case ArgConvention::OwnedInMem:
     case ArgConvention::BorrowedInReg:
     case ArgConvention::BorrowedInMem:
