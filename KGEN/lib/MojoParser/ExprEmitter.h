@@ -565,9 +565,6 @@ public:
   VarDeclOp emitVarDecl(StringAttr name, Type type, Location loc,
                         VarDeclKind kind);
 
-  VarDeclOp makeArgLValueVarSlot(CValue argValue, StringAttr argName,
-                                 SMLoc loc);
-
   /// Internal implementation of call emission, use emitCall/emitIndirectCall
   /// or higher level wrappers instead.
   /// In case customOpName is provided, emit a custom MLIR operation instead
