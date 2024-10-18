@@ -16,6 +16,7 @@
 #include "KGEN/MojoParser/SharedState.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -885,51 +886,6 @@ RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
                                           OriginType::get(ctx, isMut));
   return RefType::get(mlirType, selfOrigin, /*addressSpace=*/0);
 }
-
-namespace {
-// Class to determine if there are any parameter references in the attribute
-// value.
-class ParamIndexRefAttrFinder {
-public:
-  bool hasReferences(TypedAttr value) { return hasReferencesImpl(value, 0); }
-  bool hasReferences(Type type) { return hasReferencesImpl(type, 0); }
-
-private:
-  template <typename T>
-  bool hasReferencesImpl(T value, size_t depth) {
-    if (!value)
-      return false;
-
-    // If we've already processed this value, just reuse the memoized result.
-    auto it = cached.find(value.getAsOpaquePointer());
-    if (it != cached.end())
-      return it->second;
-
-    // Signatures push a parameter scope.
-    if constexpr (std::is_base_of_v<Type, T>)
-      if (isa<ParameterScopeTypeInterface>(value))
-        ++depth;
-
-    bool hasReference = false;
-    // Check to see if this is locally an index with the right depth.
-    if constexpr (std::is_base_of_v<Attribute, T>)
-      if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value))
-        if (indexRef.getDepth() == depth)
-          hasReference = true;
-
-    value.walkImmediateSubElements(
-        [&](Attribute attr) { hasReference |= hasReferencesImpl(attr, depth); },
-        [&](Type type) { hasReference |= hasReferencesImpl(type, depth); });
-
-    cached[value.getAsOpaquePointer()] = hasReference;
-    return hasReference;
-  }
-
-private:
-  // Don't revisit types and attributes multiple times.
-  DenseMap<const void *, bool> cached;
-};
-} // namespace
 
 /// If this type is parameterized, and if any of the parameters refer to a
 /// ParamIndexRefAttr, replace it with an UnboundAttr so parameter inference
