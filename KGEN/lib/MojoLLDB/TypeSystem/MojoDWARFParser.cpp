@@ -9,7 +9,6 @@
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/Support/DebugInfoEncoding.h"
 #include "MojoTypeSystem.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/ErrorOr.h"
 #include "lldb/Symbol/CompileUnit.h"
 #include "lldb/Symbol/SymbolFile.h"
@@ -34,12 +33,12 @@ static void doGenerateFunctionDisplayName(DebugInfo::SourceNameAttr attr,
                                           llvm::raw_ostream &os) {
   if (DebugInfo::SourceNameAttr parent = attr.getParent()) {
     doGenerateFunctionDisplayName(parent, paramValues, os);
-    os << ".";
+    os << "::";
   }
 
   os << attr.getName().getValue();
   if (!attr.getParamTypes().empty()) {
-    os << "[";
+    os << "<";
     ArrayRef<DebugInfo::SourceNameAttr> paramTypes = attr.getParamTypes();
     size_t paramDisplayCount = std::min(paramTypes.size(), paramValues.size());
     llvm::interleaveComma(paramTypes.take_front(paramDisplayCount), os,
@@ -57,7 +56,7 @@ static void doGenerateFunctionDisplayName(DebugInfo::SourceNameAttr attr,
         os << ", ";
       os << "...";
     }
-    os << "]";
+    os << ">";
   }
 }
 
@@ -600,6 +599,40 @@ bool MojoDWARFParser::CompleteTypeFromDWARF(const DWARFDIE &die,
   return false;
 }
 
+DebugInfo::SourceNameAttr
+MojoDWARFParser::extractSourceName(const DWARFDIE &die) {
+  for (auto child : die.children()) {
+    if (child.Tag() == DW_TAG_LLVM_annotation) {
+      StringRef tag_name, tag_value;
+      DWARFAttributes attributes = child.GetAttributes();
+      for (size_t i = 0, e = attributes.Size(); i < e; ++i) {
+        DWARFFormValue form_value;
+        const dw_attr_t attr = attributes.AttributeAtIndex(i);
+        if (attributes.ExtractFormValueAtIndex(i, form_value)) {
+          switch (attr) {
+          case DW_AT_name:
+            tag_name = form_value.AsCString();
+            break;
+          case DW_AT_const_value:
+            tag_value = form_value.AsCString();
+            break;
+          default:
+            break;
+          }
+        }
+      }
+      if (tag_name == "mojo_source_name") {
+        ErrorOr<DebugInfo::SourceNameAttr> attrOr =
+            DebugInfo::SourceNameAttr::decode(typeSystem.getMLIRContext(),
+                                              tag_value);
+        if (succeeded(attrOr))
+          return *attrOr;
+      }
+    }
+  }
+  return DebugInfo::SourceNameAttr();
+}
+
 Function *
 MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
                                         const DWARFDIE &die,
@@ -645,11 +678,9 @@ MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
 
       // If the name is a SourceName, then generate a human readable version of
       // it, otherwise we keep the name unchanged as its display version.
-      ErrorOr<DebugInfo::SourceNameAttr> attrOr =
-          DebugInfo::SourceNameAttr::decode(typeSystem.getMLIRContext(), name);
-      if (succeeded(attrOr)) {
+      if (DebugInfo::SourceNameAttr sourceName = extractSourceName(die)) {
         funcName.SetDemangledName(
-            ConstString(generateFunctionDisplayName(*attrOr)));
+            ConstString(generateFunctionDisplayName(sourceName)));
       } else {
         funcName.SetDemangledName(ConstString(name));
       }

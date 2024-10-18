@@ -7,6 +7,7 @@
 #ifndef KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJODWARFPARSER_H
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJODWARFPARSER_H
 
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFASTParser.h"
 #include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFDIE.h"
 
@@ -118,6 +119,10 @@ private:
   /// already.
   MojoASTDeclRef
   getCachedDeclForDIE(const lldb_private::plugin::dwarf::DWARFDIE &die);
+
+  /// Extract the SourceName of a given die by inspecting its annotations.
+  DebugInfo::SourceNameAttr
+  extractSourceName(const lldb_private::plugin::dwarf::DWARFDIE &die);
 
   MojoTypeSystem &typeSystem;
 

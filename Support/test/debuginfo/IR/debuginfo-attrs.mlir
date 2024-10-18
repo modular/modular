@@ -41,7 +41,7 @@
 // CHECK: #[[SP:.*]] = #debuginfo.subprogram<
 // CHECK-SAME:   compileUnit = #[[CU]],
 // CHECK-SAME:   scope = #[[FILE]],
-// CHECK-SAME:   name = <"foo">,
+// CHECK-SAME:   sourceName = <"foo">,
 // CHECK-SAME:   linkageName = "foo",
 // CHECK-SAME:   file = #[[FILE]],
 // CHECK-SAME:   line = 10,
@@ -51,7 +51,7 @@
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
-  name = <"foo">,
+  sourceName = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 10,

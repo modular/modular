@@ -1427,15 +1427,17 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
       SmallVector<StringAttr> paramValues;
       for (TypedAttr value : inputParamValues)
         paramValues.push_back(getParamTypeAsString(value));
-      DebugInfo::SourceNameAttr name = scope.getName();
-      name = DebugInfo::SourceNameAttr::get(
-          name.getName(), name.getParamTypes(), name.getArgTypes(), paramValues,
-          name.getParent(), name.getKind(), name.getDecorators());
+      DebugInfo::SourceNameAttr sourceName = scope.getSourceName();
+      sourceName = DebugInfo::SourceNameAttr::get(
+          sourceName.getName(), sourceName.getParamTypes(),
+          sourceName.getArgTypes(), paramValues, sourceName.getParent(),
+          sourceName.getKind(), sourceName.getDecorators());
       StringRef linkageName = newFunc.getSymName();
       if (inputParamValues.empty())
         linkageName.consume_back("_concrete");
       DebugInfo::updateSubprogram(
-          newFunc, StringAttr::get(name.getContext(), linkageName), name);
+          newFunc, StringAttr::get(sourceName.getContext(), linkageName),
+          sourceName);
     }
   }
 

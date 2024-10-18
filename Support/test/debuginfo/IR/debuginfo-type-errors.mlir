@@ -2,7 +2,7 @@
 // COM: -verify-diagnostics, we check manually.
 // RUN: not support-dialect-opt -split-input-file %s 2>&1 | FileCheck %s
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<f32>
 #loc = loc("foo.mlir":7:8)
 
@@ -14,7 +14,7 @@ func.func @foo(%arg: i32) {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<f32>
 #loc = loc("foo.mlir":7:8)
 
@@ -26,7 +26,7 @@ func.func @foo(%arg: i32) {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<i32>
 #loc = loc("foo.mlir":7:8)
 

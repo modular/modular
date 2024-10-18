@@ -22,7 +22,7 @@ kgen.generator @foo() {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc("foo.mlir":7:8)
 
@@ -34,7 +34,7 @@ kgen.func @foo() {
 // -----
 
 #file = #debuginfo.file<"foo.mlir" in "/">
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc("foo.mlir":7:8)
 
@@ -45,7 +45,7 @@ kgen.func @foo() {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc = loc("foo.mlir":7:8)
 #loc1 = loc("bar.mlir":5:6)
@@ -60,8 +60,8 @@ kgen.func @foo() {
 // -----
 
 #file = #debuginfo.file<"foo.mlir" in "/">
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<name = <"foo1">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<sourceName = <"foo1">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #lexical_block = #debuginfo.lexical_block<scope = #subprogram1, file = #file, line = 104, column = 17>
 #lexical_block1 = #debuginfo.lexical_block<scope = #lexical_block, file = #file, line = 120, column = 22>
 
@@ -88,7 +88,7 @@ kgen.func @foo() {
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
-  name = <"foo">,
+  sourceName = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 10,
@@ -108,8 +108,8 @@ kgen.func @foo() {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<name = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<sourceName = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)
@@ -129,7 +129,7 @@ kgen.func @foo() {
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #loc4 = loc(fused<#subprogram>[#loc1])
 
 kgen.func @foo() {
@@ -144,7 +144,7 @@ kgen.func @foo() {
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
-  name = <"foo">,
+  sourceName = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 44,
@@ -162,7 +162,7 @@ kgen.func @foo() {
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)

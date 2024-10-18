@@ -11,7 +11,7 @@
 
 
 # RUN: %mojo-build --debug-level full -O0 %s -o %t
-# RUN: mojo debug -X -o -X 'image lookup -r -vn "module build_debug::fn main"' -X -b %t | FileCheck %s --check-prefix CHECK-LLDB
+# RUN: mojo debug -X -o -X 'image lookup -r -vn "build_debug::main()"' -X -b %t | FileCheck %s --check-prefix CHECK-LLDB
 # CHECK-LLDB: at build_debug.mojo:16
 fn main():
     print("success")

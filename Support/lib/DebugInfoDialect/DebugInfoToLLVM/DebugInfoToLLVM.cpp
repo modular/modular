@@ -136,14 +136,20 @@ MetadataConverter::convertAttrImpl(DILocalVariableAttr attr) {
 
 LLVM::DISubprogramAttr
 MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
+  SmallVector<LLVM::DINodeAttr> annotations;
+  auto annotation = mlir::LLVM::DIAnnotationAttr::get(
+      attr.getContext(), StringAttr::get(attr.getContext(), "mojo_source_name"),
+      attr.getSourceName().encode());
+  annotations.push_back(annotation);
+
   return LLVM::DISubprogramAttr::get(
       attr.getContext(),
       mlir::DistinctAttr::create(mlir::UnitAttr::get(attr.getContext())),
       convertAttr(attr.getCompileUnit()), convertAttr(attr.getScope()),
-      attr.getName().encode(), attr.getLinkageName(),
+      attr.getSourceName().getName(), attr.getLinkageName(),
       convertAttr(attr.getFile()), attr.getLine(), attr.getScopeLine(),
       static_cast<LLVM::DISubprogramFlags>(attr.getSubprogramFlags()),
-      convertType(attr.getType()), /*retainedNodes=*/{}, /*annotations=*/{});
+      convertType(attr.getType()), /*retainedNodes=*/{}, annotations);
 }
 
 LocationAttr MetadataConverter::convertAttrImpl(DICallLocAttr attr) {

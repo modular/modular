@@ -361,7 +361,7 @@ def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", 
     #subprogram = #debuginfo.subprogram<
       compileUnit = #compile_unit,
       scope = #file,
-      name = "foo",
+      sourceName = "foo",
       linkageName = "foo",
       file = #file,
       line = 10,
@@ -374,7 +374,7 @@ def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", 
   let parameters = (ins
     OptionalParameter<"DICompileUnitAttr">:$compileUnit,
     OptionalParameter<"DIScopeAttr">:$scope,
-    "SourceNameAttr":$name,
+    "SourceNameAttr":$sourceName,
     OptionalParameter<"StringAttr">:$linkageName,
     OptionalParameter<"DIFileAttr">:$file,
     OptionalParameter<"unsigned">:$line,
@@ -385,19 +385,20 @@ def DebugInfo_DISubprogramAttr : DILocalScopeAttr<"DISubprogram", "subprogram", 
   let builders = [
     AttrBuilderWithInferredContext<(ins
       "DICompileUnitAttr":$compileUnit, "DIScopeAttr":$scope,
-      "SourceNameAttr":$name, "StringAttr":$linkageName, "DIFileAttr":$file,
-      "unsigned":$line, "unsigned":$scopeLine,
+      "SourceNameAttr":$sourceName, "StringAttr":$linkageName,
+      "DIFileAttr":$file, "unsigned":$line, "unsigned":$scopeLine,
       "SubprogramFlags":$subprogramFlags, "DISubroutineType":$type
     ), [{
-      return $_get(type.getContext(), compileUnit, scope, name, linkageName,
-                   file, line, scopeLine, subprogramFlags, type);
+      return $_get(type.getContext(), compileUnit, scope, sourceName,
+                   linkageName, file, line, scopeLine, subprogramFlags, type);
     }]>
   ];
   let assemblyFormat = "`<` struct(params) `>`";
 
   let extraClassDeclaration = [{
     /// Returns a clone with a new name and linkage name.
-    DISubprogramAttr cloneWith(SourceNameAttr name, StringAttr linkageName,
+    DISubprogramAttr cloneWith(SourceNameAttr sourceName,
+                               StringAttr linkageName,
                                DISubroutineType type = {}) const;
   }];
 }

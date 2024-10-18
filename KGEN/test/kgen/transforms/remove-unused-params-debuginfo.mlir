@@ -1,9 +1,9 @@
 // RUN: kgen-opt --split-input-file --remove-unused-params --mlir-print-debuginfo %s  | FileCheck %s
 
-#subprogram = #debuginfo.subprogram<name = <"basic_arg_remove_1">>  : !debuginfo.subroutine<(!pop.scalar<dt>, !kgen.pointer<T>, !kgen.pointer<scalar<dt>>) -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"basic_arg_remove_1">>  : !debuginfo.subroutine<(!pop.scalar<dt>, !kgen.pointer<T>, !kgen.pointer<scalar<dt>>) -> (): DW_CC_normal>
 #loc = loc(fused<#subprogram>["foo.mlir":1:1])
 
-#otherSP = #debuginfo.subprogram<name = <"param_inlined_fn">>  : !debuginfo.subroutine<(!kgen.pointer<T>) -> (): DW_CC_normal>
+#otherSP = #debuginfo.subprogram<sourceName = <"param_inlined_fn">>  : !debuginfo.subroutine<(!kgen.pointer<T>) -> (): DW_CC_normal>
 #otherLoc = loc(fused<#otherSP>["foo.mlir":2:2])
 #inlinedLoc = loc(callsite(#otherLoc at #loc))
 
@@ -23,22 +23,22 @@ kgen.generator @user<dt: dtype, T: type>(%arg0: !pop.scalar<dt>, %arg1: !kgen.po
 
 // CHECK-DAG: ![[UNSPECIFIED:.+]] = !debuginfo.unspecified<"optimized out">
 // CHECK-DAG: ![[SUBROUTINE:.+]] = !debuginfo.subroutine<(![[UNSPECIFIED]], !kgen.pointer<*?>, !kgen.pointer<scalar<*?>>) -> (): DW_CC_normal>
-// CHECK-DAG: #[[SP:.+]] = #debuginfo.subprogram<name = <"basic_arg_remove_1">, linkageName = "basic_arg_remove_1_REMOVED_ARG"> : ![[SUBROUTINE]]
+// CHECK-DAG: #[[SP:.+]] = #debuginfo.subprogram<sourceName = <"basic_arg_remove_1">, linkageName = "basic_arg_remove_1_REMOVED_ARG"> : ![[SUBROUTINE]]
 // CHECK-DAG: #[[LOC]] = loc(fused<#[[SP]]>
 
 
 // CHECK-DAG: ![[OTHER_SUBROUTINE:.+]] = !debuginfo.subroutine<(!kgen.pointer<*?>) -> (): DW_CC_normal>
-// CHECK-DAG: #[[OTHER_SP:.+]] = #debuginfo.subprogram<name = <"param_inlined_fn">> : ![[OTHER_SUBROUTINE]]
+// CHECK-DAG: #[[OTHER_SP:.+]] = #debuginfo.subprogram<sourceName = <"param_inlined_fn">> : ![[OTHER_SUBROUTINE]]
 // CHECK-DAG: #[[OTHER_LOC:.+]] = loc(fused<#[[OTHER_SP]]>
 // CHECK-DAG: #[[INLINED_LOC]] = loc(callsite(#[[OTHER_LOC]] at
 
 // -----
 
-#subprogram = #debuginfo.subprogram<name = <"basic_arg_remove_debug_only_user">>  : !debuginfo.subroutine<(!pop.scalar<dt>, !kgen.pointer<none>) -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"basic_arg_remove_debug_only_user">>  : !debuginfo.subroutine<(!pop.scalar<dt>, !kgen.pointer<none>) -> (): DW_CC_normal>
 #loc = loc(fused<#subprogram>["foo.mlir":1:1])
 #di_arg0 = #debuginfo.local_variable<scope = #subprogram, name = "arg0"> : !debuginfo.unresolved<!pop.scalar<dt>>
 
-// CHECK: #[[SP_REMOVED_ARG:.+]] = #debuginfo.subprogram<name = <"basic_arg_remove_debug_only_user">, linkageName = "basic_arg_remove_debug_only_user_REMOVED_ARG">
+// CHECK: #[[SP_REMOVED_ARG:.+]] = #debuginfo.subprogram<sourceName = <"basic_arg_remove_debug_only_user">, linkageName = "basic_arg_remove_debug_only_user_REMOVED_ARG">
 // CHECK: #[[DI_ARG:.+]] = #debuginfo.local_variable<scope = #[[SP_REMOVED_ARG]], name = "arg0">
 
 // CHECK: kgen.generator @basic_arg_remove_debug_only_user_REMOVED_ARG

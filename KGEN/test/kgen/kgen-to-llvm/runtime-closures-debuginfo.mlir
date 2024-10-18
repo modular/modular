@@ -1,6 +1,6 @@
 // RUN: kgen-opt %s -lower-runtime-closures -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":46:8)
@@ -14,7 +14,7 @@
 // CHECK-DAG: #[[LOC0:.*]] = loc("foo.mlir":46:8)
 // CHECK-DAG: #[[LOC1:.*]] = loc("foo.mlir":44:1)
 // CHECK-DAG: #[[LOC2:.*]] = loc("foo.mlir":48:8)
-// CHECK-DAG: #[[SUB_PROG:.*]] = #debuginfo.subprogram<{{.*}}name = <"foo">
+// CHECK-DAG: #[[SUB_PROG:.*]] = #debuginfo.subprogram<{{.*}}sourceName = <"foo">
 // CHECK-DAG: #[[LOC3:.*]] = loc(fused<#[[SUB_PROG]]>[#[[LOC0]]])
 // CHECK-DAG: #[[LOC4:.*]] = loc(fused<#[[SUB_PROG]]>[#[[LOC1]]])
 // CHECK-DAG: #[[LOC5:.*]] = loc(fused<#[[SUB_PROG]]>[#[[LOC2]]])
@@ -55,7 +55,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   // CHECK:} loc(#[[CLOSURE_WRAPPER_FN_LOC0]])
 }
 
-// CHECK-DAG: #[[SUB_PROG1:.*]] = #debuginfo.subprogram<name = <"closure_wrapper_fn.0" from <"foo">>, linkageName = "closure_wrapper_fn_0">
-// CHECK-DAG: #[[SUB_PROG2:.*]] = #debuginfo.subprogram<name = <"closure_wrapper_fn.1" from <"foo">>, linkageName = "closure_wrapper_fn_1">
+// CHECK-DAG: #[[SUB_PROG1:.*]] = #debuginfo.subprogram<sourceName = <"closure_wrapper_fn.0" from <"foo">>, linkageName = "closure_wrapper_fn_0">
+// CHECK-DAG: #[[SUB_PROG2:.*]] = #debuginfo.subprogram<sourceName = <"closure_wrapper_fn.1" from <"foo">>, linkageName = "closure_wrapper_fn_1">
 // CHECK-DAG: #[[CLOSURE_WRAPPER_FN_LOC]] = loc(fused<#[[SUB_PROG1]]>[#[[LOC0]]])
 // CHECK-DAG: #[[CLOSURE_WRAPPER_FN_LOC0]] = loc(fused<#[[SUB_PROG2]]>[#[[LOC2]]])

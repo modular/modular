@@ -45,7 +45,7 @@
   !debuginfo.unresolved<!kgen.none>
 ) -> (): DW_CC_normal>
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !test
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !test
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="i64:64:64", simd_bit_width=128>} {
   kgen.func @foo() {

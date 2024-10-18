@@ -12,7 +12,7 @@
 #subprogram = #debuginfo.subprogram<
   compileUnit = #compile_unit,
   scope = #file,
-  name = <"foo">,
+  sourceName = <"foo">,
   linkageName = "foo",
   file = #file,
   line = 10,
@@ -334,7 +334,7 @@ func.func @value_with_struct_fields() -> (i32, i32) {
   compileUnit =#compile_unit,
   file = #file,
   scope = #file,
-  name = <"foo">
+  sourceName = <"foo">
 > : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<
   scope = #subprogram,
@@ -406,19 +406,19 @@ func.func @sink_debug_kills_stale_after_value() -> i32 {
   compileUnit =#compile_unit,
   file = #file,
   scope = #file,
-  name = <"sp0">
+  sourceName = <"sp0">
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #sp1 = #debuginfo.subprogram<
   compileUnit =#compile_unit,
   file = #file,
   scope = #file,
-  name = <"sp1">
+  sourceName = <"sp1">
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #sp2 = #debuginfo.subprogram<
   compileUnit =#compile_unit,
   file = #file,
   scope = #file,
-  name = <"sp2">
+  sourceName = <"sp2">
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 // CHECK-DAG: #[[VAR0:.*]] = #llvm.di_local_variable<{{.*}}name = "foo0"
 #var0 = #debuginfo.local_variable<
@@ -527,7 +527,7 @@ func.func @sink_kill_debug_values_block_end() -> i32 {
   compileUnit =#compile_unit,
   file = #file,
   scope = #file,
-  name = <"foo">
+  sourceName = <"foo">
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #loc0 = loc(fused<#sp>["foo.mlir":0:0])
 #loc1 = loc(fused<#sp>["foo.mlir":1:0])

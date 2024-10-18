@@ -1,6 +1,6 @@
 // RUN: support-dialect-opt -mlir-print-debuginfo %s | support-dialect-opt -mlir-print-debuginfo | FileCheck %s
 
-#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #subprogram, name = "foo"> : !debuginfo.unresolved<i32>
 #trivial_expr = #debuginfo.expr.irvalue : !debuginfo.unresolved<i32>
 

@@ -151,7 +151,7 @@ private:
 
       auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
       auto sourceName = DebugInfo::SourceNameAttr::get(
-          "closure_wrapper_fn." + Twine(nameIndex - 1), scope.getName());
+          "closure_wrapper_fn." + Twine(nameIndex - 1), scope.getSourceName());
       wrapperFn->setLoc(FusedLoc::get(
           op.getContext(), Location(fileLoc),
           scope.cloneWith(sourceName, wrapperFn.getSymNameAttr(), spType)));

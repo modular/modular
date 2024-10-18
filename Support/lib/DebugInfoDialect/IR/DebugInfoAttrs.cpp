@@ -386,12 +386,12 @@ DIExprAttr DIRefOfExprAttr::get(DIExprAttr valueExpr, DIType type) {
 // DISubprogramAttr
 //===----------------------------------------------------------------------===//
 
-DISubprogramAttr DISubprogramAttr::cloneWith(SourceNameAttr name,
+DISubprogramAttr DISubprogramAttr::cloneWith(SourceNameAttr sourceName,
                                              StringAttr linkageName,
                                              DISubroutineType type) const {
   return DebugInfo::DISubprogramAttr::get(
-      getCompileUnit(), getScope(), name, linkageName, getFile(), getLine(),
-      getScopeLine(), getSubprogramFlags(), type ? type : getType());
+      getCompileUnit(), getScope(), sourceName, linkageName, getFile(),
+      getLine(), getScopeLine(), getSubprogramFlags(), type ? type : getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -537,14 +537,15 @@ void DIAttrTypeReplacer::recursivelyReplaceElementsIn(Operation *op) {
 }
 
 void DebugInfo::updateSubprogram(mlir::FunctionOpInterface funcOp,
-                                 StringAttr linkageName, SourceNameAttr name) {
+                                 StringAttr linkageName,
+                                 SourceNameAttr sourceName) {
   DISubprogramAttr funcSp = extractScope(funcOp);
   if (!funcSp)
     return;
 
-  if (!name)
-    name = funcSp.getName();
-  DISubprogramAttr newAttr = funcSp.cloneWith(name, linkageName);
+  if (!sourceName)
+    sourceName = funcSp.getSourceName();
+  DISubprogramAttr newAttr = funcSp.cloneWith(sourceName, linkageName);
 
   DIAttrTypeReplacer replacer;
   replacer.addReplacement(

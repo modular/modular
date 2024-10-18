@@ -124,7 +124,7 @@ def DILocalVariableAttr : DialectAttribute<(attr
 def DISubprogramAttr : DialectAttribute<(attr
   ConcreteOptionalAttribute<"DICompileUnitAttr">:$compileUnit,
   ConcreteOptionalAttribute<"DIScopeAttr">:$scope,
-  ConcreteAttribute<"SourceNameAttr">:$name,
+  ConcreteAttribute<"SourceNameAttr">:$sourceName,
   ConcreteOptionalAttribute<"StringAttr">:$linkageName,
   ConcreteOptionalAttribute<"DIFileAttr">:$file,
   VarInt:$line,

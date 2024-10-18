@@ -58,7 +58,7 @@ kgen.generator @test_param_inline<param>() {
 }
 
 // debug versions
-#subprogram = #debuginfo.subprogram<name = <"sp">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#subprogram = #debuginfo.subprogram<sourceName = <"sp">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #var_paramref = #debuginfo.local_variable<scope = #subprogram, name = "paramref"> : !debuginfo.unresolved<!kgen.paramref<T>>
 #var_pointer = #debuginfo.local_variable<scope = #subprogram, name = "pointer"> : !debuginfo.unresolved<!kgen.pointer<T>>
 #var_none = #debuginfo.local_variable<scope = #subprogram, name = "none"> : !debuginfo.unresolved<!kgen.none>

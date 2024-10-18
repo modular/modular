@@ -168,7 +168,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
     DebugInfo::updateSubprogram(
         lifted, lifted.getSymNameAttr(),
         DebugInfo::SourceNameAttr::get(
-            "async_closure." + Twine(nameCounter - 1), scope.getName()));
+            "async_closure." + Twine(nameCounter - 1), scope.getSourceName()));
   }
 }
 
@@ -288,7 +288,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
     DebugInfo::updateSubprogram(
         lifted, lifted.getSymNameAttr(),
         DebugInfo::SourceNameAttr::get("closure." + Twine(nameCounter - 1),
-                                       scope.getName()));
+                                       scope.getSourceName()));
   }
 }
 
