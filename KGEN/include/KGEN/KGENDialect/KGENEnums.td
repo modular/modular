@@ -83,7 +83,9 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // This takes one operand, the list of pointer types.
   I32EnumAttrCase<"VariadicPtrRemoveMap", 36, "variadic_ptrremove_map">,
 
-  I32EnumAttrCase<"InstantiateStruct", 37, "inst_struct">,
+  /// Replace the symbol reference to a StructGeneratorOp with a reference to
+  /// the concreteized StructInstanceOp.
+  I32EnumAttrCase<"InstantiateStructRef", 37, "inst_struct_ref">,
 ]>;
 
 //===----------------------------------------------------------------------===//

@@ -563,7 +563,7 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
             replace(ref.getMetaType(), TypeDomain::AsType));
 
         auto appliedStructTypeAttr =
-            ParamOperatorAttr::get(POC::InstantiateStruct, {concreteSymRef});
+            ParamOperatorAttr::get(POC::InstantiateStructRef, {concreteSymRef});
         return TypeValueType::get(appliedStructTypeAttr);
       },
       TypeDomain::AsValue);

@@ -66,7 +66,7 @@ private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
-  /// Evaluate a `inst_struct` operator.
+  /// Evaluate a `inst_struct_ref` operator.
   FailureOr<TypeConstantRefAttr>
   evaluateInstantiateStruct(ParamOperatorAttr op);
   /// Evaluate a `get_env` operator.
