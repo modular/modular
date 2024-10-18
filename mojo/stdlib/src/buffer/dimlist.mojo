@@ -237,7 +237,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         Returns:
             The string representation of the type.
         """
-        return String.format_sequence(self)
+        return String.write(self)
 
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
@@ -517,7 +517,7 @@ struct DimList(
         Returns:
             The string representation of the type.
         """
-        return String.format_sequence(self)
+        return String.write(self)
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: DimList) -> Bool:

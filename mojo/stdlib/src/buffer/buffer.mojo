@@ -772,7 +772,7 @@ struct NDBuffer[
         Returns:
           A compact string of the buffer.
         """
-        return String.format_sequence(self)
+        return String.write(self)
 
     fn write_to[W: Writer](self, inout writer: W):
         """
