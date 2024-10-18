@@ -131,6 +131,11 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 // Mojo program execution
 //===----------------------------------------------------------------------===//
 
+enum class OutputType {
+  executable,
+  pythonExtensionModule,
+};
+
 /// Given a module representing a Mojo program, compile the program to a static
 /// archive. Returns an unsuccessful exit code if the archive could not be
 /// created successfully, and nullopt otherwise.
@@ -138,7 +143,7 @@ static std::optional<int>
 compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
                        MLIRContext &context, const CompilationOptions &options,
                        ModuleOp moduleOp, TargetInfoAttr target,
-                       BufferRef &archive) {
+                       BufferRef &archive, OutputType outputType) {
   KGENCompiler compiler(context, options);
 
   // Compile the moduleOp down to the post-elaboration phase, because before
@@ -156,8 +161,18 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
 
   // Generate a symbol table and an export map for the module post-compile.
   SymbolTable symtab(moduleOp);
-  if (!symtab.lookup("main"))
-    return state.reportError("module does not contain a 'main' function");
+  switch (outputType) {
+  case OutputType::executable:
+    if (!symtab.lookup("main"))
+      return state.reportError("module does not contain a 'main' function");
+    break;
+  case OutputType::pythonExtensionModule:
+    // Python extension modules
+    if (symtab.lookup("main"))
+      return state.reportError(
+          "python extension module should not contain a 'main' function");
+    break;
+  }
 
   // Generate an archive for the module.
   auto archiveOr = objectCompiler->emitArchive(moduleOp);
@@ -193,11 +208,6 @@ static int generateDSYM(const State &state, StringRef binaryOutputPath) {
   return EXIT_SUCCESS;
 }
 #endif
-
-enum class OutputType {
-  executable,
-  pythonExtensionModule,
-};
 
 /// Given a static archive generated from a mojo module, either
 /// 1. Link an executable from that archive.
@@ -465,12 +475,6 @@ static int build(const State &subcommandState) {
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
 
-  // Compile the module to a static archive.
-  BufferRef archive;
-  if (std::optional<int> exitCode = compileModuleToArchive(
-          state, runtime, mlirCtx, options, **moduleOp, target, archive))
-    return *exitCode;
-
   OutputType outputType = [generatePythonBindings] {
     // We have a static archive at this point, go ahead and turn it into a
     // dynamic library.
@@ -479,6 +483,13 @@ static int build(const State &subcommandState) {
     // Link an executable from the archive.
     return OutputType::executable;
   }();
+
+  // Compile the module to a static archive.
+  BufferRef archive;
+  if (std::optional<int> exitCode =
+          compileModuleToArchive(state, runtime, mlirCtx, options, **moduleOp,
+                                 target, archive, outputType))
+    return *exitCode;
 
   return linkOutput(outputType, state, args, options, archive);
 }
