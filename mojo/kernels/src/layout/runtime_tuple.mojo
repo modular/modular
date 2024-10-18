@@ -98,8 +98,12 @@ struct RuntimeTuple[
     @always_inline
     fn __getitem__[
         i: Int
-    ](self) -> RuntimeTuple[S[i], element_bitwidth=element_bitwidth]:
-        var res = RuntimeTuple[S[i], element_bitwidth=element_bitwidth]()
+    ](self) -> RuntimeTuple[
+        S[i], element_bitwidth=element_bitwidth, unsigned=unsigned
+    ]:
+        var res = RuntimeTuple[
+            S[i], element_bitwidth=element_bitwidth, unsigned=unsigned
+        ]()
         alias offset = Self.offset_until[i]()
 
         @parameter
@@ -120,11 +124,14 @@ struct RuntimeTuple[
     fn concat[
         R: IntTuple
     ](
-        self, rhs: RuntimeTuple[R, element_bitwidth=element_bitwidth]
-    ) -> RuntimeTuple[concat(S, R), element_bitwidth=element_bitwidth]:
-        var out = RuntimeTuple[
-            concat(S, R), element_bitwidth=element_bitwidth
-        ]()
+        self,
+        rhs: RuntimeTuple[
+            R, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+    ) -> RuntimeTuple[
+        concat(S, R), element_bitwidth=element_bitwidth, unsigned=unsigned
+    ] as result:
+        var out = __type_of(result)()
 
         alias S_flat = flatten(S)
 
@@ -149,7 +156,9 @@ struct RuntimeTuple[
     @always_inline
     fn flatten(
         self,
-    ) -> RuntimeTuple[flatten(S), element_bitwidth=element_bitwidth] as result:
+    ) -> RuntimeTuple[
+        flatten(S), element_bitwidth=element_bitwidth, unsigned=unsigned
+    ] as result:
         return __type_of(result)(self.value)
 
     fn write_to[W: Writer](self, inout writer: W):
@@ -201,7 +210,7 @@ fn to_int[
 @always_inline
 fn prefix_product[
     t: IntTuple
-](tuple: RuntimeTuple[t]) -> RuntimeTuple[prefix_product_int_tuple(t)]:
+](tuple: RuntimeTuple[t, **_]) -> RuntimeTuple[prefix_product_int_tuple(t)]:
     var res = RuntimeTuple[prefix_product_int_tuple(t)]()
     var prefix_res = 1
     for i in range(tuple.scalar_length):
@@ -222,24 +231,37 @@ fn product[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Int:
 
 @always_inline
 fn idx2crd[
-    idx_t: IntTuple, shape_t: IntTuple, stride_t: IntTuple
+    idx_t: IntTuple,
+    shape_t: IntTuple,
+    stride_t: IntTuple,
 ](
     idx: RuntimeTuple[idx_t, **_],
     shape: RuntimeTuple[shape_t, **_],
     stride: RuntimeTuple[stride_t, **_],
-) -> RuntimeTuple[idx2crd_int_tuple(idx_t, shape_t, stride_t)]:
-    var res = RuntimeTuple[idx2crd_int_tuple(idx_t, shape_t, stride_t)]()
+) -> RuntimeTuple[
+    idx2crd_int_tuple(idx_t, shape_t, stride_t),
+    element_bitwidth = shape.element_bitwidth,
+    unsigned = shape.unsigned,
+] as result:
+    var res = __type_of(result)()
     constrained[idx_t.is_value(), "Only scalar index is supported"]()
     for i in range(res.scalar_length):
         res.value[i] = (int(to_int(idx)) // stride.value[i]) % shape.value[i]
     return res
 
 
+# take shape as return type
 @always_inline
 fn idx2crd[
-    idx_t: IntTuple, shape_t: IntTuple
-](idx: RuntimeTuple[idx_t], shape: RuntimeTuple[shape_t]) -> RuntimeTuple[
-    idx2crd_int_tuple(idx_t, shape_t, prefix_product_int_tuple(shape_t))
+    idx_t: IntTuple,
+    shape_t: IntTuple,
+](
+    idx: RuntimeTuple[idx_t, **_],
+    shape: RuntimeTuple[shape_t, **_],
+) -> RuntimeTuple[
+    idx2crd_int_tuple(idx_t, shape_t, prefix_product_int_tuple(shape_t)),
+    element_bitwidth = shape.element_bitwidth,
+    unsigned = shape.unsigned,
 ]:
     return idx2crd(idx, shape, prefix_product(shape))
 
@@ -247,7 +269,7 @@ fn idx2crd[
 fn crd2idx[
     crd_t: IntTuple, shape_t: IntTuple, stride_t: IntTuple
 ](
-    crd: RuntimeTuple[crd_t],
+    crd: RuntimeTuple[crd_t, **_],
     shape: RuntimeTuple[shape_t, **_],
     stride: RuntimeTuple[stride_t, **_],
 ) -> Int:
@@ -299,8 +321,6 @@ fn signum(a: Int) -> Int:
     return 1 if (a > 0) else (-1 if (a < 0) else 0)
 
 
-# TODO: the returned runtime tuple needs to conform to a type base on a element
-# and b element type, for example, if a is int64 and b is int32, return a int64 type
 fn shape_div[
     a_t: IntTuple, b_t: IntTuple
 ](a: RuntimeTuple[a_t, **_], b: RuntimeTuple[b_t, **_]) -> RuntimeTuple[
