@@ -7,6 +7,7 @@
 import sys
 from os import abort
 from sys.param_env import env_get_string
+from utils import write_args
 
 # ===----------------------------------------------------------------------===#
 # DEFAULT_LEVEL
@@ -124,18 +125,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         var writer = self._fd
 
         writer.write(str(target_level), "::: ")
-
-        @parameter
-        fn print_with_separator[i: Int, T: Writable](value: T):
-            writer.write(value)
-
-            @parameter
-            if i < len(VariadicList(Ts)) - 1:
-                writer.write(" ")
-
-        values.each_idx[print_with_separator]()
-
-        writer.write("\n")
+        write_args(writer, values, sep=" ", end="\n")
 
     fn info[*Ts: Writable](self, *values: *Ts):
         alias target_level = Level.INFO
@@ -147,18 +137,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         var writer = self._fd
 
         writer.write(str(target_level), "::: ")
-
-        @parameter
-        fn print_with_separator[i: Int, T: Writable](value: T):
-            writer.write(value)
-
-            @parameter
-            if i < len(VariadicList(Ts)) - 1:
-                writer.write(" ")
-
-        values.each_idx[print_with_separator]()
-
-        writer.write("\n")
+        write_args(writer, values, sep=" ", end="\n")
 
     fn warning[*Ts: Writable](self, *values: *Ts):
         alias target_level = Level.WARNING
@@ -170,18 +149,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         var writer = self._fd
 
         writer.write(str(target_level), "::: ")
-
-        @parameter
-        fn print_with_separator[i: Int, T: Writable](value: T):
-            writer.write(value)
-
-            @parameter
-            if i < len(VariadicList(Ts)) - 1:
-                writer.write(" ")
-
-        values.each_idx[print_with_separator]()
-
-        writer.write("\n")
+        write_args(writer, values, sep=" ", end="\n")
 
     fn error[*Ts: Writable](self, *values: *Ts):
         alias target_level = Level.CRITICAL
@@ -193,18 +161,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         var writer = self._fd
 
         writer.write(str(target_level), "::: ")
-
-        @parameter
-        fn print_with_separator[i: Int, T: Writable](value: T):
-            writer.write(value)
-
-            @parameter
-            if i < len(VariadicList(Ts)) - 1:
-                writer.write(" ")
-
-        values.each_idx[print_with_separator]()
-
-        writer.write("\n")
+        write_args(writer, values, sep=" ", end="\n")
 
     fn critical[*Ts: Writable](self, *values: *Ts):
         alias target_level = Level.CRITICAL
@@ -216,18 +173,7 @@ struct Logger[level: Level = DEFAULT_LEVEL]:
         var writer = self._fd
 
         writer.write(str(target_level), "::: ")
-
-        @parameter
-        fn print_with_separator[i: Int, T: Writable](value: T):
-            writer.write(value)
-
-            @parameter
-            if i < len(VariadicList(Ts)) - 1:
-                writer.write(" ")
-
-        values.each_idx[print_with_separator]()
-
-        writer.write("\n")
+        write_args(writer, values, sep=" ", end="\n")
 
         abort()
 
