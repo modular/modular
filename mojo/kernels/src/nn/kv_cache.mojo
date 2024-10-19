@@ -248,12 +248,13 @@ fn _kv_cache_length[
 
     @parameter
     if target != "cpu":
-        var cuda_ctx = ctx.get_device_context()
-        cuda_ctx.enqueue_copy_device_to_device(
-            output.data,
-            kv_collection.cache_length_nd().data,
-            output.dim[0](),
+        var dev_ctx = ctx.get_device_context()
+        var size = output.dim[0]()
+        var dst = DeviceBuffer(dev_ctx, output.data, size, owning=False)
+        var src = DeviceBuffer(
+            dev_ctx, kv_collection.cache_length_nd().data, size, owning=False
         )
+        dev_ctx.enqueue_copy_device_to_device(dst, src)
     else:
         memcpy(
             output.data,
