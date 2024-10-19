@@ -132,9 +132,29 @@ struct DeviceBufferV2[type: DType](Sized):
         *,
         owning: Bool,
     ):
-        not_implemented_yet["##### DeviceBufferV2.__init__ - 2"]()
-        self._device_ptr = UnsafePointer[Scalar[type]]()
-        self._handle = _DeviceBufferPtr()
+        alias elem_size = sizeof[type]()
+        var cpp_handle = _DeviceBufferPtr()
+        # void AsyncRT_DeviceContext_createBuffer_owning(const DeviceBuffer **result, const DeviceContext *ctx, void *device_ptr, size_t len, size_t elem_size, bool owning)
+        external_call[
+            "AsyncRT_DeviceContext_createBuffer_owning",
+            NoneType,
+            UnsafePointer[_DeviceBufferPtr],
+            _DeviceContextPtr,
+            UnsafePointer[Scalar[type]],
+            _SizeT,
+            _SizeT,
+            Bool,
+        ](
+            UnsafePointer.address_of(cpp_handle),
+            ctx._handle,
+            ptr,
+            size,
+            elem_size,
+            owning,
+        )
+
+        self._device_ptr = ptr
+        self._handle = cpp_handle
 
     fn __init__(inout self):
         not_implemented_yet["##### DeviceBufferV2.__init__ - 3"]()
@@ -203,8 +223,13 @@ struct DeviceBufferV2[type: DType](Sized):
         return DeviceBufferV2[view_type](new_handle, new_device_ptr)
 
     fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
-        not_implemented_yet["##### UNIMPLEMENTED: DeviceBufferV2.take_ptr"]()
-        return UnsafePointer[Scalar[type]]()  # FIXME
+        # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
+        external_call[
+            "AsyncRT_DeviceBuffer_release_ptr", NoneType, _DeviceBufferPtr
+        ](self._handle)
+        var result = self._device_ptr
+        self._device_ptr = UnsafePointer[Scalar[type]]()
+        return result
 
     fn get_ptr(self) -> UnsafePointer[Scalar[type]]:
         return self._device_ptr
