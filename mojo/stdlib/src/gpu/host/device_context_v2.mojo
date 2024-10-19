@@ -156,8 +156,6 @@ struct DeviceBufferV2[type: DType](Sized):
     fn __moveinit__(inout self, owned existing: Self):
         self._device_ptr = existing._device_ptr
         self._handle = existing._handle
-        existing._device_ptr = UnsafePointer[Scalar[type]]()
-        existing._handle = _DeviceBufferPtr()
 
     @always_inline
     fn __del__(owned self):
@@ -220,7 +218,6 @@ struct DeviceBufferV2[type: DType](Sized):
         return UnsafePointer[Scalar[type]]()
 
 
-@value
 struct DeviceFunctionV2[
     func_type: AnyTrivialRegType, //,
     func: func_type,
@@ -233,6 +230,30 @@ struct DeviceFunctionV2[
     alias _func_impl = _compile_code[
         func, is_failable=_is_failable, emission_kind="asm", target=target
     ]()
+
+    fn __copyinit__(inout self, existing: Self):
+        # Increment the reference count before copying the handle.
+        #
+        # void AsyncRT_DeviceFunction_retain(const DeviceFunction *ctx)
+        external_call[
+            "AsyncRT_DeviceFunction_retain",
+            NoneType,
+            _DeviceFunctionPtr,
+        ](existing._handle)
+        self._handle = existing._handle
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self._handle = existing._handle
+
+    fn __del__(owned self):
+        # Decrement the reference count held by this struct.
+        #
+        # void AsyncRT_DeviceFunction_release(const DeviceFunction *ctx)
+        external_call[
+            "AsyncRT_DeviceFunction_release",
+            NoneType,
+            _DeviceFunctionPtr,
+        ](self._handle)
 
     fn __init__(
         inout self,
@@ -472,7 +493,6 @@ struct DeviceContextV2:
 
     fn __moveinit__(inout self, owned existing: Self):
         self._handle = existing._handle
-        existing._handle = _DeviceContextPtr()
 
     fn __del__(owned self):
         # Decrement the reference count held by this struct.
