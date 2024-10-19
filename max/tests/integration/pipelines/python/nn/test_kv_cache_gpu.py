@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 import asyncio
+
 from max.driver import CUDA
 from max.dtype import DType
-from max.engine import InferenceSession
 from nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
 
 

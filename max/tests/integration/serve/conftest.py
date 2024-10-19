@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """The fixtures for all tests in this directory."""
 
+import os
+from pathlib import Path
+
 import pytest
 from llama3 import InferenceConfig, Llama3, Llama3Context, SupportedVersions
 from max.serve.api_server import fastapi_app
@@ -16,6 +19,14 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipelineConfig,
 )
 from transformers import AutoTokenizer
+
+
+@pytest.fixture(scope="session")
+def testdata_directory() -> Path:
+    """Returns the path to the Modular .derived directory."""
+    path = os.getenv("PIPELINES_TESTDATA")
+    assert path is not None
+    return Path(path)
 
 
 @pytest.fixture(scope="session")

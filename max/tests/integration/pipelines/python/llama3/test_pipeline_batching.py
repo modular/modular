@@ -17,8 +17,7 @@ from evaluate_llama import (
     find_runtime_path,
     next_token_with_logits,
 )
-from huggingface_hub import hf_hub_download
-from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
+from llama3.config import SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3
 from nn.kv_cache import KVCacheStrategy
 

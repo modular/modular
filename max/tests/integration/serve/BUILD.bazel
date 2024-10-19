@@ -1,0 +1,71 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+modular_py_library(
+    name = "params",
+    testonly = True,
+    srcs = ["params.py"],
+)
+
+modular_py_test(
+    name = "tests_cpu",
+    size = "large",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "test_tiny_llama_serving_cpu.py",
+    ],
+    data = [
+        "//KGEN:CompilerRT",
+        "//SDK/integration-test/pipelines/python/llama3/testdata",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "BAZEL": "true",
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
+    },
+    exec_compatible_with = ["//:large"],
+    requires_gpu = False,
+    tags = [
+        "requires-network",
+    ],
+    deps = [
+        ":params",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/public/max-repo/pipelines/python/llama3",
+        requirement("pytest-asyncio"),
+        requirement("async-asgi-testclient"),
+    ],
+)
+
+modular_py_test(
+    name = "tests_gpu",
+    size = "enormous",
+    srcs = [
+        "__init__.py",
+        "conftest.py",
+        "params.py",
+        "test_tiny_llama_serving_gpu.py",
+    ],
+    data = [
+        "//KGEN:CompilerRT",
+        "//SDK/integration-test/pipelines/python/llama3/testdata",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "BAZEL": "true",
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
+    },
+    requires_gpu = True,
+    tags = [
+        "gpu",
+        "requires-network",
+    ],
+    deps = [
+        ":params",
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/public/max-repo/pipelines/python/llama3",
+        requirement("pytest-asyncio"),
+        requirement("async-asgi-testclient"),
+    ],
+)

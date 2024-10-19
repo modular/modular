@@ -12,7 +12,7 @@ is included alongside the full weights. To re-generate the tiny llama
 checkpoint, use the `gen_tiny_llama` target:
 
 ```bash
-TESTDATA_DIR="$MODULAR_PATH/SDK/integration-test/pipelines/python/testdata"
+TESTDATA_DIR="$MODULAR_PATH/SDK/integration-test/pipelines/python/llama3/testdata"
 
 # Generate float32 checkpoint
 ./bazelw run //ModularFramework/utils:gen_tiny_llama --\
@@ -43,7 +43,7 @@ points to the modular root so that the CLI can write the golden files for
 each encoding/model pair to the test data folder.
 
 ```bash
-./bazelw run //SDK/integration-test/pipelines/python:evaluate_llama --\
+./bazelw run //SDK/integration-test/pipelines/python/llama3:evaluate_llama --\
     --modular-path /path/to/modular \
     --encoding q4_k \ # float32, q4_k, bfloat16, or all (default)
     --model tinyllama # llama3_1, tinyllama, or all (default)
