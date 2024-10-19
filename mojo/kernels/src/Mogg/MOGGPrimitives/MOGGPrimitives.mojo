@@ -887,6 +887,19 @@ fn mgp_sync[
     return 0
 
 
+@mogg_register("mgp.debug.print")
+@always_inline
+fn mg_debug_print[
+    aDebugString: StringLiteral,
+    bLabel: StringLiteral,
+](in_chain: Int, ctx: StateContext,) raises -> Int:
+    prefix = ""
+    if bLabel:
+        prefix = "[" + bLabel + "] "
+    print(prefix + aDebugString)
+    return 0
+
+
 # ===----------------------------------------------------------------------===#
 # Opaque Test Primitives
 # ===----------------------------------------------------------------------===#
