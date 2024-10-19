@@ -1555,13 +1555,11 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     if (calleeSig.isPosVarArg(argIdx))
       convention = ArgConvention::BorrowedInReg;
 
-    // Owned and borrowed packs are passed as expected, but inout is passed
-    // borrowed.
-    if (calleeSig.isPackVarArg(argIdx)) {
-      if (convention == ArgConvention::InOut ||
-          convention == ArgConvention::BorrowedInMem)
-        convention = ArgConvention::BorrowedInReg;
-    }
+    // Owned and borrowed packs are passed as expected, but inout and borrowed
+    // are passed borrowed.
+    if (calleeSig.isPackVarArg(argIdx) &&
+        convention != ArgConvention::OwnedInMem)
+      convention = ArgConvention::BorrowedInMem;
 
     if (SignatureType::isResultSlot(convention)) {
       // Async function signatures have results slots even though they are not
@@ -1603,7 +1601,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       if (SignatureType::hasAddress(convention))
         argRVType = argRVType.getReferenceElementType();
 
-      // Use the union origin that covers all the values.
+      // Include the union origin that covers all the values.
       implicitOrigins.push_back(argRVType.getVariadicPackInfo().getOrigin());
     }
 

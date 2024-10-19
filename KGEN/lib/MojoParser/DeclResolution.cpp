@@ -653,8 +653,10 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
     } else if (sig.isPackVarArg(idx)) {
       // For variadic packs, we don't have a type instance but we have the
       // metatype.
-      Type metatype =
-          ASTType(type).getVariadicPackInfo().getVariadicElementType();
+      Type metatype = ASTType(type)
+                          .getReferenceElementType()
+                          .getVariadicPackInfo()
+                          .getVariadicElementType();
       type = ParamRefType::get(UnknownAttr::get(metatype));
       conv = ArgConvention::BorrowedInReg;
     }

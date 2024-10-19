@@ -153,7 +153,7 @@ lit.func @incorrect_arg_variadicness(%a: index borrow|stuff) {
 
 // -----
 
-// expected-error @+1 {{expected convention|variadicnes, got: stuff}}
+// expected-error @+1 {{expected convention|variadicness, got: stuff}}
 lit.func @incorrect_arg_conv_and_variadicness(%a: index stuff) {
   kgen.return
 }
