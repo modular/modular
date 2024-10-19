@@ -79,7 +79,7 @@ setUnixPlatform(llvm::orc::JITDylib &platformStdlib,
     session.setPlatform(std::move(*platformOr));
   } else {
     auto platformOr = toModularErrorOr(
-        T::Create(session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
+        T::Create(cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
                   platformStdlib, std::move(*orcRuntimeArchiveGenerator)));
     if (platformOr.isError())
       return platformOr.takeError();
@@ -158,8 +158,8 @@ setupPlatform(const std::optional<BufferRef> &orcRTBuf,
     };
 
     auto platform = toModularErrorOr(llvm::orc::COFFPlatform::Create(
-        session, cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer),
-        platformStdlib, std::move(orcRTMemBuf), std::move(loadDynamicLibrary)));
+        cast<llvm::orc::ObjectLinkingLayer>(objLinkingLayer), platformStdlib,
+        std::move(orcRTMemBuf), std::move(loadDynamicLibrary)));
     if (platform.isError())
       return platform.takeError();
     session.setPlatform(std::move(*platform));

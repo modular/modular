@@ -56,12 +56,12 @@
 // CHECK-FILE:     inputs/unit_suffix_test.mojo::test_fn()>
 // CHECK-FILE:     inputs/unit_suffix_test.mojo::fn_test()>
 
-// CHECK-PACKAGE: inputs/package>
-// CHECK-PACKAGE:   inputs/package/__init__.mojo>
-// CHECK-PACKAGE:     inputs/package/__init__.mojo@package_fn().__doc__>
-// CHECK-PACKAGE:       inputs/package/__init__.mojo@package_fn().__doc__::0>
-// CHECK-PACKAGE:   inputs/package/test/test_inside_package.mojo>
-// CHECK-PACKAGE:     inputs/package/test/test_inside_package.mojo::test_fn()>
+// CHECK-PACKAGE-DAG: inputs/package>
+// CHECK-PACKAGE-DAG:   inputs/package/__init__.mojo>
+// CHECK-PACKAGE-DAG:     inputs/package/__init__.mojo@package_fn().__doc__>
+// CHECK-PACKAGE-DAG:       inputs/package/__init__.mojo@package_fn().__doc__::0>
+// CHECK-PACKAGE-DAG:   inputs/package/test/test_inside_package.mojo>
+// CHECK-PACKAGE-DAG:     inputs/package/test/test_inside_package.mojo::test_fn()>
 
 // CHECK-TEST: inputs/test_unit_prefix.mojo::test_fn()>
 

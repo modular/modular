@@ -50,7 +50,8 @@ getValueAsOptionalIndex(const llvm::Record *record) {
   if (!val)
     return {};
 
-  llvm::IntInit *i = dyn_cast_if_present<llvm::IntInit>(val->getValue());
+  const llvm::IntInit *i =
+      dyn_cast_if_present<const llvm::IntInit>(val->getValue());
   if (!i)
     return {};
 
