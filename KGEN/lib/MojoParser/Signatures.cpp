@@ -796,7 +796,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 /// This function creates a new anonymous origin decl for the specified
 /// argument, and wraps the type with a RefType using that origin.
 static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
-                                         Type type,
+                                         Type type, bool isMutable,
                                          TypeCheckedFnSignature &tcSignature) {
   ASTDecl &declScope = tcSignature.paramList.declScope;
 
@@ -808,9 +808,6 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
         declScope.mangleParamName(Twine(llvm::utostr(idx)) + "_unnamed");
   }
 
-  // The reference is immutable when borrowing, mutable otherwise.
-  bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed &&
-                   arg.convention != ParsedArgument::kConventionUnspec;
   auto originDecl = ParamDeclAttr::get(
       originName, OriginType::get(originName.getContext(), isMutable));
 
@@ -861,10 +858,14 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   }
 
+  // The reference is immutable when borrowing, mutable otherwise.
+  bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed &&
+                   arg.convention != ParsedArgument::kConventionUnspec;
+
   // Arguments passed by memory need an associated origin parameter, and need
   // to be passed by reference.
-  RefType refType =
-      makeImplicitRefTypeForArg(arg, argIdx, elementType, tcSignature);
+  RefType refType = makeImplicitRefTypeForArg(arg, argIdx, elementType,
+                                              isMutable, tcSignature);
 
   // Form a VariadicPack type.
   ASTType variadicPackType =
@@ -926,7 +927,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
     } else {
       // Ts in "*args: *Ts" is a reference to a variadic list of types, but
-      // needs to be typechecked.
+      // needs to be type checked.
       type = typeCheckVariadicPackTypeSpecifier(arg, idx, typeEmitter,
                                                 tcSignature);
     }
@@ -1021,7 +1022,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     if (arg.vararg != VarArgKind::None) {
       // There should be no reason this isn't supportable.
       shared.emitError(
-          arg.loc, "TODO: variadics not supported with 'ref' convention yet");
+          arg.loc, "TODO: variadic isn't supported with 'ref' convention yet");
       arg.vararg = VarArgKind::None;
     }
     auto refType =
@@ -1087,11 +1088,11 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       break;
     case ParsedArgument::kConventionBorrowed:
       arg.kgenVariadicConvention = ArgConvention::BorrowedInMem;
-      arg.kgenConvention = ArgConvention::BorrowedInReg;
+      arg.kgenConvention = ArgConvention::BorrowedInMem;
       break;
     case ParsedArgument::kConventionInOut:
       arg.kgenVariadicConvention = ArgConvention::InOut;
-      arg.kgenConvention = ArgConvention::BorrowedInReg;
+      arg.kgenConvention = ArgConvention::BorrowedInMem;
       break;
     }
   }
@@ -1101,7 +1102,9 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   Type fullType;
   if (SignatureType::hasImplicitOrigin(arg.kgenConvention) &&
       arg.vararg != VarArgKind::KWVarArg) {
-    fullType = makeImplicitRefTypeForArg(arg, idx, type, tcSignature);
+    bool isMutable = arg.kgenConvention != ArgConvention::BorrowedInMem;
+    fullType =
+        makeImplicitRefTypeForArg(arg, idx, type, isMutable, tcSignature);
   } else {
     fullType = type;
   }
@@ -1158,7 +1161,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     // OwnedKwargsDict is memory only and since only the callee can access it,
     // we pass it as owned.
     arg.kgenConvention = ArgConvention::OwnedInMem;
-    fullType = makeImplicitRefTypeForArg(arg, idx, fullType, tcSignature);
+    fullType = makeImplicitRefTypeForArg(arg, idx, fullType, /*isMutable*/ true,
+                                         tcSignature);
   }
   tcSignature.fullArgTypes.push_back(fullType);
 
@@ -1363,8 +1367,8 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     tcSignature.argList.parsedArgs.push_back(errArg);
     tcSignature.argTypes.push_back(errorType);
 
-    RefType refType =
-        makeImplicitRefTypeForArg(errArg, 0, errorType, tcSignature);
+    RefType refType = makeImplicitRefTypeForArg(
+        errArg, 0, errorType, /*isMutable*/ true, tcSignature);
     tcSignature.fullArgTypes.push_back(refType);
 
     // If this is for a lit.func declaration (as opposed to a function type),
@@ -1403,8 +1407,8 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     tcSignature.argTypes.push_back(resultType);
 
     // Compute the RefType for this new argument with an implicit origin.
-    RefType refType =
-        makeImplicitRefTypeForArg(resultArg, 0, resultType, tcSignature);
+    RefType refType = makeImplicitRefTypeForArg(
+        resultArg, 0, resultType, /*isMutable*/ true, tcSignature);
     tcSignature.fullArgTypes.push_back(refType);
 
     // If this is for a lit.func declaration (as opposed to a function type),

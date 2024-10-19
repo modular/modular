@@ -106,8 +106,8 @@ fn test_owned_trait():
 
 # Check the argument pack.
 # CHECK-LABEL: lit.func @"takeInoutSomeTraitPack
-# CHECK-SAME: (%rest: !lit.struct<#VariadicPack <:i1 1, :origin<1> *"rest`",
-# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>> inout|pack)
+# CHECK-SAME: (%rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:i1 1, :origin<1> *"rest`"
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>, imm *"rest`1"> inout|pack)
 fn takeInoutSomeTraitPack[*Ts: SomeTrait](inout *rest: *Ts):
     pass
 
@@ -127,12 +127,12 @@ fn test_inout():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])
 
     # Create the VariadicPack
-    # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.var.decl
     # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
-    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
-    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
+    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[VARIADICPACK]], [[PACK]], [[ISOWNED]])
 
-    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[VARIADICPACK]])
+    # CHECK-NEXT: [[PACKIMM:%.*]] = lit.ref.immut [[VARIADICPACK]]
+    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[PACKIMM]])
     takeInoutSomeTraitPack(value1, value2)
 
     # Test register types.
@@ -143,12 +143,12 @@ fn test_inout():
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create(%value3)
 
     # Create the VariadicPack
-    # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.var.decl
     # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
-    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
-    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
+    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[VARIADICPACK]], [[PACK]], [[ISOWNED]])
+    # CHECK-NEXT: [[PACKIMM:%.*]] = lit.ref.immut [[VARIADICPACK]]
 
-    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[VARIADICPACK]])
+    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[PACKIMM]])
     takeInoutSomeTraitPack(value3)
 
 
@@ -178,14 +178,14 @@ struct MyTuple[*Ts: AnyType]:
 
 # CHECK-LABEL: lit.func @"pack
 # CHECK-SAME: Ts: variadic<!AnyType> var>
-# CHECK-SAME: (%args: !lit.struct<#VariadicPack <:i1 0, :origin<0> *"args`", :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>> borrow_in_mem|pack)
+# CHECK-SAME: (%args: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:i1 0, :origin<0> *"args`", :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>, imm *"args`1"> borrow_in_mem|pack)
 fn pack[*Ts: AnyType](*args: *Ts):
     pass
 
 
 # CHECK-LABEL: lit.func @"packBorrowed[
 # CHECK-SAME: Ts: variadic<!AnyType> var>
-# CHECK-SAME: (%args: !lit.struct<#VariadicPack {{.*}} borrow_in_mem|pack
+# CHECK-SAME: (%args: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:i1 0, :origin<0> *"args`", :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>, imm *"args`1"> borrow_in_mem|pack)
 fn packBorrowed[*Ts: AnyType](*args: *Ts):
     pass
 
@@ -228,7 +228,7 @@ fn usePacks(x: FloatDyn, y: Int):
 # CHECK-LABEL: test_comptime_call
 fn test_comptime_call[a: Int]():
     # CHECK: lit.alias.decl *"foo`": none =
-    # CHECK-SAME: <apply(:!lit.signature<[1](
-    # CHECK-SAME: "args": !lit.struct<#VariadicPack <:i1 0, :origin<0> {}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>> borrow_in_mem|pack)
-    # CHECK-SAME: <store_to_mem(a)>, {:i1 0}))>
+    # CHECK-SAME: <apply(:!lit.signature<[2](
+    # CHECK-SAME: "args": !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:i1 0, :origin<0> {}, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>, imm {}> borrow_in_mem|pack)
+    # CHECK-SAME: <store_to_mem(a)>, {:i1 0}))
     alias foo = pack(a)

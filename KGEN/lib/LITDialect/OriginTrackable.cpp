@@ -252,6 +252,9 @@ static Value findRefPackCreate(Value val) {
   // we must have a register pack.  Figure out how it is formed.
   if (isa<RefType>(val.getType())) {
     loadOperand = val;
+    if (auto immOp = val.getDefiningOp<RefImmutOp>())
+      loadOperand = immOp.getOperand();
+
   } else {
     if (auto load = val.getDefiningOp<RefLoadOp>())
       loadOperand = load.getOperand();

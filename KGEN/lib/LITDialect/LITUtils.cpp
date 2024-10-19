@@ -282,7 +282,7 @@ ParseResult LIT::parseConventionAndVariadicness(
         argPackIndex = idx;
         origArgPackConvention = convention;
         if (convention != ArgConvention::OwnedInMem)
-          convention = ArgConvention::BorrowedInReg;
+          convention = ArgConvention::BorrowedInMem;
       }
       return success();
     }
@@ -294,9 +294,9 @@ ParseResult LIT::parseConventionAndVariadicness(
       argPackIndex = idx;
       origArgPackConvention = convention;
       if (convention != ArgConvention::OwnedInMem)
-        convention = ArgConvention::BorrowedInReg;
+        convention = ArgConvention::BorrowedInMem;
     } else
-      return p.emitError(loc, "expected convention|variadicnes, got: ") << str;
+      return p.emitError(loc, "expected convention|variadicness, got: ") << str;
   }
   return success();
 }
