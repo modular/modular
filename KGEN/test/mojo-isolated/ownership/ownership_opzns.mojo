@@ -279,33 +279,30 @@ fn optimizeCopyToMove():
     # CHECK: %m1 = lit.var.decl
     # CHECK-NEXT: lifetime.start %m1
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%m1)
-    var m1 = MemExample()  # expected-warning {{never mutated}}
+    var m1 = MemExample() 
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     m1.noop()
 
-    # CHECK: %m2 = lit.var.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m1
-    # CHECK-NEXT: lifetime.start %m2
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m2, %m1)
-    # CHECK-NEXT: lifetime.end %m1
-    var m2 = m1  # expected-warning {{never mutated}}
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
+    # CHECK-NEXT: kgen.param.declare *"m2`
+    # CHECK-NEXT: [[M2:%.*]] = kgen.rebind %m1
+    var m2 = m1
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[M2]]
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     m2.noop()
 
-    # CHECK: %m3 = lit.var.decl
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m2
-    # CHECK-NEXT: lifetime.start %m3
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%m3, %m2)
-    # CHECK-NEXT: lifetime.end %m2
-    var m3 = m2  # expected-warning {{never mutated}}
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[M2]]
+    # CHECK-NEXT: kgen.param.declare *"m3`
+    # CHECK-NEXT: [[M3:%.*]] = kgen.rebind [[M2]]
 
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %m3
+    var m3 = m2
+
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[M3]]
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
     m3.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m3)
-    # CHECK-NEXT: lifetime.end %m3
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[M3]])
+    # CHECK-NEXT: lit.var.lifetime.end %m1
 
     # All the copyinit's should be removed.
 

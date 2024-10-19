@@ -2291,11 +2291,12 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       if (!callUser)
         return false; // Unknown user.
 
-      // The argument convention for the callee must be consuming, not
-      // initializing or anything else.
+      // The argument convention for the callee must be consuming or borrowing,
+      // not initializing or anything else.
       auto convention =
           callUser.getCalleeType().getArgConvention(operand.getOperandNumber());
-      if (convention != ArgConvention::OwnedInMem)
+      if (convention != ArgConvention::OwnedInMem &&
+          convention != ArgConvention::BorrowedInMem)
         return false;
       userOfTmp.insert(callUser);
     }
