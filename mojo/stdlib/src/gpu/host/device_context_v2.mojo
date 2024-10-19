@@ -9,7 +9,14 @@
 
 from memory import stack_allocation
 
-from ._compile import _compile_code, _get_nvptx_target
+from ._compile import (
+    _compile_code,
+    _compile_code_asm,
+    _get_nvptx_fn_name,
+    _get_nvptx_target,
+    _ptxas_compile,
+    _to_sass,
+)
 
 alias _DeviceContextPtr = UnsafePointer[NoneType]
 alias _DeviceBufferPtr = UnsafePointer[NoneType]
@@ -369,6 +376,81 @@ struct DeviceFunctionV2[
             )
         )
 
+    @staticmethod
+    fn _dump_q[val: Variant[Bool, Path, fn () capturing -> Path]]() -> Bool:
+        @parameter
+        if val.isa[Bool]():
+            return val.unsafe_get[Bool]()
+        elif val.isa[Path]():
+            return val.unsafe_get[Path]() != Path("")
+        return val.isa[fn () capturing -> Path]()
+
+    @staticmethod
+    fn _cleanup_asm(s: StringLiteral) -> StringLiteral:
+        return s.replace("\t// begin inline asm\n", "").replace(
+            "\t// end inline asm\n", ""
+        )
+
+    @no_inline
+    @staticmethod
+    fn dump_rep[
+        dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+    ]() raises:
+        @parameter
+        if _ptxas_info_verbose:
+            alias ptx = Self._func_impl.asm
+            print(_ptxas_compile[target](ptx, options="-v"))
+
+        @parameter
+        if Self._dump_q[dump_ptx]():
+            alias ptx = Self._cleanup_asm(Self._func_impl.asm)
+
+            @parameter
+            if dump_ptx.isa[fn () capturing -> Path]():
+                alias dump_ptx_fn = dump_ptx.unsafe_get[
+                    fn () capturing -> Path
+                ]()
+                dump_ptx_fn().write_text(ptx)
+            elif dump_ptx.isa[Path]():
+                dump_ptx.unsafe_get[Path]().write_text(ptx)
+            else:
+                print(ptx)
+
+        @parameter
+        if Self._dump_q[dump_sass]():
+            alias ptx = Self._cleanup_asm(Self._func_impl.asm)
+            var sass = _to_sass[target](ptx)
+
+            @parameter
+            if dump_sass.isa[fn () capturing -> Path]():
+                alias dump_sass_fn = dump_sass.unsafe_get[
+                    fn () capturing -> Path
+                ]()
+                dump_sass_fn().write_text(sass)
+            elif dump_sass.isa[Path]():
+                dump_sass.unsafe_get[Path]().write_text(sass)
+            else:
+                print(sass)
+
+        @parameter
+        if Self._dump_q[dump_llvm]():
+            alias llvm = _compile_code_asm[
+                Self.func, emission_kind="llvm-opt"
+            ]()
+
+            @parameter
+            if dump_llvm.isa[fn () capturing -> Path]():
+                alias dump_llvm_fn = dump_llvm.unsafe_get[
+                    fn () capturing -> Path
+                ]()
+                dump_llvm_fn().write_text(llvm)
+            elif dump_llvm.isa[Path]():
+                dump_llvm.unsafe_get[Path]().write_text(llvm)
+            else:
+                print(llvm)
+
     @always_inline
     @parameter
     fn _call_with_pack[
@@ -611,7 +693,7 @@ struct DeviceContextV2:
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
     ] as result:
-        return __type_of(result)(
+        result = __type_of(result)(
             self,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
@@ -619,6 +701,9 @@ struct DeviceContextV2:
             cache_config=cache_config,
             func_attribute=func_attribute,
         )
+        result.dump_rep[
+            dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
+        ]()
 
     @parameter
     fn enqueue_function[
