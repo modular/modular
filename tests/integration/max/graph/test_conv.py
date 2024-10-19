@@ -9,10 +9,10 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
-from conftest import modular_graph_test
 from max.dtype import DType
 from max.graph import Graph, TensorType, TensorValue
 from max.graph.ops import constant, conv2d
+from modular_graph_test import modular_graph_test
 
 
 def torch_conv2d(
