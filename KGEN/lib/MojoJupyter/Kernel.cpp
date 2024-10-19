@@ -363,8 +363,8 @@ static void runLLDBInitFile(Debugger &debugger, FileSpec lldbInitFile) {
   debugger.GetCommandInterpreter().HandleCommandsFromFile(lldbInitFile, options,
                                                           result);
   if (!result.Succeeded()) {
-    llvm::errs() << result.GetOutputData() << "\n";
-    llvm::errs() << result.GetErrorData() << "\n";
+    llvm::errs() << result.GetOutputString() << "\n";
+    llvm::errs() << result.GetErrorString() << "\n";
     exit(EXIT_FAILURE);
   }
 }
@@ -519,9 +519,9 @@ ExecutionFinishedState MojoKernel::Impl::startExecution(StringRef cellId,
           target->GetDebugger().GetCommandInterpreter().HandleCommand(
               command.rtrim().str().c_str(),
               /*add_to_history=*/lldb_private::eLazyBoolNo, result);
-          sendOutput("output", result.GetOutputData());
-          if (!result.GetErrorData().empty())
-            sendOutput("error", result.GetErrorData());
+          sendOutput("output", result.GetOutputString());
+          if (!result.GetErrorString().empty())
+            sendOutput("error", result.GetErrorString());
         } else {
           MojoExpressionEvaluationOptions options = exprOpts;
           if (!storeHistory)

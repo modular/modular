@@ -70,7 +70,7 @@ getOverloadedDeclaration(ArrayRef<llvm::Type *> operandTypes,
     return {};
   }
 
-  return llvm::Intrinsic::getDeclaration(module, id, overloadedArgTys);
+  return llvm::Intrinsic::getOrInsertDeclaration(module, id, overloadedArgTys);
 }
 
 template <typename T>
@@ -150,7 +150,7 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
     // Resolve the overloaded (or not) callee for the intrinsic call.
     llvm::Function *fn = nullptr;
     if (!llvm::Intrinsic::isOverloaded(id)) {
-      fn = llvm::Intrinsic::getDeclaration(&module, id, {});
+      fn = llvm::Intrinsic::getOrInsertDeclaration(&module, id, {});
       assert(fn && "should always succeed");
     } else {
       SmallVector<llvm::Type *, 8> argTys;
