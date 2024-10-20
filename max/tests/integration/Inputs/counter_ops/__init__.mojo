@@ -11,6 +11,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from python.python import _get_global_python_itf
 from python import Python, PythonObject
+from python._cpython import PyObjectPtr
 from os import abort
 
 
@@ -69,8 +70,13 @@ fn read_counter(c: Counter, output: NDBuffer[DType.int32, 1, DimList(2)]):
 
 @mogg_register("bump_python_counter")
 fn bump_python_counter(
-    counter: PythonObject,
+    counter_b: PyObjectPtr,
 ) -> PythonObject:
+    # Note this takes the python objects in as borrowed unsafe pointers
+    # due to limitations of the graph compiler working with register-only
+    # types.  The result is an owned +1 pointer.
+    counter = PythonObject.from_borrowed_ptr(counter_b)
+
     var cpython = _get_global_python_itf().cpython()
     var state = cpython.PyGILState_Ensure()
     try:
