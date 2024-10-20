@@ -11,12 +11,6 @@ from math import ceildiv
 from buffer import DimList, NDBuffer
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import DeviceContext
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
 from memory import UnsafePointer, stack_allocation
 
 from utils.index import Index

@@ -8,8 +8,6 @@
 
 from gpu.host import DeviceContext
 from gpu.host.memory import (
-    _free,
-    _malloc_managed,
     create_tma_descriptor,
     TMADescriptor,
 )
