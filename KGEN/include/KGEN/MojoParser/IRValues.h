@@ -723,7 +723,7 @@ public:
                                        ExprEmitter &emitter) const;
 
   virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const = 0;
-  virtual BValue emitStore(ASTExprAnd<CValue> value,
+  virtual CValue emitStore(ASTExprAnd<CValue> value,
                            ExprEmitter &emitter) const = 0;
 
   /// If this is a def argument shadow, resolve it to the incoming immutable
