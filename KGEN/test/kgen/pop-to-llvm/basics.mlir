@@ -877,4 +877,20 @@ kgen.func @fence() {
   kgen.return
 }
 
+// CHECK-LABEL: kgen.func @test_stack_alloc_forward
+kgen.func @test_stack_alloc_forward(%arg0: i8) -> i8 {
+  %2 = pop.stack_allocation 1 x i8 marked
+  pop.stack_alloc.lifetime.start(%2) : !kgen.pointer<i8>
+  pop.store %arg0, %2 : !kgen.pointer<i8>
+
+  // Make sure the load is forwarded away, it doesn't need to be loaded.
+  // CHECK: hlcf.loop
+  // CHECK-NEXT: hlcf.break "inlined_cf_scope" %arg0 : i8
+  %4 = hlcf.loop "inlined_cf_scope" () -> i8 {
+    %6 = pop.load %2 : !kgen.pointer<i8>
+    hlcf.break "inlined_cf_scope" %6 : i8
+  }
+  pop.stack_alloc.lifetime.end(%2) : !kgen.pointer<i8>
+  llvm.return %4 : i8
+}
 }
