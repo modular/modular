@@ -328,7 +328,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     default:
       llvm_unreachable("unknown convention");
     case ArgConvention::BorrowedInReg:
-      argVal = SBValue(arg);
+      argVal = SRValue(arg);
       break;
     case ArgConvention::OwnedInMem:
       argVal = MRValue(arg);
@@ -387,12 +387,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
       Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
       src = isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
     } else {
-      Value fieldValue = b.create<StructExtractOp>(existingArg, fieldOp);
-      // Emit an SBValue -> SRValue conversion to get ownership of the value.
-      src = emitter.emitSRValue({SBValue(fieldValue), SyntheticNode(location)},
-                                EC_CallArgValue);
-      if (!src)
-        return failure();
+      // The value is trivial, so no copy ctor is needed.
+      src = SRValue(b.create<StructExtractOp>(existingArg, fieldOp));
     }
     emitter.emitStoreToLValue({src, SyntheticNode(location)},
                               MLValue(targetFieldOp), EC_AttributeRefBase);

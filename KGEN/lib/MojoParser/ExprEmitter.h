@@ -337,9 +337,6 @@ public:
 
   /// Emit a register primary PValue to an SRValue.
   SRValue emitPValueToSRValue(ASTExprAnd<PValue> value, ExprContext context);
-  /// Emit any kind of PValue to an MLValue.
-  MBValue emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
-                              ExprContext context);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PValues and loading LValues as

@@ -754,24 +754,6 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
           : builder->create<ParamMaterializeOp>(location, value.ir));
 }
 
-/// Emit any kind of PValue to an MLValue.
-MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
-                                         ExprContext context) {
-  // We don't allow materializing Type values yet.
-  if (emitErrorForMaterializingTypeValues(*this, value, context))
-    return {};
-
-  // PValues don't have origins and are immortal with respect to the compiler.
-  // Emit a memcpy into the LValue. Creating an SSA value of the memory-only
-  // type for the sake of memcpy is safe because the bulk store will ensure the
-  // variable does not get promoted off the stack, and after struct lowering,
-  // the type is erased down to its MLIR constituents anyways.
-  Location loc = translateLocation(value.expr->getLoc());
-  Value attr = emitPValueToSRValue(value, context);
-  builder->create<RefStoreOp>(loc, attr, dest);
-  return MBValue(dest);
-}
-
 SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
                                  ExprContext context, ASTType resultType) {
   const ExprNode *expr = anyValue.expr;
@@ -1721,8 +1703,23 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   if (!destBuffer)
     return {};
 
-  if (auto pValue = value.ir.getIfPValue())
-    return emitPValueToMLValue({pValue, value.expr}, destBuffer, dest.context);
+  // Materialize any PValue into the memory slot directly.
+  if (auto pValue = value.ir.getIfPValue()) {
+    // We don't allow materializing Type values yet.
+    if (emitErrorForMaterializingTypeValues(*this, {pValue, value.expr},
+                                            dest.context))
+      return {};
+
+    // PValues don't have origins and are immortal with respect to the compiler.
+    // Emit a memcpy into the LValue. Creating an SSA value of the memory-only
+    // type for the sake of memcpy is safe because the bulk store will ensure
+    // the variable does not get promoted off the stack, and after struct
+    // lowering, the type is erased down to its MLIR constituents anyways.
+    Location loc = translateLocation(value.expr->getLoc());
+    Value regValue = emitPValueToSRValue({pValue, value.expr}, dest.context);
+    builder->create<RefStoreOp>(loc, regValue, destBuffer);
+    return emitCResult(MRValue(destBuffer), value.expr, dest);
+  }
 
   if (!valueType.isCopyable(exprLoc, shared)) {
     if (valueType.isMovableFrom(value, shared) &&
@@ -1778,7 +1775,8 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
   // has no __moveinit__, then copy it into the destination.
-  if (!value.ir.getIfRValue() || !valueType.isMovableFrom(value, shared)) {
+  if (!value.ir.getIfRValue() || !valueType.isMovableFrom(value, shared) ||
+      value.ir.getIfPValue()) {
     // If the value isn't either copy or movable from the source, but the source
     // value is an RValue, then this is because the type isn't implementing
     // either the copy or move init.  Complain precisely, instead of just
@@ -1821,9 +1819,6 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
     return SBValue(val);
   }
-
-  if (auto pvalue = value.ir.getIfPValue())
-    return emitPValueToMLValue({pvalue, value.expr}, destRef, context);
 
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
   // to use __moveinit__ if present.

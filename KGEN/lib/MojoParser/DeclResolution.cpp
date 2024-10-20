@@ -1210,32 +1210,31 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // Ref convention works with registers and def functions without any funny
     // business.
     if (convention == ArgConvention::Ref ||
-        convention == ArgConvention::MutRef) {
+        convention == ArgConvention::MutRef ||
+        convention == ArgConvention::OwnedInMem ||
+        convention == ArgConvention::InOut ||
+        convention == ArgConvention::InitSelf) {
       setDecl(CValue::getMValueForRef(bbArg));
       continue;
     }
 
-    // Borrowed arguments in 'def's get a special wrapper that allows them to be
-    // mutable.
-    auto setBorrowedDecl = [&](auto argBValue) {
-      // Don't bother 'fn' arguments.
-      if (!funcOp.isDef())
-        return setDecl(argBValue);
-
-      // Insert the def argument wrapper to make it lazily mutable on demand.
-      setDecl(DLValue(RCRef<DefArgumentWrapperDLValue>::create(
-          &argDecl, argBValue, argBValue.getRValueType(), argIdx)));
-    };
-
-    if (convention == ArgConvention::BorrowedInReg)
-      setBorrowedDecl(SBValue(bbArg));
-    else if (convention == ArgConvention::BorrowedInMem)
-      setBorrowedDecl(MBValue(bbArg)); // borrowed
+    CValue argValue;
+    if (convention == ArgConvention::BorrowedInMem)
+      argValue = MBValue(bbArg); // borrowed
     else {
-      assert(convention == ArgConvention::OwnedInMem ||
-             convention == ArgConvention::InOut ||
-             convention == ArgConvention::InitSelf);
-      setDecl(MLValue(bbArg));
+      assert(convention == ArgConvention::BorrowedInReg);
+      // borrowed_in_reg is used for @register_passable("trivial") types, where
+      // borrowed vs owned doesn't matter so we use SRValue.
+      argValue = SRValue(bbArg);
+    }
+
+    if (!funcOp.isDef()) { // Don't bother 'fn' arguments.
+      setDecl(argValue);
+    } else {
+      // Borrowed arguments in 'def's get a special wrapper that allows them to
+      // be made lazily mutable on demand.
+      setDecl(DLValue(RCRef<DefArgumentWrapperDLValue>::create(
+          &argDecl, argValue, argValue.getRValueType(), argIdx)));
     }
   }
 

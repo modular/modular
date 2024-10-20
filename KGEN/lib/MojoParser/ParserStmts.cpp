@@ -2691,7 +2691,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
   for (auto [regionArg, parsedArg] :
        llvm::zip(op.getRegion().addArguments(argTypes, argLocs), args)) {
     // Add the declaration for the argument within the region declaration.
-    getDeclResolver().addFullyResolvedDecl(SBValue(regionArg), parsedArg.name,
+    getDeclResolver().addFullyResolvedDecl(SRValue(regionArg), parsedArg.name,
                                            parsedArg.loc, &decl);
   }
 
