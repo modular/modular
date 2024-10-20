@@ -7,6 +7,7 @@
 #include "KGEN/POPDialect/POPOps.h"
 
 #include "KGEN/Interpreter/InterpreterState.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Instructions.h"
@@ -81,6 +82,20 @@ static std::string stringize(T value) {
   return os.str().str();
 }
 
+static SmallVector<Attribute> expandOperands(ArrayRef<Attribute> args) {
+  SmallVector<Attribute> operands;
+  operands.reserve(args.size());
+  for (auto value : args) {
+    if (auto packValueAttr = dyn_cast<KGEN::PackAttr>(value)) {
+      operands.append(packValueAttr.getValues().begin(),
+                      packValueAttr.getValues().end());
+    } else {
+      operands.push_back(value);
+    }
+  }
+  return operands;
+}
+
 // Interpreting an LLVM Intrinsic is a bit awkward.  We need to create an LLVM
 // call operation, and then ask llvm to fold it for us.
 ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
@@ -101,7 +116,7 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
 
   // Figure out the LLVM representation for all the operands.
   SmallVector<llvm::Value *> loweredOperands;
-  for (auto v : operands) {
+  for (auto v : expandOperands(operands)) {
     // Try to understand what this value is.
     auto typedOp = ::dyn_cast<TypedAttr>(v);
     if (!typedOp)
@@ -164,9 +179,9 @@ ErrorTreeOrSuccess CallLLVMIntrinsicOp::interpret(ArrayRef<Attribute> operands,
                 name.str());
     }
 
-    // Okay, we got the prototype for the intrinsic to call.  Generate a call to
-    // it in another function.  We need a basic block to hold the call - just
-    // abuse the intrinsic itself to own it.
+    // Okay, we got the prototype for the intrinsic to call.  Generate a call
+    // to it in another function.  We need a basic block to hold the call -
+    // just abuse the intrinsic itself to own it.
     auto *block = llvm::BasicBlock::Create(llvmContext, Twine(), fn);
 
     auto *call =
