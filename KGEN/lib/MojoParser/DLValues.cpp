@@ -324,7 +324,7 @@ BValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 //===----------------------------------------------------------------------===//
 
 DefArgumentWrapperDLValue::DefArgumentWrapperDLValue(ASTDecl *argDecl,
-                                                     BValue argRef,
+                                                     CValue argRef,
                                                      ASTType eltType,
                                                      size_t argIndex)
     : BaseDLValue(eltType), argDecl(argDecl), argRef(argRef),
@@ -342,7 +342,7 @@ MBValue DefArgumentWrapperDLValue::emitMBValueFromDefArgument(
 RefType DefArgumentWrapperDLValue::getMBValueTypeFromDefArgument() const {
   if (auto mb = argRef.getIfMBValue())
     return cast<RefType>(mb.getType());
-  return {}; // SBValue.
+  return {}; // SRValue.
 }
 
 void DefArgumentWrapperDLValue::print(raw_ostream &os) const {

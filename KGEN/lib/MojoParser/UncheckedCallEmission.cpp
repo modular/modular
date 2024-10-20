@@ -453,10 +453,10 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     // Check for a splat.
     if (!args.empty() &&
         llvm::all_of(args, [&](Value operand) { return operand == args[0]; })) {
-      argVal = SBValue(emitter.builder->create<POP::VariadicSplatOp>(
+      argVal = SRValue(emitter.builder->create<POP::VariadicSplatOp>(
           loc, expectedType, args[0], args.size()));
     } else {
-      argVal = SBValue(emitter.builder->create<POP::VariadicCreateOp>(
+      argVal = SRValue(emitter.builder->create<POP::VariadicCreateOp>(
           loc, expectedType, args));
     }
   } else {
@@ -466,7 +466,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     argVal = emitVariadicPackConstructor(
         variadicPackType, convention, getCommonOrigin(), callExpr, emitter,
         [&](RefPackType adjustedPackType) -> CValue {
-          return SBValue(emitter.builder->create<RefPackCreateOp>(
+          return SRValue(emitter.builder->create<RefPackCreateOp>(
               loc, adjustedPackType, args));
         });
     if (!argVal)
@@ -798,12 +798,13 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // loaded.
     if (argValAndExpr.ir.isMValue()) {
       auto refVal = argValAndExpr.ir.getMValueReference();
-      auto load = emitter.builder->create<RefLoadOp>(
+      return emitter.builder->create<RefLoadOp>(
           argValAndExpr.expr->getLocation(emitter), refVal);
-      argValAndExpr.ir = SBValue(load);
     }
 
     arg = argValAndExpr.ir.getIfSBValue();
+    if (!arg)
+      arg = argValAndExpr.ir.getIfSRValue();
     assert(arg && "unknown BValue");
     return arg;
 
@@ -1644,7 +1645,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       // Emit the implicit conversion to Coroutine[T].  We emit into the call's
       // destination to avoid an extra copy/move of the Coroutine object.
       callResult =
-          emitConstructorCall(coroType, {{{SBValue(call), callExpr}}}, callExpr,
+          emitConstructorCall(coroType, {{{SRValue(call), callExpr}}}, callExpr,
                               CallSyntax::kImplicitConvert, dest);
       if (!callResult) {
         dest.resetForError();

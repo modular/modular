@@ -104,7 +104,7 @@ public:
 /// ASTDecl with a direct reference to the box.
 class DefArgumentWrapperDLValue : public BaseDLValue {
 public:
-  DefArgumentWrapperDLValue(ASTDecl *argDecl, BValue argRef, ASTType eltType,
+  DefArgumentWrapperDLValue(ASTDecl *argDecl, CValue argRef, ASTType eltType,
                             size_t argIndex);
 
   // This hook is called before an argument is passed inout.  The specified
@@ -132,8 +132,8 @@ public:
 
   /// This is the argument decl we're the representation of.
   ASTDecl *argDecl;
-  // This is the MBValue or SBValue for the argument.
-  BValue argRef;
+  // This is the MBValue or SRValue for the argument.
+  CValue argRef;
   size_t argIndex;
 };
 

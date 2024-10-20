@@ -271,7 +271,7 @@ LIT::FuncOp LIT::generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
       value = MRValue(arg);
       break;
     case ArgConvention::BorrowedInReg:
-      value = SBValue(arg);
+      value = SRValue(arg);
       break;
     case ArgConvention::BorrowedInMem:
     case ArgConvention::Ref:

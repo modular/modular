@@ -1198,7 +1198,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     argIRValue = CValue::getMValueForRef(bbArg);
     break;
   case ArgConvention::BorrowedInReg:
-    argIRValue = SBValue(bbArg);
+    argIRValue = SRValue(bbArg);
     break;
   }
 
