@@ -940,22 +940,12 @@ fn test_my_int_to_index(x: MyInt) -> Int:
 
 
 @value
-@register_passable
+@register_passable("trivial")
 struct MyIntReg:
     var val: Int
 
     fn __init__(inout self, val: Int):
         self.val = val
-
-    fn __del__(owned self):
-        print("MyIntReg.__del__", self.val)
-
-
-@mogg_register("testfuse.my_int_reg.from_index")
-@always_inline
-@export
-fn test_my_int_reg_from_index(x: Int) -> MyIntReg:
-    return MyIntReg(x)
 
 
 @mogg_register("testfuse.my_int_reg.square")
@@ -965,8 +955,34 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
     return MyIntReg(x.val * x.val)
 
 
-@mogg_register("testfuse.my_int_reg.to_index")
+@value
+@register_passable
+struct MyIntReg2:
+    var val: Int
+
+    fn __init__(inout self, val: Int):
+        self.val = val
+
+    fn __del__(owned self):
+        print("MyIntReg2.__del__", self.val)
+
+
+@mogg_register("testfuse.my_int_reg2.from_index")
 @always_inline
 @export
-fn test_my_int_reg_to_index(x: MyIntReg) -> Int:
+fn test_my_int_reg2_from_index(x: Int) -> MyIntReg2:
+    return MyIntReg2(x)
+
+
+@mogg_register("testfuse.my_int_reg2.square")
+@always_inline
+@export
+fn test_my_int_reg2_square(x: MyIntReg2) -> MyIntReg2:
+    return MyIntReg2(x.val * x.val)
+
+
+@mogg_register("testfuse.my_int_reg2.to_index")
+@always_inline
+@export
+fn test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
     return x.val
