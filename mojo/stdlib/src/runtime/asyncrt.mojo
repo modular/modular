@@ -387,7 +387,7 @@ struct TaskGroup:
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable
+@register_passable("trivial")
 struct MojoCallContextPtr:
     """A pointer to a C++ MojoCallContext struct, which is used by the Modular
     C++ runtime to coordinate execution with Mojo kernels.
