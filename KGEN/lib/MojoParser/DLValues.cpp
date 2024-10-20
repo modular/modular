@@ -59,7 +59,7 @@ CValue DiscardDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
   return {};
 }
 
-BValue DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
+CValue DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
   // Convert to an RValue to fully evaluate it.
   auto rvalue = emitter.emitRValue(value, EC_Assignment, elementType);
@@ -97,7 +97,7 @@ CValue StoredAttributeRefDLValue::emitLoad(ValueDest &dest,
                                               expr, dest, emitter);
 }
 
-BValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
+CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
                                             ExprEmitter &emitter) const {
 
   if (!emitter.builder) {
@@ -183,7 +183,7 @@ CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
                                   CallSyntax::kMethodCall, expr);
 }
 
-BValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
+CValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                    ExprEmitter &emitter) const {
   // Add the set value to the keyword arguments list.  Semantic analysis already
   // checked that there can't be a duplicate.
@@ -198,10 +198,8 @@ BValue SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
   // if (!setter) {
   StringRef setterName = isSubscript() ? "__setitem__" : "__setattr__";
 
-  auto result =
-      emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
-                                  storeDest, CallSyntax::kMethodCall, expr);
-  return emitter.emitBValue({result, value.expr}, EC_Subscript);
+  return emitter.emitNamedMethodCall(setterName, std::move(operandsWithValue),
+                                     storeDest, CallSyntax::kMethodCall, expr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -234,7 +232,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
 /// Storing to a tuple LValue extracts the elements out of the provided value
 /// stores them into each component LValue.
-BValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
+CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
                                ExprEmitter &emitter) const {
   auto emitError = [&]() -> InflightDiag {
     return emitter.emitError(expr->getLoc())
@@ -254,7 +252,7 @@ BValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   // allows "(a, b) = [1, 2]", we need to support PythonObject.  The correct
   // sequence is to check the len(x) of the argument and see if it is exactly
   // right, CPython produces these errors at runtime:
-  //   ValueRrror: too many values to unpack (expected 2)
+  //   ValueError: too many values to unpack (expected 2)
   //   ValueError: not enough values to unpack (expected 2, got 1)
   //
   // We currently require the input be a Tuple.
@@ -366,10 +364,9 @@ DefArgumentWrapperDLValue::prepareForInoutAccess(SMLoc loc,
                                                VarDeclKind::Arg);
 
   // Expr to provide location information.
-  ValueDest dest(MLValue(varDecl), EC_OwnedRegArgShadow);
-  if (!entryEmitter.emitBValue({argRef, SyntheticNode(loc)}, dest)) {
+  if (!entryEmitter.emitStoreToLValue({argRef, SyntheticNode(loc)},
+                                      MLValue(varDecl), EC_OwnedRegArgShadow)) {
     // This can fail if not copyable/movable.
-    dest.resetForError();
     argDecl->setErroneous();
     return LValue();
   }
@@ -389,7 +386,7 @@ CValue DefArgumentWrapperDLValue::emitLoad(ValueDest &dest,
   return emitter.emitCResult(argRef, &expr, dest);
 }
 
-BValue DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
+CValue DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
                                             ExprEmitter &emitter) const {
   // Okay, if the def argument is mutated, we need to snap into action and
   // lazily build a shadow in the function entry.

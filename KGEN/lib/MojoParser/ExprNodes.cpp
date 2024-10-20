@@ -757,19 +757,18 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     return emitter.emitCResult(result, expr, dest);
   }
 
-  // We know the base.ir is a RValue, DLValue or anything else fancy, decay to a
-  // BValue.
-  ValueDest bvDest(dest.getContext());
-  BValue baseBVal = emitter.emitBValue(base, bvDest);
-  if (!baseBVal)
-    return {};
-
-  // If we got an SBValue in an SSA value, then extract the field.
-  if (SBValue baseSB = baseBVal.getIfSBValue()) {
-    auto extractVal =
-        emitter.builder->create<StructExtractOp>(mlirLoc, baseSB, fieldOp);
+  // If we got an SSA value, then extract the field and return as SBValue.
+  if (base.ir.isSValue()) {
+    auto extractVal = emitter.builder->create<StructExtractOp>(
+        mlirLoc, base.ir.getSValueRegister(), fieldOp);
     return emitter.emitCResult(SBValue(extractVal), expr, dest);
   }
+
+  // We know the base.ir is a RValue, DLValue or anything else fancy, decay to a
+  // MBValue.
+  MBValue baseBVal = emitter.emitMBValue(base, dest.getContext());
+  if (!baseBVal)
+    return {};
 
   // Otherwise we have a PValue or MValue, recurse to handle it.
   return emitStoredFieldRef({baseBVal, base.expr}, fieldOp, expr, dest,

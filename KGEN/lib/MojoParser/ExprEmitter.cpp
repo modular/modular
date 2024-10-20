@@ -1745,7 +1745,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   return emitCResult(MRValue(destBuffer), value.expr, dest);
 }
 
-BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
+CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
                                       ExprContext context) {
   // Convert nonmaterializables.
   if (auto nmTarget =
@@ -1755,11 +1755,9 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       // materialize directly into it and return instead of allocating a
       // temporary if the conversion constructor requires one.
       ValueDest nmConversionDest(destLV, context);
-      CValue convertedVal =
-          emitConstructorCall(nmTarget, CallOperands({value}), value.expr,
-                              CallSyntax::kIndirectCall, nmConversionDest,
-                              /*allowImplicitConversion=*/true);
-      return emitBValue({convertedVal, value.expr}, context);
+      return emitConstructorCall(nmTarget, CallOperands({value}), value.expr,
+                                 CallSyntax::kIndirectCall, nmConversionDest,
+                                 /*allowImplicitConversion=*/true);
     }
   }
 
@@ -1792,10 +1790,9 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 
     ValueDest dest(destLV, context);
     auto result = emitCopyOfValue(value, dest);
-    assert((!result || result.getIfBValue()) &&
-           "dest specified, so this should return BValue");
-    dest.resetForError();
-    return result.getIfBValue();
+    if (!result)
+      dest.resetForError();
+    return result;
   }
 
   // Otherwise this is a movable RValue that we own and we have an MLValue

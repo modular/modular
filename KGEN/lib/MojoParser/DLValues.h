@@ -25,7 +25,7 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  BValue emitStore(ASTExprAnd<CValue> value,
+  CValue emitStore(ASTExprAnd<CValue> value,
                    ExprEmitter &emitter) const override;
 };
 
@@ -49,7 +49,7 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  BValue emitStore(ASTExprAnd<CValue> value,
+  CValue emitStore(ASTExprAnd<CValue> value,
                    ExprEmitter &emitter) const override;
 };
 
@@ -79,7 +79,7 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  BValue emitStore(ASTExprAnd<CValue> value,
+  CValue emitStore(ASTExprAnd<CValue> value,
                    ExprEmitter &emitter) const override;
 };
 
@@ -95,7 +95,7 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  BValue emitStore(ASTExprAnd<CValue> value,
+  CValue emitStore(ASTExprAnd<CValue> value,
                    ExprEmitter &emitter) const override;
 };
 
@@ -115,7 +115,7 @@ public:
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;
-  BValue emitStore(ASTExprAnd<CValue> value,
+  CValue emitStore(ASTExprAnd<CValue> value,
                    ExprEmitter &emitter) const override;
 
   /// If this is a def argument shadow, resolve it to the incoming immutable

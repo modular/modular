@@ -70,14 +70,8 @@ static CValue emitVariadicPackConstructor(
   // the declared callee side (a parameter).
   variadicPackType = variadicPackType.getWithoutParameters(emitter.shared);
 
-  auto callResult =
-      emitter.emitConstructorCall(variadicPackType, std::move(operands), expr,
-                                  CallSyntax::kTypeCall, packDest);
-
-  if (isOwned)
-    return callResult;
-  // RValue->BValue decay if we're passing VariadicPack as an SBValue.
-  return emitter.emitBValue({callResult, expr}, ExprContext::EC_PackArgument);
+  return emitter.emitConstructorCall(variadicPackType, std::move(operands),
+                                     expr, CallSyntax::kTypeCall, packDest);
 }
 
 //===----------------------------------------------------------------------===//
