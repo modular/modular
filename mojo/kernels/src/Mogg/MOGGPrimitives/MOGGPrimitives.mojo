@@ -22,7 +22,6 @@ from gpu.host import (
 )
 from gpu.host._utils import _check_error
 from gpu.host.cuda_instance import *
-from gpu.host.memory import _free, _malloc
 from memory import UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
