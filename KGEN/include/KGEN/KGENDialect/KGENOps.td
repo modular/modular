@@ -1062,7 +1062,6 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
   let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
 
   let hasFolder = 1;
-  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//

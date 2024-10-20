@@ -306,7 +306,7 @@ static SmallVector<Value> rebindValues(OpBuilder &b, Location loc,
   newValues.reserve(inputs.size());
   for (auto [input, output] : llvm::zip(inputs, outputs))
     if (input.getType() != output)
-      newValues.push_back(b.create<RebindOp>(loc, output, input));
+      newValues.push_back(b.createOrFold<RebindOp>(loc, output, input));
     else
       newValues.push_back(input);
   return newValues;
