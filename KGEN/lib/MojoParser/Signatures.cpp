@@ -1051,14 +1051,10 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
                        "TODO: borrowed non-trivial register-passable arguments "
                        "are not yet supported in async functions");
     }
-    // We can pass the borrowed argument in a register if it is register
-    // passable, but variadics have more details.
-    if (conv != TypeConvention::MemoryOnly &&
-        // We MUST pass non-trivial register types with VariadicListMem,
-        // but can't quite use it for all borrowed arguments yet.
-        // TODO(MOCO-726): Make variadics always pass through memory.
-        (arg.vararg != VarArgKind::VarArg ||
-         conv == TypeConvention::RegisterPassableTrivial))
+    // We can pass trivial register borrowed arguments in a register.  We cannot
+    // pass non-trivial ones because we cannot diagnose ownership and have other
+    // lifetime issues.
+    if (conv == TypeConvention::RegisterPassableTrivial)
       arg.kgenConvention = ArgConvention::BorrowedInReg;
     break;
   }

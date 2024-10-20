@@ -86,7 +86,7 @@ fn refGlobals():
     borrowGlobalInt(inferred_type)
 
     # CHECK: [[REG:%.*]] = lit.globalvar.ref {{.*}}@reg_global
-    # CHECK-NEXT: %[[VALUE:.*]] = lit.ref.load [[REG]]
+    # CHECK-NEXT: %[[VALUE:.*]] = lit.ref.immut [[REG]]
     # CHECK-NEXT: call {{.*}}borrowGlobalReg{{.*}}(%[[VALUE]])
     borrowGlobalReg(reg_global)
 

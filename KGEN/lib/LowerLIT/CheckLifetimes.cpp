@@ -1796,7 +1796,6 @@ private:
   void emitDestructorCall(Value value, bool isIndirect,
                           ImplicitLocOpBuilder &builder);
   DtorEmissionResult optimizeCopyDestroys(Operation *opWithUse);
-  void elideCopyInitReg(LIT::CallOp copyInitCall, RefLoadOp loadOp);
 
   enum class CopyInitSuccess {
     Failed,          // Failed to elide.
@@ -2065,43 +2064,8 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
     }
   }
 
-  // Register passable types will pass the 'existing' value by loading from a
-  // memory location that needs destruction.
-  Value copyInitSrc = copyInitCall.getOperand(1);
-  if (auto loadOp = copyInitSrc.getDefiningOp<RefLoadOp>()) {
-    Value loaded = RefImmutOp::strip(loadOp.getOperand());
-
-    // Check to see if we have this value to destroy.
-    for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
-      // Only look at full value destroys, not subfields.
-      if (!elt.fieldsToDestroy.empty())
-        continue;
-
-      // If this is is a direct reference, then it has already been loaded from
-      // the VarDecl box.
-      Value eltValue = elt.value;
-      if (!elt.valueRef.isIndirect) {
-        auto eltLoad = elt.value.getDefiningOp<RefLoadOp>();
-        if (!eltLoad)
-          continue; // Unknown direct access.
-        eltValue = RefImmutOp::strip(eltLoad.getOperand());
-      }
-
-      // Check to see if the value to destroy is the load box indirectly
-      // referenced.
-      if (eltValue == loaded) {
-        // Ok, yep we can do this.
-        elideCopyInitReg(copyInitCall, loadOp);
-
-        // We're done with this destructor, so remove it from the list.
-        valuesToDestroy.erase(valuesToDestroy.begin() + i);
-        return DtorEmissionResult::RemoveOpWithUse;
-      }
-    }
-  }
-
-  // For memory types, we scan to see if the value is used directly.
-  copyInitSrc = RefImmutOp::strip(copyInitSrc);
+  // Get the 'existing' value.
+  Value copyInitSrc = RefImmutOp::strip(copyInitCall.getOperand(1));
 
   // Check to see if we have this value to destroy.
   for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
@@ -2126,81 +2090,6 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   }
 
   return DtorEmissionResult::KeepOp;
-}
-
-/// We've found a copyinit(dest, src) where the 'src' is getting destroyed after
-/// the copy.
-///
-/// For example, if we have:
-///   %tmp = lit.var.decl "anonymous"
-///   %srcReg = lit.ref.load %src
-///   lit.call __copyinit__(%tmp, %srcReg)
-///   ==> destroy %src
-/// Then we can locally optimize this into:
-///   %tmp = lit.var.decl "anonymous"
-///   %srcReg = lit.ref.load.consume %src
-///   lit.ref.store %srcReg -> %tmp
-/// And if the only other operation using '%tmp' is a lit.load.consume:
-///   %tmp = lit.var.decl "anonymous"
-///   %srcReg = lit.ref.load %src
-///   lit.call __copyinit__(%tmp, %srcReg)
-///   ==> destroy %src
-///   ...
-///   %xyz = lit.load.consume %tmp
-/// Then we can optimize this into:
-///   %srcReg = lit.ref.load.consume %src
-///   ...
-///   %xyz = %srcReg
-void DestructorInserter::elideCopyInitReg(LIT::CallOp copyInitCall,
-                                          RefLoadOp loadOp) {
-  Value copyInitDest = copyInitCall.getOperand(0);
-
-  // We're definitely removing the copyinit.  The caller will remove it for us.
-  copyInitCall->dropAllReferences();
-
-  /// Given a temporary used as the destination of a copyinit call, check if its
-  /// only user (ignoring origin markers) is a `lit.load.consume`. This
-  /// function returns the load op if it is the only user.
-  auto getOnlyLoadConsumeUser = [](VarDeclOp var) -> LoadConsumeOp {
-    LoadConsumeOp consumer;
-    for (Operation *user : var->getUsers()) {
-      if (auto load = dyn_cast<LoadConsumeOp>(user))
-        consumer = load;
-      else if (!isa<VarLifetimeStartOp, VarLifetimeEndOp>(user))
-        return {};
-    }
-    return consumer;
-  };
-
-  // FIXME: We should turn 'loadOp' into a consuming load, but we don't update
-  // the upwards consumption mask correctly.
-
-  // If the operation right after the call is a consuming load from a
-  // varDecl, then we can squash the vardecl and the consuming load and
-  // avoid emitting a store, tidying things right up.
-  if (auto varDecl = copyInitDest.getDefiningOp<VarDeclOp>()) {
-    if (LoadConsumeOp loadConsume = getOnlyLoadConsumeUser(varDecl)) {
-      // We know the bottom-up scan won't revisit it, so directly remove it.
-      valueSet.eraseValueInfo(loadConsume);
-      loadConsume.getResult().replaceAllUsesWith(loadOp);
-      loadConsume.erase();
-
-      // This turns into a consume of the moved value. Emit an end marker if
-      // appropriate.
-      emitLifetimeEndAfter(loadOp.getRef(), loadOp);
-
-      // Don't remove the vardecl itself, because it will occur in the ValueSet
-      // maps etc. These will get cleaned up late.
-      return;
-    }
-  }
-
-  // Otherwise we need to insert a store.  Put the store after the call so
-  // it isn't reprocessed by destructor insertion.
-  emitLifetimeEndAfter(loadOp.getRef(), loadOp);
-  Operation *opAfterCall = &*++Block::iterator(copyInitCall);
-  ImplicitLocOpBuilder builder(copyInitCall.getLoc(), opAfterCall);
-  builder.create<RefStoreOp>(loadOp, copyInitDest);
 }
 
 /// Return true if the specified 'p1' pointer could point at object or a
@@ -2277,22 +2166,26 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       if (user == copyInitCall)
         continue;
 
-      // Otherwise, the only sort of user we can support is a call that consumes
-      // the value.
-      // NOTE: This could be extended in the future to be more powerful, e.g. to
-      // support patterns like:
-      //    %tmp = lit.var.decl "anonymous"
-      //    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
-      // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
-      //    use(%tmp)
-      //    consume(%tmp)
-      // It isn't clear why we're limiting this?
+      // It may be a lit.load.consume if the value is a register passable type.
+      if (auto load = dyn_cast<LoadConsumeOp>(user)) {
+        userOfTmp.insert(load);
+        continue;
+      }
+
+      // Otherwise, the only sort of user we can support is a call.
       auto callUser = dyn_cast<LIT::CallOp>(user);
       if (!callUser)
         return false; // Unknown user.
 
       // The argument convention for the callee must be consuming or borrowing,
-      // not initializing or anything else.
+      // not initializing or anything else.  Allowing borrowing allows us to
+      // enable this pattern:
+
+      //    %tmp = lit.var.decl "anonymous"
+      //    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
+      // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
+      //    use(%tmp)       <= use the temp
+      //    consume(%tmp)   <= eventually consume it.
       auto convention =
           callUser.getCalleeType().getArgConvention(operand.getOperandNumber());
       if (convention != ArgConvention::OwnedInMem &&
@@ -2315,11 +2208,13 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
     if (it == e)
       return false;
 
-    // Scan all the operands to see if any of them are related to %src. We
-    // disallow regions because we don't recurse into them.
-    if (it->getNumRegions() || llvm::any_of(it->getOperands(), [&](Value v) {
-          return v && mightPointTo(v, srcPointer);
-        }))
+    // We don't recurse into regions, so be conservative.
+    if (it->getNumRegions())
+      return false;
+
+    // Scan all the operands to see if any of them are related to %src.
+    if (llvm::any_of(it->getOperands(),
+                     [&](Value v) { return v && mightPointTo(v, srcPointer); }))
       return false;
 
     // If this operation is a known user of tmp, then we might be done scanning.

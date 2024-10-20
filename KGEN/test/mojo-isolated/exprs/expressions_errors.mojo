@@ -590,7 +590,7 @@ fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonT
   # expected-error @+1 {{cannot transfer out of immutable reference}}
   _ = borrowed_arg^
 
-  # expected-error @+1 {{expression is an immutable register value, transfer requires mutability}}
+  # expected-error @+1 {{cannot transfer out of immutable reference}}
   _ = obj^
 
   # expected-error @+1 {{cannot transfer from a parameter expression; did you want to introduce a local 'var'?}}

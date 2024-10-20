@@ -30,8 +30,8 @@ fn test_owned(owned x: RegPassable):
     # CHECK: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XIMUT]])
     borrowed_generic(x)
 
-    # CHECK: [[XREF:%.*]] = lit.ref.load %x
-    # CHECK: lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}([[XCOPY:%.*]], [[XREF]])
+    # CHECK: [[XIMM:%.*]] = lit.ref.immut %x
+    # CHECK: lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}([[XCOPY:%.*]], [[XIMM]])
     # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])
     owned_generic(x)
 
@@ -39,17 +39,10 @@ fn test_owned(owned x: RegPassable):
     owned_generic(x^)
 
 
-# CHECK-LABEL: lit.func @"test_borrowed{{.*}}"(%x: !RegPassable)
+# CHECK-LABEL: lit.func @"test_borrowed{{.*}}(%x: !lit.ref<!RegPassable, imm *"x`"> borrow_in_mem)
 fn test_borrowed(x: RegPassable):
-    # CHECK: [[XREF:%.*]] = lit.var.decl "__sbvalue_tmp__"
-    # CHECK-NEXT: [[XPTR:%.*]] = lit.ref.to_pointer [[XREF]]
-    # CHECK-NEXT: mark_initialized [[XREF]]
-    # CHECK-NEXT: pop.store %x, [[XPTR]]
-    # CHECK-NEXT: [[XIMM:%.*]] = lit.ref.immut [[XREF]]
-    # CHECK-NEXT: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>([[XIMM]])
+    # CHECK-NEXT: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>(%x)
     borrowed_generic(x)
-    # CHECK-NEXT: mark_consumed [[XREF]]
-    # CHECK-NEXT: lit.ownership.use %x : !RegPassable
 
     # CHECK: lit.call @{{.*}}::@RegPassable::@"__copyinit__{{.*}}([[XCOPY:%.*]], %x)
     # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XCOPY]])

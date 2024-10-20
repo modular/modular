@@ -737,6 +737,16 @@ struct Outer34551: # expected-error {{all members of '@register_passable' struct
     fn __del__(owned self): 
         _ = self._inner ^
 
+@register_passable
+struct StructWithoutBody:
+    pass
+
+@value
+@register_passable
+# expected-error @below {{'StructWithoutBody' is not copyable because it has no '__copyinit__'}}
+struct OkayStruct:
+    var begin: StructWithoutBody
+
 ##===----------------------------------------------------------------------===##
 # Traits
 ##===----------------------------------------------------------------------===##
@@ -988,3 +998,5 @@ top_level_func_param[a]()
 var y = 7
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
 y += 1
+
+

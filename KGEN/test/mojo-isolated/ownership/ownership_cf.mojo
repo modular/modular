@@ -171,15 +171,11 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
         # CHECK-NEXT: lifetime.end %b
         raise err
     # CHECK: } except {
-    # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
+    # CHECK-NEXT: [[ERR:%.*]] = lit.ref.immut [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
 
-    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
-    # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
-    # CHECK-NEXT: lit.ref.store [[ERR]], [[DTORTMP]]
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
-    # CHECK-NEXT: lifetime.end [[DTORTMP]]
-
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[ERRSLOT]])
+    # CHECK-NEXT: lit.var.lifetime.end [[ERRSLOT]]
     # CHECK-NEXT: lit.try.yield
     except e:
         use(e)
@@ -204,14 +200,11 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
         # CHECK-NOT: %c
         raise err
     # CHECK: } except {
-    # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
+    # CHECK-NEXT: [[ERR:%.*]] = lit.ref.immut [[ERRSLOT]]
     # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
 
-    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
-    # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
-    # CHECK-NEXT: lit.ref.store [[ERR]], [[DTORTMP]]
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
-    # CHECK-NEXT: lifetime.end [[DTORTMP]]
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[ERRSLOT]])
+    # CHECK-NEXT: lifetime.end [[ERRSLOT]]
 
     # CHECK-NEXT: lit.try.yield
     except e:

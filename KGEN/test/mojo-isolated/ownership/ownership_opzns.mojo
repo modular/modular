@@ -145,10 +145,11 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # FIXME: Should rewrite this to lit.ref.load.consume technically, but
-    # nothing after CheckLifetimes cares.
+    # CHECK-NEXT: [[A:%.*]] = lit.ref.immut %a
+    # CHECK-NEXT: kgen.param.declare *"anonymous
+    # CHECK-NEXT: [[RB:%.*]] = kgen.rebind %a
 
-    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
+    # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[RB]]
     # CHECK-NEXT: kgen.return [[A]]
     return a
 
@@ -186,11 +187,11 @@ fn passFieldToOwnedInt(owned a: MemExample):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %a[x]
     # CHECK-NEXT: %1 = lit.ref.load %0
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
-    # CHECK-NEXT: %__mem_tmp__ = lit.var.decl "__mem_tmp__"
-    # CHECK-NEXT: lit.var.lifetime.start %__mem_tmp__
-    # CHECK-NEXT: lit.ref.store %1, %__mem_tmp__
-    # CHECK-NEXT: lit.call {{.*}}takeOwnedInt{{.*}}(%__mem_tmp__)
-    # CHECK-NEXT: lit.var.lifetime.end %__mem_tmp__
+    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*
+    # CHECK-NEXT: lit.var.lifetime.start [[ANON]]
+    # CHECK-NEXT: lit.ref.store %1, [[ANON]]
+    # CHECK-NEXT: lit.call {{.*}}takeOwnedInt{{.*}}([[ANON]])
+    # CHECK-NEXT: lit.var.lifetime.end [[ANON]]
     takeOwnedInt(a.x)
 
     # CHECK-NEXT: kgen.param.constant: none
@@ -222,18 +223,17 @@ fn optimizeCopyElision():
 
     # We need one copy of 'a' here, not two + dtor.
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl
-    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
+    # CHECK-NEXT: [[A:%.*]] = lit.ref.immut %a
     # CHECK-NEXT: lifetime.start [[ANON]]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[A]])
 
-    # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
-    # CHECK-NEXT: [[ATMP:%.*]] = lit.ref.load %a
-    # CHECK-NEXT: lit.var.lifetime.end %a
-    # CHECK-NEXT: lit.var.lifetime.start [[ANON2]]
-    # CHECK-NEXT: lit.ref.store [[ATMP]], [[ANON2]]
-    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ANON]], [[ANON2]])
+    # CHECK-NEXT: [[AIMM:%.*]] = lit.ref.immut %a
+    # CHECK-NEXT: kgen.param.declare *"anonymous
+    # CHECK-NEXT: [[ATMP:%.*]] = kgen.rebind %a
+
+    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ANON]], [[ATMP]])
     takeTwo(a, a)
-    # CHECK-NEXT: lifetime.end [[ANON2]]
+    # CHECK-NEXT: lifetime.end %a
     # CHECK-NEXT: lifetime.end [[ANON]]
 
     # CHECK-NEXT: %x = lit.var.decl "x"
@@ -295,7 +295,6 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[M2]]
     # CHECK-NEXT: kgen.param.declare *"m3`
     # CHECK-NEXT: [[M3:%.*]] = kgen.rebind [[M2]]
-
     var m3 = m2
 
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[M3]]
@@ -310,69 +309,27 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lifetime.start %r1
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%r1)
     var r1 = RegExample()
-    # CHECK-NEXT: [[R1:%.*]] = lit.ref.load %r1
+    # CHECK-NEXT: [[R1:%.*]] = lit.ref.immut %r1
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R1]])
     r1.noop()
 
-    # CHECK-NEXT: %r2 = lit.var.decl "r2"
-    # CHECK-NEXT: [[R1:%.*]] = lit.ref.load %r1
-    # CHECK-NEXT: lifetime.end %r1
-    # CHECK-NEXT: lifetime.start %r2
-    # CHECK-NEXT: lit.ref.store [[R1]], %r2
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %r1
+    # CHECK-NEXT: kgen.param.declare *"r2
+    # CHECK-NEXT: [[R2:%.*]] = kgen.rebind %r1
     var r2 = r1
-    # CHECK-NEXT: [[R2:%.*]] = lit.ref.load %r2
-    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R2]])
+    # CHECK-NEXT: [[R2I:%.*]] = lit.ref.immut [[R2]]
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R2I]])
     r2.noop()
 
-    # CHECK-NEXT: %r3 = lit.var.decl "r3"
-    # CHECK-NEXT: [[R2:%.*]] = lit.ref.load %r2
-    # CHECK-NEXT: lifetime.end %r2
-    # CHECK-NEXT: lifetime.start %r3
-    # CHECK-NEXT: lit.ref.store [[R2]], %r3
+    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[R2]]
+    # CHECK-NEXT: kgen.param.declare *"r3
+    # CHECK-NEXT: [[R3:%.*]] = kgen.rebind [[R2]]
     var r3 = r2
-    # CHECK-NEXT: [[R3:%.*]] = lit.ref.load %r3
-    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R3]])
+    # CHECK-NEXT: [[R3I:%.*]] = lit.ref.immut [[R3]]
+    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R3I]])
     r3.noop()
-    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl
-    # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
-    # CHECK-NEXT: lit.ref.store [[R3]], [[DTORTMP]]
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
-    # CHECK-NEXT: lifetime.end [[DTORTMP]]
-
-    # CHECK-NEXT: %v1 = lit.var.decl
-    # CHECK-NEXT: lifetime.start %v1
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}(%v1)
-    var v1 = RegExample()  # expected-warning {{never mutated}}
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
-    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
-    v1.noop()
-
-    # CHECK-NEXT: %v2 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
-    # CHECK-NEXT: lifetime.end %v1
-    # CHECK-NEXT: lifetime.start %v2
-    # CHECK-NEXT: lit.ref.store [[TMP]], %v2
-    var v2 = v1  # expected-warning {{never mutated}}
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
-    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
-    v2.noop()
-
-    # CHECK-NEXT: %v3 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v2
-    # CHECK-NEXT: lifetime.end %v2
-    # CHECK-NEXT: lifetime.start %v3
-    # CHECK-NEXT: lit.ref.store [[TMP]], %v3
-    var v3 = v2  # expected-warning {{never mutated}}
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
-    # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
-    v3.noop()
-
-    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
-    # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
-    # CHECK-NEXT: lit.ref.store [[TMP]], [[DTORTMP]]
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
-    # CHECK-NEXT: lifetime.end [[DTORTMP]]
-    # CHECK-NEXT: kgen.param.constant: none
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[R3]])
+    # CHECK-NEXT: lifetime.end %r1
 
 
 # This is an integration test for elideCopyDestroyPair

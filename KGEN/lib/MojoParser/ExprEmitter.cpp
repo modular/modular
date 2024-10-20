@@ -608,9 +608,17 @@ BValue ExprEmitter::emitBValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
     return MBValue(value.ir.getMValueReference());
   }
 
-  // Decay RValue's into BValue's.
-  if (auto srVal = value.ir.getIfSRValue()) // Decay SRValue -> SBValue
-    return SBValue(srVal);
+  // Decay SRValue's into SBValue or MBValue.
+  if (auto srVal = value.ir.getIfSRValue()) { // Decay => SBValue/MRValue
+    if (ASTType(srVal.getType()).isTrivial(value.expr->getLoc(), shared))
+      return SBValue(srVal);
+    // If this is a nontrivial value, we need to create an MRValue (and decay
+    // that) so we can track its lifetime correctly.
+    auto mrVal = emitMRValue(value, dest.getContext());
+    if (!mrVal)
+      return {};
+    return MBValue(mrVal);
+  }
 
   // Finally, we know we have a BValue.
   auto resultBV = value.ir.getIfBValue();
@@ -764,21 +772,6 @@ MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
   return MBValue(dest);
 }
 
-MRValue ExprEmitter::emitPValueToMRValue(ASTExprAnd<PValue> value,
-                                         ExprContext context) {
-  PValue pvalue = value.ir;
-  // We model this as an immutable let value with a separately stored
-  // initializer.
-  VarDeclOp var = emitVarDecl("anonymous*", pvalue.getType(),
-                              translateLocation(value.expr->getLoc()),
-                              VarDeclKind::Synthesized);
-  if (!var)
-    return {};
-  if (!emitPValueToMLValue({pvalue, value.expr}, MLValue(var), context))
-    return {};
-  return MRValue(var);
-}
-
 SRValue ExprEmitter::emitSRValue(ASTExprAnd<AnyValue> anyValue,
                                  ExprContext context, ASTType resultType) {
   const ExprNode *expr = anyValue.expr;
@@ -823,15 +816,16 @@ MRValue ExprEmitter::emitMRValue(ASTExprAnd<AnyValue> value,
   if (auto mr = rVal.getIfMRValue())
     return mr;
 
-  if (auto pv = rVal.getIfPValue())
-    return emitPValueToMRValue({pv, value.expr}, context);
-
   // Promote SRValue to MRValue.
-  if (SRValue srValue = rVal.getIfSRValue()) {
+  if (value.ir.isSValue() || value.ir.getIfPValue()) {
     Location argLoc = value.expr->getLocation(*this);
-    VarDeclOp varOp = emitVarDecl("__mem_tmp__", srValue.getType(), argLoc,
+    VarDeclOp varOp = emitVarDecl("anonymous*", rVal.getRValueType(), argLoc,
                                   VarDeclKind::Synthesized);
-    builder->create<RefStoreOp>(argLoc, srValue, varOp);
+    if (!varOp)
+      return {};
+    ValueDest dest(MLValue(varOp), context);
+    if (!emitRValue(value, dest))
+      dest.resetForError();
     return MRValue(varOp);
   }
 
@@ -854,18 +848,13 @@ MBValue ExprEmitter::emitMBValue(ASTExprAnd<AnyValue> value,
   if (auto mbp = bValue.getIfMBPValue())
     return MBValue(mbp);
 
-  // Emit PValues to memory and promote to borrow.
-  if (auto pValue = bValue.getIfPValue()) {
-    auto mrVal = emitPValueToMRValue({pValue, value.expr}, context);
-    if (!mrVal)
-      return {};
-    return MBValue(mrVal);
-  }
-
-  // Reject SBValue.
-  emitError(value.expr->getLoc(),
-            "cannot form reference to borrowed register value");
-  return {};
+  // PValue's and SValues need to be emitted into an owned memory temporary,
+  // which we can then decay to an MBValue.
+  assert(bValue.getIfPValue() || bValue.isSValue());
+  auto mrVal = emitMRValue({bValue, value.expr}, context);
+  if (!mrVal)
+    return {};
+  return MBValue(mrVal);
 }
 
 PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
@@ -1827,8 +1816,8 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       return {};
     }
     // Store the value to memory.  StoreOp takes ownership of the input SRValue.
-    builder->create<LIT::RefStoreOp>(translateLocation(value.expr->getLoc()),
-                                     val, destRef);
+    builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()), val,
+                                destRef);
 
     return SBValue(val);
   }

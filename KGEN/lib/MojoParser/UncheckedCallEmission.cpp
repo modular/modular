@@ -172,10 +172,6 @@ private:
     // for the setter.
     SmallVector<std::pair<ValueDest, MLValue>> lvalueWritebacks;
 
-    /// This is a list of values that we need to keep alive across the duration
-    /// of the call and the corresponding vardecl to consume immediately after.
-    SmallVector<std::pair<Value, VarDeclOp>> valuesToConsume;
-
     AfterCallActions(CallEmitter &callEmitter) : callEmitter(callEmitter) {}
 
     /// Emit all after-call actions.
@@ -212,12 +208,6 @@ void CallEmitter::AfterCallActions::emit() {
     // consumed directly by an 'owned' argument without a copy.
     if (!emitter.emitResult(MRValue(lValue), callEmitter.callExpr, dest))
       dest.resetForError();
-  }
-
-  // Emit all the lit.ownership.use ops.
-  for (auto [value, tmp] : valuesToConsume) {
-    emitter.builder->create<OwnershipMarkConsumedOp>(callEmitter.loc, tmp);
-    emitter.builder->create<OwnershipUseOp>(callEmitter.loc, value);
   }
 }
 
@@ -310,12 +300,11 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     return CValue::getMValueForRef(refValue);
   }
 
-  case ArgConvention::BorrowedInReg:
   case ArgConvention::BorrowedInMem:
     // by-ref arguments are converted to the expected r-value type.
-    if (convention == ArgConvention::BorrowedInMem)
-      expectedType = cast<RefType>(expectedType).getElementType();
-
+    expectedType = cast<RefType>(expectedType).getElementType();
+    [[fallthrough]];
+  case ArgConvention::BorrowedInReg:
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
   }
   llvm_unreachable("unknown argument convention");
@@ -819,32 +808,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     return arg;
 
   case ArgConvention::BorrowedInMem: {
-    if (SBValue sbValue = argValAndExpr.ir.getIfSBValue()) {
-      // "Convert" an SBValue to an MBValue by performing a bitcopy of the
-      // value into a vardecl that is marked as consumed after the call.
-      // FIXME(MOCO-725): This doesn't work in async functions, because the
-      // borrowed argument is captured.
-      if (calleeSig.isAsync()) {
-        emitter.emitError(argValAndExpr.expr->getLoc())
-            << "TODO: cannot bind non-trivial register-passable value to "
-               "borrowed generic argument yet";
-      }
-      const ExprNode *expr = argValAndExpr.expr;
-      Location argLoc = expr->getLocation(emitter);
-      VarDeclOp tmp = emitter.emitVarDecl("__sbvalue_tmp__", sbValue.getType(),
-                                          argLoc, VarDeclKind::Synthesized);
-      Value ptr = emitter.builder->create<RefToPointerOp>(
-          argLoc, PointerType::get(sbValue.getType()), tmp);
-      emitter.builder->create<OwnershipMarkInitializedOp>(argLoc, tmp);
-      emitter.builder->create<POP::StoreOp>(argLoc, sbValue, ptr);
-      Value immRef = emitter.builder->create<RefImmutOp>(argLoc, tmp);
-
-      // Because the result of StackAllocationOp is not a origin trackable,
-      // StoreOp will not transfer ownership and we must manually extend the
-      // origin of the SBValue.
-      afterCallActions.valuesToConsume.emplace_back(sbValue, tmp);
-      return MBValue(immRef);
-    }
     // Promote PValue's if needed.
     Value result = emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
     // Drop mutability for a MBValue.

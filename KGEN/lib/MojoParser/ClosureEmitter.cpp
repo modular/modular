@@ -543,7 +543,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     // FIXME: By-reference captures should be capturable either as by-imm-ref or
     // by-mut-ref.  Right now we type check var captures as mutable but codegen
     // them as immutable references!
-    if (isRef && rvalueType.isRegisterPassable(nestedFnDecl.getLoc(), shared)) {
+    if (isRef && rvalueType.isTrivial(nestedFnDecl.getLoc(), shared)) {
       initSigConventions.push_back(ArgConvention::BorrowedInReg);
       initSigTypes.push_back(rvalueType);
     } else {

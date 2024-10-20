@@ -138,7 +138,7 @@ fn testWithRaising(a: ExampleCM) raises:
     # CHECK-NEXT: } except {
     # CHECK:        lit.ref.store %false, %__with_exc__
     # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
-    # CHECK-NEXT:   [[ERROR:%.*]] = lit.ref.load %__inner_error__
+    # CHECK-NEXT:   [[ERROR:%.*]] = lit.ref.immut %__inner_error__
     # CHECK-NEXT:   [[EXIT_RESULT:%.*]] = lit.call {{.*}}__exit__{{.*}}([[IMMREF]], [[ERROR]])
     # CHECK-NEXT:   [[SUCCESS:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[EXIT_RESULT]])
     # CHECK-NEXT:   hlcf.if [[SUCCESS]] {
