@@ -572,6 +572,39 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
   if (!typeAllocSize)
     return op.emitError("could not get size of variadic element");
 
+  // Check to see if this stack allocation has a single pop.store to it and
+  // some number of pop.loads.  If so, we know the store will dominate the loads
+  // so we can just completely eliminate this.  This is a form of guaranteed
+  // optimization, and it also matters for LLVM intrinsic propagation.
+  StoreOp theStore;
+  SmallVector<LoadOp> loads;
+  bool allSimple = true;
+  for (Operation *user : op->getUsers()) {
+    if (isa<StackAllocLifetimeStartOp, StackAllocLifetimeEndOp>(user))
+      continue;
+    // If this is the first store to the stack allocation, remember it.
+    if (auto storeOp = dyn_cast<StoreOp>(user))
+      if (storeOp.getOperand(1) == op.getResult() && !theStore) {
+        theStore = storeOp;
+        continue;
+      }
+    // Remember all the loads.
+    if (auto loadOp = dyn_cast<LoadOp>(user)) {
+      loads.push_back(loadOp);
+      continue;
+    }
+    allSimple = false;
+    break;
+  }
+
+  // If all the accesses are simple, we can just remove this entirely.
+  if (allSimple && theStore) {
+    for (auto load : loads) {
+      load.replaceAllUsesWith(theStore.getOperand(0));
+      rewriter.eraseOp(load);
+    }
+  }
+
   Value alloca = materializeLLVMAlloca(
       rewriter, elementType, cast<IntegerAttr>(op.getCount()).getInt(), op,
       *typeAllocSize, resolveAlignment(op.getAlignment()));
