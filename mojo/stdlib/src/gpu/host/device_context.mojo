@@ -15,7 +15,6 @@ from gpu.host.cuda_instance import CudaInstance, LaunchAttribute
 from gpu.host.device import Device
 from gpu.host.event import Event
 from gpu.host.function import Function
-from gpu.host.memory import _memset_async
 from gpu.host.stream import Stream
 
 from ._compile import _get_nvptx_fn_name
@@ -426,13 +425,17 @@ struct DeviceContextV1:
         type: DType
     ](self, dst: DeviceBufferV1[type], val: Scalar[type]) raises:
         self.cuda_context.set_current()
-        _memset_async[type](dst.ptr, val, dst.size, self.cuda_stream)
+        self.cuda_context.memset_async[type](
+            dst.ptr, val, dst.size, self.cuda_stream
+        )
 
     fn memset_sync[
         type: DType
     ](self, dst: DeviceBufferV1[type], val: Scalar[type]) raises:
         self.cuda_context.set_current()
-        _memset_async[type](dst.ptr, val, dst.size, self.cuda_stream)
+        self.cuda_context.memset_async[type](
+            dst.ptr, val, dst.size, self.cuda_stream
+        )
         self.synchronize()
 
     fn memset[
