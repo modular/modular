@@ -31,6 +31,8 @@ fn test_gpu_printf() raises:
             ctx.enqueue_function(
                 func, Int(98), Float64(123.456), grid_dim=1, block_dim=1
             )
+            # Ensure queued function finished before proceeding.
+            ctx.synchronize()
     except e:
         print("CUDA_ERROR:", e)
 
@@ -65,7 +67,7 @@ fn test_gpu_print_formattable() raises:
         # CHECK: [0, -1, -inf, 1.79769e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:69:32
+        # CHECK: test_print.mojo:71:32
         print(__source_location())
 
         # ------------------------------
@@ -118,6 +120,8 @@ fn test_gpu_print_formattable() raises:
             ctx.enqueue_function(
                 func, Int(42), Float64(7.2), grid_dim=1, block_dim=1
             )
+            # Ensure queued function finished before proceeding.
+            ctx.synchronize()
     except e:
         print("CUDA_ERROR:", e)
 
