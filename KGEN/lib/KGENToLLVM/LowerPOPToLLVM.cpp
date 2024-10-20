@@ -994,6 +994,26 @@ struct ConvertPOPCastFromBuiltin : ConvertPOPToLLVMPattern<CastFromBuiltinOp> {
 // ConvertPOPInlineAsm
 //===----------------------------------------------------------------------===//
 
+// Given %20 with something like:
+//     %19 = builtin.unrealized_conversion_cast %18 : !llvm.struct<(i8, i1)> to
+//     !kgen.struct<(scalar<ui8>, i1)> %20 = builtin.unrealized_conversion_cast
+//     %19 : !kgen.struct<(scalar<ui8>, i1)> to !llvm.struct<(i8, i1)>
+// Return the input %18.
+static Value squashPointlessCasts(Value v) {
+  auto cast1Op = v.getDefiningOp<mlir::UnrealizedConversionCastOp>();
+  if (!cast1Op || cast1Op.getNumOperands() != 1 || cast1Op.getNumResults() != 1)
+    return v;
+
+  auto cast2Op =
+      cast1Op.getOperand(0).getDefiningOp<mlir::UnrealizedConversionCastOp>();
+  if (!cast2Op || cast1Op.getNumOperands() != 1 ||
+      cast1Op.getNumResults() != 1 ||
+      cast2Op.getOperand(0).getType() != v.getType())
+    return v;
+
+  return squashPointlessCasts(cast2Op.getOperand(0));
+}
+
 /// Expand one level of structs so kgen.pack elements are passed as individual
 /// values instead of as a kgen.struct.
 static SmallVector<Value> expandOperands(ConversionPatternRewriter &rewriter,
@@ -1001,6 +1021,9 @@ static SmallVector<Value> expandOperands(ConversionPatternRewriter &rewriter,
   SmallVector<Value> operands;
   operands.reserve(args.size());
   for (auto value : args) {
+    // Squash pointless conversion casts that will get in the way of folds.
+    value = squashPointlessCasts(value);
+
     if (auto structTy = dyn_cast<LLVM::LLVMStructType>(value.getType())) {
       // Unpack each of the elements.
       for (size_t i = 0, e = structTy.getBody().size(); i != e; ++i) {
@@ -1027,6 +1050,7 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
       if (!types.back())
         return failure();
     }
+
     auto asmOp = rewriter.create<LLVM::InlineAsmOp>(
         op.getLoc(), types,
         expandOperands(rewriter, op.getLoc(), adaptor.getOperands()),
@@ -1035,6 +1059,7 @@ struct ConvertPOPInlineAsm : ConvertPOPToLLVMPattern<InlineAsmOp> {
         adaptor.getHasSideEffectsAttr(), adaptor.getIsStackAlignedAttr(),
         LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
         adaptor.getOperandAttrsAttr());
+
     if (op.getNumResults() <= 1) {
       rewriter.replaceOp(op, asmOp);
       return success();

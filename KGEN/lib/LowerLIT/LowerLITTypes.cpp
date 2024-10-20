@@ -712,8 +712,7 @@ Value LITTypeLowerer::getCastedToType(Location loc, Value value, Type type) {
 
   // If coming from a cast, use input.
   if (auto castOp = value.getDefiningOp<mlir::UnrealizedConversionCastOp>())
-    if (castOp.getOperand(0).getType() == type)
-      return castOp.getOperand(0);
+    return getCastedToType(loc, castOp.getOperand(0), type);
 
   // Otherwise create a new cast.
   auto cast = create<mlir::UnrealizedConversionCastOp>(loc, type, value);
