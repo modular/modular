@@ -177,6 +177,5 @@ async fn invalid_sb_value_variadic(*value: SBValue):
 async fn borrowed_generic_arg[T: AnyType](value: T):
     pass
 
-fn invalid_sbvalue_borrow(value: SBValue):
-    # expected-error @below {{TODO: cannot bind non-trivial register-passable value to borrowed generic argument yet}}
+fn valid_sbvalue_borrow(value: SBValue):
     _ = borrowed_generic_arg(value)

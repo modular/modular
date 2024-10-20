@@ -9,11 +9,11 @@
 # COM: Check that the parameter is properly added to the ClosureImpl despite being defined two levels up.
 
 # CHECK: lit.struct.decl @"`_CI_
-# CHECK-SAME: <[[A:.*]]: !Int, |>
+# CHECK-SAME: <[[SELFO:.*]]: origin<0>, [[A:.*]]: !Int, |>
 
 # COM: Check that the closure impl parameter is bound to the struct parameter:
-# CHECK: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:!Int [[ALoc:.*]]>(%anonymous2A, %self)
-# CHECK-SAME: !lit.signature<[1]("self": !lit.ref<@{{.*}}::@"`_CI_{{.*}}<:!Int [[ALoc]]>
+# CHECK: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:origin<0> [[SELFO]], :!Int [[ALoc:.*]]>(%anonymous2A, %self)
+# CHECK-SAME: !lit.signature<[2]("self": !lit.ref<@{{.*}}::@"`_CI_{{.*}}<:!Int [[ALoc]]>
 
 
 @value

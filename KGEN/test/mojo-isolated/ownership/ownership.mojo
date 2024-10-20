@@ -134,32 +134,38 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lifetime.end %someInt
   _ = someInt^
 
+  # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: [[REG:%.*]] = kgen.param.materialize: !RegExample
-  # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[REG]])
-
-  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
-  # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
-  # CHECK-NEXT: lit.ref.store [[REG]], [[DTORTMP]]
-  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
-  # CHECK-NEXT: lifetime.end [[DTORTMP]]
+  # CHECK-NEXT: lit.var.lifetime.start [[ANON]]
+  # CHECK-NEXT: lit.ref.store [[REG]], [[ANON]]
+  # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[ANON]]
+  # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMM]])
   RegExample{}.noop()
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[ANON]])
+  # CHECK-NEXT: lit.var.lifetime.end [[ANON]]
 
   # CHECK-NEXT: %localReg = lit.var.decl
   # CHECK-NEXT: lifetime.start %localReg
   # CHECK-NEXT: lit.call {{.*}}@RegExample::@"__init__{{.*}}(%localReg)
-  # CHECK-NEXT: %anonymous2A_0 = lit.var.decl "anonymous
-  # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %localReg
-  # CHECK-NEXT: lifetime.start %anonymous2A_0
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A_0, [[REG]])
-  # CHECK-NEXT: [[REG2C:%.*]] = lit.load.consume %anonymous2A_0
-  # CHECK-NEXT: lifetime.end %anonymous2A_0
-  # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %localReg
-  # CHECK-NEXT: lifetime.end %localReg
   var localReg = RegExample()
+
+  # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: [[REG:%.*]] = lit.ref.immut %localReg
+  # CHECK-NEXT: lifetime.start [[ANON]]
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[REG]])
+  # CHECK-NEXT: [[REG2C:%.*]] = lit.load.consume [[ANON]]
+  # CHECK-NEXT: lit.var.lifetime.end [[ANON]]
+
+  # CHECK-NEXT:   = lit.ref.immut %localReg
+  # CHECK-NEXT: kgen.param.declare *"anonymous*
+  # CHECK-NEXT: [[ANON:%.*]] = kgen.rebind %localReg
+  # CHECK-NEXT: [[REG:%.*]] = lit.load.consume [[ANON]]
+  # CHECK-NEXT: lit.var.lifetime.end %localReg
+
 
   # CHECK-NEXT: [[BIGREG:%.*]] = lit.struct.create(a=[[REG2C]], b=[[REG]])
 
-  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
+  # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "anonymous
   # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
   # CHECK-NEXT: lit.ref.store [[BIGREG]], [[DTORTMP]]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
@@ -450,7 +456,10 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
     # CHECK-NEXT: kgen.return [[TMP2]]
     return example2^
   else: # CHECK-NEXT: } else {
-    # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %example2
+    # CHECK-NEXT: lit.ref.immut %example2
+    # CHECK-NEXT: kgen.param.declare *"anonymous
+    # CHECK-NEXT: [[EX:%.*]] = kgen.rebind %example2
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume [[EX]]
     # CHECK-NEXT: lifetime.end %example2
     # CHECK-NEXT: kgen.return [[TMP2]]
     return example2  # copy/del -> move optimization.
@@ -511,10 +520,10 @@ struct BigRegExample:
 
   # CHECK-LABEL: lit.func @"__copyinit__
   fn __copyinit__(inout self, existing: Self):
-    # CHECK-NEXT: [[EA:%.*]] = lit.struct.extract %existing[a]
+    # CHECK-NEXT: [[EA:%.*]] = lit.ref.struct.ger %existing[a]
     # CHECK-NEXT: [[SA:%.*]] = lit.ref.struct.ger %self[a]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[SA]], [[EA]])
-    # CHECK-NEXT: [[EB:%.*]] = lit.struct.extract %existing[b]
+    # CHECK-NEXT: [[EB:%.*]] = lit.ref.struct.ger %existing[b]
     # CHECK-NEXT: [[SB:%.*]] = lit.ref.struct.ger %self[b]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[SB]], [[EB]])
     self.a = existing.a
@@ -544,7 +553,7 @@ fn bigreg_test():
 
   # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %varThing[b]
   # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous
-  # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.load [[BREF]]
+  # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.immut [[BREF]]
   # CHECK-NEXT: lifetime.start [[ANON]]
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[BVAL]])
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[ANON]])
@@ -962,11 +971,17 @@ fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegEx
     # CHECK-NEXT: lit.call {{.*}}__mlir_i1__
     # CHECK-NEXT: [[RES:%.*]] = hlcf.if
     # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
-    # CHECK-NEXT:    [[A:%.*]] = lit.ref.load %a
+    # CHECK-NEXT:    lit.ref.immut %a
+    # CHECK-NEXT:    kgen.param.declare *"anonymous
+    # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
+    # CHECK-NEXT:    [[A:%.*]] = lit.load.consume [[TMP]]
     # CHECK-NEXT:    hlcf.yield [[A]]
     # CHECK-NEXT:  } else {
     # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%a)
-    # CHECK-NEXT:    [[B:%.*]] = lit.ref.load %b
+    # CHECK-NEXT:    lit.ref.immut %b
+    # CHECK-NEXT:    kgen.param.declare *"anonymous
+    # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %b
+    # CHECK-NEXT:    [[B:%.*]] = lit.load.consume [[TMP]]
     # CHECK-NEXT:    hlcf.yield [[B]]
     # CHECK-NEXT:  }
     # CHECK-NEXT:  kgen.return [[RES]]
@@ -1059,15 +1074,12 @@ fn caught_eh_cleanup():
 
     # CHECK: } except {
     except eh2:
-      # CHECK-NEXT: [[EH2:%.*]] = lit.ref.load %eh2
+      # CHECK-NEXT: [[EH2:%.*]] = lit.ref.immut %eh2
       # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[EH2]])
       eh2.use()
 
-    # CHECK-NEXT: [[DTORTMP:%.*]] = lit.var.decl "__dtor_tmp__
-    # CHECK-NEXT: lit.var.lifetime.start [[DTORTMP]]
-    # CHECK-NEXT: lit.ref.store [[EH2]], [[DTORTMP]]
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[DTORTMP]])
-    # CHECK-NEXT: lifetime.end [[DTORTMP]]
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%eh2)
+    # CHECK-NEXT: lit.var.lifetime.end %eh2
 
 # CHECK-LABEL: lit.func @"test_ref_field
 # https://linear.app/modularml/issue/MOCO-1251

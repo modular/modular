@@ -340,9 +340,6 @@ public:
   /// Emit any kind of PValue to an MLValue.
   MBValue emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
                               ExprContext context);
-  /// This helper emits a PValue to an MRValue that has a memory representation,
-  /// materializing the PValue.
-  MRValue emitPValueToMRValue(ASTExprAnd<PValue> value, ExprContext context);
 
   /// This helper emits the specified value as a SRValue which has an SSA
   /// value representation, materializing PValues and loading LValues as

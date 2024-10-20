@@ -82,7 +82,7 @@ fn call_generic[dt: DType]():
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
 # CHECK-SAME: [[A:.*]]: !Int>
 @value
-@register_passable
+@register_passable("trivial")
 struct TestParamStruct[A: Int]:
 
   # CHECK: lit.func @"method{{.*}}"<B: !Int>(%self: !lit.struct<#TestParamStruct <:!Int [[A]]>{{.*}}>,
@@ -226,7 +226,7 @@ fn str_input_param():
   meta_str["123"]()
 
 @value
-@register_passable
+@register_passable("trivial")
 struct TwoParams[a: Int, b: Int]:
     pass
 
@@ -793,7 +793,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 # CHECK-LABEL: lit.struct.decl @Abstraction
 # CHECK-SAMEL <[[A:.*]]: !Int>
 @value
-@register_passable
+@register_passable("trivial")
 struct Abstraction[a: Int]:
   alias val = a.value
 
@@ -851,7 +851,7 @@ struct AnotherAbstraction[a: Int]:
         self.value = Abstraction[a + 1]()
 
     fn __copyinit__(inout self, existing: Self):
-        self.value = self.value
+        self.value = existing.value
 
 # CHECK-LABEL: lit.func @"testDependentField()"
 fn testDependentField():
@@ -866,7 +866,7 @@ struct LeafToRootEval[a: Int, b: Int]:
 
 # CHECK-LABEL: lit.func @"refine_type_leaf_to_root
 fn refine_type_leaf_to_root(e: LeafToRootEval[2, 3]):
-    # CHECK: call {{.*}}Abstraction::@"__copyinit__{{.*}}<:!Int {7}>
+    # CHECK: lit.var.decl "value" {{.*}}@Abstraction<:!Int {7}>
     var value = e.value
 
 fn tail_types[T: AnyTrivialRegType, *U: AnyType](a: T, *b: *U):
@@ -1425,7 +1425,7 @@ fn test_inference_from_Self_type(x: Int):
   implicit_convert_specific_Self(x)
 
   # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous
-  # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType [!Int, {{.*}}], :!Movable [!Int, {{.*}}]>([[TMP]], %__mem_tmp__)
+  # CHECK: lit.call {{.*}}__init__{{.*}}<:!AnyType [!Int, {{.*}}], :!Movable [!Int, {{.*}}]>{{.*}}([[TMP]], {{.*}})
   _ = DependentSpecificInitSelf(x)
 
 struct AutoParamDefault[value: int, param: int, default: int = param]:

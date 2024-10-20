@@ -51,9 +51,9 @@ fn eatError(err: Error):
 fn tryExceptArgDef():
     try:
         pass
-    # CHECK: except
+    # CHECK: } except {
     except err:
-        # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load %err
+        # CHECK-NEXT: [[ERR:%.*]] = lit.ref.immut %err
         # CHECK-NEXT: eatError{{.*}}([[ERR]])
         eatError(err)
 

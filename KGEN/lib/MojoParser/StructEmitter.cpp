@@ -379,11 +379,11 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 
   // copyinit/moveinit of a register passable value will pass the value as a
   // register, not a reference.
-  bool isMemoryOnly = !declOp.isRegisterPassable();
+  bool isMemory = !declOp.isRegisterPassableTrivial();
   for (StructFieldOp fieldOp : declOp.getFieldDecls()) {
     auto targetFieldOp = b.create<RefStructGEROp>(selfArg, fieldOp);
     CValue src;
-    if (isMemoryOnly) {
+    if (isMemory) {
       Value srcFieldOp = b.create<RefStructGEROp>(existingArg, fieldOp);
       src = isMove ? CValue(MRValue(srcFieldOp)) : CValue(MBValue(srcFieldOp));
     } else {
@@ -486,11 +486,11 @@ static LIT::FuncOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
   Builder b(ctx);
   StringAttr existingName = b.getStringAttr("other");
 
-  // If the type is register passable for a copy, the 'existing' value will be
+  // If the type is register passable trivial, the 'existing' value will be
   // passed as a register, otherwise a reference.
   Type existingArgType;
   ArgConvention existingConv;
-  if (cast<StructDeclOp>(structDecl).isRegisterPassable() && !isMove) {
+  if (cast<StructDeclOp>(structDecl).isRegisterPassableTrivial() && !isMove) {
     existingArgType = selfType;
     existingConv = ArgConvention::BorrowedInReg;
   } else {

@@ -381,7 +381,7 @@ struct RPStructWithInitTrivial:
 
 # CHECK-LABEL: lit.func @"ownedConventionReg
 # CHECK-SAME: (%a: !lit.ref<!RPStructWithInit, mut *"a`"> owned_in_mem,
-# CHECK-SAME:  %b: !RPStructWithInit,
+# CHECK-SAME:  %b: !lit.ref<!RPStructWithInit, imm *"b`1"> borrow_in_mem,
 # CHECK-SAME:  %triv: !RPStructWithInitTrivial)
 fn ownedConventionReg(
     owned a: RPStructWithInit,
@@ -391,7 +391,8 @@ fn ownedConventionReg(
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK:  = lit.ref.load [[AX]]
     _ = a.x
-    # CHECK: [[BY:%.*]] = lit.struct.extract %b[y]
+    # CHECK: [[BY:%.*]] = lit.ref.struct.ger %b[y]
+    # CHECK:  = lit.ref.load [[BY]]
     _ = b.y
 
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
@@ -775,14 +776,14 @@ struct StructExample:
         pass
 
 
-# CHECK-LABEL: lit.func @"callMaybeStatic{{.*}}(%a: !Int, %b: !EmptyStruct)
+# CHECK-LABEL: lit.func @"callMaybeStatic
 fn callMaybeStatic(a: Int, b: EmptyStruct):
     # CHECK-NEXT: lit.call @decls::@StructExample::@"maybe_static{{.*}}(%a)
     StructExample.maybe_static(a)
 
     # CHECK-NEXT: [[ANONSE:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}@StructExample::@"__init__{{.*}}([[ANONSE]])
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load [[ANONSE]]
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[ANONSE]]
     # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}([[TMP]], %b)
     StructExample.maybe_static(StructExample(), b)
 
@@ -793,7 +794,7 @@ fn callMaybeStatic(a: Int, b: EmptyStruct):
 
     # CHECK-NEXT: [[ANONSE:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}@StructExample::@"__init__{{.*}}([[ANONSE]])
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load [[ANONSE]]
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[ANONSE]]
     # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}([[TMP]], %b)
     StructExample().maybe_static(b)
 
@@ -858,8 +859,7 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store %2, %0
 # CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: %4 = lit.ref.struct.ger %other[b]
-# CHECK-NEXT: %5 = lit.ref.load %4
-# CHECK-NEXT: %6 = lit.call {{.*}}__copyinit__{{.*}}(%3, %5)
+# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%3, %4)
 
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<!ValueMem, mut {{.*}}> init_self,
@@ -926,17 +926,15 @@ struct ValueReg:
 
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-SAME: (%self: !lit.ref<!ValueReg, mut *"self`"> init_self, %other: !ValueReg, |)
+# CHECK-SAME: (%self: !lit.ref<!ValueReg, mut *"self`"> init_self, %other: !lit.ref<!ValueReg, imm *"existing`"> borrow_in_mem, |
 # CHECK-SAME: attributes {{.*}}specialFnKind = 3 : i8
-# CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
-# CHECK-NEXT: %1 = lit.struct.extract %other[a]
-# CHECK-NEXT: lit.ref.store %1, %0
-# CHECK-NEXT: %2 = lit.ref.struct.ger %self[b]
-# CHECK-NEXT: %3 = lit.struct.extract %other[b]
-# CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
-# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, %3)
-# CHECK-NEXT: %5 = lit.load.consume %anonymous2A
-# CHECK-NEXT: lit.ref.store %5, %2
+# CHECK-NEXT: [[SELFA:%.*]] = lit.ref.struct.ger %self[a]
+# CHECK-NEXT: [[OTHERA:%.*]] = lit.ref.struct.ger %other[a]
+# CHECK-NEXT: [[TMP:%.*]] = lit.ref.load [[OTHERA]]
+# CHECK-NEXT: lit.ref.store [[TMP]], [[SELFA]]
+# CHECK-NEXT: [[SELFB:%.*]] = lit.ref.struct.ger %self[b]
+# CHECK-NEXT: [[OTHERB:%.*]] = lit.ref.struct.ger %other[b]
+# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[SELFB]], [[OTHERB]])
 
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  (%0[*""]: !lit.ref<!ValueReg, mut *"self`"> init_self,
@@ -1571,7 +1569,7 @@ fn testRegPassableInitSelf():
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
     var x = RegPassableInitSelfInit()
     # CHECK-NEXT: %x2 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %x
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %x
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x2, [[TMP]])
     var x2 = x
 

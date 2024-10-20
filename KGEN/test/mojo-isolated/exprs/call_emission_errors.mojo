@@ -218,7 +218,10 @@ fn exclusivity[
 fn mutate_two[A: AnyType, B: AnyType](inout a: A, inout b: B):
     pass
 
-fn mutate_two_AnyLifetime(ref[MutableAnyOrigin] a: Int, ref[MutableAnyOrigin] b: Int):
+
+fn mutate_two_AnyLifetime(
+    ref [MutableAnyOrigin]a: Int, ref [MutableAnyOrigin]b: Int
+):
     pass
 
 
@@ -250,6 +253,7 @@ fn inout_ref_exclusivity(inout a: Int, inout b: Int, inout s: MyStruct):
     # expected-note @below {{'a' value is passed through aliasing 'ref' argument}}
     mutate_two_AnyLifetime(a, a)
 
+
 fn capture_exclusivity(owned x: MemExample):
     @parameter
     fn capture_and_read(y: MemExample):
@@ -266,8 +270,8 @@ fn param_inference_unrelated_error[T: AnyType](x: T, y: FloatLiteral):
 
 
 fn call_param_inference_unrelated_error():
-    var x : StringLiteral = "hello"
-    var y : StringLiteral = "world"
+    var x: StringLiteral = "hello"
+    var y: StringLiteral = "world"
     # expected-error @below {{invalid call to 'param_inference_unrelated_error': argument #1 cannot be converted from 'StringLiteral' to 'FloatLiteral'}}
     param_inference_unrelated_error(x, y)
 
@@ -276,20 +280,31 @@ fn call_param_inference_unrelated_error():
 @register_passable
 struct MyRPStruct:
     var a: Int
+
     fn __del__(owned self):
-       pass
+        pass
+
 
 @value
 @register_passable
 struct MyRPStruct2:
     var b: MyRPStruct
+
     fn __del__(owned self):
-       pass
+        pass
 
-fn take_owned_and_mutate_rp(owned a: MyRPStruct2, inout b: MyRPStruct2): pass
 
+fn take_owned_and_mutate_rp(owned a: MyRPStruct2, inout b: MyRPStruct2):
+    pass
 fn rp_exclusivity(inout x: MyRPStruct2):
     # expected-error @below {{argument of 'take_owned_and_mutate_rp' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'inout' argument}}
     take_owned_and_mutate_rp(x^, x)
 
+
+fn take_and_mutate_rp(a: MyRPStruct, inout b: MyRPStruct2):
+    pass
+fn rp_exclusivity2(inout x: MyRPStruct2):
+    # expected-error @below {{argument of 'take_and_mutate_rp' call allows writing a memory location previously readable through another aliased argument}}
+    # expected-note @below {{'x' value is passed through aliasing 'inout' argument}}
+    take_and_mutate_rp(x.b, x)

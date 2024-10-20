@@ -11,8 +11,7 @@
 
 # CHECK: lit.func @"__call__
 # CHECK: [[GEP:%.*]] = lit.ref.struct.ger {{.*}}[param_capture]
-# CHECK: [[CLIST:%.*]] = lit.ref.load [[GEP]]
-# CHECK: call {{.*}}expand{{.*}}([[CLIST]])
+# CHECK: lit.call {{.*}}expand{{.*}}([[GEP]])
 
 # CHECK: lit.func @"__init__
 # CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[param_capture]
