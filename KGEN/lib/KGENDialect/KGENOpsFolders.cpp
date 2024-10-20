@@ -97,21 +97,20 @@ OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
   }
   if (auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(adaptor.getInput()))
     return SymbolicPointerAttr::get(ptr.getSlot(), getType());
+
+  // If the input is a rebindop(x) from some other type then change this op to
+  // rebind "x" instead of the result of rebind "x".  Even if the types differ,
+  // they will all need to elaborate to the same type, so we might as well
+  // simplify ourselves.
+  bool foldedRebind = false;
+  while (auto srcRebind = getInput().getDefiningOp<RebindOp>()) {
+    setOperand(srcRebind.getInput());
+    foldedRebind = true;
+  }
+  if (foldedRebind)
+    return getResult();
+
   return {};
-}
-
-/// If the operand to a rebind is defined by a rebind, use the second rebind's
-/// operand.
-LogicalResult RebindOp::canonicalize(RebindOp op, PatternRewriter &rewriter) {
-  RebindOp cur = op, parent;
-  // Climb all the way to the top to avoid recursively invoking this pattern.
-  while ((parent = cur.getOperand().getDefiningOp<RebindOp>()))
-    cur = parent;
-
-  if (cur == op)
-    return failure();
-  rewriter.modifyOpInPlace(op, [&] { op.setOperand(cur.getOperand()); });
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
