@@ -11,7 +11,11 @@ from math import isqrt
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
+from kv_cache.types import (
+    ContiguousKVCache,
+    ContiguousKVCacheCollection,
+    KVCacheStaticParams,
+)
 from memory import UnsafePointer
 from nn.kv_cache import _flash_attention_kv_cache_impl
 from nn.mha import mha_gpu_naive
@@ -40,6 +44,7 @@ def execute_flash_attention[
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     alias max_batch_size = 32
+    alias num_layers = 1
 
     debug_assert(
         batch_size < max_batch_size,
@@ -128,16 +133,9 @@ def execute_flash_attention[
     var valid_lengths = NDBuffer[DType.uint32, 1](
         valid_lengths_dev.ptr, Index(batch_size)
     )
-
-    k_block_host = HostNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
+    k_block_host = HostNDBuffer[type, 5,](
         Index(
+            num_layers,
             batch_size,
             max_seq_len,
             int(kv_params.num_heads),
@@ -145,40 +143,11 @@ def execute_flash_attention[
         ),
     )
     random(k_block_host.tensor)
-    k_block_device = DeviceNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        Index(
-            batch_size,
-            max_seq_len,
-            int(kv_params.num_heads),
-            int(kv_params.head_size),
-        ),
-        ctx=ctx,
-    )
-    ctx.enqueue_copy_to_device(k_block_device.buffer, k_block_host.tensor.data)
+    k_block_device = k_block_host.copy_to_device(ctx)
 
-    k_cache_device = ContiguousKVCache[type, kv_params,](
-        k_block_device.tensor,
-        valid_lengths,
-        is_context_encoding,
-        batch_size,
-    )
-
-    v_block_host = HostNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
+    v_block_host = HostNDBuffer[type, 5,](
         Index(
+            num_layers,
             batch_size,
             max_seq_len,
             int(kv_params.num_heads),
@@ -186,29 +155,26 @@ def execute_flash_attention[
         ),
     )
     random(v_block_host.tensor)
-    v_block_device = DeviceNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        Index(
-            batch_size,
-            max_seq_len,
-            int(kv_params.num_heads),
-            int(kv_params.head_size),
-        ),
-        ctx=ctx,
-    )
-    ctx.enqueue_copy_to_device(v_block_device.buffer, v_block_host.tensor.data)
+    v_block_device = v_block_host.copy_to_device(ctx)
 
-    v_cache_device = ContiguousKVCache[type, kv_params,](
-        v_block_device.tensor,
-        valid_lengths,
-        is_context_encoding,
-        batch_size,
+    kv_cache_device = ContiguousKVCacheCollection[type, kv_params,](
+        key_cache=k_block_device.tensor,
+        value_cache=v_block_device.tensor,
+        cache_lengths=valid_lengths,
+        is_context_encoding=is_context_encoding,
+        seq_ids=List[Int](-1),
+        num_layers=num_layers,
+        batch_size=batch_size,
+    )
+
+    kv_cache_host = ContiguousKVCacheCollection[type, kv_params](
+        key_cache=k_block_host.tensor,
+        value_cache=v_block_host.tensor,
+        cache_lengths=valid_lengths,
+        is_context_encoding=is_context_encoding,
+        seq_ids=List[Int](-1),
+        num_layers=num_layers,
+        batch_size=batch_size,
     )
 
     valid_lengths_host = HostNDBuffer[DType.uint32, 1](Index(batch_size))
@@ -225,10 +191,10 @@ def execute_flash_attention[
 
     scale = isqrt(Float32(kv_params.head_size))
 
-    _flash_attention_kv_cache_impl[target="cuda"](
+    _flash_attention_kv_cache_impl[kv_cache_device.CacheType, target="cuda"](
         q_device.tensor,
-        k_cache_device,
-        v_cache_device,
+        kv_cache_device,
+        UInt32(0),
         mask_device.tensor,
         valid_lengths_device.tensor,
         scale,
