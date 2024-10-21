@@ -96,6 +96,16 @@ PROMPTS = (
 )
 
 
+def llama3_encode(llama3: Llama3, prompt: str):
+    """Utility function to encode a string to list of token ids."""
+    return llama3._encode(prompt)
+
+
+def llama3_decode(llama3: Llama3, token_ids: list):
+    """Utility function to decode a list of tokens to a string."""
+    return llama3._tokenizer.decode(token_ids)
+
+
 def run_llama3(llama3: Llama3, prompts=PROMPTS, num_steps=NUM_STEPS):
     results = []
     # Evaluate prompts individually (not batched).

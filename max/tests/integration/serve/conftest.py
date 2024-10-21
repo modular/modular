@@ -35,8 +35,9 @@ def app(tinyllama_model):
     repo_id = "modularai/llama-3.1"
     tokenizer = AutoTokenizer.from_pretrained(repo_id)
     pipeline = TokenGeneratorPipeline[Llama3Context](
-        TokenGeneratorPipelineConfig.dynamic_homogenous(
-            tinyllama_model.config.max_cache_batch_size
+        TokenGeneratorPipelineConfig.continuous_heterogenous(
+            tg_batch_size=tinyllama_model.config.max_cache_batch_size,
+            ce_batch_size=1,
         ),
         tinyllama_model,
         tokenizer,

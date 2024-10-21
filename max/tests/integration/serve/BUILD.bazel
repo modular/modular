@@ -18,6 +18,7 @@ modular_py_test(
         "//KGEN:CompilerRT",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "@llvm-project//compiler-rt:orc_rt",
+        "@test_llama_golden",
     ],
     env = {
         "BAZEL": "true",
@@ -30,6 +31,7 @@ modular_py_test(
     ],
     deps = [
         ":params",
+        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
         "//SDK/lib/API/python/max/serve",
         "//SDK/public/max-repo/pipelines/python/llama3",
         requirement("pytest-asyncio"),
@@ -48,12 +50,15 @@ modular_py_test(
     ],
     data = [
         "//KGEN:CompilerRT",
+        "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
         "@llvm-project//compiler-rt:orc_rt",
+        "@test_llama_golden",
     ],
     env = {
         "BAZEL": "true",
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
+        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
     },
     requires_gpu = True,
     tags = [
@@ -62,6 +67,7 @@ modular_py_test(
     ],
     deps = [
         ":params",
+        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/serve",
         "//SDK/public/max-repo/pipelines/python/llama3",
