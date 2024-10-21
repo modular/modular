@@ -109,6 +109,12 @@ class TokenGeneratorPipelineConfig:
         return config
 
 
+@dataclass
+class TokenGeneratorStats:
+    token_gen_batch_size: int = 0
+    token_gen_batch_calls: int = 0
+
+
 class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     """Base class for LLM pipelines."""
 
@@ -122,12 +128,13 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         self.model = model
         self.tokenizer = tokenizer
         self.config = config
+        self.stats = TokenGeneratorStats()
         self.queues: list[BatchMultiplexQueue] = []
         self._background_tasks: set[asyncio.Task] = set()
         self.token_gen_queue = BatchMultiplexQueue(
             "token_generation",
             config.token_generation,
-            self.model.next_token,
+            self._execute_model,
             completed_fn=TokenGeneratorPipeline.completed_token_generation_requests,
         )
         self.queues.append(self.token_gen_queue)
@@ -270,3 +277,33 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         # Request ids which were in the input batch but were not produced
         # in the output batch are assumed completed.
         return batch_input.keys() - batch_output.keys()
+
+    def _execute_model(self, batch):
+        self.stats.token_gen_batch_size = self.stats.token_gen_batch_size + len(
+            batch
+        )
+        self.stats.token_gen_batch_calls = self.stats.token_gen_batch_calls + 1
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(
+                (
+                    "Executing token-gen with, %s, step, %s, average, %s,"
+                    " context-encoding-inq, %s, context-enc-outq, %s,"
+                    " token-gen-inq, %s, token-gen-outq, %s"
+                ),
+                len(batch),
+                self.stats.token_gen_batch_calls,
+                self.stats.token_gen_batch_size
+                / self.stats.token_gen_batch_calls,
+                (
+                    self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1
+                ),
+                (
+                    len(
+                        self.context_enc_queue.out_queues
+                    ) if self.context_enc_queue else -1
+                ),
+                self.token_gen_queue.in_queue.qsize(),
+                len(self.token_gen_queue.out_queues),
+            )
+
+        return self.model.next_token(batch)
