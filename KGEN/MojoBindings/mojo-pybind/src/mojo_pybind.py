@@ -170,10 +170,11 @@ def link_mojo_archive_to_dylib(
 
     # FIXME: Don't hard-code `build-debug` path component here.
     if workspace := os.environ.get("BUILD_WORKSPACE_DIRECTORY"):
+        ext = "dylib" if platform.system() == "Darwin" else "so"
         mojo_libs = os.path.join(
-            workspace, ".derived/build-debug/bin/libKGENCompilerRT-static.a"
+            workspace, f".derived/build-debug/bin/libKGENCompilerRT.{ext}"
         )
-    elif static := os.environ.get("MODULAR_MOJO_MAX_COMPILERRT_STATIC_PATH"):
+    elif static := os.environ.get("MODULAR_MOJO_MAX_COMPILERRT_PATH"):
         mojo_libs = static
 
     assert os.path.isfile(mojo_libs)
@@ -192,6 +193,7 @@ def link_mojo_archive_to_dylib(
     clang_cmd = [
         "clang++",
         "-shared",
+        "-Wl,-rpath,{}".format(os.path.dirname(mojo_libs)),
     ]
     if platform.system() == "Linux":
         clang_cmd.extend(

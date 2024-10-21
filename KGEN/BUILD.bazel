@@ -1,4 +1,3 @@
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load(
     "//bazel:api.bzl",
@@ -7,13 +6,11 @@ load(
     "gentbl_mlir_dialect",
     "gentbl_modular_passes",
     "modular_cc_library",
-    "modular_cc_test",
     "modular_py_binary",
     "modular_shared_library",
     "td_library",
 )
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "CONFIG_SECTION_LOCAL_DEFINES")
-load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 
 pkg_files(
     name = "docs",
@@ -937,104 +934,6 @@ modular_cc_library(
         "//Support:DebugInfoTransforms",
         "//Support:Telemetry",
         "@llvm-project//llvm:OrcJIT",
-    ],
-)
-
-# Build a fully static version of CompilerRT.
-# Unused, retained only for local development and testing.
-# If you link with this, your binary must be fully static. Dynamically loaded
-# libraries may depend on the shared version of CompilerRT, which will duplicate
-# global and thread-local variables!
-cc_distributable_static_library(
-    name = "CompilerRT.distributable",
-    library_name = "libKGENCompilerRT-static.a",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":CompilerRT.static",
-        "//AsyncRT:CUDADeviceContext",
-        "//AsyncRT:DeviceContext",
-        "//AsyncRT:MojoBindings.static",
-        "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals.static",
-        "//AsyncRT:Support",
-        "//Config",
-        "//Runtime",
-        "//Runtime:CUDA",
-        "//Runtime:Tensor",
-        "//Support:ADT",
-        "//Support:Base",
-        "//Support:Configuration",
-        "//Support:Filesystem",
-        "//Support:Globals.static",
-        "//Support:ML",
-        "//Support:Profiling",
-        "//Support:Threading",
-        "//bazel/third-party:tcmalloc_objects",
-        "@llvm-project//llvm:Demangle",
-        "@llvm-project//llvm:Support",
-        "@llvm-project//llvm:TargetParser",
-        "@llvm-project//mlir:IR",
-        "@llvm-project//mlir:Support",
-    ] + select({
-        "//bazel/internal:profiling_off": [],
-        "//conditions:default": [
-            "//Support:CPUCache",
-            "//Support:DeviceSpecs",
-            "//Support:MArchTargetMinimal",
-            "@llvm-project//clang:ast",
-            "@llvm-project//clang:basic",
-            "@llvm-project//clang:lex",
-            "@llvm-project//llvm:Analysis",
-            "@llvm-project//llvm:AsmParser",
-            "@llvm-project//llvm:BinaryFormat",
-            "@llvm-project//llvm:BitReader",
-            "@llvm-project//llvm:BitstreamReader",
-            "@llvm-project//llvm:Core",
-            "@llvm-project//llvm:DebugInfoBTF",
-            "@llvm-project//llvm:DebugInfoCodeView",
-            "@llvm-project//llvm:DebugInfoDWARF",
-            "@llvm-project//llvm:DebugInfoMSF",
-            "@llvm-project//llvm:DebugInfoPDB",
-            "@llvm-project//llvm:FrontendOffloading",
-            "@llvm-project//llvm:FrontendOpenMP",
-            "@llvm-project//llvm:IRReader",
-            "@llvm-project//llvm:MC",
-            "@llvm-project//llvm:MCParser",
-            "@llvm-project//llvm:Object",
-            "@llvm-project//llvm:ProfileData",
-            "@llvm-project//llvm:Remarks",
-            "@llvm-project//llvm:Scalar",
-            "@llvm-project//llvm:Symbolize",
-            "@llvm-project//llvm:TextAPI",
-            "@llvm-project//llvm:TransformUtils",
-        ],
-    }),
-)
-
-write_file(
-    name = "gen_link_test",
-    out = "LinkTest.cpp",
-    content = ["""
-#include "gtest/gtest.h"
-
-extern "C" bool KGEN_CompilerRT_Initialize();
-
-TEST(LinkTest, works) {
-    EXPECT_TRUE(KGEN_CompilerRT_Initialize());
-}
-"""],
-)
-
-modular_cc_test(
-    name = "CompilerRTLinkTest",
-    srcs = [
-        "include/KGEN/CompilerRT/Registration.h",
-        ":gen_link_test",
-    ],
-    linkopts = ["-lz"],
-    deps = [
-        ":CompilerRT.distributable",
-        "//Support:Base",
     ],
 )
 
