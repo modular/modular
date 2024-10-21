@@ -16,7 +16,7 @@ from internal_utils import (
     random,
     zero,
 )
-from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
+from kv_cache.types import ContiguousKVCacheCollection, KVCacheStaticParams
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
 from nn.kv_cache import _fused_qkv_matmul_kv_cache_impl
@@ -45,6 +45,8 @@ def execute_fused_qkv_matmul[
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     alias max_batch_size = 32
+    alias num_layers = 1
+    alias layer_idx: Int = 0
 
     debug_assert(
         batch_size < max_batch_size,
@@ -142,87 +144,58 @@ def execute_fused_qkv_matmul[
         valid_lengths_dev.ptr, Index(batch_size)
     )
 
-    k_block_host = HostNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        IndexList[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+    k_block_host = HostNDBuffer[type, 5,](
+        IndexList[5](
+            num_layers,
+            batch_size,
+            max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
         ),
     )
-    k_block_device = DeviceNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        IndexList[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
+    k_block_device = k_block_host.copy_to_device(ctx)
+    v_block_host = HostNDBuffer[type, 5,](
+        IndexList[5](
+            num_layers,
+            batch_size,
+            max_seq_len,
+            kv_params.num_heads,
+            kv_params.head_size,
         ),
-        ctx=ctx,
     )
-    var k_cache_device = ContiguousKVCache[type, kv_params,](
-        k_block_device.tensor,
-        valid_lengths,
-        is_context_encoding,
-        batch_size,
-    )
-    var k_cache_host = ContiguousKVCache[type, kv_params,](
-        k_block_host.tensor,
-        valid_lengths_host,
-        is_context_encoding,
-        batch_size,
-    )
+    v_block_device = v_block_host.copy_to_device(ctx)
 
-    v_block_host = HostNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        IndexList[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
-        ),
-    )
-    v_block_device = DeviceNDBuffer[
-        type,
-        4,
-        ContiguousKVCache[
-            type,
-            kv_params,
-        ]._internal_block_shape,
-    ](
-        IndexList[4](
-            batch_size, max_seq_len, kv_params.num_heads, kv_params.head_size
-        ),
-        ctx=ctx,
-    )
-    v_cache_device = ContiguousKVCache[type, kv_params,](
+    var kv_collection_device = ContiguousKVCacheCollection[type, kv_params,](
+        k_block_device.tensor,
         v_block_device.tensor,
         valid_lengths,
         is_context_encoding,
+        List[Int](
+            -1,
+        ),  # seq_ids
+        num_layers,
         batch_size,
     )
-    var v_cache_host = ContiguousKVCache[type, kv_params,](
+    var kv_collection_host = ContiguousKVCacheCollection[type, kv_params,](
+        k_block_host.tensor,
         v_block_host.tensor,
         valid_lengths_host,
         is_context_encoding,
+        List[Int](
+            -1,
+        ),  # seq_ids
+        num_layers,
         batch_size,
     )
 
-    _fused_qkv_matmul_kv_cache_impl[target="cuda",](
+    _fused_qkv_matmul_kv_cache_impl[
+        kv_collection_device.CacheType,
+        target="cuda",
+    ](
         hidden_state_device.tensor,
         weight_device.tensor,
-        k_cache_device,
-        v_cache_device,
+        kv_collection_device,
+        UInt32(layer_idx),
         test_output_device.tensor,
         ctx,
     )
@@ -250,6 +223,12 @@ def execute_fused_qkv_matmul[
 
     ref_out = ref_output_host.tensor
     test_out = test_output_host.tensor
+    k_cache_host = kv_collection_host.get_key_cache[
+        kv_collection_host.CacheType
+    ](layer_idx)
+    v_cache_host = kv_collection_host.get_value_cache[
+        kv_collection_host.CacheType
+    ](layer_idx)
     for bs in range(batch_size):
         for s in range(prompt_len):
             for q_dim in range(hidden_size):

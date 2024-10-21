@@ -20,7 +20,7 @@ from internal_utils import (
     zero,
 )
 from kv_cache.types import (
-    ContinuousBatchingKVCache,
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
 from linalg.matmul_gpu import _matmul_gpu
@@ -53,10 +53,11 @@ def execute_fused_qkv_matmul[
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     alias num_blocks = 32
-    alias CacheType = ContinuousBatchingKVCache[
-        type,
-        kv_params,
-    ]
+    alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
+    seq_ids = List[Int]()
+    for i in range(batch_size):
+        seq_ids.append(-1)
+
     debug_assert(
         batch_size < num_blocks,
         "batch_size passed to unit test ("
@@ -200,43 +201,28 @@ def execute_fused_qkv_matmul[
         lookup_table_device.buffer, lookup_table_host.tensor.data
     )
 
-    var k_cache_device = CacheType(
+    var kv_collection_device = CollectionType(
         kv_block_device.tensor,
         cache_lengths_dev.tensor,
         lookup_table_device.tensor,
         is_context_encoding,
-        layer_idx,
-        CacheType.KeyIdx,
+        seq_ids,
     )
-    var k_cache_host = CacheType(
+    var kv_collection_host = CollectionType(
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         lookup_table_host.tensor,
         is_context_encoding,
-        layer_idx,
-        CacheType.KeyIdx,
+        seq_ids,
     )
-    var v_cache_device = CacheType(
-        kv_block_device.tensor,
-        cache_lengths_dev.tensor,
-        lookup_table_device.tensor,
-        is_context_encoding,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
-    var v_cache_host = CacheType(
-        kv_block_host.tensor,
-        cache_lengths_host.tensor,
-        lookup_table_host.tensor,
-        is_context_encoding,
-        layer_idx,
-        CacheType.ValueIdx,
-    )
-    _fused_qkv_matmul_kv_cache_impl[target="cuda",](
+    _fused_qkv_matmul_kv_cache_impl[
+        kv_collection_device.CacheType,
+        target="cuda",
+    ](
         hidden_state_device.tensor,
         weight_device.tensor,
-        k_cache_device,
-        v_cache_device,
+        kv_collection_device,
+        UInt32(layer_idx),
         test_output_device.tensor,
         ctx,
     )
@@ -261,6 +247,12 @@ def execute_fused_qkv_matmul[
 
     ref_out = ref_output_host.tensor
     test_out = test_output_host.tensor
+    k_cache_host = kv_collection_host.get_key_cache[
+        kv_collection_host.CacheType
+    ](layer_idx)
+    v_cache_host = kv_collection_host.get_value_cache[
+        kv_collection_host.CacheType
+    ](layer_idx)
     for bs in range(batch_size):
         for s in range(prompt_len):
             for q_dim in range(hidden_size):
