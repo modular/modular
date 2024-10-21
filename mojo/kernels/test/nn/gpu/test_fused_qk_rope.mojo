@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from memory import memcpy
+from memory import memcpy, UnsafePointer
 from utils import IndexList
 
 from buffer import DimList, NDBuffer
@@ -14,6 +14,7 @@ from internal_utils import DeviceNDBuffer, HostNDBuffer, assert_almost_equal
 from nn.fused_qk_rope import fused_qk_rope
 from nn.kv_cache import (
     ContiguousKVCache,
+    ContiguousKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
 )
@@ -52,18 +53,20 @@ def _fused_qk_rope[
     type: DType, q_shape: DimList, freqs_shape: DimList, //
 ](
     q_proj: DeviceNDBuffer[type, shape=q_shape],
-    k_cache: ContiguousKVCache,
+    kv_collection: ContiguousKVCacheCollection,
     freqs_cis: DeviceNDBuffer[type, shape=freqs_shape],
+    layer_idx: UInt32,
     output: DeviceNDBuffer[type, shape=q_shape],
     context: DeviceContext,
 ) -> None:
     """Wrapper that takes DeviceNDBuffer, to ensure lifetimes of data."""
-    fused_qk_rope[target="cuda"](
+    fused_qk_rope[kv_collection.CacheType, target="cuda"](
         q_proj=rebind[NDBuffer[type, 4, shape=q_shape]](q_proj.tensor),
-        k_cache=k_cache,
+        kv_collection=kv_collection,
         freqs_cis=rebind[NDBuffer[type, 2, shape=freqs_shape]](
             freqs_cis.tensor
         ),
+        layer_idx=layer_idx,
         output=rebind[NDBuffer[type, 4, shape=q_shape]](output.tensor),
         context=context,
     )
@@ -81,6 +84,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     alias start_positions = List[UInt32](0, 5)
     alias seq_len = 3
     alias max_seq_len = 16
+    alias num_layers = 1
 
     fn _max[type: DType, items: List[Scalar[type]]]() -> Scalar[type]:
         constrained[items.size > 0, "empty list in _max"]()
@@ -103,14 +107,16 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     alias kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    alias block_shape = IndexList[4](
-        batch_size, max_seq_len, num_heads, head_dim
+    alias block_shape = IndexList[5](
+        num_layers, batch_size, max_seq_len, num_heads, head_dim
     )
-    alias BlockType = ContiguousKVCache[type, kv_params].BlockType
 
     # Construct backing buffer and the KV cache itself.
     k_cache_block_host = HostNDBuffer[
-        type, shape = DimList(batch_size, max_seq_len, num_heads, head_dim)
+        type,
+        shape = DimList(
+            num_layers, batch_size, max_seq_len, num_heads, head_dim
+        ),
     ](block_shape)
 
     # Initialize KV cache block buffer with golden values.
@@ -127,12 +133,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
         )
 
     # Copy KV cache block to device.
-    k_cache_block_dev = DeviceNDBuffer[type, shape = k_cache_block_host.shape](
-        block_shape, ctx=ctx
-    )
-    ctx.enqueue_copy_to_device(
-        k_cache_block_dev.buffer, k_cache_block_host.tensor.data
-    )
+    k_cache_block_dev = k_cache_block_host.copy_to_device(ctx)
 
     # Create the actual KV cache type.
     cache_lengths = DeviceNDBuffer[
@@ -140,11 +141,16 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
     ](ctx=ctx)
     ctx.copy_to_device_sync(cache_lengths.buffer, start_positions.data)
 
-    k_cache_block = BlockType(k_cache_block_dev.buffer.ptr, block_shape)
-    k_cache = ContiguousKVCache[type, kv_params](
-        block=k_cache_block,
+    k_cache_block = NDBuffer[type, 5](k_cache_block_dev.buffer.ptr, block_shape)
+    kv_collection = ContiguousKVCacheCollection[type, kv_params](
+        key_cache=k_cache_block,
+        value_cache=NDBuffer[type, 5](
+            UnsafePointer[Scalar[type]](), block_shape
+        ),  # passing as a dummy val, this isn't used.
         cache_lengths=rebind[NDBuffer[DType.uint32, 1]](cache_lengths.tensor),
-        is_cache_empty=False,
+        is_context_encoding=False,
+        seq_ids=List[Int](-1),
+        num_layers=num_layers,
         batch_size=batch_size,
     )
 
@@ -180,8 +186,9 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
 
     _fused_qk_rope(
         q_proj=q_dev,
-        k_cache=k_cache,
+        kv_collection=kv_collection,
         freqs_cis=freqs_cis_table_dev,
+        layer_idx=UInt32(0),
         output=q_out_dev,
         context=ctx,
     )

@@ -1400,11 +1400,12 @@ fn fused_qk_rope_h6_d48_bshd[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: ContiguousKVCache[
+    kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=6, head_size=48),
     ],
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1424,8 +1425,8 @@ fn fused_qk_rope_h6_d48_bshd[
         DeviceContext
     ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h6_d48_bshd"):
-        fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, dev_ctx
+        fused_qk_rope[kv_collection.CacheType, target=target](
+            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
         )
 
 
@@ -1436,11 +1437,12 @@ fn fused_qk_rope_h8_d128_bshd[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: ContiguousKVCache[
+    kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=128),
     ],
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1460,8 +1462,8 @@ fn fused_qk_rope_h8_d128_bshd[
         DeviceContext
     ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d128_bshd"):
-        fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, dev_ctx
+        fused_qk_rope[kv_collection.CacheType, target=target](
+            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
         )
 
 
@@ -1472,11 +1474,12 @@ fn fused_qk_rope_h1_d16_bshd[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: ContiguousKVCache[
+    kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=1, head_size=16),
     ],
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1496,8 +1499,8 @@ fn fused_qk_rope_h1_d16_bshd[
         DeviceContext
     ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h1_d16_bshd"):
-        fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, dev_ctx
+        fused_qk_rope[kv_collection.CacheType, target=target](
+            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
         )
 
 
@@ -1508,11 +1511,12 @@ fn fused_qk_rope_h8_d32_bshd[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: ContiguousKVCache[
+    kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=32),
     ],
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1532,8 +1536,8 @@ fn fused_qk_rope_h8_d32_bshd[
         DeviceContext
     ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d32_bshd"):
-        fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, dev_ctx
+        fused_qk_rope[kv_collection.CacheType, target=target](
+            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
         )
 
 
@@ -1544,11 +1548,12 @@ fn fused_qk_rope_h8_d64_bshd[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: ContiguousKVCache[
+    kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=64),
     ],
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1568,8 +1573,8 @@ fn fused_qk_rope_h8_d64_bshd[
         DeviceContext
     ]() if target == "cpu" else context.get_device_context()
     with Trace[TraceLevel.OP, target=target]("fused_qk_rope_h8_d64_bshd"):
-        fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, dev_ctx
+        fused_qk_rope[kv_collection.CacheType, target=target](
+            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
         )
 
 
@@ -1580,11 +1585,12 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=128),
     ],
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1606,8 +1612,8 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d128_bshd_continuous_batch"
     ):
-        fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, dev_ctx
+        fused_qk_rope[kv_collection.CacheType, target=target](
+            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
         )
 
 
@@ -1618,11 +1624,12 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=1, head_size=16),
     ],
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1644,8 +1651,8 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h1_d16_bshd_continuous_batch"
     ):
-        fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, dev_ctx
+        fused_qk_rope[kv_collection.CacheType, target=target](
+            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
         )
 
 
@@ -1656,11 +1663,12 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=32),
     ],
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1682,8 +1690,8 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d32_bshd_continuous_batch"
     ):
-        fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, dev_ctx
+        fused_qk_rope[kv_collection.CacheType, target=target](
+            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
         )
 
 
@@ -1694,11 +1702,12 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=64),
     ],
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1720,8 +1729,8 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h8_d64_bshd_continuous_batch"
     ):
-        fused_qk_rope[target=target](
-            q_proj, k_cache, freqs_cis, output, dev_ctx
+        fused_qk_rope[kv_collection.CacheType, target=target](
+            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
         )
 
 

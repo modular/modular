@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from collections import Optional
-from memory import memcpy
+from memory import memcpy, UnsafePointer
 from utils import IndexList
 
 from buffer import DimList, NDBuffer
@@ -15,6 +15,7 @@ from internal_utils import assert_almost_equal
 from nn.fused_qk_rope import fused_qk_rope
 from nn.kv_cache import (
     ContiguousKVCache,
+    ContiguousKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
 )
@@ -37,6 +38,7 @@ def test_fused_qk_rope[type: DType]() -> None:
     alias start_positions = List[UInt32](0, 5)
     alias seq_len = 3
     alias max_seq_len = 16
+    alias num_layers = 1
 
     fn _max[type: DType, items: List[Scalar[type]]]() -> Scalar[type]:
         constrained[items.size > 0, "empty list in _max"]()
@@ -59,10 +61,9 @@ def test_fused_qk_rope[type: DType]() -> None:
     alias kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    alias block_shape = IndexList[4](
-        batch_size, max_seq_len, num_heads, head_dim
+    alias block_shape = IndexList[5](
+        num_layers, batch_size, max_seq_len, num_heads, head_dim
     )
-    alias BlockType = ContiguousKVCache[type, kv_params].BlockType
 
     # Construct backing buffer and the KV cache itself.
     k_cache_block_buffer = List[Scalar[type]]()
@@ -84,13 +85,21 @@ def test_fused_qk_rope[type: DType]() -> None:
         )
 
     # Create the actual KV cache type.
-    k_cache_block = BlockType(k_cache_block_buffer.data, block_shape)
-    k_cache = ContiguousKVCache[type, kv_params](
-        block=k_cache_block,
-        cache_lengths=NDBuffer[DType.uint32, rank=1](
-            start_positions.data, DimList(start_positions.size)
+    k_cache_block = NDBuffer[type, 5](k_cache_block_buffer.data, block_shape)
+    kv_collection = ContiguousKVCacheCollection[type, kv_params](
+        key_cache=k_cache_block,
+        value_cache=NDBuffer[type, 5](
+            UnsafePointer[Scalar[type]](), block_shape
+        ),  # passing as a dummy val, this isn't used.
+        cache_lengths=NDBuffer[DType.uint32, 1](
+            start_positions.data,
+            DimList(
+                start_positions.size,
+            ),
         ),
-        is_cache_empty=False,
+        is_context_encoding=False,
+        seq_ids=List[Int](-1),
+        num_layers=num_layers,
         batch_size=batch_size,
     )
 
@@ -134,12 +143,12 @@ def test_fused_qk_rope[type: DType]() -> None:
     q_out_buffer = List[Scalar[type]]()
     q_out_buffer.resize(new_size=q_buffer.size, value=0)
     q_out = NDBuffer[type, rank=4](q_out_buffer.data, q.dynamic_shape)
-
-    fused_qk_rope[target="cpu"](
+    fused_qk_rope[kv_collection.CacheType, target="cpu"](
         q_proj=q,
-        k_cache=k_cache,
+        kv_collection=kv_collection,
         freqs_cis=freqs_cis_table,
         output=q_out,
+        layer_idx=UInt32(0),
         context=Optional[DeviceContext](),
     )
 

@@ -17,6 +17,7 @@ from kv_cache.types import (
     ContiguousKVCache,
     ContinuousBatchingKVCache,
     KVCacheT,
+    KVCollectionT,
 )
 from runtime.asyncrt import (
     MojoCallContextPtr,
@@ -27,13 +28,15 @@ from utils import IndexList
 @always_inline
 fn fused_qk_rope[
     type: DType,
-    cache_t: KVCacheT, //,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
     *,
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 4, *_],
-    k_cache: cache_t,
+    kv_collection: collection_t,
     freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
     output: NDBuffer[type, 4, *_],
     context: Optional[DeviceContext],
 ):
@@ -44,6 +47,8 @@ fn fused_qk_rope[
     alias num_q_heads = q_proj.shape.get[2]()
     alias num_k_heads = kv_params.num_heads
     alias head_size = q_proj.shape.get[3]()
+
+    var k_cache = kv_collection.get_key_cache[cache_t](int(layer_idx))
 
     @always_inline
     @parameter
