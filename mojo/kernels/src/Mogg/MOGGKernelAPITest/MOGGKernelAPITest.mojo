@@ -13,37 +13,77 @@ from runtime.asyncrt import MojoCallContextPtr
 from tensor_utils import ManagedTensorSlice, foreach
 
 from utils import IndexList, StaticTuple
+from register import uses_opaque
 
 
 @value
 @register_passable
-struct MyCustomScalarReg[type: DType]:
-    var val: Scalar[type]
+struct MyCustomScalarRegSI32:
+    var val: Scalar[DType.int32]
 
-    fn __init__(inout self, val: Scalar[type]):
-        print("MyCustomScalarReg.__init__", val)
+    fn __init__(inout self, val: Scalar[DType.int32]):
+        print("MyCustomScalarRegSI32.__init__", val)
         self.val = val
 
     fn __del__(owned self):
-        print("MyCustomScalarReg.__del__", self.val)
+        print("MyCustomScalarRegSI32.__del__", self.val)
+
+
+# It is intentional there are no methods which consume this.
+# It is here to support some level of type checking.
+@value
+@register_passable
+struct MyCustomScalarRegF32:
+    var val: Scalar[DType.float32]
+
+    fn __init__(inout self, val: Scalar[DType.float32]):
+        print("MyCustomScalarRegF32.__init__", val)
+        self.val = val
+
+    fn __del__(owned self):
+        print("MyCustomScalarRegF32.__del__", self.val)
+
+
+@compiler.register("tensor_to_custom_scalar_si32_reg", num_dps_outputs=0)
+struct OpaqueToCustomScalarSI32Reg:
+    @uses_opaque
+    @staticmethod
+    fn execute(
+        x: ManagedTensorSlice[DType.int32, rank=1]
+    ) -> MyCustomScalarRegSI32:
+        return MyCustomScalarRegSI32(x[0])
 
 
 # Adds two custom scalar types (one of which is register passable) and writes
 # to a tensor
-@compiler.register("opaque_add_to_tensor")
-struct OpaqueAddToTensor:
+@compiler.register("opaque_add_to_tensor_si32")
+struct OpaqueAddToTensorSI32:
+    @uses_opaque
     @staticmethod
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
-    ](out: ManagedTensorSlice, x: MyCustomScalarReg, y: MyCustomScalarReg):
-        var scalar_x = x.val
-        var scalar_y = rebind[Scalar[x.type]](y.val)
-        out[0] = rebind[Scalar[out.type]](scalar_x + scalar_y)
+    ](
+        out: ManagedTensorSlice[DType.int32, rank=1],
+        x: MyCustomScalarRegSI32,
+        y: MyCustomScalarRegSI32,
+    ):
+        out[0] = x.val + y.val
 
+
+@compiler.register("opaque_add_to_tensor_f32")
+struct OpaqueAddToTensorF32:
+    @uses_opaque
     @staticmethod
-    fn shape(x: MyCustomScalarReg, y: MyCustomScalarReg) -> IndexList[1]:
-        return IndexList[1](1)
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        out: ManagedTensorSlice[DType.float32, rank=1],
+        x: MyCustomScalarRegF32,
+        y: MyCustomScalarRegF32,
+    ):
+        out[0] = x.val + y.val
 
 
 @compiler.register("imposter_add")
@@ -328,3 +368,23 @@ struct VariadicInputToOutput:
             for j in range(input[i].size()):
                 output[i][j] = input[i][j]
             output[i][0] += bias[0]
+
+
+# Simply adds the first number of bias to the first number of boath outputs
+# Mainly here to test logic with multiple DPS outputs
+@compiler.register("add_bias_to_two_tensors", num_dps_outputs=2)
+struct AddBiasToDouble:
+    @staticmethod
+    fn execute[
+        rank: Int,
+        type: DType,
+        synchronous: Bool,
+    ](
+        output1: ManagedTensorSlice[type, rank],
+        output2: ManagedTensorSlice[type, rank],
+        input1: ManagedTensorSlice[type, rank],
+        input2: ManagedTensorSlice[type, rank],
+        bias: ManagedTensorSlice[type, rank],
+    ):
+        output1[0] = input1[0] + bias[0]
+        output2[0] = input2[0] + bias[0]

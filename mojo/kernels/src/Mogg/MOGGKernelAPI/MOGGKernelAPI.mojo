@@ -2644,7 +2644,7 @@ struct RMSNorm:
 # ===----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.bottom_k")
+@compiler.register("mo.bottom_k", num_dps_outputs=2)
 struct BottomK:
     @staticmethod
     fn execute[
@@ -2684,7 +2684,7 @@ struct BottomK:
         )
 
 
-@compiler.register("mo.top_k")
+@compiler.register("mo.top_k", num_dps_outputs=2)
 struct TopK:
     @staticmethod
     fn execute[
