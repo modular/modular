@@ -19,7 +19,8 @@ from max.driver import CPU, CUDA
 from max.pipelines import TokenGenerator
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 
-from utils import config_to_flag
+
+from utils import config_to_flag, DevicesOptionType
 
 logger = logging.getLogger(__name__)
 
@@ -361,10 +362,15 @@ async def run_batch_scenario(
 )
 @click.option(
     "--use-gpu",
-    is_flag=True,
+    is_flag=False,
+    type=DevicesOptionType(),
     show_default=True,
-    default=False,
-    help="Whether to run the model on the available GPU.",
+    default="",
+    flag_value="0",
+    help=(
+        "Whether to run the model on the available GPU. An ID value can be"
+        " provided optionally to indicate the device ID to target."
+    ),
 )
 @click.option(
     "--model-name",
@@ -396,7 +402,7 @@ async def run_batch_scenario(
 def main(
     prompt: List[str],
     prompt_count: int,
-    use_gpu: bool,
+    use_gpu: List[int],
     model_name: str,
     batch_mode: str,
     output_path: str,
@@ -414,7 +420,7 @@ def main(
     if use_gpu:
         config_kwargs.update(
             {
-                "device": CUDA(),
+                "device": CUDA(id=use_gpu[0]),
                 "quantization_encoding": SupportedEncodings.bfloat16,
             }
         )
