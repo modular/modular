@@ -16,6 +16,7 @@ from typing import (
     Callable,
     Generic,
     Mapping,
+    Optional,
     TypeVar,
     Awaitable,
     Union,
@@ -62,6 +63,11 @@ BatchRequestExecutorFn = Callable[
     Awaitable[dict[BatchReqId, BatchReqOutput]],
 ]
 
+YieldPredicate = Callable[
+    [],
+    bool,
+]
+
 # Method which when given BatchInputs and corresponding BatchOutputs,
 # determines which BatchReqIds are completed.
 BatchRequestCompletedFn = Callable[
@@ -93,20 +99,31 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
     completed_fn: BatchRequestCompletedFn
     in_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     out_queues: dict[BatchReqId, asyncio.Queue] = field(default_factory=dict)
+    should_yield: Optional[YieldPredicate] = None
 
     # TODO@gaz: We can't use __class__ here because this is currently setup as a dataclass
     logger: logging.Logger = logging.getLogger(__name__)
 
     @contextlib.asynccontextmanager
     async def open_channel(self, req_id: BatchReqId, data: BatchReqInput):
-        self.logger.debug("BatchOpen(%s): %s", self.name, req_id)
+        self.logger.debug(
+            "BatchOpen(%s): %s, current-size %s",
+            self.name,
+            req_id,
+            self.in_queue.qsize(),
+        )
         self.out_queues[req_id] = state = asyncio.Queue()  # type: ignore
         await self.in_queue.put((req_id, data))
         try:
             yield state
         finally:
             del self.out_queues[req_id]
-            self.logger.debug("BatchClose(%s): %s", self.name, req_id)
+            self.logger.debug(
+                "BatchClose(%s): %s, current-size %s",
+                self.name,
+                req_id,
+                self.in_queue.qsize(),
+            )
 
     async def submit(
         self, req_id: BatchReqId, data: BatchReqInput
@@ -135,7 +152,9 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     req_id, data = self.in_queue.get_nowait()
                     batch[req_id] = data
                 except asyncio.QueueEmpty:
-                    return
+                    # check if we should wait longer for an upstream condition
+                    if (self.should_yield is None) or (not self.should_yield()):
+                        return
                 await asyncio.sleep(0)
         else:
             end = monotonic() + timeout_s

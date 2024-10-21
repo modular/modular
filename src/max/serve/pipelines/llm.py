@@ -118,11 +118,49 @@ class TokenGeneratorStats:
 class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     """Base class for LLM pipelines."""
 
+    def call_wrapper(self, batch):
+        self.stats.token_gen_batch_size = self.stats.token_gen_batch_size + len(
+            batch
+        )
+        self.stats.token_gen_batch_calls = self.stats.token_gen_batch_calls + 1
+        self.logger.info(
+            (
+                "Executing token-gen with, %s, step, %s, average, %s,"
+                " context-encoding-inq, %s, context-enc-outq, %s,"
+                " token-gen-inq, %s, token-gen-outq, %s"
+            ),
+            len(batch),
+            self.stats.token_gen_batch_calls,
+            self.stats.token_gen_batch_size / self.stats.token_gen_batch_calls,
+            self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1,
+            len(
+                self.context_enc_queue.out_queues
+            ) if self.context_enc_queue else -1,
+            self.token_gen_queue.in_queue.qsize(),
+            len(self.token_gen_queue.out_queues),
+        )
+
+        return self.model.next_token(batch)
+
+    def context_enc_non_empty(self) -> bool:
+        self.logger.debug(
+            "Called context_enc_non_empty with %s",
+            self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1,  # type: ignore
+        )
+        if self.context_enc_queue:
+            return (
+                self.context_enc_queue.in_queue.qsize()
+                > 0
+                # and self.token_gen.in_queue.qsize() < 32
+            )
+        return False
+
     def __init__(
         self,
         config: TokenGeneratorPipelineConfig,
         model: TokenGenerator[TokenGeneratorContext],
         tokenizer: Optional[PreTrainedTokenizerBase] = None,
+        tg_yield_to_ce: bool = True,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.model = model
@@ -136,6 +174,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             config.token_generation,
             self._execute_model,
             completed_fn=TokenGeneratorPipeline.completed_token_generation_requests,
+            should_yield=self.context_enc_non_empty if tg_yield_to_ce else None,
         )
         self.queues.append(self.token_gen_queue)
         # Create a context-encoding queue if specified.
