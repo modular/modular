@@ -6,10 +6,12 @@
 
 
 import asyncio
+import json
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Annotated, AsyncGenerator, List, Literal, Optional, cast
+from json.decoder import JSONDecodeError
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -37,7 +39,7 @@ from max.serve.schemas.openai import (
 )
 from prometheus_async.aio import time
 from prometheus_client import Histogram
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/v1")
@@ -128,6 +130,9 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 response_idx,
             )
             yield "[DONE]"
+        except ValueError as e:
+            logger.error(str(e))
+            yield json.dumps({"result": "error", "message": str(e)})
         finally:
             if self.request_limiter:
                 self.request_limiter.release()
@@ -184,22 +189,11 @@ def openai_get_content_from_message(message: ChatCompletionRequestMessage):
     )
 
 
-@router.post("/chat/completions")
-@time(REQ_TIME)
-async def openai_create_chat_completion(
-    request: Request,
-    pipeline: Annotated[TokenGeneratorPipeline, Depends(token_pipeline)],
-) -> Response:
-    request_id = request.state.request_id
-    request_json = await request.json()
-    completion_request = CreateChatCompletionRequest.model_validate(
-        request_json
-    )
-    logger.info(
-        f"Processing {request.url.path}, {request_id} -"
-        f" {'streaming' if completion_request.stream else ''} {completion_request.model} request."
-    )
-
+def build_prompt(
+    pipeline: TokenGeneratorPipeline,
+    completion_request: CreateChatCompletionRequest,
+) -> str:
+    """Build the chat completion prompt."""
     request_prompt = ""
     if pipeline.tokenizer is not None:
         messages = [
@@ -222,26 +216,54 @@ async def openai_create_chat_completion(
                 if isinstance(message.root.content, str)
             ]
         )
+    return request_prompt
 
-    response_generator = OpenAIChatResponseGenerator(
-        pipeline, request_limiter=request.app.state.request_limiter
-    )
-    token_request = await response_generator.create_request(
-        id=request_id,
-        prompt=request_prompt,
-        max_new_tokens=completion_request.max_tokens,
-    )
-    if completion_request.stream:
-        return EventSourceResponse(response_generator.stream(token_request))
 
+@router.post("/chat/completions")
+@time(REQ_TIME)
+async def openai_create_chat_completion(
+    request: Request,
+    pipeline: Annotated[TokenGeneratorPipeline, Depends(token_pipeline)],
+) -> Response:
+    request_id = request.state.request_id
     try:
-        response = await response_generator.complete(token_request)
-    except ValueError:
-        raise HTTPException(
-            status_code=400, detail="Failed to complete response."
+        request_json = await request.json()
+        completion_request = CreateChatCompletionRequest.model_validate(
+            request_json
+        )
+        request_prompt = build_prompt(pipeline, completion_request)
+
+        logger.info(
+            f"Processing {request.url.path}, {request_id} -"
+            f" {'streaming' if completion_request.stream else ''} {completion_request.model} request."
         )
 
-    return JSONResponse(response.model_dump_json())
+        response_generator = OpenAIChatResponseGenerator(
+            pipeline, request_limiter=request.app.state.request_limiter
+        )
+        token_request = await response_generator.create_request(
+            id=request_id,
+            prompt=request_prompt,
+            max_new_tokens=completion_request.max_tokens,
+        )
+
+        if completion_request.stream:
+            return EventSourceResponse(response_generator.stream(token_request))
+
+        response = await response_generator.complete(token_request)
+        return JSONResponse(response.model_dump_json())
+    except JSONDecodeError as e:
+        logger.error(str(e))
+        raise HTTPException(status_code=400, detail="Missing JSON.")
+    except (TypeError, ValidationError) as e:
+        logger.error(str(e))
+        raise HTTPException(status_code=400, detail="Invalid JSON.")
+    except ValueError as e:
+        logger.error(str(e))
+        # NOTE(matt): These errors need to return more helpful details,
+        # but we don't necessarily want to expose the full error description
+        # to the user. There are many different ValueErrors that can be raised.
+        raise HTTPException(status_code=400, detail="Value error.")
 
 
 """
@@ -309,6 +331,9 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 response_idx,
             )
             yield "[DONE]"
+        except ValueError as e:
+            logger.error(str(e))
+            yield json.dumps({"result": "error", "message": str(e)})
         finally:
             if self.request_limiter:
                 self.request_limiter.release()
@@ -358,29 +383,46 @@ async def openai_create_completion(
     pipeline: Annotated[TokenGeneratorPipeline, Depends(token_pipeline)],
 ) -> Response:
     request_id = request.state.request_id
-    request_json = await request.json()
-    completion_request = CreateCompletionRequest.model_validate(request_json)
-    logger.info(
-        f"Processing {request.url.path}, {request_id} -"
-        f" {'streaming' if completion_request.stream else ''} {completion_request.model} request."
-    )
+    try:
+        request_json = await request.json()
+        completion_request = CreateCompletionRequest.model_validate(
+            request_json
+        )
 
-    request_prompt = openai_get_prompt_from_completion_request(
-        completion_request
-    )
-    response_generator = OpenAICompletionResponseGenerator(
-        pipeline, request_limiter=request.app.state.request_limiter
-    )
-    token_request = await response_generator.create_request(
-        id=request_id,
-        prompt=request_prompt,
-        max_new_tokens=completion_request.max_tokens,
-    )
-    if completion_request.stream:
-        return EventSourceResponse(response_generator.stream(token_request))
+        logger.info(
+            f"Processing {request.url.path}, {request_id} -"
+            f" {'streaming' if completion_request.stream else ''} {completion_request.model} request."
+        )
 
-    response = await response_generator.complete(token_request)
-    return JSONResponse(response.model_dump_json())
+        request_prompt = openai_get_prompt_from_completion_request(
+            completion_request
+        )
+        response_generator = OpenAICompletionResponseGenerator(
+            pipeline, request_limiter=request.app.state.request_limiter
+        )
+        token_request = await response_generator.create_request(
+            id=request_id,
+            prompt=request_prompt,
+            max_new_tokens=completion_request.max_tokens,
+        )
+
+        if completion_request.stream:
+            return EventSourceResponse(response_generator.stream(token_request))
+
+        response = await response_generator.complete(token_request)
+        return JSONResponse(response.model_dump_json())
+    except JSONDecodeError as e:
+        logger.error(str(e))
+        raise HTTPException(status_code=400, detail="Missing JSON.")
+    except (TypeError, ValidationError) as e:
+        logger.error(str(e))
+        raise HTTPException(status_code=400, detail="Invalid JSON.")
+    except ValueError as e:
+        logger.error(str(e))
+        # NOTE(matt): These errors need to return more helpful details,
+        # but we don't necessarily want to expose the full error description
+        # to the user. There are many different ValueErrors that can be raised.
+        raise HTTPException(status_code=400, detail="Value error.")
 
 
 @router.get("/health")
