@@ -11,13 +11,14 @@ import math
 import operator
 import os
 import random
+from datetime import timedelta
 from functools import reduce
 from pathlib import Path
 from typing import Optional, Sequence
 
 import numpy as np
 import pytest
-from hypothesis import assume
+from hypothesis import assume, settings
 from hypothesis import strategies as st
 from max import _graph, mlir
 from max.dtype import DType
@@ -31,6 +32,14 @@ from max.graph import (
     SymbolicDim,
     TensorType,
 )
+
+# When running in CI, graph tests can take around 300ms for a single run.
+# These seem to be due to CI running under very high cpu usage.
+# A similar effect can be achieved locally be running with each test multible times `--runs_per_test=3`.
+# They all launch at the same time leading to exceptionally heavy cpu usage.
+# From local testing, a one second deadline seems to be enough to avoid flakes even under very high load.
+settings.register_profile("graph_tests", deadline=timedelta(seconds=1))
+settings.load_profile("graph_tests")
 
 MAX_INT32 = np.iinfo(np.int32).max
 MAX_INT64 = np.iinfo(np.int64).max
