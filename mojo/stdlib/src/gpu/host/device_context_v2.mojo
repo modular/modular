@@ -141,7 +141,9 @@ struct DeviceBufferV2[type: DType](Sized):
     ):
         alias elem_size = sizeof[type]()
         var cpp_handle = _DeviceBufferPtr()
-        # void AsyncRT_DeviceContext_createBuffer_owning(const DeviceBuffer **result, const DeviceContext *ctx, void *device_ptr, size_t len, size_t elem_size, bool owning)
+        # void AsyncRT_DeviceContext_createBuffer_owning(
+        #     const DeviceBuffer **result, const DeviceContext *ctx,
+        #     void *device_ptr, size_t len, size_t elem_size, bool owning)
         external_call[
             "AsyncRT_DeviceContext_createBuffer_owning",
             NoneType,
@@ -207,7 +209,9 @@ struct DeviceBufferV2[type: DType](Sized):
         alias elem_size = sizeof[view_type]()
         var new_handle = _DeviceBufferPtr()
         var new_device_ptr = UnsafePointer[Scalar[view_type]]()
-        # const char *AsyncRT_DeviceBuffer_createSubBuffer(const DeviceBuffer **result, void **device_ptr, const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
+        # const char *AsyncRT_DeviceBuffer_createSubBuffer(
+        #     const DeviceBuffer **result, void **device_ptr,
+        #     const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
         _checked(
             external_call[
                 "AsyncRT_DeviceBuffer_createSubBuffer",
@@ -297,6 +301,9 @@ struct DeviceFunctionV2[
         cache_config: OptionalReg[CacheConfig] = None,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
+        alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
+        alias optimization_level = env_get_int["OPTIMIZATION_LEVEL", 4]()
+
         if max_registers:
             print(
                 "DeviceFunctionV2.__init__: max_registers = "
@@ -323,10 +330,12 @@ struct DeviceFunctionV2[
                     "DeviceFunctionV2.__init__: func_attribute"
                 ]()
 
-        # const char *AsyncRT_DeviceContext_compileFunction(const DeviceFunction **result, const DeviceContext *ctx,
-        #                                                   const char *function_name, const void *data,
-        #                                                   int32_t max_registers, int32_t threads_per_block,
-        #                                                   int32_t cache_mode, int32_t cache_config, int32_t max_dynamic_shared_bytes)
+        # const char *AsyncRT_DeviceContext_compileFunction(
+        #     const DeviceFunction **result, const DeviceContext *ctx,
+        #     const char *function_name, const void *data,
+        #     int32_t max_registers, int32_t threads_per_block,
+        #     int32_t cache_mode, int32_t cache_config, int32_t max_dynamic_shared_bytes,
+        #     const char* debug_level, int32_t optimization_level)
         var result = _DeviceFunctionPtr()
         _checked(
             external_call[
@@ -341,6 +350,8 @@ struct DeviceFunctionV2[
                 Int32,
                 Int32,
                 Int32,
+                _CharPtr,
+                Int32,
             ](
                 UnsafePointer.address_of(result),
                 ctx._handle,
@@ -351,6 +362,8 @@ struct DeviceFunctionV2[
                 int(cache_mode.or_else(-1)),
                 cache_config.or_else(CacheConfig(-1)).code,
                 max_dynamic_shared_size_bytes,
+                debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
+                optimization_level,
             )
         )
         self._handle = result
