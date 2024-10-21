@@ -127,23 +127,6 @@ from nn.kv_cache import (
     fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch,
     fused_qkv_matmul_kv_cache_h8_d128_bshd,
     fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch,
-    key_cache_for_layer_h1_d16_bshd_bf16,
-    key_cache_for_layer_h1_d16_bshd_bf16_continuous_batch,
-    key_cache_for_layer_h1_d16_bshd_f32,
-    key_cache_for_layer_h1_d16_bshd_f32_continuous_batch,
-    key_cache_for_layer_h6_d48_bshd_f32,
-    key_cache_for_layer_h8_d32_bshd_bf16,
-    key_cache_for_layer_h8_d32_bshd_bf16_continuous_batch,
-    key_cache_for_layer_h8_d32_bshd_f32,
-    key_cache_for_layer_h8_d32_bshd_f32_continuous_batch,
-    key_cache_for_layer_h8_d64_bshd_bf16,
-    key_cache_for_layer_h8_d64_bshd_bf16_continuous_batch,
-    key_cache_for_layer_h8_d64_bshd_f32,
-    key_cache_for_layer_h8_d64_bshd_f32_continuous_batch,
-    key_cache_for_layer_h8_d128_bshd_bf16,
-    key_cache_for_layer_h8_d128_bshd_bf16_continuous_batch,
-    key_cache_for_layer_h8_d128_bshd_f32,
-    key_cache_for_layer_h8_d128_bshd_f32_continuous_batch,
     kv_cache_length_h1_d16_bshd_bf16,
     kv_cache_length_h1_d16_bshd_bf16_continuous_batch,
     kv_cache_length_h1_d16_bshd_f32,
@@ -161,24 +144,8 @@ from nn.kv_cache import (
     kv_cache_length_h8_d128_bshd_bf16_continuous_batch,
     kv_cache_length_h8_d128_bshd_f32,
     kv_cache_length_h8_d128_bshd_f32_continuous_batch,
-    value_cache_for_layer_h1_d16_bshd_bf16,
-    value_cache_for_layer_h1_d16_bshd_bf16_continuous_batch,
-    value_cache_for_layer_h1_d16_bshd_f32,
-    value_cache_for_layer_h1_d16_bshd_f32_continuous_batch,
-    value_cache_for_layer_h6_d48_bshd_f32,
-    value_cache_for_layer_h8_d32_bshd_bf16,
-    value_cache_for_layer_h8_d32_bshd_bf16_continuous_batch,
-    value_cache_for_layer_h8_d32_bshd_f32,
-    value_cache_for_layer_h8_d32_bshd_f32_continuous_batch,
-    value_cache_for_layer_h8_d64_bshd_bf16,
-    value_cache_for_layer_h8_d64_bshd_bf16_continuous_batch,
-    value_cache_for_layer_h8_d64_bshd_f32,
-    value_cache_for_layer_h8_d64_bshd_f32_continuous_batch,
-    value_cache_for_layer_h8_d128_bshd_bf16,
-    value_cache_for_layer_h8_d128_bshd_bf16_continuous_batch,
-    value_cache_for_layer_h8_d128_bshd_f32,
-    value_cache_for_layer_h8_d128_bshd_f32_continuous_batch,
 )
+
 from nn.mha import flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -300,40 +267,6 @@ fn MOGGExport():
     alias _kv_cache_length_h8_d64_bshd_bf16_continuous_batch = kv_cache_length_h8_d64_bshd_bf16_continuous_batch
     alias _kv_cache_length_h1_d16_bshd_f32_continuous_batch = kv_cache_length_h1_d16_bshd_f32_continuous_batch
     alias _kv_cache_length_h1_d16_bshd_bf16_continuous_batch = kv_cache_length_h1_d16_bshd_bf16_continuous_batch
-    alias _key_cache_for_layer_h8_d128_bshd_bf16 = key_cache_for_layer_h8_d128_bshd_bf16
-    alias _key_cache_for_layer_h6_d48_bshd_f32 = key_cache_for_layer_h6_d48_bshd_f32
-    alias _key_cache_for_layer_h8_d128_bshd_f32 = key_cache_for_layer_h8_d128_bshd_f32
-    alias _key_cache_for_layer_h1_d16_bshd_f32 = key_cache_for_layer_h1_d16_bshd_f32
-    alias _key_cache_for_layer_h1_d16_bshd_bf16 = key_cache_for_layer_h1_d16_bshd_bf16
-    alias _key_cache_for_layer_h8_d32_bshd_f32 = key_cache_for_layer_h8_d32_bshd_f32
-    alias _key_cache_for_layer_h8_d32_bshd_bf16 = key_cache_for_layer_h8_d32_bshd_bf16
-    alias _key_cache_for_layer_h8_d64_bshd_f32 = key_cache_for_layer_h8_d64_bshd_f32
-    alias _key_cache_for_layer_h8_d64_bshd_bf16 = key_cache_for_layer_h8_d64_bshd_bf16
-    alias _key_cache_for_layer_h8_d128_bshd_f32_continuous_batch = key_cache_for_layer_h8_d128_bshd_f32_continuous_batch
-    alias _key_cache_for_layer_h8_d128_bshd_bf16_continuous_batch = key_cache_for_layer_h8_d128_bshd_bf16_continuous_batch
-    alias _key_cache_for_layer_h8_d32_bshd_f32_continuous_batch = key_cache_for_layer_h8_d32_bshd_f32_continuous_batch
-    alias _key_cache_for_layer_h8_d32_bshd_bf16_continuous_batch = key_cache_for_layer_h8_d32_bshd_bf16_continuous_batch
-    alias _key_cache_for_layer_h8_d64_bshd_f32_continuous_batch = key_cache_for_layer_h8_d64_bshd_f32_continuous_batch
-    alias _key_cache_for_layer_h8_d64_bshd_bf16_continuous_batch = key_cache_for_layer_h8_d64_bshd_bf16_continuous_batch
-    alias _key_cache_for_layer_h1_d16_bshd_f32_continuous_batch = key_cache_for_layer_h1_d16_bshd_f32_continuous_batch
-    alias _key_cache_for_layer_h1_d16_bshd_bf16_continuous_batch = key_cache_for_layer_h1_d16_bshd_bf16_continuous_batch
-    alias _value_cache_for_layer_h8_d128_bshd_bf16 = value_cache_for_layer_h8_d128_bshd_bf16
-    alias _value_cache_for_layer_h6_d48_bshd_f32 = value_cache_for_layer_h6_d48_bshd_f32
-    alias _value_cache_for_layer_h8_d128_bshd_f32 = value_cache_for_layer_h8_d128_bshd_f32
-    alias _value_cache_for_layer_h1_d16_bshd_f32 = value_cache_for_layer_h1_d16_bshd_f32
-    alias _value_cache_for_layer_h1_d16_bshd_bf16 = value_cache_for_layer_h1_d16_bshd_bf16
-    alias _value_cache_for_layer_h1_d16_bshd_bf16_continuous_batch = value_cache_for_layer_h1_d16_bshd_bf16_continuous_batch
-    alias _value_cache_for_layer_h1_d16_bshd_f32_continuous_batch = value_cache_for_layer_h1_d16_bshd_f32_continuous_batch
-    alias _value_cache_for_layer_h8_d32_bshd_bf16 = value_cache_for_layer_h8_d32_bshd_bf16
-    alias _value_cache_for_layer_h8_d32_bshd_f32 = value_cache_for_layer_h8_d32_bshd_f32
-    alias _value_cache_for_layer_h8_d64_bshd_bf16 = value_cache_for_layer_h8_d64_bshd_bf16
-    alias _value_cache_for_layer_h8_d64_bshd_f32 = value_cache_for_layer_h8_d64_bshd_f32
-    alias _value_cache_for_layer_h8_d128_bshd_bf16_continuous_batch = value_cache_for_layer_h8_d128_bshd_bf16_continuous_batch
-    alias _value_cache_for_layer_h8_d128_bshd_f32_continuous_batch = value_cache_for_layer_h8_d128_bshd_f32_continuous_batch
-    alias _value_cache_for_layer_h8_d32_bshd_bf16_continuous_batch = value_cache_for_layer_h8_d32_bshd_bf16_continuous_batch
-    alias _value_cache_for_layer_h8_d32_bshd_f32_continuous_batch = value_cache_for_layer_h8_d32_bshd_f32_continuous_batch
-    alias _value_cache_for_layer_h8_d64_bshd_bf16_continuous_batch = value_cache_for_layer_h8_d64_bshd_bf16_continuous_batch
-    alias _value_cache_for_layer_h8_d64_bshd_f32_continuous_batch = value_cache_for_layer_h8_d64_bshd_f32_continuous_batch
     alias _fused_qkv_matmul_kv_cache_h6_d48_bshd = fused_qkv_matmul_kv_cache_h6_d48_bshd
     alias _fused_qkv_matmul_kv_cache_h8_d128_bshd = fused_qkv_matmul_kv_cache_h8_d128_bshd
     alias _fused_qkv_matmul_kv_cache_h1_d16_bshd = fused_qkv_matmul_kv_cache_h1_d16_bshd
