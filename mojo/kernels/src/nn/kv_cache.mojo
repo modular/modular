@@ -795,11 +795,11 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    k_cache: ContiguousKVCache[
+    kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=6, head_size=48),
     ],
-    v_cache: ContiguousKVCache[type, k_cache.kv_params],
+    layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -809,10 +809,10 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
@@ -820,9 +820,9 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
     with Trace[TraceLevel.OP, target=target](
         "fused_qkv_matmul_kv_cache_h6_d48_bshd"
     ):
-        return _fused_qkv_matmul_kv_cache[target=target](
-            hidden_state, weight, k_cache, v_cache, output, ctx
-        )
+        return _fused_qkv_matmul_kv_cache[
+            kv_collection.CacheType, target=target
+        ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_bshd")
@@ -836,11 +836,11 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    k_cache: ContiguousKVCache[
+    kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=128),
     ],
-    v_cache: ContiguousKVCache[type, k_cache.kv_params],
+    layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -850,10 +850,10 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
@@ -861,9 +861,9 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
     with Trace[TraceLevel.OP, target=target](
         "fused_qkv_matmul_kv_cache_h8_d128_bshd"
     ):
-        return _fused_qkv_matmul_kv_cache[target=target](
-            hidden_state, weight, k_cache, v_cache, output, ctx
-        )
+        return _fused_qkv_matmul_kv_cache[
+            kv_collection.CacheType, target=target
+        ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h1_d16_bshd")
@@ -877,11 +877,11 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd[
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    k_cache: ContiguousKVCache[
+    kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=1, head_size=16),
     ],
-    v_cache: ContiguousKVCache[type, k_cache.kv_params],
+    layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -891,10 +891,10 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd[
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
@@ -902,9 +902,9 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd[
     with Trace[TraceLevel.OP, target=target](
         "fused_qkv_matmul_kv_cache_h1_d16_bshd"
     ):
-        return _fused_qkv_matmul_kv_cache[target=target](
-            hidden_state, weight, k_cache, v_cache, output, ctx
-        )
+        return _fused_qkv_matmul_kv_cache[
+            kv_collection.CacheType, target=target
+        ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
 alias embed_fn_type = fn[type: DType, width: Int] (
@@ -964,11 +964,11 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd[
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    k_cache: ContiguousKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=64),
     ],
-    v_cache: ContiguousKVCache[type, k_cache.kv_params],
+    layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -978,10 +978,10 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd[
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
@@ -989,9 +989,9 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd[
     with Trace[TraceLevel.OP, target=target](
         "fused_qkv_matmul_kv_cache_h8_d64_bshd"
     ):
-        return _fused_qkv_matmul_kv_cache[target=target](
-            hidden_state, weight, k_cache, v_cache, output, ctx
-        )
+        return _fused_qkv_matmul_kv_cache[
+            kv_collection.CacheType, target=target
+        ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch")
@@ -1005,11 +1005,11 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    k_cache: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=128),
     ],
-    v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
+    layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1019,10 +1019,10 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
@@ -1030,9 +1030,9 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch"
     ):
-        return _fused_qkv_matmul_kv_cache[target=target](
-            hidden_state, weight, k_cache, v_cache, output, ctx
-        )
+        return _fused_qkv_matmul_kv_cache[
+            kv_collection.CacheType, target=target
+        ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch")
@@ -1046,11 +1046,11 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    k_cache: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=1, head_size=16),
     ],
-    v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
+    layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1060,9 +1060,10 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
             (batch_size, max_seq_len, num_kv_heads, head_size).
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
@@ -1071,9 +1072,9 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch"
     ):
-        return _fused_qkv_matmul_kv_cache[target=target](
-            hidden_state, weight, k_cache, v_cache, output, ctx
-        )
+        return _fused_qkv_matmul_kv_cache[
+            kv_collection.CacheType, target=target
+        ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch")
@@ -1128,11 +1129,11 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    k_cache: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=64),
     ],
-    v_cache: ContinuousBatchingKVCache[type, k_cache.kv_params],
+    layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
     ctx: MojoCallContextPtr,
 ) raises:
@@ -1142,10 +1143,10 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         ctx: The call context pointer, passed by the graph compiler.
@@ -1153,9 +1154,9 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch"
     ):
-        return _fused_qkv_matmul_kv_cache[target=target](
-            hidden_state, weight, k_cache, v_cache, output, ctx
-        )
+        return _fused_qkv_matmul_kv_cache[
+            kv_collection.CacheType, target=target
+        ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
 @always_inline
@@ -1164,14 +1165,15 @@ fn _fused_qkv_matmul_kv_cache[
     hidden_state_shape: DimList,
     weight_shape: DimList,
     output_shape: DimList,
+    collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     target: StringLiteral,
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    k_cache: cache_t,
-    v_cache: cache_t,
+    kv_collection: collection_t,
+    layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
     context: MojoCallContextPtr,
 ) raises:
@@ -1181,10 +1183,10 @@ fn _fused_qkv_matmul_kv_cache[
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         context: The call context pointer, passed by the graph compiler.
@@ -1195,8 +1197,8 @@ fn _fused_qkv_matmul_kv_cache[
     if target != "cpu":
         cuda_ctx = context.get_device_context()
 
-    return _fused_qkv_matmul_kv_cache_impl[target=target](
-        hidden_state, weight, k_cache, v_cache, output, cuda_ctx
+    return _fused_qkv_matmul_kv_cache_impl[cache_t, target=target](
+        hidden_state, weight, kv_collection, layer_idx, output, cuda_ctx
     )
 
 
@@ -1206,6 +1208,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
     hidden_state_shape: DimList,
     weight_shape: DimList,
     output_shape: DimList,
+    collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     target: StringLiteral,
@@ -1214,8 +1217,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
 ](
     hidden_state: NDBuffer[type, 3, hidden_state_shape],
     weight: NDBuffer[type, 2, weight_shape],
-    k_cache: cache_t,
-    v_cache: cache_t,
+    kv_collection: collection_t,
+    layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
     context: Optional[DeviceContext],
 ) raises:
@@ -1225,10 +1228,10 @@ fn _fused_qkv_matmul_kv_cache_impl[
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        k_cache: The historical ContiguousKVCache for keys, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
-        v_cache: The historical ContiguousKVCache for values, with logical shape:
-            (batch_size, max_seq_len, num_kv_heads, head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         context: The DeviceContext. This is unused if target == "cpu".
@@ -1243,6 +1246,9 @@ fn _fused_qkv_matmul_kv_cache_impl[
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
     var qk_offset = q_dim + k_dim
+
+    var k_cache = kv_collection.get_key_cache[cache_t](int(layer_idx))
+    var v_cache = kv_collection.get_value_cache[cache_t](int(layer_idx))
 
     @parameter
     @__copy_capture(output, q_dim, qk_offset, SEQ_LEN)
