@@ -19,8 +19,23 @@ from max.serve.pipelines.deps import echo_token_pipeline, token_pipeline
 MAX_CHUNK_TO_READ_BYTES: int = 1024 * 10
 
 
+# NOTE(matt): This also exists in test_llm.py. It should probably
+# move to conf.py to have a single source of logic.
+@pytest.fixture
+def reset_sse_starlette_appstatus_event():
+    """
+    Fixture that resets the appstatus event in the sse_starlette app.
+
+    Should be used on any test that uses sse_starlette to stream events.
+    """
+    # See https://github.com/sysid/sse-starlette/issues/59
+    from sse_starlette.sse import AppStatus
+
+    AppStatus.should_exit_event = None
+
+
 @pytest.fixture(scope="function")
-def stream_app():
+def stream_app(reset_sse_starlette_appstatus_event):
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
     pipeline = echo_token_pipeline(1)
