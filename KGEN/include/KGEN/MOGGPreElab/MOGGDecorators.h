@@ -220,6 +220,9 @@ constexpr StringLiteral MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME =
 // We support tuples of DPS tensors for operations with variadic input/outputs
 constexpr StringLiteral MOJO_STATIC_INT_TUPLE_NAME = "stdlib::StaticTuple";
 
+// We support lists of DPS tensors for a few operations
+constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "stdlib::InlinedFixedVector";
+
 //===----------------------------------------------------------------------===//
 // MOGG Tensor API type strings
 //===----------------------------------------------------------------------===//
