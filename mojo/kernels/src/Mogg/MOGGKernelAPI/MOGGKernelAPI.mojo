@@ -20,7 +20,7 @@ from math import (
     sqrt,
     tanh,
 )
-from nn.concat import concat
+from nn.concat import concat, _concat_cpu
 from random import randn, seed
 from sys import llvm_intrinsic
 from sys.info import simdwidthof
@@ -90,10 +90,13 @@ from nn.topk import top_k, top_k_shape_impl
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_utils_internal import ManagedTensorSlice, foreach
-
+from memory import UnsafePointer
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
+
+from register import mogg_register
+
 
 # ===----------------------------------------------------------------------===#
 # Helpers
@@ -150,6 +153,23 @@ fn reduce_shape[
     var output_shape = input_buf.get_static_spec().shape
     output_shape[axis] = 1
     return output_shape
+
+
+# ===----------------------------------------------------------------------===#
+# Data structures used in MOGG/MGP ABI
+# ===----------------------------------------------------------------------===#
+
+
+# NOTE the layout must match `CompiledKernelABI::Tensor`
+struct ABI_Tensor:
+    var dims: UnsafePointer[Int]
+    var data: UnsafePointer[NoneType]
+
+
+# NOTE the layout must match `CompiledKernelABI::List`
+struct ABI_List:
+    var num_elems: Int
+    var elements: UnsafePointer[NoneType]
 
 
 # ===----------------------------------------------------------------------===#
@@ -3380,6 +3400,141 @@ struct Concat:
             ):
                 raise Error(
                     "[concat] input shapes must match except at concat axis"
+                )
+
+        # compute and return the output shape
+        var output_shape = inputs[0].get_static_spec().shape
+        output_shape[axis] = concat_axis_dim_sum
+        return output_shape
+
+
+# Construct a managed tensor slice from a raw pointer and shape specification.
+# It is assumed the data and shape are contiguous
+fn to_managed_tensor_slice[
+    type: DType, rank: Int
+](
+    data: UnsafePointer[Scalar[type]],
+    shape: UnsafePointer[Int],
+) -> ManagedTensorSlice[type, rank]:
+    var shape_ptr = shape
+    var shape_tuple = IndexList[rank]()
+
+    var stride_tuple = IndexList[rank]()
+    var stride: Int = 1
+
+    @parameter
+    for i in reversed(range(rank)):
+        # Start from the back so we can accumulate the strides.
+        shape_tuple[i] = shape_ptr[i]
+        stride_tuple[i] = stride
+        stride *= shape_tuple[i]
+
+    return ManagedTensorSlice[type, rank](data, shape_tuple, stride_tuple)
+
+
+# Helper method used by compiler to reconcile MGP list with type Mojo expects.
+@mogg_register("to_managed_tensor_slice_list")
+@always_inline
+fn to_managed_tensor_slice_list[
+    type: DType, rank: Int
+](
+    raw_list_ptr: UnsafePointer[NoneType],
+) -> InlinedFixedVector[
+    ManagedTensorSlice[type, rank]
+]:
+    # Cast input list Unsafepointer
+    var abi_list_ptr = raw_list_ptr.bitcast[ABI_List]()
+    var elems_ptr = abi_list_ptr[].elements
+    var abi_tensors_ptr = elems_ptr.bitcast[ABI_Tensor]()
+
+    # Create output list
+    var num_elements = abi_list_ptr[].num_elems
+    var out_list = InlinedFixedVector[ManagedTensorSlice[type, rank]](
+        num_elements
+    )
+
+    # Convert individual elements of the input list into NDBuffer, and
+    # accumulate the results to output list.
+    for i in range(num_elements):
+        var abi_tensor_ptr = abi_tensors_ptr + i
+        var dims = abi_tensor_ptr[].dims
+        var data = abi_tensor_ptr[].data.bitcast[Scalar[type]]()
+        var buffer = to_managed_tensor_slice[type, rank](data, dims)
+        out_list.append(buffer)
+
+    return InlinedFixedVector(out_list)
+
+
+@compiler.register("mo.concat_from_list")
+struct ConcatFromList:
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type=type, rank=rank],
+        inputs: InlinedFixedVector[ManagedTensorSlice[type, rank]],
+        axis: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+
+        # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
+        var input_as_ndbuffer = InlinedFixedVector[NDBuffer[type, rank]](
+            inputs.current_size
+        )
+        for i in range(inputs.current_size):
+            input_as_ndbuffer.append(
+                managed_tensor_slice_to_ndbuffer(inputs[i])
+            )
+
+        var axis_val = axis[0]
+        _concat_cpu[rank, type, None, synchronous](
+            output_buf,
+            int(normalize_neg_index(axis_val, rank)),
+            input_as_ndbuffer,
+        )
+
+    @staticmethod
+    fn shape[
+        type: DType,
+        rank: Int,
+        synchronous: Bool,
+    ](
+        inputs: InlinedFixedVector[ManagedTensorSlice[type, rank]],
+        axis_buf: ManagedTensorSlice[rank=1],
+    ) raises -> IndexList[rank]:
+        # TODO: this shape function is nearly identical to mo.concat's
+        var axis_val = axis_buf[0]
+        var axis = int(normalize_neg_index(axis_val, rank))
+        if axis < 0 or rank <= axis:
+            raise (
+                "[concat_from_list] normalized axis must be within range [0,"
+                " rank)"
+            )
+
+        @parameter
+        @always_inline
+        fn shape_equal_ignore_axis(
+            s1: IndexList[rank], s2: IndexList[rank]
+        ) -> Bool:
+            for i in range(rank):
+                if i != axis and s1[i] != s2[i]:
+                    return False
+            return True
+
+        var concat_axis_dim_sum = 0
+        for i in range(len(inputs)):
+            concat_axis_dim_sum += inputs[i].dim_size(axis)
+            if not shape_equal_ignore_axis(
+                inputs[0].get_static_spec().shape,
+                inputs[i].get_static_spec().shape,
+            ):
+                raise Error(
+                    "[concat_from_list] input shapes must match except at"
+                    " concat axis"
                 )
 
         # compute and return the output shape
