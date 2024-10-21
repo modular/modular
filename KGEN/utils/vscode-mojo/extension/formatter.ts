@@ -4,11 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import * as vscode from 'vscode';
 
 import { MojoSDKManager } from './sdk/sdkManager';
 import { get } from './utils/config';
+import { readFile, writeFile } from './utils/files';
 
 export function registerFormatter(mojoSDKManager: MojoSDKManager) {
   return vscode.languages.registerDocumentFormattingEditProvider('mojo', {
@@ -25,39 +26,59 @@ export function registerFormatter(mojoSDKManager: MojoSDKManager) {
         return [];
       }
 
-      // Grab the formatter from the Mojo SDK (i.e. `mojo format`).
-      var command = sdk.config.mojoDriverPath + ' format';
+      const mblackPath = sdk.config.mojoMBlackPath;
+      // We try to fix the exec invocation within mblack if needed.
+      // There's currently an issue in which mblack has an internal
+      // path that is not escaped and creates issues when white
+      // spaces are present.
+      // TODO(SI-668): remove this when SI-668 gets fixed.
+
+      const contents = await readFile(mblackPath);
+      if (contents !== undefined) {
+        const newContents = contents.replace(
+          /'''exec' (\/.*) "\$0" "\$@"/i,
+          `'''exec' '$1' "\$0" "\$@"`
+        );
+        await writeFile(mblackPath, newContents);
+      }
 
       let env = sdk.getProcessEnv();
 
-      command += ' --quiet ' + args.join(' ') + ' -';
-
       return new Promise<vscode.TextEdit[]>(function (resolve, reject) {
         const originalDocumentText = document.getText();
-        const process = exec(command, { cwd, env }, (error, stdout, stderr) => {
-          // Process any errors/warnings during formatting. These aren't all
-          // necessarily fatal, so this doesn't prevent edits from being
-          // applied.
-          if (error) {
-            mojoSDKManager.logger.main.logError(`Formatting error:\n${stderr}`);
-            reject(error);
-            return;
-          }
+        const process = execFile(
+          sdk.config.mojoDriverPath,
+          ['format', '--quiet', ...args, '-'],
+          { cwd, env },
+          (error, stdout, stderr) => {
+            // Process any errors/warnings during formatting. These aren't all
+            // necessarily fatal, so this doesn't prevent edits from being
+            // applied.
+            if (error) {
+              mojoSDKManager.logger.main.logError(
+                `Formatting error:\n${stderr}`
+              );
+              reject(error);
+              return;
+            }
 
-          // Formatter returned nothing, don't try to apply any edits.
-          if (originalDocumentText.length > 0 && stdout.length === 0) {
-            resolve([]);
-            return;
-          }
+            // Formatter returned nothing, don't try to apply any edits.
+            if (originalDocumentText.length > 0 && stdout.length === 0) {
+              resolve([]);
+              return;
+            }
 
-          // Otherwise, the formatter returned the formatted text. Update the
-          // document.
-          const documentRange = new vscode.Range(
-            document.lineAt(0).range.start,
-            document.lineAt(document.lineCount - 1).rangeIncludingLineBreak.end
-          );
-          resolve([new vscode.TextEdit(documentRange, stdout)]);
-        });
+            // Otherwise, the formatter returned the formatted text. Update the
+            // document.
+            const documentRange = new vscode.Range(
+              document.lineAt(0).range.start,
+              document.lineAt(
+                document.lineCount - 1
+              ).rangeIncludingLineBreak.end
+            );
+            resolve([new vscode.TextEdit(documentRange, stdout)]);
+          }
+        );
 
         process.stdin?.write(originalDocumentText);
         process.stdin?.end();

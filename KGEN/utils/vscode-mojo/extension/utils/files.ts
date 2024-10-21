@@ -93,6 +93,21 @@ export async function readFile(path: string): Promise<Optional<string>> {
   }
 }
 
+export async function writeFile(
+  path: string,
+  contents: string
+): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.writeFile(
+      vscode.Uri.file(path),
+      new TextEncoder().encode(contents)
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function moveUpUntil(
   fsPath: string,
   condition: (p: string) => Promise<boolean>

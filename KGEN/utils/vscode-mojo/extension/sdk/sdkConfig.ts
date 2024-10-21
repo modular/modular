@@ -30,6 +30,11 @@ export class MojoSDKConfig {
   readonly mojoDriverPath: string;
 
   /**
+   * The path to mblack.
+   */
+  readonly mojoMBlackPath: string;
+
+  /**
    * The path to the LLDB vscode debug adapter.
    */
   readonly mojoLLDBVSCodePath: string;
@@ -64,6 +69,7 @@ export class MojoSDKConfig {
     this.mojoLLDBVSCodePath = rawConfig.lldb_vscode_path;
     this.mojoLLDBVisualizersPath = rawConfig.lldb_visualizers_path;
     this.mojoDriverPath = rawConfig.driver_path;
+    this.mojoMBlackPath = rawConfig.mblack_path;
     this.mojoLanguageServerPath = rawConfig.lsp_server_path;
     this.mojoLLDBPluginPath = rawConfig.lldb_plugin_path;
     this.lldbPath = rawConfig.lldb_path;
