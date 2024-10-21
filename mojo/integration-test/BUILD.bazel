@@ -7,8 +7,6 @@ lit_tests(
         "python-extension-modules/**/*.py",
     ]),
     data = glob(["**/*.mojo"]) + [
-        # Provides MODULAR_MOJO_MAX_COMPILERRT_STATIC_PATH to mojo-pybind
-        "//KGEN:CompilerRT.distributable",
         "//KGEN:CompilerRT",
     ],
     env = {},
