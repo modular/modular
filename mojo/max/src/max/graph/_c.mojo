@@ -35,8 +35,7 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
         abort("cannot load graph library from " + mof_lib_path)
 
     var ptr = UnsafePointer[DLHandle].alloc(1)
-    ptr[] = DLHandle(mof_lib_path._strref_dangerous(), RTLD.NOW | RTLD.GLOBAL)
-    mof_lib_path._strref_keepalive()
+    ptr[] = DLHandle(mof_lib_path, RTLD.NOW | RTLD.GLOBAL)
     return ptr.bitcast[NoneType]()
 
 
@@ -108,7 +107,7 @@ fn attr_new_tensor[
             UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
     ]()(
-        name._strref_dangerous(),
+        name.unsafe_ptr(),
         data.data,
         type.c,
         is_owned,
@@ -132,7 +131,7 @@ fn attr_new_tensor(
             UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
     ]()(
-        name._strref_dangerous(),
+        name.unsafe_ptr(),
         data,
         type.c,
         is_owned,
@@ -149,8 +148,8 @@ fn attr_new_tensor_from_file(
             StringRef, StringRef, _mlir.Type.cType, UnsafePointer[NoneType]
         ) -> _mlir.NamedAttribute.cType,
     ]()(
-        name._strref_dangerous(),
-        file_name._strref_dangerous(),
+        name.unsafe_ptr(),
+        file_name.unsafe_ptr(),
         type.c,
         _get_current_runtime(),
     )
@@ -165,7 +164,7 @@ fn attr_new_dim_param_decl(
         fn (_mlir.Context.cType, StringRef) -> _mlir.Attribute.cType,
     ]()(
         ctx.c,
-        name._strref_dangerous(),
+        name.unsafe_ptr(),
     )
     return result
 
@@ -298,7 +297,7 @@ fn dim_new_symbolic(ctx: _mlir.Context, name: String) -> _mlir.Attribute:
     return cfunc[
         "MAXG_dimNewSymbolic",
         fn (_mlir.Context.cType, StringRef) -> _mlir.Attribute.cType,
-    ]()(ctx.c, name._strref_dangerous())
+    ]()(ctx.c, name.unsafe_ptr())
 
 
 fn dim_is_dynamic(a: _mlir.Attribute) -> Bool:
@@ -363,7 +362,7 @@ fn opaque_type_new(ctx: _mlir.Context, name: String) -> _mlir.Type:
     return cfunc[
         "MAXG_opaqueTypeNew",
         fn (_mlir.Context.cType, StringRef) -> _mlir.Type.cType,
-    ]()(ctx.c, name._strref_dangerous())
+    ]()(ctx.c, name.unsafe_ptr())
 
 
 fn opaque_type_name(t: _mlir.Type) -> StringRef:
