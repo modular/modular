@@ -281,11 +281,11 @@ struct _CachedFunctionInfo(Boolable):
 
 
 struct FunctionCache:
-    var dict: Dict[StringLiteral, _CachedFunctionInfo]
+    var dict: Dict[String, _CachedFunctionInfo]
     var lock: BlockingSpinLock
 
     fn __init__(inout self):
-        self.dict = Dict[StringLiteral, _CachedFunctionInfo]()
+        self.dict = Dict[String, _CachedFunctionInfo]()
         self.lock = BlockingSpinLock()
 
     fn __moveinit__(inout self: Self, owned existing: Self):
