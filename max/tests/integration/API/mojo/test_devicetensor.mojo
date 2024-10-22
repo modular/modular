@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: system-windows
 # RUN: %mojo %s %S/mo_unnamed.mlir
 
 # COM: Test with mojo build

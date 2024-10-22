@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: system-windows
 # RUN: %mojo -debug-level full %s %S/../../Inputs/relu3x100x100.torchscript
 
 from sys import argv
