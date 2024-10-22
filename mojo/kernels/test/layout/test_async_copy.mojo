@@ -413,20 +413,6 @@ fn test_swizzle_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_swizzle_copy")
 
-    var a_host = UnsafePointer[Float32].alloc((M - skew_M) * K)
-    var b_host = UnsafePointer[Float32].alloc(M * K)
-
-    for i in range((M - skew_M) * K):
-        a_host[i] = i
-
-    for i in range(M * K):
-        b_host[i] = 0
-
-    var a_device = ctx.create_buffer[DType.float32]((M - skew_M) * K)
-    var b_device = ctx.create_buffer[DType.float32](M * K)
-
-    ctx.enqueue_copy_to_device(a_device, a_host)
-
     alias a_runtime_layout = RuntimeLayout[a_layout].row_major(
         IndexList[2]((M - skew_M), K)
     )
@@ -434,13 +420,22 @@ fn test_swizzle_copy[
         IndexList[2](M, K)
     )
 
-    var a_tensor = LayoutTensor[DType.float32, a_layout](
-        a_device.ptr, a_runtime_layout
-    )
+    var a_tensor = ManagedLayoutTensor[
+        DType.float32,
+        a_layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+    ](a_runtime_layout)
+    arange(a_tensor.tensor)
 
-    var b_tensor = LayoutTensor[DType.float32, b_layout](
-        b_device.ptr, b_runtime_layout
-    )
+    var b_tensor = ManagedLayoutTensor[
+        DType.float32,
+        b_layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+    ](b_runtime_layout)
 
     alias copy = swizzle_copy[
         DType.float32,
@@ -455,26 +450,18 @@ fn test_swizzle_copy[
 
     ctx.enqueue_function(
         func,
-        a_tensor,
-        b_tensor,
+        a_tensor.tensor,
+        b_tensor.tensor,
         grid_dim=(ceildiv(M, BM), 1, 1),
         block_dim=(num_threads, 1, 1),
     )
 
     ctx.synchronize()
 
-    ctx.enqueue_copy_from_device(b_host, b_device)
+    print(b_tensor.tensor)
 
-    for m in range(M):
-        for k in range(K):
-            print(b_host[m * K + k], end=" ")
-        print()
-
-    _ = a_device
-    _ = b_device
-
-    a_host.free()
-    b_host.free()
+    _ = a_tensor^
+    _ = b_tensor^
 
 
 @always_inline
