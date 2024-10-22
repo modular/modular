@@ -204,6 +204,9 @@ class BufferValue(Value):
             self, val, index if isinstance(index, Iterable) else (index,)  # type: ignore
         )
 
+    def print(self, label: str = "debug_buffer"):
+        ops.print(self[...], label=label)
+
 
 class TensorValue(Value):
     """Represents a value semantic tensor within a `Graph`."""

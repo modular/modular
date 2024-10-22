@@ -11,7 +11,7 @@ import pytest
 from max.driver import Tensor
 from max.driver.tensor import load_max_tensor
 from max.dtype import DType
-from max.graph import Graph, TensorType
+from max.graph import BufferType, Graph, TensorType
 
 
 @pytest.fixture(scope="module")
@@ -21,6 +21,16 @@ def compiled_model(session):
         return x
 
     g = Graph("test_print", print_input, [TensorType(DType.float32, ["dim1"])])
+    return session.load(g)
+
+
+@pytest.fixture(scope="module")
+def compiled_buffer_model(session):
+    def print_input(x):
+        x.print("test_x_value")
+        return x
+
+    g = Graph("test_print", print_input, [BufferType(DType.float32, ["dim1"])])
     return session.load(g)
 
 
@@ -45,6 +55,19 @@ def test_debug_print_options(session, tmp_path):
 def test_debug_print_compact(compiled_model, session, capfd):
     session.set_debug_print_options("COMPACT")
     _ = compiled_model.execute(
+        Tensor.from_numpy(np.full([20], 1.1234567, np.float32))
+    )
+    captured = capfd.readouterr()
+    assert (
+        "test_x_value = tensor([[1.1235, 1.1235, 1.1235, ..., 1.1235,"
+        " 1.1235, 1.1235]], dtype=f32, shape=[20])"
+        in captured.out
+    )
+
+
+def test_debug_print_buffer(compiled_buffer_model, session, capfd):
+    session.set_debug_print_options("COMPACT")
+    _ = compiled_buffer_model.execute(
         Tensor.from_numpy(np.full([20], 1.1234567, np.float32))
     )
     captured = capfd.readouterr()
