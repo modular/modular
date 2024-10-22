@@ -1057,6 +1057,7 @@ struct DeviceContextV2:
         )
 
     fn is_compatible(self) raises:
+        # const char * AsyncRT_DeviceContext_isCompatibleWithMAX(const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_isCompatibleWithMAX",
@@ -1069,13 +1070,14 @@ struct DeviceContextV2:
 
     fn compute_capability(self) raises -> Int:
         var compute_capability: Int32 = 0
+        # const char * AsyncRT_DeviceContext_computeCapability(int32_t *result, const DeviceContext *ctx)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_computeCapability",
                 _CharPtr,
-                _DeviceContextPtr,
                 _IntPtr,
-            ](self._handle, UnsafePointer.address_of(compute_capability))
+                _DeviceContextPtr,
+            ](UnsafePointer.address_of(compute_capability), self._handle)
         )
         return int(compute_capability)
 
