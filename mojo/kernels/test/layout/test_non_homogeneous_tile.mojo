@@ -149,7 +149,7 @@ def test_non_homogeneous_copy_from():
     # CHECK: 0.0 0.5
     # CHECK: 3.0 3.5
     # CHECK: unknown tile
-    # CHECK: ((3, 4):(6, 1))
+    # CHECK: ((3, 2):(6, 1))
     # CHECK: 2.0 2.5
     # CHECK: 5.0 5.5
     # CHECK: 8.0 8.5
@@ -165,7 +165,7 @@ def test_non_homogeneous_copy_from():
     # CHECK: 9.0 9.5
     # CHECK: 12.0 12.5
     # CHECK: unknown tile
-    # CHECK: ((3, 4):(6, 1))
+    # CHECK: ((3, 2):(6, 1))
     # CHECK: 11.0 11.5
     # CHECK: 14.0 14.5
     # CHECK: 17.0 17.5
@@ -192,7 +192,7 @@ def test_non_homogeneous_copy_from():
     # CHECK: 0.0 0.5
     # CHECK: 3.0 3.5
     # CHECK: unknown tile
-    # CHECK: ((3, 4):(6, 1))
+    # CHECK: ((3, 2):(6, 1))
     # CHECK: 2.0 2.5
     # CHECK: 5.0 5.5
     # CHECK: 8.0 8.5
@@ -208,7 +208,7 @@ def test_non_homogeneous_copy_from():
     # CHECK: 9.0 9.5
     # CHECK: 12.0 12.5
     # CHECK: unknown tile
-    # CHECK: ((3, 4):(6, 1))
+    # CHECK: ((3, 2):(6, 1))
     # CHECK: 11.0 11.5
     # CHECK: 14.0 14.5
     # CHECK: 17.0 17.5

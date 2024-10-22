@@ -164,7 +164,7 @@ struct RuntimeTuple[
     fn write_to[W: Writer](self, inout writer: W):
         @parameter
         if S.is_value():
-            writer.write(self.get_int())
+            writer.write(self.value[0])
         else:
             writer.write("(")
 
