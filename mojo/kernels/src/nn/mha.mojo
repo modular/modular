@@ -470,16 +470,17 @@ fn flash_attention[
                 mask.dim[mask.rank - 1]() - mask.dim[mask.rank - 2]()
             )
         else:
-            # TODO hard code this to large enough value. We'll only use this in our
-            # naive MHA codepath.
+            # Hard code this to large enough value. We'll only use this in our
+            # naive MHA codepath. TODO KERN-1104
             max_cache_valid_length = 2048
 
         @parameter
         if ragged:
             batch_size = valid_length.dim[0]() - 1
 
-            # TODO hard code this to reasonable value. We'll only use this in our naive MHA codepath
-            # once fused masking lands fully.
+            # Hard code this to a large enough value. We'll use this during
+            # our naive MHA fallback to allocate the p-matrix
+            # TODO KERN-1104
             max_prompt_len = 2048 if is_context_encoding else 1
         else:
             batch_size = q.dim[0]()
@@ -2450,6 +2451,9 @@ fn _bmm0_bs[
         q_offset = int(depth * (head + num_heads * max_prompt_len * batch))
         num_keys = padded_num_keys
 
+    debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
+    debug_assert(num_keys <= padded_num_keys, "Invalid max_cache_size")
+
     if x >= max_prompt_len + max_cache_size or y >= max_prompt_len:
         return
 
@@ -2571,6 +2575,8 @@ fn _bmm1_bs[
     else:
         cur_query_len = int(valid_length[batch])
         output_offset = depth * (head + num_heads * max_prompt_len * batch)
+
+    debug_assert(cur_query_len <= max_prompt_len, "Invalid cur_query_len")
 
     if x >= depth or y >= cur_query_len:
         return
