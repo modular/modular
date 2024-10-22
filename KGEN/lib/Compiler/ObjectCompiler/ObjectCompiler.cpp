@@ -73,7 +73,7 @@ ObjectCompiler::create(StringRef basePath, CompilationOptions options,
                        bool isJIT, MLIRContext &context,
                        PassManagerConfigOptions pmOptions) {
   auto transformCache = Cache::getLocalDefaultBackendChain(
-      std::filesystem::path(basePath.str()) / "transform", KGEN_VERSION_STRING);
+      std::filesystem::path(basePath.str()) / "transform", getVersionString());
   if (failed(transformCache))
     return transformCache.takeError();
   return std::unique_ptr<ObjectCompiler>(
