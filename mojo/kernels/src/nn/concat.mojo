@@ -24,6 +24,7 @@ from memory import UnsafePointer, memcpy
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
+from register import mogg_register_shape_func
 
 from utils import IndexList, StaticTuple, product
 
@@ -517,7 +518,7 @@ fn _concat_cpu[
         _concat_parallel[epilogue_fn=epilogue_fn](output, axis, inputs)
 
 
-@mogg_register("concat_from_list_shape")
+@mogg_register_shape_func("mo.concat_from_list")
 @always_inline
 fn concat_shape[
     input_rank: Int,
