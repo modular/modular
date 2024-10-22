@@ -8,14 +8,16 @@ import * as vscode from 'vscode';
 import { MojoSDKSpec } from './types';
 import * as path from 'path';
 import { mkdirp, chmod, rm, createWriteStream } from 'fs-extra';
-import { directoryExists, readFile } from '../utils/files';
 import * as util from 'util';
+import { directoryExists, readFile } from '../utils/files';
 import { lock } from 'proper-lockfile';
 import axios from 'axios';
 import { Logger } from '../logging';
-const execFile = util.promisify(require('child_process').execFile);
+import { execFile } from 'child_process';
+const execFileSync = util.promisify(execFile);
 import { MojoSDKVersion as MaxSDKVersion } from './sdkVersion';
-import { quote } from 'shell-quote';
+
+const SDK_INSTALLATION_CANCELLATION_MSG = 'SDK installation cancelled';
 
 async function downloadFile(
   url: string,
@@ -265,13 +267,18 @@ async function createDownloadSpec(
 async function doInstallMagicAndMAXSDK(
   downloadSpec: DownloadSpec,
   logger: Logger,
-  isNightly: boolean
+  isNightly: boolean,
+  token: vscode.CancellationToken
 ): Promise<void> {
   await rm(downloadSpec.doneDirectory, { recursive: true, force: true });
 
   logger.main.logInfo(
     `Will download ${downloadSpec.magicUrl} into ${downloadSpec.magicPath}`
   );
+  if (token.isCancellationRequested) {
+    throw new Error(SDK_INSTALLATION_CANCELLATION_MSG);
+  }
+
   await downloadFile(
     downloadSpec.magicUrl,
     downloadSpec.magicPath,
@@ -307,22 +314,37 @@ async function doInstallMagicAndMAXSDK(
     'python>=3.11,<3.12',
   ];
   logger.main.logInfo(`Installing the MAX SDK.`);
-  await execFile(downloadSpec.magicPath, args, { env });
+
+  if (token.isCancellationRequested) {
+    throw new Error(SDK_INSTALLATION_CANCELLATION_MSG);
+  }
+
+  const controller = new AbortController();
+  const { signal } = controller;
+  const child = execFileSync(downloadSpec.magicPath, args, { env, signal });
+  token.onCancellationRequested((e) => {
+    controller.abort();
+  });
+  await child;
+
   logger.main.logInfo(`Successfully installed MAX.`);
 
   await mkdirp(downloadSpec.doneDirectory);
   await mkdirp(downloadSpec.versionDoneDir);
 }
 
+/**
+ * @returns a string with an error message if the download didn't succeed.
+ */
 async function installMagicAndMAXSDKWithProgress(
   downloadSpec: DownloadSpec,
   logger: Logger,
   isNightly: boolean,
   reinstall: boolean
-): Promise<boolean> {
+): Promise<Optional<string>> {
   if (!reinstall && (await directoryExists(downloadSpec.versionDoneDir))) {
     logger.main.logInfo('Magic SDK present. Skipping installation.');
-    return true;
+    return undefined;
   }
   await rm(downloadSpec.versionDoneDirParent, {
     recursive: true,
@@ -332,14 +354,15 @@ async function installMagicAndMAXSDKWithProgress(
     {
       title: 'Installing the MAX SDK for VS Code',
       location: vscode.ProgressLocation.Notification,
+      cancellable: true,
     },
-    async () => {
+    async (progress, token: vscode.CancellationToken) => {
       try {
-        await doInstallMagicAndMAXSDK(downloadSpec, logger, isNightly);
-        return true;
-      } catch (e) {
+        await doInstallMagicAndMAXSDK(downloadSpec, logger, isNightly, token);
+        return undefined;
+      } catch (e: any) {
         logger.main.logError("Couldn't install the MAX SDK for VS Code", e);
-        return false;
+        return e.message;
       }
     }
   );
@@ -373,6 +396,7 @@ export async function findMagicSDKSpec(
   await mkdirp(downloadSpec.magicDataHome);
 
   let success = false;
+  var errorMessage: string | undefined = '';
   try {
     logger.main.logInfo('Trying to acquire installation lock...');
     const releaseLock = await acquireLockIfNeeded(
@@ -380,21 +404,27 @@ export async function findMagicSDKSpec(
       withLock,
       downloadSpec
     );
-    success = await installMagicAndMAXSDKWithProgress(
+    errorMessage = await installMagicAndMAXSDKWithProgress(
       downloadSpec,
       logger,
       isNightly,
       reinstall
     );
+    if (errorMessage === undefined) {
+      success = true;
+    }
     await releaseLock();
-  } catch (e) {
+  } catch (e: any) {
     logger.main.logError(
       'Error while handling the lock for the MAX SDK for VS Code',
       e
     );
   }
   if (!success) {
-    vscode.window.showErrorMessage("Couldn't install the MAX SDK for VS Code");
+    errorMessage = errorMessage ? `\n${errorMessage}.` : '';
+    vscode.window.showErrorMessage(
+      `Couldn't install the MAX SDK for VS Code.${errorMessage}`
+    );
     return undefined;
   }
   const modularHomePath = path.join(
