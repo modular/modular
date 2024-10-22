@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Support/BuildInfo.h"
+#include "Config/Version.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Format.h"
@@ -26,7 +27,7 @@ extern char __build_id_end;
 using namespace M;
 using namespace KGEN;
 
-std::string M::KGEN::getBuildID() {
+static std::string getBuildID() {
   std::string str;
   llvm::raw_string_ostream os(str);
 
@@ -61,4 +62,9 @@ std::string M::KGEN::getBuildID() {
 #endif // __APPLE__
 
   return str;
+}
+
+std::string M::KGEN::getVersionString() {
+  return M::getModularVersionString() + getBuildID() + "-" +
+         M::getModularVersion().buildType;
 }

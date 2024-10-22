@@ -116,7 +116,6 @@ modular_cc_binary(
         ],
         "//conditions:default": [],
     }),
-    stamp = 1,
     deps = [
         ":Build.inc_files",
         ":Debug.inc_files",

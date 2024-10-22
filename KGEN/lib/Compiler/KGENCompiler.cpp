@@ -380,7 +380,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 /// created.
 static ErrorOr<RCRef<Cache::BlobCacheBackend>> getMojoCacheBackend() {
   return Cache::getLocalDefaultBackendChain(
-      std::filesystem::path(".mojo_cache") / "transform", KGEN_VERSION_STRING);
+      std::filesystem::path(".mojo_cache") / "transform", getVersionString());
 }
 
 //===----------------------------------------------------------------------===//
