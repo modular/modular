@@ -16,9 +16,12 @@
 #include "Runtime/Tensor/StateContext.h"
 #include "Runtime/Tensor/TensorBufferRef.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/ML/SizeUtils.h"
 #include "Support/ML/TensorSpec.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
+
+#include <memory>
 
 using namespace M;
 using namespace M::AsyncRT;
@@ -362,17 +365,20 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncBufferWithBorrow(
     void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> toBorrowFrom,
-    AsyncRTWrapper<AnyAsyncValueRef> async,
+    bool borrowFromHandle, AsyncRTWrapper<AnyAsyncValueRef> async,
     AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &outVal = unwrap(async);
-
-  // Use the lifetime of the other tensor by sharing the same storage handle.
-  AnyAsyncValueRef &value = unwrap(toBorrowFrom);
-  auto &bufToBorrowFrom = value.get<TensorBufferRef>();
+  AnyAsyncValueRef &handleOrTensor = unwrap(toBorrowFrom);
+  AnyAsyncValueRef handle;
+  if (borrowFromHandle) {
+    handle = std::move(handleOrTensor);
+  } else {
+    // Use the lifetime of the other tensor by sharing the same storage handle.
+    handle = handleOrTensor.get<TensorBufferRef>().getMemStorageHandle();
+  }
   TensorBufferRef buf = ::M::TensorBufferRef::create(
-      data, size, bufToBorrowFrom.getMemStorageHandle(),
-      std::optional<size_t>{});
+      data, size, std::move(handle), std::optional<size_t>{});
 
   // Emplace into the async value.
   if (outVal.getPointer() && outVal.getPointer()->isIndirect()) {
@@ -517,6 +523,37 @@ KGEN_CompilerRT_GetContextAndSizeFromAsync(
   auto &ctx = value.get<StateContext>();
   *size = ctx.getNumStateSlots();
   return reinterpret_cast<void *>(&ctx);
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_GetCachedBuffer(size_t bBufferSlot,
+                                AsyncRTWrapper<StateContext> rawCtx,
+                                size_t *size, AnyAsyncValueRef *storageRefPtr) {
+  static_assert(sizeof(AnyAsyncValueRef) == sizeof(void *) &&
+                "SANITY CHECK FAILED: Graph Compiler allocates a `void *` to "
+                "hold the async value ref, keep two sizes consistent to make "
+                "the function work.");
+  assert(storageRefPtr != nullptr);
+
+  StateContext &theContext = unwrap(rawCtx);
+  auto &stateSlot = theContext.getStateSlot(bBufferSlot);
+  ErrorOr<TensorBufferRef> errOr = stateSlot.getBuffer(/*bufferIndex=*/0);
+  if (errOr)
+    return nullptr;
+
+  TensorBufferRef ref = errOr.takeValue();
+  // Emplace construction using the storage_ref of the TensorBufferRef.
+  new ((void *)storageRefPtr) AnyAsyncValueRef(ref.getMemStorageHandle());
+  *size = ref.getSize();
+  return ref.getBuffer();
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_DestructAsyncRefs(size_t size, void **storageRefPtr) {
+  for (size_t i = 0; i < size; i++) {
+    void *ref_addr = storageRefPtr[i];
+    std::destroy_at(reinterpret_cast<AnyAsyncValueRef *>(ref_addr));
+  }
 }
 
 //===----------------------------------------------------------------------===//
