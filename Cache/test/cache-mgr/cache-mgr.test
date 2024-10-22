@@ -3,7 +3,6 @@
 # This file is only run on non-windows targets.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: system-windows
 
 # RUN: cache-mgr -base-dir=%t -input="%S/Inputs/some_file.txt" | FileCheck %s --check-prefix=PUT
 # RUN: cache-mgr -base-dir=%t -input="%S/Inputs/some_file.txt" --output-hex | FileCheck %s --check-prefix=PUT-HEX
