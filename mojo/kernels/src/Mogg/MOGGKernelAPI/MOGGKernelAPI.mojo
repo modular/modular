@@ -2829,9 +2829,13 @@ struct Matmul:
 
         alias transposed_a = False
 
-        var a_buffer = managed_tensor_slice_to_ndbuffer(a)
-        var b_buffer = managed_tensor_slice_to_ndbuffer(b)
-        var c_buffer = managed_tensor_slice_to_ndbuffer(c)
+        alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
+        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
+        alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
+
+        var a_buffer = managed_tensor_slice_to_ndbuffer[static_shape=a_shape](a)
+        var b_buffer = managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b)
+        var c_buffer = managed_tensor_slice_to_ndbuffer[static_shape=c_shape](c)
 
         alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
 
@@ -2841,7 +2845,7 @@ struct Matmul:
             _type: DType, _width: Int, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_type, _width]):
             c._fused_store[width=_width](
-                rebind[IndexList[c.rank]](coords),
+                coords,
                 rebind[SIMD[c.type, _width]](val),
             )
 
