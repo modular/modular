@@ -82,7 +82,6 @@ static void annotateTypes(LIT::FuncOp func) {
   bool takesTensor = false;
   for (Type litType : func.getArgumentTypes()) {
     if (LIT::StructType asDeclRef = getAsDeclRefOrNull(litType)) {
-      takesTensor |= isMOGGTensor(asDeclRef);
       takesTensor |= isExtensibilityTensor(asDeclRef);
       takesTensor |= isDPSTensor(asDeclRef);
     }
