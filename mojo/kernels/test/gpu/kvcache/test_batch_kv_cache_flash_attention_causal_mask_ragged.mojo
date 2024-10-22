@@ -131,18 +131,7 @@ def execute_ragged_flash_attention[
     q_padded_device = q_padded_host.copy_to_device(ctx)
 
     # initialize mask tensor
-    # We don't actually use this, we'll use the mask functor later. Allocating as a dummy.
-    # mask_host = HostNDBuffer[
-    #     type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
-    # ](
-    #     IndexList[4](
-    #         batch_size,
-    #         num_q_heads,
-    #         max_prompt_length,
-    #         max_context_length,
-    #     )
-    # )
-    # mask_device = mask_host.copy_to_device(ctx)
+    # dummy mask to satisfy the argument.
     dummy_mask = NDBuffer[type, 4](
         UnsafePointer[Scalar[type]](), IndexList[4]()
     )
@@ -297,8 +286,6 @@ def execute_ragged_flash_attention[
     _ = q_ragged_device^
     _ = q_padded_host^
     _ = q_padded_device^
-    # _ = mask_host^
-    # _ = mask_device^
     _ = scale_host^
     _ = scale_device^
     _ = kv_block_host^
