@@ -32,7 +32,7 @@ export abstract class MojoDocument {
    */
   abstract openDocumentOnServer(
     server: MojoLSPServer,
-    stateHandler: MojoDocumentsStateHandler
+    stateHandler: MojoDocumentsStateHandler,
   ): void;
 }
 
@@ -51,13 +51,13 @@ export class MojoTextDocument extends MojoDocument {
       params.uri,
       params.languageId,
       params.version,
-      params.text
+      params.text,
     );
   }
 
   openDocumentOnServer(
     server: MojoLSPServer,
-    stateHandler: MojoDocumentsStateHandler
+    stateHandler: MojoDocumentsStateHandler,
   ): void {
     const didOpenParams: DidOpenTextDocumentParams = {
       textDocument: {
@@ -89,7 +89,7 @@ export class MojoNotebookCellDocument extends MojoTextDocument {
   constructor(
     params: TextDocumentItem,
     notebookCell: NotebookCell,
-    parentNotebook: MojoNotebookDocument
+    parentNotebook: MojoNotebookDocument,
   ) {
     super(params);
     this.notebookCell = notebookCell;
@@ -118,14 +118,14 @@ export class MojoNotebookDocument extends MojoDocument {
         new MojoNotebookCellDocument(
           item,
           params.notebookDocument.cells[index],
-          this
-        )
+          this,
+        ),
     );
   }
 
   openDocumentOnServer(
     server: MojoLSPServer,
-    stateHandler: MojoDocumentsStateHandler
+    stateHandler: MojoDocumentsStateHandler,
   ): void {
     const didOpenParams: DidOpenNotebookDocumentParams = {
       notebookDocument: {
@@ -245,7 +245,7 @@ export class MojoDocumentsStateHandler {
    */
   private applyChangesToNotebookDoc(
     changes: DidChangeNotebookDocumentParams,
-    doc: MojoNotebookDocument
+    doc: MojoNotebookDocument,
   ) {
     const version = changes.notebookDocument.version;
     doc.version = version;
@@ -266,8 +266,8 @@ export class MojoDocumentsStateHandler {
                 text: '',
               },
               cell,
-              doc
-            )
+              doc,
+            ),
         );
 
         for (let i = array.start; i < array.start + array.deleteCount; i++) {
@@ -282,7 +282,7 @@ export class MojoDocumentsStateHandler {
         doc.notebookDocument.cells.splice(
           array.start,
           array.deleteCount,
-          ...array.cells
+          ...array.cells,
         );
       }
       for (const cellData of cells.data || []) {
@@ -301,7 +301,7 @@ export class MojoDocumentsStateHandler {
                 contentChanges: textContent.changes,
                 textDocument: textContent.document,
               },
-              cellDoc
+              cellDoc,
             )
           ) {
             return false;
@@ -353,11 +353,11 @@ export class MojoDocumentsStateHandler {
     originalNotification: string,
     server: MojoLSPServer,
     uri: URI,
-    doc: Optional<MojoDocument>
+    doc: Optional<MojoDocument>,
   ): void {
     if (!doc) {
       this.client.console.log(
-        `Updating a document non-tracked by the proxy '${uri}'.`
+        `Updating a document non-tracked by the proxy '${uri}'.`,
       );
       server.sendNotification(params, originalNotification);
       return;
@@ -371,7 +371,7 @@ export class MojoDocumentsStateHandler {
       this.client.console.error(
         `Couldn't update the document '${
           params.notebookDocument.uri
-        }' in the proxy. It will stop being tracked by the proxy.`
+        }' in the proxy. It will stop being tracked by the proxy.`,
       );
       this.stopTrackingDocument(doc);
 
@@ -400,7 +400,7 @@ export class MojoDocumentsStateHandler {
   public onDidChangeNotebookDocument(
     params: DidChangeNotebookDocumentParams,
     client: Client,
-    server: MojoLSPServer
+    server: MojoLSPServer,
   ): void {
     const doc = this.uriToNotebookDocs.get(params.notebookDocument.uri);
     this.onDidChangeDocument(
@@ -408,7 +408,7 @@ export class MojoDocumentsStateHandler {
       'notebookDocument/didChange',
       server,
       params.notebookDocument.uri,
-      doc
+      doc,
     );
   }
 
@@ -417,7 +417,7 @@ export class MojoDocumentsStateHandler {
    */
   public onDidOpenNotebookDocument(
     params: DidOpenNotebookDocumentParams,
-    server: MojoLSPServer
+    server: MojoLSPServer,
   ) {
     const doc = new MojoNotebookDocument(params);
     doc.openDocumentOnServer(server, this);
@@ -433,7 +433,7 @@ export class MojoDocumentsStateHandler {
    */
   public onDidCloseNotebookDocument(
     params: DidCloseNotebookDocumentParams,
-    server: MojoLSPServer
+    server: MojoLSPServer,
   ) {
     const doc = this.uriToNotebookDocs.get(params.notebookDocument.uri);
 
@@ -451,13 +451,13 @@ export class MojoDocumentsStateHandler {
    */
   public applyChangesToTextDocument(
     changes: DidChangeTextDocumentParams,
-    doc: MojoTextDocument
+    doc: MojoTextDocument,
   ): boolean {
     try {
       TextDocument.update(
         doc.textDocument,
         changes.contentChanges,
-        changes.textDocument.version
+        changes.textDocument.version,
       );
       return true;
     } catch (ex) {
@@ -471,7 +471,7 @@ export class MojoDocumentsStateHandler {
    */
   public onDidChangeTextDocument(
     params: DidChangeTextDocumentParams,
-    server: MojoLSPServer
+    server: MojoLSPServer,
   ): void {
     const doc = this.uriToTextDocs.get(params.textDocument.uri);
     this.onDidChangeDocument(
@@ -479,7 +479,7 @@ export class MojoDocumentsStateHandler {
       'textDocument/didChange',
       server,
       params.textDocument.uri,
-      doc
+      doc,
     );
   }
 
@@ -488,7 +488,7 @@ export class MojoDocumentsStateHandler {
    */
   public onDidOpenTextDocument(
     params: DidOpenTextDocumentParams,
-    server: MojoLSPServer
+    server: MojoLSPServer,
   ) {
     const doc = new MojoTextDocument(params.textDocument);
     doc.openDocumentOnServer(server, this);
@@ -500,7 +500,7 @@ export class MojoDocumentsStateHandler {
    */
   public onDidCloseTextDocument(
     params: DidCloseTextDocumentParams,
-    server: MojoLSPServer
+    server: MojoLSPServer,
   ) {
     const doc = this.uriToTextDocs.get(params.textDocument.uri);
 
@@ -530,7 +530,7 @@ export class MojoDocumentsStateHandler {
    *     returns the document given by its `uri`.
    */
   public getOwningTextOrNotebookDocument(
-    uri: URI
+    uri: URI,
   ): Optional<MojoNotebookDocument | MojoTextDocument> {
     {
       const doc = this.uriToTextDocs.get(uri);

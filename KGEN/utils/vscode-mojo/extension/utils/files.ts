@@ -27,7 +27,7 @@ export class WorkspaceAwareFile {
     this.baseName = path.basename(uri.fsPath);
     this.relativePath = vscode.workspace.asRelativePath(
       this.uri,
-      /*includeWorkspaceFolder=*/ true
+      /*includeWorkspaceFolder=*/ true,
     );
   }
 }
@@ -57,7 +57,7 @@ export function getAllOpenMojoFiles(): [
     .map((uri) => new WorkspaceAwareFile(uri))
     // We remove the active file from this list.
     .filter(
-      (file) => !activeFile || file.uri.toString() != activeFile.uri.toString()
+      (file) => !activeFile || file.uri.toString() != activeFile.uri.toString(),
     );
 
   return [activeFile, otherOpenFiles];
@@ -86,7 +86,7 @@ export async function fileExists(path: string): Promise<boolean> {
 export async function readFile(path: string): Promise<Optional<string>> {
   try {
     return new TextDecoder().decode(
-      await vscode.workspace.fs.readFile(vscode.Uri.file(path))
+      await vscode.workspace.fs.readFile(vscode.Uri.file(path)),
     );
   } catch {
     return undefined;
@@ -95,12 +95,12 @@ export async function readFile(path: string): Promise<Optional<string>> {
 
 export async function writeFile(
   path: string,
-  contents: string
+  contents: string,
 ): Promise<boolean> {
   try {
     await vscode.workspace.fs.writeFile(
       vscode.Uri.file(path),
-      new TextEncoder().encode(contents)
+      new TextEncoder().encode(contents),
     );
     return true;
   } catch {
@@ -110,7 +110,7 @@ export async function writeFile(
 
 export async function moveUpUntil(
   fsPath: string,
-  condition: (p: string) => Promise<boolean>
+  condition: (p: string) => Promise<boolean>,
 ): Promise<Optional<string>> {
   while (fsPath.length > 0) {
     if (await condition(fsPath)) {

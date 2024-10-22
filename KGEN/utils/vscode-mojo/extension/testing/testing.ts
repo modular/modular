@@ -71,7 +71,7 @@ export class MojoTestManager extends DisposableContext {
     // Register the mojo test controller.
     this.controller = vscode.tests.createTestController(
       'mojoTests',
-      'Mojo Tests'
+      'Mojo Tests',
     );
     this.pushSubscription(this.controller);
 
@@ -81,7 +81,7 @@ export class MojoTestManager extends DisposableContext {
       vscode.TestRunProfileKind.Run,
       (request, token) => {
         this.runHandler(/*shouldDebug=*/ false, request, token);
-      }
+      },
     );
   }
 
@@ -92,17 +92,17 @@ export class MojoTestManager extends DisposableContext {
     this.pushSubscription(
       vscode.workspace.onDidOpenTextDocument((event) => {
         this.discoverTestsInDocument(event);
-      })
+      }),
     );
     this.pushSubscription(
       vscode.workspace.onDidSaveTextDocument((event) => {
         this.discoverTestsInDocument(event);
-      })
+      }),
     );
     this.pushSubscription(
       vscode.workspace.onDidCloseTextDocument((event) => {
         this.controller.items.delete(event.uri.fsPath);
-      })
+      }),
     );
     // Process any existing documents.
 
@@ -122,7 +122,7 @@ export class MojoTestManager extends DisposableContext {
   async runHandler(
     shouldDebug: boolean,
     request: vscode.TestRunRequest,
-    token: vscode.CancellationToken
+    token: vscode.CancellationToken,
   ) {
     const queue: vscode.TestItem[] = [];
 
@@ -205,7 +205,7 @@ export class MojoTestManager extends DisposableContext {
     request = new vscode.TestRunRequest(
       Array.from(includedTests.keys()),
       excludedTests,
-      request.profile
+      request.profile,
     );
     const run = this.controller.createTestRun(request);
 
@@ -230,8 +230,8 @@ export class MojoTestManager extends DisposableContext {
         this.executeTest(
           run,
           test.children.get(test.id + '::' + childIdx.toString())!,
-          dependencies
-        )
+          dependencies,
+        ),
       );
     }
 
@@ -254,7 +254,7 @@ export class MojoTestManager extends DisposableContext {
   async executeTest(
     run: vscode.TestRun,
     test: vscode.TestItem,
-    dependencies: vscode.TestItem[] = []
+    dependencies: vscode.TestItem[] = [],
   ) {
     let allTests = [...dependencies, test];
     for (const test of allTests) {
@@ -282,7 +282,7 @@ export class MojoTestManager extends DisposableContext {
     let result = await this.runMojoTestCommand<MojoTestExecutionResult>(
       sdk,
       test.id,
-      workspaceFolder
+      workspaceFolder,
     );
     if (!result) {
       markAllTestsErrored('fatal error: unable to process test execution');
@@ -305,7 +305,7 @@ export class MojoTestManager extends DisposableContext {
       if (!result) {
         run.errored(
           test,
-          new vscode.TestMessage('fatal error: test not found')
+          new vscode.TestMessage('fatal error: test not found'),
         );
         continue;
       }
@@ -346,7 +346,7 @@ export class MojoTestManager extends DisposableContext {
     sdk: MojoSDK,
     testId: string,
     workspaceFolder: Optional<vscode.WorkspaceFolder>,
-    args: string[] = []
+    args: string[] = [],
   ): Promise<Optional<Result>> {
     // Grab any additional include directories from the workspace settings.
     const includeDirs =
@@ -379,7 +379,7 @@ export class MojoTestManager extends DisposableContext {
           resolve(JSON.parse(stdout));
         } catch (e) {
           logger.main.logError(
-            `Received invalid JSON response from mojo CLI\n${stdout}`
+            `Received invalid JSON response from mojo CLI\n${stdout}`,
           );
           resolve(undefined);
         }
@@ -403,7 +403,7 @@ export class MojoTestManager extends DisposableContext {
     if (!sdk) {
       this.controller.items.delete(document.uri.fsPath);
       this.logger.main.logDebug(
-        `No SDK present, clearing tests for ${document.uri}`
+        `No SDK present, clearing tests for ${document.uri}`,
       );
       return;
     }
@@ -415,7 +415,7 @@ export class MojoTestManager extends DisposableContext {
       sdk,
       document.uri.fsPath,
       workspaceFolder,
-      ['--co']
+      ['--co'],
     );
     if (!mojoTestSuite || !mojoTestSuite.children) {
       this.controller.items.delete(document.uri.fsPath);
@@ -428,7 +428,7 @@ export class MojoTestManager extends DisposableContext {
       file = this.controller.createTestItem(
         document.uri.fsPath,
         document.uri.fsPath.split(path.sep).pop()!,
-        document.uri
+        document.uri,
       );
       this.controller.items.add(file);
     }
@@ -443,7 +443,7 @@ export class MojoTestManager extends DisposableContext {
   populateTests(
     parent: MojoTest,
     parentVSTest: vscode.TestItem,
-    document: vscode.TextDocument
+    document: vscode.TextDocument,
   ) {
     if (!parent.children) {
       return;
@@ -472,12 +472,12 @@ export class MojoTestManager extends DisposableContext {
         vsTest.range = new vscode.Range(
           new vscode.Position(
             test.location.startLine - 1,
-            test.location.startColumn - 1
+            test.location.startColumn - 1,
           ),
           new vscode.Position(
             test.location.endLine - 1,
-            test.location.endColumn - 1
-          )
+            test.location.endColumn - 1,
+          ),
         );
       }
       vsTest.tags = tags;

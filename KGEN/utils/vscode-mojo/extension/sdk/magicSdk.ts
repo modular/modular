@@ -24,7 +24,7 @@ async function downloadFile(
   outputPath: string,
   timeoutMins: number,
   errorMessage: string,
-  logger: Logger
+  logger: Logger,
 ): Promise<boolean> {
   const writer = createWriteStream(outputPath);
 
@@ -60,7 +60,7 @@ function getMagicUrl(): Optional<string> {
     platform = 'pc-windows-msvc';
   } else {
     vscode.window.showErrorMessage(
-      `The MAX SDK is not supported in this platform: ${process.platform}`
+      `The MAX SDK is not supported in this platform: ${process.platform}`,
     );
     return undefined;
   }
@@ -123,14 +123,14 @@ function compareNightlyMAXVersions(version1: string, version2: string): number {
  */
 async function getAllNightlyMAXVersions(
   logger: Logger,
-  privateDir: string
+  privateDir: string,
 ): Promise<Optional<string[]>> {
   const repodataDir = path.join(privateDir, 'repodata');
   const now = new Date();
   const repodataFile = path.join(
     privateDir,
     'repodata',
-    `${now.getFullYear()}-${now.getMonth()}-${now.getDay()}`
+    `${now.getFullYear()}-${now.getMonth()}-${now.getDay()}`,
   );
   let contents = await readFile(repodataFile);
   // If the repodata for today is not present, then we download it and we delete any previous repodata files.
@@ -147,7 +147,7 @@ async function getAllNightlyMAXVersions(
         repodataFile,
         /*timeoutMins=*/ 1,
         "Couldn't download " + repodataUrl,
-        logger
+        logger,
       ))
     ) {
       return undefined;
@@ -172,7 +172,7 @@ async function getAllNightlyMAXVersions(
 
 async function getLatestNightlyMAXVersion(
   logger: Logger,
-  privateDir: string
+  privateDir: string,
 ): Promise<Optional<string>> {
   const versions = await getAllNightlyMAXVersions(logger, privateDir);
   if (versions === undefined) {
@@ -186,10 +186,10 @@ async function findVersionToDownload(
   extVersion: string,
   isNightly: boolean,
   logger: Logger,
-  privateDir: string
+  privateDir: string,
 ): Promise<Optional<[string, string, string]>> {
   const nightlyMaxVersionToComponents = (
-    nightlyVersion: Optional<string>
+    nightlyVersion: Optional<string>,
   ): Optional<[string, string, string]> => {
     if (nightlyVersion === undefined) {
       return undefined;
@@ -201,18 +201,18 @@ async function findVersionToDownload(
   if (extVersion === '0.0.0') {
     if (!isNightly) {
       vscode.window.showErrorMessage(
-        'Invalid extension version: ' + extVersion
+        'Invalid extension version: ' + extVersion,
       );
     }
     // If this is a dev version of the extension, we can figure out dynamically
     // what's the latest version of the sdk.
     return nightlyMaxVersionToComponents(
-      await getLatestNightlyMAXVersion(logger, privateDir)
+      await getLatestNightlyMAXVersion(logger, privateDir),
     );
   }
   if (isNightly) {
     return nightlyMaxVersionToComponents(
-      context.extension.packageJSON.sdkVersion
+      context.extension.packageJSON.sdkVersion,
     );
   }
   // stable
@@ -224,7 +224,7 @@ async function findVersionToDownload(
 async function createDownloadSpec(
   context: vscode.ExtensionContext,
   isNightly: boolean,
-  logger: Logger
+  logger: Logger,
 ): Promise<Optional<DownloadSpec>> {
   const privateDir = context.globalStorageUri.fsPath;
   const magicDataHome = path.join(privateDir, 'magic-data-home');
@@ -240,7 +240,7 @@ async function createDownloadSpec(
     extVersion,
     isNightly,
     logger,
-    privateDir
+    privateDir,
   );
   if (!versionToDownload) {
     return undefined;
@@ -268,12 +268,12 @@ async function doInstallMagicAndMAXSDK(
   downloadSpec: DownloadSpec,
   logger: Logger,
   isNightly: boolean,
-  token: vscode.CancellationToken
+  token: vscode.CancellationToken,
 ): Promise<void> {
   await rm(downloadSpec.doneDirectory, { recursive: true, force: true });
 
   logger.main.logInfo(
-    `Will download ${downloadSpec.magicUrl} into ${downloadSpec.magicPath}`
+    `Will download ${downloadSpec.magicUrl} into ${downloadSpec.magicPath}`,
   );
   if (token.isCancellationRequested) {
     throw new Error(SDK_INSTALLATION_CANCELLATION_MSG);
@@ -284,12 +284,12 @@ async function doInstallMagicAndMAXSDK(
     downloadSpec.magicPath,
     /*timeoutMins=*/ 5,
     "Couldn't download magic",
-    logger
+    logger,
   );
   logger.main.logInfo('Successfully downloaded magic.');
   await chmod(downloadSpec.magicPath, 0o755);
   logger.main.logInfo(
-    `The permissions for ${downloadSpec.magicPath} have been changed and it's now executable.`
+    `The permissions for ${downloadSpec.magicPath} have been changed and it's now executable.`,
   );
 
   logger.main.logInfo(`Will prepare the MAX SDK installation.`);
@@ -340,7 +340,7 @@ async function installMagicAndMAXSDKWithProgress(
   downloadSpec: DownloadSpec,
   logger: Logger,
   isNightly: boolean,
-  reinstall: boolean
+  reinstall: boolean,
 ): Promise<Optional<string>> {
   if (!reinstall && (await directoryExists(downloadSpec.versionDoneDir))) {
     logger.main.logInfo('Magic SDK present. Skipping installation.');
@@ -364,14 +364,14 @@ async function installMagicAndMAXSDKWithProgress(
         logger.main.logError("Couldn't install the MAX SDK for VS Code", e);
         return e.message;
       }
-    }
+    },
   );
 }
 
 async function acquireLockIfNeeded(
   logger: Logger,
   useLock: boolean,
-  downloadSpec: DownloadSpec
+  downloadSpec: DownloadSpec,
 ): Promise<() => Promise<void>> {
   if (!useLock) {
     return async () => {};
@@ -387,7 +387,7 @@ export async function findMagicSDKSpec(
   context: vscode.ExtensionContext,
   logger: Logger,
   isNightly: boolean,
-  reinstall: boolean = false
+  reinstall: boolean = false,
 ): Promise<Optional<MojoSDKSpec>> {
   const downloadSpec = await createDownloadSpec(context, isNightly, logger);
   if (downloadSpec === undefined) {
@@ -402,13 +402,13 @@ export async function findMagicSDKSpec(
     const releaseLock = await acquireLockIfNeeded(
       logger,
       withLock,
-      downloadSpec
+      downloadSpec,
     );
     errorMessage = await installMagicAndMAXSDKWithProgress(
       downloadSpec,
       logger,
       isNightly,
-      reinstall
+      reinstall,
     );
     if (errorMessage === undefined) {
       success = true;
@@ -417,13 +417,13 @@ export async function findMagicSDKSpec(
   } catch (e: any) {
     logger.main.logError(
       'Error while handling the lock for the MAX SDK for VS Code',
-      e
+      e,
     );
   }
   if (!success) {
     errorMessage = errorMessage ? `\n${errorMessage}.` : '';
     vscode.window.showErrorMessage(
-      `Couldn't install the MAX SDK for VS Code.${errorMessage}`
+      `Couldn't install the MAX SDK for VS Code.${errorMessage}`,
     );
     return undefined;
   }
@@ -432,7 +432,7 @@ export async function findMagicSDKSpec(
     'envs',
     'max',
     'share',
-    'max'
+    'max',
   );
 
   return {
@@ -444,7 +444,7 @@ export async function findMagicSDKSpec(
       downloadSpec.major,
       downloadSpec.minor,
       downloadSpec.patch,
-      modularHomePath
+      modularHomePath,
     ),
   };
 }

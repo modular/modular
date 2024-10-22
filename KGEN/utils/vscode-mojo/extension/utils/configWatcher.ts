@@ -27,7 +27,7 @@ async function promptRestart(settingName: string, promptMessage: string) {
           promptMessage,
           'Yes',
           'Yes, always',
-          'No, never'
+          'No, never',
         )
       ) {
         case 'Yes':
@@ -38,14 +38,14 @@ async function promptRestart(settingName: string, promptMessage: string) {
           config.update<string>(
             settingName,
             'restart',
-            vscode.ConfigurationTarget.Global
+            vscode.ConfigurationTarget.Global,
           );
           break;
         case 'No, never':
           config.update<string>(
             settingName,
             'ignore',
-            vscode.ConfigurationTarget.Global
+            vscode.ConfigurationTarget.Global,
           );
           break;
         default:
@@ -90,11 +90,11 @@ export async function activate({
           promptRestartOnce(
             `setting '${
               expandedSetting
-            }' has changed. Do you want to reload the server?`
+            }' has changed. Do you want to reload the server?`,
           );
         }
       }
-    })
+    }),
   );
 
   // Setup watchers for the provided paths.
@@ -110,14 +110,14 @@ export async function activate({
     fileWatcher.on('all', (event, _filename, _details) => {
       if (event != 'unlink') {
         promptRestartOnce(
-          'mojo language server file has changed. Do you want to reload the server?'
+          'mojo language server file has changed. Do you want to reload the server?',
         );
       }
     });
     disposables.pushSubscription(
       new vscode.Disposable(() => {
         fileWatcher.close();
-      })
+      }),
     );
   }
   return disposables;

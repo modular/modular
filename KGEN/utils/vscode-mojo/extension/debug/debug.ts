@@ -75,12 +75,12 @@ const DEBUG_TYPE: string = 'mojo-lldb';
  */
 async function findSDKForDebugConfiguration(
   config: MojoDebugConfiguration,
-  sdkManager: MojoSDKManager
+  sdkManager: MojoSDKManager,
 ): Promise<Optional<MojoSDK>> {
   if (config.modularHomePath !== undefined) {
     return sdkManager.createAdHocSDKAndShowError(
       config.modularHomePath,
-      config.modularConfigMojoSection
+      config.modularConfigMojoSection,
     );
   }
   return sdkManager.findSDK(/*hideRepeatedErrors=*/ false);
@@ -100,23 +100,23 @@ class MojoDebugAdapterDescriptorFactory
 
   async createDebugAdapterDescriptor(
     session: vscode.DebugSession,
-    _executable: Optional<vscode.DebugAdapterExecutable>
+    _executable: Optional<vscode.DebugAdapterExecutable>,
   ): Promise<Optional<vscode.DebugAdapterDescriptor>> {
     let sdk = await findSDKForDebugConfiguration(
       session.configuration,
-      this.sdkManager
+      this.sdkManager,
     );
 
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
     if (!sdk) {
       this.sdkManager.logger.main.logError(
-        "Couldn't find an SDK for the debug session"
+        "Couldn't find an SDK for the debug session",
       );
       return undefined;
     }
     this.sdkManager.logger.main.logInfo(
-      `Using the SDK ${sdk.config.version.toString()} for the debug session`
+      `Using the SDK ${sdk.config.version.toString()} for the debug session`,
     );
     if (sdk.config.modularHomePath.endsWith('.derived')) {
       // Debug adapters from dev sdks tend to be corrupted because dependencies
@@ -126,11 +126,11 @@ class MojoDebugAdapterDescriptorFactory
       } catch (ex: any) {
         const { stderr, stdout } = ex;
         this.sdkManager.logger.main.outputChannel.appendLine(
-          '\n\n\n===== LLDB Debug Adapter verification ====='
+          '\n\n\n===== LLDB Debug Adapter verification =====',
         );
         this.sdkManager.logger.main.logError(
           'Unable to execute the LLDB Debug Adapter.',
-          ex
+          ex,
         );
         if (stdout) {
           this.sdkManager.logger.main.logInfo('stdout: ' + stdout);
@@ -142,7 +142,7 @@ class MojoDebugAdapterDescriptorFactory
 
         this.sdkManager.showBazelwRunInstallPrompt(
           'The LLDB Debug Adapter seems to be corrupted.',
-          sdk.config.modularHomePath
+          sdk.config.modularHomePath,
         );
       }
     }
@@ -164,7 +164,7 @@ class MojoCudaGdbDebugAdapterDescriptorFactory
 {
   async createDebugAdapterDescriptor(
     session: vscode.DebugSession,
-    _executable: Optional<vscode.DebugAdapterExecutable>
+    _executable: Optional<vscode.DebugAdapterExecutable>,
   ): Promise<Optional<vscode.DebugAdapterDescriptor>> {
     // We never actually call this, but we need a stub for registration.
     // Instead of making a DebugAdapterDescriptor, we end up tossing the
@@ -189,11 +189,11 @@ class MojoDebugConfigurationResolver
   async resolveDebugConfigurationWithSubstitutedVariables?(
     folder: Optional<vscode.WorkspaceFolder>,
     debugConfiguration: MojoDebugConfiguration,
-    token?: vscode.CancellationToken
+    token?: vscode.CancellationToken,
   ): Promise<undefined | vscode.DebugConfiguration> {
     let sdk = await findSDKForDebugConfiguration(
       debugConfiguration,
-      this.sdkManager
+      this.sdkManager,
     );
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
@@ -281,10 +281,10 @@ class MojoDebugConfigurationResolver
     if (await sdk.lldbHasPythonScriptingSupport()) {
       let visualizersDir = sdk.config.mojoLLDBVisualizersPath;
       let visualizers = await vscode.workspace.fs.readDirectory(
-        vscode.Uri.file(visualizersDir)
+        vscode.Uri.file(visualizersDir),
       );
       let visualizerCommands = visualizers.map(
-        ([name, _type]) => `?command script import ${visualizersDir}/${name}`
+        ([name, _type]) => `?command script import ${visualizersDir}/${name}`,
       );
       debugConfiguration.initCommands.push(...visualizerCommands);
     }
@@ -302,7 +302,7 @@ class MojoDebugConfigurationResolver
   async resolveDebugConfiguration(
     folder: Optional<vscode.WorkspaceFolder>,
     debugConfiguration: MojoDebugConfiguration,
-    token?: vscode.CancellationToken
+    token?: vscode.CancellationToken,
   ): Promise<vscode.DebugConfiguration> {
     // The `Debug: Start Debugging` command (aka F5 or the `Run and Debug`
     // button if no launch.json files are present), invoke this method with a
@@ -335,7 +335,7 @@ class MojoCudaGdbDebugConfigurationResolver
   async resolveDebugConfigurationWithSubstitutedVariables?(
     folder: Optional<vscode.WorkspaceFolder>,
     debugConfigIn: MojoCudaGdbDebugConfiguration,
-    token?: vscode.CancellationToken
+    token?: vscode.CancellationToken,
   ): Promise<undefined | vscode.DebugConfiguration> {
     const maybeErrorMessage = await checkNsightInstall(this.sdkManager.logger);
     if (maybeErrorMessage) {
@@ -348,7 +348,7 @@ class MojoCudaGdbDebugConfigurationResolver
 
     let sdk = await findSDKForDebugConfiguration(
       debugConfigIn as vscode.DebugConfiguration,
-      this.sdkManager
+      this.sdkManager,
     );
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
@@ -400,7 +400,7 @@ class MojoDebugDynamicConfigurationProvider
 {
   async provideDebugConfigurations(
     _folder: Optional<vscode.WorkspaceFolder>,
-    _token?: Optional<vscode.CancellationToken>
+    _token?: Optional<vscode.CancellationToken>,
   ): Promise<Optional<vscode.DebugConfiguration[]>> {
     const [activeFile, otherOpenFiles] = getAllOpenMojoFiles();
     return [activeFile, ...otherOpenFiles]
@@ -437,8 +437,8 @@ export class MojoDebugManager extends DisposableContext {
     this.pushSubscription(
       vscode.debug.registerDebugAdapterDescriptorFactory(
         DEBUG_TYPE,
-        new MojoDebugAdapterDescriptorFactory(this.sdkManager)
-      )
+        new MojoDebugAdapterDescriptorFactory(this.sdkManager),
+      ),
     );
 
     this.pushSubscription(
@@ -449,10 +449,10 @@ export class MojoDebugManager extends DisposableContext {
 
         if (!listener.configuration.runInTerminal) {
           await vscode.commands.executeCommand(
-            'workbench.debug.action.focusRepl'
+            'workbench.debug.action.focusRepl',
           );
         }
-      })
+      }),
     );
 
     this.pushSubscription(initializeInlineLocalVariablesProvider(extension));
@@ -460,20 +460,20 @@ export class MojoDebugManager extends DisposableContext {
     this.pushSubscription(
       vscode.debug.registerDebugConfigurationProvider(
         DEBUG_TYPE,
-        new MojoDebugConfigurationResolver(sdkManager)
-      )
+        new MojoDebugConfigurationResolver(sdkManager),
+      ),
     );
 
     this.pushSubscription(
       vscode.debug.registerDebugConfigurationProvider(
         DEBUG_TYPE,
         new MojoDebugDynamicConfigurationProvider(),
-        vscode.DebugConfigurationProviderTriggerKind.Dynamic
-      )
+        vscode.DebugConfigurationProviderTriggerKind.Dynamic,
+      ),
     );
 
     this.pushSubscription(
-      activatePickProcessToAttachCommand(extension.extensionContext)
+      activatePickProcessToAttachCommand(extension.extensionContext),
     );
 
     this.pushSubscription(
@@ -484,7 +484,7 @@ export class MojoDebugManager extends DisposableContext {
           name: 'Mojo: Attach to process command',
           pid: '${command:pickProcessToAttach}',
         });
-      })
+      }),
     );
 
     // Add subscriptions for mojo-cuda-gdb.  Need to register
@@ -494,15 +494,15 @@ export class MojoDebugManager extends DisposableContext {
     this.pushSubscription(
       vscode.debug.registerDebugAdapterDescriptorFactory(
         'mojo-cuda-gdb',
-        new MojoCudaGdbDebugAdapterDescriptorFactory()
-      )
+        new MojoCudaGdbDebugAdapterDescriptorFactory(),
+      ),
     );
 
     this.pushSubscription(
       vscode.debug.registerDebugConfigurationProvider(
         'mojo-cuda-gdb',
-        new MojoCudaGdbDebugConfigurationResolver(sdkManager)
-      )
+        new MojoCudaGdbDebugConfigurationResolver(sdkManager),
+      ),
     );
   }
 }

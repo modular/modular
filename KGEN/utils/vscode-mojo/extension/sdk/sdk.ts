@@ -29,7 +29,7 @@ export class MojoSDK {
   static getConfigKey(
     modularHomePath: string,
     isNightly: boolean,
-    possibleKeys: string[]
+    possibleKeys: string[],
   ): Optional<string> {
     // Bail early if we don't have any keys.
     if (possibleKeys.length === 0) {
@@ -44,7 +44,7 @@ export class MojoSDK {
 
     // Filter the keys to only those that match the current extension.
     possibleKeys = possibleKeys.filter(
-      (key) => isNightly === key.endsWith('-nightly')
+      (key) => isNightly === key.endsWith('-nightly'),
     );
 
     if (possibleKeys.length === 0) {
@@ -89,13 +89,13 @@ export class MojoSDK {
         this.logger.main.logInfo(
           `Python scripting support in LLDB not found. The test script returned:\n${
             stdout
-          }\n${stderr}`
+          }\n${stderr}`,
         );
       }
     } catch (e) {
       this.logger.main.logError(
         'Python scripting support in LLDB not found. The test script failed with',
-        e
+        e,
       );
     }
     return false;

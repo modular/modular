@@ -62,7 +62,7 @@ export class MojoSDKConfig {
   public constructor(
     version: MojoSDKVersion,
     modularPath: string,
-    rawConfig: { [key: string]: any }
+    rawConfig: { [key: string]: any },
   ) {
     this.version = version;
     this.modularHomePath = modularPath;
@@ -81,7 +81,7 @@ export class MojoSDKConfig {
   public static async parseVersionFromDriver(
     logger: Logger,
     driverPath: string,
-    configSection: string
+    configSection: string,
   ): Promise<Optional<MojoSDKVersion>> {
     try {
       let { stdout, stderr } = await execFile(driverPath, ['--version'], {
@@ -89,7 +89,7 @@ export class MojoSDKConfig {
         encoding: 'utf-8',
       });
       logger.main.logInfo(
-        `${driverPath} --version results\n` + stderr + '\n' + stdout
+        `${driverPath} --version results\n` + stderr + '\n' + stdout,
       );
 
       if (stderr) {
@@ -118,7 +118,7 @@ export class MojoSDKConfig {
         `${match[1]}`,
         `${match[2]}`,
         `${match[3]}`,
-        driverPath
+        driverPath,
       );
     } catch (e) {
       logger.main.logError('Unable to parse version from `mojo` driver: ', e);
