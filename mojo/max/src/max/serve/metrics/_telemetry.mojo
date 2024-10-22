@@ -229,11 +229,10 @@ struct PrometheusMetricsEndPoint:
         """
         self.lib = handle_from_config("serving", ".serve_lib")
         self.ptr = UnsafePointer[NoneType]()
-        var endpoint_ref = end_point._strref_dangerous()
         call_dylib_func(
             self.lib,
             "M_createCustomMetricsPrometheus",
-            endpoint_ref.data,
+            end_point.unsafe_ptr(),
             UnsafePointer.address_of(self.ptr),
         )
         end_point._strref_keepalive()
@@ -321,14 +320,11 @@ struct TelemetryContext:
         Returns:
             A Counter instance that can be used to update the values.
         """
-        var name_ref = name._strref_dangerous()
-        var desc_ref = desc._strref_dangerous()
-        var unit_ref = unit._strref_dangerous()
         var attrib_count = 0
         var addresses = List[UnsafePointer[UInt8]]()
         for k in attributes.items():
-            addresses.append(k[].key._strref_dangerous().data)
-            addresses.append(k[].value._strref_dangerous().data)
+            addresses.append(k[].key.unsafe_ptr())
+            addresses.append(k[].value.unsafe_ptr())
 
         attrib_count = len(addresses)
         var res: Counter[T]
@@ -337,23 +333,13 @@ struct TelemetryContext:
             self.lib,
             Counter[T]._get_create_fn_name(),
             self.context.address,
-            name_ref.data,
-            desc_ref.data,
-            unit_ref.data,
+            name.unsafe_ptr(),
+            desc.unsafe_ptr(),
+            unit.unsafe_ptr(),
             attrib_count,
             addresses.data,
         )
         res = Counter[T](self.lib, ctr)
-
-        _ = attributes
-        _ = addresses
-
-        name._strref_keepalive()
-        desc._strref_keepalive()
-        unit._strref_keepalive()
-        for k in attributes.items():
-            k[].key._strref_keepalive()
-            k[].value._strref_keepalive()
 
         return res
 
@@ -380,14 +366,11 @@ struct TelemetryContext:
         Returns:
             A Gauge instance that can be used to update the values.
         """
-        var name_ref = name._strref_dangerous()
-        var desc_ref = desc._strref_dangerous()
-        var unit_ref = unit._strref_dangerous()
         var attrib_count = 0
         var addresses = List[UnsafePointer[UInt8]]()
         for k in attributes.items():
-            addresses.append(k[].key._strref_dangerous().data)
-            addresses.append(k[].value._strref_dangerous().data)
+            addresses.append(k[].key.unsafe_ptr())
+            addresses.append(k[].value.unsafe_ptr())
 
         attrib_count = len(addresses)
         var res: Gauge[T]
@@ -396,17 +379,14 @@ struct TelemetryContext:
             self.lib,
             Gauge[T]._get_create_fn_name(),
             self.context.address,
-            name_ref.data,
-            desc_ref.data,
-            unit_ref.data,
+            name.unsafe_ptr(),
+            desc.unsafe_ptr(),
+            unit.unsafe_ptr(),
             attrib_count,
             addresses.data,
         )
         res = Gauge[T](self.lib, ctr)
 
-        name._strref_keepalive()
-        desc._strref_keepalive()
-        unit._strref_keepalive()
         return res
 
     fn create_histogram[
@@ -422,14 +402,11 @@ struct TelemetryContext:
             T == DType.float64 or T == DType.uint64,
             "Type must be uint64 or float64.",
         ]()
-        var name_ref = name._strref_dangerous()
-        var desc_ref = desc._strref_dangerous()
-        var unit_ref = unit._strref_dangerous()
         var attrib_count = 0
         var addresses = List[UnsafePointer[UInt8]]()
         for k in attributes.items():
-            addresses.append(k[].key._strref_dangerous().data)
-            addresses.append(k[].value._strref_dangerous().data)
+            addresses.append(k[].key.unsafe_ptr())
+            addresses.append(k[].value.unsafe_ptr())
 
         attrib_count = len(addresses)
         var res: Histogram[T]
@@ -438,17 +415,14 @@ struct TelemetryContext:
             self.lib,
             Histogram[T]._get_create_fn_name(),
             self.context.address,
-            name_ref.data,
-            desc_ref.data,
-            unit_ref.data,
+            name.unsafe_ptr(),
+            desc.unsafe_ptr(),
+            unit.unsafe_ptr(),
             attrib_count,
             addresses.data,
         )
         res = Histogram[T](self.lib, ctr)
 
-        name._strref_keepalive()
-        desc._strref_keepalive()
-        unit._strref_keepalive()
         return res
 
     fn create_instrument[
@@ -460,14 +434,11 @@ struct TelemetryContext:
         unit: String,
         attributes: Dict[String, String] = Dict[String, String](),
     ) -> T:
-        var name_ref = name._strref_dangerous()
-        var desc_ref = desc._strref_dangerous()
-        var unit_ref = unit._strref_dangerous()
         var attrib_count = 0
         var addresses = List[UnsafePointer[UInt8]]()
         for k in attributes.items():
-            addresses.append(k[].key._strref_dangerous().data)
-            addresses.append(k[].value._strref_dangerous().data)
+            addresses.append(k[].key.unsafe_ptr())
+            addresses.append(k[].value.unsafe_ptr())
 
         attrib_count = len(addresses)
 
@@ -475,23 +446,12 @@ struct TelemetryContext:
             self.lib,
             T._get_create_fn_name(),
             self.context.address,
-            name_ref.data,
-            desc_ref.data,
-            unit_ref.data,
+            name.unsafe_ptr(),
+            desc.unsafe_ptr(),
+            unit.unsafe_ptr(),
             attrib_count,
             addresses.data,
         )
         var res = T(self.lib, ctr)
-
-        # keep vars alive until the call has completed
-        _ = attributes
-        _ = addresses
-
-        name._strref_keepalive()
-        desc._strref_keepalive()
-        unit._strref_keepalive()
-        for k in attributes.items():
-            k[].key._strref_keepalive()
-            k[].value._strref_keepalive()
 
         return res^
