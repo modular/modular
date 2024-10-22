@@ -22,12 +22,12 @@ export async function checkNsightInstall(logger: Logger) {
     logger.main.logInfo(message);
     const response = await vscode.window.showInformationMessage(
       'Unable to debug with cuda-gdb mode without the NVIDIA Nsight extension.',
-      'Find NVIDIA Nsight extension'
+      'Find NVIDIA Nsight extension',
     );
     if (response) {
       vscode.commands.executeCommand(
         'workbench.extensions.search',
-        '@id:nvidia.nsight-vscode-edition'
+        '@id:nvidia.nsight-vscode-edition',
       );
     }
     return message;

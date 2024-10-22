@@ -18,15 +18,15 @@ import * as vscode from 'vscode';
  */
 export function substituteVariables(
   text: string,
-  workspaceFolder: Optional<vscode.WorkspaceFolder>
+  workspaceFolder: Optional<vscode.WorkspaceFolder>,
 ) {
   text = text.replace(
     /\${workspaceFolder}/g,
-    workspaceFolder?.uri.fsPath || ''
+    workspaceFolder?.uri.fsPath || '',
   );
   text = text.replace(
     /\${workspaceFolderBasename}/g,
-    path.basename(workspaceFolder?.uri.fsPath || '')
+    path.basename(workspaceFolder?.uri.fsPath || ''),
   );
   text = text.replace(/\${userHome}/g, os.homedir());
   text = text.replace(/\${pathSeparator}/g, path.sep);
@@ -39,7 +39,7 @@ export function substituteVariables(
     }
     text = text.replace(
       new RegExp(`\\\${env:${match[1]}}`, 'g'),
-      process.env[match[1]] || ''
+      process.env[match[1]] || '',
     );
   }
   return text;

@@ -34,41 +34,41 @@ export class MojoDecoratorManager extends DisposableContext {
         },
         // Hide the decoration, we only care about the "after" content.
         opacity: '0',
-      }
+      },
     );
     this.pushSubscription(this.docStringDecorationType);
 
     this.pushSubscription(
       vscode.workspace.onDidOpenTextDocument((event) => {
         this.decorateDocument(event);
-      })
+      }),
     );
     this.pushSubscription(
       vscode.workspace.onDidChangeTextDocument((event) => {
         this.decorateDocument(event.document);
-      })
+      }),
     );
     this.pushSubscription(
       vscode.workspace.onDidOpenNotebookDocument((event) => {
         this.decorateNotebookDocument(event);
-      })
+      }),
     );
     this.pushSubscription(
       vscode.workspace.onDidChangeNotebookDocument((event) => {
         this.decorateNotebookDocument(event.notebook);
-      })
+      }),
     );
     this.pushSubscription(
       vscode.window.onDidChangeVisibleTextEditors((editors) => {
         editors.forEach((editor) => this.decorate(editor));
-      })
+      }),
     );
     this.pushSubscription(
       vscode.window.onDidChangeVisibleNotebookEditors((editors) => {
         editors.forEach((editor) =>
-          this.decorateNotebookDocument(editor.notebook)
+          this.decorateNotebookDocument(editor.notebook),
         );
-      })
+      }),
     );
 
     // Process any existing documents.

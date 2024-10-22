@@ -55,16 +55,16 @@ class VsCodeReporter extends Base {
     runner.on(EVENT_TEST_PASS, (test: Test) => {
       console.log(
         indent(
-          `${Base.color('checkmark', Base.symbols.ok)} ${Base.color('pass', test.title)}`
-        )
+          `${Base.color('checkmark', Base.symbols.ok)} ${Base.color('pass', test.title)}`,
+        ),
       );
     });
 
     runner.on(EVENT_TEST_FAIL, (test: Test, err) => {
       console.log(
         indent(
-          `${Base.color('fail', Base.symbols.err)} ${Base.color('fail', test.title)}`
-        )
+          `${Base.color('fail', Base.symbols.err)} ${Base.color('fail', test.title)}`,
+        ),
       );
       indentDepth += 2;
 

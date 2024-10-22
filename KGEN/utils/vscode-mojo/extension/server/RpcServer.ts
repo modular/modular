@@ -94,28 +94,28 @@ export class RpcServer extends DisposableContext {
           this.logger.main.logInfo('RPC server closed.');
           this.server.unref();
         });
-      })
+      }),
     );
     this.pushSubscription(
       vscode.window.onDidChangeWindowState((e: vscode.WindowState) => {
         if (e.active) {
           this.lastTimeActiveInMillis = new Date();
         }
-      })
+      }),
     );
   }
 
   private onError(err: Error): void {
     if (err.message.includes('EADDRINUSE') && this.port < PORT_MAX) {
       this.logger.main.logInfo(
-        'Will try to start the RPC Server with a new port.'
+        'Will try to start the RPC Server with a new port.',
       );
       this.port += 1;
       this.listen();
     } else {
       this.logger.main.logError(
         'RPC Server error. You might need to restart VS Code to fix this issue.',
-        err
+        err,
       );
     }
   }
@@ -131,7 +131,7 @@ export class RpcServer extends DisposableContext {
     }
     let success = await debug.startDebugging(
       /*workspaceFolder=*/ undefined,
-      debugConfig
+      debugConfig,
     );
 
     if (!success) {
@@ -141,7 +141,7 @@ export class RpcServer extends DisposableContext {
 
   private async dispatchRequest(
     socket: net.Socket,
-    rawRequest: string
+    rawRequest: string,
   ): Promise<void> {
     let request: Optional<any>;
     try {
@@ -181,12 +181,12 @@ export class RpcServer extends DisposableContext {
         kind: 'connect',
         pid: process.pid,
         lastTimeSeenActiveInSecs: Math.floor(
-          (now - this.lastTimeActiveInMillis.getTime()) / 1000
+          (now - this.lastTimeActiveInMillis.getTime()) / 1000,
         ),
         name,
       };
       this.logger.main.logInfo(
-        `RPC Server response: ${JSON.stringify(response)}`
+        `RPC Server response: ${JSON.stringify(response)}`,
       );
       socket.write(JSON.stringify(response) + this.protocolSeparator);
     } else if (instanceOfDebug(request)) {
@@ -198,7 +198,7 @@ export class RpcServer extends DisposableContext {
           kind: 'debug',
         };
         this.logger.main.logInfo(
-          `RPC Server response: ${JSON.stringify(response)}`
+          `RPC Server response: ${JSON.stringify(response)}`,
         );
         socket.write(JSON.stringify(response) + this.protocolSeparator);
       } catch (err) {
@@ -208,7 +208,7 @@ export class RpcServer extends DisposableContext {
           kind: 'debug',
         };
         this.logger.main.logInfo(
-          `RPC Server response: ${JSON.stringify(response)}`
+          `RPC Server response: ${JSON.stringify(response)}`,
         );
         socket.write(JSON.stringify(response) + this.protocolSeparator);
       }
@@ -218,7 +218,7 @@ export class RpcServer extends DisposableContext {
         message: 'Invalid request',
       };
       this.logger.main.logInfo(
-        `RPC Server response: ${JSON.stringify(response)}`
+        `RPC Server response: ${JSON.stringify(response)}`,
       );
       socket.end(JSON.stringify(response) + this.protocolSeparator);
     }
@@ -245,13 +245,13 @@ export class RpcServer extends DisposableContext {
    */
   public async listen() {
     this.logger.main.logInfo(
-      `Attempting to create the RPC server with port ${this.port}`
+      `Attempting to create the RPC server with port ${this.port}`,
     );
 
     return new Promise<net.AddressInfo | string>((resolve) =>
       this.server.listen({ port: this.port, host: '127.0.0.1' }, () =>
-        resolve(this.server.address() || '')
-      )
+        resolve(this.server.address() || ''),
+      ),
     );
   }
 }

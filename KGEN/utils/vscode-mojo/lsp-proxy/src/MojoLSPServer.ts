@@ -63,12 +63,12 @@ export class MojoLSPServer extends DisposableContext {
       initializationOptions.serverArgs,
       {
         env: initializationOptions.serverEnv,
-      }
+      },
     );
     this.pushSubscription(
       new LineSeparatedStream(this.serverProcess.stderr!, (line: string) =>
-        logger(line)
-      )
+        logger(line),
+      ),
     );
     this.pushSubscription(
       new JSONRPCStream(
@@ -76,8 +76,8 @@ export class MojoLSPServer extends DisposableContext {
         (response: JSONObject) =>
           this.pendingRequests.get(response.id)!.responseStream.next(response),
         (notification: JSONObject) =>
-          onNotification(notification.method, notification.params)
-      )
+          onNotification(notification.method, notification.params),
+      ),
     );
     this.pushSubscription(new ProcessExitStream(this.serverProcess, onExit));
     this.pushSubscription(
@@ -87,7 +87,7 @@ export class MojoLSPServer extends DisposableContext {
         try {
           this.serverProcess.kill();
         } catch {}
-      })
+      }),
     );
   }
 
@@ -99,7 +99,7 @@ export class MojoLSPServer extends DisposableContext {
    */
   public async sendRequest(
     params: RequestParams,
-    method: string
+    method: string,
   ): Promise<JSONObject> {
     const request = this.wrapRequest(params, method);
     const id = request.id;
@@ -139,7 +139,7 @@ export class MojoLSPServer extends DisposableContext {
     return new Promise((resolve, _reject) => {
       return this.serverProcess.stdin?.write(
         `${protocolHeader}${payload.length}${protocolLineSeparator}${payload}`,
-        () => resolve()
+        () => resolve(),
       );
     });
   }

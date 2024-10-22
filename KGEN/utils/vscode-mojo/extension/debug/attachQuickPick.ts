@@ -24,7 +24,7 @@ interface ProcessItem extends vscode.QuickPickItem {
 }
 
 async function getProcessItems(
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
 ): Promise<ProcessItem[]> {
   let processes: ProcessDescriptor[] = await psList(context);
   processes.filter((p) => p.pid !== undefined);
@@ -68,7 +68,7 @@ async function getProcessItems(
  */
 async function showQuickPick(
   extensionContext: vscode.ExtensionContext,
-  debugConfig: any
+  debugConfig: any,
 ): Promise<Optional<string>> {
   const processItems: ProcessItem[] = await getProcessItems(extensionContext);
   const memento = extensionContext.workspaceState;
@@ -94,7 +94,7 @@ async function showQuickPick(
         quickPick.items = await getProcessItems(extensionContext);
       },
       undefined,
-      disposables
+      disposables,
     );
 
     quickPick.onDidChangeValue((e: string) => {
@@ -116,7 +116,7 @@ async function showQuickPick(
         resolve(selectedId);
       },
       undefined,
-      disposables
+      disposables,
     );
 
     quickPick.onDidHide(
@@ -127,7 +127,7 @@ async function showQuickPick(
         resolve(undefined);
       },
       undefined,
-      disposables
+      disposables,
     );
 
     quickPick.show();
@@ -135,10 +135,10 @@ async function showQuickPick(
 }
 
 export function activatePickProcessToAttachCommand(
-  extensionContext: vscode.ExtensionContext
+  extensionContext: vscode.ExtensionContext,
 ): vscode.Disposable {
   return vscode.commands.registerCommand(
     'mojo.pickProcessToAttach',
-    async (debugConfig: any) => showQuickPick(extensionContext, debugConfig)
+    async (debugConfig: any) => showQuickPick(extensionContext, debugConfig),
   );
 }

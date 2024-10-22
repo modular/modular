@@ -52,7 +52,7 @@ class ExecutionManager extends DisposableContext {
   private async setBuildArgs(path: string, args: string): Promise<void> {
     const fileArgs = this.getFileArgs(path);
     fileArgs.buildArgs = parse(args).filter(
-      (x): x is string => typeof x === 'string'
+      (x): x is string => typeof x === 'string',
     );
     return this.context.globalState.update(this.getFileArgsKey(path), fileArgs);
   }
@@ -64,7 +64,7 @@ class ExecutionManager extends DisposableContext {
   private async setRunArgs(path: string, args: string): Promise<void> {
     const fileArgs = this.getFileArgs(path);
     fileArgs.runArgs = parse(args).filter(
-      (x): x is string => typeof x === 'string'
+      (x): x is string => typeof x === 'string',
     );
     return this.context.globalState.update(this.getFileArgsKey(path), fileArgs);
   }
@@ -78,7 +78,7 @@ class ExecutionManager extends DisposableContext {
       vscode.commands.registerCommand(cmd, (file?: vscode.Uri) => {
         this.executeFileInTerminal(file);
         return true;
-      })
+      }),
     );
 
     for (const cmd of ['mojo.file.debug', 'mojo.file.debug-in-terminal']) {
@@ -86,10 +86,10 @@ class ExecutionManager extends DisposableContext {
         vscode.commands.registerCommand(cmd, (file: vscode.Uri) => {
           this.debugFile(
             file,
-            /*runInTerminal=*/ cmd === 'mojo.file.debug-in-terminal'
+            /*runInTerminal=*/ cmd === 'mojo.file.debug-in-terminal',
           );
           return true;
-        })
+        }),
       );
     }
     this.pushSubscription(
@@ -104,7 +104,7 @@ class ExecutionManager extends DisposableContext {
               title: 'Select the arguments you want to configure',
               placeHolder:
                 'This will affect `Run Mojo File`, `Debug Mojo File` and similar actions.',
-            }
+            },
           );
 
           if (option === setBuildArgs) {
@@ -131,8 +131,8 @@ class ExecutionManager extends DisposableContext {
             }
           }
           return true;
-        }
-      )
+        },
+      ),
     );
   }
 
@@ -165,7 +165,7 @@ class ExecutionManager extends DisposableContext {
         ...this.getBuildArgs(doc.fileName),
         doc.fileName,
         ...this.getRunArgs(doc.fileName),
-      ])
+      ]),
     );
 
     if (this.shouldTerminalFocusOnStart(doc.uri)) {
@@ -204,7 +204,7 @@ class ExecutionManager extends DisposableContext {
     };
     await vscode.debug.startDebugging(
       vscode.workspace.getWorkspaceFolder(doc.uri),
-      debugConfig as vscode.DebugConfiguration
+      debugConfig as vscode.DebugConfiguration,
     );
   }
 
@@ -242,7 +242,7 @@ class ExecutionManager extends DisposableContext {
    *     it will point to the currently active document.
    */
   async getDocumentToExecute(
-    file?: vscode.Uri
+    file?: vscode.Uri,
   ): Promise<Optional<vscode.TextDocument>> {
     let doc =
       file === undefined
@@ -250,13 +250,13 @@ class ExecutionManager extends DisposableContext {
         : await vscode.workspace.openTextDocument(file);
     if (!doc) {
       vscode.window.showErrorMessage(
-        `Couldn't access the file '${file}' for execution.`
+        `Couldn't access the file '${file}' for execution.`,
       );
       return undefined;
     }
     if (doc.isDirty && !(await doc.save())) {
       vscode.window.showErrorMessage(
-        `Couldn't save file '${file}' before execution.`
+        `Couldn't save file '${file}' before execution.`,
       );
       return undefined;
     }
@@ -270,7 +270,7 @@ class ExecutionManager extends DisposableContext {
     return config.get<boolean>(
       'run.focusOnTerminalAfterLaunch',
       vscode.workspace.getWorkspaceFolder(uri),
-      false
+      false,
     );
   }
 }
@@ -283,7 +283,7 @@ class ExecutionManager extends DisposableContext {
  */
 export function activateRunCommands(
   sdkManager: MojoSDKManager,
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
 ): vscode.Disposable {
   return new ExecutionManager(sdkManager, context);
 }

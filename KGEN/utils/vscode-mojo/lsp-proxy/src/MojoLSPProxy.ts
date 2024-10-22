@@ -80,7 +80,7 @@ export class MojoLSPProxy {
    */
   private createDiagnosticErrorMessageUponCrash(
     doc: MojoDocument,
-    crashTrigger: Optional<URI>
+    crashTrigger: Optional<URI>,
   ): string {
     let errorMessage = 'A crash happened in the Mojo Language Server';
     if (this.docsStateHandler.isCrashTrigger(doc)) {
@@ -124,7 +124,7 @@ export class MojoLSPProxy {
       }
       const errorMessage = this.createDiagnosticErrorMessageUponCrash(
         doc,
-        crashTriggerURI
+        crashTriggerURI,
       );
 
       const diagnostic: PublishDiagnosticsParams = {
@@ -144,7 +144,7 @@ export class MojoLSPProxy {
       };
       this.client.sendNotification(
         PublishDiagnosticsNotification.method,
-        diagnostic
+        diagnostic,
       );
     }
   }
@@ -157,7 +157,7 @@ export class MojoLSPProxy {
     this.client.console.log(
       `The mojo-lsp-server binary exited with signal '${
         status.signal
-      }' and exit code '${status.code}'.`
+      }' and exit code '${status.code}'.`,
     );
 
     const timeSinceInitInMillis = Date.now() - this.initTime;
@@ -168,7 +168,7 @@ export class MojoLSPProxy {
       this.client.console.log(
         `The mojo-lsp-server binary has exited unsuccessfully. The proxy will terminate. It ran ${
           timeSinceInitInMins
-        } ms.`
+        } ms.`,
       );
 
       if (status.signal !== null) {
@@ -191,7 +191,7 @@ export class MojoLSPProxy {
     const params = this.initializeParams!;
     const workspaceFolder = params.rootUri;
     this.client.console.log(
-      `Server(${process.pid}) ${workspaceFolder} started`
+      `Server(${process.pid}) ${workspaceFolder} started`,
     );
 
     this.server = new MojoLSPServer({
@@ -215,7 +215,7 @@ export class MojoLSPProxy {
     });
     return this.server!.sendRequest(
       params,
-      'initialize'
+      'initialize',
     ) as Promise<InitializeResult>;
   }
 
@@ -235,41 +235,41 @@ export class MojoLSPProxy {
     // Note: all of these requests must go through `relayRequestWithDocument` to
     // ensure crash handling is applied correctly.
     this.client.onCodeAction(
-      this.relayRequestWithDocument('textDocument/codeAction')
+      this.relayRequestWithDocument('textDocument/codeAction'),
     );
     this.client.onCompletion(
-      this.relayRequestWithDocument('textDocument/completion')
+      this.relayRequestWithDocument('textDocument/completion'),
     );
     this.client.onDefinition(
-      this.relayRequestWithDocument('textDocument/definition')
+      this.relayRequestWithDocument('textDocument/definition'),
     );
     this.client.onDocumentSymbol(
-      this.relayRequestWithDocument('textDocument/documentSymbol')
+      this.relayRequestWithDocument('textDocument/documentSymbol'),
     );
     this.client.onFoldingRanges(
-      this.relayRequestWithDocument('textDocument/foldingRange')
+      this.relayRequestWithDocument('textDocument/foldingRange'),
     );
     this.client.onHover(this.relayRequestWithDocument('textDocument/hover'));
     this.client.onReferences(
-      this.relayRequestWithDocument('textDocument/references')
+      this.relayRequestWithDocument('textDocument/references'),
     );
     this.client.onRenameRequest(
-      this.relayRequestWithDocument('textDocument/rename')
+      this.relayRequestWithDocument('textDocument/rename'),
     );
     this.client.onSignatureHelp(
-      this.relayRequestWithDocument('textDocument/signatureHelp')
+      this.relayRequestWithDocument('textDocument/signatureHelp'),
     );
     this.client.onShutdown((params) => {
       return this.server!.sendRequest(params, 'shutdown') as Promise<any>;
     });
     this.client.languages.inlayHint.on(
-      this.relayRequestWithDocument('textDocument/inlayHint')
+      this.relayRequestWithDocument('textDocument/inlayHint'),
     );
     this.client.languages.semanticTokens.on(
-      this.relayRequestWithDocument('textDocument/semanticTokens/full')
+      this.relayRequestWithDocument('textDocument/semanticTokens/full'),
     );
     this.client.languages.semanticTokens.onDelta(
-      this.relayRequestWithDocument('textDocument/semanticTokens/full/delta')
+      this.relayRequestWithDocument('textDocument/semanticTokens/full/delta'),
     );
 
     // Client notifications - normal documents
@@ -284,7 +284,7 @@ export class MojoLSPProxy {
     this.client.onDidChangeTextDocument(
       (params: DidChangeTextDocumentParams) => {
         this.docsStateHandler.onDidChangeTextDocument(params, this.server!);
-      }
+      },
     );
 
     // Client notifications - notebooks
@@ -292,13 +292,13 @@ export class MojoLSPProxy {
     notebooks.onDidOpenNotebookDocument(
       (params: DidOpenNotebookDocumentParams) => {
         this.docsStateHandler.onDidOpenNotebookDocument(params, this.server!);
-      }
+      },
     );
 
     notebooks.onDidCloseNotebookDocument(
       (params: DidCloseNotebookDocumentParams) => {
         this.docsStateHandler.onDidCloseNotebookDocument(params, this.server!);
-      }
+      },
     );
 
     notebooks.onDidChangeNotebookDocument(
@@ -306,9 +306,9 @@ export class MojoLSPProxy {
         this.docsStateHandler.onDidChangeNotebookDocument(
           params,
           this.client,
-          this.server!
+          this.server!,
         );
-      }
+      },
     );
   }
 

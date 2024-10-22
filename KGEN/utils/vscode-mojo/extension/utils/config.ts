@@ -11,7 +11,7 @@ import * as vscode from 'vscode';
  */
 export function get<T>(
   key: string,
-  workspaceFolder: Optional<vscode.WorkspaceFolder>
+  workspaceFolder: Optional<vscode.WorkspaceFolder>,
 ): Optional<T>;
 
 /**
@@ -21,13 +21,13 @@ export function get<T>(
 export function get<T>(
   key: string,
   workspaceFolder: Optional<vscode.WorkspaceFolder>,
-  defaultValue: T
+  defaultValue: T,
 ): T;
 
 export function get<T>(
   key: string,
   workspaceFolder: Optional<vscode.WorkspaceFolder> = undefined,
-  defaultValue: Optional<T> = undefined
+  defaultValue: Optional<T> = undefined,
 ): Optional<T> {
   if (defaultValue === undefined) {
     return vscode.workspace
@@ -45,7 +45,7 @@ export function get<T>(
 export function update<T>(
   key: string,
   value: T,
-  target?: vscode.ConfigurationTarget
+  target?: vscode.ConfigurationTarget,
 ) {
   return vscode.workspace.getConfiguration('mojo').update(key, value, target);
 }

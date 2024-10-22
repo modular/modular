@@ -29,7 +29,7 @@ export class MojoLSPManager extends DisposableContext {
 
   constructor(
     sdkManager: MojoSDKManager,
-    extensionContext: vscode.ExtensionContext
+    extensionContext: vscode.ExtensionContext,
   ) {
     super();
 
@@ -45,29 +45,29 @@ export class MojoLSPManager extends DisposableContext {
         async () => {
           this.dispose();
           await this.activate(/*launchServerWithDebuggerAttached=*/ true);
-        }
-      )
+        },
+      ),
     );
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.lsp.restart', async () => {
         this.dispose();
         await this.activate();
-      })
+      }),
     );
 
     vscode.workspace.textDocuments.forEach((doc) =>
-      this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached)
+      this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached),
     );
     this.pushSubscription(
       vscode.workspace.onDidOpenTextDocument((doc) =>
-        this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached)
-      )
+        this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached),
+      ),
     );
   }
 
   async tryStartLanguageClient(
     doc: vscode.TextDocument,
-    debuggerAttached: boolean
+    debuggerAttached: boolean,
   ): Promise<void> {
     if (doc.languageId !== 'mojo') {
       return;
@@ -86,12 +86,12 @@ export class MojoLSPManager extends DisposableContext {
     const includeDirs = config.get<string[]>(
       'lsp.includeDirs',
       /*workspaceFolder=*/ undefined,
-      []
+      [],
     );
     const lspClient = this.activateLanguageClient(
       debuggerAttached,
       sdk,
-      includeDirs
+      includeDirs,
     );
     this.lspClient = lspClient;
     this.lspClientChanges.next(lspClient);
@@ -101,7 +101,7 @@ export class MojoLSPManager extends DisposableContext {
         lspClient.dispose();
         this.lspClientChanges.next(undefined);
         this.lspClientChanges.unsubscribe();
-      })
+      }),
     );
   }
 
@@ -111,7 +111,7 @@ export class MojoLSPManager extends DisposableContext {
   activateLanguageClient(
     launchServerWithDebuggerAttached: boolean,
     sdk: MojoSDK,
-    includeDirs: string[]
+    includeDirs: string[],
   ): vscodelc.LanguageClient {
     this.logger.lsp.logInfo('Activating language client');
 
@@ -132,7 +132,7 @@ export class MojoLSPManager extends DisposableContext {
     };
 
     const module = this.extensionContext.asAbsolutePath(
-      path.join('lsp-proxy', 'out', 'proxy.js')
+      path.join('lsp-proxy', 'out', 'proxy.js'),
     );
     const serverOptions: vscodelc.ServerOptions = {
       run: { module, transport: TransportKind.ipc },
@@ -163,7 +163,7 @@ export class MojoLSPManager extends DisposableContext {
         // Notify the server about file changes following the given file
         // pattern.
         fileEvents: vscode.workspace.createFileSystemWatcher(
-          '**/*.{mojo,🔥,ipynb}'
+          '**/*.{mojo,🔥,ipynb}',
         ),
       },
       outputChannel: this.logger.lsp.outputChannel,
@@ -178,13 +178,13 @@ export class MojoLSPManager extends DisposableContext {
       'mojo-lsp',
       'Mojo Language Client',
       serverOptions,
-      clientOptions
+      clientOptions,
     );
     this.logger.lsp.logInfo(
       `Launching Language Server '${
         initializationOptions.serverPath
       }' with options:`,
-      initializationOptions.serverArgs
+      initializationOptions.serverArgs,
     );
     this.logger.lsp.logInfo('Launching Language Server');
     // We intentionally don't await the `start` so that we can cancelling it

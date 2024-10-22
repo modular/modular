@@ -16,7 +16,7 @@ export class LineSeparatedStream {
 
   constructor(
     rawStream: NodeJS.ReadableStream,
-    onLine: (line: string) => void
+    onLine: (line: string) => void,
   ) {
     let buffer = '';
     rawStream.on('data', (chunk: any) => {
@@ -53,7 +53,7 @@ export class JSONRPCStream {
   constructor(
     rawStream: NodeJS.ReadableStream,
     onResponse: (response: JSONObject) => void,
-    onNotification: (notification: JSONObject) => void
+    onNotification: (notification: JSONObject) => void,
   ) {
     rawStream.on('data', (chunk: any) => {
       if (!this.enabled) {

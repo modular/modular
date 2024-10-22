@@ -24,7 +24,7 @@ function openModularRoot() {
     {
       uri: vscode.Uri.file(repoConfig.root),
       name: 'modular',
-    }
+    },
   );
 }
 
@@ -39,8 +39,8 @@ suite('LSP', () => {
     openModularRoot();
     await vscode.workspace.openTextDocument(
       vscode.Uri.file(
-        path.join(repoConfig.fixtures, 'dangling-file', 'dangling_file.mojo')
-      )
+        path.join(repoConfig.fixtures, 'dangling-file', 'dangling_file.mojo'),
+      ),
     );
 
     assert.strictEqual((await lsp)!.name, 'Mojo Language Client');

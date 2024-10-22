@@ -58,7 +58,7 @@ export class MojoExtension extends DisposableContext {
   constructor(
     context: vscode.ExtensionContext,
     logger: Logger,
-    isNightly: boolean
+    isNightly: boolean,
   ) {
     super();
     this.extensionContext = context;
@@ -68,7 +68,7 @@ export class MojoExtension extends DisposableContext {
 
   async activate(
     initializationSDK: Optional<MojoSDKSpec>,
-    reloading: boolean
+    reloading: boolean,
   ): Promise<MojoExtension> {
     return await this.activateMutex.runExclusive(async () => {
       if (reloading) {
@@ -77,7 +77,7 @@ export class MojoExtension extends DisposableContext {
 
       if (this.areThereIncompatibleExtensions(this.isNightly)) {
         this.logger.main.logInfo(
-          'Not activating the Mojo Context due to another Mojo extension being enabled.'
+          'Not activating the Mojo Context due to another Mojo extension being enabled.',
         );
         return this;
       }
@@ -94,14 +94,14 @@ Activating the Mojo Extension
         initializationSDK,
         this.isNightly,
         this.semiPersistentState,
-        this.extensionContext
+        this.extensionContext,
       );
       this.pushSubscription(sdkManager);
 
       this.pushSubscription(
         await configWatcher.activate({
           settings: ['SDK.additionalSDKs'],
-        })
+        }),
       );
 
       // Initialize the restart command, which can optionally receive an
@@ -113,8 +113,8 @@ Activating the Mojo Extension
           async (initializationSDK: Optional<MojoSDKSpec>) => {
             // Dispose and reactivate the context.
             await this.activate(initializationSDK, /*reloading=*/ true);
-          }
-        )
+          },
+        ),
       );
 
       // Initialize the testing support.
@@ -130,7 +130,7 @@ Activating the Mojo Extension
 
       // Initialize the execution commands.
       this.pushSubscription(
-        activateRunCommands(sdkManager, this.extensionContext)
+        activateRunCommands(sdkManager, this.extensionContext),
       );
 
       // Initialize the decorations.
@@ -145,7 +145,7 @@ Activating the Mojo Extension
       this.pushSubscription(
         new vscode.Disposable(() => {
           logger.main.logInfo('Disposing MOJOContext.');
-        })
+        }),
       );
 
       // Initialize the RPC server
@@ -166,7 +166,7 @@ Activating the Mojo Extension
     // them can lead to unexpected behavior. If this is a stable extension,
     // check for a nightly extension, and vice versa.
     const invalidExtension = vscode.extensions.getExtension(
-      isNightly ? stableExtensionId : nightlyExtensionId
+      isNightly ? stableExtensionId : nightlyExtensionId,
     );
 
     if (!invalidExtension) {
@@ -178,13 +178,13 @@ Activating the Mojo Extension
         'You have both the stable and nightly versions of the Mojo ' +
           'extension enabled. Please disable one of them to avoid ' +
           'conflicts and then restart the editor.',
-        'Show Extensions'
+        'Show Extensions',
       )
       .then((value) => {
         if (value === 'Show Extensions') {
           vscode.commands.executeCommand(
             'workbench.extensions.search',
-            '@id:' + stableExtensionId + ' ' + '@id:' + nightlyExtensionId
+            '@id:' + stableExtensionId + ' ' + '@id:' + nightlyExtensionId,
           );
         }
       });
@@ -207,7 +207,7 @@ let logHook: (level: string, message: string) => void;
  * activate this extension.
  */
 export function activate(
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
 ): Promise<MojoExtension> {
   const isNightly = isNightlyExtension(context);
   logger = new Logger(isNightly);
@@ -220,7 +220,7 @@ export function activate(
   extension = new MojoExtension(context, logger, isNightly);
   return extension.activate(
     /*initializationSDK=*/ undefined,
-    /*reloading=*/ false
+    /*reloading=*/ false,
   );
 }
 

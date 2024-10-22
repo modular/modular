@@ -77,7 +77,7 @@ const nonWindowsMultipleCalls = async (options: any = {}) => {
 
         returnValue[pid][cmd] = value;
       }
-    })
+    }),
   );
 
   // Filter out inconsistencies as there might be race
@@ -90,7 +90,7 @@ const nonWindowsMultipleCalls = async (options: any = {}) => {
         value.ppid &&
         value.uid &&
         value['%cpu'] &&
-        value['%mem']
+        value['%mem'],
     )
     .map(([key, value]: any) => ({
       pid: Number.parseInt(key, 10),
@@ -119,7 +119,7 @@ const nonWindowsCall = async (options: any = {}) => {
   ];
 
   const [psLines, psArgsLines] = (await Promise.all(psPromises)).map(
-    ({ stdout }) => stdout.trim().split('\n')
+    ({ stdout }) => stdout.trim().split('\n'),
   );
 
   const psPids = new Set(psPromises.map((promise) => promise.child.pid));
@@ -208,7 +208,7 @@ export interface ProcessDescriptor {
 
 export function psList(
   context: vscode.ExtensionContext,
-  options?: Options
+  options?: Options,
 ): Promise<ProcessDescriptor[]> {
   return process.platform === 'win32' ? windows(context) : nonWindows(options);
 }

@@ -13,7 +13,7 @@ export class MojoSDKVersion {
     major: string,
     minor: string,
     patch: string,
-    modularHomePath: string
+    modularHomePath: string,
   ) {
     this.title = title;
     this.minor = minor;

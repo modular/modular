@@ -37,7 +37,7 @@ export function registerFormatter(mojoSDKManager: MojoSDKManager) {
       if (contents !== undefined) {
         const newContents = contents.replace(
           /'''exec' (\/.*) "\$0" "\$@"/i,
-          `'''exec' '$1' "\$0" "\$@"`
+          `'''exec' '$1' "\$0" "\$@"`,
         );
         await writeFile(mblackPath, newContents);
       }
@@ -56,7 +56,7 @@ export function registerFormatter(mojoSDKManager: MojoSDKManager) {
             // applied.
             if (error) {
               mojoSDKManager.logger.main.logError(
-                `Formatting error:\n${stderr}`
+                `Formatting error:\n${stderr}`,
               );
               reject(error);
               return;
@@ -73,11 +73,11 @@ export function registerFormatter(mojoSDKManager: MojoSDKManager) {
             const documentRange = new vscode.Range(
               document.lineAt(0).range.start,
               document.lineAt(
-                document.lineCount - 1
-              ).rangeIncludingLineBreak.end
+                document.lineCount - 1,
+              ).rangeIncludingLineBreak.end,
             );
             resolve([new vscode.TextEdit(documentRange, stdout)]);
-          }
+          },
         );
 
         process.stdin?.write(originalDocumentText);
