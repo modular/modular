@@ -50,10 +50,6 @@ inline bool isXType(LIT::StructType maybeTensor, StringLiteral root,
   return maybeTensor.getSymbol().getLeafReference() == className;
 }
 
-inline bool isMOGGTensor(LIT::StructType maybeTensor) {
-  return isXType(maybeTensor, "MOGGTensor", "Tensor");
-}
-
 inline bool isExtensibilityTensor(LIT::StructType maybeTensor) {
   return isXType(maybeTensor, "extensibility", "Tensor");
 }
@@ -65,7 +61,7 @@ inline bool isDPSTensor(LIT::StructType maybeTensor) {
 }
 
 inline bool isCustomType(LIT::StructType maybeCustom) {
-  return !isMOGGTensor(maybeCustom) && !isExtensibilityTensor(maybeCustom);
+  return !isExtensibilityTensor(maybeCustom);
 }
 
 /// Returns true if there is at least one recognizable tensor on the signature.
