@@ -14,7 +14,7 @@ from max.dtype import DType
 from max.graph import Graph, TensorType
 from nn import (
     MLP,
-    Attention,
+    NaiveAttentionWithRope,
     Embedding,
     Linear,
     RMSNorm,
@@ -158,7 +158,7 @@ def test_transformer_block(session):
         ],
     ) as graph:
         transformer_block = TransformerBlock(
-            attention=Attention(
+            attention=NaiveAttentionWithRope(
                 n_heads=n_heads,
                 n_kv_heads=n_kv_heads,
                 head_dim=head_dim,
@@ -310,7 +310,7 @@ def test_transformer():
             n_heads=n_heads,
             layers=[
                 TransformerBlock(
-                    attention=Attention(
+                    attention=NaiveAttentionWithRope(
                         n_heads=n_heads,
                         n_kv_heads=n_kv_heads,
                         head_dim=head_dim,

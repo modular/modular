@@ -11,7 +11,7 @@ import torch
 from max.dtype import DType
 from max.graph import BufferType, Graph, TensorType, TensorValue, ops
 from modular_graph_test import modular_graph_test
-from nn import Attention, Linear, RotaryEmbedding
+from nn import NaiveAttentionWithRope, Linear, RotaryEmbedding
 from torch import nn
 from transformers import StaticCache
 from transformers.models.llama.configuration_llama import LlamaConfig
@@ -125,7 +125,7 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
     with graph:
         x, attn_mask, k_cache, v_cache, wq, wk, wv, wo = graph.inputs
         graph.output(
-            Attention(
+            NaiveAttentionWithRope(
                 n_heads,
                 n_kv_heads,
                 head_dim,
