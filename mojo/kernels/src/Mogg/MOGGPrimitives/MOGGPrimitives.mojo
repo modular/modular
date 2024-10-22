@@ -289,7 +289,7 @@ fn create_non_tracked_buffer_ref_async[
 @always_inline
 @export
 fn create_buffer_ref_with_borrow_async[
-    target: StringLiteral
+    borrow_from_storage_handle: Bool, target: StringLiteral
 ](
     buffer: NDBuffer[DType.int8, 1],
     async_to_borrow: UnsafePointer[NoneType],
@@ -298,7 +298,12 @@ fn create_buffer_ref_with_borrow_async[
     call_ctx: MojoCallContextPtr,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncBufferWithBorrow", NoneType](
-        buffer.data, len(buffer), async_to_borrow, output_async, runtime
+        buffer.data,
+        len(buffer),
+        async_to_borrow,
+        borrow_from_storage_handle,
+        output_async,
+        runtime,
     )
 
 
@@ -735,6 +740,45 @@ fn mgp_buffer_host_to_device[
             "mgp.buffer.host_to_device must be scheduled on cuda device"
         )
     return 0
+
+
+@mogg_register("mgp.buffer.get_cached")
+@always_inline
+@export
+fn mgp_buffer_get_cached[
+    aRuntimeSlot: UInt64,
+    bBufferSlot: UInt64,
+](
+    dummy_chain: Int,
+    ctx: StateContext,
+    storage_ref_addr: UnsafePointer[UnsafePointer[NoneType]],
+) raises -> NDBuffer[DType.uint8, 1]:
+    var buffer_size: UInt64 = 0
+    var buffer_data: UnsafePointer[NoneType] = external_call[
+        "KGEN_CompilerRT_GetCachedBuffer", UnsafePointer[NoneType]
+    ](
+        int(bBufferSlot),
+        ctx.ctxPtr,
+        UnsafePointer.address_of(buffer_size),
+        storage_ref_addr,
+    )
+
+    if not buffer_data:
+        raise Error("failed in mgp.buffer.get_cached")
+
+    return NDBuffer[DType.uint8, 1](
+        buffer_data.bitcast[UInt8](), Index(buffer_size)
+    )
+
+
+@mogg_register("destruct_async_refs")
+@always_inline
+fn destruct_async_refs[
+    size: Int
+](storage_ref_addr: StaticTuple[UnsafePointer[UnsafePointer[NoneType]], size]):
+    external_call["KGEN_CompilerRT_DestructAsyncRefs", NoneType](
+        size, UnsafePointer.address_of(storage_ref_addr.array).address
+    )
 
 
 # ===----------------------------------------------------------------------===#
