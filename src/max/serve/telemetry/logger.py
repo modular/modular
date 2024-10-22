@@ -16,6 +16,7 @@ from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
+from pythonjsonlogger import jsonlogger
 
 
 def _getCloudProvider() -> str:
@@ -46,13 +47,17 @@ def configureLogging(
 
     # Create a console handler
     console_handler = logging.StreamHandler()
-    console_formatter = logging.Formatter(
-        (
-            "%(asctime)s.%(msecs)03d %(levelname)s: %(threadName)s: %(name)s:"
-            " %(message)s"
-        ),
-        datefmt="%H:%M:%S",
-    )
+    console_formatter: logging.Formatter
+    if os.getenv("MODULAR_STRUCTURED_LOGGING"):
+        console_formatter = jsonlogger.JsonFormatter()
+    else:
+        console_formatter = logging.Formatter(
+            (
+                "%(asctime)s.%(msecs)03d %(levelname)s: %(threadName)s:"
+                " %(name)s: %(message)s"
+            ),
+            datefmt="%H:%M:%S",
+        )
     console_handler.setFormatter(console_formatter)
     console_handler.setLevel(console_level)
     logging_handlers.append(console_handler)
@@ -60,13 +65,17 @@ def configureLogging(
     if file_level is not None:
         # Create a file handler
         file_handler = logging.FileHandler(file_path)
-        file_formatter = logging.Formatter(
-            (
-                "%(asctime)s.%(msecs)03d %(levelname)s: %(threadName)s:"
-                " %(name)s: %(message)s"
-            ),
-            datefmt="%y:%m:%d-%H:%M:%S",
-        )
+        file_formatter: logging.Formatter
+        if os.getenv("MODULAR_STRUCTURED_LOGGING"):
+            file_formatter = jsonlogger.JsonFormatter()
+        else:
+            file_formatter = logging.Formatter(
+                (
+                    "%(asctime)s.%(msecs)03d %(levelname)s: %(threadName)s:"
+                    " %(name)s: %(message)s"
+                ),
+                datefmt="%y:%m:%d-%H:%M:%S",
+            )
         file_handler.setFormatter(file_formatter)
         file_handler.setLevel(file_level)
         logging_handlers.append(file_handler)
