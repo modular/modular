@@ -377,7 +377,10 @@ fn flash_attention[
     add_attn_mask: Bool = True,
     target: StringLiteral = "cuda",
     use_tensor_core: Bool = True,
-    config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
+    config: MHAConfig = MHAConfig(
+        type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
+    ),
+    ragged: Bool = False,
 ](
     output: NDBuffer[_, rank, *_],
     q: NDBuffer[type, rank, q_shape, *_],
@@ -414,7 +417,12 @@ fn flash_attention[
     padding). Such lengths are passed in valid_length argument.
     """
     constrained["cuda" in target, "only valid on Nvidia GPUs"]()
-    constrained[rank == 4, "only support rank 4 inputs."]()
+    constrained[
+        ragged or rank == 4, "only support rank 4 inputs for non-ragged inputs."
+    ]()
+    constrained[
+        not ragged or rank == 3, "only support rank 3 inputs for ragged inputs."
+    ]()
     constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
     constrained[
         q.type == k.get_type() == v.get_type() == output.type,
@@ -440,8 +448,6 @@ fn flash_attention[
         Trace[TraceLevel.OP, target=target]._get_detail_str[description_fn](),
     ):
         # Runtime dimensions.
-        var batch_size = q.dim[0]()
-        var seq_len = q.dim[1]()
 
         # TODO: This helps differentiate between CE/TG. Not batch-specific.
         #       We'll just implement a flag on the cache object which is true
@@ -449,37 +455,60 @@ fn flash_attention[
         #       such flag (part of ContiguousKVCache) is implemented.
         var is_context_encoding = k.empty_cache()
 
-        # Get maximum cache valid length from the mask shape.
-        # Reminder: mask is BSS or BHSS (depending on rank).
-        #           and SS is max_prompt_len x
-        #                       max_prompt_len + mac_cache_valid_length
-        # Used in decoding only. Needed by mha_gpu_naive that handles both, too.
-        var max_cache_valid_length = mask.dim(3) - mask.dim(
-            2
-        ) if mask.rank == 4 else mask.dim(2) - mask.dim(1)
+        var batch_size: Int
+        var max_prompt_len: Int
+        var max_cache_valid_length: Int
+
+        @parameter
+        if add_attn_mask:
+            # Get maximum cache valid length from the mask shape.
+            # Reminder: mask is BSS or BHSS (depending on rank).
+            #           and SS is max_prompt_len x
+            #                       max_prompt_len + mac_cache_valid_length
+            # Used in decoding only. Needed by mha_gpu_naive that handles both, too.
+            max_cache_valid_length = (
+                mask.dim[mask.rank - 1]() - mask.dim[mask.rank - 2]()
+            )
+        else:
+            # TODO hard code this to large enough value. We'll only use this in our
+            # naive MHA codepath.
+            max_cache_valid_length = 2048
+
+        @parameter
+        if ragged:
+            batch_size = valid_length.dim[0]() - 1
+
+            # TODO hard code this to reasonable value. We'll only use this in our naive MHA codepath
+            # once fused masking lands fully.
+            max_prompt_len = 2048 if is_context_encoding else 1
+        else:
+            batch_size = q.dim[0]()
+            max_prompt_len = q.dim[1]()
 
         # Whether head and depth are static. With BSHD, B and S are dynamic.
         # H and D are always known.
         # fmt: off
-        alias head_depth_known = q.shape.all_known[2, 4]() and k.get_block_static_shape().has_value[1]()
+        alias head_depth_known = q.shape.all_known[rank-2, rank]() and k.get_block_static_shape().has_value[1]()
         # Current impl has only been verified for depth = 128.
-        alias flash_attention_applicable = head_depth_known and q.shape.get[3]() == 128 and use_tensor_core
+        alias flash_attention_applicable = head_depth_known and q.shape.get[rank-1]() == 128 and use_tensor_core
         alias q_half_float = q.type in (DType.float16, DType.bfloat16)
         # fmt: on
 
         alias num_heads = config.num_heads
         alias depth = config.depth
-        constrained[depth == q.shape.get[3]()]()
-        constrained[num_heads == q.shape.get[2]()]()
+        alias kv_num_heads = k.get_kv_params().num_heads
+        alias group = config.num_heads // kv_num_heads
+
+        constrained[depth == q.shape.get[rank - 1]()]()
+        constrained[num_heads == q.shape.get[rank - 2]()]()
 
         @parameter
         if flash_attention_applicable:
-            alias kv_num_heads = k.get_kv_params().num_heads
-            alias group = config.num_heads // kv_num_heads
-
             # Attention mask tensor needs to be aligned to even length. This
             # is not needed when computing mask on the fly.
-            if is_context_encoding and (seq_len % 2 == 0 or not add_attn_mask):
+            if is_context_encoding and (
+                max_prompt_len % 2 == 0 or not add_attn_mask
+            ):
                 # Choose matmul parameters based on dtype.
                 alias smem_use = config.shared_mem_elements() * sizeof[
                     config.type
@@ -496,6 +525,7 @@ fn flash_attention[
                         config,
                         group=group,
                         use_mask_tensor=add_attn_mask,
+                        ragged=ragged,
                     ]
                 ](
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -511,11 +541,11 @@ fn flash_attention[
                     output.data,
                     scale,
                     batch_size,
-                    seq_len,
+                    max_prompt_len,
                     valid_length,
                     mask_functor,
                     grid_dim=(
-                        Int(ceildiv(seq_len, config.block_m())),
+                        Int(ceildiv(max_prompt_len, config.block_m())),
                         Int(config.num_heads),
                         Int(batch_size),
                     ),
@@ -524,7 +554,9 @@ fn flash_attention[
                 )
 
             # Decoding impl only support half precision.
-            elif q_half_float and seq_len == 1 and not is_context_encoding:
+            elif (
+                q_half_float and max_prompt_len == 1 and not is_context_encoding
+            ):
                 alias BM = 16
                 alias BN = depth
                 alias BK = 16 if q.type is DType.float32 else 32
@@ -532,7 +564,6 @@ fn flash_attention[
                 alias WN = 32
                 # num warps in M and N, multipled by warp size.
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
-
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask.rank,
@@ -553,6 +584,7 @@ fn flash_attention[
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_tensor_core=use_tensor_core,
+                        ragged=ragged,
                     ]
                 ](
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -577,7 +609,12 @@ fn flash_attention[
                     shared_mem_bytes=80 * 1024,
                 )
             else:
-                mha_gpu_naive[mask.rank, rank, use_mask_tensor=add_attn_mask,](
+                mha_gpu_naive[
+                    mask.rank,
+                    rank,
+                    use_mask_tensor=add_attn_mask,
+                    ragged=ragged,
+                ](
                     q,
                     k,
                     v,
@@ -587,7 +624,7 @@ fn flash_attention[
                     valid_length,
                     scale,
                     batch_size,
-                    seq_len,
+                    max_prompt_len,
                     max_cache_valid_length,
                     num_heads,
                     depth,
@@ -597,12 +634,9 @@ fn flash_attention[
 
         else:
             # Assumes BSHD.
-            var depth = q.dim[3]()
-            alias num_heads = q.shape.get[2]()
-            alias kv_num_heads = k.get_kv_params().num_heads
-            alias group = num_heads // kv_num_heads
-
-            mha_gpu_naive[mask.rank, rank, use_mask_tensor=add_attn_mask,](
+            mha_gpu_naive[
+                mask.rank, rank, use_mask_tensor=add_attn_mask, ragged=ragged
+            ](
                 q,
                 k,
                 v,
@@ -612,7 +646,7 @@ fn flash_attention[
                 valid_length,
                 scale,
                 batch_size,
-                seq_len,
+                max_prompt_len,
                 max_cache_valid_length,
                 num_heads,
                 depth,
@@ -950,6 +984,7 @@ fn mha[
     config: MHAConfig,
     group: Int = 1,
     use_mask_tensor: Bool = True,
+    ragged: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: cache_t,
@@ -963,8 +998,23 @@ fn mha[
     mask: mask_t,
 ):
     var batch_idx = BlockIdx.z()
-    var seq_len: Int = int(valid_length[batch_idx])
-    var q_batch_offset = config.depth * config.num_heads * max_seq_len * batch_idx
+    var seq_len: Int
+    var q_batch_offset: Int
+
+    @parameter
+    if ragged:
+        # treat valid_lengths as a prefix_sum
+        start_of_seq = int(valid_length[batch_idx])
+        end_of_seq = int(valid_length[batch_idx + 1])
+        seq_len = end_of_seq - start_of_seq
+        q_batch_offset = start_of_seq * config.depth * config.num_heads
+    else:
+        # treat valid_lengths as valid lengths
+        q_batch_offset = (
+            config.depth * config.num_heads * max_seq_len * batch_idx
+        )
+        seq_len = int(valid_length[batch_idx])
+
     var mask_batch_offset = batch_idx * max_seq_len * max_seq_len * (
         config.num_heads if mask_rank == 4 else 1
     )
@@ -1618,6 +1668,7 @@ fn mha_decoding[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_tensor_core: Bool = True,
+    ragged: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: cache_t,
@@ -1631,11 +1682,23 @@ fn mha_decoding[
     mask: mask_t,
 ):
     var batch_idx = BlockIdx.z()
+    var seq_len: Int
+    var q_batch_offset: Int
 
-    var seq_len: Int = int(valid_length[batch_idx])  # Always 1 for decoding
+    @parameter
+    if ragged:
+        # treat valid_lengths as a prefix_sum
+        start_of_seq = int(valid_length[batch_idx])
+        end_of_seq = int(valid_length[batch_idx + 1])
+        seq_len = end_of_seq - start_of_seq
+        q_batch_offset = start_of_seq * depth * num_heads
+    else:
+        # treat valid_lengths as valid lengths
+        q_batch_offset = depth * num_heads * batch_idx
+        seq_len = int(valid_length[batch_idx])
+
     var num_keys = seq_len + k.cache_length(batch_idx)
 
-    var q_batch_offset = depth * num_heads * batch_idx
     # This is:
     # batch_idx *
     # full_seq_len (=longest KV cache entry + longest seq in the batch,
@@ -2214,6 +2277,7 @@ fn mha_gpu_naive[
     mask_rank: Int,
     rank: Int,
     use_mask_tensor: Bool = True,
+    ragged: Bool = False,
 ](
     q: NDBuffer[_, rank, *_],
     k: cache_t,
@@ -2257,6 +2321,7 @@ fn mha_gpu_naive[
             p_type,
             mask_type,
             use_mask_tensor,
+            ragged=ragged,
         ]
     ]()
     ctx.enqueue_function(
@@ -2301,6 +2366,7 @@ fn mha_gpu_naive[
             __type_of(v),
             p_type,
             output_type,
+            ragged=ragged,
         ]
     ]()
 
@@ -2335,6 +2401,8 @@ fn _bmm0_bs[
     p_type: DType,
     mask_type: DType,
     use_mask_tensor: Bool = True,
+    *,
+    ragged: Bool = False,
 ](
     p_ptr: UnsafePointer[Scalar[p_type]],
     q_ptr: UnsafePointer[Scalar[q_type]],
@@ -2350,24 +2418,41 @@ fn _bmm0_bs[
     group: Int,
     mask_functor: mask_t,
 ):
+    # total_context_length
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    # prompt_length
     var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 
     alias k_type = k_cache.get_type()
     alias kv_num_heads = k_cache.get_kv_params().num_heads
 
-    var num_keys = max_prompt_len + max_cache_size
     var batch_head = BlockIdx.z()
     var batch: UInt
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))
 
-    var cur_query_len = int(valid_length[batch])
+    var cur_query_len: Int
+    var q_offset: Int
+    var num_keys: Int
+    var padded_num_keys = max_prompt_len + max_cache_size
+    var p_offset = batch_head * max_prompt_len * padded_num_keys
+
+    @parameter
+    if ragged:
+        seq_start = int(valid_length[batch])
+        seq_end = int(valid_length[batch + 1])
+        cur_query_len = seq_end - seq_start
+        q_offset = int((seq_start * num_heads + head) * depth)
+        # num_heads * max_prompt_len * batch * depth + depth * head
+        num_keys = cur_query_len + k_cache.cache_length(batch)
+    else:
+        cur_query_len = int(valid_length[batch])
+        q_offset = int(depth * (head + num_heads * max_prompt_len * batch))
+        num_keys = padded_num_keys
 
     if x >= max_prompt_len + max_cache_size or y >= max_prompt_len:
         return
 
-    var q_offset = int(depth * (head + num_heads * max_prompt_len * batch))
     var q = q_ptr + q_offset
 
     var kv_head = int(head // group)
@@ -2375,12 +2460,11 @@ fn _bmm0_bs[
         batch, 0
     )._offset(Index(0, kv_head, 0))
 
-    var p_offset = batch_head * max_prompt_len * num_keys
     var p = p_ptr + Int(p_offset)
 
     var mask_offset = (
         batch if mask_rank == 3 else batch_head
-    ) * max_prompt_len * num_keys
+    ) * max_prompt_len * padded_num_keys
     var mask = mask_ptr + Int(mask_offset)
 
     var accum = SIMD[p_type, 1](0.0)
@@ -2410,19 +2494,20 @@ fn _bmm0_bs[
 
     @parameter
     if use_mask_tensor:
-        p[y * num_keys + x] = (
-            accum * scale.cast[p_type]() + mask[y * num_keys + x].cast[p_type]()
+        p[y * padded_num_keys + x] = (
+            accum * scale.cast[p_type]()
+            + mask[y * padded_num_keys + x].cast[p_type]()
         )
 
         if (
             x >= cur_query_len + k_cache.cache_length(batch)
             or y >= cur_query_len
         ):
-            p[y * num_keys + x] = min_or_neg_inf[p_type]()
+            p[y * padded_num_keys + x] = min_or_neg_inf[p_type]()
     else:
         var score_row = x
         var score_col = y
-        p[y * num_keys + x] = mask_functor.mask(
+        p[y * padded_num_keys + x] = mask_functor.mask(
             Index(
                 int(batch),
                 int(head),
@@ -2431,13 +2516,13 @@ fn _bmm0_bs[
             ),
             accum * scale.cast[p_type](),
         )
-        p[y * num_keys + x] = _kernel_mask(
+        p[y * padded_num_keys + x] = _kernel_mask(
             Index(score_row, score_col),
             Index(
                 k_cache.cache_length(batch) + cur_query_len,
                 k_cache.cache_length(batch) + cur_query_len,
             ),
-            p[y * num_keys + x],
+            p[y * padded_num_keys + x],
         )
 
 
@@ -2446,6 +2531,8 @@ fn _bmm1_bs[
     cache_t: KVCacheT,
     p_type: DType,
     output_type: DType,
+    *,
+    ragged: Bool = False,
 ](
     output_ptr: UnsafePointer[Scalar[output_type]],
     p_ptr: UnsafePointer[Scalar[p_type]],
@@ -2460,22 +2547,34 @@ fn _bmm1_bs[
     alias v_type = v_cache.get_type()
     alias kv_num_heads = v_cache.get_kv_params().num_heads
 
+    # head_size
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    # seq_len
     var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-
-    var num_keys = max_prompt_len + max_cache_size
 
     var batch_head = BlockIdx.z()
     var batch: UInt
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))
 
-    var cur_query_len = int(valid_length[batch])
+    var cur_query_len: Int
+    var output_offset: Int
+    var padded_num_keys = max_prompt_len + max_cache_size
+    var p_offset = batch_head * max_prompt_len * padded_num_keys
+
+    @parameter
+    if ragged:
+        seq_start = int(valid_length[batch])
+        seq_end = int(valid_length[batch + 1])
+        cur_query_len = seq_end - seq_start
+        output_offset = int((seq_start * num_heads + head) * depth)
+    else:
+        cur_query_len = int(valid_length[batch])
+        output_offset = depth * (head + num_heads * max_prompt_len * batch)
 
     if x >= depth or y >= cur_query_len:
         return
 
-    var p_offset = batch_head * max_prompt_len * num_keys
     var p = p_ptr + p_offset
 
     var kv_head = int(head // group)
@@ -2483,14 +2582,14 @@ fn _bmm1_bs[
         batch, 0
     )._offset(Index(0, kv_head, 0))
 
-    var output_offset = depth * (head + num_heads * max_prompt_len * batch)
     var output = output_ptr + Int(output_offset)
 
     var accum = SIMD[DType.float32, 1](0.0)
 
     for i in range(cur_query_len + v_cache.cache_length(batch)):
         accum += (
-            p[y * num_keys + i].cast[v_type]() * v[i * kv_num_heads * depth + x]
+            p[y * padded_num_keys + i].cast[v_type]()
+            * v[i * kv_num_heads * depth + x]
         ).cast[DType.float32]()
 
     output[y * num_heads * depth + x] = accum.cast[output_type]()
