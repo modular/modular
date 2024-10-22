@@ -10,18 +10,17 @@ import asyncio
 import logging
 import os
 import signal
-
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Generic, Mapping, Optional
-from transformers import PreTrainedTokenizerBase
-from max.pipelines import TokenGenerator, TokenGeneratorContext
-from max.serve.telemetry.stopwatch import StopWatch
 
+from max.pipelines import TokenGenerator, TokenGeneratorContext
 from max.serve.scheduler.queues import (
+    BatchingStrategy,
     BatchMultiplexQueue,
     BatchQueueConfig,
-    BatchingStrategy,
 )
+from max.serve.telemetry.stopwatch import StopWatch
+from transformers import PreTrainedTokenizerBase
 
 
 @dataclass(frozen=True)
@@ -222,6 +221,8 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                     )
                     if valid:
                         yield token
+                    else:
+                        return
                 self.logger.debug(
                     "%s: Context-Encoding: %0.2f ms, Elapsed: %0.2f ms",
                     request.id,

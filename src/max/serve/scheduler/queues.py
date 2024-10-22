@@ -7,21 +7,20 @@
 
 import asyncio
 import contextlib
-from enum import Enum
 import logging
-from time import monotonic
 from dataclasses import dataclass, field
+from enum import Enum
+from time import monotonic
 from typing import (
     AsyncGenerator,
+    Awaitable,
     Callable,
     Generic,
     Mapping,
     Optional,
     TypeVar,
-    Awaitable,
     Union,
 )
-
 
 BatchReqId = TypeVar("BatchReqId")
 BatchReqInput = TypeVar("BatchReqInput")
@@ -202,6 +201,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     while batch:
                         results = await self.executor_fn(batch)
                         completed = self.completed_fn(batch, results)
+                        terminated = batch.keys() - results.keys()
                         if completed or (
                             self.config.strategy
                             == BatchingStrategy.DYNAMIC_IMMUTABLE
@@ -214,7 +214,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                                 completed,
                             )
 
-                            for req_id in completed:
+                            for req_id in terminated:
                                 results[req_id] = STOP_STREAM
 
                             for req_id in completed:
