@@ -3335,6 +3335,44 @@ struct CumSum:
 # ===----------------------------------------------------------------------===#
 
 
+fn concat_shape_impl[
+    type: DType, rank: Int, size: Int
+](
+    axis_buf: ManagedTensorSlice[rank=1],
+    inputs: StaticTuple[ManagedTensorSlice[type, rank], size],
+) raises -> IndexList[rank]:
+    var axis_val = axis_buf._ptr.load(0)
+    var axis = int(normalize_neg_index(axis_val, rank))
+    if axis < 0 or rank <= axis:
+        raise ("[concat] normalized axis must be within range [0, rank)")
+
+    @parameter
+    @always_inline
+    fn shape_equal_ignore_axis(
+        s1: IndexList[rank], s2: IndexList[rank]
+    ) -> Bool:
+        for i in range(rank):
+            if i != axis and s1[i] != s2[i]:
+                return False
+        return True
+
+    var concat_axis_dim_sum = 0
+    for i in range(len(inputs)):
+        concat_axis_dim_sum += inputs[i].dim_size(axis)
+        if not shape_equal_ignore_axis(
+            inputs[0].get_static_spec().shape,
+            inputs[i].get_static_spec().shape,
+        ):
+            raise Error(
+                "[concat] input shapes must match except at concat axis"
+            )
+
+    # compute and return the output shape
+    var output_shape = inputs[0].get_static_spec().shape
+    output_shape[axis] = concat_axis_dim_sum
+    return output_shape
+
+
 @compiler.register("mo.concat")
 struct Concat:
     @staticmethod
@@ -3376,36 +3414,7 @@ struct Concat:
         axis_buf: ManagedTensorSlice[rank=1],
         inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
     ) raises -> IndexList[rank]:
-        var axis_val = axis_buf._ptr.load(0)
-        var axis = int(normalize_neg_index(axis_val, rank))
-        if axis < 0 or rank <= axis:
-            raise ("[concat] normalized axis must be within range [0, rank)")
-
-        @parameter
-        @always_inline
-        fn shape_equal_ignore_axis(
-            s1: IndexList[rank], s2: IndexList[rank]
-        ) -> Bool:
-            for i in range(rank):
-                if i != axis and s1[i] != s2[i]:
-                    return False
-            return True
-
-        var concat_axis_dim_sum = 0
-        for i in range(len(inputs)):
-            concat_axis_dim_sum += inputs[i].dim_size(axis)
-            if not shape_equal_ignore_axis(
-                inputs[0].get_static_spec().shape,
-                inputs[i].get_static_spec().shape,
-            ):
-                raise Error(
-                    "[concat] input shapes must match except at concat axis"
-                )
-
-        # compute and return the output shape
-        var output_shape = inputs[0].get_static_spec().shape
-        output_shape[axis] = concat_axis_dim_sum
-        return output_shape
+        return concat_shape_impl(axis_buf, inputs)
 
 
 # Construct a managed tensor slice from a raw pointer and shape specification.
@@ -3465,6 +3474,46 @@ fn to_managed_tensor_slice_list[
     return InlinedFixedVector(out_list)
 
 
+# NOTE: there are a lot of similarities between this and the shape func
+# for mo.concat.
+fn concat_from_list_shape_impl[
+    type: DType, rank: Int
+](
+    axis_buf: ManagedTensorSlice[rank=1],
+    inputs: InlinedFixedVector[ManagedTensorSlice[type, rank]],
+) raises -> IndexList[rank]:
+    var axis_val = axis_buf._ptr.load(0)
+    var axis = int(normalize_neg_index(axis_val, rank))
+    if axis < 0 or rank <= axis:
+        raise ("[concat] normalized axis must be within range [0, rank)")
+
+    @parameter
+    @always_inline
+    fn shape_equal_ignore_axis(
+        s1: IndexList[rank], s2: IndexList[rank]
+    ) -> Bool:
+        for i in range(rank):
+            if i != axis and s1[i] != s2[i]:
+                return False
+        return True
+
+    var concat_axis_dim_sum = 0
+    for i in range(len(inputs)):
+        concat_axis_dim_sum += inputs[i].dim_size(axis)
+        if not shape_equal_ignore_axis(
+            inputs[0].get_static_spec().shape,
+            inputs[i].get_static_spec().shape,
+        ):
+            raise Error(
+                "[concat] input shapes must match except at concat axis"
+            )
+
+    # compute and return the output shape
+    var output_shape = inputs[0].get_static_spec().shape
+    output_shape[axis] = concat_axis_dim_sum
+    return output_shape
+
+
 @compiler.register("mo.concat_from_list")
 struct ConcatFromList:
     @staticmethod
@@ -3506,41 +3555,7 @@ struct ConcatFromList:
         inputs: InlinedFixedVector[ManagedTensorSlice[type, rank]],
         axis_buf: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[rank]:
-        # TODO: this shape function is nearly identical to mo.concat's
-        var axis_val = axis_buf[0]
-        var axis = int(normalize_neg_index(axis_val, rank))
-        if axis < 0 or rank <= axis:
-            raise (
-                "[concat_from_list] normalized axis must be within range [0,"
-                " rank)"
-            )
-
-        @parameter
-        @always_inline
-        fn shape_equal_ignore_axis(
-            s1: IndexList[rank], s2: IndexList[rank]
-        ) -> Bool:
-            for i in range(rank):
-                if i != axis and s1[i] != s2[i]:
-                    return False
-            return True
-
-        var concat_axis_dim_sum = 0
-        for i in range(len(inputs)):
-            concat_axis_dim_sum += inputs[i].dim_size(axis)
-            if not shape_equal_ignore_axis(
-                inputs[0].get_static_spec().shape,
-                inputs[i].get_static_spec().shape,
-            ):
-                raise Error(
-                    "[concat_from_list] input shapes must match except at"
-                    " concat axis"
-                )
-
-        # compute and return the output shape
-        var output_shape = inputs[0].get_static_spec().shape
-        output_shape[axis] = concat_axis_dim_sum
-        return output_shape
+        return concat_from_list_shape_impl(axis_buf, inputs)
 
 
 # ===----------------------------------------------------------------------===#
