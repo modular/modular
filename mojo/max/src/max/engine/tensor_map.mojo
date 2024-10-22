@@ -118,7 +118,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             value: Tensor to be held in map.
         """
         var spec = EngineTensorSpec(
-            key._strref_dangerous(),
+            key.as_string_slice(),
             value.spec(),
             self._lib,
             self._session,
@@ -126,7 +126,6 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         self._ptr.borrow_tensor_by_name(
             value.unsafe_ptr().bitcast[NoneType](), spec, self._lib
         )
-        key._strref_keepalive()
 
     fn borrow[
         type: DType
@@ -147,7 +146,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             ptr: The tensor pointer.
         """
         var tensor_spec = EngineTensorSpec(
-            key._strref_dangerous(),
+            key.as_string_slice(),
             spec,
             self._lib,
             self._session,
@@ -168,13 +167,12 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             value: View of a tensor.
         """
         var spec = EngineTensorSpec(
-            key._strref_dangerous(),
+            key.as_string_slice(),
             value.spec(),
             self._lib,
             self._session,
         )
         self._ptr.borrow_tensor_by_name(value.unsafe_ptr(), spec, self._lib)
-        key._strref_keepalive()
 
     fn borrow(self, key: String, value: EngineNumpyView) raises:
         """Borrow the given numpy view into the map at the key location.
@@ -186,13 +184,12 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             value: View of a numpy array.
         """
         var spec = EngineTensorSpec(
-            key._strref_dangerous(),
+            key.as_string_slice(),
             value.spec(),
             self._lib,
             self._session,
         )
         self._ptr.borrow_tensor_by_name(value.unsafe_ptr(), spec, self._lib)
-        key._strref_keepalive()
 
     fn borrow(self, key: String, value: Value) raises:
         """Borrow the given value into the map at the key location.
@@ -204,9 +201,8 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             value: Value to insert into map.
         """
         self._ptr.borrow_value_by_name(
-            key._strref_dangerous(), value._ptr.ptr, self._lib
+            key.as_string_slice(), value._ptr.ptr, self._lib
         )
-        key._strref_keepalive()
 
     fn _move_mojo_value[T: Movable](self, key: String, owned value: T) raises:
         """Move the mojo value inside the map at the key location.
@@ -236,7 +232,6 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         var tensor_ptr = self._ptr.get_tensor_by_name(
             key.unsafe_cstr_ptr(), self._lib
         )
-        key._strref_keepalive()
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
         var tensor = mof_tensor.tensor[type]()
         return tensor^
@@ -273,7 +268,6 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         var tensor_ptr = self._ptr.get_tensor_by_name(
             key.unsafe_cstr_ptr(), self._lib
         )
-        key._strref_keepalive()
         return EngineTensor(tensor_ptr, self._lib, self._session).buffer[type]()
 
     fn get_spec(self, key: String) raises -> TensorSpec:
@@ -306,7 +300,6 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         var value_ptr = self._ptr.get_value_by_name(
             key.unsafe_cstr_ptr(), self._lib
         )
-        key._strref_keepalive()
         return Value(value_ptr, self._lib, self._session)
 
     fn keys(self) -> List[String]:
