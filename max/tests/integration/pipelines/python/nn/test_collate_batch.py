@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from llama3.collate_batch import (
+from dataprocessing import (
     PaddingDirection,
     batch_padded_tokens_and_mask,
     collate_batch,

@@ -30,6 +30,7 @@ modular_py_test(
     deps = [
         "//SDK/integration-test/API/python:modular_graph_test",
         "//SDK/lib/API/python/max/engine",
+        "//SDK/public/max-repo/pipelines/python/dataprocessing",
         "//SDK/public/max-repo/pipelines/python/nn",
         requirement("torch"),
         requirement("transformers"),
@@ -70,6 +71,7 @@ modular_py_test(
     deps = [
         "//SDK/integration-test/API/python:modular_graph_test",
         "//SDK/lib/API/python/max/engine",
+        "//SDK/public/max-repo/pipelines/python/dataprocessing",
         "//SDK/public/max-repo/pipelines/python/nn",
         requirement("torch"),
         requirement("transformers"),

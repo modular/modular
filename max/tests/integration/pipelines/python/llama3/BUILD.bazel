@@ -79,6 +79,7 @@ modular_py_binary(
             ":evaluate_llama",
             "//SDK/lib/API/python/max/engine",
             "//SDK/lib/API/python/max/serve",
+            "//SDK/public/max-repo/pipelines/python/dataprocessing",
             "//SDK/public/max-repo/pipelines/python/llama3",
             "//SDK/public/max-repo/pipelines/python/nn",
             "//SDK/public/max-repo/pipelines/python/utils",
