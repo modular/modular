@@ -112,7 +112,7 @@ struct PythonServer[
             callbacks: Extra lifecycle callbacks.
         """
         self._lib = handle_from_config("serving", ".serve_lib")
-        self._impl = CPythonServer(self._lib, address._strref_dangerous())
+        self._impl = CPythonServer(self._lib, address.unsafe_ptr())
         self._callbacks = CallbackSet(
             Guarded[ServerStats, STATS_ENABLED](ServerStats()),
             callbacks^,

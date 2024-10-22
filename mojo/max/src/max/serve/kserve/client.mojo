@@ -37,7 +37,7 @@ struct GRPCClient:
         """
         self._lib = handle_from_config("serving", ".serve_lib")
         self._session = session^
-        self._impl = CGRPCClient(self._lib, address._strref_dangerous())
+        self._impl = CGRPCClient(self._lib, address.as_string_slice())
         self._impl.run()
 
     fn __moveinit__(inout self: Self, owned existing: Self):
@@ -77,7 +77,7 @@ struct GRPCClient:
     ) raises -> InferenceRequest:
         var request = InferenceRequest(
             self._impl.create_infer_request(
-                name._strref_dangerous(), version._strref_dangerous()
+                name.as_string_slice(), version.as_string_slice()
             ),
             self._session,
         )
@@ -94,7 +94,7 @@ struct GRPCClient:
     ) raises -> InferenceRequest:
         var request = InferenceRequest(
             self._impl.create_infer_request(
-                name._strref_dangerous(), version._strref_dangerous()
+                name.as_string_slice(), version.as_string_slice()
             ),
             self._session,
         )

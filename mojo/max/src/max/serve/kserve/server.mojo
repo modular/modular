@@ -77,7 +77,7 @@ struct GRPCServer[
         self._lib = handle_from_config("serving", ".serve_lib")
         self._session = session^
         self._num_listeners = num_listeners
-        self._impl = CGRPCServer(self._lib, address._strref_dangerous())
+        self._impl = CGRPCServer(self._lib, address.unsafe_ptr())
         self._stop_flag = Atomic[DType.int64](0)
         self._callbacks = CallbackSet(
             Guarded[ServerStats, STATS_ENABLED](ServerStats()),

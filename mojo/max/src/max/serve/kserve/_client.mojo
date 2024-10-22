@@ -9,7 +9,7 @@ from sys.ffi import DLHandle
 from memory import UnsafePointer
 from memory import UnsafePointer
 from runtime.asyncrt import Chain
-from utils import StringRef
+from utils import StringRef, StringSlice
 
 from max._utils import call_dylib_func, exchange, CString
 
@@ -45,13 +45,13 @@ struct CGRPCClient:
     alias _ModelInferCreateRequestFnName = "M_modelInferCreateRequest"
     alias _ModelInferTakeResultFnName = "M_modelInferTakeResult"
 
-    fn __init__(inout self, lib: DLHandle, address: StringRef):
+    fn __init__(inout self, lib: DLHandle, address: StringSlice):
         self._lib = lib
         self._ptr = UnsafePointer[NoneType]()
         call_dylib_func(
             self._lib,
             Self._NewFnName,
-            address,
+            address.unsafe_ptr(),
             UnsafePointer.address_of(self._ptr),
         )
 
@@ -79,15 +79,15 @@ struct CGRPCClient:
         return chain
 
     fn create_infer_request(
-        inout self, name: StringRef, version: StringRef
+        inout self, name: StringSlice, version: StringSlice
     ) -> CInferenceRequest:
         var ptr = UnsafePointer[NoneType]()
         call_dylib_func(
             self._lib,
             Self._ModelInferCreateRequestFnName,
             self._ptr,
-            name,
-            version,
+            name.unsafe_ptr(),
+            version.unsafe_ptr(),
             UnsafePointer.address_of(ptr),
         )
         return CInferenceRequest(self._lib, ptr, owning=True)

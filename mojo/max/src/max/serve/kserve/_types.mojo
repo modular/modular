@@ -7,7 +7,7 @@
 
 from memory import UnsafePointer
 from sys.ffi import DLHandle
-from utils import StringRef
+from utils import StringRef, StringSlice
 from max.tensor import TensorSpec
 
 from max.engine import InferenceSession, TensorMap
@@ -168,7 +168,7 @@ fn _set_tensors[
             shape.append(spec[i])
 
         var view = CTensorView(
-            name._strref_dangerous(),
+            name.unsafe_ptr(),
             dtype_str,
             shape.data,
             spec.rank(),
@@ -283,9 +283,9 @@ struct CInferenceRequest:
             self._lib, Self._OutputAtFnName, self._ptr, index
         )
 
-    fn add_output(self, name: StringRef):
+    fn add_output(self, name: StringSlice):
         call_dylib_func[NoneType](
-            self._lib, Self._AddOutputFnName, self._ptr, name
+            self._lib, Self._AddOutputFnName, self._ptr, name.unsafe_ptr()
         )
 
 

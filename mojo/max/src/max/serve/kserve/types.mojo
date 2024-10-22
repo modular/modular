@@ -81,7 +81,7 @@ struct InferenceRequest(Movable):
 
     fn set_outputs(self, outputs: List[String]) -> None:
         for output in outputs:
-            self._impl.add_output(output[]._strref_dangerous())
+            self._impl.add_output(output[].as_string_slice())
 
 
 # ===----------------------------------------------------------------------=== #

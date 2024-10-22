@@ -105,7 +105,7 @@ struct CBatch:
             self._PushFailedFnName,
             self._ptr,
             index,
-            message._strref_dangerous(),
+            message.unsafe_ptr(),
         )
 
     async fn load[
