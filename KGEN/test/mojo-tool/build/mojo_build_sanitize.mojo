@@ -11,7 +11,6 @@
 #       clean environment.
 # UNSUPPORTED: asan,msan,tsan
 # TODO: Support windows when we build with sanitizers.
-# UNSUPPORTED: system-windows
 # TODO: Mac requires using a non-apple clang, as our sanitizers are different.
 # UNSUPPORTED: system-darwin
 

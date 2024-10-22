@@ -1,4 +1,3 @@
-// UNSUPPORTED: system-windows
 // TODO(#19240): These tests should support Windows.  The same steps should be
 // doable on Windows, but these commands would need to be rewritten in Batch or
 // PowerShell.
