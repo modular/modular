@@ -18,10 +18,28 @@ from ._compile import (
     _to_sass,
 )
 
-alias _DeviceContextPtr = UnsafePointer[NoneType]
-alias _DeviceBufferPtr = UnsafePointer[NoneType]
-alias _DeviceFunctionPtr = UnsafePointer[NoneType]
-alias _DeviceTimerPtr = UnsafePointer[NoneType]
+
+# Create empty structs to ensure type checking when using the C++ handles.
+struct _DeviceContextCpp:
+    pass
+
+
+struct _DeviceBufferCpp:
+    pass
+
+
+struct _DeviceFunctionCpp:
+    pass
+
+
+struct _DeviceTimerCpp:
+    pass
+
+
+alias _DeviceContextPtr = UnsafePointer[_DeviceContextCpp]
+alias _DeviceBufferPtr = UnsafePointer[_DeviceBufferCpp]
+alias _DeviceFunctionPtr = UnsafePointer[_DeviceFunctionCpp]
+alias _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp]
 alias _CharPtr = UnsafePointer[UInt8]
 alias _IntPtr = UnsafePointer[Int32]
 alias _VoidPtr = UnsafePointer[NoneType]
@@ -177,7 +195,7 @@ struct DeviceBufferV2[type: DType](Sized):
         external_call[
             "AsyncRT_DeviceBuffer_retain",
             NoneType,
-            _DeviceContextPtr,
+            _DeviceBufferPtr,
         ](existing._handle)
         self._device_ptr = existing._device_ptr
         self._handle = existing._handle
