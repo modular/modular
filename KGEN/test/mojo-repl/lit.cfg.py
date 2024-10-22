@@ -23,9 +23,6 @@ config.test_exec_root = os.path.join(
     config.modular_obj_root, "KGEN", "test", "mojo-repl"
 )
 
-python_env_path = Path(config.modular_derived_dir) / "autovenv" / "bin"
-llvm_config.with_environment("PATH", str(python_env_path), append_path=True)
-
 config.substitutions.append(
     (
         "%repl",
