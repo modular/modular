@@ -10,7 +10,6 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
-#include "KGEN/MOGGPreElab/MOGGTensorAccessor.h"
 
 namespace M::KGEN::MOGGPreElab {
 
@@ -75,33 +74,6 @@ inline bool hasAtLeastOneTensor(GeneratorOp generator) {
       return true;
   }
   return false;
-}
-
-/// Given a mojo function pull the tensor parameter information off of it. I.E
-/// which parameter corresponds to which parameter in a given input.
-inline std::optional<MOGG::MOGGTensorParamAccessor>
-getTensorRepFromFunctionInput(GeneratorOp generator, size_t index) {
-  ArrayAttr names =
-      dyn_cast_or_null<ArrayAttr>(generator->getAttr(MOGG_ARG_TYPE_NAMES));
-  ArrayAttr types =
-      dyn_cast_or_null<ArrayAttr>(generator->getAttr(MOGG_ARG_PARAMS));
-
-  if (!names || !types || names.size() <= index || types.size() <= index)
-    return std::nullopt;
-
-  if (!isTensor(names.getValue()[index]))
-    return std::nullopt;
-
-  ArrayAttr params = dyn_cast<ArrayAttr>(types.getValue()[index]);
-  if (!params)
-    return std::nullopt;
-
-  MOGG::MOGGTensorParamAccessor tensor;
-  for (auto [paramIdx, param] : llvm::enumerate(params.getValue())) {
-    if (auto typedAttr = dyn_cast<TypedAttr>(param))
-      tensor.assignParam(typedAttr, paramIdx);
-  }
-  return tensor;
 }
 
 /// Remove the decorators from the function. Return true if any function had the

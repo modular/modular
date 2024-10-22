@@ -9,7 +9,6 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
-#include "KGEN/MOGGPreElab/MOGGTensorAccessor.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -372,8 +371,8 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
         LLVM_DEBUG(llvm::dbgs()
                    << "Add param (call) for " << tensorName << " (#"
                    << callerIdx << "): callee input #" << calleeIdx
-                   << " (param #" << (calleeParamIdx - 1) << ") "
-                   << "@" << oldCall.getCalleeSymbol() << ".\n");
+                   << " (param #" << (calleeParamIdx - 1) << ") " << "@"
+                   << oldCall.getCalleeSymbol() << ".\n");
       }
     }
   });
