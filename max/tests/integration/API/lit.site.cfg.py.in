@@ -5,5 +5,5 @@ lit_config.load_config(
 )
 
 lit_config.load_config(
-    config, "@MODULAR_SOURCE_DIR@/SDK/integration-test/EngineAPI/lit.cfg.py"
+    config, "@MODULAR_SOURCE_DIR@/SDK/integration-test/API/lit.cfg.py"
 )

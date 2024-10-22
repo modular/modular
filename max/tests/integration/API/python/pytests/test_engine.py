@@ -37,7 +37,7 @@ def mo_custom_ops_model_path(modular_path: Path) -> Path:
         modular_path
         / "SDK"
         / "integration-test"
-        / "EngineAPI"
+        / "API"
         / "c"
         / "custom-ops-override.api"
     )
@@ -49,7 +49,7 @@ def mo_custom_op_failing_constraint_model_path(modular_path: Path) -> Path:
         modular_path
         / "SDK"
         / "integration-test"
-        / "EngineAPI"
+        / "API"
         / "c"
         / "custom-op-failing-constraint.api"
     )
@@ -57,7 +57,7 @@ def mo_custom_op_failing_constraint_model_path(modular_path: Path) -> Path:
 
 @pytest.fixture
 def sdk_test_inputs_path(modular_path: Path) -> Path:
-    return modular_path / "SDK" / "integration-test" / "EngineAPI" / "Inputs"
+    return modular_path / "SDK" / "integration-test" / "API" / "Inputs"
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def mo_listio_model_path(modular_path: Path) -> Path:
         modular_path
         / "SDK"
         / "integration-test"
-        / "EngineAPI"
+        / "API"
         / "Inputs"
         / "mo-list-model.mlir"
     )

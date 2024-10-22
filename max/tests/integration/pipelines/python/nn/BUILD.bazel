@@ -28,7 +28,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/integration-test/EngineAPI/python:modular_graph_test",
+        "//SDK/integration-test/API/python:modular_graph_test",
         "//SDK/lib/API/python/max/engine",
         "//SDK/public/max-repo/pipelines/python/nn",
         requirement("torch"),
@@ -68,7 +68,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
-        "//SDK/integration-test/EngineAPI/python:modular_graph_test",
+        "//SDK/integration-test/API/python:modular_graph_test",
         "//SDK/lib/API/python/max/engine",
         "//SDK/public/max-repo/pipelines/python/nn",
         requirement("torch"),

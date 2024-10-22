@@ -25,12 +25,7 @@ def modular_path() -> Path:
 def mo_model_path(modular_path: Path) -> Path:
     """Returns the path to the generated BasicMLP model."""
     return (
-        modular_path
-        / "SDK"
-        / "integration-test"
-        / "EngineAPI"
-        / "c"
-        / "mo-model.api"
+        modular_path / "SDK" / "integration-test" / "API" / "c" / "mo-model.api"
     )
 
 
@@ -41,7 +36,7 @@ def dynamic_model_path(modular_path: Path) -> Path:
         modular_path
         / "SDK"
         / "integration-test"
-        / "EngineAPI"
+        / "API"
         / "Inputs"
         / "dynamic-model.mlir"
     )
@@ -54,7 +49,7 @@ def no_input_path(modular_path: Path) -> Path:
         modular_path
         / "SDK"
         / "integration-test"
-        / "EngineAPI"
+        / "API"
         / "Inputs"
         / "no-inputs.mlir"
     )
@@ -67,7 +62,7 @@ def scalar_input_path(modular_path: Path) -> Path:
         modular_path
         / "SDK"
         / "integration-test"
-        / "EngineAPI"
+        / "API"
         / "Inputs"
         / "scalar-input.mlir"
     )
@@ -80,7 +75,7 @@ def aliasing_outputs_path(modular_path: Path) -> Path:
         modular_path
         / "SDK"
         / "integration-test"
-        / "EngineAPI"
+        / "API"
         / "Inputs"
         / "aliasing-outputs.mlir"
     )
@@ -93,7 +88,7 @@ def named_inputs_path(modular_path: Path) -> Path:
         modular_path
         / "SDK"
         / "integration-test"
-        / "EngineAPI"
+        / "API"
         / "Inputs"
         / "named-inputs.mlir"
     )

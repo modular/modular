@@ -22,7 +22,7 @@ config.test_source_root = os.path.dirname(__file__)
 
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(
-    config.modular_obj_root, "SDK", "integration-test", "EngineAPI"
+    config.modular_obj_root, "SDK", "integration-test", "API"
 )
 
 tool_dirs = [
@@ -38,21 +38,30 @@ multi_tenancy_api_models_dir = (
     Path(config.modular_obj_root) / "multi-tenancy" / "api-models"
 )
 config.substitutions.append(
-    ("%multi_tenancy_api_models_dir", str(multi_tenancy_api_models_dir))
+    (
+        "%multi_tenancy_api_models_dir",
+        str(multi_tenancy_api_models_dir),
+    )
 )
 
 concurrent_api_models_dir = (
     Path(config.modular_obj_root) / "concurrent" / "api-models"
 )
 config.substitutions.append(
-    ("%concurrent_api_models_dir", str(concurrent_api_models_dir))
+    (
+        "%concurrent_api_models_dir",
+        str(concurrent_api_models_dir),
+    )
 )
 
 api_executor_models_dir = (
     Path(config.modular_obj_root) / "api-executor" / "api-models"
 )
 config.substitutions.append(
-    ("%api_executor_models_dir", str(api_executor_models_dir))
+    (
+        "%api_executor_models_dir",
+        str(api_executor_models_dir),
+    )
 )
 
 # Enable MEF caching in tests if not given a value via env vars.

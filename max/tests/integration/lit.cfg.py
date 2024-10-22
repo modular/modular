@@ -25,7 +25,7 @@ config.test_exec_root = os.path.join(
     config.modular_obj_root, "SDK", "integration-test"
 )
 
-config.excludes.add("EngineAPI")
+config.excludes.add("API")
 
 tool_dirs = [
     config.modular_tools_dir,
