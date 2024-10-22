@@ -36,6 +36,8 @@ static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor_utils", "managed_tensor_slice", "ManagedTensorSlice"};
 static constexpr std::array<StringLiteral, 4> kMaxStaticTuple = {
     "stdlib", "utils", "static_tuple", "StaticTuple"};
+static constexpr std::array<StringLiteral, 4> kMaxList = {
+    "stdlib", "collections", "vector", "InlinedFixedVector"};
 
 // Check if the decorator correspond to a function call:
 // eg @foo(arg)
@@ -159,6 +161,106 @@ static void annotateTypes(LIT::FuncOp func) {
   }
 }
 
+// Extract the used parameters from the lit type. Returns null for fields which
+// are unbound or already populated.
+static SmallVector<KGEN::ParamDeclRefAttr>
+litTypeToParams(LIT::StructType structType) {
+  SmallVector<KGEN::ParamDeclRefAttr> attrs;
+  for (TypedAttr param : structType.getParamValues()) {
+    auto declRefAttr = dyn_cast<KGEN::ParamDeclRefAttr>(param);
+    attrs.push_back(declRefAttr);
+  }
+
+  return attrs;
+};
+
+/// Return a set of named attributes mapping all unbound parameters in the
+/// tensor type struct
+static SmallVector<NamedAttribute>
+getUnboundParametersForTensor(LIT::StructType &structType, OpBuilder &builder) {
+  constexpr unsigned kDTypeIndex = 0;
+  constexpr unsigned kRankIndex = 1;
+  auto allParameters = litTypeToParams(structType);
+  assert(allParameters.size() >= 2);
+  auto dtype = allParameters[kDTypeIndex];
+  auto rank = allParameters[kRankIndex];
+
+  SmallVector<NamedAttribute> tensorSpecNamedAttrs;
+  // Sometimes, dtype or ranks are not present because the user expects
+  // specific values for those parameters (ex: dtype=float32 or rank=2).
+  if (dtype)
+    tensorSpecNamedAttrs.push_back(
+        NamedAttribute{builder.getStringAttr(kParameterDType), dtype});
+  if (rank)
+    tensorSpecNamedAttrs.push_back(
+        NamedAttribute{builder.getStringAttr(kParameterRank), rank});
+
+  return tensorSpecNamedAttrs;
+}
+
+/// Return a set of named attributes mapping all unbound parameters in the tuple
+/// of tensor struct
+static SmallVector<NamedAttribute>
+getUnboundParametersForTensorTuple(LIT::StructType &structType,
+                                   OpBuilder &builder) {
+  // TODO(GRA-1126): consider a tuple which only contains tensors to
+  // simplify this
+  constexpr unsigned kElementType = 0;
+  constexpr unsigned kSizeIndex = 1;
+  auto allParameters = litTypeToParams(structType);
+
+  assert(allParameters.size() >= 2);
+  [[maybe_unused]] auto elementType = allParameters[kElementType];
+  assert(!elementType && "Element type must be defined and be equal to tensor");
+  auto size = allParameters[kSizeIndex];
+
+  SmallVector<NamedAttribute> tupleNamedAttrs;
+  if (size)
+    tupleNamedAttrs.push_back(
+        NamedAttribute{builder.getStringAttr(kParameterSize), size});
+
+  auto elementTypeAttr =
+      cast<KGEN::TypeConstantAttr>(structType.getParamValues()[0]);
+  auto elementTypeStruct =
+      cast<LIT::StructType>(elementTypeAttr.getTypeValue());
+  assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&
+         "Expect managed tensor slice element type");
+  auto elementTypeParams =
+      getUnboundParametersForTensor(elementTypeStruct, builder);
+
+  tupleNamedAttrs.append(elementTypeParams);
+  return tupleNamedAttrs;
+}
+
+/// Return a set of named attributes mapping all unbound parameters in the list
+/// of tensor struct
+static SmallVector<NamedAttribute>
+getUnboundParametersForTensorList(LIT::StructType &structType,
+                                  OpBuilder &builder) {
+  // TODO(GRA-1126): consider a tuple which only contains tensors to
+  // simplify this
+  constexpr unsigned kElementType = 0;
+  auto allParameters = litTypeToParams(structType);
+
+  assert(allParameters.size() >= 1);
+  [[maybe_unused]] auto elementType = allParameters[kElementType];
+  assert(!elementType && "Element type must be defined and be equal to tensor");
+  SmallVector<NamedAttribute> listNamedAttrs;
+
+  auto elementTypeAttr =
+      cast<KGEN::TypeConstantAttr>(structType.getParamValues()[0]);
+  auto elementTypeStruct =
+      cast<LIT::StructType>(elementTypeAttr.getTypeValue());
+  assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&
+         "Expect managed tensor slice element type");
+
+  auto elementTypeParams =
+      getUnboundParametersForTensor(elementTypeStruct, builder);
+
+  listNamedAttrs.append(elementTypeParams);
+  return listNamedAttrs;
+}
+
 static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
   OpBuilder builder{funcOp.getContext()};
 
@@ -173,17 +275,6 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
     return dyn_cast<LIT::StructType>(t);
   };
 
-  // Extract the used parameters from the lit type.
-  auto litTypeToParams = [](LIT::StructType structType) {
-    SmallVector<KGEN::ParamDeclRefAttr> attrs;
-    for (TypedAttr param : structType.getParamValues()) {
-      auto declRefAttr = dyn_cast<KGEN::ParamDeclRefAttr>(param);
-      attrs.push_back(declRefAttr);
-    }
-
-    return attrs;
-  };
-
   SmallVector<Attribute> tensorSpecs;
   Attribute emptyAttr = builder.getUnitAttr();
 
@@ -196,44 +287,22 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
     }
 
     if (symbolMatches(asStructType.getSymbol(), kMaxManagedTensorSlice)) {
-      constexpr unsigned kDTypeIndex = 0;
-      constexpr unsigned kRankIndex = 1;
-      auto allParameters = litTypeToParams(asStructType);
-      assert(allParameters.size() >= 2);
-      auto dtype = allParameters[kDTypeIndex];
-      auto rank = allParameters[kRankIndex];
-
-      SmallVector<NamedAttribute> tensorSpecNamedAttrs;
-      // Sometimes, dtype or ranks are not present because the user expects
-      // specific values for those parameters (ex: dtype=float32 or rank=2).
-      if (dtype)
-        tensorSpecNamedAttrs.push_back(
-            NamedAttribute{builder.getStringAttr("dtype"), dtype});
-      if (rank)
-        tensorSpecNamedAttrs.push_back(
-            NamedAttribute{builder.getStringAttr("rank"), rank});
-
+      SmallVector<NamedAttribute> tensorSpecNamedAttrs =
+          getUnboundParametersForTensor(asStructType, builder);
       tensorSpecs.push_back(
           DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxStaticTuple)) {
-      // TODO(GRA-1126): consider a tuple which only contains tensors to
-      // simplify this
-      constexpr unsigned kElementType = 0;
-      constexpr unsigned kSizeIndex = 1;
-      auto allParameters = litTypeToParams(asStructType);
-      assert(allParameters.size() >= 2);
-      [[maybe_unused]] auto elementType = allParameters[kElementType];
-      assert(!elementType &&
-             "Element type must be defined and be equal to tensor");
-      auto size = allParameters[kSizeIndex];
-
-      SmallVector<NamedAttribute> tupleNamedAttrs;
-      if (size)
-        tupleNamedAttrs.push_back(
-            NamedAttribute{builder.getStringAttr("size"), size});
+      SmallVector<NamedAttribute> tensorSpecNamedAttrs =
+          getUnboundParametersForTensorTuple(asStructType, builder);
       tensorSpecs.push_back(
-          DictionaryAttr::get(funcOp.getContext(), tupleNamedAttrs));
+          DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
+    } else if (symbolMatches(asStructType.getSymbol(), kMaxList)) {
+      SmallVector<NamedAttribute> tensorSpecNamedAttrs =
+          getUnboundParametersForTensorList(asStructType, builder);
+      tensorSpecs.push_back(
+          DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
     } else {
+      // Unsupported type, can ignore
       tensorSpecs.push_back(emptyAttr);
     }
   }
