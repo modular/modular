@@ -69,6 +69,10 @@ fn _run_device_info(ctx: DeviceContext) raises:
     _ = buf
 
 
+fn _run_compute_capability(ctx: DeviceContext) raises:
+    print("Compute capability: " + str(ctx.compute_capability()))
+
+
 fn main() raises:
     var ctx = create_test_device_context()
     print("-------")
@@ -76,5 +80,6 @@ fn main() raises:
 
     _run_ownership_transfer(ctx)
     _run_device_info(ctx)
+    _run_compute_capability(ctx)
 
     print("Done.")
