@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: system-windows
 # RUN: %mojo -debug-level full %s
 
 from testing import assert_equal, assert_false, assert_true

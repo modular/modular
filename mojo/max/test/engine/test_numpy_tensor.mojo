@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: system-windows
 # UNSUPPORTED: asan
 # RUN: %mojo -debug-level full %s
 
