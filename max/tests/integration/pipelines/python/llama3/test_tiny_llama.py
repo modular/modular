@@ -78,7 +78,10 @@ def test_tiny_llama_naive_kv_cache(
 ) -> None:
     """Runs tiny Llama with naive KV cache and checks output."""
     # Check that we indeed have a naive KV cache Llama model.
-    assert not tinyllama_model_naive_kv_cache.params.use_opaque
+    assert (
+        tinyllama_model_naive_kv_cache.config.cache_strategy
+        == KVCacheStrategy.NAIVE
+    )
 
     golden_data_path = find_runtime_path(
         SupportedTestModels.TINY_LLAMA_F32.golden_data_fname(),

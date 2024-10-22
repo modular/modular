@@ -249,23 +249,6 @@ class _SupportedModelEncoding:
                 filename=self.encoding.hf_model_name(version),
             )
 
-        if "cache_strategy" in config_kwargs:
-            if config_kwargs[
-                "cache_strategy"
-            ] == KVCacheStrategy.CONTINUOUS and self.encoding not in [
-                SupportedEncodings.float32,
-                SupportedEncodings.bfloat16,
-            ]:
-                config_kwargs["cache_strategy"] = KVCacheStrategy.NAIVE
-        else:
-            if self.encoding in [
-                SupportedEncodings.float32,
-                SupportedEncodings.bfloat16,
-            ]:
-                config_kwargs["cache_strategy"] = KVCacheStrategy.CONTINUOUS
-            else:
-                config_kwargs["cache_strategy"] = KVCacheStrategy.NAIVE
-
         return InferenceConfig(
             version=version,
             quantization_encoding=self.encoding,
