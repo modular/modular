@@ -233,6 +233,17 @@ constexpr StringLiteral MOJO_MOGG_TENSOR_TYPE_NAME = "MOGGTensor::Tensor";
 constexpr StringLiteral MOJO_EXTENSIBILITY_API_CALL_CONTEXT_PTR_TYPE_NAME =
     "runtime::MojoCallContextPtr";
 
+//===----------------------------------------------------------------------===//
+// Parameter Inference
+//===----------------------------------------------------------------------===//
+
+// Names of common params. We use these strings as the key to a parameter ref.
+static constexpr llvm::StringLiteral kParameterDType = "dtype";
+static constexpr llvm::StringLiteral kParameterRank = "rank";
+
+// Used in variadics/tuple types.
+static constexpr llvm::StringLiteral kParameterSize = "size";
+
 } // namespace M::KGEN::MOGGPreElab
 
 #endif // KGEN_LIB_MOGGPREELAB_MOGGDECORATORS_H
