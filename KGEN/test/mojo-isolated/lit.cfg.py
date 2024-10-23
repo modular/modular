@@ -12,7 +12,7 @@ from lit.llvm import llvm_config
 config.name = "mojo-isolated"
 
 config.parser_stubs_source = os.path.abspath(os.path.join(
-    config.modular_src_root, "KGEN", "test", "test-packages"
+    "KGEN", "test", "test-packages"
 ))
 
 # suffixes: A list of file extensions to treat as test files.

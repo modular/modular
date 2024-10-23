@@ -23,22 +23,11 @@ config.test_exec_root = os.path.join(
     config.modular_obj_root, "KGEN", "test", "mojo-debug"
 )
 
-config.substitutions.append(
-    (
-        "%debug",
-        (
-            f"{config.lldb_env} mojo debug -X --source-quietly -X -S "
-            f"-X {config.lit_lldb_init}"
-        ),
-    )
-)
-
 tool_dirs = [
     config.modular_tools_dir,
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
 tools = ["mojo"]
-
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

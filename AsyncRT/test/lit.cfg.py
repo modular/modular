@@ -15,17 +15,6 @@ config.test_exec_root = os.path.join(config.modular_obj_root, "AsyncRT", "test")
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
 
-# Setup substitutions.
-config.substitutions.append(
-    (
-        "%driver-tblgen",
-        (
-            'driver-tblgen -I "{0}/KGEN/include" -I "{0}/AsyncRT/include" '
-            '-I "{0}/third-party/llvm-project/llvm/include"'
-        ).format(config.modular_src_root),
-    )
-)
-
 # suffixes: A list of file extensions to treat as test files.
 config.suffixes = [".mlir", ".td"]
 

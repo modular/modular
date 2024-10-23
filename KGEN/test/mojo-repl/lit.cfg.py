@@ -23,16 +23,6 @@ config.test_exec_root = os.path.join(
     config.modular_obj_root, "KGEN", "test", "mojo-repl"
 )
 
-config.substitutions.append(
-    (
-        "%repl",
-        (
-            f"{config.lldb_env} mojo repl --source-quietly -S"
-            f" {config.lit_lldb_init}"
-        ),
-    )
-)
-
 tool_dirs = [
     config.modular_tools_dir,
     config.mlir_tools_dir,
