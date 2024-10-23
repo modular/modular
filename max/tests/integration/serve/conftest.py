@@ -65,7 +65,7 @@ def tinyllama_model(testdata_directory, request):
         max_length=request.param.max_length,
         max_new_tokens=request.param.max_new_tokens,
         quantization_encoding=request.param.encoding,
-        device=request.param.device,
+        device_spec=request.param.device_spec,
     )
 
     model = Llama3(config)

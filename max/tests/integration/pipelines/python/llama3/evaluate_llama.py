@@ -24,9 +24,14 @@ import numpy as np
 import numpy.typing as npt
 from cpuinfo import get_cpu_info
 from huggingface_hub import hf_hub_download
-from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
+from llama3.config import (
+    DeviceSpec,
+    InferenceConfig,
+    SupportedEncodings,
+    SupportedVersions,
+)
 from llama3.llama3 import Llama3, Llama3Context
-from max.driver import CPU, CUDA
+from max.driver import CPU
 from nn.kv_cache import KVCacheStrategy
 
 
@@ -232,9 +237,10 @@ class _SupportedModelEncoding:
                 )
         else:
             version = SupportedVersions[self.model]
-        if "device" not in config_kwargs:
-            config_kwargs["device"] = (
-                CUDA() if self.encoding == "bfloat16" else CPU()
+        if "device_spec" not in config_kwargs:
+            config_kwargs["device_spec"] = (
+                DeviceSpec.cuda() if self.encoding
+                == "bfloat16" else DeviceSpec.cpu()
             )
         if (
             "max_new_tokens" not in config_kwargs

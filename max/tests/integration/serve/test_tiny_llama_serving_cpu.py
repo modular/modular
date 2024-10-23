@@ -18,7 +18,7 @@ from evaluate_llama import (
     llama3_decode,
 )
 from llama3 import SupportedEncodings
-from max.driver import CPU
+from llama3.config import DeviceSpec
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
@@ -38,7 +38,7 @@ MAX_READ_SIZE = 10 * 1024
             weight_path="tiny_llama.gguf",
             max_length=512,
             max_new_tokens=10,
-            device=CPU(),
+            device_spec=DeviceSpec.cpu(),
             encoding=SupportedEncodings.float32,
         )
     ],
@@ -66,7 +66,7 @@ async def test_tinyllama_serve_cpu(app):
             weight_path="tiny_llama.gguf",
             max_length=512,
             max_new_tokens=10,
-            device=CPU(),
+            device_spec=DeviceSpec.cpu(),
             encoding=SupportedEncodings.float32,
         ),
     ],

@@ -18,6 +18,7 @@ from evaluate_llama import (
     llama3_decode,
 )
 from llama3 import SupportedEncodings
+from llama3.config import DeviceSpec
 from max.driver import CUDA
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import CreateChatCompletionResponse
@@ -41,7 +42,7 @@ MAX_READ_SIZE = 10 * 1024
             weight_path="tiny_llama_bf16.gguf",
             max_length=512,
             max_new_tokens=10,
-            device=CUDA(),
+            device_spec=DeviceSpec.cuda(),
             encoding=SupportedEncodings.bfloat16,
         )
     ],
@@ -80,7 +81,7 @@ async def test_tinyllama_serve_gpu(app):
             weight_path="tiny_llama_bf16.gguf",
             max_length=512,
             max_new_tokens=10,
-            device=CUDA(),
+            device_spec=DeviceSpec.cuda(),
             encoding=SupportedEncodings.bfloat16,
         ),
     ],
