@@ -32,6 +32,7 @@ from .cumsum import cumsum
 from .custom import custom, inplace_custom
 from .debug import print
 from .elementwise import *
+from .flatten import flatten
 from .gather import gather, gather_nd
 from .layer_norm import layer_norm
 from .matmul import matmul

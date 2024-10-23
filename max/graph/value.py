@@ -283,6 +283,9 @@ class TensorValue(Value):
     def reshape(self, shape: ShapeLike) -> TensorValue:
         return ops.reshape(self, shape)
 
+    def flatten(self, start_dim: int = 0, end_dim: int = -1) -> TensorValue:
+        return ops.flatten(self, start_dim, end_dim)
+
     def broadcast_to(self, shape: ShapeLike) -> TensorValue:
         return ops.broadcast_to(self, shape)
 

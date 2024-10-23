@@ -77,6 +77,7 @@ def shapes(
     max_rank: int = 10,
     include_dims: Sequence = (),
     is_static: bool = False,
+    max_size: int = MAX_INT64,
 ) -> Shape:
     """A strategy to produce shapes whose product fits within an int64.
 
@@ -110,7 +111,7 @@ def shapes(
             continue
 
         # Draw a static dim.
-        max_value = MAX_INT64 // max(1, cumulative_product)
+        max_value = max_size // max(1, cumulative_product)
         # Get the max exponent: bits needed to represent the max value,
         # excluding sign and leading zeros.
         max_exponent = max_value.bit_length()
