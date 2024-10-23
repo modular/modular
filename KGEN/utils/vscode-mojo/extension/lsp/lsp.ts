@@ -38,16 +38,7 @@ export class MojoLSPManager extends DisposableContext {
     this.logger = sdkManager.logger;
   }
 
-  async activate(launchServerWithDebuggerAttached: boolean = false) {
-    this.pushSubscription(
-      vscode.commands.registerCommand(
-        'mojo.lsp.restart-and-debug',
-        async () => {
-          this.dispose();
-          await this.activate(/*launchServerWithDebuggerAttached=*/ true);
-        },
-      ),
-    );
+  async activate() {
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.lsp.restart', async () => {
         this.dispose();
@@ -56,19 +47,16 @@ export class MojoLSPManager extends DisposableContext {
     );
 
     vscode.workspace.textDocuments.forEach((doc) =>
-      this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached),
+      this.tryStartLanguageClient(doc),
     );
     this.pushSubscription(
       vscode.workspace.onDidOpenTextDocument((doc) =>
-        this.tryStartLanguageClient(doc, launchServerWithDebuggerAttached),
+        this.tryStartLanguageClient(doc),
       ),
     );
   }
 
-  async tryStartLanguageClient(
-    doc: vscode.TextDocument,
-    debuggerAttached: boolean,
-  ): Promise<void> {
+  async tryStartLanguageClient(doc: vscode.TextDocument): Promise<void> {
     if (doc.languageId !== 'mojo') {
       return;
     }
@@ -88,11 +76,7 @@ export class MojoLSPManager extends DisposableContext {
       /*workspaceFolder=*/ undefined,
       [],
     );
-    const lspClient = this.activateLanguageClient(
-      debuggerAttached,
-      sdk,
-      includeDirs,
-    );
+    const lspClient = this.activateLanguageClient(sdk, includeDirs);
     this.lspClient = lspClient;
     this.lspClientChanges.next(lspClient);
     this.pushSubscription(
@@ -109,17 +93,12 @@ export class MojoLSPManager extends DisposableContext {
    * Create a new language server.
    */
   activateLanguageClient(
-    launchServerWithDebuggerAttached: boolean,
     sdk: MojoSDK,
     includeDirs: string[],
   ): vscodelc.LanguageClient {
     this.logger.lsp.logInfo('Activating language client');
 
     let serverArgs: string[] = [];
-
-    if (launchServerWithDebuggerAttached) {
-      serverArgs.push('--attach-debugger-on-startup');
-    }
 
     for (const includeDir of includeDirs) {
       serverArgs.push('-I', includeDir);
