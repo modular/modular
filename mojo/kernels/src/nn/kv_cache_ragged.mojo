@@ -11,6 +11,8 @@ from gpu.host import DeviceContext
 from kv_cache.types import (
     ContiguousKVCache,
     ContinuousBatchingKVCache,
+    ContiguousKVCacheCollection,
+    ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
 )
@@ -21,6 +23,7 @@ from utils.index import IndexList, Index
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
 from register import mogg_register
+from nn.fused_qk_rope_ragged import fused_qk_rope_ragged
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
@@ -384,3 +387,417 @@ fn _matmul_common[
             transpose_b=True,
             target=target,
         ](c_nd, hidden_state, weight, context.value())
+
+
+@mogg_register("fused_qk_rope_h6_d48_bshd_ragged")
+fn fused_qk_rope_h6_d48_bshd_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContiguousKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=6, head_size=48),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h6_d48_bshd_ragged"
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            prefix_sum,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@mogg_register("fused_qk_rope_h8_d128_bshd_ragged")
+fn fused_qk_rope_h8_d128_bshd_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContiguousKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=8, head_size=128),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h8_d128_bshd_ragged"
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            prefix_sum,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@mogg_register("fused_qk_rope_h1_d16_bshd_ragged")
+fn fused_qk_rope_h1_d16_bshd_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContiguousKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h1_d16_bshd_ragged"
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            prefix_sum,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@mogg_register("fused_qk_rope_h8_d32_bshd_ragged")
+fn fused_qk_rope_h8_d32_bshd_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContiguousKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=8, head_size=32),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h8_d32_bshd_ragged"
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            prefix_sum,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@mogg_register("fused_qk_rope_h8_d64_bshd_ragged")
+fn fused_qk_rope_h8_d64_bshd_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContiguousKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=8, head_size=64),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h8_d64_bshd_ragged"
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            prefix_sum,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@mogg_register("fused_qk_rope_h8_d128_bshd_continuous_batch_ragged")
+fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=8, head_size=128),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h8_d128_bshd_continuous_batch_ragged"
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            prefix_sum,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@mogg_register("fused_qk_rope_h1_d16_bshd_continuous_batch_ragged")
+fn fused_qk_rope_h1_d16_bshd_continuous_batch_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=1, head_size=16),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h1_d16_bshd_continuous_batch_ragged"
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            prefix_sum,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@mogg_register("fused_qk_rope_h8_d32_bshd_continuous_batch_ragged")
+fn fused_qk_rope_h8_d32_bshd_continuous_batch_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=8, head_size=32),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h8_d32_bshd_continuous_batch_ragged"
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            prefix_sum,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@mogg_register("fused_qk_rope_h8_d64_bshd_continuous_batch_ragged")
+fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        KVCacheStaticParams(num_heads=8, head_size=64),
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    """
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qk_rope_h8_d64_bshd_continuous_batch_ragged"
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            prefix_sum,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
