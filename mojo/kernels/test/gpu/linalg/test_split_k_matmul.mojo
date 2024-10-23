@@ -95,21 +95,21 @@ fn test_split_k_multistage_gemm[
     alias c_layout = Layout(IntTuple(UNKNOWN_VALUE, N), IntTuple(N, 1))
 
     var a_runtime_layout = RuntimeLayout(
-        RuntimeTuple[a_layout.shape](M, K_part),
-        RuntimeTuple[a_layout.stride](K, 1),
+        RuntimeTuple[a_layout.shape, unsigned=True](M, K_part),
+        RuntimeTuple[a_layout.stride, unsigned=True](K, 1),
     )
 
     var b_runtime_layout = RuntimeLayout(
-        RuntimeTuple[b_layout.shape](N, K_part),
-        RuntimeTuple[b_layout.stride](K, 1),
+        RuntimeTuple[b_layout.shape, unsigned=True](N, K_part),
+        RuntimeTuple[b_layout.stride, unsigned=True](K, 1),
     ) if transpose_b else RuntimeLayout(
-        RuntimeTuple[b_layout.shape](K_part, N),
-        RuntimeTuple[b_layout.stride](N, 1),
+        RuntimeTuple[b_layout.shape, unsigned=True](K_part, N),
+        RuntimeTuple[b_layout.stride, unsigned=True](N, 1),
     )
 
     var c_runtime_layout = RuntimeLayout(
-        RuntimeTuple[c_layout.shape](M, N),
-        RuntimeTuple[c_layout.stride](N, 1),
+        RuntimeTuple[c_layout.shape, unsigned=True](M, N),
+        RuntimeTuple[c_layout.stride, unsigned=True](N, 1),
     )
 
     alias a_dim = DimList(M, K)

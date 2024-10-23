@@ -152,8 +152,8 @@ struct test_matmul[
             dtype, layout
         ]:
             var dynamic_layout = RuntimeLayout[layout](
-                RuntimeTuple[layout.shape](m, n),
-                RuntimeTuple[layout.stride](n, 1),
+                RuntimeTuple[layout.shape, unsigned=True](m, n),
+                RuntimeTuple[layout.stride, unsigned=True](n, 1),
             )
             return LayoutTensor[dtype, layout](ptr, dynamic_layout)
 
