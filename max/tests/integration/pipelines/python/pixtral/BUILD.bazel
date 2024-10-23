@@ -1,0 +1,48 @@
+# Pixtral tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+modular_py_test(
+    name = "pixtral",
+    size = "large",
+    srcs = glob(
+        ["**/test_*.py"],
+        exclude = [
+            "**/*_gpu.py",
+        ],
+    ),
+    data = [
+        "//KGEN:CompilerRT",
+        "//ModularFramework/tools/mof",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    exec_compatible_with = ["//:large"],
+    requires_gpu = False,
+    tags = [
+        "requires-network",
+    ],
+    target_compatible_with = select(
+        {
+            # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+            "//:asan": ["@platforms//:incompatible"],
+            "//:tsan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        },
+    ),
+    deps = [
+        "//SDK/lib/API/python/max/engine",
+        "//SDK/lib/API/python/max/serve",
+        "//SDK/pipelines/pixtral",
+        "//SDK/public/max-repo/pipelines/python/nn",
+        "//SDK/public/max-repo/pipelines/python/utils",
+        "//Support/python:support",
+        requirement("hypothesis"),
+        requirement("transformers"),
+        requirement("pytest-asyncio"),
+        requirement("huggingface_hub"),
+    ],
+)
