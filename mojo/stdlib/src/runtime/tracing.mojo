@@ -419,7 +419,6 @@ struct Trace[
             # 1. If there is a detail string we must heap allocate the string
             #    because it presumably contains information only known at
             #    runtime.
-            var detail_strref = self.detail._strref_dangerous()
 
             # Begins recording the trace range from the stack. This is only enabled if the AsyncRT
             # profiling is enabled.
@@ -428,8 +427,8 @@ struct Trace[
             ](
                 self.name[StringLiteral].unsafe_cstr_ptr(),
                 len(self.name[StringLiteral]),
-                detail_strref.unsafe_ptr(),
-                len(detail_strref),
+                self.detail.unsafe_ptr(),
+                len(self.detail),
                 self.parent_id,
             )
         elif self.int_payload:
