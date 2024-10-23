@@ -89,7 +89,7 @@ Semaphore::Impl::Impl(ssize_t initialValue) {
 }
 
 Semaphore::Impl::~Impl() {
-  int rc = sem_destroy(&sema);
+  [[maybe_unused]] int rc = sem_destroy(&sema);
   assert(rc == 0 && "Unable to destroy the unnamed semaphore.");
 }
 
