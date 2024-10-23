@@ -104,9 +104,10 @@ struct CausalMask(MHAMask):
 
         # coords[2] >= coords[3] ensures the current tokens is only affected by
         # itself and previous tokens.
+        # TODO(KERN-782): -10000 should be -inf but softmax saturates with NaNs.
         masked_score_vec = (
             q_idx >= (k_idx + iota[index_type, width]())
-        ).select(score_vec, min_or_neg_inf[type]())
+        ).select(score_vec, -10000)
 
         return masked_score_vec
 
