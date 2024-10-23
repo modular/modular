@@ -23,7 +23,7 @@ fn create_test_device_context() raises -> DeviceContext:
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         var kind = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
-        print("Using DeviceContext: V2 - " + kind)
+        print("Using DeviceContext: V2 - " + str(kind))
         test_ctx = DeviceContext(kind)
     else:
         print("Using DeviceContext: default")
