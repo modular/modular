@@ -235,7 +235,6 @@ struct PrometheusMetricsEndPoint:
             end_point.unsafe_ptr(),
             UnsafePointer.address_of(self.ptr),
         )
-        end_point._strref_keepalive()
 
     fn __moveinit__(inout self: Self, owned existing: Self):
         """Initializes a prometheus custom metrics exporter at the specified

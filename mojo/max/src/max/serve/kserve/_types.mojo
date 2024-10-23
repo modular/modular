@@ -179,7 +179,6 @@ fn _set_tensors[
             lib, add_tensor_fn, ptr, UnsafePointer.address_of(view)
         )
         _ = view
-        name._strref_keepalive()
         _ = shape^
 
 

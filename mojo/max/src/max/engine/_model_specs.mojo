@@ -79,7 +79,6 @@ struct TensorNames(Sized):
         self.ptr = call_dylib_func[CTensorNameArray](
             lib, fn_name.unsafe_ptr(), ptr, status.borrow_ptr()
         )
-        fn_name._strref_keepalive()
         if status:
             print(status.__str__())
             self.ptr = UnsafePointer[NoneType]()
