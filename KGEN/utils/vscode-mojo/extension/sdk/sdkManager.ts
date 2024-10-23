@@ -49,18 +49,15 @@ type SDKSelection = NotYetSelectedSDK | SelectedSDK;
  */
 export class MojoSDKManager extends DisposableContext {
   public logger: Logger;
-  private context: vscode.ExtensionContext;
   private initializationSDK: Optional<MojoSDKSpec>;
   private activeSDK: SDKSelection = { state: 'not-yet-selected' };
   private findSDKMutex = new Mutex();
   private isNightly: boolean;
   private extensionSemiPersistentState;
   private extensionContext: vscode.ExtensionContext;
-  private initialized: boolean = false;
 
   constructor(
     logger: Logger,
-    context: vscode.ExtensionContext,
     initializationSDK: Optional<MojoSDKSpec>,
     isNightly: boolean,
     extensionSemiPersistentState: ExtensionSemiPersistentState,
@@ -68,7 +65,6 @@ export class MojoSDKManager extends DisposableContext {
   ) {
     super();
     this.logger = logger;
-    this.context = context;
     this.initializationSDK = initializationSDK;
     this.isNightly = isNightly;
     this.extensionSemiPersistentState = extensionSemiPersistentState;
@@ -106,7 +102,7 @@ export class MojoSDKManager extends DisposableContext {
       vscode.commands.registerCommand('mojo.sdk.reinstall', async () => {
         const spec = await findMagicSDKSpec(
           /*withLock=*/ false,
-          this.context,
+          this.extensionContext,
           this.logger,
           this.isNightly,
           /*reinstall=*/ true,
@@ -115,26 +111,6 @@ export class MojoSDKManager extends DisposableContext {
           vscode.commands.executeCommand('mojo.extension.restart');
         }
       }),
-    );
-    this.pushSubscription(
-      vscode.workspace.onDidOpenTextDocument((doc: vscode.TextDocument) =>
-        this.onPathSeenAfterInitialization(doc.uri.fsPath),
-      ),
-    );
-    this.pushSubscription(
-      vscode.workspace.onDidOpenNotebookDocument(
-        (doc: vscode.NotebookDocument) =>
-          this.onPathSeenAfterInitialization(doc.uri.fsPath),
-      ),
-    );
-    this.pushSubscription(
-      vscode.workspace.onDidChangeWorkspaceFolders(
-        (e: vscode.WorkspaceFoldersChangeEvent) => {
-          for (const added of e.added) {
-            this.onPathSeenAfterInitialization(added.uri.fsPath);
-          }
-        },
-      ),
     );
   }
 
@@ -154,30 +130,6 @@ export class MojoSDKManager extends DisposableContext {
     };
 
     return this.findSDKMutex.runExclusive(() => doWork());
-  }
-
-  private async onPathSeenAfterInitialization(path: string): Promise<void> {
-    if (
-      !this.initialized ||
-      !(path.endsWith('.🔥') || path.endsWith('.mojo'))
-    ) {
-      return;
-    }
-    const specResult = await this.findDevSDKSpecFromSubPath(path);
-    if (specResult !== undefined && specResult.isNew) {
-      const result = await vscode.window.showInformationMessage(
-        'A new MAX SDK from a Modular repo has been identified: ' +
-          specResult.spec.modularHomePath +
-          '.\nDo you want to use this SDK?',
-        'Use this SDK',
-      );
-      if (result === 'Use this SDK') {
-        vscode.commands.executeCommand(
-          'mojo.extension.restart',
-          specResult.spec,
-        );
-      }
-    }
   }
 
   public async createAdHocSDKAndShowError(
@@ -225,7 +177,6 @@ export class MojoSDKManager extends DisposableContext {
         ? this.initializationSDK
         : await this.selectSDK();
     this.activeSDK = { state: 'selected', sdkSpec };
-    this.initialized = true;
     return this.activeSDK;
   }
 
@@ -499,12 +450,12 @@ export class MojoSDKManager extends DisposableContext {
 
   private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {
     // In tests, we don't want to download magic and its SDK.
-    if (this.context.extensionMode === vscode.ExtensionMode.Test) {
+    if (this.extensionContext.extensionMode === vscode.ExtensionMode.Test) {
       return [];
     }
     const spec = await findMagicSDKSpec(
       /*withLock=*/ true,
-      this.context,
+      this.extensionContext,
       this.logger,
       this.isNightly,
     );
