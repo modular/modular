@@ -190,21 +190,10 @@ def test_attention(session, start_pos, seq_len):
         # TODO(MSDK-1071): Consolidate and figure out how to call
         # assert_allclose(result, expected) to fire again on mismatched
         # tensor values.
-        try:
-            np.testing.assert_allclose(
-                result,
-                expected,
-                atol=ACCURACY_ATOL,
-                rtol=ACCURACY_RTOL,
-                equal_nan=True,
-            )
-        except AssertionError:
-            # There must be an "inf" in max relative difference given we may
-            # be comparing very small values, so we just
-            # do absolute val comparison instead.
-            np.testing.assert_allclose(
-                result,
-                expected,
-                atol=ACCURACY_ATOL,
-                equal_nan=True,
-            )
+        np.testing.assert_allclose(
+            result,
+            expected,
+            atol=ACCURACY_ATOL,
+            rtol=ACCURACY_RTOL,
+            equal_nan=True,
+        )
