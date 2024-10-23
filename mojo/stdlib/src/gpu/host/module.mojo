@@ -12,7 +12,7 @@ from sys import env_get_int, env_get_string
 
 from memory import memset_zero, stack_allocation
 
-from utils import StringRef
+from utils import StringRef, StringSlice
 
 from ._utils import _check_error, _FunctionHandle, _ModuleHandle
 
@@ -347,7 +347,7 @@ struct Module:
         cache_mode: OptionalReg[CacheMode] = None,
     ) raises:
         self.__init__(
-            content._strref_dangerous(),
+            content.as_string_slice(),
             cuda_dll=cuda_dll,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
@@ -364,7 +364,7 @@ struct Module:
         cache_mode: OptionalReg[CacheMode] = None,
     ) raises:
         self.__init__(
-            StringRef(content),
+            content.as_string_slice(),
             cuda_dll=cuda_dll,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
@@ -373,7 +373,7 @@ struct Module:
 
     fn __init__(
         inout self,
-        content: StringRef,
+        content: StringSlice,
         cuda_dll: CudaDLL,
         *,
         max_registers: OptionalReg[Int] = None,
