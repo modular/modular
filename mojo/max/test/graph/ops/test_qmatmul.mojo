@@ -5,6 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: mojo "%s"
 
+# Run test again with the new API
+# RUN: export MODULAR_ONLY_USE_NEW_EXTENSIBILITY_API=true
+# RUN: mojo "%s"
+
 from max.graph import ops, _testing, Type, Graph, TensorType
 from max.tensor import Tensor, TensorShape
 from max.graph.quantization import Q4_0Encoding
