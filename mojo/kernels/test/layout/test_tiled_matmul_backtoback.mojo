@@ -322,16 +322,12 @@ fn alloc_tensor[
     )
 
 
-fn row_major_dyn(
-    M: Int, N: Int
-) -> RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)]:
-    return RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)](
-        RuntimeTuple[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE).shape](
-            M, N
-        ),
-        RuntimeTuple[Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE).stride](
-            N, 1
-        ),
+fn row_major_dyn[
+    layout: Layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+](M: Int, N: Int) -> RuntimeLayout[layout]:
+    return RuntimeLayout[layout](
+        RuntimeTuple[layout.shape, unsigned=True](M, N),
+        RuntimeTuple[layout.stride, unsigned=True](N, 1),
     )
 
 

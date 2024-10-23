@@ -154,7 +154,8 @@ fn test_element_dynamic_layout():
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
+        RuntimeTuple[layout.shape, unsigned=True](8, 8),
+        RuntimeTuple[layout.stride, unsigned=True](8, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from utils import IndexList
+from sys import bitwidthof
 
 from . import IntTuple, Layout
 from .int_tuple import UNKNOWN_VALUE, flatten, to_int
@@ -19,29 +20,38 @@ from .runtime_tuple import RuntimeTuple, crd2idx, product
 
 
 @register_passable("trivial")
-struct RuntimeLayout[layout: Layout](Stringable, Writable):
-    var shape: RuntimeTuple[layout.shape]
-    var stride: RuntimeTuple[layout.stride]
+struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
+    Stringable, Writable
+):
+    var shape: RuntimeTuple[
+        layout.shape, element_bitwidth=bitwidth, unsigned=True
+    ]
+    # stride can be huge so default to int64 for now
+    var stride: RuntimeTuple[layout.stride, unsigned=True]
 
     @always_inline
     fn __init__(inout self):
         constrained[
             layout.all_dims_known(), "Static layout with known dims is required"
         ]()
-        self.shape = RuntimeTuple[layout.shape]()
-        self.stride = RuntimeTuple[layout.stride]()
+        self.shape = RuntimeTuple[
+            layout.shape, element_bitwidth=bitwidth, unsigned=True
+        ]()
+        self.stride = RuntimeTuple[layout.stride, unsigned=True]()
 
     @always_inline
     fn __init__(
         inout self,
-        shape: RuntimeTuple[layout.shape],
-        stride: RuntimeTuple[layout.stride],
+        shape: RuntimeTuple[
+            layout.shape, element_bitwidth=bitwidth, unsigned=True
+        ],
+        stride: RuntimeTuple[layout.stride, unsigned=True],
     ):
         self.shape = shape
         self.stride = stride
 
     @always_inline
-    fn __call__[t: IntTuple](self, idx: RuntimeTuple[t]) -> Int:
+    fn __call__[t: IntTuple](self, idx: RuntimeTuple[t, **_]) -> Int:
         return crd2idx(idx, self.shape, self.stride)
 
     @always_inline
@@ -55,7 +65,9 @@ struct RuntimeLayout[layout: Layout](Stringable, Writable):
     @staticmethod
     fn row_major[
         rank: Int, //
-    ](shape: IndexList[rank, **_]) -> RuntimeLayout[layout]:
+    ](shape: IndexList[rank, **_]) -> RuntimeLayout[
+        layout, bitwidth = shape.element_bitwidth
+    ] as result:
         var stride = __type_of(shape)()
         var c_stride = 1
         stride[rank - 1] = c_stride
@@ -65,12 +77,14 @@ struct RuntimeLayout[layout: Layout](Stringable, Writable):
             var dim = shape[i + 1]
             stride[i] = dim * c_stride
             c_stride *= dim
-        return RuntimeLayout[layout](shape, stride)
+        return __type_of(result)(shape, stride)
 
     @staticmethod
     fn col_major[
         rank: Int, //
-    ](shape: IndexList[rank, **_]) -> RuntimeLayout[layout]:
+    ](shape: IndexList[rank, **_]) -> RuntimeLayout[
+        layout, bitwidth = shape.element_bitwidth
+    ] as result:
         var stride = __type_of(shape)()
         var c_stride = 1
         stride[0] = c_stride
@@ -80,7 +94,7 @@ struct RuntimeLayout[layout: Layout](Stringable, Writable):
             var dim = shape[i - 1]
             stride[i] = dim * c_stride
             c_stride *= dim
-        return RuntimeLayout[layout](shape, stride)
+        return __type_of(result)(shape, stride)
 
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
@@ -90,10 +104,20 @@ struct RuntimeLayout[layout: Layout](Stringable, Writable):
         writer.write(self.stride)
         writer.write(")")
 
-    fn sublayout[i: Int](self) -> RuntimeLayout[layout[i]]:
-        return RuntimeLayout[layout[i]](
-            rebind[RuntimeTuple[layout[i].shape]](self.shape[i]),
-            rebind[RuntimeTuple[layout[i].stride]](self.stride[i]),
+    fn sublayout[
+        i: Int
+    ](self) -> RuntimeLayout[layout[i], bitwidth=bitwidth] as result:
+        return __type_of(result)(
+            rebind[
+                RuntimeTuple[
+                    layout[i].shape,
+                    element_bitwidth=bitwidth,
+                    unsigned=True,
+                ],
+            ](self.shape[i]),
+            rebind[RuntimeTuple[layout[i].stride, unsigned=True]](
+                self.stride[i]
+            ),
         )
 
     @staticmethod
@@ -102,12 +126,22 @@ struct RuntimeLayout[layout: Layout](Stringable, Writable):
 
 
 fn coalesce[
-    l: Layout, keep_rank: Bool = False
-](layout: RuntimeLayout[l]) -> RuntimeLayout[coalesce_layout(l, keep_rank)]:
+    l: Layout,
+    keep_rank: Bool = False,
+](layout: RuntimeLayout[l, **_]) -> RuntimeLayout[
+    coalesce_layout(l, keep_rank), bitwidth = layout.bitwidth
+] as result:
     constrained[not keep_rank, "Unsupported coalesce mode"]()
 
-    var res_shape = RuntimeTuple[coalesce_layout(l, keep_rank).shape]()
-    var res_stride = RuntimeTuple[coalesce_layout(l, keep_rank).stride]()
+    var res_shape = RuntimeTuple[
+        coalesce_layout(l, keep_rank).shape,
+        element_bitwidth = layout.bitwidth,
+        unsigned=True,
+    ]()
+    var res_stride = RuntimeTuple[
+        coalesce_layout(l, keep_rank).stride,
+        unsigned=True,
+    ]()
 
     res_shape.value[0] = 1
     res_stride.value[0] = 0
@@ -144,16 +178,25 @@ fn coalesce[
             res_stride.value[idx] = layout.stride.value[i]
             idx += 1
 
-    return RuntimeLayout[coalesce_layout(l, keep_rank)](res_shape, res_stride)
+    return __type_of(result)(res_shape, res_stride)
 
 
+# TODO: we are forcing a and b to have the same bitwidth for now. Should we
+# infer a output bitwidth?
 fn make_layout[
-    l1: Layout, l2: Layout
-](a: RuntimeLayout[l1], b: RuntimeLayout[l2]) -> RuntimeLayout[
-    make_layout_static(l1, l2)
-]:
-    var res_shape = RuntimeTuple[make_layout_static(l1, l2).shape]()
-    var res_stride = RuntimeTuple[make_layout_static(l1, l2).stride]()
+    l1: Layout, l2: Layout, bitwidth: Int
+](
+    a: RuntimeLayout[l1, bitwidth=bitwidth],
+    b: RuntimeLayout[l2, bitwidth=bitwidth],
+) -> RuntimeLayout[make_layout_static(l1, l2), bitwidth=bitwidth] as result:
+    var res_shape = RuntimeTuple[
+        make_layout_static(l1, l2).shape,
+        element_bitwidth=bitwidth,
+        unsigned=True,
+    ]()
+    var res_stride = RuntimeTuple[
+        make_layout_static(l1, l2).stride, unsigned=True
+    ]()
 
     alias a_length = len(flatten(l1.shape))
     alias b_length = len(flatten(l2.shape))
@@ -168,4 +211,4 @@ fn make_layout[
         res_shape.value[a_length + i] = b.shape.value[i]
         res_stride.value[a_length + i] = b.stride.value[i]
 
-    return RuntimeLayout(res_shape, res_stride)
+    return __type_of(result)(res_shape, res_stride)

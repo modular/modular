@@ -99,7 +99,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index(shape0.value, shape1.value)
+                Index[unsigned=True](shape0.value, shape1.value)
             )
         )
 
@@ -115,7 +115,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index(shape0.value, shape1.value, shape2.value)
+                Index[unsigned=True](shape0.value, shape1.value, shape2.value)
             )
         )
 
@@ -134,7 +134,9 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index(shape0.value, shape1.value, shape2.value, shape3.value)
+                Index[unsigned=True](
+                    shape0.value, shape1.value, shape2.value, shape3.value
+                )
             )
         )
 
@@ -154,7 +156,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index(
+                Index[unsigned=True](
                     shape0.value,
                     shape1.value,
                     shape2.value,
@@ -182,7 +184,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index(shape0.value, shape1.value)
+                Index[unsigned=True](shape0.value, shape1.value)
             )
         )
 
@@ -198,7 +200,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index(shape0.value, shape1.value, shape2.value)
+                Index[unsigned=True](shape0.value, shape1.value, shape2.value)
             )
         )
 
@@ -217,7 +219,9 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index(shape0.value, shape1.value, shape2.value, shape3.value)
+                Index[unsigned=True](
+                    shape0.value, shape1.value, shape2.value, shape3.value
+                )
             )
         )
 
@@ -237,7 +241,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index(
+                Index[unsigned=True](
                     shape0.value,
                     shape1.value,
                     shape2.value,
@@ -289,7 +293,9 @@ struct LayoutTensorBuild[
         __layout_init=True,
     ] as res:
         return __type_of(res)(
-            __type_of(res.runtime_layout).col_major(Index(shape0.value))
+            __type_of(res.runtime_layout).col_major(
+                Index[unsigned=True](shape0.value)
+            )
         )
 
     @always_inline

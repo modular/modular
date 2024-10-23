@@ -29,8 +29,8 @@ def test_runtime_layout_const():
 
     alias layout = Layout(shape, stride)
 
-    var shape_runtime = RuntimeTuple[layout.shape](16, 8)
-    var stride_runtime = RuntimeTuple[layout.stride]()
+    var shape_runtime = RuntimeTuple[layout.shape, unsigned=True](16, 8)
+    var stride_runtime = RuntimeTuple[layout.stride, unsigned=True]()
 
     var layout_r = RuntimeLayout[layout](shape_runtime, stride_runtime)
 
@@ -43,8 +43,8 @@ def test_static_and_dynamic_size():
     print("== test_static_and_dynamic_size")
     alias d_layout = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
     var layout = RuntimeLayout[d_layout](
-        RuntimeTuple[d_layout.shape](4, 8),
-        RuntimeTuple[d_layout.stride](4, 8),
+        RuntimeTuple[d_layout.shape, unsigned=True](4, 8),
+        RuntimeTuple[d_layout.stride, unsigned=True](4, 8),
     )
     assert_equal(layout.size(), 32)
 
@@ -63,8 +63,8 @@ def test_tiled_layout_indexing():
     alias d_layout = Layout(d_tuple, d_tuple)
 
     var layout = RuntimeLayout[d_layout](
-        RuntimeTuple[d_layout.shape](2, 2, 2, 2),
-        RuntimeTuple[d_layout.stride](1, 8, 2, 4),
+        RuntimeTuple[d_layout.shape, unsigned=True](2, 2, 2, 2),
+        RuntimeTuple[d_layout.stride, unsigned=True](1, 8, 2, 4),
     )
 
     for ii in range(2):
@@ -95,8 +95,8 @@ def test_tiled_layout_indexing_linear_idx():
     alias d_layout = Layout(d_tuple, d_tuple)
 
     var layout = RuntimeLayout[d_layout](
-        RuntimeTuple[d_layout.shape](2, 2, 2, 2),
-        RuntimeTuple[d_layout.stride](1, 8, 2, 4),
+        RuntimeTuple[d_layout.shape, unsigned=True](2, 2, 2, 2),
+        RuntimeTuple[d_layout.stride, unsigned=True](1, 8, 2, 4),
     )
 
     for i in range(16):
@@ -115,7 +115,8 @@ def test_sublayout_indexing():
     print("== test_sublayout_indexing")
     alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     alias layout = RuntimeLayout[layout_t](
-        RuntimeTuple[layout_t.shape](8, 4), RuntimeTuple[layout_t.stride](4, 1)
+        RuntimeTuple[layout_t.shape, unsigned=True](8, 4),
+        RuntimeTuple[layout_t.stride, unsigned=True](4, 1),
     )
     assert_equal(str(layout.sublayout[0]()), "(8:4)")
     assert_equal(str(layout.sublayout[1]()), "(4:1)")
@@ -126,7 +127,8 @@ def test_coalesce():
     print("== test_coalesce")
     alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var layout = RuntimeLayout[layout_t](
-        RuntimeTuple[layout_t.shape](8, 1), RuntimeTuple[layout_t.stride](1, 1)
+        RuntimeTuple[layout_t.shape, unsigned=True](8, 1),
+        RuntimeTuple[layout_t.stride, unsigned=True](1, 1),
     )
     assert_equal(str(coalesce(layout)), "((8, 1):(1, 1))")
     assert_equal(str(coalesce_layout(layout_t)), "((-1, -1):(-1, 1))")
@@ -136,8 +138,8 @@ def test_coalesce():
         IntTuple(UNKNOWN_VALUE, 8, 1, 1),
     )
     var layout_2 = RuntimeLayout[layout_t_2](
-        RuntimeTuple[layout_t_2.shape](32, 16, 8, 1),
-        RuntimeTuple[layout_t_2.stride](16, 8, 1, 1),
+        RuntimeTuple[layout_t_2.shape, unsigned=True](32, 16, 8, 1),
+        RuntimeTuple[layout_t_2.stride, unsigned=True](16, 8, 1, 1),
     )
 
     assert_equal(str(coalesce(layout_2)), "((32, 16, 8):(16, 8, 1))")
@@ -149,10 +151,12 @@ def test_make_layout():
     print("== test_make_layout")
     alias layout_t = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     var l_a = RuntimeLayout[layout_t](
-        RuntimeTuple[layout_t.shape](2, 2), RuntimeTuple[layout_t.stride](2, 1)
+        RuntimeTuple[layout_t.shape, unsigned=True](2, 2),
+        RuntimeTuple[layout_t.stride, unsigned=True](2, 1),
     )
     var l_b = RuntimeLayout[layout_t](
-        RuntimeTuple[layout_t.shape](4, 4), RuntimeTuple[layout_t.stride](4, 1)
+        RuntimeTuple[layout_t.shape, unsigned=True](4, 4),
+        RuntimeTuple[layout_t.stride, unsigned=True](4, 1),
     )
     assert_equal(
         str(make_layout(l_a, l_b)), "(((2, 2), (4, 4)):((2, 1), (4, 1)))"

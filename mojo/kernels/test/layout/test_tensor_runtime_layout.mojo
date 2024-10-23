@@ -23,7 +23,8 @@ def test_fill_and_print():
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](4, 8), RuntimeTuple[layout.stride](8, 1)
+        RuntimeTuple[layout.shape, unsigned=True](4, 8),
+        RuntimeTuple[layout.stride, unsigned=True](8, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -47,7 +48,8 @@ def test_set_and_get_items():
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](4, 4), RuntimeTuple[layout.stride](4, 1)
+        RuntimeTuple[layout.shape, unsigned=True](4, 4),
+        RuntimeTuple[layout.stride, unsigned=True](4, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -74,7 +76,8 @@ def test_tile():
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](4, 4), RuntimeTuple[layout.stride](4, 1)
+        RuntimeTuple[layout.shape, unsigned=True](4, 4),
+        RuntimeTuple[layout.stride, unsigned=True](4, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -115,7 +118,8 @@ fn test_tile_and_distribute():
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
+        RuntimeTuple[layout.shape, unsigned=True](8, 8),
+        RuntimeTuple[layout.stride, unsigned=True](8, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -209,7 +213,8 @@ fn test_tile_and_vectorize():
     alias layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](16, 16), RuntimeTuple[layout.stride](16, 1)
+        RuntimeTuple[layout.shape, unsigned=True](16, 16),
+        RuntimeTuple[layout.stride, unsigned=True](16, 1),
     )
 
     var storage = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -422,7 +427,8 @@ fn test_copy_from():
     )
 
     var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
+        RuntimeTuple[layout.shape, unsigned=True](8, 8),
+        RuntimeTuple[layout.stride, unsigned=True](8, 1),
     )
     var src_tensor = LayoutTensor[DType.float32, layout](
         UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
@@ -445,7 +451,8 @@ fn test_linspace_fill():
     )
 
     var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
+        RuntimeTuple[layout.shape, unsigned=True](8, 8),
+        RuntimeTuple[layout.stride, unsigned=True](8, 1),
     )
     var src_tensor = LayoutTensor[DType.float32, layout](
         UnsafePointer[Float32].alloc(dynamic_layout.size()), dynamic_layout
@@ -530,7 +537,8 @@ fn test_iterator():
     alias layout = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
 
     var dynamic_layout = RuntimeLayout[layout](
-        RuntimeTuple[layout.shape](8, 8), RuntimeTuple[layout.stride](8, 1)
+        RuntimeTuple[layout.shape, unsigned=True](8, 8),
+        RuntimeTuple[layout.stride, unsigned=True](8, 1),
     )
 
     var ptr = UnsafePointer[Float32].alloc(dynamic_layout.size())
@@ -569,7 +577,8 @@ fn test_iterator():
         IntTuple(4, UNKNOWN_VALUE), IntTuple(2, UNKNOWN_VALUE)
     )
     var dynamic_layout1 = RuntimeLayout[layout1](
-        RuntimeTuple[layout1.shape](4, 2), RuntimeTuple[layout1.stride](2, 1)
+        RuntimeTuple[layout1.shape, unsigned=True](4, 2),
+        RuntimeTuple[layout1.stride, unsigned=True](2, 1),
     )
     var iter = LayoutTensorIter[DType.float32, layout1, circular=True](
         ptr, 64, runtime_layout=dynamic_layout1
@@ -618,8 +627,8 @@ fn test_split():
 
     alias layout_Ux4 = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
     var dynamic_layout_2x4 = RuntimeLayout[layout_Ux4](
-        RuntimeTuple[layout_Ux4.shape](2, 4),
-        RuntimeTuple[layout_Ux4.stride](4, 1),
+        RuntimeTuple[layout_Ux4.shape, unsigned=True](2, 4),
+        RuntimeTuple[layout_Ux4.stride, unsigned=True](4, 1),
     )
     var tensor_Ux4 = LayoutTensor[DType.float32, layout_Ux4](
         ptr, dynamic_layout_2x4
@@ -634,8 +643,8 @@ fn test_split():
 
     alias layout_4x4 = Layout(IntTuple(4, 4), IntTuple(4, 1))
     var dynamic_layout_4x4 = RuntimeLayout[layout_4x4](
-        RuntimeTuple[layout_4x4.shape](4, 4),
-        RuntimeTuple[layout_4x4.stride](4, 1),
+        RuntimeTuple[layout_4x4.shape, unsigned=True](4, 4),
+        RuntimeTuple[layout_4x4.stride, unsigned=True](4, 1),
     )
     var tensor_4x4 = LayoutTensor[DType.float32, layout_4x4](
         ptr, dynamic_layout_4x4
@@ -662,8 +671,8 @@ fn test_split():
 
     alias layout_Ux8 = Layout(IntTuple(UNKNOWN_VALUE, 8), IntTuple(8, 1))
     var dynamic_layout_Ux8 = RuntimeLayout[layout_Ux8](
-        RuntimeTuple[layout_Ux8.shape](2, 8),
-        RuntimeTuple[layout_Ux8.stride](8, 1),
+        RuntimeTuple[layout_Ux8.shape, unsigned=True](2, 8),
+        RuntimeTuple[layout_Ux8.stride, unsigned=True](8, 1),
     )
     var tensor_Ux8 = LayoutTensor[DType.float32, layout_Ux8](
         ptr, dynamic_layout_Ux8

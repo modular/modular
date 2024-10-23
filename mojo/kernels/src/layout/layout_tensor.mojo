@@ -7,7 +7,14 @@
 from collections import Optional, OptionalReg
 from math import align_up, ceildiv
 from os import abort
-from sys import alignof, prefetch, simdwidthof, sizeof, triple_is_nvidia_cuda
+from sys import (
+    alignof,
+    prefetch,
+    bitwidthof,
+    simdwidthof,
+    sizeof,
+    triple_is_nvidia_cuda,
+)
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
@@ -188,12 +195,13 @@ struct LayoutTensor[
 
     var ptr: UnsafePointer[Scalar[dtype], address_space]
 
-    var runtime_layout: RuntimeLayout[layout, **_]
+    var runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]
 
     var runtime_element_layout: RuntimeLayout[element_layout]
 
     alias element_size = element_layout.size()
     alias element_type = SIMD[dtype, Self.element_size]
+    alias layout_bitwidth = bitwidthof[Int]()
 
     # An offset of the global coords.
     var org_coords_offset: IndexList[rank]
@@ -235,7 +243,7 @@ struct LayoutTensor[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[dtype], address_space],
-        runtime_layout: RuntimeLayout[layout],
+        runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
         /,
         *,
         org_coords_offset: IndexList[rank] = IndexList[rank](0),
@@ -266,7 +274,7 @@ struct LayoutTensor[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[dtype], address_space],
-        runtime_layout: RuntimeLayout[layout],
+        runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
         element_runtime_layout: RuntimeLayout[element_layout],
         /,
         *,
@@ -1165,13 +1173,21 @@ struct LayoutTensor[
 
             @parameter
             if __experimental_non_homogeneous_tile:
-                dynamic_shape = RuntimeTuple[result.layout.shape](
-                    self._clamp_tile[*tile_sizes](tile_coords)
-                )
+                dynamic_shape = RuntimeTuple[
+                    result.layout.shape,
+                    element_bitwidth = Self.layout_bitwidth,
+                    unsigned=True,
+                ](self._clamp_tile[*tile_sizes](tile_coords))
             else:
-                dynamic_shape = RuntimeTuple[result.layout.shape]()
+                dynamic_shape = RuntimeTuple[
+                    result.layout.shape,
+                    element_bitwidth = Self.layout_bitwidth,
+                    unsigned=True,
+                ]()
 
-            var dynamic_stride = RuntimeTuple[result.layout.stride]()
+            var dynamic_stride = RuntimeTuple[
+                result.layout.stride, unsigned=True
+            ]()
 
             @parameter
             for i in range(num_tiles):
@@ -1254,7 +1270,9 @@ struct LayoutTensor[
                 bound,
                 stride=stride,
                 offset=0,
-                runtime_layout=RuntimeLayout[result.layout](),
+                runtime_layout=RuntimeLayout[
+                    result.layout, bitwidth = Self.layout_bitwidth
+                ](),
                 dim_bound=int(self.runtime_layout.shape[axis].get_int()),
                 idx=tile_coords[axis],
             )
@@ -1263,12 +1281,20 @@ struct LayoutTensor[
 
             @parameter
             if __experimental_non_homogeneous_tile:
-                runtime_shape = RuntimeTuple[result.layout.shape](
-                    self._clamp_tile[*tile_sizes](tile_coords)
-                )
+                runtime_shape = RuntimeTuple[
+                    result.layout.shape,
+                    element_bitwidth = Self.layout_bitwidth,
+                    unsigned=True,
+                ](self._clamp_tile[*tile_sizes](tile_coords))
             else:
-                runtime_shape = RuntimeTuple[result.layout.shape]()
-            var runtime_stride = RuntimeTuple[result.layout.stride]()
+                runtime_shape = RuntimeTuple[
+                    result.layout.shape,
+                    element_bitwidth = Self.layout_bitwidth,
+                    unsigned=True,
+                ]()
+            var runtime_stride = RuntimeTuple[
+                result.layout.stride, unsigned=True
+            ]()
 
             @parameter
             for i in range(tiles_rank):
@@ -1375,7 +1401,11 @@ struct LayoutTensor[
         alias flatten_rank = len(flatten(layout.shape))
         alias axis_in_flatten_tuple = runtime_shape.offset_until[axis]()
 
-        var runtime_shape = RuntimeTuple[result.layout.shape]()
+        var runtime_shape = RuntimeTuple[
+            result.layout.shape,
+            element_bitwidth = Self.layout_bitwidth,
+            unsigned=True,
+        ]()
         var axis_partition_dim = align_up(axis_dim // count, alignment)
 
         @parameter
@@ -1393,9 +1423,9 @@ struct LayoutTensor[
         return __type_of(result)(
             # Only the last partition can have size other than axis_partition_dim.
             self.ptr + idx * axis_partition_dim * axis_stride,
-            RuntimeLayout[result.layout](
+            RuntimeLayout[result.layout, bitwidth = Self.layout_bitwidth](
                 runtime_shape,
-                rebind[RuntimeTuple[result.layout.stride]](
+                rebind[RuntimeTuple[result.layout.stride, unsigned=True]](
                     self.runtime_layout.stride
                 ),
             ),
@@ -1574,13 +1604,21 @@ struct LayoutTensor[
 
             @parameter
             if __experimental_non_homogeneous_tile:
-                runtime_shape = RuntimeTuple[result.layout.shape](
-                    self._clamp_distribute_shape[threads_layout](thread_id)
-                )
+                runtime_shape = RuntimeTuple[
+                    result.layout.shape,
+                    element_bitwidth = Self.layout_bitwidth,
+                    unsigned=True,
+                ](self._clamp_distribute_shape[threads_layout](thread_id))
             else:
-                runtime_shape = RuntimeTuple[result.layout.shape]()
+                runtime_shape = RuntimeTuple[
+                    result.layout.shape,
+                    element_bitwidth = Self.layout_bitwidth,
+                    unsigned=True,
+                ]()
 
-            var runtime_stride = RuntimeTuple[result.layout.stride]()
+            var runtime_stride = RuntimeTuple[
+                result.layout.stride, unsigned=True
+            ]()
 
             @parameter
             for i in range(runtime_shape.scalar_length):
@@ -1711,14 +1749,20 @@ struct LayoutTensor[
                 coalesce(result.element_layout).known_shape(),
                 "Result element layout should have known shape",
             ]()
-            var runtime_shape = RuntimeTuple[result.layout.shape]()
-            var runtime_stride = RuntimeTuple[result.layout.stride]()
+            var runtime_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = Self.layout_bitwidth,
+                unsigned=True,
+            ]()
+            var runtime_stride = RuntimeTuple[
+                result.layout.stride, unsigned=True
+            ]()
 
             var runtime_element_layout_shape = RuntimeTuple[
-                result.element_layout.shape
+                result.element_layout.shape, unsigned=True
             ]()
             var runtime_element_layout_stride = RuntimeTuple[
-                result.element_layout.stride
+                result.element_layout.stride, unsigned=True
             ](self.runtime_layout.stride.value)
 
             @parameter
@@ -2138,12 +2182,24 @@ struct LayoutTensor[
             var d0 = min(other.dim(0), self.dim(0))
             var d1 = min(other.dim(1), self.dim(1))
 
-            var dst_layout = RuntimeLayout[self.layout](
-                RuntimeTuple[self.layout.shape](d0, d1),
+            var dst_layout = RuntimeLayout[
+                self.layout, bitwidth = Self.layout_bitwidth
+            ](
+                RuntimeTuple[
+                    self.layout.shape,
+                    element_bitwidth = Self.layout_bitwidth,
+                    unsigned=True,
+                ](d0, d1),
                 self.runtime_layout.stride,
             )
-            var src_layout = RuntimeLayout[other.layout](
-                RuntimeTuple[other.layout.shape](d0, d1),
+            var src_layout = RuntimeLayout[
+                other.layout, bitwidth = other.layout_bitwidth
+            ](
+                RuntimeTuple[
+                    other.layout.shape,
+                    element_bitwidth = other.layout_bitwidth,
+                    unsigned=True,
+                ](d0, d1),
                 other.runtime_layout.stride,
             )
 
@@ -2459,12 +2515,24 @@ struct LayoutTensor[
                 var d0 = min(src.dim(0), self.dim(0))
                 var d1 = min(src.dim(1), self.dim(1))
 
-                var dst_runtime_layout = RuntimeLayout[self.layout](
-                    RuntimeTuple[self.layout.shape](d0, d1),
+                var dst_runtime_layout = RuntimeLayout[
+                    self.layout, bitwidth = Self.layout_bitwidth
+                ](
+                    RuntimeTuple[
+                        self.layout.shape,
+                        element_bitwidth = Self.layout_bitwidth,
+                        unsigned=True,
+                    ](d0, d1),
                     self.runtime_layout.stride,
                 )
-                var src_runtime_layout = RuntimeLayout[src.layout](
-                    RuntimeTuple[src.layout.shape](d0, d1),
+                var src_runtime_layout = RuntimeLayout[
+                    src.layout, bitwidth = src.layout_bitwidth
+                ](
+                    RuntimeTuple[
+                        src.layout.shape,
+                        element_bitwidth = src.layout_bitwidth,
+                        unsigned=True,
+                    ](d0, d1),
                     src.runtime_layout.stride,
                 )
 
@@ -3380,7 +3448,7 @@ struct LayoutTensorIter[
     var offset: Scalar[_get_unsigned_type(layout, address_space)]
     var stride: Scalar[_get_unsigned_type(layout, address_space)]
     var bound: Scalar[_get_unsigned_type(layout, address_space)]
-    var runtime_layout: RuntimeLayout[layout]
+    var runtime_layout: RuntimeLayout[layout, bitwidth = bitwidthof[Int]()]
     var dim_bound: Scalar[_get_unsigned_type(layout, address_space)]
     var idx: Scalar[_get_unsigned_type(layout, address_space)]
 
