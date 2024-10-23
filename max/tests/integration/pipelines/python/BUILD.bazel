@@ -26,3 +26,16 @@ modular_py_binary(
         requirement("click"),
     ],
 )
+
+modular_py_binary(
+    name = "verify_pipelines",
+    srcs = ["verify_pipelines.py"],
+    data = [
+        "//KGEN:CompilerRT",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("click"),
+    ],
+)
