@@ -37,24 +37,24 @@ def torch_conv2d(
 
 
 # TODO(KERN-1066): Fix and enable test
-@pytest.mark.skip(reason="Errors are larger than usual")
+@pytest.mark.skip(reason="Errors are larger than usual (10^-2)")
 @pytest.mark.parametrize(
     "input_type, filter_type",
     [
         (
-            TensorType(DType.float32, [1, 10, 10, 4]),
-            TensorType(DType.float32, [4, 4, 4, 8]),
+            TensorType(DType.float32, [1, 16, 16, 4]),
+            TensorType(DType.float32, [16, 16, 4, 5]),
         ),
     ],
 )
 def test_conv2d(session, input_type: TensorType, filter_type: TensorType):
     with Graph("conv2d", input_types=[input_type, filter_type]) as graph:
         x, filter = graph.inputs
-        stride = (2, 2)
-        padding = (1, 1)
+        stride = (16, 16)
+        padding = (0, 0)
         dilation = (1, 1)
 
-        conv = conv2d(x, filter, stride, dilation, (1, 1, 1, 1))
+        conv = conv2d(x, filter, stride, dilation, (0, 0, 0, 0))
         graph.output(conv)
 
         @modular_graph_test(session, graph)

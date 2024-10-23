@@ -12,8 +12,8 @@ from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph
-from ..value import TensorValue
 from ..type import TensorType
+from ..value import TensorValue
 
 
 def constant(
