@@ -37,6 +37,7 @@
 # CHECK-BIN-NEXT:     "--some-arg"
 # CHECK-BIN-NEXT:   ],
 # CHECK-BIN-NEXT:   "cwd": "
+# CHECK-BIN-NEXT:   "debuggerRoot": "
 # CHECK-BIN-NEXT:   "env": [
 # CHECK-BIN:        ]
 # CHECK-BIN:   "modularHomePath": "
@@ -59,6 +60,7 @@
 # CHECK-MOJO-NEXT:     "--some-arg"
 # CHECK-MOJO-NEXT:   ],
 # CHECK-MOJO-NEXT:   "cwd": "
+# CHECK-MOJO-NEXT:   "debuggerRoot": "
 # CHECK-MOJO-NEXT:   "env": [
 # CHECK-MOJO:          "PATH=
 # CHECK-MOJO:        ]
@@ -79,6 +81,7 @@
 # CHECK-CUDA-GDB:     "hello.mojo"
 # CHECK-CUDA-GDB:   ],
 # CHECK-CUDA-GDB:   "cwd": "
+# CHECK-CUDA-GDB:   "debuggerRoot": "
 # CHECK-CUDA-GDB:   "env": [
 # CHECK-CUDA-GDB:          "PATH=
 # CHECK-CUDA-GDB:        ]
@@ -99,6 +102,7 @@
 # CHECK-CUDA-GDB-BREAK:   ],
 # CHECK-CUDA-GDB-BREAK:   "breakOnLaunch": true,
 # CHECK-CUDA-GDB-BREAK:   "cwd": "
+# CHECK-CUDA-GDB-BREAK:   "debuggerRoot": "
 # CHECK-CUDA-GDB-BREAK:   "env": [
 # CHECK-CUDA-GDB-BREAK:          "PATH=
 # CHECK-CUDA-GDB-BREAK:        ]
