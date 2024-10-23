@@ -197,7 +197,6 @@ std::string M::Frameworks::StatsReport::getJSON() {
 
   llvm::json::OStream J(os, 2);
   J.object([&] {
-    J.attribute("model_name", modelName);
     J.attributeObject("fallbacks", [&] {
       for (const auto &entry : fallbackHistogram)
         J.attribute(entry.getKey(), entry.getValue());
