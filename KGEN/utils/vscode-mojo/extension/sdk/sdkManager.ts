@@ -23,7 +23,6 @@ import {
 import { MojoSDKVersion } from './sdkVersion';
 import { findMagicSDKSpec } from './magicSdk';
 import { MojoSDKSpec } from './types';
-import { ExtensionSemiPersistentState } from '../extension';
 
 type NotYetSelectedSDK = {
   state: 'not-yet-selected';
@@ -53,21 +52,18 @@ export class MojoSDKManager extends DisposableContext {
   private activeSDK: SDKSelection = { state: 'not-yet-selected' };
   private findSDKMutex = new Mutex();
   private isNightly: boolean;
-  private extensionSemiPersistentState;
   private extensionContext: vscode.ExtensionContext;
 
   constructor(
     logger: Logger,
     initializationSDK: Optional<MojoSDKSpec>,
     isNightly: boolean,
-    extensionSemiPersistentState: ExtensionSemiPersistentState,
     extensionContext: vscode.ExtensionContext,
   ) {
     super();
     this.logger = logger;
     this.initializationSDK = initializationSDK;
     this.isNightly = isNightly;
-    this.extensionSemiPersistentState = extensionSemiPersistentState;
     this.extensionContext = extensionContext;
 
     this.pushSubscription(
@@ -141,7 +137,7 @@ export class MojoSDKManager extends DisposableContext {
     const devSDKSpec = await this.findDevSDKSpecFromSubPath(modularHomePath);
     if (devSDKSpec !== undefined) {
       return this.createSDKAndShowError(
-        { state: 'selected', sdkSpec: devSDKSpec.spec },
+        { state: 'selected', sdkSpec: devSDKSpec },
         hideRepeatedErrors,
       );
     }
@@ -398,9 +394,7 @@ export class MojoSDKManager extends DisposableContext {
       await Promise.all(
         paths.map((path) => this.findDevSDKSpecFromSubPath(path)),
       )
-    )
-      .map((x) => x?.spec)
-      .filter((x): x is MojoSDKSpec => x !== undefined);
+    ).filter((spec): spec is MojoSDKSpec => spec !== undefined);
     const uniqueSDKSpecs = new Map<string, MojoSDKSpec>();
     candidateSDKSpecs.forEach((spec) =>
       uniqueSDKSpecs.set(spec.modularHomePath, spec),
@@ -410,7 +404,7 @@ export class MojoSDKManager extends DisposableContext {
 
   private async findDevSDKSpecFromSubPath(
     fsPath: string,
-  ): Promise<Optional<{ spec: MojoSDKSpec; isNew: boolean }>> {
+  ): Promise<Optional<MojoSDKSpec>> {
     const repoRoot = await moveUpUntil(fsPath, (p) =>
       directoryExists(path.join(p, '.git')),
     );
@@ -438,14 +432,7 @@ export class MojoSDKManager extends DisposableContext {
       ),
       section: 'mojo-max',
     };
-    let isNew = false;
-    if (
-      !this.extensionSemiPersistentState.seenDevSDKs.has(spec.modularHomePath)
-    ) {
-      this.extensionSemiPersistentState.seenDevSDKs.add(spec.modularHomePath);
-      isNew = true;
-    }
-    return { spec, isNew };
+    return spec;
   }
 
   private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {

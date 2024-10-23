@@ -21,13 +21,6 @@ import { MojoSDKSpec } from './sdk/types';
 import { Mutex } from 'async-mutex';
 
 /**
- * State that survives across reloads of the extension, but not re-activations.
- */
-export class ExtensionSemiPersistentState {
-  public seenDevSDKs = new Set<string>();
-}
-
-/**
  * Returns if the given extension context is a nightly build.
  */
 export function isNightlyExtension(context: vscode.ExtensionContext) {
@@ -52,7 +45,6 @@ export class MojoExtension extends DisposableContext {
   public readonly extensionContext: vscode.ExtensionContext;
   public lspManager?: MojoLSPManager;
   public readonly isNightly: boolean;
-  private semiPersistentState = new ExtensionSemiPersistentState();
   private activateMutex = new Mutex();
 
   constructor(
@@ -92,7 +84,6 @@ Activating the Mojo Extension
         this.logger,
         initializationSDK,
         this.isNightly,
-        this.semiPersistentState,
         this.extensionContext,
       );
       this.pushSubscription(sdkManager);
