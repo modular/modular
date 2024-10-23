@@ -68,8 +68,7 @@ struct _InferenceSessionImpl(Movable):
         var model_path = config._model_path
         if model_path:
             var path = model_path.value()
-            compile_config.set_model_path(path.path._strref_dangerous())
-            path.path._strref_keepalive()
+            compile_config.set_model_path(path.path)
 
         var pipeline_name = config._pipeline_name
         if pipeline_name:
@@ -79,8 +78,7 @@ struct _InferenceSessionImpl(Movable):
         # TODO: Use a direct for loop (#38478).
         for i in range(len(custom_ops_paths)):
             var path = custom_ops_paths[i]
-            compile_config.set_replace_ops_path(path.path._strref_dangerous())
-            path.path._strref_keepalive()
+            compile_config.set_replace_ops_path(path.path)
 
         var model_source = config._source
         if model_source and model_path:

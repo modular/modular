@@ -15,7 +15,5 @@ fn get_version() raises -> String:
     Returns:
         Version as string.
     """
-    var path = _get_engine_path()
-    var version = _EngineImpl(path._strref_dangerous()).get_version()
-    path._strref_keepalive()
+    var version = _EngineImpl(_get_engine_path()).get_version()
     return version

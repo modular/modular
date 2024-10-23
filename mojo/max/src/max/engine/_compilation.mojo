@@ -72,17 +72,13 @@ struct CCompileConfig:
 
     fn set_model_path(self, path: String, lib: DLHandle):
         """Sets the path of model to compile."""
-        var path_strref = path._strref_dangerous()
-        call_dylib_func(lib, Self.SetModelPathFnName, self, path_strref.data)
-        path._strref_keepalive()
+        call_dylib_func(lib, Self.SetModelPathFnName, self, path.unsafe_ptr())
 
     fn replace_ops(self, path: String, lib: DLHandle) raises:
         var status = Status(lib)
-        var path_strref = path._strref_dangerous()
         call_dylib_func(
-            lib, Self.ReplaceOpsFnName, self, path_strref.data, status.ptr
+            lib, Self.ReplaceOpsFnName, self, path.unsafe_ptr(), status.ptr
         )
-        path._strref_keepalive()
         if status:
             raise Error(status.__str__())
 

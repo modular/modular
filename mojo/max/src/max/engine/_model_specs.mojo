@@ -77,7 +77,7 @@ struct TensorNames(Sized):
     ):
         var status = Status(lib)
         self.ptr = call_dylib_func[CTensorNameArray](
-            lib, fn_name._strref_dangerous(), ptr, status.borrow_ptr()
+            lib, fn_name.unsafe_ptr(), ptr, status.borrow_ptr()
         )
         fn_name._strref_keepalive()
         if status:
