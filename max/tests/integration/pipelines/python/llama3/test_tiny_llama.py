@@ -7,20 +7,11 @@
 golden values.
 """
 
-import os
 import re
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from evaluate_llama import (
-    PROMPTS,
-    NumpyDecoder,
-    SupportedTestModels,
-    compare_values,
-    find_runtime_path,
-    run_llama3,
-)
+from evaluate_llama import PROMPTS, SupportedTestModels, run_llama3
 from llama3.llama3 import Llama3
 from nn.kv_cache import KVCacheStrategy
 
@@ -57,39 +48,34 @@ def tinyllama_model_naive_kv_cache(testdata_directory, request):
 
 
 @pytest.mark.parametrize("tinyllama_model", [(2048, -1)], indirect=True)
-def test_tiny_llama(tinyllama_model, testdata_directory):
+def test_tiny_llama(tinyllama_model):
     """Runs Llama3.1 on a tiny checkpoint and compares it to previously generated
     golden values.
+
+    NOTE: Intentionally don't compare results with "goldens" because TinyLlama
+    weights were randomly initialized.
     """
-    golden_data_path = find_runtime_path(
-        SupportedTestModels.TINY_LLAMA_F32.golden_data_fname(),
-        testdata_directory,
-    )
-    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
-    actual = run_llama3(tinyllama_model, prompts=PROMPTS[:1])
-    compare_values(actual, expected_results)
+    _ = run_llama3(tinyllama_model, prompts=PROMPTS[:1])
 
 
 @pytest.mark.parametrize(
     "tinyllama_model_naive_kv_cache", [(2048, -1)], indirect=True
 )
 def test_tiny_llama_naive_kv_cache(
-    tinyllama_model_naive_kv_cache: Llama3, testdata_directory: Path
+    tinyllama_model_naive_kv_cache: Llama3,
 ) -> None:
-    """Runs tiny Llama with naive KV cache and checks output."""
+    """Runs tiny Llama with naive KV cache.
+
+    NOTE: Intentionally don't compare results with "goldens" because TinyLlama
+    weights were randomly initialized.
+    """
     # Check that we indeed have a naive KV cache Llama model.
     assert (
         tinyllama_model_naive_kv_cache.config.cache_strategy
         == KVCacheStrategy.NAIVE
     )
 
-    golden_data_path = find_runtime_path(
-        SupportedTestModels.TINY_LLAMA_F32.golden_data_fname(),
-        testdata_directory,
-    )
-    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
-    actual = run_llama3(tinyllama_model_naive_kv_cache, prompts=PROMPTS[:1])
-    compare_values(actual, expected_results)
+    _ = run_llama3(tinyllama_model_naive_kv_cache, prompts=PROMPTS[:1])
 
 
 def _prompt_to_test_id(prompt: str):

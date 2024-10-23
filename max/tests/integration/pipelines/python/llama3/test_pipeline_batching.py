@@ -9,14 +9,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pytest
-from evaluate_llama import (
-    PROMPTS,
-    NumpyDecoder,
-    SupportedTestModels,
-    compare_values,
-    find_runtime_path,
-    next_token_with_logits,
-)
+from evaluate_llama import PROMPTS, SupportedTestModels, next_token_with_logits
 from llama3.config import SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3
 from nn.kv_cache import KVCacheStrategy
@@ -293,21 +286,13 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
     ids=PipelineModelParams.__str__,
     indirect=True,
 )
-async def test_pipeline_heterogeneous_batch_logits(
-    pipeline_model, testdata_directory
-):
+async def test_pipeline_heterogeneous_batch_logits(pipeline_model):
     """Execute a batch with prompts with different lengths and validates the
     logits.
 
     This should only be expected to run with the continuous batching kv cache.
     As such, it should only work with tinyllama/fp32 on CPU.
     """
-    golden_data_path = find_runtime_path(
-        SupportedTestModels.TINY_LLAMA_F32.golden_data_fname(),
-        testdata_directory,
-    )
-    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
-
     prompt_a = PROMPTS[0]
     prompt_b = PROMPTS[1]
     prompt_c = PROMPTS[2]
@@ -336,30 +321,12 @@ async def test_pipeline_heterogeneous_batch_logits(
         pipeline_model, {"B": context_b, "C": context_c}, stored_logits
     )
 
-    compare_values(
-        [
-            {"prompt": prompt_a, "values": stored_logits["A"]},
-            {"prompt": prompt_b, "values": stored_logits["B"]},
-            {"prompt": prompt_c, "values": stored_logits["C"]},
-        ],
-        expected_results,
-    )
-
     # Send in A, B, C out of order
     # This evaluates if the order of the batch can be mutated
     next_token_with_logits(
         pipeline_model,
         {"C": context_c, "B": context_b, "A": context_a},
         stored_logits,
-    )
-
-    compare_values(
-        [
-            {"prompt": prompt_a, "values": stored_logits["A"]},
-            {"prompt": prompt_b, "values": stored_logits["B"]},
-            {"prompt": prompt_c, "values": stored_logits["C"]},
-        ],
-        expected_results,
     )
 
     await pipeline_model.release(context_a)

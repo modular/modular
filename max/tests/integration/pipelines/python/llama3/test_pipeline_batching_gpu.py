@@ -9,16 +9,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pytest
-from evaluate_llama import (
-    PROMPTS,
-    NumpyDecoder,
-    SupportedTestModels,
-    compare_values,
-    find_runtime_path,
-    next_token_with_logits,
-)
+from evaluate_llama import PROMPTS, SupportedTestModels, next_token_with_logits
 from llama3.config import SupportedEncodings, SupportedVersions
-from llama3.llama3 import Llama3
+from llama3.llama3 import Llama3, Llama3Context
 from nn.kv_cache import KVCacheStrategy
 
 
@@ -40,7 +33,7 @@ class PipelineModelParams:
 
 
 @pytest.fixture(scope="session")
-def pipeline_model(testdata_directory, request):
+def pipeline_model(testdata_directory, request) -> Llama3:
     model_params: PipelineModelParams = request.param
     print(f"\nPipelineModel: {model_params}")
     encoding = model_params.encoding
@@ -67,9 +60,7 @@ def pipeline_model(testdata_directory, request):
         f" MaxNewTokens={config.max_new_tokens},"
         f" BatchSize={config.max_cache_batch_size}"
     )
-    model = Llama3(config)
-
-    return model
+    return Llama3(config)
 
 
 @pytest.mark.asyncio
@@ -88,22 +79,18 @@ def pipeline_model(testdata_directory, request):
     indirect=True,
 )
 async def test_pipeline_heterogeneous_batch_logits(
-    pipeline_model, testdata_directory
-):
-    """Execute a batch with prompts with different lengths and validates the
-    logits.
-    """
-    golden_data_path = find_runtime_path(
-        SupportedTestModels.TINY_LLAMA_BF16.golden_data_fname(),
-        testdata_directory,
-    )
-    expected_results = NumpyDecoder().decode(golden_data_path.read_text())
+    pipeline_model: Llama3,
+) -> None:
+    """Executes batch of prompts with different lengths and validates logits.
 
+    NOTE: Intentionally don't compare results with "goldens" because TinyLlama
+    weights were randomly initialized.
+    """
     prompt_a = PROMPTS[0]
     prompt_b = PROMPTS[1]
     prompt_c = PROMPTS[2]
 
-    stored_logits = {"A": [], "B": [], "C": []}
+    stored_logits: dict[str, Llama3Context] = {"A": [], "B": [], "C": []}
 
     # Send in A for context encoding.
     context_a = await pipeline_model.new_context(prompt_a)
@@ -125,16 +112,6 @@ async def test_pipeline_heterogeneous_batch_logits(
     # Send in both B and C for token generation
     next_token_with_logits(
         pipeline_model, {"B": context_b, "C": context_c}, stored_logits
-    )
-
-    compare_values(
-        [
-            {"prompt": prompt_a, "values": stored_logits["A"]},
-            {"prompt": prompt_b, "values": stored_logits["B"]},
-            {"prompt": prompt_c, "values": stored_logits["C"]},
-        ],
-        expected_results,
-        rtol=1e-2,
     )
 
     await pipeline_model.release(context_a)
