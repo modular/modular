@@ -66,11 +66,18 @@ struct DeviceBufferV1[type: DType](Sized):
         self.size = size
         self.owning = owning
 
-    fn __init__(inout self):
-        self.ctx_ptr = UnsafePointer[DeviceContextV1]()
-        self.ptr = UnsafePointer[Scalar[type]]()
-        self.size = 0
-        self.owning = False
+    fn __init__(
+        inout self,
+        ctx_ptr: UnsafePointer[DeviceContextV1],
+        ptr: UnsafePointer[Scalar[type]],
+        size: Int,
+        *,
+        owning: Bool,
+    ):
+        self.ctx_ptr = ctx_ptr
+        self.ptr = ptr
+        self.size = size
+        self.owning = owning
 
     fn __copyinit__(inout self, existing: Self):
         self.ctx_ptr = existing.ctx_ptr
@@ -109,14 +116,12 @@ struct DeviceBufferV1[type: DType](Sized):
     ](self, offset: Int, size: Int) raises -> DeviceBufferV1[view_type]:
         if sizeof[view_type]() * (offset + size) > sizeof[type]() * self.size:
             raise Error("offset and size exceed original buffer size")
-        var sub_buffer = DeviceBufferV1[view_type]()
-        sub_buffer.ctx_ptr = self.ctx_ptr
-        sub_buffer.ptr = rebind[UnsafePointer[Scalar[view_type]]](
-            self.ptr
-        ).offset(offset)
-        sub_buffer.size = size
-        sub_buffer.owning = False
-        return sub_buffer
+        return DeviceBufferV1[view_type](
+            self.ctx_ptr,
+            rebind[UnsafePointer[Scalar[view_type]]](self.ptr).offset(offset),
+            size,
+            owning=False,
+        )
 
     fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         var tmp = self.ptr

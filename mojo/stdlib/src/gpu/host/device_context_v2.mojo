@@ -183,11 +183,6 @@ struct DeviceBufferV2[type: DType](Sized):
         self._device_ptr = ptr
         self._handle = cpp_handle
 
-    fn __init__(inout self):
-        not_implemented_yet["##### DeviceBufferV2.__init__ - 3"]()
-        self._device_ptr = UnsafePointer[Scalar[type]]()
-        self._handle = _DeviceBufferPtr()
-
     fn __copyinit__(inout self, existing: Self):
         # Increment the reference count before copying the handle.
         #

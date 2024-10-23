@@ -127,13 +127,6 @@ struct DeviceBufferVariant[type: DType](Sized):
         else:
             self._impl = Self.V1(ctx.v1(), ptr, size, owning=owning)
 
-    fn __init__(inout self):
-        @parameter
-        if _device_ctx_v2():
-            self._impl = Self.V2()
-        else:
-            self._impl = Self.V1()
-
     fn __copyinit__(inout self, existing: Self):
         self._impl = existing._impl
 
