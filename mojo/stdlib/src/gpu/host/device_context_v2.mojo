@@ -317,13 +317,6 @@ struct DeviceFunctionV2[
         alias debug_level = env_get_string["DEBUG_LEVEL", "none"]()
         alias optimization_level = env_get_int["OPTIMIZATION_LEVEL", 4]()
 
-        if max_registers:
-            print(
-                "DeviceFunctionV2.__init__: max_registers = "
-                + str(max_registers.value())
-            )
-            not_implemented_yet["DeviceFunctionV2.__init__: max_registers"]()
-
         var max_dynamic_shared_size_bytes: Int32 = -1
         if func_attribute:
             if (
