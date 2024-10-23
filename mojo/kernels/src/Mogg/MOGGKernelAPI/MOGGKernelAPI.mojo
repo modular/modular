@@ -27,6 +27,7 @@ from sys.info import simdwidthof
 from nn.split import split
 import compiler_internal as compiler
 from collections.vector import InlinedFixedVector
+from sys.info import bitwidthof, simdwidthof, sizeof
 
 # ===----------------------------------------------------------------------===#
 # Kernel imports
@@ -100,6 +101,21 @@ from register import mogg_register_override
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 
+from quantization import (
+    Q4sym,
+    block_Q4_K,
+    block_Q6_K,
+    block_QK_K,
+    q4_k_dequantize_impl,
+    q6_k_dequantize_impl,
+)
+from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
+from quantization.qmatmul_k import (
+    matmul_Q4_K,
+    matmul_Q4_K_pack_b,
+    matmul_Q6_K,
+    matmul_Q6_K_pack_b,
+)
 
 # ===----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
@@ -306,6 +322,14 @@ fn pack_conv_transpose_filter[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_transpose_filter(filter, packed_filter, 1)
+
+
+@mogg_register_override("get_int_from_shape", 1)
+@always_inline
+fn get_int_from_shape[
+    param_index: Int, rank: Int
+](shape: IndexList[rank]) -> Int:
+    return shape[param_index]
 
 
 # ===----------------------------------------------------------------------===#
@@ -4467,3 +4491,247 @@ struct WithMaskFlashAttentionCPU:
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
             scale[0].cast[DType.float32](),
         )
+
+
+# ===----------------------------------------------------------------------===#
+# Quantization for CPU
+# ===----------------------------------------------------------------------===#
+
+######
+# Q4_0
+######
+
+
+@compiler.register("ggml_q4_0_dequantize")
+struct GGMLQ40Dequantize:
+    @staticmethod
+    @always_inline
+    fn execute(
+        output: ManagedTensorSlice[DType.float32, 2],
+        input: ManagedTensorSlice[DType.uint8, 2],
+    ) raises:
+        with Trace[TraceLevel.OP, target="cpu"]("ggml_q4_0_dequantize"):
+            Q4sym[group_size=32].dequantize_and_write_to_tensor(
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(output),
+                output.get_static_spec().shape,
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(input: ManagedTensorSlice[DType.uint8, 2]) -> IndexList[2]:
+        alias block_nbytes = sizeof[Q4sym[group_size=32]]()
+        alias quants_per_block = 32
+        var num_block_per_batch = (
+            input.size() // input.dim_size(0)
+        ) // block_nbytes
+        return (input.dim_size(0), quants_per_block * num_block_per_batch)
+
+
+@compiler.register("vroom_q4_0_matmul")
+struct VroomQ40Matmul:
+    @staticmethod
+    @always_inline
+    fn execute(
+        c: ManagedTensorSlice[DType.float32, 2],
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) raises:
+        with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_0_matmul"):
+            matmul_qint4[32](
+                managed_tensor_slice_to_ndbuffer(a),
+                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(c),
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size(0), b.dim_size(0))
+
+
+@compiler.register("vroom_q4_0_repack_weights")
+struct VroomQ40RepackWeights:
+    @staticmethod
+    @always_inline
+    fn execute(
+        b_packed: ManagedTensorSlice[DType.uint8, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) raises:
+        with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_0_matmul"):
+            matmul_qint4_pack_b[32](
+                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(b_packed),
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return b.get_static_spec().shape
+
+
+######
+# Q4_K
+######
+
+
+@compiler.register("ggml_q4_k_dequantize")
+struct GGMLQ4KDequantize:
+    @staticmethod
+    @always_inline
+    fn execute(
+        output: ManagedTensorSlice[DType.float32, 2],
+        input: ManagedTensorSlice[DType.uint8, 2],
+    ) raises:
+        with Trace[TraceLevel.OP, target="cpu"]("ggml_q4_k_dequantize"):
+            q4_k_dequantize_impl(
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(output),
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(input: ManagedTensorSlice[DType.uint8, 2]) -> IndexList[2]:
+        alias block_nbytes = sizeof[block_Q4_K]()
+        alias elements_per_block = block_QK_K.quantized_k
+
+        var num_block_per_batch = (
+            input.size() // input.dim_size(0)
+        ) // block_nbytes
+
+        return (input.dim_size(0), elements_per_block * num_block_per_batch)
+
+
+@compiler.register("vroom_q4_k_matmul")
+struct VroomQ4KMatmul:
+    @staticmethod
+    @always_inline
+    fn execute(
+        c: ManagedTensorSlice[DType.float32, 2],
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) raises:
+        with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_k_matmul"):
+            matmul_Q4_K(
+                managed_tensor_slice_to_ndbuffer(a),
+                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(c),
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size(0), b.dim_size(0))
+
+
+@compiler.register("vroom_q4_k_repack_weights")
+struct VroomQ4KRepackWeights:
+    @staticmethod
+    @always_inline
+    fn execute(
+        b_packed: ManagedTensorSlice[DType.uint8, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) raises:
+        with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_k_repack_weights"):
+            matmul_Q4_K_pack_b(
+                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(b_packed),
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return b.get_static_spec().shape
+
+
+######
+# Q6_K
+######
+
+
+@compiler.register("ggml_q6_k_dequantize")
+struct GGMLQ6KDequantize:
+    @staticmethod
+    @always_inline
+    fn execute(
+        output: ManagedTensorSlice[DType.float32, 2],
+        input: ManagedTensorSlice[DType.uint8, 2],
+    ) raises:
+        with Trace[TraceLevel.OP, target="cpu"]("ggml_q6_k_dequantize"):
+            q6_k_dequantize_impl(
+                managed_tensor_slice_to_ndbuffer(input),
+                managed_tensor_slice_to_ndbuffer(output),
+                output.get_static_spec().shape,
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(input: ManagedTensorSlice[DType.uint8, 2]) -> IndexList[2]:
+        alias block_nbytes = sizeof[block_Q6_K]()
+        alias elements_per_block = block_QK_K.quantized_k
+
+        var num_block_per_batch = (
+            input.size() // input.dim_size(0)
+        ) // block_nbytes
+
+        return (input.dim_size(0), elements_per_block * num_block_per_batch)
+
+
+@compiler.register("vroom_q6_k_matmul")
+struct VroomQ6KMatmul:
+    @staticmethod
+    @always_inline
+    fn execute(
+        c: ManagedTensorSlice[DType.float32, 2],
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) raises:
+        with Trace[TraceLevel.OP, target="cpu"]("vroom_q6_k_matmul"):
+            matmul_Q6_K(
+                managed_tensor_slice_to_ndbuffer(a),
+                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(c),
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size(0), b.dim_size(0))
+
+
+@compiler.register("vroom_q6_k_repack_weights")
+struct VroomQ6KRepackWeights:
+    @staticmethod
+    @always_inline
+    fn execute(
+        b_packed: ManagedTensorSlice[DType.uint8, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) raises:
+        with Trace[TraceLevel.OP, target="cpu"]("vroom_q6_k_repack_weights"):
+            matmul_Q6_K_pack_b(
+                managed_tensor_slice_to_ndbuffer(b),
+                managed_tensor_slice_to_ndbuffer(b_packed),
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return b.get_static_spec().shape
