@@ -17,7 +17,6 @@ import { activateRunCommands } from './commands/run';
 import { MojoDebugManager } from './debug/debug';
 import { MojoDecoratorManager } from './decorations';
 import { RpcServer } from './server/RpcServer';
-import { MojoSDKSpec } from './sdk/types';
 import { Mutex } from 'async-mutex';
 
 /**
@@ -30,15 +29,6 @@ export function isNightlyExtension(context: vscode.ExtensionContext) {
 /**
  * This class provides an entry point for the Mojo extension, managing the
  * extension's state and disposal.
- *
- * The MojoExtension class and its components don't really have dynamic
- * states. Instead, when a major configuration changes, the extension restarts
- * completely with the new configuration. This can be seen, for example,
- * when selecting the SDK upon initialization: once the initial SDK is
- * selected, a full restart happens with that SDK forced as part of the
- * new initialization. This approach simplifies greatly the architecture of
- * the code and can keep us away from redux-like workflows, which are great,
- * but not worth the price at this point.
  */
 export class MojoExtension extends DisposableContext {
   public logger: Logger;
@@ -58,10 +48,7 @@ export class MojoExtension extends DisposableContext {
     this.isNightly = isNightly;
   }
 
-  async activate(
-    initializationSDK: Optional<MojoSDKSpec>,
-    reloading: boolean,
-  ): Promise<MojoExtension> {
+  async activate(reloading: boolean): Promise<MojoExtension> {
     return await this.activateMutex.runExclusive(async () => {
       if (reloading) {
         this.dispose();
@@ -82,7 +69,6 @@ Activating the Mojo Extension
 
       const sdkManager = new MojoSDKManager(
         this.logger,
-        initializationSDK,
         this.isNightly,
         this.extensionContext,
       );
@@ -94,17 +80,11 @@ Activating the Mojo Extension
         }),
       );
 
-      // Initialize the restart command, which can optionally receive an
-      // initialization SDK to force the extension to use it without
-      // performing any SDK fetching work.
       this.pushSubscription(
-        vscode.commands.registerCommand(
-          'mojo.extension.restart',
-          async (initializationSDK: Optional<MojoSDKSpec>) => {
-            // Dispose and reactivate the context.
-            await this.activate(initializationSDK, /*reloading=*/ true);
-          },
-        ),
+        vscode.commands.registerCommand('mojo.extension.restart', async () => {
+          // Dispose and reactivate the context.
+          await this.activate(/*reloading=*/ true);
+        }),
       );
 
       // Initialize the testing support.
@@ -208,10 +188,7 @@ export function activate(
   }
 
   extension = new MojoExtension(context, logger, isNightly);
-  return extension.activate(
-    /*initializationSDK=*/ undefined,
-    /*reloading=*/ false,
-  );
+  return extension.activate(/*reloading=*/ false);
 }
 
 /**

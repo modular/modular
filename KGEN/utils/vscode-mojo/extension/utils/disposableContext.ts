@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 import * as vscode from 'vscode';
+import { Subscription } from 'rxjs';
 
 /**
  * This class provides a simple wrapper around vscode.Disposable that allows
@@ -29,5 +30,13 @@ export class DisposableContext implements vscode.Disposable {
    */
   public pushSubscription(disposable: vscode.Disposable) {
     this._disposables.push(disposable);
+  }
+
+  public pushRxjsSubscription(subs: Subscription) {
+    this._disposables.push(
+      new vscode.Disposable(() => {
+        subs.unsubscribe();
+      }),
+    );
   }
 }

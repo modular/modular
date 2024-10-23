@@ -54,6 +54,11 @@ export class MojoLSPManager extends DisposableContext {
         this.tryStartLanguageClient(doc),
       ),
     );
+    this.pushRxjsSubscription(
+      this.sdkManager.onActiveSDKChanged.subscribe(() => {
+        vscode.commands.executeCommand('mojo.lsp.restart');
+      }),
+    );
   }
 
   async tryStartLanguageClient(doc: vscode.TextDocument): Promise<void> {

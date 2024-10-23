@@ -23,6 +23,7 @@ import {
 import { MojoSDKVersion } from './sdkVersion';
 import { findMagicSDKSpec } from './magicSdk';
 import { MojoSDKSpec } from './types';
+import { Subject } from 'rxjs';
 
 type NotYetSelectedSDK = {
   state: 'not-yet-selected';
@@ -48,21 +49,27 @@ type SDKSelection = NotYetSelectedSDK | SelectedSDK;
  */
 export class MojoSDKManager extends DisposableContext {
   public logger: Logger;
-  private initializationSDK: Optional<MojoSDKSpec>;
-  private activeSDK: SDKSelection = { state: 'not-yet-selected' };
+  private _activeSDK: SDKSelection = { state: 'not-yet-selected' };
+  private set activeSDK(newSDK: SDKSelection) {
+    this._activeSDK = newSDK;
+    this.onActiveSDKChanged.next();
+  }
+  private get activeSDK() {
+    return this._activeSDK;
+  }
+
   private findSDKMutex = new Mutex();
   private isNightly: boolean;
   private extensionContext: vscode.ExtensionContext;
+  public onActiveSDKChanged = new Subject<void>();
 
   constructor(
     logger: Logger,
-    initializationSDK: Optional<MojoSDKSpec>,
     isNightly: boolean,
     extensionContext: vscode.ExtensionContext,
   ) {
     super();
     this.logger = logger;
-    this.initializationSDK = initializationSDK;
     this.isNightly = isNightly;
     this.extensionContext = extensionContext;
 
@@ -117,11 +124,15 @@ export class MojoSDKManager extends DisposableContext {
       if (this.activeSDK.state === 'selected') {
         return this.createSDKAndShowError(this.activeSDK, hideRepeatedErrors);
       } else {
-        const activeSDK = await this.initializeActiveSDK();
-        return this.createSDKAndShowError(
-          activeSDK,
+        // This is invoked only once per extension activation.
+        const sdkSpec = await this.selectSDK();
+        const sdkSelection: SDKSelection = { state: 'selected', sdkSpec };
+        const sdk = await this.createSDKAndShowError(
+          sdkSelection,
           /*hideRepeatedErrors=*/ false,
         );
+        this.activeSDK = sdkSelection;
+        return sdk;
       }
     };
 
@@ -164,16 +175,6 @@ export class MojoSDKManager extends DisposableContext {
       { state: 'selected', sdkSpec },
       hideRepeatedErrors,
     );
-  }
-
-  private async initializeActiveSDK(): Promise<SelectedSDK> {
-    // This is invoked only once per extension activation.
-    const sdkSpec =
-      this.initializationSDK !== undefined
-        ? this.initializationSDK
-        : await this.selectSDK();
-    this.activeSDK = { state: 'selected', sdkSpec };
-    return this.activeSDK;
   }
 
   private async createSDKAndShowError(
