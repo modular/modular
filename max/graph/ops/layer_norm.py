@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for layer_norm."""
 
-import numpy as np
 from max.mlir.dialects import mo
 
 from .. import dtype_promotion
