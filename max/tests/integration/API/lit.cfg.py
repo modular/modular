@@ -27,7 +27,6 @@ config.test_exec_root = os.path.join(
 
 tool_dirs = [
     config.modular_tools_dir,
-    config.modular_utils_dir,
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
@@ -51,16 +50,6 @@ config.substitutions.append(
     (
         "%concurrent_api_models_dir",
         str(concurrent_api_models_dir),
-    )
-)
-
-api_executor_models_dir = (
-    Path(config.modular_obj_root) / "api-executor" / "api-models"
-)
-config.substitutions.append(
-    (
-        "%api_executor_models_dir",
-        str(api_executor_models_dir),
     )
 )
 
