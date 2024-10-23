@@ -39,7 +39,7 @@ modular_py_binary(
 [
     modular_py_test(
         name = src.split("/")[-1].split(".")[0],
-        size = "large",
+        size = "enormous",
         srcs = [
             "conftest.py",
             src,
