@@ -26,6 +26,8 @@ ACCURACY_ATOL = 1e-8
 def elements(dtype, max_magnitude=MAX_INPUT_MAGNITUDE, **kwargs):
     if max_magnitude:
         kwargs.setdefault("max_value", max_magnitude)
+
+    if "min_value" not in kwargs:
         kwargs.setdefault("min_value", -max_magnitude)
 
     return nps.from_dtype(
@@ -97,6 +99,7 @@ def given_input_types(
     static_dims: Dict[str, int] = {},
     provided_inputs: Dict[int, np.ndarray] = {},
     max_magnitude: Optional[float] = None,
+    **kwargs,
 ):
     input_arrays = []
     for i, input_type in enumerate(input_types):
@@ -108,10 +111,13 @@ def given_input_types(
                     input_type,
                     static_dims=static_dims,
                     max_magnitude=max_magnitude,
+                    **kwargs,
                 )
             )
         else:
-            input_arrays.append(arrays(input_type, static_dims=static_dims))
+            input_arrays.append(
+                arrays(input_type, static_dims=static_dims, **kwargs)
+            )
 
     return given(st.tuples(*input_arrays))
 
@@ -130,6 +136,7 @@ def modular_graph_test(
     provided_inputs: Dict[int, np.ndarray] = {},
     hypothesis_settings: Optional[settings] = None,
     max_magnitude: Optional[float] = None,
+    **kwargs,
 ):
     def decorator(test_fn):
         model = session.load(graph)
@@ -143,6 +150,7 @@ def modular_graph_test(
             static_dims=static_dims,
             provided_inputs=provided_inputs,
             max_magnitude=max_magnitude,
+            **kwargs,
         )
         def test_correctness(inputs):
             model_execute = functools.partial(execute, model)
