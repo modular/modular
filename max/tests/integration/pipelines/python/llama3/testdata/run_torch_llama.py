@@ -103,7 +103,7 @@ def main(model, encoding, verbose):
         model, encoding, strict=False
     ):
         if encoding == "bfloat16" and not torch.cuda.is_available():
-            print("Skipping {model}")
+            print(f"Skipping {model} {encoding} because cuda is not available.")
             continue
         try:
             hf_config_path = model_encoding.hf_config_path(testdata_directory)
