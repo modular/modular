@@ -5,16 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-import platform
 
 from lit.llvm import llvm_config
-
-
-def is_apple_silicon() -> bool:
-    return platform.system() == "Darwin" and platform.processor() == "arm"
-
-
-# Configuration file for the 'lit' test runner.
 
 # name: The name of this test suite.
 config.name = "Cache"
