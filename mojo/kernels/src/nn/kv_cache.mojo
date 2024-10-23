@@ -1685,11 +1685,11 @@ fn flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch[
     target: StringLiteral = "cpu",
 ](
     q: NDBuffer[type, 4, *_],
-    k: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=128),
     ],
-    v: ContinuousBatchingKVCache[type, k.kv_params],
+    layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
@@ -1698,9 +1698,9 @@ fn flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch"
     ):
-        return _flash_attention_kv_cache_causal_mask[target=target](
-            q, k, v, valid_lengths, scale, output, context
-        )
+        return _flash_attention_kv_cache_causal_mask[
+            kv_collection.CacheType, target=target
+        ](q, kv_collection, layer_idx, valid_lengths, scale, output, context)
 
 
 @mogg_register("flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch")
@@ -1710,11 +1710,11 @@ fn flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch[
     target: StringLiteral = "cpu",
 ](
     q: NDBuffer[type, 4, *_],
-    k: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=32),
     ],
-    v: ContinuousBatchingKVCache[type, k.kv_params],
+    layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
@@ -1723,9 +1723,9 @@ fn flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch"
     ):
-        return _flash_attention_kv_cache_causal_mask[target=target](
-            q, k, v, valid_lengths, scale, output, context
-        )
+        return _flash_attention_kv_cache_causal_mask[
+            kv_collection.CacheType, target=target
+        ](q, kv_collection, layer_idx, valid_lengths, scale, output, context)
 
 
 @mogg_register("flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch")
@@ -1735,11 +1735,11 @@ fn flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch[
     target: StringLiteral = "cpu",
 ](
     q: NDBuffer[type, 4, *_],
-    k: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=64),
     ],
-    v: ContinuousBatchingKVCache[type, k.kv_params],
+    layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
@@ -1748,9 +1748,9 @@ fn flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch"
     ):
-        return _flash_attention_kv_cache_causal_mask[target=target](
-            q, k, v, valid_lengths, scale, output, context
-        )
+        return _flash_attention_kv_cache_causal_mask[
+            kv_collection.CacheType, target=target
+        ](q, kv_collection, layer_idx, valid_lengths, scale, output, context)
 
 
 @mogg_register("flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch")
@@ -1760,11 +1760,11 @@ fn flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch[
     target: StringLiteral = "cpu",
 ](
     q: NDBuffer[type, 4, *_],
-    k: ContinuousBatchingKVCache[
+    kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=1, head_size=16),
     ],
-    v: ContinuousBatchingKVCache[type, k.kv_params],
+    layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
@@ -1773,20 +1773,21 @@ fn flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch[
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch"
     ):
-        return _flash_attention_kv_cache_causal_mask[target=target](
-            q, k, v, valid_lengths, scale, output, context
-        )
+        return _flash_attention_kv_cache_causal_mask[
+            kv_collection.CacheType, target=target
+        ](q, kv_collection, layer_idx, valid_lengths, scale, output, context)
 
 
 @always_inline
 fn _flash_attention_kv_cache_causal_mask[
     type: DType,
-    cache_t: KVCacheT, //,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
     target: StringLiteral,
 ](
     q: NDBuffer[type, 4, *_],
-    k: cache_t,
-    v: cache_t,
+    kv_collection: collection_t,
+    layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
@@ -1796,8 +1797,8 @@ fn _flash_attention_kv_cache_causal_mask[
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
-        k: ContiguousKVCache type with logical shape (batch_size, num_heads, max_seq_len, head_size).
-        v: ContiguousKVCache type with logical shape (batch_size, num_heads, max_seq_len, head_size).
+        kv_collection: The Collection object storing out KVCache entries for this layer
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
         valid_lengths: The unpadded lengths of the sequences contained in q
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
@@ -1810,20 +1811,21 @@ fn _flash_attention_kv_cache_causal_mask[
     if target != "cpu":
         cuda_ctx = context.get_device_context()
 
-    _flash_attention_kv_cache_causal_mask_impl[target=target](
-        q, k, v, valid_lengths, scale, output, cuda_ctx
+    _flash_attention_kv_cache_causal_mask_impl[cache_t, target=target](
+        q, kv_collection, layer_idx, valid_lengths, scale, output, cuda_ctx
     )
 
 
 @always_inline
 fn _flash_attention_kv_cache_causal_mask_impl[
     type: DType,
+    collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     target: StringLiteral,
 ](
     q: NDBuffer[type, 4, *_],
-    k: cache_t,
-    v: cache_t,
+    kv_collection: collection_t,
+    layer_idx: UInt32,
     valid_lengths: NDBuffer[DType.uint32, 1],
     scale: Float32,
     output: NDBuffer[type, 4, *_],
@@ -1833,14 +1835,17 @@ fn _flash_attention_kv_cache_causal_mask_impl[
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
-        k: ContiguousKVCache type with logical shape (batch_size, num_heads, max_seq_len, head_size).
-        v: ContiguousKVCache type with logical shape (batch_size, num_heads, max_seq_len, head_size).
+        kv_collection: The Collection object storing out KVCache entries for this layer
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
         valid_lengths: The unpadded lengths of the sequences contained in q
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
         context: CUDA DeviceContext. This is not used if target == "cpu"
     """
+    var layer_idx_cast = int(layer_idx)
+    var k = kv_collection.get_key_cache[cache_t](layer_idx_cast)
+    var v = kv_collection.get_value_cache[cache_t](layer_idx_cast)
 
     @parameter
     if target == "cpu":
