@@ -34,4 +34,4 @@ def test_llama(model, encoding, testdata_directory):
         test_model.golden_data_fname(), testdata_directory
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
-    compare_values(actual, expected_results, rtol=1, atol=0.1)
+    compare_values(actual, expected_results, rtol=0.01, atol=1e-3)
