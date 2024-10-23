@@ -208,7 +208,7 @@ struct DeviceContextVariant:
     fn name(self) -> String:
         @parameter
         if _device_ctx_v2():
-            return "DeviceContextV2"
+            return self.v2().name()
         else:
             return "DeviceContextV1"
 

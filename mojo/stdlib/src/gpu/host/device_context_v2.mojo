@@ -640,10 +640,23 @@ struct DeviceContextV2:
     fn __enter__(owned self) -> Self:
         return self^
 
+    fn name(self) -> String:
+        # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
+        var name_ptr = external_call[
+            "AsyncRT_DeviceContext_deviceName",
+            _CharPtr,
+            _DeviceContextPtr,
+        ](
+            self._handle,
+        )
+        result = String(StringRef(name_ptr))
+        external_call["free", NoneType, _CharPtr](name_ptr)
+        return result
+
     fn malloc_host[
         type: AnyType
     ](self, size: Int) raises -> UnsafePointer[type]:
-        # const char * AsyncRT_DeviceContext_mallocHost(void **result, const DeviceContext *ctx, size_t size)
+        # const char *AsyncRT_DeviceContext_mallocHost(void **result, const DeviceContext *ctx, size_t size)
         alias elem_size = sizeof[type]()
         var result = UnsafePointer[type]()
         _checked(
