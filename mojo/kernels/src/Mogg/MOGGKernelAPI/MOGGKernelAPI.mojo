@@ -42,7 +42,7 @@ from utils import StaticTuple
 # General imports
 # ===----------------------------------------------------------------------===#
 from buffer import NDBuffer
-from buffer.dimlist import DimList
+from buffer.dimlist import DimList, Dim
 from builtin.simd import _pow
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
@@ -94,8 +94,218 @@ from memory import UnsafePointer
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
+from compiler_internal import StaticTensorSpec
 
-from register import mogg_register
+from register import mogg_register_override
+from nn.conv import pack_filter as _pack_conv_filter
+from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
+
+
+# ===----------------------------------------------------------------------===#
+# Nop functions to expose different types to the compiler.
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register_override("bfloat16", 1)
+fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
+    return DType.bfloat16.value
+
+
+@mogg_register_override("float16", 1)
+fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
+    return DType.float16.value
+
+
+@mogg_register_override("float32", 1)
+fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
+    return DType.float32.value
+
+
+@mogg_register_override("float64", 1)
+fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
+    return DType.float64.value
+
+
+@mogg_register_override("int8", 1)
+fn DTypeInt8TypeDef(ty: DType.type) -> DType.type:
+    return DType.int8.value
+
+
+@mogg_register_override("int16", 1)
+fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
+    return DType.int16.value
+
+
+@mogg_register_override("int32", 1)
+fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
+    return DType.int32.value
+
+
+@mogg_register_override("uint32", 1)
+fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
+    return DType.uint32.value
+
+
+@mogg_register_override("uint64", 1)
+fn DTypeUInt64TypeDef(ty: DType.type) -> DType.type:
+    return DType.uint64.value
+
+
+@mogg_register_override("int64", 1)
+fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
+    return DType.int64.value
+
+
+@mogg_register_override("uint8", 1)
+fn DTypeUInt8TypeDef(ty: DType.type) -> DType.type:
+    return DType.uint8.value
+
+
+@mogg_register_override("uint16", 1)
+fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
+    return DType.uint16.value
+
+
+@mogg_register_override("bool", 1)
+fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
+    return DType.bool.value
+
+
+@mogg_register_override("index", 1)
+fn IndexTypeDef(ty: Int) -> Int:
+    return ty
+
+
+@mogg_register_override("mojoCallContext", 1)
+fn MojoCallContextDef(ty: MojoCallContextPtr):
+    pass
+
+
+@mogg_register_override("simd", 1)
+fn SimdTypeDef[
+    type: DType, width: Int
+](ty: SIMD[type, width]) -> SIMD[type, width]:
+    return ty
+
+
+@mogg_register_override("indices", 1)
+fn TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
+    return ty
+
+
+@mogg_register_override("dim_type", 1)
+fn DimTypeDef(ty: Dim) -> Dim:
+    return ty
+
+
+# ===----------------------------------------------------------------------===#
+# Hooks to help build static shapes.
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register_override("create_unknown_dim", 1)
+fn create_unknown_dim() -> Dim:
+    return Dim()
+
+
+@mogg_register_override("create_known_dim", 1)
+fn create_known_dim[known_val: Int]() -> Dim:
+    return Dim(known_val)
+
+
+# ===----------------------------------------------------------------------===#
+# Additional expected primitives
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register_override("get_address_space", 1)
+fn get_address_space() -> AddressSpace:
+    return AddressSpace.GENERIC
+
+
+# Build the StaticTensorSpec parameter for the DPS kernels
+@mogg_register_override("build_static_tensor_specs", 1)
+@export
+fn build_static_tensor_specs[
+    type: DType, rank: Int
+](shape: DimList, strides: DimList) -> StaticTensorSpec[type, rank]:
+    return StaticTensorSpec(
+        shape,
+        strides,
+        OptionalReg[StaticTensorSpec[type, rank].in_lambda_t](None),
+        OptionalReg[StaticTensorSpec[type, rank].out_lambda_t](None),
+    )
+
+
+# Used by the graph compiler to construct tensors from MGP repr. of tensor
+@mogg_register_override("to_managed_tensor_slice", 1)
+@export
+@always_inline
+fn to_managed_tensor_slice[
+    type: DType, rank: Int
+](
+    data: UnsafePointer[Scalar[type]],
+    shape: UnsafePointer[Int],
+) -> ManagedTensorSlice[type, rank]:
+    var shape_ptr = shape
+    var shape_tuple = IndexList[rank]()
+
+    var stride_tuple = IndexList[rank]()
+    var stride: Int = 1
+
+    @parameter
+    for i in reversed(range(rank)):
+        # Start from the back so we can accumulate the strides.
+        shape_tuple[i] = shape_ptr[i]
+        stride_tuple[i] = stride
+        stride *= shape_tuple[i]
+
+    return ManagedTensorSlice[type, rank](data, shape_tuple, stride_tuple)
+
+
+# Extract a value from a shape.
+@mogg_register_override("get_scalar_from_ndbuffer", 1)
+@always_inline
+fn get_scalar_from_ndbuffer[
+    dtype: DType
+](tensor: NDBuffer[dtype, 1]) -> Scalar[dtype]:
+    # Assumes that tensor is on the host!
+    return tensor[0]
+
+
+# Wrappers that take `num_groups` as a parameter.
+# This is required unti `mo.layout.transform` passes `num_groups` as a runtime
+# value.
+@mogg_register_override("layout_transform_QRSCF_to_FQRSCf", 1)
+@mogg_register_override("layout_transform_RSCF_to_FRSCf", 1)
+@always_inline
+fn pack_conv_filter[
+    filter_type: DType,
+    rank: Int,
+    num_groups: Int,
+    input_1_static_shape: DimList,
+](
+    filter: NDBuffer[filter_type, rank],
+    packed_filter: NDBuffer[filter_type, rank + 1, input_1_static_shape],
+    ctx: MojoCallContextPtr,
+):
+    _pack_conv_filter(filter, packed_filter, num_groups)
+
+
+@mogg_register_override("layout_transform_RSFC_to_FRSCf", 1)
+@mogg_register_override("layout_transform_QRSFC_to_FQRSCf", 1)
+@always_inline
+fn pack_conv_transpose_filter[
+    filter_type: DType,
+    rank: Int,
+](
+    filter: NDBuffer[filter_type, rank],
+    packed_filter: NDBuffer[filter_type, rank + 1],
+    ctx: MojoCallContextPtr,
+):
+    # last param is num_groups which is currently not an available
+    # arg for the MO level op
+    _pack_conv_transpose_filter(filter, packed_filter, 1)
 
 
 # ===----------------------------------------------------------------------===#
@@ -104,6 +314,15 @@ from register import mogg_register
 
 # TODO(GRA-914): Properly support scalars.
 alias ScalarTensor = ManagedTensorSlice[rank=1]
+
+
+# Used by the graph compiler -- which right now does not support static shape
+@mogg_register_override("managed_tensor_slice_to_ndbuffer", 1)
+@always_inline
+fn managed_tensor_slice_to_ndbuffer_primitive[
+    type: DType, rank: Int
+](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank]:
+    return managed_tensor_slice_to_ndbuffer(tensor)
 
 
 @always_inline
@@ -2025,7 +2244,7 @@ struct ReduceMin:
         return reduce_shape[input_rank, input_type](input, axis)
 
 
-@compiler.register("mo.reduce_min_and_max")
+@compiler.register("reduce_min_and_max")
 struct ReduceMinMax:
     @staticmethod
     fn execute[
@@ -3421,32 +3640,8 @@ struct Concat:
         return concat_shape_impl(axis_buf, inputs)
 
 
-# Construct a managed tensor slice from a raw pointer and shape specification.
-# It is assumed the data and shape are contiguous
-fn to_managed_tensor_slice[
-    type: DType, rank: Int
-](
-    data: UnsafePointer[Scalar[type]],
-    shape: UnsafePointer[Int],
-) -> ManagedTensorSlice[type, rank]:
-    var shape_ptr = shape
-    var shape_tuple = IndexList[rank]()
-
-    var stride_tuple = IndexList[rank]()
-    var stride: Int = 1
-
-    @parameter
-    for i in reversed(range(rank)):
-        # Start from the back so we can accumulate the strides.
-        shape_tuple[i] = shape_ptr[i]
-        stride_tuple[i] = stride
-        stride *= shape_tuple[i]
-
-    return ManagedTensorSlice[type, rank](data, shape_tuple, stride_tuple)
-
-
 # Helper method used by compiler to reconcile MGP list with type Mojo expects.
-@mogg_register("to_managed_tensor_slice_list")
+@mogg_register_override("to_managed_tensor_slice_list", 1)
 @always_inline
 fn to_managed_tensor_slice_list[
     type: DType, rank: Int
