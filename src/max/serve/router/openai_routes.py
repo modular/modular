@@ -8,6 +8,7 @@
 import asyncio
 import json
 import logging
+import traceback
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Annotated, AsyncGenerator, List, Literal, Optional, cast
@@ -37,15 +38,11 @@ from max.serve.schemas.openai import (
     Logprobs,
     Logprobs2,
 )
-from prometheus_async.aio import time
-from prometheus_client import Histogram
 from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger(__name__)
-
-REQ_TIME = Histogram("req_time_seconds", "time spent in requests")
 
 
 class OpenAIResponseGenerator(ABC):
@@ -131,7 +128,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             )
             yield "[DONE]"
         except ValueError as e:
-            logger.error(str(e))
+            logger.error(traceback.format_exc())
             yield json.dumps({"result": "error", "message": str(e)})
         finally:
             if self.request_limiter:
@@ -220,7 +217,6 @@ def build_prompt(
 
 
 @router.post("/chat/completions")
-@time(REQ_TIME)
 async def openai_create_chat_completion(
     request: Request,
     pipeline: Annotated[TokenGeneratorPipeline, Depends(token_pipeline)],
@@ -253,13 +249,13 @@ async def openai_create_chat_completion(
         response = await response_generator.complete(token_request)
         return JSONResponse(response.model_dump_json())
     except JSONDecodeError as e:
-        logger.error(str(e))
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=400, detail="Missing JSON.")
     except (TypeError, ValidationError) as e:
-        logger.error(str(e))
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=400, detail="Invalid JSON.")
     except ValueError as e:
-        logger.error(str(e))
+        logger.error(traceback.format_exc())
         # NOTE(matt): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
@@ -332,7 +328,7 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             )
             yield "[DONE]"
         except ValueError as e:
-            logger.error(str(e))
+            logger.error(traceback.format_exc())
             yield json.dumps({"result": "error", "message": str(e)})
         finally:
             if self.request_limiter:
@@ -412,13 +408,13 @@ async def openai_create_completion(
         response = await response_generator.complete(token_request)
         return JSONResponse(response.model_dump_json())
     except JSONDecodeError as e:
-        logger.error(str(e))
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=400, detail="Missing JSON.")
     except (TypeError, ValidationError) as e:
-        logger.error(str(e))
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=400, detail="Invalid JSON.")
     except ValueError as e:
-        logger.error(str(e))
+        logger.error(traceback.format_exc())
         # NOTE(matt): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
