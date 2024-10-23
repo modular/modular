@@ -1,3 +1,5 @@
+load("//bazel:api.bzl", "modular_py_binary", "requirement")
+
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
@@ -8,4 +10,31 @@ filegroup(
             "*.gguf",
         ],
     ),
+)
+
+modular_py_binary(
+    name = "run_torch_llama",
+    srcs = ["run_torch_llama.py"],
+    data = [
+        ":testdata",
+        "@test_llama_golden",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
+    },
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("accelerate"),  # Required transformers integration.
+        requirement("sentencepiece"),
+        requirement("gguf"),  # Required since the checkpoints are GGUF.
+        requirement("numpy"),
+        requirement("click"),
+        requirement("tokenizers"),
+        requirement("transformers"),
+        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
+        "//SDK/public/max-repo/pipelines/python/llama3",
+        "//SDK/public/max-repo/pipelines/python/utils",
+    ],
 )

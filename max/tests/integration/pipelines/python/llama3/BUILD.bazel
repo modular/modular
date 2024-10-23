@@ -13,6 +13,7 @@ modular_py_binary(
     data = [
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
+        "//SDK/integration-test/pipelines/python/llama3/testdata",
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
     ],
@@ -33,6 +34,26 @@ modular_py_binary(
         "//SDK/public/max-repo/pipelines/python/llama3",
         requirement("click"),
         requirement("py-cpuinfo"),
+    ],
+)
+
+modular_py_binary(
+    name = "verify",
+    srcs = ["verify.py"],
+    data = [
+        "@test_llama_golden",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": (
+            "SDK/integration-test/pipelines/python/llama3/testdata"
+        ),
+    },
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":evaluate_llama",
+        "//GenericML/tools/model",
+        requirement("click"),
     ],
 )
 

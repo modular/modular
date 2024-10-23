@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass
 from json import JSONDecoder, JSONEncoder
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import click
 import numpy as np
@@ -156,7 +156,30 @@ def next_token_with_logits(
         req_to_context_dict[req_id].next_tokens = next_token.reshape(-1)
 
 
-def compare_values(actual, expected, rtol=1e-2, atol=1e-5):
+def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
+    """Compares the values between two computed logits.
+
+    The data structure of the actual/expected logits should be:
+    [
+        {"prompt": "prompt 1", "values": [{"key": value, ...}],
+        {"prompt": "prompt 2", "values": [{"key": value, ...}],
+        ...
+    ]
+
+    The "values" list contains the logits at each step for the prompt.
+
+    The `actual` logits structure must be a subset of the expected logits.
+    E.g. if the `expected` values contains logits for 10 steps, the `actual`
+    values can contain any number of steps between 1-10.
+
+    Args:
+        actual: Data structure containing computed values.
+        expected: Data structure containing reference values.
+        rtol: The relative tolerance (used if `compare_fn` is not provided).
+        atol: The absolute tolerance (used if `compare_fn` is not provided).
+        compare_fn: A callable that takes the arguments
+            (actual, expected, description).
+    """
     expected_prompts = {x["prompt"]: x["values"] for x in expected}
     actual_prompts = {x["prompt"]: x["values"] for x in actual}
 
@@ -178,23 +201,20 @@ def compare_values(actual, expected, rtol=1e-2, atol=1e-5):
             expected_results = expected_values[step]
 
             for key, value in inference_results.items():
-                # TODO(MSDK-1025): Add logits to A100 and A10G golden test files and
-                # delete this.
-                if (key == "logits") and (key not in expected_results):
-                    continue
-
                 expected_value = expected_results[key]
-                np.testing.assert_allclose(
-                    value,
-                    expected_value,
-                    rtol=rtol,
-                    atol=atol,
-                    err_msg=(
-                        f"Got different values for the computed {key} on step"
-                        f" {step}."
-                    ),
-                    verbose=True,
-                )
+                short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
+                description = f"'{key}' on step={step} for the prompt='{short}'"
+                if compare_fn:
+                    compare_fn(value, expected_value, description)
+                else:
+                    np.testing.assert_allclose(
+                        value,
+                        expected_value,
+                        rtol=rtol,
+                        atol=atol,
+                        err_msg=f"Got different values for {description}.",
+                        verbose=True,
+                    )
 
 
 @dataclass(frozen=True)
@@ -224,44 +244,54 @@ class _SupportedModelEncoding:
                 f"Could not find tiny llama checkpoint for {self.encoding=}."
             )
 
+    @property
+    def version(self) -> SupportedVersions:
+        if self.model == "tinyllama":
+            return SupportedVersions.llama3_1
+        else:
+            return SupportedVersions[self.model]
+
+    @property
+    def hf_repo_id(self) -> str:
+        return f"modularai/llama-{self.version}"
+
+    @property
+    def use_gpu(self) -> bool:
+        return self.encoding == "bfloat16"
+
     def build_config(
         self,
         testdata_directory: Optional[Path] = None,
-        **config_kwargs,
+        **kwargs,
     ) -> InferenceConfig:
-        if self.model == "tinyllama":
-            version = SupportedVersions.llama3_1
-            if "weight_path" not in config_kwargs:
-                config_kwargs["weight_path"] = self._tiny_llama_weights(
+        if "max_new_tokens" not in kwargs and "max_tokens" not in kwargs:
+            kwargs["max_new_tokens"] = 10
+        if "weight_path" not in kwargs:
+            if self.model == "tinyllama":
+                kwargs["weight_path"] = self._tiny_llama_weights(
                     testdata_directory
                 )
-        else:
-            version = SupportedVersions[self.model]
-        if "device_spec" not in config_kwargs:
-            config_kwargs["device_spec"] = (
-                DeviceSpec.cuda() if self.encoding
-                == "bfloat16" else DeviceSpec.cpu()
-            )
-        if (
-            "max_new_tokens" not in config_kwargs
-            and "max_tokens" not in config_kwargs
-        ):
-            config_kwargs["max_new_tokens"] = 10
-
-        if "weight_path" not in config_kwargs:
-            repo_id = f"modularai/llama-{version}"
-            config_kwargs["weight_path"] = hf_hub_download(
-                repo_id=repo_id,
-                filename=self.encoding.hf_model_name(version),
-            )
+            else:
+                version = SupportedVersions[self.model]
+                repo_id = f"modularai/llama-{version}"
+                kwargs["weight_path"] = hf_hub_download(
+                    repo_id=repo_id,
+                    filename=self.encoding.hf_model_name(version),
+                )
+        if "device_spec" not in kwargs:
+            kwargs[
+                "device_spec"
+            ] = DeviceSpec.cuda() if self.use_gpu else DeviceSpec.cpu()
+        if "max_new_tokens" not in kwargs and "max_tokens" not in kwargs:
+            kwargs["max_new_tokens"] = 10
 
         return InferenceConfig(
-            version=version,
+            version=self.version,
             quantization_encoding=self.encoding,
-            **config_kwargs,
+            **kwargs,
         )
 
-    def golden_data_fname(self):
+    def golden_data_fname(self, *, framework: Literal["max", "torch"] = "max"):
         # TODO(MSDK-948): Actually support a distinction between device and encoding
         # instead of letting bfloat16 _imply_ GPU as is done multiple times in this file
         if self.encoding == "bfloat16":
@@ -285,7 +315,29 @@ class _SupportedModelEncoding:
         # This becomes a file path
         hardware = hardware.replace(" ", "")
 
-        return f"{self.model}_{self.encoding}_{hardware}_golden.json"
+        if framework == "max":
+            return f"{self.model}_{self.encoding}_{hardware}_golden.json"
+        else:
+            return f"{framework}_{self.model}_{self.encoding}_{hardware}_golden.json"
+
+    def hf_config_path(self, testdata_directory: Optional[Path] = None) -> Path:
+        if self.model == "tinyllama":
+            if not testdata_directory:
+                raise ValueError(
+                    "Need testdata_directory for tiny llama config path."
+                )
+            if self.encoding == SupportedEncodings.float32:
+                return testdata_directory / "tiny_llama_config.json"
+            elif self.encoding == SupportedEncodings.bfloat16:
+                return testdata_directory / "tiny_llama_bf16_config.json"
+            else:
+                raise ValueError(
+                    f"Could not find config path for tinyllama {self.encoding}."
+                )
+        else:
+            return Path(
+                hf_hub_download(repo_id=self.hf_repo_id, filename="config.json")
+            )
 
 
 def _system_info():
@@ -344,7 +396,7 @@ class SupportedTestModels:
         """
         try:
             return SupportedTestModels._supported_pairs[(model, encoding)]
-        except IndexError:
+        except KeyError:
             if not strict:
                 return _SupportedModelEncoding.init(model, encoding)
             raise ValueError(
@@ -354,40 +406,34 @@ class SupportedTestModels:
             )
 
 
+# Supported models and encodings are defined in SupportedTestModels.
+ALL_SUPPORTED_MODELS = {"all"}
+ALL_SUPPORTED_ENCODINGS = {"all"}
+
 for attr in dir(SupportedTestModels):
     value = getattr(SupportedTestModels, attr)
     if isinstance(value, _SupportedModelEncoding):
         SupportedTestModels._supported_pairs[
             (value.model, value.encoding)
         ] = value
+        ALL_SUPPORTED_MODELS.add(value.model)
+        ALL_SUPPORTED_ENCODINGS.add(str(value.encoding))
 
 
-@click.command
-@click.option("--modular-path", type=Path, required=True)
-@click.option(
-    "--model",
-    type=click.Choice(["llama3_1", "tinyllama", "all"]),
-    default="all",
-)
-@click.option(
-    "--encoding",
-    type=click.Choice(["bfloat16", "float32", "q4_k", "all"]),
-    default="all",
-)
-def main(model, modular_path, encoding):
-    testdata_directory = modular_path / Path(os.getenv("PIPELINES_TESTDATA"))
-
-    # There must be a slicker way to do this expansion
-    encodings = [encoding]
-    models = [model]
+def supported_model_encodings(model, encoding, strict=False):
+    # TODO: Use driver to check if cuda available
     if encoding == "all":
-        encodings = ["bfloat16", "float32", "q4_k"]
+        encodings = ALL_SUPPORTED_ENCODINGS - {"all"}
+    else:
+        encodings = [encoding]
     if model == "all":
-        models = ["llama3_1", "tinyllama"]
+        models = ALL_SUPPORTED_MODELS - {"all"}
+    else:
+        models = [model]
 
     for encoding, model in itertools.product(encodings, models):
         try:
-            model_encoding = SupportedTestModels.get(model, encoding)
+            yield SupportedTestModels.get(model, encoding, strict=False)
         except:
             print(
                 "Skipping golden generation for"
@@ -395,17 +441,50 @@ def main(model, modular_path, encoding):
             )
             continue
 
+
+@click.command
+@click.option(
+    "--model",
+    type=click.Choice(list(ALL_SUPPORTED_MODELS)),
+    default="all",
+)
+@click.option(
+    "--encoding",
+    type=click.Choice(list(ALL_SUPPORTED_ENCODINGS)),
+    default="all",
+)
+@click.option(
+    "--verbose",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Whether to print the results of the evaluated logits.",
+)
+def main(model, encoding, verbose):
+    testdata_directory = os.getenv("PIPELINES_TESTDATA")
+    if testdata_directory is None:
+        raise ValueError("Environmental PIPELINES_TESTDATA not defined.")
+    testdata_directory = Path(testdata_directory)
+    encoder = NumpyEncoder()
+    for model_encoding in supported_model_encodings(
+        model, encoding, strict=False
+    ):
         try:
             config = model_encoding.build_config(testdata_directory)
             llama3 = Llama3(config)
             results = run_llama3(llama3, PROMPTS)
-            encoder = NumpyEncoder()
-            output_full_path = (
-                testdata_directory / model_encoding.golden_data_fname()
+
+            output_full_path = os.path.join(
+                "/tmp", model_encoding.golden_data_fname()
             )
+            if verbose:
+                print(f"===Results for {model} {encoding}")
+                print(results)
             with open(output_full_path, "w") as f:
                 f.write(encoder.encode(results))
-            print("Golden file written to", output_full_path)
+            print(
+                f"Goldens for {model} {encoding} written to", output_full_path
+            )
         except Exception as e:
             print(f"Failed to generate golden data for {model}_{encoding}: {e}")
             raise e
