@@ -302,8 +302,7 @@ struct Dim(CollectionElement):
             return _c.dim_new_dynamic(ctx)
         elif self.value.isa[SymbolicDim]():
             var name = self.value[SymbolicDim].name
-            var result = _c.dim_new_symbolic(ctx, name._strref_dangerous())
-            name._strref_keepalive()
+            var result = _c.dim_new_symbolic(ctx, name)
             return result
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")

@@ -11,6 +11,7 @@ import ._c.BuiltinAttributes
 import ._c.BuiltinTypes
 from ._c.ffi import MLIR_func
 from .ir import Attribute, Context, DialectAttribute, Type
+from utils import StringRef
 
 
 @value
@@ -51,9 +52,9 @@ struct StringAttr(DialectAttribute):
 
     fn to_mlir(self) -> Attribute:
         var result = _c.BuiltinAttributes.mlirStringAttrGet(
-            self.ctx.c, self.value._strref_dangerous()
+            self.ctx.c,
+            StringRef(self.value.unsafe_ptr(), self.value.byte_length()),
         )
-        self.value._strref_keepalive()
         return result
 
     @staticmethod

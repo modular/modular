@@ -8,7 +8,7 @@ from memory import UnsafePointer
 from sys.ffi import RTLD, DLHandle, _get_dylib_function, external_call
 from os import abort
 from pathlib import Path
-from utils import StringRef
+from utils import StringRef, StringSlice
 from runtime.asyncrt import _get_current_runtime
 
 import _mlir
@@ -81,7 +81,7 @@ fn graph_new(
             StringRef,
             _mlir.Type.cType,
         ) -> _mlir.Operation.cType,
-    ]()(module.c, loc.c, name._strref_dangerous(), signature.to_mlir().c)
+    ]()(module.c, loc.c, name.unsafe_ptr(), signature.to_mlir().c)
 
 
 # ===----------------------------------------------------------------------===#

@@ -34,7 +34,6 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
 
     var ptr = UnsafePointer[DLHandle].alloc(1)
     ptr.init_pointee_move(DLHandle(mof_lib_path, RTLD.NOW | RTLD.GLOBAL))
-    mof_lib_path._strref_keepalive()
     return ptr.bitcast[NoneType]()
 
 
