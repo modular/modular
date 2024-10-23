@@ -905,8 +905,8 @@ fn _copy_frag_to_smem[
     p_reg_tile: LayoutTensor[
         type1, layout1, address_space = AddressSpace.LOCAL
     ],
-    warp_x: Int,
-    warp_y: Int,
+    warp_x: UInt32,
+    warp_y: UInt32,
 ):
     """Copy p fragments to shared memory.
 
@@ -928,7 +928,7 @@ fn _copy_frag_to_smem[
         Layout.row_major(BM, BN),
         address_space = AddressSpace.SHARED,
     ](p_smem_iter.ptr)
-    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y, warp_x)
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](int(warp_y), int(warp_x))
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
     alias swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, BK]()
@@ -1152,12 +1152,13 @@ fn mha_single_batch[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid = ThreadIdx.x()
-    var warp_id = tid // WARP_SIZE
-    var lane = lane_id()
+    var tid: UInt32 = ThreadIdx.x()
+    var warp_id: UInt32 = tid // WARP_SIZE
+    var lane: UInt32 = lane_id()
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+    var warp_y = warp_id // num_warps_n
+    var warp_x = warp_id % num_warps_n
 
     # The entire query block (BM x depth) is tiled in shared memory.
     alias q_smem_size = config.q_smem_size()
@@ -1195,8 +1196,8 @@ fn mha_single_batch[
         circular=True,
     ](k_smem, k_smem_size)
 
-    var head_idx = BlockIdx.y()
-    var q_tile_idx = BlockIdx.x()
+    var head_idx: UInt32 = BlockIdx.y()
+    var q_tile_idx: UInt32 = BlockIdx.x()
 
     # Query global memory iterator
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
@@ -1205,7 +1206,7 @@ fn mha_single_batch[
         Layout(
             IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
         ),
-    ](q_ptr + q_offset)
+    ](q_ptr + int(q_offset))
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
@@ -1266,11 +1267,11 @@ fn mha_single_batch[
     )
 
     # Mask global memory iterator.
-    var mask_block_row = q_tile_idx * BM
+    var mask_block_row: UInt32 = q_tile_idx * BM
     var mask_offset = mask_block_row * max_seq_len + (
-        Int(head_idx * max_seq_len * max_seq_len) if mask_rank == 4 else 0
+        head_idx * max_seq_len * max_seq_len if mask_rank == 4 else 0
     )
-    var mask_tile_ptr = mask_ptr + mask_offset
+    var mask_tile_ptr = mask_ptr + int(mask_offset)
     var mask_warp_row = warp_y * WM
     var mask_warp_col = warp_x * WN
 
@@ -1283,7 +1284,10 @@ fn mha_single_batch[
     for kv_tile_start_row in range(0, seq_len, BN):
         if (
             mask.status(
-                Index(q_tile_idx * BM, kv_tile_start_row), Index(BM, BN)
+                Index[element_bitwidth=32, unsigned=True](
+                    int(q_tile_idx * BM), int(kv_tile_start_row)
+                ),
+                Index[element_bitwidth=32, unsigned=True](int(BM), int(BN)),
             )
             == TileMaskStatus.FULL_MASK
         ):
@@ -1295,7 +1299,7 @@ fn mha_single_batch[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-        ](k_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
+        ](k_ptr + int(kv_offset + kv_tile_start_row * kv_num_heads * depth))
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
         var v_gmem_block = LayoutTensor[
@@ -1304,7 +1308,7 @@ fn mha_single_batch[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-        ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
+        ](v_ptr + int(kv_offset + kv_tile_start_row * kv_num_heads * depth))
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
         var kv_tile_num_rows = min(Int(BN), seq_len - kv_tile_start_row)
@@ -1332,8 +1336,8 @@ fn mha_single_batch[
                 k_smem_iter,
                 depth // BK,
                 next_op_b_iter=v_gmem_iter.bitcast[k_type](),
-                num_a_rows=Int(q_tile_num_rows),
-                num_b_rows=Int(kv_tile_num_rows),
+                num_a_rows=int(q_tile_num_rows),
+                num_b_rows=int(kv_tile_num_rows),
             )
         # Subsequent iterations just use q in share memory.
         # TODO: Figure out a better function interface instead of passing in
@@ -1359,8 +1363,8 @@ fn mha_single_batch[
                 k_smem_iter,
                 depth // BK,
                 next_op_b_iter=v_gmem_iter.bitcast[k_type](),
-                num_a_rows=Int(q_tile_num_rows),
-                num_b_rows=Int(kv_tile_num_rows),
+                num_a_rows=int(q_tile_num_rows),
+                num_b_rows=int(kv_tile_num_rows),
             )
 
         # Increment V iterator since it's prefetched inside 1st matmul.
@@ -1402,8 +1406,11 @@ fn mha_single_batch[
                         ):
                             var mask_vec = (
                                 mask_tile_ptr
-                                + (mask_frag_row + i * MMA_M // 2) * max_seq_len
-                                + mask_frag_col
+                                + int(
+                                    (mask_frag_row + i * MMA_M // 2)
+                                    * max_seq_len
+                                    + mask_frag_col
+                                )
                             ).load[
                                 width=p_frag_simdwidth, alignment=mask_align
                             ]()
@@ -1452,7 +1459,9 @@ fn mha_single_batch[
                                 var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
                                 var score_col = mask_frag_col
                                 p_reg_vec2[mma_id, i] = mask.mask(
-                                    Index(
+                                    IndexList[
+                                        4, element_bitwidth=32, unsigned=True
+                                    ](
                                         int(BlockIdx.z()),
                                         int(BlockIdx.y()),
                                         int(score_row),
@@ -1462,8 +1471,12 @@ fn mha_single_batch[
                                     * scale.cast[accum_type](),
                                 )
                                 p_reg_vec2[mma_id, i] = _kernel_mask(
-                                    Index(score_row, score_col),
-                                    Index(seq_len, seq_len),
+                                    IndexList[
+                                        2, element_bitwidth=32, unsigned=True
+                                    ](int(score_row), int(score_col)),
+                                    IndexList[
+                                        2, element_bitwidth=32, unsigned=True
+                                    ](seq_len, seq_len),
                                     p_reg_vec2[mma_id, i],
                                 )
                             else:
@@ -1474,8 +1487,10 @@ fn mha_single_batch[
 
             unswitch[_apply_mask](
                 mask.status(
-                    Index(q_tile_idx * BM, kv_tile_start_row),
-                    Index(BM, BN),
+                    Index[element_bitwidth=32, unsigned=True](
+                        int(q_tile_idx * BM), kv_tile_start_row
+                    ),
+                    Index[element_bitwidth=32, unsigned=True](int(BM), int(BN)),
                 )
                 == TileMaskStatus.PARTIAL_MASK
             )
@@ -1488,7 +1503,7 @@ fn mha_single_batch[
         ](
             output_reg_tile,
             p_reg_tile,
-            warp_scratch.tile[num_warps_n, WM](0, warp_y),
+            warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
             rowmax,
             rowsum,
         )
@@ -1524,7 +1539,7 @@ fn mha_single_batch[
                 p_smem_iter,
                 v_smem_iter,
                 BN // BK,
-                num_b_rows=Int(kv_tile_num_rows),
+                num_b_rows=int(kv_tile_num_rows),
             )
         else:
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
@@ -1552,7 +1567,7 @@ fn mha_single_batch[
                 p_smem_iter,
                 v_smem_iter,
                 BN // BK,
-                num_b_rows=Int(kv_tile_num_rows),
+                num_b_rows=int(kv_tile_num_rows),
             )
 
     # Apply softmax denumerator.
@@ -1576,8 +1591,10 @@ fn mha_single_batch[
         Layout(
             IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
         ),
-    ](output_ptr + q_offset)
-    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](warp_y, warp_x)
+    ](output_ptr + int(q_offset))
+    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
+        int(warp_y), int(warp_x)
+    )
 
     # Write to global memory.
     @parameter
@@ -1588,7 +1605,9 @@ fn mha_single_batch[
             Layout.row_major(BM, depth),
             address_space = AddressSpace.SHARED,
         ](q_smem.bitcast[Scalar[accum_type]]())
-        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](warp_y, warp_x)
+        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
+            int(warp_y), int(warp_x)
+        )
         copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
@@ -1607,7 +1626,7 @@ fn mha_single_batch[
         ](
             output_gmem_tile.vectorize[1, simd_size](),
             accum_smem_tile.vectorize[1, simd_size](),
-            q_offset,
+            int(q_offset),
             # Equivalent as storing to seq_len x (num_heads * depth) matrix.
             seq_len,
             num_heads * depth,
@@ -1627,9 +1646,9 @@ fn mha_single_batch[
 @always_inline
 fn _kernel_mask[
     type: DType, width: Int
-](coord: IndexList[2], bound: IndexList[2], vec: SIMD[type, width]) -> SIMD[
-    type, width
-]:
+](
+    coord: IndexList[2, **_], bound: IndexList[2, **_], vec: SIMD[type, width]
+) -> SIMD[type, width]:
     var masked_vec = SIMD[type, width]()
 
     # TODO: use `select` to see if it generates the same code.
@@ -1637,7 +1656,7 @@ fn _kernel_mask[
     for i in range(width):
         masked_vec[i] = (
             vec[i] if coord[0] < bound[0]
-            and coord[1] + i < bound[1] else min_or_neg_inf[type]()
+            and coord[1] + UInt32(i) < bound[1] else min_or_neg_inf[type]()
         )
 
     return masked_vec
@@ -2181,7 +2200,7 @@ fn mha_decoding_single_batch[
         ](
             output_reg_tile,
             p_reg_tile,
-            warp_scratch.tile[num_warps_n, WM](0, warp_y),
+            warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
             rowmax,
             rowsum,
         )

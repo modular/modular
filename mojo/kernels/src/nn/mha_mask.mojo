@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from math import iota
 from sys import bitwidthof
 
@@ -38,8 +39,8 @@ trait MHAMask:
         type: DType,
         width: Int, //,
         *,
-        element_bitwidth: Int = bitwidthof[Int](),
-        unsigned: Bool = False,
+        element_bitwidth: Int = bitwidthof[UInt32](),
+        unsigned: Bool = True,
     ](
         self,
         coord: IndexList[
@@ -58,7 +59,7 @@ trait MHAMask:
         ...
 
     fn status[
-        *, element_bitwidth: Int = bitwidthof[Int](), unsigned: Bool = False
+        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = True
     ](
         self,
         tile_offset: IndexList[
@@ -82,8 +83,8 @@ struct CausalMask(MHAMask):
         type: DType,
         width: Int, //,
         *,
-        element_bitwidth: Int = bitwidthof[Int](),
-        unsigned: Bool = False,
+        element_bitwidth: Int = bitwidthof[UInt32](),
+        unsigned: Bool = True,
     ](
         self,
         coord: IndexList[
@@ -91,23 +92,27 @@ struct CausalMask(MHAMask):
         ],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
+        alias index_type = _uint_type_of_width[
+            element_bitwidth
+        ]() if unsigned else _int_type_of_width[element_bitwidth]()
+
         var masked_score_vec = score_vec
 
         # coord[2] and coord[3] are the token index in query and key respectively.
-        var q_idx = SIMD[DType.index, width](coord[2])
-        var k_idx = SIMD[DType.index, width](coord[3])
+        var q_idx = SIMD[index_type, width](coord[2])
+        var k_idx = SIMD[index_type, width](coord[3])
 
         # coords[2] >= coords[3] ensures the current tokens is only affected by
         # itself and previous tokens.
         masked_score_vec = (
-            q_idx >= (k_idx + iota[DType.index, width]())
+            q_idx >= (k_idx + iota[index_type, width]())
         ).select(score_vec, min_or_neg_inf[type]())
 
         return masked_score_vec
 
     @always_inline
     fn status[
-        *, element_bitwidth: Int = bitwidthof[Int](), unsigned: Bool = False
+        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = True
     ](
         self,
         tile_offset: IndexList[
@@ -118,14 +123,14 @@ struct CausalMask(MHAMask):
         ],
     ) -> TileMaskStatus:
         # If false, the tile is not masked.
-        var min_q_lt_max_k = UInt(
-            tile_offset[0] < (tile_offset[1] + tile_size[1])
-        )
+        var min_q_lt_max_k = (
+            tile_offset.data[0] < (tile_offset.data[1] + tile_size.data[1])
+        ).cast[DType.uint8]()
 
         # If true, the tile is fully masked
-        var max_q_lt_min_k = UInt(
-            tile_offset[0] + tile_size[0] < tile_offset[1]
-        )
+        var max_q_lt_min_k = (
+            tile_offset.data[0] + tile_size.data[0] < tile_offset.data[1]
+        ).cast[DType.uint8]()
 
         # Use 2 bits to represent:
         # (F, F) -> no mask
