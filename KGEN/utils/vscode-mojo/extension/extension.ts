@@ -90,7 +90,6 @@ Activating the Mojo Extension
 
       const sdkManager = new MojoSDKManager(
         this.logger,
-        this.extensionContext,
         initializationSDK,
         this.isNightly,
         this.semiPersistentState,
