@@ -162,12 +162,10 @@ fn create_errror_async_values_and_destruct_error[
 ):
     """Indicates to the C++ runtime that the kernel has failed."""
     var str = err.__str__()
-    var strref = str._strref_dangerous()
+    var strslice = str.as_string_slice()
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
-        ctx, ptr, len, runtime, strref.data, strref.length
+        ctx, ptr, len, runtime, strslice.unsafe_ptr(), strslice.byte_length()
     )
-    str._strref_keepalive()
-    # mojo lowering will insert destructor call for `error`
 
 
 @mogg_register("builtin.create_index_async")
