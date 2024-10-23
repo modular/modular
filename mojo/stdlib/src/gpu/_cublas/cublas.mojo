@@ -27,7 +27,7 @@ alias CUDA_CUBLAS_LIBRARY_PATH = "/usr/local/cuda/lib64/libcublas.so.12"
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     if not Path(CUDA_CUBLAS_LIBRARY_PATH).exists():
         return abort[UnsafePointer[NoneType]](
-            "the CUDA NVRTC library was not found at "
+            "the CUDA cuBLAS library was not found at "
             + CUDA_CUBLAS_LIBRARY_PATH
         )
     var ptr = UnsafePointer[DLHandle].alloc(1)
