@@ -385,6 +385,7 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, bool useCudaGdb,
   payload->insert({"program", fullTarget.string()});
   payload->insert({"request", "launch"});
   payload->insert({"cwd", cwd.string()});
+  payload->insert({"debuggerRoot", cwd.string()});
 
   json::Array env;
   for (StringRef entry : getEnv())
