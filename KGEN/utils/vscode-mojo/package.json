@@ -170,11 +170,6 @@
     "commands": [
       {
         "category": "Developer",
-        "command": "mojo.lsp.restart-and-debug",
-        "title": "Restart the Mojo LSP Server and Attach the Debugger to it"
-      },
-      {
-        "category": "Developer",
         "command": "mojo.lsp.restart",
         "title": "Restart the Mojo LSP Server"
       },
