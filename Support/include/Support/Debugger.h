@@ -20,4 +20,8 @@ void waitForDebuggerToAttach(int timeoutSeconds = 120);
 
 } // namespace M
 
+#define DEBUGGER_ATTACH_IF_NOT(condition)                                      \
+  if (!(condition))                                                            \
+    waitForDebuggerToAttach(30);
+
 #endif // SUPPORT_DEBUGGER_H
