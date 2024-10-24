@@ -24,6 +24,7 @@ from gpu.cublas.cublas import (
     cublasDestroy,
 )
 from linalg.cublas import cublas_matmul
+from gpu.host.info import DEFAULT_GPU_ARCH
 
 
 fn _get_run_name[
@@ -144,9 +145,11 @@ fn bench_matmul[
                 )
 
             else:
-                _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
-                    tensor_c, tensor_a, tensor_b, ctx
-                )
+                _matmul_gpu[
+                    use_tensor_core=True,
+                    transpose_b=transpose_b,
+                    target=DEFAULT_GPU_ARCH,
+                ](tensor_c, tensor_a, tensor_b, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
