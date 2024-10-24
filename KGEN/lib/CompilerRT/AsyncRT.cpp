@@ -14,6 +14,7 @@
 #include "Runtime/MojoCallContext.h"
 #include "Runtime/MojoValue.h"
 #include "Runtime/Tensor/StateContext.h"
+#include "Runtime/Tensor/Tensor.h"
 #include "Runtime/Tensor/TensorBufferRef.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ML/SizeUtils.h"
@@ -386,6 +387,35 @@ KGEN_CompilerRT_CreateAsyncBufferWithBorrow(
   } else {
     outVal = outVal.createReady<TensorBufferRef>(runtime, std::move(buf));
   }
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsyncTensorWithBorrow(
+    void *data, size_t byteCount, size_t rank, size_t *dims, int8_t type,
+    AsyncRTWrapper<AnyAsyncValueRef> toBorrowFrom, bool borrowFromHandle,
+    AsyncRTWrapper<AnyAsyncValueRef> async,
+    AsyncRTWrapper<Runtime> runtimePtr) {
+  Runtime &rt = unwrap(runtimePtr);
+  AnyAsyncValueRef &outVal = unwrap(async);
+
+  // Create a borrowed buffer ref.
+  AnyAsyncValueRef &handleOrTensor = unwrap(toBorrowFrom);
+  AnyAsyncValueRef handle;
+  if (borrowFromHandle) {
+    handle = std::move(handleOrTensor);
+  } else {
+    // Use the lifetime of the other tensor by sharing the same storage handle.
+    handle = handleOrTensor.get<TensorBufferRef>().getMemStorageHandle();
+  }
+  TensorBufferRef buf = ::M::TensorBufferRef::create(
+      data, byteCount, std::move(handle), std::optional<size_t>{});
+
+  // Pack buffer and spec into tensor.
+  TensorSpec spec(ArrayRef<size_t>(dims, rank), DType(type));
+  if (outVal.getPointer() && outVal.getPointer()->isIndirect())
+    outVal.copy().emplaceIndirect<Tensor>(std::move(buf), std::move(spec));
+  else
+    outVal = outVal.createReady<Tensor>(rt, std::move(buf), std::move(spec));
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
