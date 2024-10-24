@@ -44,18 +44,18 @@ struct StaticTensorSpec[rank: Int]():
     tensor_spec, but this is fully static and will not have any allocations."""
 
     var shape: IndexList[rank]
-    var dType: DType
+    var type: DType
 
     @always_inline
-    fn __init__(inout self, shape: IndexList[rank], dType: DType):
-        """Constructs a static tensor spec with a static rank shape and dType.
+    fn __init__(inout self, shape: IndexList[rank], type: DType):
+        """Constructs a static tensor spec with a static rank shape and type.
 
         Args:
             shape: The shape of static rank we are creating tensor spec with.
-            dType: The DType we are creating tensor spec with.
+            type: The DType we are creating tensor spec with.
         """
         self.shape = shape
-        self.dType = dType
+        self.type = type
 
     @always_inline
     fn __len__(self) -> Int:
@@ -73,13 +73,13 @@ struct StaticTensorSpec[rank: Int]():
         Returns:
             The byte size of the tensor-spec.
         """
-        return len(self) * self.dType.sizeof()
+        return len(self) * self.type.sizeof()
 
     @always_inline
     fn __eq__(self, rhs: StaticTensorSpec[rank]) -> Bool:
         """Compares this StaticTensorSpec to another StaticTensorSpec for equality.
 
-        The StaticTensorSpec are equal if the shapes are equal and the dTypes are
+        The StaticTensorSpec are equal if the shapes are equal and the types are
         also equal.
 
         Args:
@@ -88,7 +88,7 @@ struct StaticTensorSpec[rank: Int]():
         Returns:
             The comparison result.
         """
-        return self.shape == rhs.shape and self.dType == rhs.dType
+        return self.shape == rhs.shape and self.type == rhs.type
 
 
 @register_passable("trivial")
@@ -96,21 +96,21 @@ struct StateContext:
     """Defines a StateContext structure which holds a ptr to context and has accessors that go to external calls
     This is currently meant as a mojo-side container for GML::StateContext."""
 
-    var numSlots: Int
-    var ctxPtr: UnsafePointer[NoneType]
+    var num_slots: Int
+    var ctx_ptr: UnsafePointer[NoneType]
 
     @always_inline
-    fn __init__(inout self, numSlots: Int, ctxPtr: UnsafePointer[NoneType]):
-        self.numSlots = numSlots
-        self.ctxPtr = ctxPtr
+    fn __init__(inout self, num_slots: Int, ctx_ptr: UnsafePointer[NoneType]):
+        self.num_slots = num_slots
+        self.ctx_ptr = ctx_ptr
 
     @always_inline
     fn __getitem__(self, index: Int) -> UnsafePointer[NoneType]:
-        debug_assert(0 <= index < self.numSlots, "index must be within bounds")
+        debug_assert(0 <= index < self.num_slots, "index must be within bounds")
         return external_call[
             "KGEN_CompilerRT_GetContextPayloadPtr",
             UnsafePointer[NoneType],
-        ](index, self.ctxPtr)
+        ](index, self.ctx_ptr)
 
 
 # ===----------------------------------------------------------------------===#
@@ -322,7 +322,7 @@ fn create_tensor_spec_async[
     for i in range(rank):
         shape_ptr[i] = spec.shape[i]
     external_call["KGEN_CompilerRT_CreateAsyncTensorSpec", NoneType](
-        shape_ptr, rank, spec.dType, async_ptr, runtime
+        shape_ptr, rank, spec.type, async_ptr, runtime
     )
     shape_ptr.free()
 
@@ -443,12 +443,12 @@ fn unpack_context(
     async_ptr: UnsafePointer[NoneType],
 ) -> StateContext:
     # We want to construct this because we want all payloads to be implemented
-    var numSlots: UInt64 = 0
-    var ctxPtr: UnsafePointer[NoneType] = external_call[
+    var num_slots: UInt64 = 0
+    var ctx_ptr: UnsafePointer[NoneType] = external_call[
         "KGEN_CompilerRT_GetContextAndSizeFromAsync",
         UnsafePointer[NoneType],
-    ](UnsafePointer.address_of(numSlots), async_ptr)
-    return StateContext(int(numSlots), ctxPtr)
+    ](UnsafePointer.address_of(num_slots), async_ptr)
+    return StateContext(int(num_slots), ctx_ptr)
 
 
 @mogg_register("builtin.get_buffer_data")
@@ -756,7 +756,7 @@ fn mgp_buffer_get_cached[
         "KGEN_CompilerRT_GetCachedBuffer", UnsafePointer[NoneType]
     ](
         int(bBufferSlot),
-        ctx.ctxPtr,
+        ctx.ctx_ptr,
         UnsafePointer.address_of(buffer_size),
         storage_ref_addr,
     )
@@ -792,7 +792,7 @@ fn mgp_tensor_spec_create[
     aRawDims: DimList,
     aRawDimsRank: Int,
 ](*runtimeDims: Int) -> StaticTensorSpec[aRawDimsRank]:
-    var dType = DType._from_ui8(bRawDType.value)
+    var type = DType._from_ui8(bRawDType.value)
     var static_shape = IntList[aRawDims]()
     var shape = IndexList[aRawDimsRank]()
     var runtimeIndex = 0
@@ -803,7 +803,7 @@ fn mgp_tensor_spec_create[
         else:
             shape[i] = runtimeDims[runtimeIndex]
             runtimeIndex = runtimeIndex + 1
-    return StaticTensorSpec[aRawDimsRank](shape, dType)
+    return StaticTensorSpec[aRawDimsRank](shape, type)
 
 
 @mogg_register("mgp.tensor_spec.size")
