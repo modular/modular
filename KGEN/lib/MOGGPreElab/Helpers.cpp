@@ -68,18 +68,11 @@ bool stripDecorators(LIT::FuncOp func) {
   SmallVector<NamedAttribute> newAttrs;
 
   // Decorators we should replace with a trivial unit attribute.
-  constexpr std::array<MOGGDecorator, 11> identityDecorators{
-      Decorators::ELEM_HOOK,
-      Decorators::ELEMENTWISE,
-      Decorators::VIEW,
-      Decorators::TAKES_INDICES,
-      Decorators::TENSOR_ALLOC,
-      Decorators::TENSOR_COPY,
-      Decorators::TENSOR_DECONSTRUCT,
-      Decorators::ENABLE_FUSION,
-      Decorators::INPUT_FUSION,
-      Decorators::OUTPUT_FUSION,
-      Decorators::ELEMENTWISE_PUBLIC};
+  constexpr std::array<MOGGDecorator, 8> identityDecorators{
+      Decorators::ELEM_HOOK,     Decorators::ELEMENTWISE,
+      Decorators::VIEW,          Decorators::TAKES_INDICES,
+      Decorators::ENABLE_FUSION, Decorators::INPUT_FUSION,
+      Decorators::OUTPUT_FUSION, Decorators::ELEMENTWISE_PUBLIC};
 
   // Each kernel can implement multiple operations. We will canonicalize these
   // into one attribute.
