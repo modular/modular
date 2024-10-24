@@ -21,8 +21,29 @@ params:
       - meta-llama/Llama-2-7b-hf
       - meta-llama/Llama-3-8b
 - <<: *batch_size
-  N: 14336
+  N: 6144
   K: 4096
+  metadata:
+    MODEL:
+      - mistralai/Mistral-7B-v0.1
+      - mistralai/Mixtral-8x7B-v0.1
+      - meta-llama/Llama-3-8b
+- <<: *batch_size
+  N: 28672
+  K: 4096
+  metadata:
+    MODEL:
+      - mistralai/Mistral-7B-v0.1
+      - meta-llama/Llama-3-8b
+- <<: *batch_size
+  N: [12288, 22016]
+  K: 4096
+  metadata:
+    MODEL:
+      - meta-llama/Llama-2-7b-hf
+- <<: *batch_size
+  N: 4096
+  K: 14336
   metadata:
     MODEL:
       - mistralai/Mistral-7B-v0.1
@@ -34,26 +55,38 @@ params:
     MODEL:
       - meta-llama/Llama-2-7b-hf
 - <<: *batch_size
+  N: 6144
+  K: 4096
+  metadata:
+    MODEL:
+      - meta-llama/Llama-3-8b
+- <<: *batch_size
+  N: 4096
+  K: 28672
+  metadata:
+    MODEL:
+      - meta-llama/Llama-3-8b
+- <<: *batch_size
+  N: [8192, 10240, 57344]
+  K: 8192
+  metadata:
+    MODEL:
+      - meta-llama/Llama-3-70b
+- <<: *batch_size
   N: 8192
-  K: 8192
+  K: 28672
   metadata:
     MODEL:
       - meta-llama/Llama-3-70b
 - <<: *batch_size
-  N: 28672
-  K: 8192
-  metadata:
-    MODEL:
-      - meta-llama/Llama-3-70b
-- <<: *batch_size
-  N: 16384
+  N: [20480, 16384, 106496]
   K: 16384
   metadata:
     MODEL:
       - meta-llama/Llama-3-405b
 - <<: *batch_size
-  N: 53248
-  K: 16384
+  N: 16384
+  K: 53248
   metadata:
     MODEL:
       - meta-llama/Llama-3-405b
