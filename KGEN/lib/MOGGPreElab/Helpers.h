@@ -36,12 +36,6 @@ struct LambdaTemplate {
   CallOp callUsingLambda;
 };
 
-inline bool isTensor(Attribute maybeTensor) {
-  if (auto symbol = dyn_cast<StringAttr>(maybeTensor))
-    return "MOGGTensor::Tensor" == symbol;
-  return false;
-}
-
 inline bool isXType(LIT::StructType maybeTensor, StringLiteral root,
                     StringLiteral className) {
   if (maybeTensor.getSymbol().getRootReference() != root)
@@ -61,19 +55,6 @@ inline bool isDPSTensor(LIT::StructType maybeTensor) {
 
 inline bool isCustomType(LIT::StructType maybeCustom) {
   return !isExtensibilityTensor(maybeCustom);
-}
-
-/// Returns true if there is at least one recognizable tensor on the signature.
-inline bool hasAtLeastOneTensor(GeneratorOp generator) {
-  ArrayAttr names =
-      dyn_cast_or_null<ArrayAttr>(generator->getAttr(MOGG_ARG_TYPE_NAMES));
-  if (!names)
-    return false;
-  for (Attribute attr : names.getValue()) {
-    if (isTensor(attr))
-      return true;
-  }
-  return false;
 }
 
 /// Remove the decorators from the function. Return true if any function had the

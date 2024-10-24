@@ -223,12 +223,6 @@ constexpr StringLiteral MOJO_STATIC_INT_TUPLE_NAME = "stdlib::StaticTuple";
 // We support lists of DPS tensors for a few operations
 constexpr StringLiteral MOJO_TENSOR_LIST_NAME = "stdlib::InlinedFixedVector";
 
-//===----------------------------------------------------------------------===//
-// MOGG Tensor API type strings
-//===----------------------------------------------------------------------===//
-
-constexpr StringLiteral MOJO_MOGG_TENSOR_TYPE_NAME = "MOGGTensor::Tensor";
-
 // The stored mojo type symbol name of the mojo ctx in extensibility kernels.
 constexpr StringLiteral MOJO_EXTENSIBILITY_API_CALL_CONTEXT_PTR_TYPE_NAME =
     "runtime::MojoCallContextPtr";
