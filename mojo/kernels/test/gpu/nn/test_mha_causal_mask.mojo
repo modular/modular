@@ -181,17 +181,24 @@ fn test[
     ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
     _ = output_ref_device_ptr
 
+    # seqlen > 1 compares the same kernel using mask tensor vs CausalMask()
+    # seqlen = 1 compares tensor core mha decoding using mask tensor vs warp
+    # shuffling mha decoding using CausalMask(), hence a larger rtol.
+    var rtol = 1e-4 if seq_len > 1 else 1e-2
+
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
-                var expect = output_ptr.load(d + depth * (h + s * num_heads))
+                var expect = output_ptr.load(
+                    d + depth * (h + s * num_heads)
+                ).cast[DType.float64]()
                 var actual = flash_output_ptr.load(
                     d + depth * (h + s * num_heads)
-                )
-                if not isclose(actual, expect, atol=1e-5, rtol=1e-4):
+                ).cast[DType.float64]()
+                if not isclose(actual, expect, atol=1e-5, rtol=rtol):
                     var rerr = abs((actual - expect) / expect)
                     print(h, s, d, actual, expect, rerr)
-                assert_almost_equal(actual, expect, atol=1e-5, rtol=1e-4)
+                assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
