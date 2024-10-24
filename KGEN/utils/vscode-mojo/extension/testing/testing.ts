@@ -4,15 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import * as vscode from 'vscode';
-
-import { MojoExtension } from '../extension';
 import { MojoSDK } from '../sdk/sdk';
 import * as config from '../utils/config';
 import { DisposableContext } from '../utils/disposableContext';
-
-import path = require('path');
+import * as path from 'path';
 import { MojoSDKManager } from '../sdk/sdkManager';
 import { Logger } from '../logging';
 
@@ -283,6 +280,8 @@ export class MojoTestManager extends DisposableContext {
       sdk,
       test.id,
       workspaceFolder,
+      /*args=*/ [],
+      /*withTelemetry=*/ true,
     );
     if (!result) {
       markAllTestsErrored('fatal error: unable to process test execution');
@@ -347,6 +346,7 @@ export class MojoTestManager extends DisposableContext {
     testId: string,
     workspaceFolder: Optional<vscode.WorkspaceFolder>,
     args: string[] = [],
+    withTelemetry: boolean,
   ): Promise<Optional<Result>> {
     // Grab any additional include directories from the workspace settings.
     const includeDirs =
@@ -356,34 +356,26 @@ export class MojoTestManager extends DisposableContext {
       args.push('-I', includeDir);
     }
 
-    // Build the command to run.
-
-    // Build the command to run.
-    var command =
-      sdk.config.mojoDriverPath +
-      ' test --diagnostic-format json ' +
-      "'" +
-      testId +
-      "' " +
-      args.join(' ');
-    let env = sdk.getProcessEnv();
-
-    this.logger.main.logDebug(`Invoking mojo CLI with command\n${command}`);
-
+    let env = sdk.getProcessEnv(withTelemetry);
     const logger = this.logger;
 
     return new Promise<Optional<Result>>(function (resolve, reject) {
-      exec(command, { env }, (error, stdout, stderr) => {
-        // Parse the json output from the stdout.
-        try {
-          resolve(JSON.parse(stdout));
-        } catch (e) {
-          logger.main.logError(
-            `Received invalid JSON response from mojo CLI\n${stdout}`,
-          );
-          resolve(undefined);
-        }
-      });
+      execFile(
+        sdk.config.mojoDriverPath,
+        ['test', '--diagnostic-format', 'json', testId, ...args],
+        { env },
+        (error, stdout, stderr) => {
+          // Parse the json output from the stdout.
+          try {
+            resolve(JSON.parse(stdout));
+          } catch (e) {
+            logger.main.logError(
+              `Received invalid JSON response from mojo CLI\n${stdout}`,
+            );
+            resolve(undefined);
+          }
+        },
+      );
     });
   }
 
@@ -416,6 +408,7 @@ export class MojoTestManager extends DisposableContext {
       document.uri.fsPath,
       workspaceFolder,
       ['--co'],
+      /*withTelemetry=*/ false,
     );
     if (!mojoTestSuite || !mojoTestSuite.children) {
       this.controller.items.delete(document.uri.fsPath);

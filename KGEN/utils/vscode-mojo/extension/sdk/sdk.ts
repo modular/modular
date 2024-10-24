@@ -105,13 +105,16 @@ export class MojoSDK {
    * Returns a process environment to be used when executing SDK
    * binaries.
    */
-  public getProcessEnv(): NodeJS.ProcessEnv {
+  public getProcessEnv(withTelemetry: boolean = true): NodeJS.ProcessEnv {
     let env = { ...process.env };
 
     // If we had modular home provided somewhere, make sure that
     // gets propagated.
     if (this.config.modularHomePath) {
       env.MODULAR_HOME = this.config.modularHomePath;
+    }
+    if (!withTelemetry) {
+      env.MODULAR_TELEMETRY_ENABLED = 'false';
     }
     return env;
   }
