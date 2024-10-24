@@ -189,18 +189,7 @@ export class MojoSDKManager extends DisposableContext {
       let errorMessage = result;
       selectedSDK.errorMessage = result;
 
-      if (selectedSDK.sdkSpec?.kind === 'modular-cli') {
-        errorMessage += '\nPlease install the MAX SDK via the modular tool.';
-        vscode.window
-          .showErrorMessage(errorMessage, 'Install')
-          .then((value) => {
-            if (value === 'Install') {
-              vscode.env.openExternal(
-                vscode.Uri.parse('https://www.modular.com/mojo'),
-              );
-            }
-          });
-      } else if (selectedSDK.sdkSpec?.kind === 'dev') {
+      if (selectedSDK.sdkSpec?.kind === 'dev') {
         this.showBazelwRunInstallPrompt(
           errorMessage,
           selectedSDK.sdkSpec.modularHomePath,

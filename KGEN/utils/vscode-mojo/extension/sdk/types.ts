@@ -5,7 +5,7 @@ import { MojoSDKVersion } from './sdkVersion';
  * guaranteed to exist or even have a valid modular.cfg file.
  */
 export type MojoSDKSpec = {
-  kind: 'modular-cli' | 'dev' | 'magic' | 'custom';
+  kind: 'dev' | 'magic' | 'custom';
   modularHomePath: string;
   section: string;
   version: MojoSDKVersion;
