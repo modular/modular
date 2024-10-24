@@ -82,27 +82,6 @@ fn mogg_takes_indices():
     return
 
 
-fn mogg_tensor_allocator():
-    """
-    Marks this function as being the allocator of a tensor.
-    """
-    return
-
-
-fn mogg_tensor_copy_constructor():
-    """
-    Marks this function as being the move constructor of a tensor.
-    """
-    return
-
-
-fn mogg_tensor_deconstructor():
-    """
-    Marks this function as being the deconstructor of a tensor.
-    """
-    return
-
-
 fn mogg_enable_fusion():
     """
     Marks this function as the trigger which enables fusion.
