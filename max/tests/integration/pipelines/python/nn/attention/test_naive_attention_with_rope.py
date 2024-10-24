@@ -12,6 +12,7 @@ from max.dtype import DType
 from max.graph import BufferType, Graph, TensorType, TensorValue, ops
 from modular_graph_test import modular_graph_test
 from nn import NaiveAttentionWithRope, Linear, RotaryEmbedding
+from nn.kv_cache import KVCacheParams, KVCacheStrategy
 from torch import nn
 from transformers import StaticCache
 from transformers.models.llama.configuration_llama import LlamaConfig
@@ -116,6 +117,13 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
     wo_type = TensorType(input_dtype, [dim, n_heads * head_dim])
     weight_types = [wq_type, wk_type, wv_type, wo_type]
 
+    kv_params = KVCacheParams(
+        dtype=input_dtype,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
+        cache_strategy=KVCacheStrategy.NAIVE,
+    )
+
     graph = Graph(
         "attn",
         input_types=attn_input_types + weight_types,
@@ -127,13 +135,12 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
         graph.output(
             NaiveAttentionWithRope(
                 n_heads,
-                n_kv_heads,
-                head_dim,
-                dim,
-                Linear(wq),
-                Linear(wk),
-                Linear(wv),
-                Linear(wo),
+                kv_params=kv_params,
+                dim=dim,
+                wq=Linear(wq),
+                wk=Linear(wk),
+                wv=Linear(wv),
+                wo=Linear(wo),
                 rope=RotaryEmbedding(
                     dim=dim,
                     n_heads=n_heads,
@@ -162,7 +169,7 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
 )
 def test_attention(session, start_pos, seq_len):
     config = LlamaConfig(
-        hidden_size=2,
+        hidden_size=16,
         num_attention_heads=1,
         num_key_value_heads=1,
         rope_theta=10000.0,

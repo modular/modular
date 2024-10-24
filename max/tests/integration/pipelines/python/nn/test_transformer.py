@@ -22,6 +22,7 @@ from nn import (
     Transformer,
     TransformerBlock,
 )
+from nn.kv_cache import KVCacheParams, KVCacheStrategy
 
 
 class Weights:
@@ -143,6 +144,13 @@ def test_transformer_block(session):
 
     w = Weights()
 
+    kv_params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
+        cache_strategy=KVCacheStrategy.NAIVE,
+    )
+
     with Graph(
         "transformer_block",
         input_types=[
@@ -160,8 +168,7 @@ def test_transformer_block(session):
         transformer_block = TransformerBlock(
             attention=NaiveAttentionWithRope(
                 n_heads=n_heads,
-                n_kv_heads=n_kv_heads,
-                head_dim=head_dim,
+                kv_params=kv_params,
                 dim=dim,
                 wk=Linear(w.attn_wk),
                 wv=Linear(w.attn_wv),
@@ -312,8 +319,12 @@ def test_transformer():
                 TransformerBlock(
                     attention=NaiveAttentionWithRope(
                         n_heads=n_heads,
-                        n_kv_heads=n_kv_heads,
-                        head_dim=head_dim,
+                        kv_params=KVCacheParams(
+                            dtype=DType.float32,
+                            n_kv_heads=n_kv_heads,
+                            head_dim=head_dim,
+                            cache_strategy=KVCacheStrategy.NAIVE,
+                        ),
                         dim=dim,
                         wk=Linear(w.attn_wk),
                         wv=Linear(w.attn_wv),
