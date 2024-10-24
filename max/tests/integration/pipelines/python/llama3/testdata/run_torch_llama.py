@@ -3,7 +3,19 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Executes the Torch Llama model and exports the logits."""
+"""Executes the Torch Llama model and exports the logits.
+
+float32 on cpu:
+    ./bazelw run SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama \
+        -- --model llama3_1 --encoding float32 --verbose
+
+bfloat16 with gpu:
+./bazelw run SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama_gpu \
+        -- --model llama3_1 --encoding bfloat16 --verbose
+
+`--encoding q4_k` might work, but the transformers library will first dequantize
+the checkpoint.
+"""
 import os
 from pathlib import Path
 from typing import Iterable
@@ -22,13 +34,13 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     LogitsProcessorList,
+    PreTrainedModel,
 )
 
 
 def create_torch_llama3(
-    config_path: Path, gguf_weight_path: Path, use_gpu: bool
+    config_path: Path, gguf_weight_path: Path, device: torch.device
 ):
-    device = torch.device("cuda:0" if use_gpu else "cpu")
     config = AutoConfig.from_pretrained(config_path)
     return AutoModelForCausalLM.from_pretrained(
         "UNUSED", config=config, gguf_file=gguf_weight_path, device_map=device
@@ -39,7 +51,13 @@ def create_tokenizer(tokenizer_directory: Path):
     return AutoTokenizer.from_pretrained(tokenizer_directory)
 
 
-def run_torch_llama3(llama3, tokenizer, prompts: Iterable[str], num_steps=10):
+def run_torch_llama3(
+    llama3: PreTrainedModel,
+    tokenizer: AutoTokenizer,
+    device: torch.device,
+    prompts: Iterable[str],
+    num_steps=10,
+):
     saved_logits = []
 
     def store_logits(input_ids: torch.LongTensor, scores: torch.FloatTensor):
@@ -58,7 +76,9 @@ def run_torch_llama3(llama3, tokenizer, prompts: Iterable[str], num_steps=10):
 
     results = []
     for prompt in prompts:
-        encoded_prompt = tokenizer.encode(prompt, return_tensors="pt")
+        encoded_prompt = tokenizer.encode(prompt, return_tensors="pt").to(
+            device
+        )
         mask = torch.ones_like(encoded_prompt)
         llama3.generate(
             input_ids=encoded_prompt,
@@ -74,7 +94,7 @@ def run_torch_llama3(llama3, tokenizer, prompts: Iterable[str], num_steps=10):
     return results
 
 
-@click.command
+@click.command()
 @click.option(
     "--model",
     type=click.Choice(list(ALL_SUPPORTED_MODELS)),
@@ -108,10 +128,11 @@ def main(model, encoding, verbose):
         try:
             hf_config_path = model_encoding.hf_config_path(testdata_directory)
             max_config = model_encoding.build_config(testdata_directory)
+            device = torch.device("cuda:0" if model_encoding.use_gpu else "cpu")
             llama3 = create_torch_llama3(
-                hf_config_path, max_config.weight_path, model_encoding.use_gpu
+                hf_config_path, max_config.weight_path, device
             )
-            results = run_torch_llama3(llama3, tokenizer, PROMPTS)
+            results = run_torch_llama3(llama3, tokenizer, device, PROMPTS)
             output_full_path = os.path.join(
                 "/tmp", model_encoding.golden_data_fname(framework="torch")
             )

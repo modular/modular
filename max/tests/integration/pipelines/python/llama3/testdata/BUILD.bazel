@@ -17,7 +17,6 @@ modular_py_binary(
     srcs = ["run_torch_llama.py"],
     data = [
         ":testdata",
-        "@test_llama_golden",
     ],
     env = {
         "MODULAR_PATH": ".",
@@ -28,13 +27,38 @@ modular_py_binary(
     deps = [
         requirement("accelerate"),  # Required transformers integration.
         requirement("sentencepiece"),
-        requirement("gguf"),  # Required since the checkpoints are GGUF.
+        requirement("numpy"),
+        requirement("click"),
+        requirement("tokenizers"),
+        requirement("transformers"),
+        requirement("torch"),
+        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
+    ],
+)
+
+modular_py_binary(
+    name = "run_torch_llama_gpu",
+    srcs = ["run_torch_llama.py"],
+    data = [
+        ":testdata",
+        "//Kernels/tools/gpu-query",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
+        "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
+    },
+    imports = ["."],
+    main = "run_torch_llama.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@vllm//:accelerate",  # Required transformers integration.
+        requirement("sentencepiece"),
         requirement("numpy"),
         requirement("click"),
         requirement("tokenizers"),
         requirement("transformers"),
         "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
-        "//SDK/public/max-repo/pipelines/python/llama3",
-        "//SDK/public/max-repo/pipelines/python/utils",
+        "@vllm//:torch",  # Torch with GPU.
     ],
 )
