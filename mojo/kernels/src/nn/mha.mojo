@@ -1738,7 +1738,7 @@ fn mha_decoding[
     var v_ptr = v_nd_buffer.data
 
     @parameter
-    if use_tensor_core:
+    if use_mask_tensor:
         mha_decoding_single_batch[
             mask_rank,
             BM=BM,
@@ -1822,7 +1822,7 @@ fn mha_decoding[
     )
 
     @parameter
-    if use_tensor_core:
+    if use_mask_tensor:
         mha_decoding_single_batch[
             mask_rank,
             BM=BM,
