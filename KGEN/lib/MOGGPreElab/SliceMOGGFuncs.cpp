@@ -181,12 +181,6 @@ public:
       if (!isKernel(userKernel))
         continue;
 
-      // If there are no tensors detected on the API then it's not a new API
-      // kernel.
-      // TODO: This should be removed when there's only one API.
-      if (!hasAtLeastOneTensor(userKernel))
-        continue;
-
       // Currently we only support kernels which return something. We will
       // later enforce that this is a tensor.
       if (!userKernel.getSignature().hasMemoryOnlyResult())
