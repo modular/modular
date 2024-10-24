@@ -207,6 +207,7 @@ fn block_reduce_topk[
 
 fn topk_stage1[
     T: DType,
+    out_idx_type: DType,
     largest: Bool = True,
 ](
     K: Int,
@@ -217,7 +218,7 @@ fn topk_stage1[
         Scalar[T]
     ],  # Output buffer of size num_blocks_per_input * K
     local_topk_idxs: UnsafePointer[
-        Int
+        Scalar[out_idx_type]
     ],  # Output buffer of size num_blocks_per_input * K
 ):
     """
@@ -229,11 +230,12 @@ fn topk_stage1[
 
     Parameters:
         T: Data type of the elements.
+        out_idx_type: DType - The data type of the output indices.
         largest: Bool - Whether to find the maximum or minimum value.
 
     Args:
         K: Number of top elements to select per block.
-        num_elements: Total number of elements in the input buffer.
+        num_elements: Size of last dimension of input buffer (vocab size).
         num_blocks_per_input: Number of blocks used to process the input data.
         in_buffer: Input buffer containing the elements to process.
         local_topk_vals: Output buffer to store the local top-K values.
@@ -279,13 +281,21 @@ fn topk_stage1[
             # Store the local top-K values and indices in global memory
             var vector_idx = total.p
             local_topk_vals[bid * K + k] = total.u
-            local_topk_idxs[bid * K + k] = vector_idx
+            local_topk_idxs[bid * K + k] = Scalar[DType.index](vector_idx).cast[
+                out_idx_type
+            ]()
 
             # Remove the found maximum from consideration in the next iteration
             var orig_tid = (vector_idx - block_offset) % stride
             topk_sram[orig_tid].u = _topk_dead_val[T, largest]()
 
         barrier()
+
+
+@always_inline("nodebug")
+fn _get_shmem_size_stg_1[type: DType](block_size: Int) -> Int:
+    # Get dynamic shared memory size for stage 1
+    return int(block_size * sizeof[TopK_2[type]]())
 
 
 fn topk_stage2[
@@ -300,7 +310,7 @@ fn topk_stage2[
         Scalar[T]
     ],  # Input array of size n_batch * num_blocks_per_input * K
     local_topk_idxs: UnsafePointer[
-        Int
+        Scalar[out_idx_type]
     ],  # Input array of size n_batch * num_blocks_per_input * K
     global_topk_vals: UnsafePointer[
         Scalar[T]
@@ -349,9 +359,7 @@ fn topk_stage2[
         if tid < K and not sampling:
             batch_i_topk_vals[tid] = _local_topk_vals[tid]
             # cast to out_idx_type
-            batch_i_topk_idxs[tid] = Scalar[DType.index](
-                _local_topk_idxs[tid]
-            ).cast[out_idx_type]()
+            batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
             return
 
     # Allocate shared memory for values and indices
@@ -418,9 +426,7 @@ fn topk_stage2[
             else:
                 # Store the global top-K values and indices
                 batch_i_topk_vals[k] = total.u
-                batch_i_topk_idxs[k] = Scalar[DType.index](
-                    _local_topk_idxs[total.p]
-                ).cast[out_idx_type]()
+                batch_i_topk_idxs[k] = _local_topk_idxs[total.p]
 
             # Early exit if no valid index
             if total.p == -1:
@@ -447,9 +453,7 @@ fn topk_stage2[
                     # uncomment below to return prob of largest logit
                     # batch_i_topk_vals[0] = exp_logit / softmax_norm
                     var idx: Int = s_id[ki]
-                    batch_i_topk_idxs[0] = Scalar[DType.index](
-                        _local_topk_idxs[idx]
-                    ).cast[out_idx_type]()
+                    batch_i_topk_idxs[0] = _local_topk_idxs[idx]
                     break
 
 
@@ -464,7 +468,7 @@ fn _topk_gpu[
     K: Int,  # num top elements to keep
     input_buf: NDBuffer[type, rank],
     device_local_topk_vals: NDBuffer[type, rank],
-    device_local_topk_idxs: NDBuffer[DType.index, rank],
+    device_local_topk_idxs: NDBuffer[out_idx_type, rank],
     out_vals: NDBuffer[type, rank],
     out_idxs: NDBuffer[out_idx_type, rank],
     block_size: Int = 256,
@@ -518,7 +522,7 @@ fn _topk_gpu[
     ]()
     # Use largest number of threads per block
     var batch_size = input_buf.get_shape()[0] if rank == 2 else 1
-    var N = input_buf.get_shape()[1] if rank == 2 else input_buf.get_shape()[0]
+    var N = input_buf.get_shape()[1]
     # Define the number of blocks per grid
     var num_blocks_per_input_: Int = ceildiv(
         N, block_size
@@ -528,11 +532,11 @@ fn _topk_gpu[
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
 
-    var shared_mem_bytes_1 = int(block_size * sizeof[TopK_2[type]]())
+    var shared_mem_bytes_1 = _get_shmem_size_stg_1[type](block_size)
 
     # Compile the kernels
     var gpu_fn_stage1 = ctx.compile_function[
-        topk_stage1[type, largest], dump_ptx=False
+        topk_stage1[type, out_idx_type, largest], dump_ptx=False
     ]()
     # Define grid and block dimensions for stage 1
     var griddim_stage1 = Dim(num_blocks_per_input_ * batch_size)
@@ -729,10 +733,10 @@ fn topk_gpu[
     )
 
     # Create temporary buffer for local top-K indices
-    var internal_idxs_buf = ctx.create_buffer[DType.index](
+    var internal_idxs_buf = ctx.create_buffer[out_idx_type](
         int(internal_cache_shape.product())
     )
-    var device_local_topk_idxs = NDBuffer[DType.index, internal_rank](
+    var device_local_topk_idxs = NDBuffer[out_idx_type, internal_rank](
         internal_idxs_buf.ptr, internal_cache_shape
     )
 
