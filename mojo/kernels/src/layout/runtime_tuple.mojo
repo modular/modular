@@ -183,6 +183,14 @@ struct RuntimeTuple[
     fn __len__(self) -> Int:
         return len(S)
 
+    @always_inline
+    fn cast[
+        type: DType
+    ](self) -> RuntimeTuple[
+        S, element_bitwidth = bitwidthof[type](), unsigned=unsigned
+    ] as result:
+        return __type_of(result)(self.value.cast[type]())
+
 
 fn is_tuple[t: IntTuple](tuple: RuntimeTuple[t, **_]) -> Bool:
     return t.is_tuple()

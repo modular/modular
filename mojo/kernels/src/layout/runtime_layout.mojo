@@ -58,6 +58,12 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     fn size(self) -> Int:
         return product(self.shape)
 
+    @always_inline
+    fn cast[
+        type: DType
+    ](self) -> RuntimeLayout[layout, bitwidth = bitwidthof[type]()] as result:
+        return __type_of(result)(self.shape.cast[type](), self.stride)
+
     @no_inline
     fn __str__(self) -> String:
         return String.write(self)
@@ -181,17 +187,17 @@ fn coalesce[
     return __type_of(result)(res_shape, res_stride)
 
 
-# TODO: we are forcing a and b to have the same bitwidth for now. Should we
-# infer a output bitwidth?
 fn make_layout[
-    l1: Layout, l2: Layout, bitwidth: Int
+    l1: Layout, l2: Layout
 ](
-    a: RuntimeLayout[l1, bitwidth=bitwidth],
-    b: RuntimeLayout[l2, bitwidth=bitwidth],
-) -> RuntimeLayout[make_layout_static(l1, l2), bitwidth=bitwidth] as result:
+    a: RuntimeLayout[l1, **_],
+    b: RuntimeLayout[l2, **_],
+) -> RuntimeLayout[
+    make_layout_static(l1, l2), bitwidth = b.bitwidth
+] as result:
     var res_shape = RuntimeTuple[
         make_layout_static(l1, l2).shape,
-        element_bitwidth=bitwidth,
+        element_bitwidth = b.bitwidth,
         unsigned=True,
     ]()
     var res_stride = RuntimeTuple[

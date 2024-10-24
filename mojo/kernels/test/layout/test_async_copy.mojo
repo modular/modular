@@ -7,7 +7,7 @@
 
 from math import ceildiv
 from pathlib import Path
-from sys import simdwidthof
+from sys import simdwidthof, bitwidthof
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -66,7 +66,9 @@ fn test_async_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_async_copy")
 
-    alias runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](M, N))
+    alias runtime_layout = RuntimeLayout[
+        layout, bitwidth = bitwidthof[Int]()
+    ].row_major(IndexList[2](M, N))
 
     var input = ManagedLayoutTensor[
         DType.float32,

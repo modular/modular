@@ -3,10 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from sys import triple_is_nvidia_cuda
+from sys import triple_is_nvidia_cuda, bitwidthof
 
 from layout import Layout, LayoutTensor
-from layout.layout_tensor import LayoutTensorIter
+from layout.layout_tensor import LayoutTensorIter, _get_index_type
 from memory import UnsafePointer
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
@@ -74,9 +74,10 @@ struct LayoutTensorBuild[
     __layout: Layout = Layout(1),
     __layout_init: Bool = False,
     __address_space: AddressSpace = _GPUAddressSpace.GENERIC,
+    __layout_bitwidth: Int = bitwidthof[_get_index_type(__address_space)](),
     __circular: Bool = False,
 ]:
-    var runtime_layout: RuntimeLayout[__layout]
+    var runtime_layout: RuntimeLayout[__layout, bitwidth=__layout_bitwidth]
 
     fn __init__(inout self):
         self.runtime_layout = __type_of(self.runtime_layout)()
@@ -99,7 +100,9 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[unsigned=True](shape0.value, shape1.value)
+                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                    shape0.value, shape1.value
+                )
             )
         )
 
@@ -115,7 +118,9 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[unsigned=True](shape0.value, shape1.value, shape2.value)
+                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                    shape0.value, shape1.value, shape2.value
+                )
             )
         )
 
@@ -134,7 +139,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[unsigned=True](
+                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
                     shape0.value, shape1.value, shape2.value, shape3.value
                 )
             )
@@ -156,7 +161,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).row_major(
-                Index[unsigned=True](
+                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
                     shape0.value,
                     shape1.value,
                     shape2.value,
@@ -184,7 +189,9 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True](shape0.value, shape1.value)
+                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                    shape0.value, shape1.value
+                )
             )
         )
 
@@ -200,7 +207,9 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True](shape0.value, shape1.value, shape2.value)
+                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                    shape0.value, shape1.value, shape2.value
+                )
             )
         )
 
@@ -219,7 +228,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True](
+                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
                     shape0.value, shape1.value, shape2.value, shape3.value
                 )
             )
@@ -241,7 +250,7 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True](
+                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
                     shape0.value,
                     shape1.value,
                     shape2.value,
@@ -294,7 +303,9 @@ struct LayoutTensorBuild[
     ] as res:
         return __type_of(res)(
             __type_of(res.runtime_layout).col_major(
-                Index[unsigned=True](shape0.value)
+                Index[unsigned=True, element_bitwidth = res.__layout_bitwidth](
+                    shape0.value
+                )
             )
         )
 
@@ -311,7 +322,13 @@ struct LayoutTensorBuild[
             triple_is_nvidia_cuda(),
             "shared memory is supported on cuda devices only.",
         ]()
-        return __type_of(res)(self.runtime_layout)
+        return __type_of(res)(
+            rebind[__type_of(res.runtime_layout)](
+                self.runtime_layout.cast[
+                    _get_index_type(_GPUAddressSpace.SHARED)
+                ]()
+            )
+        )
 
     @always_inline
     fn local(
@@ -326,7 +343,13 @@ struct LayoutTensorBuild[
             triple_is_nvidia_cuda(),
             "local memory is supported on cuda devices only.",
         ]()
-        return __type_of(res)(self.runtime_layout)
+        return __type_of(res)(
+            rebind[__type_of(res.runtime_layout)](
+                self.runtime_layout.cast[
+                    _get_index_type(_GPUAddressSpace.LOCAL)
+                ]()
+            )
+        )
 
     @always_inline
     fn alloc(
@@ -344,7 +367,9 @@ struct LayoutTensorBuild[
     fn view[
         address_space: AddressSpace
     ](self, ptr: UnsafePointer[Scalar[dtype], address_space]) -> LayoutTensor[
-        dtype, __layout, address_space=address_space
+        dtype,
+        __layout,
+        address_space=address_space,
     ] as res:
         constrained[__layout_init == True, "Layout is not set."]()
         constrained[__address_space == address_space, ""]()
@@ -354,7 +379,9 @@ struct LayoutTensorBuild[
         if __layout.all_dims_known():
             return __type_of(res)(ptr)
         else:
-            return __type_of(res)(ptr, self.runtime_layout)
+            return __type_of(res)(
+                ptr, rebind[__type_of(res.runtime_layout)](self.runtime_layout)
+            )
 
     @always_inline
     fn circular(
@@ -366,7 +393,9 @@ struct LayoutTensorBuild[
         __address_space=__address_space,
         __circular=True,
     ] as res:
-        return __type_of(res)(self.runtime_layout)
+        return __type_of(res)(
+            rebind[__type_of(res.runtime_layout)](self.runtime_layout)
+        )
 
     @always_inline
     fn iter(
@@ -384,4 +413,4 @@ struct LayoutTensorBuild[
             __layout.all_dims_known(),
             "Cannot create dynamic iterator",
         ]()
-        return __type_of(res)(ptr, bound)
+        return __type_of(res)(ptr, bound, self.runtime_layout)

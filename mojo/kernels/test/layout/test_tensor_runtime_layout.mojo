@@ -581,7 +581,7 @@ fn test_iterator():
         RuntimeTuple[layout1.stride, unsigned=True](2, 1),
     )
     var iter = LayoutTensorIter[DType.float32, layout1, circular=True](
-        ptr, 64, runtime_layout=dynamic_layout1
+        ptr, 64, dynamic_layout1
     )
     iter += 9
     print(iter.runtime_layout)

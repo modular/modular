@@ -6,9 +6,11 @@
 # REQUIRES: disabled
 
 from os import abort
+from sys import bitwidthof
 
 from gpu.host.memory import _free, _malloc_managed
 from layout import *
+from layout.layout_tensor import _get_index_type
 from memory import UnsafePointer
 
 from .int_tuple import product
@@ -18,7 +20,7 @@ alias alloc_fn_type = fn[layout: Layout, dtype: DType] () -> UnsafePointer[
 ]
 
 alias alloc_runtime_fn = fn[layout: Layout, dtype: DType] (
-    runtime_layout: RuntimeLayout[layout]
+    runtime_layout: RuntimeLayout[layout, **_]
 ) -> UnsafePointer[Scalar[dtype]]
 
 alias free_fn_type = fn[dtype: DType] (
@@ -32,7 +34,7 @@ fn cpu_alloc[layout: Layout, dtype: DType]() -> UnsafePointer[Scalar[dtype]]:
 
 fn cpu_alloc_runtime[
     layout: Layout, dtype: DType
-](runtime_layout: RuntimeLayout[layout]) -> UnsafePointer[Scalar[dtype]]:
+](runtime_layout: RuntimeLayout[layout, **_]) -> UnsafePointer[Scalar[dtype]]:
     return UnsafePointer[Scalar[dtype]].alloc(runtime_layout.size())
 
 
@@ -52,7 +54,7 @@ fn gpu_managed_alloc[
 
 fn gpu_managed_alloc_runtime[
     layout: Layout, dtype: DType
-](runtime_layout: RuntimeLayout[layout]) -> UnsafePointer[Scalar[dtype]]:
+](runtime_layout: RuntimeLayout[layout, **_]) -> UnsafePointer[Scalar[dtype]]:
     try:
         return _malloc_managed[Scalar[dtype]](runtime_layout.size())
     except e:
@@ -75,6 +77,8 @@ struct ManagedLayoutTensor[
     *,
     __experimental_non_homogeneous_tile: Bool = False,
 ]:
+    alias layout_bitwidth = bitwidthof[_get_index_type(AddressSpace.GENERIC)]()
+
     var tensor: LayoutTensor[
         dtype,
         layout,
@@ -90,14 +94,19 @@ struct ManagedLayoutTensor[
         ](alloc_fn[layout, dtype]())
 
     @always_inline
-    fn __init__(inout self, runtime_layout: RuntimeLayout[layout]):
+    fn __init__(
+        inout self,
+        runtime_layout: RuntimeLayout[layout, **_],
+    ):
         self.tensor = LayoutTensor[
             dtype,
             layout,
             __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ](
             alloc_runtime_fn[layout, dtype](runtime_layout),
-            runtime_layout,
+            rebind[RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]](
+                runtime_layout
+            ),
         )
 
     @always_inline

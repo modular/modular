@@ -315,7 +315,7 @@ fn alloc_tensor[elt: DType, layout: Layout]() -> LayoutTensor[elt, layout]:
 
 fn alloc_tensor[
     elt: DType, layout: Layout
-](rtlayout: RuntimeLayout[layout]) -> LayoutTensor[elt, layout]:
+](rtlayout: RuntimeLayout[layout, **_]) -> LayoutTensor[elt, layout]:
     return LayoutTensor[elt, layout](
         UnsafePointer[Scalar[elt], alignment=64].alloc(rtlayout.size()),
         rtlayout,

@@ -173,6 +173,7 @@ struct LayoutTensor[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
+    layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
     __experimental_non_homogeneous_tile: Bool = False,
 ](CollectionElement, CollectionElementNew, Stringable, Writable):
     """This is a Tensor type that has a specified memory layout and rank. The
@@ -188,6 +189,7 @@ struct LayoutTensor[
         rank: The rank of the Tensor.
         address_space: The address space of the underlying pointer.
         element_layout: The memory layout of each element in the Tensor.
+        layout_bitwidth: The bitwidth of each dimension of runtime layout.
         __experimental_non_homogeneous_tile: An experimental feature for dynamic tile sizes.
     """
 
@@ -195,13 +197,12 @@ struct LayoutTensor[
 
     var ptr: UnsafePointer[Scalar[dtype], address_space]
 
-    var runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]
+    var runtime_layout: RuntimeLayout[layout, bitwidth=layout_bitwidth]
 
     var runtime_element_layout: RuntimeLayout[element_layout]
 
     alias element_size = element_layout.size()
     alias element_type = SIMD[dtype, Self.element_size]
-    alias layout_bitwidth = bitwidthof[Int]()
 
     # An offset of the global coords.
     var org_coords_offset: IndexList[rank]
@@ -234,7 +235,9 @@ struct LayoutTensor[
 
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
         self.ptr = ptr
-        self.runtime_layout = RuntimeLayout[layout]()
+        self.runtime_layout = RuntimeLayout[
+            layout, bitwidth = Self.layout_bitwidth
+        ]()
         self.runtime_element_layout = RuntimeLayout[element_layout]()
         self.org_coords_offset = org_coords_offset
         self.org_coords_stride = org_coords_stride
@@ -243,7 +246,7 @@ struct LayoutTensor[
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[dtype], address_space],
-        runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
+        runtime_layout: RuntimeLayout[layout, **_],
         /,
         *,
         org_coords_offset: IndexList[rank] = IndexList[rank](0),
@@ -264,8 +267,16 @@ struct LayoutTensor[
         constrained[
             element_layout.all_dims_known(), "Layout must be fully static"
         ]()
+
+        constrained[
+            runtime_layout.bitwidth == Self.layout_bitwidth,
+            "Mismatch of bitwidth for RuntimeLayout and LayoutTensor.",
+        ]()
+
         self.ptr = ptr
-        self.runtime_layout = runtime_layout
+        self.runtime_layout = rebind[
+            RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]
+        ](runtime_layout)
         self.runtime_element_layout = RuntimeLayout[element_layout]()
         self.org_coords_offset = org_coords_offset
         self.org_coords_stride = org_coords_stride
@@ -329,7 +340,9 @@ struct LayoutTensor[
         """
         return __type_of(result)(
             self.ptr.bitcast[new_type, address_space=address_space](),
-            self.runtime_layout,
+            rebind[RuntimeLayout[layout, bitwidth = result.layout_bitwidth]](
+                self.runtime_layout
+            ),
         )
 
     @always_inline
@@ -374,6 +387,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
             __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
@@ -493,6 +507,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
             __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
@@ -525,6 +540,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
             __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ):
@@ -574,6 +590,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
             __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
@@ -626,6 +643,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
             __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ):
@@ -675,6 +693,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
             __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
@@ -722,6 +741,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
             __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ):
@@ -770,6 +790,7 @@ struct LayoutTensor[
             _,
             address_space=address_space,
             element_layout=element_layout,
+            layout_bitwidth=layout_bitwidth,
             __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
@@ -1175,13 +1196,13 @@ struct LayoutTensor[
             if __experimental_non_homogeneous_tile:
                 dynamic_shape = RuntimeTuple[
                     result.layout.shape,
-                    element_bitwidth = Self.layout_bitwidth,
+                    element_bitwidth = result.layout_bitwidth,
                     unsigned=True,
                 ](self._clamp_tile[*tile_sizes](tile_coords))
             else:
                 dynamic_shape = RuntimeTuple[
                     result.layout.shape,
-                    element_bitwidth = Self.layout_bitwidth,
+                    element_bitwidth = result.layout_bitwidth,
                     unsigned=True,
                 ]()
 
@@ -1226,6 +1247,7 @@ struct LayoutTensor[
         address_space=address_space,
         circular=False,
         axis=axis,
+        layout_bitwidth = Self.layout_bitwidth,
         __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
     ] as result:
         """Returns the tiled iterator of the LayoutTensor.
@@ -1403,7 +1425,7 @@ struct LayoutTensor[
 
         var runtime_shape = RuntimeTuple[
             result.layout.shape,
-            element_bitwidth = Self.layout_bitwidth,
+            element_bitwidth = result.layout_bitwidth,
             unsigned=True,
         ]()
         var axis_partition_dim = align_up(axis_dim // count, alignment)
@@ -1423,7 +1445,7 @@ struct LayoutTensor[
         return __type_of(result)(
             # Only the last partition can have size other than axis_partition_dim.
             self.ptr + idx * axis_partition_dim * axis_stride,
-            RuntimeLayout[result.layout, bitwidth = Self.layout_bitwidth](
+            RuntimeLayout[result.layout, bitwidth = result.layout_bitwidth](
                 runtime_shape,
                 rebind[RuntimeTuple[result.layout.stride, unsigned=True]](
                     self.runtime_layout.stride
@@ -1606,13 +1628,13 @@ struct LayoutTensor[
             if __experimental_non_homogeneous_tile:
                 runtime_shape = RuntimeTuple[
                     result.layout.shape,
-                    element_bitwidth = Self.layout_bitwidth,
+                    element_bitwidth = result.layout_bitwidth,
                     unsigned=True,
                 ](self._clamp_distribute_shape[threads_layout](thread_id))
             else:
                 runtime_shape = RuntimeTuple[
                     result.layout.shape,
-                    element_bitwidth = Self.layout_bitwidth,
+                    element_bitwidth = result.layout_bitwidth,
                     unsigned=True,
                 ]()
 
@@ -1751,7 +1773,7 @@ struct LayoutTensor[
             ]()
             var runtime_shape = RuntimeTuple[
                 result.layout.shape,
-                element_bitwidth = Self.layout_bitwidth,
+                element_bitwidth = result.layout_bitwidth,
                 unsigned=True,
             ]()
             var runtime_stride = RuntimeTuple[
@@ -3437,6 +3459,7 @@ struct LayoutTensorIter[
     alignment: Int = alignof[type]() if triple_is_nvidia_cuda() else 1,
     circular: Bool = False,
     axis: OptionalReg[Int] = None,
+    layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
     __experimental_non_homogeneous_tile: Bool = False,
 ]:
     """Iterate through a memory buffer and construct layout tensor.
@@ -3448,7 +3471,7 @@ struct LayoutTensorIter[
     var offset: Scalar[_get_unsigned_type(layout, address_space)]
     var stride: Scalar[_get_unsigned_type(layout, address_space)]
     var bound: Scalar[_get_unsigned_type(layout, address_space)]
-    var runtime_layout: RuntimeLayout[layout, bitwidth = bitwidthof[Int]()]
+    var runtime_layout: RuntimeLayout[layout, bitwidth=layout_bitwidth]
     var dim_bound: Scalar[_get_unsigned_type(layout, address_space)]
     var idx: Scalar[_get_unsigned_type(layout, address_space)]
 
@@ -3467,7 +3490,7 @@ struct LayoutTensorIter[
         self.offset = 0
         self.stride = 0
         self.bound = 0
-        self.runtime_layout = RuntimeLayout[layout]()
+        self.runtime_layout = RuntimeLayout[layout, bitwidth=layout_bitwidth]()
         self.dim_bound = 0
         self.idx = 0
 
@@ -3476,14 +3499,40 @@ struct LayoutTensorIter[
         inout self,
         ptr: __type_of(self.ptr),
         bound: __type_of(self.offset),
+        stride: __type_of(self.stride) = layout.size(),
+        offset: __type_of(self.offset) = 0,
+    ):
+        constrained[
+            layout.all_dims_known(),
+            "Cannot construct LayoutTensorIter with unknown layout.",
+        ]()
+
+        self.ptr = ptr
+        self.bound = bound
+        self.stride = stride
+        self.runtime_layout = RuntimeLayout[layout, bitwidth=layout_bitwidth]()
+        self.offset = offset
+        self.dim_bound = 0
+        self.idx = 0
+
+    @always_inline
+    fn __init__(
+        inout self,
+        ptr: __type_of(self.ptr),
+        bound: __type_of(self.offset),
+        runtime_layout: RuntimeLayout[layout, **_],
         stride: __type_of(
             self.stride
         ) = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
         offset: __type_of(self.offset) = 0,
-        runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
         dim_bound: __type_of(self.offset) = 0,
         idx: __type_of(self.offset) = 0,
     ):
+        constrained[
+            runtime_layout.bitwidth == layout_bitwidth,
+            "Mismatch of bitwidth for RuntimeLayout and LayoutTensorIter.",
+        ]()
+
         @parameter
         if axis:
             constrained[
@@ -3497,7 +3546,9 @@ struct LayoutTensorIter[
             runtime_layout.size() if stride == UNKNOWN_VALUE else stride
         )
         self.bound = bound
-        self.runtime_layout = runtime_layout
+        self.runtime_layout = rebind[
+            RuntimeLayout[layout, bitwidth=layout_bitwidth]
+        ](runtime_layout)
         self.dim_bound = dim_bound
         self.idx = idx
 
@@ -3514,7 +3565,10 @@ struct LayoutTensorIter[
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
         return __type_of(result)(
-            self.ptr + int(self.offset), self.runtime_layout
+            self.ptr + int(self.offset),
+            rebind[RuntimeLayout[layout, bitwidth = result.layout_bitwidth]](
+                self.runtime_layout
+            ),
         )
 
     @always_inline
@@ -3665,9 +3719,9 @@ struct LayoutTensorIter[
         return Self(
             self.ptr,
             self.bound,
+            runtime_layout=self.runtime_layout,
             stride=self.stride,
             offset=int(next_offset),
-            runtime_layout=self.runtime_layout,
             dim_bound=self.dim_bound,
             idx=int(next_idx),
         )
@@ -3681,6 +3735,7 @@ struct LayoutTensorIter[
         address_space=address_space,
         alignment=alignment,
         circular=circular,
+        layout_bitwidth=layout_bitwidth,
     ] as result:
         constrained[
             dst_layout.size() == layout.size(),
@@ -3701,9 +3756,9 @@ struct LayoutTensorIter[
         return __type_of(result)(
             self.ptr,
             int(self.bound),
+            RuntimeLayout[dst_layout, bitwidth=layout_bitwidth](),
             int(self.stride),
             int(self.offset),
-            RuntimeLayout[dst_layout](),
             dim_bound=int(self.dim_bound),
             idx=int(self.idx),
         )
@@ -3720,15 +3775,16 @@ struct LayoutTensorIter[
         address_space=address_space,
         alignment=alignment,
         circular = Self.circular,
+        layout_bitwidth=layout_bitwidth,
     ] as result:
         return __type_of(result)(
             self.ptr.bitcast[
                 new_type, address_space=address_space, alignment=alignment
             ](),
             int(self.bound),
+            self.runtime_layout,
             int(self.stride),
             int(self.offset),
-            runtime_layout=self.runtime_layout,
             dim_bound=int(self.dim_bound),
             idx=int(self.idx),
         )
