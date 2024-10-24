@@ -7,8 +7,6 @@
 golden values.
 """
 
-import os
-from pathlib import Path
 
 import pytest
 from evaluate_llama import (
