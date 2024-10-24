@@ -1905,6 +1905,42 @@ struct Slice:
         )
 
 
+@compiler.register("mo.mutable.store.slice", num_dps_outputs=0)
+struct MutableStoreSlice:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        rank: Int,
+    ](
+        to_buffer: ManagedTensorSlice[type=type, rank=rank],
+        from_slice: ManagedTensorSlice[type=type, rank=rank],
+        starts: ManagedTensorSlice[rank=1],
+        stops: ManagedTensorSlice[rank=1],
+        steps: ManagedTensorSlice[rank=1],
+    ):
+        var to_buffer_ndb_view = slice_as_view(
+            managed_tensor_slice_to_ndbuffer(to_buffer),
+            managed_tensor_slice_to_ndbuffer(starts),
+            managed_tensor_slice_to_ndbuffer(stops),
+            managed_tensor_slice_to_ndbuffer(steps),
+        )
+        var to_buffer_mts_view = ManagedTensorSlice[type, rank](
+            to_buffer_ndb_view.data,
+            to_buffer_ndb_view.get_shape(),
+            to_buffer_ndb_view.get_strides(),
+        )
+        view_copy_impl[synchronous, target](to_buffer_mts_view, from_slice)
+
+    # No shape function as it currently just routes to mo.slice's (done in
+    # legalize-rmo-operators) Can have a proper shape function once the whole
+    # GC stack has moved to the new kernel API
+    #
+    # TODO(GRA-1178): Generic support for in-place kernels where the shape is
+    # being enforced on one of the inputs (e.g. on from_slice for this kernel)
+
+
 @compiler.register("mo.slice_dim")
 @compiler.view_kernel
 struct SliceDim:

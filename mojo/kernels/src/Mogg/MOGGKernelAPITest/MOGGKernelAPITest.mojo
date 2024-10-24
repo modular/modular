@@ -388,3 +388,26 @@ struct AddBiasToDouble:
     ):
         output1[0] = input1[0] + bias[0]
         output2[0] = input2[0] + bias[0]
+
+
+@compiler.register("inplace_increment_elem", num_dps_outputs=0)
+struct BasicInplace:
+    @staticmethod
+    fn execute[
+        type: DType,
+    ](input: ManagedTensorSlice[type, rank=2]):
+        x = input[0, 0]
+        x += 1
+        input[0, 0] = x
+
+
+# Have this nearly identical version as having a raise changes the Mojo function's signature
+@compiler.register("inplace_increment_elem_raises", num_dps_outputs=0)
+struct BasicInplaceRaises:
+    @staticmethod
+    fn execute[
+        type: DType,
+    ](input: ManagedTensorSlice[type, rank=2]) raises:
+        x = input[0, 0]
+        x += 1
+        input[0, 0] = x
