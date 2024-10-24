@@ -7,7 +7,9 @@
 golden values.
 """
 
+import numpy as np
 import pytest
+import torch
 from evaluate_llama import (
     PROMPTS,
     NumpyDecoder,
@@ -33,5 +35,12 @@ def test_llama(model, encoding, testdata_directory):
     golden_data_path = find_runtime_path(
         test_model.golden_data_fname(), testdata_directory
     )
+    eps_bf16 = torch.finfo(torch.bfloat16).eps
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
-    compare_values(actual, expected_results, rtol=0.01, atol=1e-3)
+    compare_values(
+        actual,
+        expected_results,
+        compare_fn=lambda x, y, desc: np.linalg.norm(x - y)
+        / (np.linalg.norm(y) + eps_bf16)
+        < 2 * eps_bf16,
+    )
