@@ -21,11 +21,13 @@ alias DeviceContext = DeviceContextVariant
 # Runtime switch to select Device context V1 (mojo) or V2 (C++)
 @parameter
 fn _device_ctx_v2() -> Bool:
+    # Pass one of these two -D defines on the mojo command line to override
+    # the default device context version.
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         return True
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():
         return False
-    return True  # default to V1
+    return True  # default to V2
 
 
 struct DeviceFunctionVariant[
