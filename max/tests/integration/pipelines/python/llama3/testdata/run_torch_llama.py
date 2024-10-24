@@ -35,6 +35,7 @@ from transformers import (
     AutoTokenizer,
     LogitsProcessorList,
     PreTrainedModel,
+    PreTrainedTokenizer,
 )
 
 
@@ -53,7 +54,7 @@ def create_tokenizer(tokenizer_directory: Path):
 
 def run_torch_llama3(
     llama3: PreTrainedModel,
-    tokenizer: AutoTokenizer,
+    tokenizer: PreTrainedTokenizer,
     device: torch.device,
     prompts: Iterable[str],
     num_steps=10,
@@ -134,7 +135,7 @@ def main(model, encoding, verbose):
             )
             results = run_torch_llama3(llama3, tokenizer, device, PROMPTS)
             output_full_path = os.path.join(
-                "/tmp", model_encoding.golden_data_fname(framework="torch")
+                "/tmp/torch_{self.encoding}_{hardware}_golden.json"
             )
             if verbose:
                 print(f"===Results for {model} {encoding}")

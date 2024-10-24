@@ -111,3 +111,26 @@ to package and upload the latest version (current version number is `3`).
 
 6. Find the associated section in `WORKSPACE.bazel`, delete it, and replace
 with this newly generated value.
+
+## Registering torch golden logits
+
+Similar to above, except the torch golden archive is named `torch_llama_golden`.
+Here are the condensed instructions:
+
+### Generating new torch goldens
+
+Currently we only generate goldens for bfloat16 on GPU.
+
+```bash
+./bazelw run SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama_gpu \
+    -- --model llama3_1 --encoding bfloat16 --verbose
+```
+
+### Uploading new goldens
+
+1. Download the tar file from the URL reported by
+   `cat WORKSPACE.bazel | grep torch_llama_golden`
+2. Untar: `tar -xvf torch_llama_golden.tar.gz`
+3. Update file list with new golden files.
+4. Run `./utils/upload-public-bazel-artifact.sh torch_llama_golden 3 torch_*golden.json`
+5. Update `WORKSPACE.bazel` with the result from above.
