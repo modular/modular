@@ -25,7 +25,7 @@ fn _device_ctx_v2() -> Bool:
         return True
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():
         return False
-    return False  # default to V1
+    return True  # default to V1
 
 
 struct DeviceFunctionVariant[
