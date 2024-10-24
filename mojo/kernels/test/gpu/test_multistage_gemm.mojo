@@ -622,18 +622,9 @@ fn test[
     alias a_layout = Layout.row_major[c_device.rank](a_device.shape)
     alias b_layout = Layout.row_major[c_device.rank](b_device.shape)
 
-    var c_tensor = LayoutTensor[type, c_layout,](
-        c_device.buffer.ptr,
-        RuntimeLayout[c_layout].row_major(c_device.tensor.dynamic_shape),
-    )
-    var a_tensor = LayoutTensor[type, a_layout,](
-        a_device.buffer.ptr,
-        RuntimeLayout[a_layout].row_major(a_device.tensor.dynamic_shape),
-    )
-    var b_tensor = LayoutTensor[type, b_layout,](
-        b_device.buffer.ptr,
-        RuntimeLayout[b_layout].row_major(b_device.tensor.dynamic_shape),
-    )
+    var c_tensor = from_ndbuffer_row_major(c_device.tensor)
+    var a_tensor = from_ndbuffer_row_major(a_device.tensor)
+    var b_tensor = from_ndbuffer_row_major(b_device.tensor)
 
     alias kernels = MatmulKernels[type, type, type, transpose_b]()
     alias config = kernels.ampere_128x128_4
