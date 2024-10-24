@@ -1,5 +1,5 @@
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
-load("//bazel:api.bzl", "modular_cc_library", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 exports_files(["pyproject.toml"])
 
@@ -33,14 +33,4 @@ pkg_files(
     prefix = "modular",
     strip_prefix = strip_prefix.from_pkg(""),
     visibility = ["//visibility:public"],
-)
-
-modular_cc_library(
-    name = "CPython",
-    srcs = glob(["lib/**/*.cpp"]),
-    hdrs = glob(["include/**/*.h"]),
-    local_defines = ["Py_LIMITED_API=0x03090000"],
-    deps = [
-        "@python_3_9//:python_headers",
-    ],
 )

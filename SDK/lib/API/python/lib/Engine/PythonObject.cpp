@@ -3,9 +3,10 @@
 // This file is Modular Inc proprietary.
 //
 //===----------------------------------------------------------------------===//
-#include "Support/python/PythonObject.h"
+#include "SDK/EngineAPI/python/PythonObject.h"
+#include "llvm/Support/raw_ostream.h"
 
-M::PythonObjectWrapper::PythonObjectWrapper(PyObject *ptr) : ptr(ptr) {
+M::core::PythonObjectWrapper::PythonObjectWrapper(PyObject *ptr) : ptr(ptr) {
   if (ptr) {
     PyGILState_STATE state = PyGILState_Ensure();
     Py_INCREF(ptr);
@@ -13,7 +14,7 @@ M::PythonObjectWrapper::PythonObjectWrapper(PyObject *ptr) : ptr(ptr) {
   }
 }
 
-M::PythonObjectWrapper::~PythonObjectWrapper() {
+M::core::PythonObjectWrapper::~PythonObjectWrapper() {
   if (ptr) {
     PyGILState_STATE state = PyGILState_Ensure();
     Py_DECREF(ptr);
@@ -21,7 +22,7 @@ M::PythonObjectWrapper::~PythonObjectWrapper() {
   }
 }
 
-void M::freePythonObjectWrapper(void *ptr) {
+void M::core::freePythonObjectWrapper(void *ptr) {
   PythonObjectWrapper *wrapper = static_cast<PythonObjectWrapper *>(ptr);
   delete wrapper;
 };
