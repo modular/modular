@@ -211,14 +211,8 @@ public:
         if (!func)
           continue;
 
-        if (func->hasAttr(Decorators::TENSOR_ALLOC.attr))
-          allocationFunc = call;
-        else if (func->hasAttr(Decorators::TENSOR_COPY.attr))
-          constructor = call;
-        else if (func->hasAttr(Decorators::ENABLE_FUSION.attr))
+        if (func->hasAttr(Decorators::ENABLE_FUSION.attr))
           enableFusionFuncs.push_back(call);
-        else if (func->hasAttr(Decorators::TENSOR_DECONSTRUCT.attr))
-          deconstructors.push_back(call);
       }
 
       // Strip all debug info. Its too annoying to maintain and there is no

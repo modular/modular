@@ -110,12 +110,6 @@ constexpr MOGGDecorator TAKES_INDICES{"mogg_takes_indices",
 
 // Tensor API hooks.
 
-constexpr MOGGDecorator TENSOR_ALLOC{"mogg_tensor_allocator",
-                                     "mogg.tensor_alloc"};
-constexpr MOGGDecorator TENSOR_COPY{"mogg_tensor_copy_constructor",
-                                    "mogg.tensor_copy_construct"};
-constexpr MOGGDecorator TENSOR_DECONSTRUCT{"mogg_tensor_deconstructor",
-                                           "mogg.tensor_destruct"};
 constexpr MOGGDecorator ELEM_HOOK{"mogg_elementwise_hook", "mogg.elem_hook"};
 
 constexpr MOGGDecorator ENABLE_FUSION{"mogg_enable_fusion",
