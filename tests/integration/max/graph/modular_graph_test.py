@@ -123,7 +123,13 @@ def given_input_types(
 
 
 def execute(model, inputs):
-    results = model.execute(*[Tensor.from_numpy(inp) for inp in inputs])
+    tensor_inputs = []
+    for inp in inputs:
+        if isinstance(inp, Tensor):
+            tensor_inputs.append(inp)
+        else:
+            tensor_inputs.append(Tensor.from_numpy(inp))
+    results = model.execute(*tensor_inputs)
     if results:
         return results[0].to_numpy()
 
@@ -154,7 +160,16 @@ def modular_graph_test(
         )
         def test_correctness(inputs):
             model_execute = functools.partial(execute, model)
-            test_fn(model_execute, inputs, [torch.tensor(i) for i in inputs])
+
+            # If provided inputs are Tensors, we must convert to numpy first.
+            torch_inputs = []
+            for inp in inputs:
+                if isinstance(inp, Tensor):
+                    torch_inputs.append(torch.tensor(inp.to_numpy()))
+                else:
+                    torch_inputs.append(torch.tensor(inp))
+
+            test_fn(model_execute, inputs, torch_inputs)
 
         if hypothesis_settings is not None:
             test_correctness = hypothesis_settings(test_correctness)
