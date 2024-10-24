@@ -47,14 +47,14 @@ struct StaticTensorSpec[rank: Int]():
     var type: DType
 
     @always_inline
-    fn __init__(inout self, shape: IndexList[rank], type: DType):
+    fn __init__(inout self, shape: IndexList[rank, **_], type: DType):
         """Constructs a static tensor spec with a static rank shape and type.
 
         Args:
             shape: The shape of static rank we are creating tensor spec with.
             type: The DType we are creating tensor spec with.
         """
-        self.shape = shape
+        self.shape = shape.canonicalize()
         self.type = type
 
     @always_inline
@@ -293,7 +293,6 @@ fn create_buffer_ref_with_borrow_async[
     async_to_borrow: UnsafePointer[NoneType],
     output_async: UnsafePointer[NoneType],
     runtime: UnsafePointer[NoneType],
-    call_ctx: MojoCallContextPtr,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncBufferWithBorrow", NoneType](
         buffer.data,
@@ -325,6 +324,37 @@ fn create_tensor_spec_async[
         shape_ptr, rank, spec.type, async_ptr, runtime
     )
     shape_ptr.free()
+
+
+@mogg_register("builtin.create_tensor_with_borrow_async")
+@always_inline
+@export
+fn create_tensor_async[
+    rank: Int,
+    type: DType,
+    target: StringLiteral,
+    rank_promoted: Bool,
+    borrow_from_storage_handle: Bool,
+](
+    tensor: NDBuffer[type, rank],
+    async_to_borrow: UnsafePointer[NoneType],
+    output_async: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
+):
+    constrained[not rank_promoted or rank == 1]()
+    var spec = StaticTensorSpec(tensor.dynamic_shape, type)
+    external_call["KGEN_CompilerRT_CreateAsyncTensorWithBorrow", NoneType](
+        tensor.data,
+        spec.bytecount(),
+        0 if rank_promoted else rank,
+        UnsafePointer.address_of(tensor.dynamic_shape.data.array),
+        type,
+        async_to_borrow,
+        borrow_from_storage_handle,
+        output_async,
+        runtime,
+    )
+    pass
 
 
 @export
@@ -470,6 +500,40 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
     if not cond:
         raise Error(message)
     return 0
+
+
+# ===----------------------------------------------------------------------===#
+# MGP Tensor Primitives
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("mgp.tensor.create")
+@always_inline
+fn mgp_tensor_create[
+    rank: Int,
+    tensor_rank: Int,
+    type: DType,
+](
+    dummy_chain: Int,
+    buffer: NDBuffer[DType.uint8, 1],
+    spec: StaticTensorSpec[rank],
+) -> NDBuffer[type, tensor_rank]:
+    debug_assert(type == spec.type)
+
+    @parameter
+    if rank == 0:
+        # We promote scalar tensor to tensor<[1]>
+        constrained[tensor_rank == 1]()
+        return NDBuffer[type, tensor_rank](
+            buffer.data.bitcast[type](),
+            rebind[IndexList[tensor_rank]](IndexList[1](1)),
+        )
+    else:
+        constrained[rank == tensor_rank]()
+        return NDBuffer[type, tensor_rank](
+            buffer.data.bitcast[type](),
+            rebind[IndexList[tensor_rank]](spec.shape),
+        )
 
 
 # ===----------------------------------------------------------------------===#
