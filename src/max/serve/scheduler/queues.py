@@ -81,12 +81,13 @@ STOP_STREAM = object()
 class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
     """Helps manage batching and streaming interfaces.
     - Requests should open a channel like
-    ```
-        async with queue.open_channel(id, data) as channel:
-            # id is a key which uniquely identifies the data in your request.
-            # channel is an asyncio.Queue which yields streaming data
 
-    ```
+    .. code-block::
+
+    async with queue.open_channel(id, data) as channel:
+        # id is a key which uniquely identifies the data in your request.
+        # channel is an asyncio.Queue which yields streaming data
+
     - Batching services can use `fill_batch_nowait` and `respond`
         to pull and respond to requests respectively, or interact
         with the queues directly.

@@ -48,20 +48,23 @@ class TokenGeneratorRequest:
 
 @dataclass(frozen=True)
 class TokenGeneratorPipelineConfig:
-    """Example config
-    {
-        "context_encoding": {
-            "strategy": "dynamic",
-            "size": 1,
-            "timeout": 0.1
-        },
-        "token_generation": {
-            "strategy": "continuous",
-            "size": 64,
-            "timeout": 0.0
+    """
+    Example config
+
+    .. code-block:: json
+
+        {
+            "context_encoding": {
+                "strategy": "dynamic",
+                "size": 1,
+                "timeout": 0.1
+            },
+            "token_generation": {
+                "strategy": "continuous",
+                "size": 64,
+                "timeout": 0.0
             }
         }
-    }
     """
 
     token_generation: BatchQueueConfig
