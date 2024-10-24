@@ -121,9 +121,9 @@ def _attention_layer(
 
         attn_out, _ = attn_fn(
             x,
-            attn_mask,
             kv_collection,
             cache_lengths,
+            attn_mask=attn_mask,
         )
 
         graph.output(attn_out)
