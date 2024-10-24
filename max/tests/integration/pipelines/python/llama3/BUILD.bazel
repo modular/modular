@@ -98,6 +98,7 @@ modular_py_binary(
         ),
         deps = [
             ":evaluate_llama",
+            "//SDK/integration-test/API/python:modular_graph_test",
             "//SDK/lib/API/python/max/engine",
             "//SDK/lib/API/python/max/serve",
             "//SDK/public/max-repo/pipelines/python/dataprocessing",

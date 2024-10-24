@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 import pytest
+from max.engine import InferenceSession
 
 
 @pytest.fixture
@@ -24,3 +25,8 @@ def testdata_directory() -> Path:
     path = os.getenv("PIPELINES_TESTDATA")
     assert path is not None
     return Path(path)
+
+
+@pytest.fixture(scope="session")
+def session() -> InferenceSession:
+    return InferenceSession()
