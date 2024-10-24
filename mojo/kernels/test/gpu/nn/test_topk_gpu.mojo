@@ -103,7 +103,7 @@ fn test_case_batched[
     var device_local_topk_vals = DeviceNDBuffer[type, rank](
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
-    var device_local_topk_idxs = DeviceNDBuffer[DType.index, rank](
+    var device_local_topk_idxs = DeviceNDBuffer[out_idx_type, rank](
         DimList(batch_size, num_blocks_per_input_ * K), ctx=ctx
     )
 
