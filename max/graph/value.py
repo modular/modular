@@ -297,6 +297,9 @@ class TensorValue(Value):
         frame = inspect.currentframe()
         return ops.rebind(self, shape, graph._frame_str(frame))
 
+    def permute(self, dims: list[int]) -> TensorValue:
+        return ops.permute(self, dims)
+
     def transpose(self, dim_1: int, dim_2: int) -> TensorValue:
         return ops.transpose(self, dim_1, dim_2)
 
