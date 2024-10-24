@@ -46,7 +46,6 @@ from MOGGIntList import IntList
 from MOGGKernelAPI import (
     managed_tensor_slice_to_ndbuffer as managed_tensor_slice_to_ndbuffer_impl,
 )
-from MOGGTensor import Tensor
 from nn._optional_param import OptionalParamInt
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
@@ -663,51 +662,6 @@ fn build_static_tensor_specs[
 # ===----------------------------------------------------------------------===#
 # Tensor API intrinsics
 # ===----------------------------------------------------------------------===#
-
-
-@mogg_register("to_tensor")
-@export
-@always_inline
-fn to_tensor[
-    type: DType,
-    static_shape: DimList = DimList(),
-    static_strides: DimList = DimList(),
-](
-    data: UnsafePointer[Scalar[type]],
-    raw_shape_ptr: UnsafePointer[Int],
-    length: Int,
-) -> Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False]:
-    var shape_ptr = raw_shape_ptr
-
-    var shape = IntList[static_shape].empty(length)
-    var strides = IntList[static_strides].empty(length)
-
-    var stride: Int = 1
-
-    @parameter
-    if shape.has_static_length():
-        alias rank = len(static_shape)
-
-        @parameter
-        for i in reversed(range(rank)):
-            # Start from the back so we can accumulate the strides.
-            shape[i] = shape_ptr[i]
-            strides[i] = stride
-            stride *= shape[i]
-
-    else:
-        # Start from the back so we can accumulate the strides.
-        for i in reversed(range(length)):
-            shape[i] = shape_ptr[i]
-            strides[i] = stride
-            stride *= shape[i]
-
-    return Tensor[type, static_shape, static_strides, _OWNED_MEMORY=False](
-        data,
-        shape,
-        strides,
-        UnsafePointer[Scalar[DType.index]](),
-    )
 
 
 @mogg_register("to_managed_tensor_slice")
