@@ -242,7 +242,11 @@ fn test_case_sampling[
     var temperature = rebind[Scalar[type]](test_case.temperature)
     var p_threshold = rebind[Scalar[type]](test_case.p_threshold)
 
-    var m = Bench()
+    var m: Bench
+
+    @parameter
+    if DEBUG_BENCH:
+        m = Bench()
 
     # Create input tensors
     var in_logits_ptr = UnsafePointer[Scalar[type]].alloc(
