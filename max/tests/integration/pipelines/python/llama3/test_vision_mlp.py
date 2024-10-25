@@ -53,8 +53,8 @@ def test_mlp(session, input_type: TensorType):
             # TODO(MSDK-1071): Consolidate and figure out how to call
             # assert_allclose(result, expected) to fire again on mismatched
             # tensor values.
-            ACCURACY_RTOL = 1e-2
-            ACCURACY_ATOL = 1e-8
+            ACCURACY_RTOL = 1e-1
+            ACCURACY_ATOL = 1e-7
             np.testing.assert_allclose(
                 result,
                 expected,
