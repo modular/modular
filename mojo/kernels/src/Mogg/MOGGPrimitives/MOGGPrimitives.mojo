@@ -742,20 +742,21 @@ fn mgp_buffer_device_to_device[
     ctx: StateContext,
     src_buf: NDBuffer[DType.uint8, 1],
     dst_buf: NDBuffer[DType.uint8, 1],
-    dev_ctx: UnsafePointer[DeviceContext],
+    src_dev_ctx: UnsafePointer[DeviceContext],
+    dst_dev_ctx: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
     if ("cuda" in cSrcDevice) and ("cuda" in dDstDevice):
-        dev_ctx[].enqueue_copy_device_to_device[DType.uint8](
+        dst_dev_ctx[].enqueue_copy_device_to_device[DType.uint8](
             DeviceBuffer[DType.uint8](
-                dev_ctx[],
+                dst_dev_ctx[],
                 dst_buf.data,
                 dst_buf.size(),
                 owning=False,
             ),
             DeviceBuffer[DType.uint8](
-                dev_ctx[],
+                src_dev_ctx[],
                 src_buf.data,
                 src_buf.size(),
                 owning=False,
