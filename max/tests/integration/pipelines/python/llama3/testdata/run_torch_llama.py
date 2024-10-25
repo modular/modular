@@ -13,6 +13,9 @@ bfloat16 with gpu:
 ./bazelw run SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama_gpu \
         -- --model llama3_1 --encoding bfloat16 --verbose
 
+Note that you need a machine with lots of GPU memory to run this (like a2-highgpu-1g).
+A machine with ~25GB will likely OOM.
+
 `--encoding q4_k` might work, but the transformers library will first dequantize
 the checkpoint.
 """
