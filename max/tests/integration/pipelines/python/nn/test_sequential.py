@@ -1,0 +1,110 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+import pytest
+import numpy as np
+from max.dtype import DType
+from max.graph import TensorType, Graph, TensorValueLike, ops
+from nn.sequential import Sequential
+from nn.linear import Linear
+from modular_graph_test import modular_graph_test
+
+
+def test_sequential__one_linear_layer(session):
+    dtype = DType.float32
+
+    with Graph(
+        "sequential_two_linear_layers",
+        input_types=[
+            TensorType(dtype, ["batch", "input_dim"]),
+            TensorType(dtype, ["hidden_dim", "input_dim"]),
+        ],
+    ) as graph:
+        x, w1 = graph.inputs
+        one_layer = Sequential([Linear(w1)])
+
+        graph.output(one_layer(x))
+
+        @modular_graph_test(
+            session,
+            graph,
+            max_magnitude=1 / 64,
+        )
+        def test_correctness(execute, inputs, torch_inputs):
+            result = execute(inputs)
+            x, w1 = torch_inputs
+
+            expected = x @ w1.T
+
+            np.testing.assert_allclose(
+                result, expected, atol=1e-1, rtol=1e-6, equal_nan=True
+            )
+
+
+def test_sequential__two_linear_layers(session):
+    dtype = DType.float32
+
+    with Graph(
+        "sequential_two_linear_layers",
+        input_types=[
+            TensorType(dtype, ["batch", "input_dim"]),
+            TensorType(dtype, ["hidden_dim", "input_dim"]),
+            TensorType(dtype, ["input_dim", "hidden_dim"]),
+        ],
+    ) as graph:
+        x, w1, w2 = graph.inputs
+        two_layers = Sequential([Linear(w1), Linear(w2)])
+
+        graph.output(two_layers(x))
+
+        @modular_graph_test(
+            session,
+            graph,
+            max_magnitude=1 / 64,
+        )
+        def test_correctness(execute, inputs, torch_inputs):
+            result = execute(inputs)
+            x, w1, w2 = torch_inputs
+
+            expected = x @ w1.T
+            expected = expected @ w2.T
+
+            np.testing.assert_allclose(
+                result, expected, atol=1e-1, rtol=1e-6, equal_nan=True
+            )
+
+
+def test_sequential__two_linear_layers_with_activation(session):
+    dtype = DType.float32
+
+    with Graph(
+        "sequential_two_linear_layers",
+        input_types=[
+            TensorType(dtype, ["batch", "input_dim"]),
+            TensorType(dtype, ["hidden_dim", "input_dim"]),
+            TensorType(dtype, ["input_dim", "hidden_dim"]),
+        ],
+    ) as graph:
+        x, w1, w2 = graph.inputs
+        two_layer = Sequential([Linear(w1), ops.relu, Linear(w2)])
+        graph.output(two_layer(x))
+
+        @modular_graph_test(
+            session,
+            graph,
+            max_magnitude=1 / 64,
+        )
+        def test_correctness(execute, inputs, torch_inputs):
+            result = execute(inputs)
+            x, w1, w2 = torch_inputs
+
+            expected = x @ w1.T
+            expected = np.maximum(expected, 0)
+            expected = expected @ w2.T
+
+            np.testing.assert_allclose(
+                result, expected, atol=1e-1, rtol=1e-6, equal_nan=True
+            )
