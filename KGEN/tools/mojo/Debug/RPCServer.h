@@ -26,7 +26,7 @@ ErrorOrSuccess invokeAttachRPC(bool dryRun, bool useCudaGdb, bool breakOnLaunch,
 ErrorOrSuccess invokeLaunchRPC(bool dryRun, bool useCudaGdb, bool breakOnLaunch,
                                ArrayRef<int> rpcPorts, StringRef target,
                                ArrayRef<std::string> runArgs,
-                               StringRef rpcTerminal);
+                               StringRef rpcTerminal, bool stopOnEntry);
 } // namespace M
 
 #endif // MOJO_DEBUG_RPC_SERVER_H

@@ -57,4 +57,8 @@ defm port: CommandOption<["--", "-"], "port",
   HelpText<"Uses the given PORT to communicate with the RPC debug server. "
   "Defaults to trying all ports from 12355 to 12364 inclusive.">>;
 
+def stopOnEntry: Flag<["--", "-"], "stop-on-entry">,
+  Group<DebugServerOptionGroup>, Index<4>,
+  HelpText<"Automatically stop after launch.">;
+
 #endif // KGEN_TOOLS_MOJO_DEBUG_STANDALONEDEBUGOPTIONS_TD
