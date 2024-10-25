@@ -28,7 +28,6 @@ from max._tensor_utils import (
     TensorLike,
     indexing,
 )
-from builtin._documentation import doc_private
 from collections import Optional, InlineArray
 from memory import UnsafePointer
 from utils import IndexList
