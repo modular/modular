@@ -84,9 +84,9 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
 
     .. code-block::
 
-    async with queue.open_channel(id, data) as channel:
-        # id is a key which uniquely identifies the data in your request.
-        # channel is an asyncio.Queue which yields streaming data
+      async with queue.open_channel(id, data) as channel:
+          # id is a key which uniquely identifies the data in your request.
+          # channel is an asyncio.Queue which yields streaming data
 
     - Batching services can use `fill_batch_nowait` and `respond`
         to pull and respond to requests respectively, or interact
