@@ -674,7 +674,7 @@ fn _topp_minp_sampling_gpu[
     5. Output the selected token indices
 
     Based on sampling implementations from:
-    - TensorRT-LLM: https://github.com/NVIDIA/TensorRT-LLM/
+    - TensorRT-LLM: https://github.com/NVIDIA/TensorRT-LLM/blob/main/cpp/tensorrt_llm/kernels/samplingTopPKernels.cu#L199-L323
     - InternLM: https://github.com/InternLM/lmdeploy/
     """
     constrained[rank == 2, "Only rank 2 tensors are supported"]()
@@ -836,7 +836,7 @@ fn min_p_sampling_gpu[
     min_ps: NDBuffer[type, 1],
     input_logits: NDBuffer[type, rank],
     out_token_ids: NDBuffer[out_idx_type, rank],
-    temperature: Scalar[type] = Scalar[type](1.0),
+    temperature: Scalar[type] = 1,
 ) raises:
     """
     GPU implementation of Min-P sampling for token selection.
