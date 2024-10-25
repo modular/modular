@@ -174,8 +174,12 @@ from nn.tile import tile, tile_shape
 from nn.topk import top_k as _top_k
 from nn.topk import top_k_fused_sampling as _topk_fused_sampling
 from nn.topk import top_k_shape
+from nn.toppminp import top_p_sampling as _top_p_sampling
+from nn.toppminp import min_p_sampling as _min_p_sampling
 from nn.topk_gpu import topk_gpu as _topk_gpu
 from nn.topk_gpu import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
+from nn.toppminp_gpu import top_p_sampling_gpu as _top_p_sampling_gpu
+from nn.toppminp_gpu import min_p_sampling_gpu as _min_p_sampling_gpu
 from quantization import (
     Q4sym,
     block_Q4_K,
@@ -3867,6 +3871,72 @@ fn logical_xor[
 # ===----------------------------------------------------------------------===#
 # Custom Ops
 # ===----------------------------------------------------------------------===#
+
+
+@mogg_register("top_p_sampling")
+@always_inline
+@export
+fn top_p_sampling[
+    type: DType,
+    rank: Int,
+    out_idx_type: DType,
+    target: StringLiteral = "cpu",
+](
+    top_ps: NDBuffer[type, 1],
+    input: NDBuffer[type, rank],
+    out_idxs: NDBuffer[out_idx_type, rank],
+    temperature: Scalar[type],  # should be default or no?
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    with Trace[TraceLevel.OP, target=target]("top_p_sampling"):
+
+        @parameter
+        if target == "cpu":
+            _top_p_sampling(top_ps, input, out_idxs, temperature)
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            _top_p_sampling_gpu(
+                cuda_ctx,
+                top_ps,
+                input,
+                out_idxs,
+                temperature,
+            )
+
+
+@mogg_register("min_p_sampling")
+@always_inline
+@export
+fn min_p_sampling[
+    type: DType,
+    rank: Int,
+    out_idx_type: DType,
+    target: StringLiteral = "cpu",
+](
+    min_ps: NDBuffer[type, 1],
+    input: NDBuffer[type, rank],
+    out_idxs: NDBuffer[out_idx_type, rank],
+    temperature: Scalar[type],  # should be default or no?
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    with Trace[TraceLevel.OP, target=target]("min_p_sampling"):
+
+        @parameter
+        if target == "cpu":
+            _min_p_sampling(min_ps, input, out_idxs, temperature)
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            _min_p_sampling_gpu(
+                cuda_ctx,
+                min_ps,
+                input,
+                out_idxs,
+                temperature,
+            )
 
 
 @mogg_register("topk_fused_sampling")
