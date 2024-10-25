@@ -23,7 +23,7 @@ from utils.index import IndexList, Index
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
 from register import mogg_register
-from nn.fused_qk_rope_ragged import fused_qk_rope_ragged
+from nn.fused_qk_rope import fused_qk_rope_ragged
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")

@@ -14,7 +14,7 @@ from internal_utils import HostNDBuffer
 
 from gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
-from nn.fused_qk_rope_ragged import fused_qk_rope_ragged
+from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.kv_cache import (
     ContiguousKVCache,
     ContiguousKVCacheCollection,
