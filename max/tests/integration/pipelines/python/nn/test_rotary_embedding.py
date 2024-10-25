@@ -4,16 +4,25 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import asyncio
 from dataclasses import dataclass
 
 import numpy as np
 import pytest
 import torch
-from modular_graph_test import modular_graph_test
 from hypothesis import assume
+from max.driver import CPU, Tensor
 from max.dtype import DType
-from max.graph import Dim, Graph, TensorType, TensorValue, TensorValueLike
+from max.graph import Dim, Graph, TensorType, TensorValue, TensorValueLike, ops
+from modular_graph_test import modular_graph_test
 from nn import RotaryEmbedding
+from nn.kernels import fused_qk_ragged_rope
+from nn.kv_cache import (
+    ContinuousBatchingKVCacheManager,
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+    KVCacheStrategy,
+)
 
 MAX_SEQ_LEN = 2**16
 ACCURACY_RTOL = 1e-2
@@ -146,3 +155,118 @@ def test_rope(session, input_type: TensorType, start_pos: Dim):
                 rtol=ACCURACY_RTOL,
                 equal_nan=True,
             )
+
+
+def test_kv_cache_ragged_rope(session):
+    num_q_heads = 32
+    kv_params = KVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=8,
+        head_dim=128,
+        cache_strategy=KVCacheStrategy.CONTINUOUS,
+    )
+    prompt_lens = [10, 30]
+    batch_size = len(prompt_lens)
+    total_seq_len = sum(prompt_lens)
+    input_type = TensorType(
+        DType.float32, ["total_seq_len", num_q_heads, kv_params.head_dim]
+    )
+    input_row_offset_type = TensorType(
+        DType.uint32,
+        [
+            "input_row_offset_len",
+        ],
+    )
+
+    freqs_cis_type = TensorType(
+        input_type.dtype, [MAX_SEQ_LEN, kv_params.head_dim]
+    )
+
+    kv_manager = ContinuousBatchingKVCacheManager(
+        kv_params,
+        max_cache_batch_size=2,
+        max_seq_len=100,
+        num_layers=1,
+        device=CPU(),
+    )
+    fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
+    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
+        kv_manager.input_symbols()
+    )
+
+    with Graph(
+        "call_ragged_qk_rope",
+        input_types=[
+            input_type,
+            input_row_offset_type,
+            freqs_cis_type,
+            blocks_type,
+            cache_lengths_type,
+            lookup_table_type,
+            is_cache_empty_type,
+        ],
+    ) as g:
+        input, input_row_offset, freqs_cis, blocks, cache_lengths, lookup_table, is_cache_empty = (
+            g.inputs
+        )
+        layer_idx = ops.constant(
+            0,
+            DType.uint32,
+        )
+
+        kv_collection = fetch_op(
+            blocks,
+            cache_lengths,
+            lookup_table,
+            is_cache_empty,
+        )
+        result = fused_qk_ragged_rope(
+            kv_params,
+            input,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+        )
+        g.output(result)
+
+    # Claim seq_ids in cache
+    seq_ids = []
+    for _ in range(batch_size):
+        seq_id = asyncio.run(kv_manager.claim(1))
+        seq_ids.append(seq_id[0])
+
+    input_row_offset = Tensor(
+        [batch_size + 1],
+        DType.uint32,
+    )
+    running_sum = 0
+    for i in range(batch_size):
+        input_row_offset[i] = running_sum
+        running_sum += prompt_lens[i]
+    input_row_offset[batch_size] = running_sum
+
+    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
+        kv_manager.fetch(seq_ids)
+    )
+
+    @modular_graph_test(
+        session,
+        g,
+        static_dims={
+            "total_seq_len": total_seq_len,
+            "input_row_offset_len": len(prompt_lens) + 1,
+        },
+        provided_inputs={
+            1: input_row_offset,
+            3: blocks,
+            4: cache_lengths,
+            5: lookup_table_tensor,
+            6: is_cache_empty_buf,
+        },
+    )
+    def test_runs_without_nan(execute, inputs, torch_inputs):
+        inputs = list(inputs)
+        result = execute(inputs)
+        assert np.any(result != np.nan)
+        assert np.any(result != np.inf)
