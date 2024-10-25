@@ -16,6 +16,11 @@ from utils import IndexList, StaticTuple
 from register import uses_opaque
 
 
+# ===----------------------------------------------------------------------===#
+# Opaque Reg Types
+# ===----------------------------------------------------------------------===#
+
+
 @value
 @register_passable
 struct MyCustomScalarRegSI32:
@@ -56,8 +61,8 @@ struct OpaqueToCustomScalarSI32Reg:
 
 # Adds two custom scalar types (one of which is register passable) and writes
 # to a tensor
-@compiler.register("opaque_add_to_tensor_si32")
-struct OpaqueAddToTensorSI32:
+@compiler.register("opaque_add_to_tensor_si32_reg")
+struct OpaqueAddToTensorSI32Reg:
     @uses_opaque
     @staticmethod
     fn execute[
@@ -71,7 +76,7 @@ struct OpaqueAddToTensorSI32:
         out[0] = x.val + y.val
 
 
-@compiler.register("opaque_add_to_tensor_f32")
+@compiler.register("opaque_add_to_tensor_f32_reg")
 struct OpaqueAddToTensorF32:
     @uses_opaque
     @staticmethod
@@ -84,6 +89,55 @@ struct OpaqueAddToTensorF32:
         y: MyCustomScalarRegF32,
     ):
         out[0] = x.val + y.val
+
+
+# ===----------------------------------------------------------------------===#
+# Opaque Mem. Types
+# ===----------------------------------------------------------------------===#
+
+
+@value
+struct MyCustomScalarSI32:
+    var val: Scalar[DType.int32]
+
+    fn __init__(inout self, val: Scalar[DType.int32]):
+        print("MyCustomScalarSI32.__init__", val)
+        self.val = val
+
+    fn __del__(owned self):
+        print("MyCustomScalarSI32.__del__", self.val)
+
+
+@compiler.register("tensor_to_custom_scalar_si32", num_dps_outputs=0)
+struct OpaqueToCustomScalarSI32:
+    @uses_opaque
+    @staticmethod
+    fn execute(
+        x: ManagedTensorSlice[DType.int32, rank=1]
+    ) -> MyCustomScalarSI32:
+        return MyCustomScalarSI32(x[0])
+
+
+# Adds two custom scalar types (one of which is register passable) and writes
+# to a tensor
+@compiler.register("opaque_add_to_tensor_si32")
+struct OpaqueAddToTensorSI32:
+    @uses_opaque
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        out: ManagedTensorSlice[DType.int32, rank=1],
+        x: MyCustomScalarSI32,
+        y: MyCustomScalarSI32,
+    ):
+        out[0] = x.val + y.val
+
+
+# ===----------------------------------------------------------------------===#
+# Other Kernels
+# ===----------------------------------------------------------------------===#
 
 
 @compiler.register("imposter_add")
