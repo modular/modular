@@ -818,24 +818,54 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
     return b.notifyMatchFailure(op.getLoc(),
                                 "intermediate cast has multiple uses");
 
-  auto inType = op.getInput().getType().getResolvedDType();
+  auto inType = cast.getType().getResolvedDType();
   auto type = op.getType().getResolvedDType();
   auto castType = cast.getInput().getType().getResolvedDType();
-  if (!inType || !type || !castType)
-    return b.notifyMatchFailure(op.getLoc(), "not all types are known");
 
-  if (!(*inType).isInt() || !(*type).isInt() || !(*castType).isInt())
-    return b.notifyMatchFailure(op.getLoc(), "not all types are integer");
+  auto isSupportedType = [](auto t) {
+    return !t || (!t->isIntLike() && (t->isComplex() || !t->isFloat()));
+  };
 
-  size_t inWidth = inType->getIntegerWidthInBits();
-  size_t width = type->getIntegerWidthInBits();
-  size_t castWidth = castType->getIntegerWidthInBits();
+  Location loc = op.getLoc();
+  // Both cast should convert to/from integer or floating point
+  if (isSupportedType(inType) || isSupportedType(type) ||
+      isSupportedType(castType) || inType->isInt() != type->isInt() ||
+      inType->isInt() != castType->isInt())
+    return b.notifyMatchFailure(loc, "not all types are known or supported");
 
-  // Intermediate cast is redundant if the final cast truncates its result
-  // and all bits created by the intermediate cast are discarded.
-  if (!(width <= inWidth && width <= castWidth))
-    return b.notifyMatchFailure(op.getLoc(),
-                                "intermediate cast affects result");
+  size_t inWidth = inType->getWidthInBits();
+  size_t width = type->getWidthInBits();
+  size_t castWidth = castType->getWidthInBits();
+
+  if (width < inWidth) {
+    // Except for floating point, intermediate cast is redundant if the final
+    // cast truncates its result.
+    // For the floating point allows fptrunc(fpext)
+    if (width > castWidth && castType->isInt()) {
+      return b.notifyMatchFailure(loc,
+                                  "intermediate truncation affects result");
+    }
+  } else if (width > inWidth) {
+    // Final cast converts input to wider type. Possible to optimize:
+    //  - zext(zext)
+    //  - sext(sext)
+    //  - fpext(fpext)
+    if (inWidth < castWidth ||
+        (inType->isInt() && inType->isSInt() != type->isSInt())) {
+      return b.notifyMatchFailure(loc, "intermediate extension affects result");
+    }
+  } else {
+    // Final cast converts integer to/from floating point of the same width.
+    // Possible to optimize:
+    // - fptosi(fpext)
+    // - fptoui(fpext)
+    // - uitofp(zext)
+    // - sitofp(sext)
+    if (inWidth < castWidth || castType->isInt() != inType->isInt() ||
+        (inType->isInt() && inType->isSInt() != type->isSInt())) {
+      return b.notifyMatchFailure(loc, "intermediate extension affects result");
+    }
+  }
 
   b.replaceOpWithNewOp<CastOp>(op, op.getType(), cast.getInput());
   // Erase the intermediate cast -- its only use has been removed.

@@ -660,6 +660,115 @@ kgen.func @cast_and_trancate(%v0 : !pop.simd<2, si64>) -> !pop.simd<2, si32> {
   kgen.return %v3 : !pop.simd<2, si32>
 }
 
+// CHECK-LABEL: @sext_and_sext
+kgen.func @sext_and_sext(%v0 : !pop.simd<2, si16>) -> !pop.simd<2, si64> {
+  // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, si16> to !pop.simd<2, si64>
+  %v1 = pop.cast %v0 : !pop.simd<2, si16> to !pop.simd<2, si32>
+  %v2 = pop.cast %v1 : !pop.simd<2, si32> to !pop.simd<2, si64>
+  kgen.return %v2 : !pop.simd<2, si64>
+}
+
+// CHECK-LABEL: @zext_and_zext
+kgen.func @zext_and_zext(%v0 : !pop.simd<2, ui16>) -> !pop.simd<2, ui64> {
+  // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, ui16> to !pop.simd<2, ui64>
+  %v1 = pop.cast %v0 : !pop.simd<2, ui16> to !pop.simd<2, ui32>
+  %v2 = pop.cast %v1 : !pop.simd<2, ui32> to !pop.simd<2, ui64>
+  kgen.return %v2 : !pop.simd<2, ui64>
+}
+
+// CHECK-LABEL: @fpext_and_fptoint
+kgen.func @fpext_and_fptoint(%arg0 : !pop.simd<2, f16>) -> (!pop.simd<2, si32>, !pop.simd<2, ui32>) {
+  // COM: fptosi(fpext)
+  %v12 = pop.cast %arg0 : !pop.simd<2, f16> to !pop.simd<2, f32>
+  %v13 = pop.cast %v12 : !pop.simd<2, f32> to !pop.simd<2, si32>
+
+  // COM: fptoui(fpext)
+  %v14 = pop.cast %arg0 : !pop.simd<2, f16> to !pop.simd<2, f32>
+  %v15 = pop.cast %v14 : !pop.simd<2, f32> to !pop.simd<2, ui32>
+
+  kgen.return %v13, %v15 : !pop.simd<2, si32>, !pop.simd<2, ui32>
+}
+
+// CHECK-LABEL: @intext_and_fptoint
+kgen.func @intext_and_fptoint(%arg0 : !pop.simd<2, ui16>, %arg1 : !pop.simd<2, si16>) -> (!pop.simd<2, f32>, !pop.simd<2, f32>) {
+  // COM: uitofp(zext)
+  %v12 = pop.cast %arg0 : !pop.simd<2, ui16> to !pop.simd<2, ui32>
+  %v13 = pop.cast %v12 : !pop.simd<2, ui32> to !pop.simd<2, f32>
+
+  // COM: sitofp(sext)
+  %v14 = pop.cast %arg1 : !pop.simd<2, si16> to !pop.simd<2, si32>
+  %v15 = pop.cast %v14 : !pop.simd<2, si32> to !pop.simd<2, f32>
+
+  kgen.return %v13, %v15 : !pop.simd<2, f32>, !pop.simd<2, f32>
+}
+
+// CHECK-LABEL: @unsupported_intcast_and_intcast
+kgen.func @unsupported_intcast_and_intcast(%v0 : !pop.simd<2, ui8>) -> !pop.simd<2, si64> {
+  // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, ui8> to !pop.simd<2, ui16>
+  %v1 = pop.cast %v0 : !pop.simd<2, ui8> to !pop.simd<2, ui16>
+  // CHECK-NEXT: pop.cast %0 : !pop.simd<2, ui16> to !pop.simd<2, si32>
+  %v2 = pop.cast %v1 : !pop.simd<2, ui16> to !pop.simd<2, si32>
+  // CHECK-NEXT: pop.cast %1 : !pop.simd<2, si32> to !pop.simd<2, ui64>
+  %v3 = pop.cast %v2 : !pop.simd<2, si32> to !pop.simd<2, ui64>
+  // CHECK-NEXT: pop.cast %2 : !pop.simd<2, ui64> to !pop.simd<2, si64>
+  %v4 = pop.cast %v3 : !pop.simd<2, ui64> to !pop.simd<2, si64>
+  kgen.return %v4 : !pop.simd<2, si64>
+}
+
+// CHECK-LABEL: @fpext_and_fpext
+kgen.func @fpext_and_fpext(%arg0 : !pop.simd<2, f16>) -> !pop.simd<2, f64> {
+  // COM: fpext(fpext)
+  %v8 = pop.cast %arg0 : !pop.simd<2, f16> to !pop.simd<2, f32>
+  // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, f16> to !pop.simd<2, f64>
+  %v9 = pop.cast %v8 : !pop.simd<2, f32> to !pop.simd<2, f64>
+  kgen.return %v9 : !pop.simd<2, f64>
+}
+
+// CHECK-LABEL: @fpext_and_fptrunc
+kgen.func @fpext_and_fptrunc(%arg0 : !pop.simd<2, f16>) -> !pop.simd<2, f32> {
+  // COM: fptrunc(fpext)
+  %v10 = pop.cast %arg0 : !pop.simd<2, f16> to !pop.simd<2, f64>
+  // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, f16> to !pop.simd<2, f32>
+  %v11 = pop.cast %v10 : !pop.simd<2, f64> to !pop.simd<2, f32>
+  kgen.return %v11 : !pop.simd<2, f32>
+}
+
+// COM: test chain of int2fp/fp2int conversions
+// CHECK-LABEL: @unsupported_conv_conv
+kgen.func @unsupported_conv_conv(%arg0 : !pop.simd<2, ui16>, %arg1 : !pop.simd<2, si16>) -> (!pop.simd<2, ui32>, !pop.simd<2, f64>, !pop.simd<2, si32>, !pop.simd<2, f64>, !pop.simd<2, f16>) {
+  // COM: fptoui(uitofp)
+  // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, ui16> to !pop.simd<2, f32>
+  %0 = pop.cast %arg0 : !pop.simd<2, ui16> to !pop.simd<2, f32>
+  // CHECK: pop.cast %0 : !pop.simd<2, f32> to !pop.simd<2, ui32>
+  %v2 = pop.cast %0 : !pop.simd<2, f32> to !pop.simd<2, ui32>
+
+  // COM: fpext(uitofp)
+  // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, ui16> to !pop.simd<2, f32>
+  %1 = pop.cast %arg0 : !pop.simd<2, ui16> to !pop.simd<2, f32>
+  // CHECK-NEXT: pop.cast %2 : !pop.simd<2, f32> to !pop.simd<2, f64>
+  %v3 = pop.cast %1 : !pop.simd<2, f32> to !pop.simd<2, f64>
+
+  // COM: fptrunc(sitofp)
+  // CHECK-NEXT: pop.cast %arg1 : !pop.simd<2, si16> to !pop.simd<2, f32>
+  %2 = pop.cast %arg1 : !pop.simd<2, si16> to !pop.simd<2, f32>
+  // CHECK-NEXT: pop.cast %4 : !pop.simd<2, f32> to !pop.simd<2, si32>
+  %v5 = pop.cast %2 : !pop.simd<2, f32> to !pop.simd<2, si32>
+
+  // COM: fpext(sitofp)
+  // CHECK-NEXT: pop.cast %arg1 : !pop.simd<2, si16> to !pop.simd<2, f32>
+  %3 = pop.cast %arg1 : !pop.simd<2, si16> to !pop.simd<2, f32>
+  // CHECK-NEXT: pop.cast %6 : !pop.simd<2, f32> to !pop.simd<2, f64>
+  %v6 = pop.cast %3 : !pop.simd<2, f32> to !pop.simd<2, f64>
+
+  // COM: fptrunc(sitofp)
+  // CHECK-NEXT: pop.cast %arg1 : !pop.simd<2, si16> to !pop.simd<2, f32>
+  %4 = pop.cast %arg1 : !pop.simd<2, si16> to !pop.simd<2, f32>
+  // CHECK: pop.cast %8 : !pop.simd<2, f32> to !pop.simd<2, f16>
+  %v7 = pop.cast %4 : !pop.simd<2, f32> to !pop.simd<2, f16>
+
+  kgen.return %v2, %v3, %v5, %v6, %v7 : !pop.simd<2, ui32>, !pop.simd<2, f64>, !pop.simd<2, si32>, !pop.simd<2, f64>, !pop.simd<2, f16>
+}
+
 // CHECK-LABEL: @simd_extractelement
 kgen.func @simd_extractelement() -> (!pop.scalar<si8>) {
   // CHECK-NEXT: <20>
