@@ -147,6 +147,12 @@ static int debug(const State &state) {
   bool useCudaGDB = parsedArgs.hasArg(options::OPT_cudaGDB);
   bool breakOnLaunch = parsedArgs.hasArg(options::OPT_breakOnLaunch);
   bool stopOnEntry = parsedArgs.hasArg(options::OPT_stopOnEntry);
+  SmallVector<std::string> initCommands;
+  for (std::string &val :
+       parsedArgs.getAllArgValues(options::OPT_initCommand)) {
+    initCommands.push_back(val);
+  }
+
   if (breakOnLaunch && !useCudaGDB)
     return state.reportError(Twine("--break-on-launch requires --cuda-gdb"));
   std::optional<std::string> cudaGdbPath = getCudaGDBPath(parsedArgs);
@@ -197,7 +203,7 @@ static int debug(const State &state) {
     if (useRpc) {
       ErrorOrSuccess status =
           invokeLaunchRPC(dryRun, useCudaGDB, breakOnLaunch, rpcPorts, *target,
-                          runArgs, rpcTerminal, stopOnEntry);
+                          runArgs, rpcTerminal, stopOnEntry, initCommands);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;
@@ -224,8 +230,9 @@ static int debug(const State &state) {
   //  This is an attach case.
   if (pid || processName) {
     if (useRpc) {
-      ErrorOrSuccess status = invokeAttachRPC(dryRun, useCudaGDB, breakOnLaunch,
-                                              rpcPorts, pid, processName);
+      ErrorOrSuccess status =
+          invokeAttachRPC(dryRun, useCudaGDB, breakOnLaunch, rpcPorts, pid,
+                          processName, initCommands);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;

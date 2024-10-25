@@ -18,7 +18,8 @@ namespace M {
 ErrorOrSuccess invokeAttachRPC(bool dryRun, bool useCudaGdb, bool breakOnLaunch,
                                ArrayRef<int> rpcPorts,
                                const std::optional<StringRef> &pid,
-                               const std::optional<StringRef> &processName);
+                               const std::optional<StringRef> &processName,
+                               ArrayRef<std::string> initCommands);
 
 /// Starts a `launch` debug session with an existing RPC debug server.
 /// If `dryRun` is specified, then the request payload is printed to the
@@ -26,7 +27,8 @@ ErrorOrSuccess invokeAttachRPC(bool dryRun, bool useCudaGdb, bool breakOnLaunch,
 ErrorOrSuccess invokeLaunchRPC(bool dryRun, bool useCudaGdb, bool breakOnLaunch,
                                ArrayRef<int> rpcPorts, StringRef target,
                                ArrayRef<std::string> runArgs,
-                               StringRef rpcTerminal, bool stopOnEntry);
+                               StringRef rpcTerminal, bool stopOnEntry,
+                               ArrayRef<std::string> initCommands);
 } // namespace M
 
 #endif // MOJO_DEBUG_RPC_SERVER_H
