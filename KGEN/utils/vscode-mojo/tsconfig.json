@@ -7,7 +7,9 @@
     "strict": true,
     "noImplicitOverride": true,
     "target": "es6",
-    "experimentalDecorators": true
+    "experimentalDecorators": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": ["extension"],
   "exclude": ["node_modules", ".vscode-test"],

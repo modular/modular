@@ -322,7 +322,7 @@ async function doInstallMagicAndMAXSDK(
   const controller = new AbortController();
   const { signal } = controller;
   const child = execFileSync(downloadSpec.magicPath, args, { env, signal });
-  token.onCancellationRequested((e) => {
+  token.onCancellationRequested(() => {
     controller.abort();
   });
   await child;
@@ -356,7 +356,7 @@ async function installMagicAndMAXSDKWithProgress(
       location: vscode.ProgressLocation.Notification,
       cancellable: true,
     },
-    async (progress, token: vscode.CancellationToken) => {
+    async (_progress, token: vscode.CancellationToken) => {
       try {
         await doInstallMagicAndMAXSDK(downloadSpec, logger, isNightly, token);
         return undefined;

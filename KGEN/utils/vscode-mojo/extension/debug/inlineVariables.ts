@@ -57,7 +57,7 @@ export class LocalVariablesTracker implements vscode.DebugAdapterTracker {
       return result;
     }
 
-    return new Promise<VariablesGroups>((resolve, reject) => {
+    return new Promise<VariablesGroups>((resolve, _reject) => {
       this.onFrameGotVariables.event(([eventFrameId, variables]) => {
         if (eventFrameId === frameId) {
           resolve(variables);

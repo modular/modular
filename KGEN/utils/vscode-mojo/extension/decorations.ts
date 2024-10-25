@@ -132,8 +132,8 @@ export class MojoDecoratorManager extends DisposableContext {
     for (let line = 0, lineE = splitLines.length; line != lineE; ++line) {
       // Check for the start of a new codeblock.
       let currentLine = splitLines[line];
-      let match;
-      if ((match = startRegEx.test(currentLine))) {
+      let match = startRegEx.test(currentLine);
+      if (match) {
         if (numCurrentCodeBlocks++ === 0) {
           prevNumDecorations = docDecorations.length;
         }
