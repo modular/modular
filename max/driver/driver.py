@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from json import loads
-from typing import Any, Mapping
+from typing import Any, Mapping, Literal
 
 from max._driver import Device as _Device
 from max._driver import cpu_device as _cpu_device
@@ -63,3 +63,20 @@ def CPU(id: int = -1) -> Device:
 def CUDA(id: int = -1) -> Device:
     """Creates a CUDA device with the provided id."""
     return Device.cuda(id)
+
+
+@dataclass(frozen=True)
+class DeviceSpec:
+    id: int
+    """Provided id for this device."""
+
+    device_type: Literal["cpu", "cuda"] = "cpu"
+    """Type of specified device."""
+
+    @staticmethod
+    def cpu(id: int = -1):
+        return DeviceSpec(id, "cpu")
+
+    @staticmethod
+    def cuda(id: int = -1):
+        return DeviceSpec(id, "cuda")
