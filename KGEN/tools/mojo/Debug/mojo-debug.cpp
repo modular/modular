@@ -146,6 +146,7 @@ static int debug(const State &state) {
   bool dryRun = parsedArgs.hasArg(options::OPT_dry_run);
   bool useCudaGDB = parsedArgs.hasArg(options::OPT_cudaGDB);
   bool breakOnLaunch = parsedArgs.hasArg(options::OPT_breakOnLaunch);
+  bool stopOnEntry = parsedArgs.hasArg(options::OPT_stopOnEntry);
   if (breakOnLaunch && !useCudaGDB)
     return state.reportError(Twine("--break-on-launch requires --cuda-gdb"));
   std::optional<std::string> cudaGdbPath = getCudaGDBPath(parsedArgs);
@@ -196,7 +197,7 @@ static int debug(const State &state) {
     if (useRpc) {
       ErrorOrSuccess status =
           invokeLaunchRPC(dryRun, useCudaGDB, breakOnLaunch, rpcPorts, *target,
-                          runArgs, rpcTerminal);
+                          runArgs, rpcTerminal, stopOnEntry);
       if (failed(status))
         return state.reportError(status.getError());
       return 0;

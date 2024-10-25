@@ -44,11 +44,12 @@
 # CHECK-BIN:        "program": "{{.*}}/bin.exe"
 # CHECK-BIN-NEXT:   "request": "launch"
 # CHECK-BIN-NEXT:   "runInTerminal": false
+# CHECK-BIN-NEXT:   "stopOnEntry": false
 # CHECK-BIN-NEXT:   "type": "mojo-lldb"
 # CHECK-BIN-NEXT: }
 
 # COM: Check if the RPC launch command is created properly with a mojo file
-# RUN: %debug --terminal dedicated --dry-run --vscode --debug-level line-tables file.mojo --some-arg | FileCheck %s --check-prefix=CHECK-MOJO
+# RUN: %debug --terminal dedicated --dry-run --vscode --debug-level line-tables --stop-on-entry file.mojo --some-arg | FileCheck %s --check-prefix=CHECK-MOJO
 # CHECK-MOJO:       {
 # CHECK-MOJO:   "args": [
 # CHECK-MOJO-NEXT:     "run",
@@ -68,8 +69,8 @@
 # CHECK-MOJO:        "program": "{{.*}}/mojo
 # CHECK-MOJO-NEXT:   "request": "launch"
 # CHECK-MOJO-NEXT:   "runInTerminal": true
+# CHECK-MOJO-NEXT:   "stopOnEntry": true
 # CHECK-MOJO-NEXT:   "type": "mojo-lldb"
-# CHECK-MOJO-NEXT: }
 
 # COM: Check if the RPC launch command is created properly with the --cuda-gdb flag
 # RUN: %debug --rpc --cuda-gdb --dry-run hello.mojo | FileCheck %s --check-prefix=CHECK-CUDA-GDB

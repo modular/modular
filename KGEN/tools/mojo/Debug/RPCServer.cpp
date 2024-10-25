@@ -15,7 +15,6 @@
 #include <future>
 #include <iostream>
 #include <set>
-#include <thread>
 
 #if defined(_WIN32)
 #include <io.h>
@@ -361,7 +360,7 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, bool useCudaGdb,
                                   bool breakOnLaunch, ArrayRef<int> rpcPorts,
                                   StringRef target,
                                   ArrayRef<std::string> runArgs,
-                                  StringRef rpcTerminal) {
+                                  StringRef rpcTerminal, bool stopOnEntry) {
   ErrorOr<json::Object> payload = createBasicDebugConfiguration(useCudaGdb);
   if (failed(payload))
     return payload.takeError();
@@ -386,6 +385,7 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, bool useCudaGdb,
   payload->insert({"request", "launch"});
   payload->insert({"cwd", cwd.string()});
   payload->insert({"debuggerRoot", cwd.string()});
+  payload->insert({"stopOnEntry", stopOnEntry});
 
   json::Array env;
   for (StringRef entry : getEnv())
