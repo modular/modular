@@ -182,7 +182,8 @@ def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
         rtol: The relative tolerance (used if `compare_fn` is not provided).
         atol: The absolute tolerance (used if `compare_fn` is not provided).
         compare_fn: A callable that takes the arguments
-            (actual, expected, description).
+            (actual, expected, description) and raises an assertion error
+            if the check fails.
     """
     expected_prompts = {x["prompt"]: x["values"] for x in expected}
     actual_prompts = {x["prompt"]: x["values"] for x in actual}
