@@ -163,7 +163,7 @@ fn test_vector_both() raises:
     g.verify()
 
     var x = Tensor[DType.float32](TensorShape(3), -2.0, -1.0, 0.0)
-    var y = Tensor[DType.float32](TensorShape(3, 2), 1.0, 1.0, 0.0)
+    var y = Tensor[DType.float32](TensorShape(3), 1.0, 1.0, 0.0)
     var expected = Tensor[DType.float32](TensorShape(), -3)
 
     var actual = _testing.execute_binary(g, x, y)
