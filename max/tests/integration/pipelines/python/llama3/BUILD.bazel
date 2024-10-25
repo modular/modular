@@ -136,6 +136,7 @@ modular_py_test(
         "//Support/tools/system-info",
         "@llvm-project//compiler-rt:orc_rt",
         "@test_llama_golden",
+        "@torch_llama_golden",
     ],
     env = {
         "BAZEL": "true",

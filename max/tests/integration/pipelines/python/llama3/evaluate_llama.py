@@ -35,7 +35,11 @@ from max.driver import CPU
 from nn.kv_cache import KVCacheStrategy
 
 
-def find_runtime_path(fname: str, testdata_directory: Path) -> Path:
+def find_runtime_path(
+    fname: str,
+    testdata_directory: Path,
+    subdir: Path = Path("test_llama_golden"),
+) -> Path:
     try:
         from python.runfiles import runfiles
     except ModuleNotFoundError:
@@ -44,7 +48,7 @@ def find_runtime_path(fname: str, testdata_directory: Path) -> Path:
         return testdata_directory / fname
 
     r = runfiles.Create()
-    path = r.Rlocation("test_llama_golden/" + fname)
+    path = r.Rlocation(str(subdir / fname))
 
     if path is None:
         raise Exception(f"Runtime path for {fname} was not found.")
