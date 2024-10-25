@@ -273,6 +273,29 @@ struct AddElementwise:
         foreach[func](z)
 
 
+@compiler.register("imposter_add_lhs")
+struct AddFuseLHS:
+    @compiler.enable_fusion_for("x")
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](z: ManagedTensorSlice, x: ManagedTensorSlice, y: ManagedTensorSlice):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
+            return rebind[SIMD[z.type, width]](
+                x._fused_load[width](idx)
+            ) + rebind[SIMD[z.type, width]](y.load[width](idx))
+
+        # Wrapper to hide the foreach call from MOGGPreElab.
+        # Otherwhise it would still be detected as an elementwise kernel.
+        fn foo():
+            foreach[func](z)
+
+        foo()
+
+
 # c = a @ b, should support CPU and GPU
 @compiler.register("matmul_fuse_out")
 struct MatmulFuseOut:
