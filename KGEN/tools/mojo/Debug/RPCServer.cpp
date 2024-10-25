@@ -119,7 +119,9 @@ struct Connection {
 } // namespace
 
 /// Create an object with the common fields of debug configurations.
-static ErrorOr<json::Object> createBasicDebugConfiguration(bool useCudaGdb) {
+static ErrorOr<json::Object>
+createBasicDebugConfiguration(bool useCudaGdb,
+                              ArrayRef<std::string> initCommands) {
   ErrorOr<std::filesystem::path> modularHome =
       Config::getModularConfigFolderPath();
   if (failed(modularHome))
@@ -137,6 +139,10 @@ static ErrorOr<json::Object> createBasicDebugConfiguration(bool useCudaGdb) {
       {"modularConfigMojoSection", configOr->getMojoConfigSection().str()},
       {"mojoDriverPath", configOr->getDriverPath().str()},
       {"type", useCudaGdb ? "mojo-cuda-gdb" : "mojo-lldb"}};
+
+  if (!initCommands.empty()) {
+    payload.insert({"initCommands", json::Array(initCommands)});
+  }
 
   return payload;
 }
@@ -249,8 +255,6 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
   std::string requestStr =
       llvm::formatv("{0:2}{1}", request, protocolSeparator);
   if (dryRun) {
-    for (int p : ports)
-      llvm::outs() << "port: " << p << "\n";
     llvm::outs() << "payload: " << requestStr << "\n";
     return success();
   }
@@ -342,8 +346,10 @@ static ErrorOrSuccess invokeRPC(bool dryRun, ArrayRef<int> ports,
 ErrorOrSuccess M::invokeAttachRPC(bool dryRun, bool useCudaGdb,
                                   bool breakOnLaunch, ArrayRef<int> rpcPorts,
                                   const std::optional<StringRef> &pid,
-                                  const std::optional<StringRef> &processName) {
-  ErrorOr<json::Object> payload = createBasicDebugConfiguration(useCudaGdb);
+                                  const std::optional<StringRef> &processName,
+                                  ArrayRef<std::string> initCommands) {
+  ErrorOr<json::Object> payload =
+      createBasicDebugConfiguration(useCudaGdb, initCommands);
   if (failed(payload))
     return payload.takeError();
   payload->insert({"request", "attach"});
@@ -360,8 +366,10 @@ ErrorOrSuccess M::invokeLaunchRPC(bool dryRun, bool useCudaGdb,
                                   bool breakOnLaunch, ArrayRef<int> rpcPorts,
                                   StringRef target,
                                   ArrayRef<std::string> runArgs,
-                                  StringRef rpcTerminal, bool stopOnEntry) {
-  ErrorOr<json::Object> payload = createBasicDebugConfiguration(useCudaGdb);
+                                  StringRef rpcTerminal, bool stopOnEntry,
+                                  ArrayRef<std::string> initCommands) {
+  ErrorOr<json::Object> payload =
+      createBasicDebugConfiguration(useCudaGdb, initCommands);
   if (failed(payload))
     return payload.takeError();
 

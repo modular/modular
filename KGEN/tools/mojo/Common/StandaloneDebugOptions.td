@@ -55,10 +55,15 @@ defm terminal: CommandOptionWithValues<
 defm port: CommandOption<["--", "-"], "port",
   DebugServerOptionGroup, Index<3>, MetaVarName<"PORT">,
   HelpText<"Uses the given PORT to communicate with the RPC debug server. "
-  "Defaults to trying all ports from 12355 to 12364 inclusive.">>;
+           "Defaults to trying all ports from 12355 to 12364 inclusive.">>;
 
 def stopOnEntry: Flag<["--", "-"], "stop-on-entry">,
   Group<DebugServerOptionGroup>, Index<4>,
   HelpText<"Automatically stop after launch.">;
+
+defm initCommand: CommandOption<["--", "-"], "init-command",
+  DebugServerOptionGroup, Index<5>, MetaVarName<"INIT_COMMAND">,
+  HelpText<"Initialization command executed upon debugger startup. Can be "
+           "specified multiple times.">>;
 
 #endif // KGEN_TOOLS_MOJO_DEBUG_STANDALONEDEBUGOPTIONS_TD

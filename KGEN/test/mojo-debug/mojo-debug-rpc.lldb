@@ -31,7 +31,7 @@
 # CHECK-PROC-NAME-NEXT: }
 
 # COM: Check if the RPC launch command is created properly with a binary
-# RUN: %debug --dry-run --vscode bin.exe --some-arg | FileCheck %s --check-prefix=CHECK-BIN
+# RUN: %debug --dry-run --vscode --init-command "foo" --init-command "bar" bin.exe --some-arg | FileCheck %s --check-prefix=CHECK-BIN
 # CHECK-BIN:      {
 # CHECK-BIN:   "args": [
 # CHECK-BIN-NEXT:     "--some-arg"
@@ -40,7 +40,11 @@
 # CHECK-BIN-NEXT:   "debuggerRoot": "
 # CHECK-BIN-NEXT:   "env": [
 # CHECK-BIN:        ]
-# CHECK-BIN:   "modularHomePath": "
+# CHECK-BIN:        "initCommands": [
+# CHECK-BIN-NEXT:     "foo"
+# CHECK-BIN-NEXT:     "bar"
+# CHECK-BIN-NEXT:   ]
+# CHECK-BIN:        "modularHomePath": "
 # CHECK-BIN:        "program": "{{.*}}/bin.exe"
 # CHECK-BIN-NEXT:   "request": "launch"
 # CHECK-BIN-NEXT:   "runInTerminal": false
@@ -65,7 +69,7 @@
 # CHECK-MOJO-NEXT:   "env": [
 # CHECK-MOJO:          "PATH=
 # CHECK-MOJO:        ]
-# CHECK-MOJO:   "modularHomePath": "
+# CHECK-MOJO:        "modularHomePath": "
 # CHECK-MOJO:        "program": "{{.*}}/mojo
 # CHECK-MOJO-NEXT:   "request": "launch"
 # CHECK-MOJO-NEXT:   "runInTerminal": true
