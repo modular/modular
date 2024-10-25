@@ -339,28 +339,7 @@ fn _matmul_gpu[
 
                 @parameter
                 if static_K == 4096 and static_N == 4096:
-                    if m <= 128:
-                        alias M128_N4096_K4096_config = MatmulConfig[
-                            a_type, b_type, c_type, transpose_b
-                        ](
-                            block_tile_shape=Index(128, 64, 32),
-                            warp_tile_shape=warp_shape,
-                            num_pipeline_stages=4,
-                            num_k_partitions=1,
-                        )
-                        multistage_gemm[
-                            transpose_b=transpose_b,
-                            config=M128_N4096_K4096_config,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                        ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
-                            M128_N4096_K4096_config,
-                            ctx,
-                        )
-                        return
-                    if m <= 256:
+                    if m <= 256 and m > 128:
                         alias M256_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
@@ -381,7 +360,7 @@ fn _matmul_gpu[
                             ctx,
                         )
                         return
-                    if m <= 512:
+                    if m <= 512 and m > 128:
                         alias M512_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
@@ -402,7 +381,7 @@ fn _matmul_gpu[
                             ctx,
                         )
                         return
-                    if m <= 2048:
+                    if m <= 2048 and m > 128:
                         alias M2048_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
@@ -645,28 +624,7 @@ fn _matmul_gpu[
 
                 @parameter
                 if static_N == 6144 and static_K == 4096:
-                    if m <= 128:
-                        alias M128_N6144_K4096_config = MatmulConfig[
-                            a_type, b_type, c_type, transpose_b
-                        ](
-                            block_tile_shape=Index(128, 128, 32),
-                            warp_tile_shape=warp_shape,
-                            num_pipeline_stages=4,
-                            num_k_partitions=1,
-                        )
-                        multistage_gemm[
-                            transpose_b=transpose_b,
-                            config=M128_N6144_K4096_config,
-                            elementwise_lambda_fn=elementwise_lambda_fn,
-                        ](
-                            rebind[NDBuffer[c_type, 2, c_shape]](c),
-                            rebind[NDBuffer[a_type, 2, a_shape]](a),
-                            rebind[NDBuffer[b_type, 2, b_shape]](b),
-                            M128_N6144_K4096_config,
-                            ctx,
-                        )
-                        return
-                    if m <= 256:
+                    if m <= 256 and m > 128:
                         alias M256_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
@@ -687,7 +645,7 @@ fn _matmul_gpu[
                             ctx,
                         )
                         return
-                    if m <= 2048:
+                    if m <= 2048 and m > 128:
                         alias M2048_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
