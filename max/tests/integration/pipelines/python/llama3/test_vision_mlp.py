@@ -18,26 +18,8 @@ from max.dtype import DType
 from max.graph import Graph, TensorType
 from modular_graph_test import modular_graph_test
 from nn import Linear
+from torch_utils import TorchVisionEncoderMLP
 from llama3.vision.mlp import MLP
-
-
-def torch_linear(weight, **kwargs):
-    linear = nn.Linear(*weight.shape, **kwargs)
-    linear.weight = nn.Parameter(weight)
-    return linear
-
-
-class TorchMLP(nn.Module):
-    def __init__(self, w1, w2):
-        super().__init__()
-        self.fc1 = torch_linear(w1, bias=False)
-        self.fc2 = torch_linear(w2, bias=False)
-
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        hidden_states = self.fc1(hidden_states)
-        hidden_states = F.gelu(hidden_states)
-        hidden_states = self.fc2(hidden_states)
-        return hidden_states
 
 
 @pytest.mark.parametrize(
@@ -67,7 +49,7 @@ def test_mlp(session, input_type: TensorType):
             x, w1, w2 = torch_inputs
 
             # Transpose weights to match our Linear semantics.
-            expected = TorchMLP(w1, w2)(x).detach().numpy()
+            expected = TorchVisionEncoderMLP(w1, w2)(x).detach().numpy()
             # TODO(MSDK-1071): Consolidate and figure out how to call
             # assert_allclose(result, expected) to fire again on mismatched
             # tensor values.

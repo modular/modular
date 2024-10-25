@@ -63,6 +63,7 @@ modular_py_binary(
         size = "enormous",
         srcs = [
             "conftest.py",
+            "torch_utils.py",
             src,
         ],
         data = [
@@ -127,6 +128,7 @@ modular_py_test(
         ["test_*_gpu.py"],
     ) + [
         "conftest.py",
+        "torch_utils.py",
     ],
     data = [
         "//KGEN:CompilerRT",
