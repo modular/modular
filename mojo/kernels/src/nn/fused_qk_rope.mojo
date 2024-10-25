@@ -28,14 +28,10 @@ from complex import ComplexSIMD
 
 @always_inline
 fn _rope(val: SIMD, freq: __type_of(val)) -> __type_of(val):
-    var x_c = val.deinterleave()
-    var x = ComplexSIMD(x_c[0], x_c[1])
-
-    var f_c = freq.deinterleave()
-    var f = ComplexSIMD(f_c[0], f_c[1])
-    var r = x * f
-    var result = r.re.interleave(r.im)
-    return rebind[__type_of(val)](result)
+    x_re, x_im = val.deinterleave()
+    f_re, f_im = freq.deinterleave()
+    var r = ComplexSIMD(x_re, x_im) * ComplexSIMD(f_re, f_im)
+    return rebind[__type_of(val)](r.re.interleave(r.im))
 
 
 @always_inline
