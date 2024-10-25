@@ -3980,7 +3980,7 @@ fn topk_fused_sampling[
     out_idx_type: DType,
     target: StringLiteral = "cpu",
 ](
-    K: Int,
+    K: Scalar,
     input: NDBuffer[type, rank],
     out_idxs: NDBuffer[out_idx_type, rank],
     ctx: MojoCallContextPtr,
@@ -3991,12 +3991,12 @@ fn topk_fused_sampling[
 
         @parameter
         if target == "cpu":
-            _topk_fused_sampling(K, input, out_idxs)
+            _topk_fused_sampling(int(K), input, out_idxs)
         else:
             var cuda_ctx = ctx.get_device_context()
             _topk_fused_sampling_gpu(
                 cuda_ctx,
-                K,
+                int(K),
                 input,
                 out_idxs,
             )
