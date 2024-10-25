@@ -317,7 +317,8 @@ class Graph:
                     f"Failed to create op '{op.__qualname__}':\nInputs:\n"
                     + "".join(f"    {k} = {v!r}\n" for k, v in args.items())  # type: ignore
                     + f"\n{e}"
-                ) from e
+                    # Intentionally suppress extra stack traces from max._mlir.
+                ) from None
 
         if isinstance(results, mlir.Operation):
             return []
