@@ -130,7 +130,8 @@ kgen.func @loop_carried_dependency() {
 
 // CHECK-LABEL: @lower_unrolled_inclusive_cmp
  kgen.func @lower_unrolled_inclusive_cmp() -> index {
-   // CHECK:      [[IDX0:%.*]] = index.constant 0
+   // CHECK:      [[IDX2:%.*]] = index.constant 2
+   // CHECK-NEXT: [[IDX0:%.*]] = index.constant 0
    // CHECK-NEXT: [[IDX1:%.*]] = index.constant 1
    // CHECK-NEXT: [[IDX3:%.*]] = index.constant 3
    // CHECK-NEXT: [[IDX4:%.*]] = index.constant 4
@@ -144,9 +145,9 @@ kgen.func @loop_carried_dependency() {
    // CHECK-NEXT:   }
    // CHECK-NEXT:   [[V1:%.*]] = index.add %arg0, %idx1
    // CHECK-NEXT:   kgen.call @foo([[V1]]) : (index) -> ()
-   // CHECK-NEXT:   [[V2:%.*]] = index.add [[V1]], [[IDX1]]
+   // CHECK-NEXT:   [[V2:%.*]] = index.add %arg0, [[IDX2]]
    // CHECK-NEXT:   kgen.call @foo([[V2]]) : (index) -> ()
-   // CHECK-NEXT:   [[V3:%.*]] = index.add [[V2]], [[IDX1]]
+   // CHECK-NEXT:   [[V3:%.*]] = index.add %arg0, [[IDX3]]
    // CHECK-NEXT:   kgen.call @foo([[V3]]) : (index) -> ()
    // CHECK-NEXT:   hlcf.continue [[V3]] : index
    // CHECK-NEXT: }

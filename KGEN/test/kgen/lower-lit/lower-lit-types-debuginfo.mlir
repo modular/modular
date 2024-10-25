@@ -31,7 +31,7 @@ lit.struct.decl @"$test::ComplexStruct"<A: type, B: type> attributes {sourceName
 
 // This is only possible in mlir tests. Mojo parser will guarantee all structs have SourceNames.
 // CHECK-DAG: ![[COMPLEX_STRUCT_NOSOURCENAME:.*]] = !debuginfo.struct<"struct `$test::ComplexStructNoSourceName`<`:type Int`,`:type simd<4, f32>`>"(![[MEMBER_A]], ![[MEMBER_B]])>
-lit.struct.decl @"$test::ComplexStructNoSourceName"<A: type, B: type> attributes {sourceName = "struct anonymous"} {
+lit.struct.decl @"$test::ComplexStructNoSourceName"<A: type, B: type> {
   lit.struct.field a: !kgen.paramref<A>
   lit.struct.field b: !kgen.paramref<B>
 }
