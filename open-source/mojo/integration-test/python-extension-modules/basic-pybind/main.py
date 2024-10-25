@@ -29,12 +29,22 @@ class TestMojoPythonInterop(unittest.TestCase):
         mojo_int = mojo_module.Int()
 
         self.assertEqual(type(mojo_int), mojo_module.Int)
-
         self.assertEqual(repr(mojo_int), "0")
 
         mojo_module.incr_int(mojo_int)
-
         self.assertEqual(repr(mojo_int), "1")
+
+        # Memory-only types are also supported
+        mojo_string = mojo_module.String()
+
+        self.assertEqual(type(mojo_string), mojo_module.String)
+        self.assertEqual(repr(mojo_string), "''")
+
+        mojo_module.fill_string(mojo_string)
+        self.assertEqual(repr(mojo_string), "'hello'")
+
+        mojo_module.fill_string(mojo_string)
+        self.assertEqual(repr(mojo_string), "'hellohello'")
 
 
 if __name__ == "__main__":
