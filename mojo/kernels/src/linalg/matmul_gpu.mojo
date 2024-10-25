@@ -339,7 +339,7 @@ fn _matmul_gpu[
 
                 @parameter
                 if static_K == 4096 and static_N == 4096:
-                    if m <= 256 and m > 128:
+                    if 128 < m <= 256:
                         alias M256_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
@@ -360,7 +360,7 @@ fn _matmul_gpu[
                             ctx,
                         )
                         return
-                    if m <= 512 and m > 128:
+                    if 128 < m <= 512:
                         alias M512_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
@@ -381,7 +381,7 @@ fn _matmul_gpu[
                             ctx,
                         )
                         return
-                    if m <= 2048 and m > 128:
+                    if 128 < m <= 2048:
                         alias M2048_N4096_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
@@ -624,7 +624,7 @@ fn _matmul_gpu[
 
                 @parameter
                 if static_N == 6144 and static_K == 4096:
-                    if m <= 256 and m > 128:
+                    if 128 < m <= 256:
                         alias M256_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
@@ -645,7 +645,7 @@ fn _matmul_gpu[
                             ctx,
                         )
                         return
-                    if m <= 2048 and m > 128:
+                    if 128 < m <= 2048:
                         alias M2048_N6144_K4096_config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
