@@ -264,19 +264,22 @@ fn matmul_kernel_naive[
 
 @always_inline
 fn _matmul_gpu[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType, //,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     target: StringLiteral = "cuda",
+    config: OptionalReg[
+        MatmulConfig[a_type, b_type, c_type, transpose_b]
+    ] = None,
 ](
-    c: NDBuffer[_, 2, _],
-    a: NDBuffer[_, 2, _],
-    b: NDBuffer[_, 2, _],
+    c: NDBuffer[c_type, 2, _],
+    a: NDBuffer[a_type, 2, _],
+    b: NDBuffer[b_type, 2, _],
     ctx: DeviceContext,
 ) raises:
-    alias a_type = a.type
-    alias b_type = b.type
-    alias c_type = c.type
     alias a_shape = a.shape
     alias b_shape = b.shape
     alias c_shape = c.shape
@@ -322,6 +325,22 @@ fn _matmul_gpu[
                     rebind[NDBuffer[a_type, 2, a_shape]](a),
                     rebind[NDBuffer[b_type, 2, b_shape]](b),
                     kernels.tuning_config,
+                    ctx,
+                )
+                return
+
+            # Allow caller to overwrite dispatch heuristic with their own config.
+            @parameter
+            if config:
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config = config.value(),
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](
+                    rebind[NDBuffer[c_type, 2, c_shape]](c),
+                    rebind[NDBuffer[a_type, 2, a_shape]](a),
+                    rebind[NDBuffer[b_type, 2, b_shape]](b),
+                    config.value(),
                     ctx,
                 )
                 return
