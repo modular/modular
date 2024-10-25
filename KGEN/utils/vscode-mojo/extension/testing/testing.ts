@@ -117,7 +117,7 @@ export class MojoTestManager extends DisposableContext {
    * @param token The cancellation token.
    */
   async runHandler(
-    shouldDebug: boolean,
+    _shouldDebug: boolean,
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken,
   ) {
@@ -359,12 +359,12 @@ export class MojoTestManager extends DisposableContext {
     let env = sdk.getProcessEnv(withTelemetry);
     const logger = this.logger;
 
-    return new Promise<Optional<Result>>(function (resolve, reject) {
+    return new Promise<Optional<Result>>(function (resolve, _reject) {
       execFile(
         sdk.config.mojoDriverPath,
         ['test', '--diagnostic-format', 'json', testId, ...args],
         { env },
-        (error, stdout, stderr) => {
+        (_error, stdout, _stderr) => {
           // Parse the json output from the stdout.
           try {
             resolve(JSON.parse(stdout));

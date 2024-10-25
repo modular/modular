@@ -7,7 +7,9 @@
     "composite": true,
     "strict": true,
     "noImplicitOverride": true,
-    "target": "es6"
+    "target": "es6",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
   "include": ["src"],
   "exclude": ["node_modules", ".vscode-test"]

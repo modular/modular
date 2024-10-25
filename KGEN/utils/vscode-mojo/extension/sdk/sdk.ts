@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-import * as vscode from 'vscode';
 import { Logger } from '../logging';
 import { MojoSDKConfig } from './sdkConfig';
 import { Memoize } from 'typescript-memoize';

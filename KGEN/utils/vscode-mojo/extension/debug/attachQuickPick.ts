@@ -7,7 +7,6 @@
 import * as vscode from 'vscode';
 
 import { ProcessDescriptor, psList } from '../external/psList';
-import { MojoSDKManager } from '../sdk/sdkManager';
 
 class RefreshButton implements vscode.QuickInputButton {
   get iconPath(): vscode.ThemeIcon {

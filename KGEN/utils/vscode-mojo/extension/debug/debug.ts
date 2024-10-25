@@ -16,7 +16,6 @@ import { MojoExtension } from '../extension';
 import { MojoSDKManager } from '../sdk/sdkManager';
 import { quote } from 'shell-quote';
 import * as util from 'util';
-import path = require('path');
 const execFile = util.promisify(require('child_process').execFile);
 
 /**
@@ -163,7 +162,7 @@ class MojoCudaGdbDebugAdapterDescriptorFactory
   implements vscode.DebugAdapterDescriptorFactory
 {
   async createDebugAdapterDescriptor(
-    session: vscode.DebugSession,
+    _session: vscode.DebugSession,
     _executable: Optional<vscode.DebugAdapterExecutable>,
   ): Promise<Optional<vscode.DebugAdapterDescriptor>> {
     // We never actually call this, but we need a stub for registration.
@@ -187,9 +186,9 @@ class MojoDebugConfigurationResolver
   }
 
   async resolveDebugConfigurationWithSubstitutedVariables?(
-    folder: Optional<vscode.WorkspaceFolder>,
+    _folder: Optional<vscode.WorkspaceFolder>,
     debugConfiguration: MojoDebugConfiguration,
-    token?: vscode.CancellationToken,
+    _token?: vscode.CancellationToken,
   ): Promise<undefined | vscode.DebugConfiguration> {
     let sdk = await findSDKForDebugConfiguration(
       debugConfiguration,
@@ -300,9 +299,9 @@ class MojoDebugConfigurationResolver
   }
 
   async resolveDebugConfiguration(
-    folder: Optional<vscode.WorkspaceFolder>,
+    _folder: Optional<vscode.WorkspaceFolder>,
     debugConfiguration: MojoDebugConfiguration,
-    token?: vscode.CancellationToken,
+    _token?: vscode.CancellationToken,
   ): Promise<vscode.DebugConfiguration> {
     // The `Debug: Start Debugging` command (aka F5 or the `Run and Debug`
     // button if no launch.json files are present), invoke this method with a
@@ -333,9 +332,9 @@ class MojoCudaGdbDebugConfigurationResolver
   }
 
   async resolveDebugConfigurationWithSubstitutedVariables?(
-    folder: Optional<vscode.WorkspaceFolder>,
+    _folder: Optional<vscode.WorkspaceFolder>,
     debugConfigIn: MojoCudaGdbDebugConfiguration,
-    token?: vscode.CancellationToken,
+    _token?: vscode.CancellationToken,
   ): Promise<undefined | vscode.DebugConfiguration> {
     const maybeErrorMessage = await checkNsightInstall(this.sdkManager.logger);
     if (maybeErrorMessage) {
@@ -425,12 +424,10 @@ class MojoDebugDynamicConfigurationProvider
  * mojo debugging.
  */
 export class MojoDebugManager extends DisposableContext {
-  private extension: MojoExtension;
   private sdkManager: MojoSDKManager;
 
   constructor(extension: MojoExtension, sdkManager: MojoSDKManager) {
     super();
-    this.extension = extension;
     this.sdkManager = sdkManager;
 
     // Register the lldb-vscode debug adapter.
@@ -448,6 +445,7 @@ export class MojoDebugManager extends DisposableContext {
         }
 
         if (!listener.configuration.runInTerminal) {
+          await vscode.commands.executeCommand('workbench.view.debug');
           await vscode.commands.executeCommand(
             'workbench.debug.action.focusRepl',
           );

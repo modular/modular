@@ -14,7 +14,6 @@ import { debug, DebugConfiguration } from 'vscode';
 import { Logger } from '../logging';
 import { checkNsightInstall } from '../utils/checkNsight';
 import { DisposableContext } from '../utils/disposableContext';
-import path = require('path');
 
 type ResponseConnect = {
   kind: 'connect';

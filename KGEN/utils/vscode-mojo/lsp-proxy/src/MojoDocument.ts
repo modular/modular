@@ -399,7 +399,6 @@ export class MojoDocumentsStateHandler {
    */
   public onDidChangeNotebookDocument(
     params: DidChangeNotebookDocumentParams,
-    client: Client,
     server: MojoLSPServer,
   ): void {
     const doc = this.uriToNotebookDocs.get(params.notebookDocument.uri);

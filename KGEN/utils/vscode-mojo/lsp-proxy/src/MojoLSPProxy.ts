@@ -303,11 +303,7 @@ export class MojoLSPProxy {
 
     notebooks.onDidChangeNotebookDocument(
       (params: DidChangeNotebookDocumentParams) => {
-        this.docsStateHandler.onDidChangeNotebookDocument(
-          params,
-          this.client,
-          this.server!,
-        );
+        this.docsStateHandler.onDidChangeNotebookDocument(params, this.server!);
       },
     );
   }
