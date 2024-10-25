@@ -42,8 +42,6 @@ fn _compute_distribute_layout[
     data_layout: Layout,
     threads_layout: Layout,
     axis: OptionalReg[Int] = None,
-    /,
-    __experimental_non_homogeneous_tile: Bool = False,
 ]() -> Layout:
     """Distribute thread_layout into self layout, if axis is provided
     distribute into threads_layout projected into this axis.
@@ -52,41 +50,15 @@ fn _compute_distribute_layout[
 
     @parameter
     if axis:
-        var divided_layout = zipped_divide(
+        return zipped_divide(
             data_layout, Layout(threads_layout.shape[axis.value()])
         )
-
-        @parameter
-        if not __experimental_non_homogeneous_tile:
-            return divided_layout
-        else:
-            divided_layout.shape[1] = propagate_unknown(
-                divided_layout.shape[1], data_layout.shape
-            )
-            # TODO: remove this after KERN-983 is fixed
-            divided_layout.stride[1] = propagate_unknown(
-                divided_layout.stride[1], data_layout.stride
-            )
-            return divided_layout
 
     else:
         for dim in threads_layout.shape:
             thread_tile.append(Layout(dim))
 
-        var divided_layout = zipped_divide(data_layout, thread_tile)
-
-        @parameter
-        if not __experimental_non_homogeneous_tile:
-            return divided_layout
-        else:
-            divided_layout.shape[1] = propagate_unknown(
-                divided_layout.shape[1], data_layout.shape
-            )
-            # TODO: remove this after KERN-983 is fixed
-            divided_layout.stride[1] = propagate_unknown(
-                divided_layout.stride[1], data_layout.stride
-            )
-            return divided_layout
+        return zipped_divide(data_layout, thread_tile)
 
 
 # Returns an IntTuple with all ones except axis same as input t, when
@@ -1086,14 +1058,7 @@ struct LayoutTensor[
 
     @staticmethod
     fn _compute_tile_layout[*tile_sizes: Int]() -> Layout:
-        alias tiles = Self._divide_tiles[*tile_sizes]()
-
-        @parameter
-        if __experimental_non_homogeneous_tile:
-            # override the tile shapes with original unknown dim
-            return Self._prop_unknown_shape[0, tiles, layout]()
-
-        return tiles
+        return Self._divide_tiles[*tile_sizes]()
 
     @staticmethod
     fn _divide_tiles[*tile_sizes: Int]() -> Layout:
@@ -1163,6 +1128,21 @@ struct LayoutTensor[
             "Number of tiles should match the rank",
         ]()
 
+        @parameter
+        if __experimental_non_homogeneous_tile:
+            dynamic_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = result.layout_bitwidth,
+                unsigned=True,
+            ](self._clamp_tile[*tile_sizes](tile_coords))
+        else:
+            dynamic_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = result.layout_bitwidth,
+                unsigned=True,
+            ]()
+        var dynamic_stride = RuntimeTuple[result.layout.stride, unsigned=True]()
+
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
         @parameter
@@ -1183,6 +1163,7 @@ struct LayoutTensor[
 
             return __type_of(result)(
                 self.ptr.offset(offset),
+                RuntimeLayout(dynamic_shape, dynamic_stride),
                 org_coords_offset=rebind[IndexList[result.layout.rank()]](
                     org_coords_offset
                 ),
@@ -1191,20 +1172,6 @@ struct LayoutTensor[
         else:
             # Dynamic layout, use strides
             var offset = 0
-
-            @parameter
-            if __experimental_non_homogeneous_tile:
-                dynamic_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ](self._clamp_tile[*tile_sizes](tile_coords))
-            else:
-                dynamic_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ]()
 
             var dynamic_stride = RuntimeTuple[
                 result.layout.stride, unsigned=True
@@ -1465,7 +1432,7 @@ struct LayoutTensor[
 
         # clamp IndexList using thread_id and thread_layout
         var tile_shape = IndexList[rank]()
-        var runtime_shape = self.runtime_layout.shape
+        var runtime_shape = self.runtime_layout.shape.value
         alias thread_shape = thread_layout.shape
         alias thread_stride = thread_layout.stride
 
@@ -1476,7 +1443,7 @@ struct LayoutTensor[
             alias thread_stride_i = to_int(thread_stride[i])
             alias thread_shape_i = to_int(thread_shape[i])
             var tile_idx = (thread_id // thread_stride_i) % thread_shape_i
-            var runtime_dim = int(runtime_shape[i].get_int())
+            var runtime_dim = runtime_shape[i]
             var tile_shape_i = int(ceildiv(runtime_dim, thread_shape_i))
             var bound_i = int((tile_shape_i - 1) * thread_shape_i + tile_idx)
             tile_shape[i] = tile_shape_i if bound_i < runtime_dim else (
@@ -1497,7 +1464,6 @@ struct LayoutTensor[
             layout,
             threads_layout,
             axis,
-            __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
         ]()[1],
         address_space=address_space,
         element_layout=element_layout,
@@ -1518,12 +1484,27 @@ struct LayoutTensor[
             layout,
             threads_layout,
             axis,
-            __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
         ]()
 
         alias coalesce_thread_layout = coalesce(threads_layout, keep_rank=True)
 
         alias res_rank = result.layout.rank()
+
+        @parameter
+        if __experimental_non_homogeneous_tile:
+            runtime_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = result.layout_bitwidth,
+                unsigned=True,
+            ](self._clamp_distribute_shape[threads_layout](thread_id))
+        else:
+            runtime_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = result.layout_bitwidth,
+                unsigned=True,
+            ]()
+
+        var runtime_stride = RuntimeTuple[result.layout.stride, unsigned=True]()
 
         # Update org_coords offset and stride according to thread_id.
         var org_coords_offset = IndexList[res_rank]()
@@ -1588,6 +1569,7 @@ struct LayoutTensor[
 
             return __type_of(result)(
                 self.ptr.offset(int(swizzled_offset)),
+                RuntimeLayout(runtime_shape, runtime_stride),
                 org_coords_offset=rebind[IndexList[result.layout.rank()]](
                     org_coords_offset
                 ),
@@ -1623,24 +1605,6 @@ struct LayoutTensor[
             )
 
             var offset: Scalar[Self.index_type] = 0
-
-            @parameter
-            if __experimental_non_homogeneous_tile:
-                runtime_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ](self._clamp_distribute_shape[threads_layout](thread_id))
-            else:
-                runtime_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ]()
-
-            var runtime_stride = RuntimeTuple[
-                result.layout.stride, unsigned=True
-            ]()
 
             @parameter
             for i in range(runtime_shape.scalar_length):
@@ -1757,8 +1721,30 @@ struct LayoutTensor[
 
         @parameter
         if layout.all_dims_known():
+            var runtime_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = result.layout_bitwidth,
+                unsigned=True,
+            ]()
+            var runtime_stride = RuntimeTuple[
+                result.layout.stride, unsigned=True
+            ]()
+
+            @parameter
+            if __experimental_non_homogeneous_tile:
+
+                @parameter
+                for i in range(runtime_shape.scalar_length):
+                    runtime_shape.value[i] = (
+                        self.runtime_layout.shape.value[i] // vector_shape[i]
+                    )
+                    runtime_stride.value[i] = (
+                        self.runtime_layout.stride.value[i] * vector_shape[i]
+                    )
+
             return __type_of(result)(
                 self.ptr,
+                RuntimeLayout(runtime_shape, runtime_stride),
                 org_coords_offset=rebind[IndexList[result.layout.rank()]](
                     self.org_coords_offset
                 ),

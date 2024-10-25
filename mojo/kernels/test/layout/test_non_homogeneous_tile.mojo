@@ -32,26 +32,26 @@ def test_single_unknown_tile():
     arange(tensorUxN.tensor, 0, 0.5)
     # CHECK: ----check axis 0 ----
     # CHECK: ----tile[ 0 , 0 ]----
-    # CHECK: ((-1, 3):(6, 1))
+    # CHECK: ((4, 3):(6, 1))
     # CHECK: ((4, 3):(6, 1))
     # CHECK: 0.0 0.5 1.0
     # CHECK: 3.0 3.5 4.0
     # CHECK: 6.0 6.5 7.0
     # CHECK: 9.0 9.5 10.0
     # CHECK: ----tile[ 0 , 1 ]----
-    # CHECK: ((-1, 3):(6, 1))
+    # CHECK: ((4, 3):(6, 1))
     # CHECK: ((4, 3):(6, 1))
     # CHECK: 1.5 2.0 2.5
     # CHECK: 4.5 5.0 5.5
     # CHECK: 7.5 8.0 8.5
     # CHECK: 10.5 11.0 11.5
     # CHECK: ----tile[ 1 , 0 ]----
-    # CHECK: ((-1, 3):(6, 1))
+    # CHECK: ((4, 3):(6, 1))
     # CHECK: ((2, 3):(6, 1))
     # CHECK: 12.0 12.5 13.0
     # CHECK: 15.0 15.5 16.0
     # CHECK: ----tile[ 1 , 1 ]----
-    # CHECK: ((-1, 3):(6, 1))
+    # CHECK: ((4, 3):(6, 1))
     # CHECK: ((2, 3):(6, 1))
     # CHECK: 13.5 14.0 14.5
     # CHECK: 16.5 17.0 17.5
@@ -77,25 +77,25 @@ def test_single_unknown_tile():
     arange(tensorMxU.tensor, 0, 0.5)
     # CHECK: ----check axis 1 ----
     # CHECK: ----tile[ 0 , 0 ]----
-    # CHECK: ((3, -1):(-1, 1))
+    # CHECK: ((3, 4):(-1, 1))
     # CHECK: ((3, 4):(6, 1))
     # CHECK: 0.0 0.5 1.0 1.5
     # CHECK: 3.0 3.5 4.0 4.5
     # CHECK: 6.0 6.5 7.0 7.5
     # CHECK: ----tile[ 0 , 1 ]----
-    # CHECK: ((3, -1):(-1, 1))
+    # CHECK: ((3, 4):(-1, 1))
     # CHECK: ((3, 2):(6, 1))
     # CHECK: 2.0 2.5
     # CHECK: 5.0 5.5
     # CHECK: 8.0 8.5
     # CHECK: ----tile[ 1 , 0 ]----
-    # CHECK: ((3, -1):(-1, 1))
+    # CHECK: ((3, 4):(-1, 1))
     # CHECK: ((3, 4):(6, 1))
     # CHECK: 9.0 9.5 10.0 10.5
     # CHECK: 12.0 12.5 13.0 13.5
     # CHECK: 15.0 15.5 16.0 16.5
     # CHECK: ----tile[ 1 , 1 ]----
-    # CHECK: ((3, -1):(-1, 1))
+    # CHECK: ((3, 4):(-1, 1))
     # CHECK: ((3, 2):(6, 1))
     # CHECK: 11.0 11.5
     # CHECK: 14.0 14.5
