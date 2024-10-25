@@ -1004,7 +1004,7 @@ fn mha[
 
     @parameter
     if ragged:
-        # treat valid_lengths as a prefix_sum
+        # treat valid_lengths as a input_row_offset
         start_of_seq = int(valid_length[batch_idx])
         end_of_seq = int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq
@@ -1707,7 +1707,7 @@ fn mha_decoding[
 
     @parameter
     if ragged:
-        # treat valid_lengths as a prefix_sum
+        # treat valid_lengths as a input_row_offset
         start_of_seq = int(valid_length[batch_idx])
         end_of_seq = int(valid_length[batch_idx + 1])
         seq_len = end_of_seq - start_of_seq

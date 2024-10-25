@@ -1300,10 +1300,10 @@ fn flash_attention_kv_cache[
     mask_t: MHAMask, //,
 ](
     q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
-    prefix_sums: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     output: NDBuffer[type, 3, *_],
 ):
@@ -1327,14 +1327,14 @@ fn flash_attention_kv_cache[
     @always_inline
     @parameter
     fn q_length_fn(batch: Int) -> Int:
-        return int(prefix_sums[batch + 1] - prefix_sums[batch])
+        return int(input_row_offsets[batch + 1] - input_row_offsets[batch])
 
     @always_inline
     @parameter
     fn input_q_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
         var bs = idx[0]
         var tok_idx = idx[1]
-        var q_start = int(prefix_sums[bs]) + tok_idx
+        var q_start = int(input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         return q._offset(flat_idx)
 
@@ -1343,12 +1343,12 @@ fn flash_attention_kv_cache[
     fn output_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
         var bs = idx[0]
         var tok_idx = idx[1]
-        var q_start = int(prefix_sums[bs]) + tok_idx
+        var q_start = int(input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         return output._offset(flat_idx)
 
     alias mask_rank = 4
-    var num_batches = prefix_sums.dim[0]() - 1
+    var num_batches = input_row_offsets.dim[0]() - 1
     var max_seq_len = -1
     for bs in range(num_batches):
         max_seq_len = max(max_seq_len, q_length_fn(bs))

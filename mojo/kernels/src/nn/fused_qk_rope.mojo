@@ -180,7 +180,7 @@ fn fused_qk_rope_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
@@ -189,8 +189,8 @@ fn fused_qk_rope_ragged[
 ):
     alias kv_params = cache_t.get_kv_params()
 
-    var batch_size = prefix_sum.dim[0]() - 1
-    var max_seq_len = prefix_sum[batch_size]
+    var batch_size = input_row_offset.dim[0]() - 1
+    var max_seq_len = input_row_offset[batch_size]
 
     alias num_q_heads = q_proj.shape.get[1]()
     alias num_k_heads = kv_params.num_heads
@@ -200,7 +200,7 @@ fn fused_qk_rope_ragged[
 
     @always_inline
     @parameter
-    @__copy_capture(freqs_cis, q_proj, output, prefix_sum, batch_size)
+    @__copy_capture(freqs_cis, q_proj, output, input_row_offset, batch_size)
     fn rope_fn_common[
         rank: Int,
         cache_t_: KVCacheT, //,
@@ -218,16 +218,16 @@ fn fused_qk_rope_ragged[
             var global_token_idx = idx[0]
 
             var batch_idx: Int = -1
-            # loop through prefix_sum until we get to our sequence
+            # loop through input_row_offset until we get to our sequence
             # NOTE: this is O(N), we could do a binary search, but I'm not sure
             # how that would perform vs a linear search on GPU
             for i in range(batch_size):
-                if prefix_sum[i + 1] <= global_token_idx:
+                if input_row_offset[i + 1] <= global_token_idx:
                     continue
                 batch_idx = i
                 break
             debug_assert(batch_idx != -1)
-            var token_idx = int(global_token_idx - prefix_sum[batch_idx])
+            var token_idx = int(global_token_idx - input_row_offset[batch_idx])
 
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
             var head_idx = idx[1]

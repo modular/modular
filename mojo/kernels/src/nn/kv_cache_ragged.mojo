@@ -43,8 +43,8 @@ fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
     target: StringLiteral = "cpu",
 ](
     hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[type, 2, _],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=128),
@@ -58,9 +58,9 @@ fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
-        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        prefix_sum: Tensor with shape (batch_size + 1,).
+        input_row_offset: Tensor with shape (batch_size + 1,).
             The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
         kv_collection: The object storing the KVCache for this layer.
         layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
@@ -75,8 +75,8 @@ fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
             kv_collection.CacheType, target=target
         ](
             hidden_state,
+            input_row_offset,
             weight,
-            prefix_sum,
             kv_collection,
             layer_idx,
             output,
@@ -91,8 +91,8 @@ fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged[
     target: StringLiteral = "cpu",
 ](
     hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[type, 2, _],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=64),
@@ -106,9 +106,9 @@ fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged[
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
-        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        prefix_sum: Tensor with shape (batch_size + 1,).
+        input_row_offset: Tensor with shape (batch_size + 1,).
             The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
         kv_collection: The object storing the KVCache for this layer.
         layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
@@ -123,8 +123,8 @@ fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged[
             kv_collection.CacheType, target=target
         ](
             hidden_state,
+            input_row_offset,
             weight,
-            prefix_sum,
             kv_collection,
             layer_idx,
             output,
@@ -139,8 +139,8 @@ fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged[
     target: StringLiteral = "cpu",
 ](
     hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[type, 2, _],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=1, head_size=16),
@@ -154,9 +154,9 @@ fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged[
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
-        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        prefix_sum: Tensor with shape (batch_size + 1,).
+        input_row_offset: Tensor with shape (batch_size + 1,).
             The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
         kv_collection: The object storing the KVCache for this layer.
         layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
@@ -171,8 +171,8 @@ fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged[
             kv_collection.CacheType, target=target
         ](
             hidden_state,
+            input_row_offset,
             weight,
-            prefix_sum,
             kv_collection,
             layer_idx,
             output,
@@ -189,8 +189,8 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     target: StringLiteral,
 ](
     hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[type, 2, _],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
     output: NDBuffer[type, 2, _],
@@ -201,9 +201,9 @@ fn _fused_qkv_matmul_kv_cache_ragged[
 
     Args:
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
-        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
-        prefix_sum: Tensor with shape (batch_size + 1,).
+        input_row_offset: Tensor with shape (batch_size + 1,).
             The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
         kv_collection: The object storing the KVCache for this layer.
         layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
@@ -220,7 +220,13 @@ fn _fused_qkv_matmul_kv_cache_ragged[
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl[target=target](
-        hidden_state, weight, prefix_sum, k_cache, v_cache, output, cuda_ctx
+        hidden_state,
+        input_row_offset,
+        weight,
+        k_cache,
+        v_cache,
+        output,
+        cuda_ctx,
     )
 
 
@@ -232,8 +238,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     target: StringLiteral,
 ](
     hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[type, 2, _],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     k_cache: cache_t,
     v_cache: cache_t,
     output: NDBuffer[type, 2, *_],
@@ -244,9 +250,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
 
     Args:
         hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
-        weight: Tensor with shape (num_heads * head_size, (num_heads + 2 * num_kv_heads) * head_size).
-        prefix_sum: Tensor with shape (batch_size + 1,)
+        input_row_offset: Tensor with shape (batch_size + 1,)
             denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, (num_heads + 2 * num_kv_heads) * head_size).
         k_cache: The historical ContiguousKVCache for keys, with logical shape:
             (batch_size, max_seq_len, num_kv_heads, head_size).
         v_cache: The historical ContiguousKVCache for values, with logical shape:
@@ -266,10 +272,10 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     var q_dim = output.dim[1]()
     var k_dim = kv_params.head_size * kv_params.num_heads
     var qk_offset = q_dim + k_dim
-    var batch_size = prefix_sum.dim[0]() - 1
+    var batch_size = input_row_offset.dim[0]() - 1
 
     @parameter
-    @__copy_capture(output, prefix_sum, q_dim, qk_offset, batch_size)
+    @__copy_capture(output, input_row_offset, q_dim, qk_offset, batch_size)
     fn write_to_cache_common[
         type_: DType, width: Int, cache_t_: KVCacheT, *, alignment: Int = 1
     ](
@@ -287,18 +293,18 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
 
         global_token_idx = idx[0]
 
-        # loop through prefix_sum until we get to our sequence
+        # loop through input_row_offset until we get to our sequence
         # NOTE: this is O(N), we could do a binary search, but I'm not sure
         # how that would perform vs a linear search on GPU
         var batch_idx: Int = -1
         for i in range(batch_size):
-            if prefix_sum[i + 1] <= global_token_idx:
+            if input_row_offset[i + 1] <= global_token_idx:
                 continue
 
             batch_idx = i
             break
 
-        token_idx = int(global_token_idx - prefix_sum[batch_idx])
+        token_idx = int(global_token_idx - input_row_offset[batch_idx])
 
         var h_idx: UInt
         var hd_idx: UInt
@@ -431,7 +437,7 @@ fn fused_qk_rope_h6_d48_bshd_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=6, head_size=48),
@@ -461,7 +467,7 @@ fn fused_qk_rope_h6_d48_bshd_ragged[
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
             q_proj,
-            prefix_sum,
+            input_row_offset,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -477,7 +483,7 @@ fn fused_qk_rope_h8_d128_bshd_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=128),
@@ -507,7 +513,7 @@ fn fused_qk_rope_h8_d128_bshd_ragged[
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
             q_proj,
-            prefix_sum,
+            input_row_offset,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -523,7 +529,7 @@ fn fused_qk_rope_h1_d16_bshd_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=1, head_size=16),
@@ -553,7 +559,7 @@ fn fused_qk_rope_h1_d16_bshd_ragged[
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
             q_proj,
-            prefix_sum,
+            input_row_offset,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -569,7 +575,7 @@ fn fused_qk_rope_h8_d32_bshd_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=32),
@@ -599,7 +605,7 @@ fn fused_qk_rope_h8_d32_bshd_ragged[
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
             q_proj,
-            prefix_sum,
+            input_row_offset,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -615,7 +621,7 @@ fn fused_qk_rope_h8_d64_bshd_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContiguousKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=64),
@@ -645,7 +651,7 @@ fn fused_qk_rope_h8_d64_bshd_ragged[
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
             q_proj,
-            prefix_sum,
+            input_row_offset,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -661,7 +667,7 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=128),
@@ -691,7 +697,7 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
             q_proj,
-            prefix_sum,
+            input_row_offset,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -707,7 +713,7 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=1, head_size=16),
@@ -737,7 +743,7 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch_ragged[
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
             q_proj,
-            prefix_sum,
+            input_row_offset,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -753,7 +759,7 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=32),
@@ -783,7 +789,7 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch_ragged[
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
             q_proj,
-            prefix_sum,
+            input_row_offset,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -799,7 +805,7 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         KVCacheStaticParams(num_heads=8, head_size=64),
@@ -829,7 +835,7 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
     ):
         fused_qk_rope_ragged[kv_collection.CacheType, target=target](
             q_proj,
-            prefix_sum,
+            input_row_offset,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -850,11 +856,11 @@ fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
     target: StringLiteral,
 ](
     q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type, KVCacheStaticParams(num_heads=1, head_size=16)
     ],
     layer_idx: UInt32,
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
@@ -864,7 +870,7 @@ fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
     ):
         return _flash_attention_kv_cache_ragged[
             kv_collection.CacheType, target=target
-        ](q, kv_collection, layer_idx, prefix_sum, scale, output, context)
+        ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
 
 
 @mogg_register("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
@@ -874,11 +880,11 @@ fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
     target: StringLiteral,
 ](
     q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type, KVCacheStaticParams(num_heads=6, head_size=64)
     ],
     layer_idx: UInt32,
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
@@ -888,7 +894,7 @@ fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
     ):
         return _flash_attention_kv_cache_ragged[
             kv_collection.CacheType, target=target
-        ](q, kv_collection, layer_idx, prefix_sum, scale, output, context)
+        ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
 
 
 @mogg_register("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
@@ -898,11 +904,11 @@ fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
     target: StringLiteral,
 ](
     q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type, KVCacheStaticParams(num_heads=8, head_size=128)
     ],
     layer_idx: UInt32,
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
@@ -912,7 +918,7 @@ fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
     ):
         return _flash_attention_kv_cache_ragged[
             kv_collection.CacheType, target=target
-        ](q, kv_collection, layer_idx, prefix_sum, scale, output, context)
+        ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
 
 
 @always_inline
@@ -923,9 +929,9 @@ fn _flash_attention_kv_cache_ragged[
     target: StringLiteral,
 ](
     q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
@@ -934,9 +940,9 @@ fn _flash_attention_kv_cache_ragged[
 
     Args:
         q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
+        input_row_offset: The start and end position of each entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        prefix_sum: The start and end position of each entry in the batch.
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
@@ -950,9 +956,9 @@ fn _flash_attention_kv_cache_ragged[
 
     _flash_attention_kv_cache_ragged_impl[cache_t, target=target](
         q,
+        input_row_offset,
         kv_collection,
         layer_idx,
-        prefix_sum,
         scale,
         output,
         cuda_ctx,
@@ -967,9 +973,9 @@ fn _flash_attention_kv_cache_ragged_impl[
     target: StringLiteral,
 ](
     q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     output: NDBuffer[type, 3, *_],
     context: Optional[DeviceContext],
@@ -978,9 +984,9 @@ fn _flash_attention_kv_cache_ragged_impl[
 
     Args:
         q: NDBuffer with shape (sum(seq_lens in batch), num_heads, head_size).
+        input_row_offset: The start and end position of each entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
-        prefix_sum: The start and end position of each entry in the batch.
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (sum(seq_lens in batch), num_heads, head_size).
@@ -994,11 +1000,11 @@ fn _flash_attention_kv_cache_ragged_impl[
     @parameter
     if target == "cpu":
         return flash_attention_kv_cache_cpu(
-            q, k, v, CausalMask(), prefix_sum, scale, output
+            q, input_row_offset, k, v, CausalMask(), scale, output
         )
     else:
         return _flash_attention_kv_cache_ragged_gpu[target=target](
-            q, k, v, prefix_sum, scale, output, context.value()
+            q, input_row_offset, k, v, scale, output, context.value()
         )
 
 
@@ -1007,9 +1013,9 @@ fn _flash_attention_kv_cache_ragged_gpu[
     type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
 ](
     q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
     k: cache_t,
     v: cache_t,
-    prefix_sum: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     output: NDBuffer[type, 3, *_],
     context: DeviceContext,
@@ -1032,7 +1038,7 @@ fn _flash_attention_kv_cache_ragged_gpu[
         v,
         dummy_mask,
         CausalMask(),
-        prefix_sum,
+        input_row_offset,
         scale,
         context,
     )

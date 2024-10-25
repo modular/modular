@@ -112,10 +112,10 @@ def test_fused_qk_rope[type: DType]() -> None:
     )
 
     # Create query tensor as a view of the query buffer.
-    prefix_sum = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
+    input_row_offset = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
     for i in range(batch_size):
-        prefix_sum.tensor[i] = i * seq_len
-    prefix_sum.tensor[batch_size] = batch_size * seq_len
+        input_row_offset.tensor[i] = i * seq_len
+    input_row_offset.tensor[batch_size] = batch_size * seq_len
 
     q = NDBuffer[
         type, rank=3, shape = DimList(batch_size * seq_len, num_heads, head_dim)
@@ -152,7 +152,7 @@ def test_fused_qk_rope[type: DType]() -> None:
     q_out = NDBuffer[type, rank=3](q_out_buffer.data, q.dynamic_shape)
     fused_qk_rope_ragged[kv_collection.CacheType, target="cpu"](
         q_proj=q,
-        prefix_sum=prefix_sum.tensor,
+        input_row_offset=input_row_offset.tensor,
         kv_collection=kv_collection,
         freqs_cis=freqs_cis_table,
         output=q_out,
