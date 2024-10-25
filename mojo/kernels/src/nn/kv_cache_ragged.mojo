@@ -15,6 +15,7 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
+    KVCollectionT,
 )
 from linalg.matmul import _matmul_cpu, elementwise_epilogue_type
 from linalg.matmul_gpu import _matmul_gpu
@@ -24,6 +25,15 @@ from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
 from register import mogg_register
 from nn.fused_qk_rope import fused_qk_rope_ragged
+from nn.mha import flash_attention as gpu_flash_attention
+from nn.mha_mask import CausalMask
+from nn.flash_attention import (
+    flash_attention_kv_cache as flash_attention_kv_cache_cpu,
+)
+
+# ===----------------------------------------------------------------------===#
+# Fused QKV Matmul
+# ===----------------------------------------------------------------------===#
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
@@ -31,7 +41,7 @@ from nn.fused_qk_rope import fused_qk_rope_ragged
 fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
-](
+](  # TODO change to operate on collection
     hidden_state: NDBuffer[type, 2, _],
     weight: NDBuffer[type, 2, _],
     prefix_sum: NDBuffer[DType.uint32, 1, *_],
@@ -387,6 +397,11 @@ fn _matmul_common[
             transpose_b=True,
             target=target,
         ](c_nd, hidden_state, weight, context.value())
+
+
+# ===----------------------------------------------------------------------===#
+# Fused QK Rope
+# ===----------------------------------------------------------------------===#
 
 
 @mogg_register("fused_qk_rope_h6_d48_bshd_ragged")
@@ -801,3 +816,209 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
             output,
             dev_ctx,
         )
+
+
+# ===----------------------------------------------------------------------===#
+#   Flash Attention
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
+@export
+fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
+    type: DType,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, KVCacheStaticParams(num_heads=1, head_size=16)
+    ],
+    layer_idx: UInt32,
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h1_d16_cont_batch_ragged"
+    ):
+        return _flash_attention_kv_cache_ragged[cache_t, target=target](
+            q, kv_collection, layer_idx, prefix_sum, scale, output, context
+        )
+
+
+@mogg_register("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
+@export
+fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
+    type: DType,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, KVCacheStaticParams(num_heads=6, head_size=64)
+    ],
+    layer_idx: UInt32,
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h8_d64_cont_batch_ragged"
+    ):
+        return _flash_attention_kv_cache_ragged[cache_t, target=target](
+            q, kv_collection, layer_idx, prefix_sum, scale, output, context
+        )
+
+
+@mogg_register("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
+@export
+fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
+    type: DType,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, KVCacheStaticParams(num_heads=8, head_size=128)
+    ],
+    layer_idx: UInt32,
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h8_d128_cont_batch_ragged"
+    ):
+        return _flash_attention_kv_cache_ragged[cache_t, target=target](
+            q, kv_collection, layer_idx, prefix_sum, scale, output, context
+        )
+
+
+@always_inline
+fn _flash_attention_kv_cache_ragged[
+    type: DType,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    """Performs flash attention using k and v caches from ContiguousKVCache custom types.
+
+    Args:
+        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
+        kv_collection: The Collection object storing out KVCache entries for this layer
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        prefix_sum: The start and end position of each entry in the batch.
+        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        output: The Pre-allocated output buffer to write results to. Has shape:
+            (batch_size, num_heads, seq_len, head_size).
+        context: Pointer containing the runtime context for the target device.
+    """
+    var cuda_ctx: Optional[DeviceContext] = None
+
+    @parameter
+    if target != "cpu":
+        cuda_ctx = context.get_device_context()
+
+    _flash_attention_kv_cache_ragged_impl[cache_t, target=target](
+        q,
+        kv_collection,
+        layer_idx,
+        prefix_sum,
+        scale,
+        output,
+        cuda_ctx,
+    )
+
+
+@always_inline
+fn _flash_attention_kv_cache_ragged_impl[
+    type: DType,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: Optional[DeviceContext],
+) raises:
+    """Performs flash attention using k and v caches from ContiguousKVCache custom types.
+
+    Args:
+        q: NDBuffer with shape (sum(seq_lens in batch), num_heads, head_size).
+        kv_collection: The Collection object storing out KVCache entries for this layer
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        prefix_sum: The start and end position of each entry in the batch.
+        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        output: The Pre-allocated output buffer to write results to. Has shape:
+            (sum(seq_lens in batch), num_heads, head_size).
+        context: CUDA DeviceContext. This is not used if target == "cpu"
+    """
+
+    var layer_idx_cast = int(layer_idx)
+    var k = kv_collection.get_key_cache[cache_t](layer_idx_cast)
+    var v = kv_collection.get_value_cache[cache_t](layer_idx_cast)
+
+    @parameter
+    if target == "cpu":
+        return flash_attention_kv_cache_cpu(
+            q, k, v, CausalMask(), prefix_sum, scale, output
+        )
+    else:
+        return _flash_attention_kv_cache_ragged_gpu[target=target](
+            q, k, v, prefix_sum, scale, output, context.value()
+        )
+
+
+@always_inline
+fn _flash_attention_kv_cache_ragged_gpu[
+    type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
+](
+    q: NDBuffer[type, 3, *_],
+    k: cache_t,
+    v: cache_t,
+    prefix_sum: NDBuffer[DType.uint32, 1, *_],
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: DeviceContext,
+) raises:
+    var dummy_mask = NDBuffer[
+        type,
+        4,
+        DimList.create_unknown[4](),
+    ]()
+
+    gpu_flash_attention[
+        add_attn_mask=False,
+        use_tensor_core=True,
+        target=target,
+        ragged=True,
+    ](
+        output,
+        q,
+        k,
+        v,
+        dummy_mask,
+        CausalMask(),
+        prefix_sum,
+        scale,
+        context,
+    )

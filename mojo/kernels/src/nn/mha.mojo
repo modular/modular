@@ -388,7 +388,7 @@ fn flash_attention[
     v: cache_t,
     mask: NDBuffer,
     mask_functor: mask_t,
-    valid_length: NDBuffer[DType.uint32, 1],
+    valid_length: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -2305,7 +2305,7 @@ fn mha_gpu_naive[
     mask_ptr: UnsafePointer[Scalar[mask_type], *_],
     mask_functor: mask_t,
     output_ptr: UnsafePointer[Scalar[output_type], *_],
-    valid_length: NDBuffer[DType.uint32, 1],
+    valid_length: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
