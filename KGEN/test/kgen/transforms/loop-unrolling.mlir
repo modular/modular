@@ -329,15 +329,16 @@ kgen.func @unroll_factor_not_divisible() -> index {
 
    // CHECK:      [[IDX5:%.*]] = index.constant 5
    // CHECK-NEXT: [[IDX4:%.*]] = index.constant 4
+   // CHECK-NEXT: [[IDX2:%.*]] = index.constant 2
    // CHECK-NEXT: [[IDX0:%.*]] = index.constant 0
    // CHECK-NEXT: [[IDX1:%.*]] = index.constant 1
    // CHECK-NEXT: [[IDX3:%.*]] = index.constant 3
    // CHECK-NEXT: [[V0:%.*]] = hlcf.for [[[IDX0]] to [[IDX3]] step [[IDX3]] sle add]  (%arg0 = [[IDX0]] : index, %arg1 = [[IDX0]] : index) -> index {
    // CHECK-NEXT:   [[V1:%.*]] = index.add %arg0, [[IDX1]]
    // CHECK-NEXT:   kgen.call @foo(%1) : (index) -> ()
-   // CHECK-NEXT:   [[V2:%.*]] = index.add [[V1]], [[IDX1]]
+   // CHECK-NEXT:   [[V2:%.*]] = index.add %arg0, [[IDX2]]
    // CHECK-NEXT:   kgen.call @foo(%2) : (index) -> ()
-   // CHECK-NEXT:   [[V3:%.*]] = index.add [[V2]], [[IDX1]]
+   // CHECK-NEXT:   [[V3:%.*]] = index.add %arg0, [[IDX3]]
    // CHECK-NEXT:   kgen.call @foo([[V3]]) : (index) -> ()
    // CHECK-NEXT:   hlcf.for.yield [induction_var ([[V3]] : index)] [retvals ([[V3]] : index)] [iterargs ()]
    // CHECK-NEXT: }
