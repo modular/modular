@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "RPCServer.h"
+#include "RPCClient.h"
 #include "KGEN/Support/Configuration.h"
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
