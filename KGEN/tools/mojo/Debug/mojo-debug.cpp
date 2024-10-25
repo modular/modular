@@ -10,7 +10,7 @@
 #include "../Common/LLDB.h"
 #include "Init/Init.h"
 #include "KGEN/Support/Configuration.h"
-#include "RPCServer.h"
+#include "RPCClient.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Path.h"
 
