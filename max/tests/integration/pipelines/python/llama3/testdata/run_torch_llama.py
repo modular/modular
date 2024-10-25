@@ -138,7 +138,7 @@ def main(model, encoding, verbose):
             )
             results = run_torch_llama3(llama3, tokenizer, device, PROMPTS)
             output_full_path = os.path.join(
-                "/tmp/torch_{self.encoding}_{hardware}_golden.json"
+                f"/tmp/torch_{model}_{encoding}_golden.json"
             )
             if verbose:
                 print(f"===Results for {model} {encoding}")
