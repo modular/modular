@@ -34,6 +34,7 @@ from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.cublas import cublas_matmul
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
+from linalg.utils_gpu import MatmulConfig, MatmulKernels
 from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
 
@@ -87,6 +88,7 @@ fn test[
     init_a: Optional[init_fn_type] = None,
     init_b: Optional[init_fn_type] = None,
     lambda_fn: Optional[epilogue_func_type] = None,
+    config: OptionalReg[MatmulConfig[type, type, type, transpose_b]] = None,
 ](
     ctx: DeviceContext,
     m: ValOrDim,
@@ -186,6 +188,7 @@ fn test[
             use_tensor_core=True,
             transpose_b=transpose_b,
             elementwise_lambda_fn=epilogue_fn,
+            config=config,
         ](
             c_device.tensor,
             a_device.tensor,
@@ -193,7 +196,9 @@ fn test[
             ctx,
         )
     else:
-        _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b,](
+        _matmul_gpu[
+            use_tensor_core=True, transpose_b=transpose_b, config=config
+        ](
             c_device.tensor,
             a_device.tensor,
             b_device.tensor,
@@ -271,6 +276,7 @@ def main():
             init_a=linspace,
             init_b=linspace,
         ](ctx, dynamic(512), static[12288](), static[4096]())
+
         print("===> tfloat32-float32 mma")
         test[DType.float32, init_a=linspace](
             ctx, dynamic(256), static[384](), static[128]()
@@ -288,9 +294,21 @@ def main():
         test[DType.float32](ctx, dynamic(555), static[4096](), static[4096]())
 
         print("===> bfloat16-float32 mma")
-        test[DType.bfloat16, init_a=linspace](
-            ctx, dynamic(1024), static[3072](), static[12288]()
-        )
+        test[
+            DType.bfloat16,
+            init_a=linspace,
+            transpose_b=True,
+            config = MatmulConfig[
+                DType.bfloat16,
+                DType.bfloat16,
+                DType.bfloat16,
+                transpose_b=True,
+            ](
+                block_tile_shape=Index(64, 128, 64),
+                warp_tile_shape=(16, 128, 64),
+                num_pipeline_stages=3,
+            ),
+        ](ctx, dynamic(100), static[128](), static[128]())
         test[DType.bfloat16, init_b=linspace](
             ctx, dynamic(1024), static[12288](), static[3072]()
         )
@@ -313,6 +331,7 @@ def main():
             DType.float32,
             lambda_fn=epilogue_test_fn,
         ](ctx, dynamic(777), static[12288](), static[2048]())
+
         print("===> bfloat16-float32 mma with epilogue")
         test[
             DType.bfloat16,
