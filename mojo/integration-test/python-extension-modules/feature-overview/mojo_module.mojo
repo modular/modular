@@ -15,7 +15,7 @@ from os import abort
 
 from python import Python, PythonObject, TypedPythonObject
 from python._bindings import (
-    create_wrapper_function,
+    py_c_function_wrapper,
     PyMojoObject,
 )
 from builtin._pybind import (
@@ -51,23 +51,23 @@ fn PyInit_mojo_module() -> PythonObject:
 
     var funcs = List[PyMethodDef](
         PyMethodDef.function[
-            create_wrapper_function[case_return_arg_tuple](),
+            py_c_function_wrapper[case_return_arg_tuple],
             "case_return_arg_tuple",
         ](),
         PyMethodDef.function[
-            create_wrapper_function[case_raise_empty_error](),
+            py_c_function_wrapper[case_raise_empty_error],
             "case_raise_empty_error",
         ](),
         PyMethodDef.function[
-            create_wrapper_function[case_raise_string_error](),
+            py_c_function_wrapper[case_raise_string_error],
             "case_raise_string_error",
         ](),
         PyMethodDef.function[
-            create_wrapper_function[case_mojo_raise](),
+            py_c_function_wrapper[case_mojo_raise],
             "case_mojo_raise",
         ](),
         PyMethodDef.function[
-            create_wrapper_function[incr_int__wrapper](),
+            py_c_function_wrapper[incr_int__wrapper],
             "incr_int",
         ](),
     )
@@ -177,7 +177,7 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
 
     var methods = List[PyMethodDef](
         PyMethodDef.function[
-            create_wrapper_function[Person.obj_name](),
+            py_c_function_wrapper[Person.obj_name],
             "name",
         ](),
         # Zeroed item as terminator
