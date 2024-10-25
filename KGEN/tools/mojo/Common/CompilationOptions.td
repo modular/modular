@@ -45,6 +45,18 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
            "that, when queried with the `sys.param_env` module from within the "
            "Mojo program, would yield the compile-time value `42`.">;
 
+defm debug_level : CommandOption<["--", "-"], "debug-level",
+  CompilationOptionGroup, Index<5>, MetaVarName<"LEVEL">,
+  HelpText<
+    "Sets the level of debug info to use at compilation. The value must be one "
+    "of: `none` (the default value), `line-tables`, or `full`. Please note "
+    "that there are issues when generating debug info for some Mojo programs "
+    "that have yet to be addressed."
+  >>;
+
+def : Flag<["-"], "g">, Group<CompilationOptionGroup>, Index<6>,
+  Alias<debug_level>, AliasArgs<["full"]>;
+
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
 //===----------------------------------------------------------------------===//
@@ -52,24 +64,11 @@ def D : Separate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
 def ExperimentalCompilationOptionGroup :
   OptionGroup<"Experimental compilation options">, Index<15>;
 
-defm debug_level : CommandOption<["--", "-"], "debug-level",
-  ExperimentalCompilationOptionGroup, Index<0>, MetaVarName<"LEVEL">,
-  HelpText<
-    "Sets the level of debug info to use at compilation. The value must be one "
-    "of: `none` (the default value), `line-tables`, or `full`. Please note "
-    "that there are issues when generating debug info for some Mojo programs "
-    "that have yet to be addressed."
-  >>;
-def : Flag<["-"], "g">, Group<ExperimentalCompilationOptionGroup>, Index<1>,
-  Alias<debug_level>, AliasArgs<["full"]>;
-
 defm sanitize : CommandOption<["--", "-"], "sanitize",
   ExperimentalCompilationOptionGroup, Index<1>, MetaVarName<"CHECK">,
   HelpText<
     "Turns on runtime checks. The following values are supported: `address` "
-    "(detects memory issues), and `thread` (detects multi-threading issues). "
-    "Please note that these checks are not currently supported when executing "
-    "Mojo programs."
+    "(detects memory issues), and `thread` (detects multi-threading issues)."
   >>;
 
 defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
