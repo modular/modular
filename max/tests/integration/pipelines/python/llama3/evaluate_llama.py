@@ -25,13 +25,12 @@ import numpy.typing as npt
 from cpuinfo import get_cpu_info
 from huggingface_hub import hf_hub_download
 from llama3.config import (
-    DeviceSpec,
     InferenceConfig,
     SupportedEncodings,
     SupportedVersions,
 )
 from llama3.llama3 import Llama3, Llama3Context
-from max.driver import CPU
+from max.driver import CPU, DeviceSpec
 from nn.kv_cache import KVCacheStrategy
 
 

@@ -18,7 +18,7 @@ from evaluate_llama import (
     llama3_decode,
 )
 from llama3 import SupportedEncodings
-from llama3.config import DeviceSpec
+from max.driver import DeviceSpec
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,

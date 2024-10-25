@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """The parameters used when parameterizing a test."""
 
-from llama3 import DeviceSpec
+from max.driver import DeviceSpec
 
 
 class ModelParams:
