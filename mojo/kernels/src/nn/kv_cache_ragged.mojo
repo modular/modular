@@ -846,9 +846,7 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
 @mogg_register("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
 @export
 fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
-    type: DType,
-    collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
+    type: DType, //,
     target: StringLiteral,
 ](
     q: NDBuffer[type, 3, *_],
@@ -864,17 +862,15 @@ fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h1_d16_cont_batch_ragged"
     ):
-        return _flash_attention_kv_cache_ragged[cache_t, target=target](
-            q, kv_collection, layer_idx, prefix_sum, scale, output, context
-        )
+        return _flash_attention_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](q, kv_collection, layer_idx, prefix_sum, scale, output, context)
 
 
 @mogg_register("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
 @export
 fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
-    type: DType,
-    collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
+    type: DType, //,
     target: StringLiteral,
 ](
     q: NDBuffer[type, 3, *_],
@@ -890,17 +886,15 @@ fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d64_cont_batch_ragged"
     ):
-        return _flash_attention_kv_cache_ragged[cache_t, target=target](
-            q, kv_collection, layer_idx, prefix_sum, scale, output, context
-        )
+        return _flash_attention_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](q, kv_collection, layer_idx, prefix_sum, scale, output, context)
 
 
 @mogg_register("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
 @export
 fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
-    type: DType,
-    collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
+    type: DType, //,
     target: StringLiteral,
 ](
     q: NDBuffer[type, 3, *_],
@@ -916,9 +910,9 @@ fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
     with Trace[TraceLevel.OP, target=target](
         "flash_attention_kv_cache_h8_d128_cont_batch_ragged"
     ):
-        return _flash_attention_kv_cache_ragged[cache_t, target=target](
-            q, kv_collection, layer_idx, prefix_sum, scale, output, context
-        )
+        return _flash_attention_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](q, kv_collection, layer_idx, prefix_sum, scale, output, context)
 
 
 @always_inline
