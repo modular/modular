@@ -12,6 +12,11 @@ from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 
 
+# ===----------------------------------------------------------------------===#
+# TileMaskStatus
+# ===----------------------------------------------------------------------===#
+
+
 @value
 @register_passable("trivial")
 struct TileMaskStatus:
@@ -30,6 +35,11 @@ struct TileMaskStatus:
 
     fn __eq__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
+
+
+# ===----------------------------------------------------------------------===#
+# MHAMask
+# ===----------------------------------------------------------------------===#
 
 
 trait MHAMask:
@@ -71,6 +81,11 @@ trait MHAMask:
     ) -> TileMaskStatus:
         """Given a tile' index range, return its masking status."""
         ...
+
+
+# ===----------------------------------------------------------------------===#
+# CausalMask
+# ===----------------------------------------------------------------------===#
 
 
 @value
@@ -136,6 +151,11 @@ struct CausalMask(MHAMask):
         # (T, F) -> partial mask
         # (T, T) -> full mask
         return TileMaskStatus(min_q_lt_max_k + (max_q_lt_min_k << 1))
+
+
+# ===----------------------------------------------------------------------===#
+# NullMask
+# ===----------------------------------------------------------------------===#
 
 
 @value
