@@ -22,7 +22,7 @@ from gpu.host import (
 )
 from gpu.host._compile import _get_nvptx_target
 from gpu.memory import AddressSpace, CacheOperation, load
-from gpu.shuffle import ReductionMethod, warp_sum
+from gpu.shuffle import ReductionMethod, warp_sum, warp_broadcast
 from gpu.tensor_ops import tc_reduce_gevm_4x, tc_reduce_gevm_8x
 from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
 
@@ -87,7 +87,7 @@ fn gemv_kernel[
     k: Int,
 ):
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var warp_id = tid // WARP_SIZE
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     if warp_id >= m:
         return
@@ -145,7 +145,7 @@ fn gemv_kernel_vector[
     alias align_a = alignof[SIMD[a_type, simd_width]]()
     alias align_b = alignof[SIMD[b_type, simd_width]]()
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var warp_id = tid // WARP_SIZE
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     var a_ptr = (
         a.data + (warp_id * a.dim[1]()) + lane_id() * simd_width
@@ -281,7 +281,7 @@ fn gemv_split_k[
                     )
 
     alias k_warp_num = block_size // WARP_SIZE
-    var warp_id = tid // WARP_SIZE
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
     var lane_id = tid % WARP_SIZE
     var shmem = stack_allocation[
         k_warp_num * tile_m * tile_n,
@@ -397,7 +397,7 @@ fn gevm_tc_kernel_vector_8x[
     var accum = SIMD[s_type, simd_width]()
     var col = BlockIdx.x() * WARP_SIZE * simd_width + lane_id() * simd_width
     var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var global_warp_id = tid // WARP_SIZE
+    var global_warp_id = warp_broadcast(tid // WARP_SIZE)
 
     var x_shared = stack_allocation[
         tile_size,

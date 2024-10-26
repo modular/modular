@@ -10,7 +10,15 @@ from sys import alignof, simdwidthof, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
+from gpu import (
+    WARP_SIZE,
+    BlockIdx,
+    GridDim,
+    ThreadIdx,
+    barrier,
+    lane_id,
+    warp_broadcast,
+)
 from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
 from gpu.memory import (
     async_copy_commit_group,
@@ -112,7 +120,7 @@ fn multistage_mma[
     alias simd_size = simdwidthof[a_type]()
 
     var tid: UInt32 = ThreadIdx.x()
-    var warp_id = tid // WARP_SIZE
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
@@ -541,7 +549,7 @@ fn multistage_gemm_kernel[
 
     var tid = ThreadIdx.x()
     var ln_id = lane_id()
-    var warp_id = tid // WARP_SIZE
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
@@ -556,7 +564,7 @@ fn multistage_gemm_kernel[
     )
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(tid // WARP_SIZE, num_warps_n)
+    warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
