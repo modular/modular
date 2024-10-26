@@ -357,7 +357,7 @@ fn warp_reduce[
 @always_inline
 fn lane_group_sum[
     val_type: DType,
-    simd_width: Int,
+    simd_width: Int, //,
     nthreads: Int,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     @parameter
@@ -368,35 +368,10 @@ fn lane_group_sum[
 
 
 @always_inline
-fn lane_group_max[
-    val_type: DType,
-    simd_width: Int,
-    nthreads: Int,
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    @parameter
-    fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
-        return max(x, y)
-
-    return lane_group_reduce[shuffle_down, _reduce_max, nthreads=nthreads](val)
-
-
-@always_inline
 fn warp_sum[
-    val_type: DType, simd_width: Int
+    val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     return lane_group_sum[nthreads=WARP_SIZE](val)
-
-
-@always_inline
-fn warp_max[
-    val_type: DType, simd_width: Int
-](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
-    return lane_group_max[nthreads=WARP_SIZE](val)
-
-
-# ===----------------------------------------------------------------------===#
-# Block Sum
-# ===----------------------------------------------------------------------===#
 
 
 @value
@@ -447,11 +422,59 @@ fn warp_sum[
 
 
 # ===----------------------------------------------------------------------===#
-# warp_broadcast
+# Warp Max
+# ===----------------------------------------------------------------------===#
+
+
+fn lane_group_max[
+    val_type: DType,
+    simd_width: Int, //,
+    nthreads: Int,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    @parameter
+    fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
+        return max(x, y)
+
+    return lane_group_reduce[shuffle_down, _reduce_max, nthreads=nthreads](val)
+
+
+@always_inline
+fn warp_max[
+    val_type: DType, simd_width: Int, //
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    return lane_group_max[nthreads=WARP_SIZE](val)
+
+
+# ===----------------------------------------------------------------------===#
+# Warp Min
 # ===----------------------------------------------------------------------===#
 
 
 @always_inline
+fn lane_group_min[
+    val_type: DType,
+    simd_width: Int, //,
+    nthreads: Int,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    @parameter
+    fn _reduce_min(x: SIMD, y: __type_of(x)) -> __type_of(x):
+        return min(x, y)
+
+    return lane_group_reduce[shuffle_down, _reduce_min, nthreads=nthreads](val)
+
+
+@always_inline
+fn warp_min[
+    val_type: DType, simd_width: Int, //
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    return lane_group_min[nthreads=WARP_SIZE](val)
+
+
+# ===----------------------------------------------------------------------===#
+# Warp Broadcast
+# ===----------------------------------------------------------------------===#
+
+
 fn warp_broadcast[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
