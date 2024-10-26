@@ -308,20 +308,20 @@ fn create_buffer_ref_with_borrow_async[
 @always_inline
 @export
 fn create_tensor_spec_async[
-    rank: Int
+    spec_rank: Int
 ](
-    spec: StaticTensorSpec[rank],
+    spec: StaticTensorSpec[spec_rank],
     async_ptr: UnsafePointer[NoneType],
     runtime: UnsafePointer[NoneType],
 ):
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
-    var shape_ptr = UnsafePointer[Int].alloc(rank)
-    for i in range(rank):
+    var shape_ptr = UnsafePointer[Int].alloc(spec_rank)
+    for i in range(spec_rank):
         shape_ptr[i] = spec.shape[i]
     external_call["KGEN_CompilerRT_CreateAsyncTensorSpec", NoneType](
-        shape_ptr, rank, spec.type, async_ptr, runtime
+        shape_ptr, spec_rank, spec.type, async_ptr, runtime
     )
     shape_ptr.free()
 
@@ -330,24 +330,28 @@ fn create_tensor_spec_async[
 @always_inline
 @export
 fn create_tensor_async[
-    rank: Int,
+    tensor_rank: Int,
+    buffer_rank: Int,
     type: DType,
     target: StringLiteral,
-    rank_promoted: Bool,
     borrow_from_storage_handle: Bool,
 ](
-    tensor: NDBuffer[type, rank],
+    buffer: NDBuffer[type, buffer_rank],
     async_to_borrow: UnsafePointer[NoneType],
     output_async: UnsafePointer[NoneType],
     runtime: UnsafePointer[NoneType],
 ):
-    constrained[not rank_promoted or rank == 1]()
-    var spec = StaticTensorSpec(tensor.dynamic_shape, type)
+    # Tensor and the underlying buffer must have the same rank, unless it is a
+    # scalar tensor stored with a NDBuffer<[1]>
+    constrained[
+        tensor_rank == buffer_rank or (tensor_rank == 0 and buffer_rank == 1)
+    ]()
+    var spec = StaticTensorSpec(buffer.dynamic_shape, type)
     external_call["KGEN_CompilerRT_CreateAsyncTensorWithBorrow", NoneType](
-        tensor.data,
+        buffer.data,
         spec.bytecount(),
-        0 if rank_promoted else rank,
-        UnsafePointer.address_of(tensor.dynamic_shape.data.array),
+        tensor_rank,
+        UnsafePointer.address_of(buffer.dynamic_shape.data.array),
         type,
         async_to_borrow,
         borrow_from_storage_handle,
@@ -448,22 +452,52 @@ fn unpack_buffer_ref[
     return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
 
 
+@mogg_register("builtin.unpack_tensor")
+@always_inline
+@export
+fn unpack_tensor[
+    buffer_rank: Int,
+    tensor_rank: Int,
+    type: DType,
+    target: StringLiteral,
+](tensor_async_ptr: UnsafePointer[NoneType]) -> NDBuffer[type, buffer_rank]:
+    # Tensor and the underlying buffer must have the same rank, unless it is a
+    # scalar tensor stored with a NDBuffer<[1]>
+    constrained[
+        tensor_rank == buffer_rank or (tensor_rank == 0 and buffer_rank == 1)
+    ]()
+    var shapes = IndexList[buffer_rank]()
+    var buffer_ptr = external_call[
+        "KGEN_CompilerRT_GetShapeAndDataFromTensor",
+        UnsafePointer[NoneType],
+    ](
+        UnsafePointer.address_of(shapes.data.array),
+        tensor_async_ptr,
+    )
+
+    @parameter
+    if tensor_rank == 0:
+        shapes[0] = 1
+
+    return NDBuffer[type, buffer_rank](buffer_ptr.bitcast[type](), shapes)
+
+
 @mogg_register("builtin.unpack_tensor_spec")
 @always_inline
 @export
 fn unpack_tensor_spec[
-    rank: Int
-](async_ptr: UnsafePointer[NoneType]) -> StaticTensorSpec[rank]:
-    var shape_ptr = UnsafePointer[Int].alloc(rank)
+    spec_rank: Int
+](async_ptr: UnsafePointer[NoneType]) -> StaticTensorSpec[spec_rank]:
+    var shape_ptr = UnsafePointer[Int].alloc(spec_rank)
     var raw_dtype = external_call[
         "KGEN_CompilerRT_GetTensorSpecFromAsync",
         UInt8,
-    ](shape_ptr, rank, async_ptr)
-    var shape = IndexList[rank]()
-    for i in range(rank):
+    ](shape_ptr, spec_rank, async_ptr)
+    var shape = IndexList[spec_rank]()
+    for i in range(spec_rank):
         shape[i] = int(shape_ptr[i])
     shape_ptr.free()
-    return StaticTensorSpec[rank](shape, DType._from_ui8(raw_dtype.value))
+    return StaticTensorSpec[spec_rank](shape, DType._from_ui8(raw_dtype.value))
 
 
 @mogg_register("builtin.unpack_context")
@@ -510,29 +544,51 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
 @mogg_register("mgp.tensor.create")
 @always_inline
 fn mgp_tensor_create[
-    rank: Int,
-    tensor_rank: Int,
+    spec_rank: Int,
+    buffer_rank: Int,
     type: DType,
 ](
     dummy_chain: Int,
     buffer: NDBuffer[DType.uint8, 1],
-    spec: StaticTensorSpec[rank],
-) -> NDBuffer[type, tensor_rank]:
+    spec: StaticTensorSpec[spec_rank],
+) -> NDBuffer[type, buffer_rank]:
     debug_assert(type == spec.type)
 
     @parameter
-    if rank == 0:
+    if spec_rank == 0:
         # We promote scalar tensor to tensor<[1]>
-        constrained[tensor_rank == 1]()
-        return NDBuffer[type, tensor_rank](
+        constrained[buffer_rank == 1]()
+        return NDBuffer[type, buffer_rank](
             buffer.data.bitcast[type](),
-            rebind[IndexList[tensor_rank]](IndexList[1](1)),
+            rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
-        constrained[rank == tensor_rank]()
-        return NDBuffer[type, tensor_rank](
+        constrained[spec_rank == buffer_rank]()
+        return NDBuffer[type, buffer_rank](
             buffer.data.bitcast[type](),
-            rebind[IndexList[tensor_rank]](spec.shape),
+            rebind[IndexList[buffer_rank]](spec.shape),
+        )
+
+
+@mogg_register("mgp.tensor.extract.tensor_spec")
+@always_inline
+fn mgp_tensor_extract_tensor_spec[
+    tensor_rank: Int,
+    buffer_rank: Int,
+    type: DType,
+](buffer: NDBuffer[type, buffer_rank]) -> StaticTensorSpec[
+    tensor_rank
+] as result:
+    @parameter
+    if tensor_rank == 0:
+        constrained[buffer_rank == 1]()
+        return rebind[__type_of(result)](
+            StaticTensorSpec[0](IndexList[0](), type)
+        )
+    else:
+        constrained[buffer_rank == tensor_rank]()
+        return rebind[__type_of(result)](
+            StaticTensorSpec[buffer_rank](buffer.dynamic_shape, type)
         )
 
 
@@ -874,7 +930,9 @@ fn mgp_tensor_spec_create[
 @mogg_register("mgp.tensor_spec.size")
 @always_inline
 @export
-fn mgp_tensor_spec_size[rank: Int](spec: StaticTensorSpec[rank]) -> Int:
+fn mgp_tensor_spec_size[
+    spec_rank: Int
+](spec: StaticTensorSpec[spec_rank]) -> Int:
     return spec.bytecount()
 
 
@@ -882,11 +940,11 @@ fn mgp_tensor_spec_size[rank: Int](spec: StaticTensorSpec[rank]) -> Int:
 @always_inline
 @export
 fn mgp_tensor_spec_equal_static[
-    rank: Int, *rawDims: Dim
-](spec: StaticTensorSpec[rank]) -> Bool:
+    spec_rank: Int, *rawDims: Dim
+](spec: StaticTensorSpec[spec_rank]) -> Bool:
     var dims: VariadicList[Dim] = rawDims
     var numDims = len(dims)
-    if rank != numDims:
+    if spec_rank != numDims:
         return False
     for i in range(numDims):
         var dim = dims[i]
