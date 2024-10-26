@@ -192,5 +192,4 @@ kgen.func @simd_cast(
     !pop.simd<2, f32>,
     !pop.simd<2, f32>
 }
-
 }
