@@ -287,7 +287,7 @@ fn create_non_tracked_buffer_ref_async[
 @always_inline
 @export
 fn create_buffer_ref_with_borrow_async[
-    borrow_from_storage_handle: Bool, target: StringLiteral
+    borrowee_type: Int, target: StringLiteral
 ](
     buffer: NDBuffer[DType.int8, 1],
     async_to_borrow: UnsafePointer[NoneType],
@@ -298,7 +298,7 @@ fn create_buffer_ref_with_borrow_async[
         buffer.data,
         len(buffer),
         async_to_borrow,
-        borrow_from_storage_handle,
+        borrowee_type,
         output_async,
         runtime,
     )
@@ -334,7 +334,7 @@ fn create_tensor_async[
     buffer_rank: Int,
     type: DType,
     target: StringLiteral,
-    borrow_from_storage_handle: Bool,
+    borrowee_type: Int,
 ](
     buffer: NDBuffer[type, buffer_rank],
     async_to_borrow: UnsafePointer[NoneType],
@@ -354,7 +354,7 @@ fn create_tensor_async[
         UnsafePointer.address_of(buffer.dynamic_shape.data.array),
         type,
         async_to_borrow,
-        borrow_from_storage_handle,
+        borrowee_type,
         output_async,
         runtime,
     )
@@ -590,6 +590,19 @@ fn mgp_tensor_extract_tensor_spec[
         return rebind[__type_of(result)](
             StaticTensorSpec[buffer_rank](buffer.dynamic_shape, type)
         )
+
+
+@mogg_register("mgp.tensor.extract.buffer")
+@always_inline
+fn mgp_tensor_extract_buffer[
+    tensor_rank: Int,
+    buffer_rank: Int,
+    type: DType,
+](buffer: NDBuffer[type, buffer_rank]) -> NDBuffer[DType.uint8, 1]:
+    # Unwrap the tensor into a size-less buffer pointer.
+    return NDBuffer[DType.uint8, 1](
+        buffer.data.bitcast[UInt8](), buffer.bytecount()
+    )
 
 
 # ===----------------------------------------------------------------------===#
