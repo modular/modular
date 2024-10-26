@@ -56,6 +56,12 @@ using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
 /// have to include in the header).
 COMPILERRT_EXPORT void KGEN_CompilerRT_AsyncRT_Dummy() {}
 
+enum BorroweeType : size_t {
+  kHandle = 0,
+  kBuffer = 1,
+  kTensor = 2,
+};
+
 //===----------------------------------------------------------------------===//
 // Chains
 //===----------------------------------------------------------------------===//
@@ -366,17 +372,20 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncBufferWithBorrow(
     void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> toBorrowFrom,
-    bool borrowFromHandle, AsyncRTWrapper<AnyAsyncValueRef> async,
+    size_t borroweeType, AsyncRTWrapper<AnyAsyncValueRef> async,
     AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &outVal = unwrap(async);
   AnyAsyncValueRef &handleOrTensor = unwrap(toBorrowFrom);
   AnyAsyncValueRef handle;
-  if (borrowFromHandle) {
+  if (borroweeType == kHandle) {
     handle = std::move(handleOrTensor);
-  } else {
+  } else if (borroweeType == kBuffer) {
     // Use the lifetime of the other tensor by sharing the same storage handle.
     handle = handleOrTensor.get<TensorBufferRef>().getMemStorageHandle();
+  } else {
+    assert(borroweeType == kTensor);
+    handle = handleOrTensor.get<Tensor>().getBufferRef().getMemStorageHandle();
   }
   TensorBufferRef buf = ::M::TensorBufferRef::create(
       data, size, std::move(handle), std::optional<size_t>{});
@@ -392,7 +401,7 @@ KGEN_CompilerRT_CreateAsyncBufferWithBorrow(
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncTensorWithBorrow(
     void *data, size_t byteCount, size_t rank, size_t *dims, int8_t type,
-    AsyncRTWrapper<AnyAsyncValueRef> toBorrowFrom, bool borrowFromHandle,
+    AsyncRTWrapper<AnyAsyncValueRef> toBorrowFrom, size_t borroweeType,
     AsyncRTWrapper<AnyAsyncValueRef> async,
     AsyncRTWrapper<Runtime> runtimePtr) {
   Runtime &rt = unwrap(runtimePtr);
@@ -401,11 +410,14 @@ KGEN_CompilerRT_CreateAsyncTensorWithBorrow(
   // Create a borrowed buffer ref.
   AnyAsyncValueRef &handleOrTensor = unwrap(toBorrowFrom);
   AnyAsyncValueRef handle;
-  if (borrowFromHandle) {
+  if (borroweeType == kHandle) {
     handle = std::move(handleOrTensor);
-  } else {
+  } else if (borroweeType == kBuffer) {
     // Use the lifetime of the other tensor by sharing the same storage handle.
     handle = handleOrTensor.get<TensorBufferRef>().getMemStorageHandle();
+  } else {
+    assert(borroweeType == kTensor);
+    handle = handleOrTensor.get<Tensor>().getBufferRef().getMemStorageHandle();
   }
   TensorBufferRef buf = ::M::TensorBufferRef::create(
       data, byteCount, std::move(handle), std::optional<size_t>{});
