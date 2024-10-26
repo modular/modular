@@ -92,9 +92,7 @@ struct CausalMask(MHAMask):
         ],
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
-        alias index_type = _uint_type_of_width[
-            element_bitwidth
-        ]() if unsigned else _int_type_of_width[element_bitwidth]()
+        alias index_type = coord.element_type
 
         var masked_score_vec = score_vec
 
@@ -150,7 +148,7 @@ struct NullMask(MHAMask):
         type: DType,
         width: Int, //,
         *,
-        element_bitwidth: Int = bitwidthof[Int](),
+        element_bitwidth: Int = bitwidthof[UInt32](),
         unsigned: Bool = False,
     ](
         self,
@@ -163,7 +161,7 @@ struct NullMask(MHAMask):
 
     @always_inline
     fn status[
-        *, element_bitwidth: Int = bitwidthof[Int](), unsigned: Bool = False
+        *, element_bitwidth: Int = bitwidthof[UInt32](), unsigned: Bool = False
     ](
         self,
         tile_offset: IndexList[

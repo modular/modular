@@ -86,7 +86,7 @@ struct AlibiScoreMod(ScoreModTrait):
         # coord[1] is the head index.
         # coord[2] and coord[3] are the token index in query and key respectively.
 
-        alias coords_dtype = coord._int_dtype
+        alias coords_dtype = coord.element_type
         var head_idx = SIMD[coords_dtype, width](coord[1])
         var q_idx = SIMD[coords_dtype, width](coord[2])
         var k_idx = SIMD[coords_dtype, width](coord[3])
