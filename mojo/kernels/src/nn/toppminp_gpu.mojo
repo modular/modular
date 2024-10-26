@@ -153,7 +153,7 @@ fn topk_wrapper[
 
 
 @always_inline
-fn normalize_bf16(value: Scalar[DType.bfloat16]) -> Scalar[DType.uint16]:
+fn normalize(value: Scalar[DType.bfloat16]) -> Scalar[DType.uint16]:
     @always_inline
     fn reinterpret(value: Scalar[DType.bfloat16]) -> Scalar[DType.uint16]:
         # For unsigned integral types: No conversion needed, return as-is
@@ -161,8 +161,8 @@ fn normalize_bf16(value: Scalar[DType.bfloat16]) -> Scalar[DType.uint16]:
 
     # Normalize bf16 values by flipping the sign bit for positive and fully
     # inverting negative numbers
-    var bits: Scalar[DType.uint16] = reinterpret(value)
-    var sign_bit_mask = (0b1 << (bitwidthof[DType.bfloat16]() - 1))
+    var bits = reinterpret(value)
+    alias sign_bit_mask = (0b1 << (bitwidthof[DType.bfloat16]() - 1))
     if bits & sign_bit_mask:
         # For negative numbers, flip all bits (two's complement behavior)
         return ~bits
@@ -177,7 +177,7 @@ fn normalize_u32(value: Scalar[DType.uint32]) -> Scalar[DType.uint32]:
 
 
 @always_inline
-fn normalize_i32(value: Scalar[DType.int32]) -> Scalar[DType.uint32]:
+fn normalize(value: Scalar[DType.int32]) -> Scalar[DType.uint32]:
     @always_inline
     fn reinterpret(value: Scalar[DType.int32]) -> Scalar[DType.uint32]:
         # For signed integral types: Convert to unsigned int to ensure proper
@@ -187,18 +187,18 @@ fn normalize_i32(value: Scalar[DType.int32]) -> Scalar[DType.uint32]:
     # For signed integers: Flip the most significant bit to ensure correct ordering
     # This makes negative numbers appear "smaller" than positive numbers in
     # unsigned comparison
-    var sign_bit_mask = (0b1 << (bitwidthof[DType.int32]() - 1))
+    alias sign_bit_mask = (0b1 << (bitwidthof[DType.int32]() - 1))
 
     return reinterpret(value) ^ sign_bit_mask
 
 
 @always_inline
-fn normalize_u16(value: Scalar[DType.uint16]) -> Scalar[DType.uint16]:
+fn normalize(value: Scalar[DType.uint16]) -> Scalar[DType.uint16]:
     return value
 
 
 @always_inline
-fn normalize_f32(value: Scalar[DType.float32]) -> Scalar[DType.uint32]:
+fn normalize(value: Scalar[DType.float32]) -> Scalar[DType.uint32]:
     @always_inline
     fn reinterpret(value: Scalar[DType.float32]) -> Scalar[DType.uint32]:
         # For floating-point types: Reinterpret the bit pattern as an unsigned int
@@ -206,50 +206,46 @@ fn normalize_f32(value: Scalar[DType.float32]) -> Scalar[DType.uint32]:
         # representation
         return bitcast[DType.uint32, 1](value)
 
-    var bits: Scalar[DType.uint32] = reinterpret(value)
-    var sign_bit = bitwidthof[DType.float32]() - 1  # 31
+    var bits = reinterpret(value)
+    alias sign_bit = bitwidthof[DType.float32]() - 1
     # Flip all bits if the value is negative (sign bit is 1)
     # This makes more negative numbers appear "smaller" in unsigned comparison
     return bits ^ ((-(bits >> sign_bit)) | (0b1 << sign_bit))
 
 
-fn _uint_me[T: DType]() -> DType:
-    # Wrapper to reduce verbosity
-    return _uint_type_of_width[bitwidthof[T]()]()
-
-
 @always_inline
-fn normalize[T: DType](value: Scalar[T]) -> Scalar[_uint_me[T]()]:
+fn normalize(
+    value: Scalar,
+) -> Scalar[_uint_type_of_width[bitwidthof[value.type]()]()] as result:
     """
     Normalize the value to the appropriate unsigned integer type. This is needed
     for radix sort to work correctly.
     """
+    alias type = value.type
 
     @parameter
-    if T == DType.int32:
-        return rebind[Scalar[_uint_me[T]()]](
-            normalize_i32(rebind[Scalar[DType.int32]](value))
-        )
-    elif T == DType.uint32:
-        return rebind[Scalar[_uint_me[T]()]](
-            normalize_u32(rebind[Scalar[DType.uint32]](value))
-        )
-    elif T == DType.float32:
-        return rebind[Scalar[_uint_me[T]()]](
-            normalize_f32(rebind[Scalar[DType.float32]](value))
-        )
+    if type is DType.int32:
+        return normalize(rebind[Scalar[DType.int32]](value)).cast[result.type]()
+    elif type is DType.uint32:
+        return normalize(rebind[Scalar[DType.uint32]](value)).cast[
+            result.type
+        ]()
+    elif type is DType.float32:
+        return normalize(rebind[Scalar[DType.float32]](value)).cast[
+            result.type
+        ]()
     # TODO: These below don't return uint32 so must generalize and fix
-    elif T == DType.uint16:
-        return rebind[Scalar[_uint_me[T]()]](
-            normalize_u16(rebind[Scalar[DType.uint16]](value))
-        )
-    elif T == DType.bfloat16:
-        return rebind[Scalar[_uint_me[T]()]](
-            normalize_bf16(rebind[Scalar[DType.bfloat16]](value))
-        )
-
-    _printf["BAD PATH ERROR !! RAAAAA \n"]()
-    return Scalar[_uint_me[T]()](0)  # TODO: This should be an error
+    elif type is DType.uint16:
+        return normalize(rebind[Scalar[DType.uint16]](value)).cast[
+            result.type
+        ]()
+    elif type is DType.bfloat16:
+        return normalize(rebind[Scalar[DType.bfloat16]](value)).cast[
+            result.type
+        ]()
+    else:
+        constrained[False, "unhandled normalize type"]()
+        return 0
 
 
 @always_inline
