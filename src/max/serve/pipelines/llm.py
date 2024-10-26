@@ -11,16 +11,32 @@ import logging
 import os
 import signal
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Generic, Mapping, Optional
+from typing import (
+    Any,
+    AsyncGenerator,
+    Generic,
+    Mapping,
+    Optional,
+    TypeVar,
+    Union,
+)
 
-from max.pipelines import TokenGenerator, TokenGeneratorContext
+import numpy as np
+from max.pipelines.interfaces import (
+    TokenGeneratorRequest,
+    TokenGeneratorTokenizer,
+)
 from max.serve.scheduler.queues import (
     BatchingStrategy,
     BatchMultiplexQueue,
     BatchQueueConfig,
 )
 from max.serve.telemetry.stopwatch import StopWatch
-from transformers import PreTrainedTokenizerBase
+from transformers import (
+    PreTrainedTokenizer,
+    PreTrainedTokenizerBase,
+    PreTrainedTokenizerFast,
+)
 
 
 @dataclass(frozen=True)
@@ -30,20 +46,6 @@ class TokenGeneratorTimers:
     token_generation: StopWatch = field(default_factory=StopWatch)
     # Started on creation
     total: StopWatch = field(default_factory=StopWatch.start)
-
-
-@dataclass(frozen=True)
-class TokenGeneratorRequest:
-    id: str
-    prompt: str
-    max_new_tokens: Optional[int] = None
-    timers: TokenGeneratorTimers = field(default_factory=TokenGeneratorTimers)
-
-    def __str__(self):
-        txt = f"Id: {self.id}, Prompt: [{self.prompt[:40]}]"
-        if self.max_new_tokens:
-            txt += f", MaxNewTokens: {self.max_new_tokens}"
-        return txt
 
 
 @dataclass(frozen=True)
@@ -117,6 +119,9 @@ class TokenGeneratorStats:
     token_gen_batch_calls: int = 0
 
 
+TokenGeneratorContext = TypeVar("TokenGeneratorContext")
+
+
 class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     """Base class for LLM pipelines."""
 
@@ -141,8 +146,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             self.token_gen_queue.in_queue.qsize(),
             len(self.token_gen_queue.out_queues),
         )
-
-        return self.model.next_token(batch)
+        return batch
 
     def context_enc_non_empty(self) -> bool:
         self.logger.debug(
@@ -160,22 +164,22 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     def __init__(
         self,
         config: TokenGeneratorPipelineConfig,
-        model: TokenGenerator[TokenGeneratorContext],
-        tokenizer: Optional[PreTrainedTokenizerBase] = None,
+        model_name: str,
+        tokenizer: TokenGeneratorTokenizer,
         tg_yield_to_ce: bool = True,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.model = model
+        self.model_name = model_name
         self.tokenizer = tokenizer
         self.config = config
         self.stats = TokenGeneratorStats()
+
         self.queues: list[BatchMultiplexQueue] = []
-        self._background_tasks: set[asyncio.Task] = set()
         self.token_gen_queue = BatchMultiplexQueue(
             "token_generation",
+            self.model_name,
             config.token_generation,
-            self._execute_model,
-            completed_fn=TokenGeneratorPipeline.completed_token_generation_requests,
+            completed_fn=self.completed_token_generation_requests,
             should_yield=self.context_enc_non_empty if tg_yield_to_ce else None,
         )
         self.queues.append(self.token_gen_queue)
@@ -183,31 +187,50 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         self.context_enc_queue: Optional[BatchMultiplexQueue] = None
         if config.context_encoding:
             self.context_enc_queue = BatchMultiplexQueue(
-                name="context_encoding",
-                config=config.context_encoding,
-                executor_fn=self.model.next_token,
-                completed_fn=TokenGeneratorPipeline.completed_context_encoding_requests,
+                "context_encoding",
+                self.model_name,
+                config.context_encoding,
+                completed_fn=self.completed_context_encoding_requests,
             )
             self.queues.append(self.context_enc_queue)
+        self.max_queue_size = max(q.config.size for q in self.queues)
+
+        self.request_semaphore = asyncio.BoundedSemaphore(self.max_queue_size)
+        self.request_indices = set(range(self.max_queue_size))
+
+        self._timers: dict[str, TokenGeneratorTimers] = {}
+        self._background_tasks: set[asyncio.Task] = set()
+
+    async def create_request(self, id: str, **kwargs) -> TokenGeneratorRequest:
+        await self.request_semaphore.acquire()
+        index = self.request_indices.pop()
+        request = TokenGeneratorRequest(id=id, index=index, **kwargs)
+        self._timers[id] = TokenGeneratorTimers()
+        return request
+
+    def _complete_request(self, request: TokenGeneratorRequest):
+        del self._timers[request.id]
+        self.request_indices.add(request.index)
+        self.request_semaphore.release()
 
     async def next_token(
         self,
         request: TokenGeneratorRequest,
     ) -> AsyncGenerator[str, None]:
         """Generates and streams tokens for the provided request."""
-        timers = request.timers
+        timers = self._timers[request.id]
         self.logger.debug(
-            "%s: Started: Elapsed: %0.2f ms",
+            "%s [%d]: Started: Elapsed: %0.2f ms",
             request.id,
+            request.index,
             timers.total.elapsed_ms,
         )
         with timers.context_creation:
-            context = await self.model.new_context(
-                request.prompt, max_new_tokens=request.max_new_tokens
-            )
+            context = await self.tokenizer.new_context(request)
         self.logger.debug(
-            "%s: Context-Creation: %0.2f ms, Elapsed: %0.2f ms",
+            "%s [%d]: Context-Creation: %0.2f ms, Elapsed: %0.2f ms",
             request.id,
+            request.index,
             timers.context_creation.elapsed_ms,
             timers.total.elapsed_ms,
         )
@@ -219,35 +242,42 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             # fully processed.
             if self.context_enc_queue:
                 with timers.context_encoding:
-                    (token, valid) = await self.context_enc_queue.submit(
+                    encoded_token, valid = await self.context_enc_queue.submit(
                         request.id, context
                     )
                     if valid:
-                        yield token
+                        # TODO: Put this off the main thread.
+                        yield await self.tokenizer.decode(
+                            context, encoded_token
+                        )
                     else:
                         return
                 self.logger.debug(
-                    "%s: Context-Encoding: %0.2f ms, Elapsed: %0.2f ms",
+                    "%s [%d]: Context-Encoding: %0.2f ms, Elapsed: %0.2f ms",
                     request.id,
+                    request.index,
                     timers.context_encoding.elapsed_ms,
                     timers.total.elapsed_ms,
                 )
             with timers.token_generation:
-                async for token in self.token_gen_queue.stream(
+                async for encoded_token in self.token_gen_queue.stream(
                     request.id, context
                 ):
-                    yield token
+                    # TODO: Put this off the main thread.
+                    yield await self.tokenizer.decode(context, encoded_token)
             self.logger.debug(
-                "%s: Token-Generation: %0.2f ms, Elapsed: %0.2f ms",
+                "%s [%d]: Token-Generation: %0.2f ms, Elapsed: %0.2f ms",
                 request.id,
+                request.index,
                 timers.token_generation.elapsed_ms,
                 timers.total.elapsed_ms,
             )
         finally:
-            await self.model.release(context)
+            self._complete_request(request)
             self.logger.debug(
-                "%s: Completed: Elapsed: %0.2f ms",
+                "%s [%d]: Completed: Elapsed: %0.2f ms",
                 request.id,
+                request.index,
                 timers.total.elapsed_ms,
             )
 
@@ -258,26 +288,6 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     async def __aenter__(self):
         self.logger.info("Starting workers")
         assert not self._background_tasks
-
-        def log_task_done(task: asyncio.Task):
-            # TODO - should gracefully shut down here.
-            self.logger.info("Task completed: %s", task.get_name())
-            self._background_tasks.remove(task)
-            # Cancel remaining tasks.
-            for t in self._background_tasks:
-                if not t.done():
-                    t.cancel("Terminating task")
-            if task.cancelled():
-                return
-            e = task.exception()
-            if e:
-                self.logger.error(
-                    "Task completed with error. Stopping", exc_info=e
-                )
-                # Shut server down.
-                # Sending SIGTERM is ugly, but simplifies the internal plumbing.
-                os.kill(os.getpid(), signal.SIGTERM)
-
         for queue in self.queues:
             # TODO@gaz: Move to queue constructor once the queue has constructor.
             if (
@@ -291,8 +301,13 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                 queue_task = asyncio.create_task(
                     queue.continuous_batching_worker()
                 )
-            queue_task.add_done_callback(log_task_done)
-            self._background_tasks.add(queue_task)
+
+            self.add_background_task(queue_task)
+
+        # Add global fanout worker.
+        self.add_background_task(
+            asyncio.create_task(queue.response_fanout_worker())
+        )
 
         self.logger.info("Started workers")
         return self
@@ -302,6 +317,27 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         for task in self._background_tasks:
             task.cancel()
         # TODO: also cancel any `queue.get()` tasks
+
+    def add_background_task(self, task: asyncio.Task):
+        task.add_done_callback(self.log_task_done)
+        self._background_tasks.add(task)
+
+    def log_task_done(self, task: asyncio.Task):
+        # TODO - should gracefully shut down here.
+        self.logger.info("Task completed: %s", task.get_name())
+        self._background_tasks.remove(task)
+        # Cancel remaining tasks.
+        for t in self._background_tasks:
+            if not t.done():
+                t.cancel("Terminating task")
+        if task.cancelled():
+            return
+        e = task.exception()
+        if e:
+            self.logger.error("Task completed with error. Stopping", exc_info=e)
+            # Shut server down.
+            # Sending SIGTERM is ugly, but simplifies the internal plumbing.
+            os.kill(os.getpid(), signal.SIGTERM)
 
     @staticmethod
     def completed_context_encoding_requests(
@@ -321,32 +357,44 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         # in the output batch are assumed completed.
         return batch_input.keys() - batch_output.keys()
 
-    def _execute_model(self, batch):
-        self.stats.token_gen_batch_size = self.stats.token_gen_batch_size + len(
-            batch
-        )
-        self.stats.token_gen_batch_calls = self.stats.token_gen_batch_calls + 1
-        if self.logger.isEnabledFor(logging.DEBUG):
-            self.logger.debug(
-                (
-                    "Executing token-gen with, %s, step, %s, average, %s,"
-                    " context-encoding-inq, %s, context-enc-outq, %s,"
-                    " token-gen-inq, %s, token-gen-outq, %s"
-                ),
-                len(batch),
-                self.stats.token_gen_batch_calls,
-                self.stats.token_gen_batch_size
-                / self.stats.token_gen_batch_calls,
-                (
-                    self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1
-                ),
-                (
-                    len(
-                        self.context_enc_queue.out_queues
-                    ) if self.context_enc_queue else -1
-                ),
-                self.token_gen_queue.in_queue.qsize(),
-                len(self.token_gen_queue.out_queues),
-            )
 
-        return self.model.next_token(batch)
+class IdentityTokenGeneratorTokenizer(
+    Generic[TokenGeneratorContext],
+    TokenGeneratorTokenizer[TokenGeneratorContext, str],
+):
+    async def encode(self, prompt: str) -> str:
+        return prompt
+
+    async def decode(
+        self,
+        context: TokenGeneratorContext,
+        encoded: Any,
+    ) -> str:
+        if isinstance(encoded, str):
+            return encoded
+        return ""
+
+
+class PreTrainedTokenGeneratorTokenizer(
+    Generic[TokenGeneratorContext],
+    TokenGeneratorTokenizer[TokenGeneratorContext, np.ndarray],
+):
+    def __init__(
+        self,
+        delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast, None],
+    ) -> None:
+        self.delegate = delegate
+
+    async def encode(self, prompt: str) -> np.ndarray:
+        if self.delegate:
+            return np.array(self.delegate.encode(prompt))
+        return np.ones([0])
+
+    async def decode(
+        self,
+        context: TokenGeneratorContext,
+        encoded: np.ndarray,
+    ) -> str:
+        if self.delegate:
+            return self.delegate.decode(encoded)
+        return ""

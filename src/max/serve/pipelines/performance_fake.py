@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import asyncio
 import logging
 import threading
 from dataclasses import dataclass
 from time import sleep, time
-from typing import Literal, Optional
+from typing import Literal
 
-from transformers import AutoTokenizer
+import numpy as np
+from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.serve.pipelines.llm import PreTrainedTokenGeneratorTokenizer
 
 
 @dataclass
@@ -20,14 +21,63 @@ class PerformanceFakingContext:
     prompt_len: int
     context_len: int
     max_tokens: int
+
     # correctness attributes
     prompt: str
+    encoded_prompt: np.ndarray
+
+
+class PerformanceFakingTokenGeneratorTokenizer(
+    PreTrainedTokenGeneratorTokenizer[PerformanceFakingContext]
+):
+    def __init__(self, delegate):
+        super().__init__(delegate)
+        # amount of time spent in the tokenizer
+        self.tokenizer_secs = 0
+
+        # timestamp of the end of the last GPU wait
+        self.last_wait_end = None
+
+    async def new_context(
+        self, request: TokenGeneratorRequest
+    ) -> PerformanceFakingContext:
+        if self.last_wait_end is None:
+            self.last_wait_end = time()
+
+        if self.delegate:
+            encoded_prompt = self._tokenize(request.prompt)
+            prompt_length = len(encoded_prompt)
+        else:
+            prompt_length = len(request.prompt)
+        num_tokens = request.max_new_tokens or prompt_length
+        return PerformanceFakingContext(
+            prompt_length,
+            0,
+            num_tokens,
+            request.prompt,
+            np.array(encoded_prompt),
+        )
+
+    async def decode(
+        self,
+        context: PerformanceFakingContext,
+        logits: np.ndarray,
+    ) -> str:
+        # Not actually an np.ndarray!
+        return logits  # type: ignore
+
+    def _tokenize(self, prompt):
+        if self.delegate is None:
+            return prompt
+        else:
+            start = time()
+            encoded = self.delegate.encode(prompt)
+            self.tokenizer_secs += time() - start
+            return encoded
 
 
 @dataclass
-class PerformanceFakingTokenGenerator:
-    _tokenizer: Optional[AutoTokenizer] = None
-
+class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
     # ttft (ms) for prompt_length = batch_size = 1
     ce_baseline: float = 6.85
     # ttft (ms) / batch size / prompt size
@@ -43,10 +93,6 @@ class PerformanceFakingTokenGenerator:
     tg_rate_per_context_token: float = (21.11 / 256 - 12.67 / 256) / 512
     # padding mode for context encoding
     tg_padding: bool = False
-
-    # our pipelines are well behaved asyncio citizen and offload
-    # expensive work to the asyncio threadpool
-    use_executor: bool = True
 
     # whether to busy wait or to sleep
     # the model execute call in our pipelines does release the GIL
@@ -68,29 +114,9 @@ class PerformanceFakingTokenGenerator:
     # amount of time spent in between waiting
     non_wait_secs = 0
 
-    async def new_context(
-        self, prompt: str, max_new_tokens: Optional[int] = None
-    ) -> PerformanceFakingContext:
-        if self.last_wait_end is None:
-            self.last_wait_end = time()
-
-        if self._tokenizer:
-            if self.use_executor:
-                loop = asyncio.get_running_loop()
-                encoded = await loop.run_in_executor(
-                    None, self._tokenize, prompt
-                )
-            else:
-                encoded = self._tokenize(prompt)
-            prompt_length = len(encoded)
-        else:
-            prompt_length = len(prompt)
-        num_tokens = max_new_tokens or prompt_length
-        return PerformanceFakingContext(prompt_length, 0, num_tokens, prompt)
-
-    async def next_token(
+    def next_token(
         self, batch: dict[str, PerformanceFakingContext]
-    ) -> dict[str, str]:
+    ) -> dict[str, np.ndarray]:
         context_lengths = [x.context_len for x in batch.values()]
         if sum(context_lengths) == 0:
             self.logger.info(
@@ -112,11 +138,7 @@ class PerformanceFakingTokenGenerator:
                 ctx.context_len += 1
 
         # actually wait here
-        if self.use_executor:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._wait, wait_time)
-        else:
-            self._wait(wait_time)
+        self._wait(wait_time)
 
         # We return the reversed prompt, repeated as many times necessary
         # to satisfy the max_tokens
@@ -124,9 +146,9 @@ class PerformanceFakingTokenGenerator:
             rid: ctx.prompt[-((ctx.context_len + 1) % ctx.prompt_len)]
             for rid, ctx in batch.items()
             if ctx.context_len - ctx.prompt_len < ctx.max_tokens
-        }
+        }  # type: ignore
 
-    async def release(self, context: PerformanceFakingContext):
+    def release(self, context: PerformanceFakingContext):
         pass
 
     def _wait(self, wait_time_ms):
@@ -166,15 +188,6 @@ class PerformanceFakingTokenGenerator:
             + N * self.tg_rate_per_context_token
         )
 
-    def _tokenize(self, prompt):
-        if self._tokenizer is None:
-            return prompt
-        else:
-            start = time()
-            encoded = self._tokenizer.encode(prompt)
-            self.tokenizer_secs += time() - start
-            return encoded
-
     def __del__(self):
         # print the total wait time for benchmarking/debugging purposes
         self.logger.info(
@@ -192,21 +205,19 @@ class PerformanceFakingTokenGenerator:
 
 
 def get_performance_fake(
-    mode: Literal["no-op", "speed-of-light", "vllm"],
-    tokenizer: Optional[AutoTokenizer] = None,
+    mode: Literal["no-op", "speed-of-light", "vllm"]
 ) -> PerformanceFakingTokenGenerator:
     """Construct a performance fake for the given performance mode."""
     if mode == "no-op":
         return PerformanceFakingTokenGenerator(
-            tokenizer, 0, 0, False, 0, 0, 0, False, False
+            0, 0, False, 0, 0, 0, False, False
         )
     elif mode == "speed-of-light":
         # current defaults are speed-of-light on A100-80GB
-        return PerformanceFakingTokenGenerator(tokenizer)
+        return PerformanceFakingTokenGenerator()
     elif mode == "vllm":
         # this is for A100-80GB
         return PerformanceFakingTokenGenerator(
-            _tokenizer=tokenizer,
             ce_baseline=11.95,
             ce_rate=19487 / 1024 / 256,
             ce_padding=False,

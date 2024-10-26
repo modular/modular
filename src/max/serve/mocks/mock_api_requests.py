@@ -9,11 +9,14 @@
 import time
 
 
-def simple_openai_request(content="Say this is a test!"):
+def simple_openai_request(
+    model_name="gpt-3.5-turbo", content="Say this is a test!", stream=False
+):
     return {
-        "model": "gpt-3.5-turbo",
+        "model": model_name,
         "messages": [{"role": "user", "content": content}],
         "temperature": 0.7,
+        "stream": stream,
     }
 
 

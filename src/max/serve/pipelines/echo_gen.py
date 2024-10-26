@@ -5,7 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Optional
+
+from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.serve.pipelines.llm import IdentityTokenGeneratorTokenizer
 
 
 @dataclass
@@ -17,15 +19,24 @@ class EchoTokenGeneratorContext:
 
 
 @dataclass
-class EchoTokenGenerator:
+class EchoTokenGeneratorTokenizer(
+    IdentityTokenGeneratorTokenizer[EchoTokenGeneratorContext]
+):
     async def new_context(
-        self, prompt: str, max_new_tokens: Optional[int] = None
+        self, request: TokenGeneratorRequest
     ) -> EchoTokenGeneratorContext:
         return EchoTokenGeneratorContext(
-            prompt, 0, max_new_tokens if max_new_tokens else len(prompt)
+            request.prompt,
+            0,
+            request.max_new_tokens if request.max_new_tokens else len(
+                request.prompt
+            ),
         )
 
-    async def next_token(
+
+@dataclass
+class EchoTokenGenerator(TokenGenerator[EchoTokenGeneratorContext]):
+    def next_token(
         self, batch: dict[str, EchoTokenGeneratorContext]
     ) -> dict[str, str]:
         for _, ctx in batch.items():
@@ -38,5 +49,5 @@ class EchoTokenGenerator:
             if ctx.index <= len(ctx.prompt) and ctx.index <= ctx.max_tokens
         }
 
-    async def release(self, context: EchoTokenGeneratorContext):
+    def release(self, context: EchoTokenGeneratorContext):
         pass

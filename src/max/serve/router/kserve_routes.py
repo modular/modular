@@ -31,7 +31,7 @@ async def infer(
     model_name: str, model_version: str, request: Request
 ) -> Response:
     """Process a model inference request."""
-    json_data = await request.json()
+    await request.json()
 
     # TODO - parse this request and hand it off.
     print(request)

@@ -8,10 +8,13 @@
 import asyncio
 import contextlib
 import logging
+import queue
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache
 from time import monotonic
 from typing import (
+    Any,
     AsyncGenerator,
     Awaitable,
     Callable,
@@ -22,9 +25,22 @@ from typing import (
     Union,
 )
 
+from max.serve.multiprocessing.worker import MPQueue, all_queues
+
 BatchReqId = TypeVar("BatchReqId")
 BatchReqInput = TypeVar("BatchReqInput")
 BatchReqOutput = TypeVar("BatchReqOutput")
+
+BatchInputs = dict[BatchReqId, BatchReqInput]
+BatchInputsMapping = Mapping[BatchReqId, BatchReqInput]
+
+Batch = dict[BatchReqId, Any]
+
+BatchOutputs = dict[BatchReqId, Union[BatchReqOutput, int]]
+BatchOutputsMapping = Mapping[BatchReqId, Union[BatchReqOutput, int]]
+
+# TODO(SI-683): Choose a better serializable sentinel.
+STOP_STREAM = -1
 
 
 class BatchingStrategy(Enum):
@@ -55,26 +71,26 @@ class BatchQueueConfig:
         return txt
 
 
-# TODO@gaz: Would TypeVars be more appropriate here?
-# Method which executes BatchInputs and returns BatchOutputs
-BatchRequestExecutorFn = Callable[
-    [dict[BatchReqId, BatchReqInput]],
-    Awaitable[dict[BatchReqId, BatchReqOutput]],
-]
+YieldPredicate = Callable[[], bool]
 
-YieldPredicate = Callable[
-    [],
-    bool,
-]
+# Method which operates on BatchInputs prior to model forward execution.
+BatchRequestPreForwardFn = Callable[[BatchInputs], BatchInputs]
 
 # Method which when given BatchInputs and corresponding BatchOutputs,
 # determines which BatchReqIds are completed.
 BatchRequestCompletedFn = Callable[
-    [Mapping[BatchReqId, BatchReqInput], Mapping[BatchReqId, BatchReqOutput]],
+    [BatchInputsMapping, BatchOutputsMapping],
     set[BatchReqId],
 ]
 
-STOP_STREAM = object()
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class BatchEntry:
+    model_name: str
+    batch_key: int
+    batch: dict[Any, Any]
 
 
 @dataclass
@@ -94,15 +110,26 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
     """
 
     name: str
+    model_name: str
     config: BatchQueueConfig
-    executor_fn: BatchRequestExecutorFn
     completed_fn: BatchRequestCompletedFn
+    pre_forward_fn: BatchRequestPreForwardFn = lambda x: x
+
     in_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     out_queues: dict[BatchReqId, asyncio.Queue] = field(default_factory=dict)
     should_yield: Optional[YieldPredicate] = None
 
-    # TODO@gaz: We can't use __class__ here because this is currently setup as a dataclass
-    logger: logging.Logger = logging.getLogger(__name__)
+    model_in_queue: MPQueue = field(
+        default_factory=lambda: all_queues()["MODEL_IN"]
+    )
+    model_cancel_queue: MPQueue = field(
+        default_factory=lambda: all_queues()["MODEL_CANCEL"]
+    )
+
+    logger: logging.Logger = field(init=False)
+
+    def __post_init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     @contextlib.asynccontextmanager
     async def open_channel(self, req_id: BatchReqId, data: BatchReqInput):
@@ -112,9 +139,9 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
             req_id,
             self.in_queue.qsize(),
         )
-        self.out_queues[req_id] = state = asyncio.Queue()  # type: ignore
-        await self.in_queue.put((req_id, data))
         try:
+            self.out_queues[req_id] = state = asyncio.Queue()  # type: ignore
+            self.in_queue.put_nowait((req_id, data))
             yield state
         finally:
             del self.out_queues[req_id]
@@ -141,7 +168,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
 
     async def fill_batch(
         self,
-        batch: dict[BatchReqId, BatchReqInput],
+        batch: BatchInputs,
         max_batch_size: int,
         timeout_s: float = 0.0,
     ):
@@ -168,9 +195,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                 except asyncio.TimeoutError:
                     return
 
-    async def respond(
-        self, batch_responses: dict[BatchReqId, Union[BatchReqOutput, object]]
-    ):
+    async def respond(self, batch_responses: BatchOutputsMapping):
         """Writes provided responses to available output queues.
         Output queues can be closed upstream upon disconnection events.
         """
@@ -182,13 +207,33 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
             ),
         )
 
+    async def model_forward(self, batch_key: int, batch: Batch):
+        batch = self.pre_forward_fn(batch)
+        self.model_in_queue.queue.put_nowait(
+            BatchEntry(
+                self.model_name,
+                batch_key,
+                batch,
+            )
+        )
+        model_out_futures = BatchMultiplexQueue.pending_model_out_futures()
+        model_out_future = asyncio.get_running_loop().create_future()
+
+        model_out_futures[batch_key] = model_out_future
+        responses = await model_out_future
+        del model_out_futures[batch_key]
+
+        for req_id in batch:
+            batch[req_id] = None
+        return responses
+
     async def dynamic_batching_worker(self):
         self.logger.info(
             "DynamicBatcher(%s): Started: %s", self.name, self.config
         )
         try:
             while True:
-                batch: dict[BatchReqId, BatchReqInput] = {}
+                batch: BatchInputs = {}
                 await self.fill_batch(
                     batch, self.config.size, self.config.timeout
                 )
@@ -200,7 +245,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         batch.keys(),
                     )
                     while batch:
-                        results = await self.executor_fn(batch)
+                        results = await self.model_forward(id(batch), batch)
                         completed = self.completed_fn(batch, results)
                         terminated = batch.keys() - results.keys()
                         if completed or (
@@ -243,8 +288,8 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
             "ContinuousBatcher(%s): Started: %s", self.name, self.config
         )
 
-        batch: dict[BatchReqId, BatchReqInput] = {}
-        last_result: dict[BatchReqId, Union[BatchReqOutput, object]] = {}
+        batch: BatchInputs = {}
+        last_result: BatchOutputs = {}
 
         try:
             while True:
@@ -267,8 +312,9 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         )
 
                     task_results = await asyncio.gather(
-                        self.executor_fn(batch), self.respond(last_result)
-                    )
+                        self.model_forward(id(batch), batch),
+                        self.respond(last_result),
+                    )  # type: ignore
                     last_result = task_results[0]
 
                     # Determine completed requests.
@@ -285,6 +331,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     # Determine cancelled requests.
                     cancelled = last_result.keys() - self.out_queues.keys()
                     if cancelled:
+                        self.model_cancel_queue.queue.put_many_nowait(cancelled)
                         self.logger.debug(
                             "ContinuousBatcher(%s): Cancelled %d (%s)",
                             self.name,
@@ -318,4 +365,32 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
             self.logger.info(
                 "ContinuousBatcher(%s): Cancelled: %s", self.name, self.config
             )
+            raise
+
+    @lru_cache
+    @staticmethod
+    def static_logger():
+        return logging.getLogger(BatchMultiplexQueue.__name__)
+
+    @lru_cache
+    @staticmethod
+    def pending_model_out_futures():
+        return {}
+
+    @staticmethod
+    async def response_fanout_worker():
+        logger = BatchMultiplexQueue.static_logger()
+        logger.info("ResponseFanout: Started")
+        model_out_q = all_queues()["MODEL_OUT"]
+        model_out_futures = BatchMultiplexQueue.pending_model_out_futures()
+        try:
+            while True:
+                try:
+                    batch_responses = model_out_q.queue.get_many_nowait()
+                    for batch_key, responses in batch_responses:
+                        model_out_futures[batch_key].set_result(responses)
+                except queue.Empty:
+                    await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            logger.info("ResponseFanout: Cancelled")
             raise

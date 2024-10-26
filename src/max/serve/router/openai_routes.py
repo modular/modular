@@ -11,13 +11,14 @@ import logging
 import traceback
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Annotated, AsyncGenerator, List, Literal, Optional, cast
 from json.decoder import JSONDecodeError
+from typing import AsyncGenerator, List, Literal, Optional, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
-from max.serve.pipelines.deps import token_pipeline
+from max.serve.pipelines.deps import token_pipeline_state
 from max.serve.pipelines.llm import (
+    PreTrainedTokenGeneratorTokenizer,
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
 )
@@ -56,13 +57,12 @@ class OpenAIResponseGenerator(ABC):
         self.request_limiter = request_limiter
 
     async def create_request(
-        self, id: str, prompt: str, max_new_tokens: Optional[int] = None
+        self,
+        **kwargs,
     ):
         if self.request_limiter:
             await self.request_limiter.acquire()
-        return TokenGeneratorRequest(
-            id=id, prompt=prompt, max_new_tokens=max_new_tokens
-        )
+        return await self.pipeline.create_request(**kwargs)
 
     @abstractmethod
     async def stream(
@@ -192,7 +192,9 @@ def build_prompt(
 ) -> str:
     """Build the chat completion prompt."""
     request_prompt = ""
-    if pipeline.tokenizer is not None:
+    if pipeline.tokenizer is not None and isinstance(
+        pipeline.tokenizer, PreTrainedTokenGeneratorTokenizer
+    ):
         messages = [
             {
                 "role": message.root.role,
@@ -201,7 +203,7 @@ def build_prompt(
             for message in completion_request.messages
         ]
         request_prompt = str(
-            pipeline.tokenizer.apply_chat_template(
+            pipeline.tokenizer.delegate.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
         )
@@ -217,16 +219,15 @@ def build_prompt(
 
 
 @router.post("/chat/completions")
-async def openai_create_chat_completion(
-    request: Request,
-    pipeline: Annotated[TokenGeneratorPipeline, Depends(token_pipeline)],
-) -> Response:
+async def openai_create_chat_completion(request: Request) -> Response:
     request_id = request.state.request_id
     try:
         request_json = await request.json()
         completion_request = CreateChatCompletionRequest.model_validate(
             request_json
         )
+        pipeline_state = token_pipeline_state(completion_request.model)
+        pipeline = pipeline_state.batched_generator
         request_prompt = build_prompt(pipeline, completion_request)
 
         logger.info(
@@ -240,6 +241,7 @@ async def openai_create_chat_completion(
         token_request = await response_generator.create_request(
             id=request_id,
             prompt=request_prompt,
+            model_name=completion_request.model,
             max_new_tokens=completion_request.max_tokens,
         )
 
@@ -374,17 +376,15 @@ def openai_get_prompt_from_completion_request(
 
 
 @router.post("/completions")
-async def openai_create_completion(
-    request: Request,
-    pipeline: Annotated[TokenGeneratorPipeline, Depends(token_pipeline)],
-) -> Response:
+async def openai_create_completion(request: Request) -> Response:
     request_id = request.state.request_id
     try:
         request_json = await request.json()
         completion_request = CreateCompletionRequest.model_validate(
             request_json
         )
-
+        pipeline_state = token_pipeline_state(completion_request.model)
+        pipeline = pipeline_state.batched_generator
         logger.info(
             f"Processing {request.url.path}, {request_id} -"
             f" {'streaming' if completion_request.stream else ''} {completion_request.model} request."
@@ -399,6 +399,7 @@ async def openai_create_completion(
         token_request = await response_generator.create_request(
             id=request_id,
             prompt=request_prompt,
+            model_name=completion_request.model,
             max_new_tokens=completion_request.max_tokens,
         )
 
