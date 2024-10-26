@@ -36,7 +36,7 @@ async def test_kv_collection_constructor_continuous() -> None:
     )
 
     # Reserve a slot in the KV cache manager.
-    seq_id = await kv_manager.claim(n=1)
+    seq_id = kv_manager.claim(n=1)
     seq_id = seq_id[0]
 
     # Set the cache lengths first by "stepping".

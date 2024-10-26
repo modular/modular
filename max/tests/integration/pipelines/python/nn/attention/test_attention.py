@@ -160,7 +160,7 @@ def test_attention__valid_logits(session, start_pos, seq_len):
     # Claim seq_ids in cache
     seq_ids = []
     for _ in range(BATCH_SIZE):
-        seq_id = asyncio.run(kv_manager.claim(1))
+        seq_id = kv_manager.claim(1)
         seq_ids.append(seq_id[0])
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
@@ -251,7 +251,7 @@ def test_kv_cache_ragged_attention(session):
     # Claim seq_ids in cache
     seq_ids = []
     for _ in range(batch_size):
-        seq_id = asyncio.run(kv_manager.claim(1))
+        seq_id = kv_manager.claim(1)
         seq_ids.append(seq_id[0])
 
     input_row_offset = Tensor(

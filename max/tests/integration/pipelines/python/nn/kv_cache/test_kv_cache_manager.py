@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
 from max.driver import CPU
 from max.dtype import DType
+from nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
 
 
 @pytest.mark.asyncio
@@ -26,7 +26,7 @@ async def test_step():
     )
 
     # Claim three items
-    seq_ids = await kv_manager.claim(n=3)
+    seq_ids = kv_manager.claim(n=3)
 
     # Assert that each cache_length is initialized appropriately as 0
     for seq_id in seq_ids:
@@ -63,24 +63,24 @@ async def test_claim_and_release():
 
     # Claim 5 ids
     outstanding = 11
-    seq_ids = await kv_manager.claim(n=5)
+    seq_ids = kv_manager.claim(n=5)
     assert len(seq_ids) == 5
-    assert kv_manager.slots_remaining == outstanding
+    assert len(kv_manager.slots_remaining) == outstanding
 
     # Claim another 3 ids
-    seq_ids_2 = await kv_manager.claim(n=3)
+    seq_ids_2 = kv_manager.claim(n=3)
     assert len(seq_ids_2) == 3
     outstanding -= 3
-    assert kv_manager.slots_remaining == outstanding
+    assert len(kv_manager.slots_remaining) == outstanding
 
     # Release id that has not been claimed
     with pytest.raises(ValueError):
-        await kv_manager.release(seq_id=25)
+        kv_manager.release(seq_id=25)
 
     # Release all ids
     for i, id in enumerate(seq_ids + seq_ids_2):
-        await kv_manager.release(seq_id=id)
-        assert kv_manager.slots_remaining == outstanding + i + 1
+        kv_manager.release(seq_id=id)
+        assert len(kv_manager.slots_remaining) == outstanding + i + 1
 
 
 @pytest.mark.asyncio
@@ -107,7 +107,7 @@ async def test_fetch_continuous():
         kv_collection = kv_manager.fetch(seq_ids=[0])
 
     # Claim 5 items
-    seq_ids = await kv_manager.claim(n=5)
+    seq_ids = kv_manager.claim(n=5)
 
     # Fetch 3 of the 5 ids
     kv_collection = kv_manager.fetch(seq_ids[:3])

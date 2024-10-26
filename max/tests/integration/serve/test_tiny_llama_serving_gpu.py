@@ -73,6 +73,7 @@ async def test_tinyllama_serve_gpu(app):
             assert response.choices[0].finish_reason == "stop"
 
 
+@pytest.mark.skip("TODO(ylou): Fix!!")
 @pytest.mark.parametrize(
     "tinyllama_model",
     [

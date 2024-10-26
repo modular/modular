@@ -14,13 +14,12 @@ from typing import Any, List, Optional, TextIO
 
 import click
 from huggingface_hub import hf_hub_download
-from llama3 import InferenceConfig, Llama3, SupportedEncodings
+from llama3 import InferenceConfig, Llama3, Llama3Tokenizer, SupportedEncodings
 from max.driver import CPU, CUDA
 from max.pipelines import TokenGenerator
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 
-
-from utils import config_to_flag, DevicesOptionType
+from utils import DevicesOptionType, config_to_flag
 
 logger = logging.getLogger(__name__)
 
@@ -228,9 +227,7 @@ async def run_batch_scenario(
                             batch_id, prompt, max_new_tokens = (
                                 context_encoding_queue.pop(0)
                             )
-                            context = await model.new_context(
-                                prompt, max_new_tokens
-                            )
+                            context = model.new_context(prompt, max_new_tokens)
                             context_encoding_batch[batch_id] = context
                             batch_out_file = get_batch_output_file(batch_id)
                             if batch_out_file:
@@ -247,7 +244,7 @@ async def run_batch_scenario(
                             len(context_encoding_queue),
                         )
 
-                        context_encoding_results = await model.next_token(
+                        context_encoding_results = model.next_token(
                             context_encoding_batch
                         )
                         assert (
@@ -305,7 +302,7 @@ async def run_batch_scenario(
                     ",".join(token_gen_batch.keys()),
                 )
                 batch_log.append(step_current, [x for x in token_gen_batch])
-                results = await model.next_token(token_gen_batch)
+                results = model.next_token(token_gen_batch)
                 for batch_id, token in results.items():
                     assert token is not None
                     batch_completions[batch_id] += token
@@ -453,7 +450,12 @@ def main(
     if model_name == "rev-echo":
         model = EchoTokenGenerator()
     elif model_name == "llama3":
-        model = Llama3(config)
+        tokenizer = Llama3Tokenizer(config)
+        model = Llama3(
+            config,
+            tokenizer.delegate.eos_token_id,
+            tokenizer.delegate.vocab_size,
+        )
         batch_max_size = config.max_cache_batch_size
     else:
         raise ValueError("invalid model name")

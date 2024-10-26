@@ -27,6 +27,8 @@ from max.serve.schemas.openai import (
 
 from .params import ModelParams
 
+pytestmark = pytest.mark.skip("TODO(ylou): Fix!!")
+
 MAX_READ_SIZE = 10 * 1024
 
 

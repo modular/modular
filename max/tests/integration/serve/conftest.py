@@ -5,16 +5,29 @@
 # ===----------------------------------------------------------------------=== #
 """The fixtures for all tests in this directory."""
 
+import functools
 import os
 from pathlib import Path
+from typing import Coroutine
 
 import pytest
-from llama3 import InferenceConfig, Llama3, Llama3Context, SupportedVersions
+from llama3 import (
+    InferenceConfig,
+    Llama3,
+    Llama3Context,
+    Llama3Tokenizer,
+    SupportedVersions,
+)
+from max.pipelines.interfaces import TokenGeneratorRequest
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
-from max.serve.pipelines.deps import token_pipeline
+from max.serve.pipelines.deps import (
+    BatchedTokenGeneratorState,
+    all_pipeline_states,
+)
 from max.serve.pipelines.llm import (
+    PreTrainedTokenGeneratorTokenizer,
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
@@ -29,24 +42,44 @@ def testdata_directory() -> Path:
     return Path(path)
 
 
+class DummyTokenizer(PreTrainedTokenGeneratorTokenizer[str]):
+    def __init__(self, delegate) -> None:
+        super().__init__(delegate)
+
+    async def new_context(self, request: TokenGeneratorRequest):
+        return ""
+
+
+def identity(x):
+    return x
+
+
 @pytest.fixture(scope="session")
 def app(tinyllama_model):
     """The FastAPI app used to serve the model."""
     repo_id = "modularai/llama-3.1"
-    tokenizer = AutoTokenizer.from_pretrained(repo_id)
-    pipeline = TokenGeneratorPipeline[Llama3Context](
+    tokenizer = DummyTokenizer(AutoTokenizer.from_pretrained(repo_id))
+    pipeline = TokenGeneratorPipeline(
         TokenGeneratorPipelineConfig.continuous_heterogenous(
             tg_batch_size=tinyllama_model.config.max_cache_batch_size,
             ce_batch_size=1,
         ),
-        tinyllama_model,
+        "test",
         tokenizer,
     )
 
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
-    app = fastapi_app(settings, debug_settings, [pipeline])
-    app.dependency_overrides[token_pipeline] = lambda: pipeline
+    app = fastapi_app(
+        settings,
+        debug_settings,
+        {
+            "test": BatchedTokenGeneratorState(
+                pipeline,
+                functools.partial(identity, pipeline),
+            ),
+        },
+    )
     return app
 
 
@@ -68,5 +101,8 @@ def tinyllama_model(testdata_directory, request):
         device_spec=request.param.device_spec,
     )
 
-    model = Llama3(config)
+    tokenizer = Llama3Tokenizer(config)
+    model = Llama3(
+        config, tokenizer.delegate.eos_token_id, tokenizer.delegate.vocab_size
+    )
     return model

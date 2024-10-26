@@ -21,17 +21,20 @@ from typing import Any, Literal, Optional
 
 import click
 import numpy as np
-import numpy.typing as npt
-from cpuinfo import get_cpu_info
 from huggingface_hub import hf_hub_download
-from llama3.config import (
+from llama3 import (
     InferenceConfig,
+    Llama3,
+    Llama3Context,
+    Llama3Tokenizer,
     SupportedEncodings,
     SupportedVersions,
+    gguf_reader_and_params,
 )
-from llama3.llama3 import Llama3, Llama3Context
-from max.driver import CPU, DeviceSpec
+from max.driver import CPU, CUDA, DeviceSpec
 from nn.kv_cache import KVCacheStrategy
+
+from utils import tokenizer_from_gguf
 
 
 def find_runtime_path(
@@ -85,6 +88,13 @@ class NumpyDecoder(JSONDecoder):
         return dct
 
 
+def load_llama3(config: InferenceConfig):
+    reader, params = gguf_reader_and_params(config)
+    tokenizer = tokenizer_from_gguf(reader)
+    llama3 = Llama3(config, tokenizer.eos, tokenizer.vocab_size)
+    return llama3, tokenizer
+
+
 NUM_STEPS = 10
 PROMPTS = (
     """One of the most important aspects of performance benchmarking when it pertains to comparison of different implementations is making sure comparisons are fair. This is a place where most discussions occur, as deviation from best practices can make one’s performance claims easy to dismiss. For faster results of a given implementation (the Mojo implementation in our case) to be meaningful, the comparison needs to be apples-to-apples.
@@ -114,17 +124,22 @@ def llama3_decode(llama3: Llama3, token_ids: list):
     return llama3._tokenizer.decode(token_ids)
 
 
-def run_llama3(llama3: Llama3, prompts=PROMPTS, num_steps=NUM_STEPS):
+def run_llama3(
+    llama3: Llama3,
+    tokenizer: Llama3Tokenizer,
+    prompts=PROMPTS,
+    num_steps=NUM_STEPS,
+):
     results = []
     # Evaluate prompts individually (not batched).
     for prompt in prompts:
-        context = asyncio.run(llama3.new_context(prompt))
+        context = asyncio.run(tokenizer.new_context(prompt))
         curr_req_id = str(uuid.uuid4())
         values: dict[str, list[Any]] = {curr_req_id: []}
         for _ in range(num_steps):
             next_token_with_logits(llama3, {curr_req_id: context}, values)
         results.append({"prompt": prompt, "values": values[curr_req_id]})
-        asyncio.run(llama3.release(context))
+        llama3.release(context)
     return results
 
 
@@ -475,8 +490,8 @@ def main(model, encoding, verbose):
     ):
         try:
             config = model_encoding.build_config(testdata_directory)
-            llama3 = Llama3(config)
-            results = run_llama3(llama3, PROMPTS)
+            llama3, tokenizer = load_llama3(config)
+            results = run_llama3(llama3, tokenizer, PROMPTS)
 
             output_full_path = os.path.join(
                 "/tmp", model_encoding.golden_data_fname()
