@@ -539,6 +539,18 @@ KGEN_CompilerRT_GetTensorSpecFromAsync(ssize_t *data, ssize_t rank,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_GetShapeAndDataFromTensor(
+    size_t *shape, AsyncRTWrapper<AnyAsyncValueRef> async) {
+  AnyAsyncValueRef &value = unwrap(async);
+  assert(value.isReady());
+  auto &tensor = value.get<Tensor>();
+  const TensorSpec &spec = tensor.getSpec();
+  for (size_t i = 0; i < spec.getRank(); ++i)
+    shape[i] = spec[i];
+  return tensor.getMutableBuffer();
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetContextPayloadPtr(size_t index,
                                      AsyncRTWrapper<StateContext> rawCtx) {
   StateContext &ctx = unwrap(rawCtx);
