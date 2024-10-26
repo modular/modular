@@ -433,10 +433,10 @@ fn unpack_async(
     ](async_ptr)
 
 
-@mogg_register("builtin.unpack_buffer")
+@mogg_register("builtin.unpack_buffer_ref")
 @always_inline
 @export
-fn unpack_buffer[
+fn unpack_buffer_ref[
     target: StringLiteral
 ](async_ptr: UnsafePointer[NoneType],) -> NDBuffer[DType.uint8, 1]:
     var size: UInt64 = 0
