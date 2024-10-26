@@ -27,6 +27,7 @@ from gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
+from gpu.host.info import A100, Info
 from gpu.host._compile import _get_nvptx_target
 from gpu.memory import (
     AddressSpace,
@@ -301,8 +302,8 @@ fn _matmul_gpu[
     # fmt: off
     # Require Static K, N in A, B, C
     alias multistage_gemm_supported_shape = b_shape.all_known[2]() \
-    and a_shape.has_value[1]() \
-    and c_shape.has_value[1]()
+                                        and a_shape.has_value[1]() \
+                                        and c_shape.has_value[1]()
     # fmt: on
 
     @parameter
@@ -349,7 +350,7 @@ fn _matmul_gpu[
             if (
                 a_type == b_type
                 and a_type.is_half_float()
-                and "sm_80" in target
+                and Info.from_target_name[target]() is A100
                 and transpose_b
             ):
                 alias static_K = a_shape.get[1]()
