@@ -443,6 +443,12 @@ static std::string getDTypeAsString(KGENDType dtype) {
     return "int64";
   case KGENDType::ui64:
     return "uint64";
+  case KGENDType::f8e5m2:
+    return "float8e5m2";
+  case KGENDType::f8e4m3:
+    return "float8e4m3";
+  case KGENDType::f8e3m4:
+    return "float8e3m4";
   case KGENDType::bf16:
     return "bfloat16";
   case KGENDType::f16:

@@ -900,9 +900,18 @@ Value KGEN::convertParameterToLLVM(
                          intCst.getValue()));
   }
 
-  // Float attributes are fine as-is.
-  if (isa<FloatAttr>(attr))
-    return b.create<LLVM::ConstantOp>(attr);
+  if (auto fltCst = dyn_cast<FloatAttr>(attr)) {
+    Type type = fltCst.getType();
+    bool isFP8 =
+        type.isFloat8E3M4() || type.isFloat8E4M3() || type.isFloat8E5M2();
+    if (isFP8) {
+      return b.create<LLVM::ConstantOp>(tc.convertType(type),
+                                        fltCst.getValue().bitcastToAPInt());
+    }
+
+    // Float attributes are fine as-is.
+    return b.create<LLVM::ConstantOp>(fltCst);
+  }
 
   // Convert DType constants to `i8` constants of the DType's enum value.
   if (auto dtypeCst = dyn_cast<DTypeConstantAttr>(attr))

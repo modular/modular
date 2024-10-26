@@ -1458,14 +1458,18 @@ using ConvertPOPPointerToIndex =
 //===----------------------------------------------------------------------===//
 
 static FailureOr<NVVM::WGMMATypesAttr> getMMAType(MLIRContext *ctx, Type type) {
-  if (type.isF32())
-    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::f32);
-  if (type.isTF32())
-    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::tf32);
+  if (type.isFloat8E4M3())
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::e4m3);
+  if (type.isFloat8E5M2())
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::e5m2);
   if (type.isBF16())
     return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::bf16);
   if (type.isF16())
     return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::f16);
+  if (type.isF32())
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::f32);
+  if (type.isTF32())
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::tf32);
   return failure();
 }
 

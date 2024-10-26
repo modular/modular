@@ -257,3 +257,17 @@ kgen.func @coro() attributes {coroutineType = !kgen.struct<(index, (!kgen.pointe
 }
 
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+// CHECK-LABEL: llvm.func @kgen_fp8_param_constant
+kgen.func export @kgen_fp8_param_constant() {
+  // CHECK: llvm.mlir.constant(56 : i8) : i8
+  %0 = kgen.param.constant: f8E4M3 = <1.>
+
+  // CHECK: llvm.mlir.constant(60 : i8) : i8
+  %1 = kgen.param.constant: f8E5M2 = <1.>
+  kgen.return
+}
+}

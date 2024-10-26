@@ -28,4 +28,13 @@ module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arc
     %2 = pop.nvvm.wgmma.mma_async %0 %1 %arg2 tf32 tf32 f32 {layout_a = "row" : !kgen.string, layout_b = "col" : !kgen.string, shape_k = 8 : index, shape_m = 64 : index, shape_n = 8 : index} : <4, f32> -> <4, f32>
     kgen.return %2 : !pop.simd<4, f32>
   }
+
+  // CHECK-LABEL: llvm.func @kgen_fp8_param_constant
+  kgen.func export @kgen_fp8_param_constant() -> (f8E4M3, f8E5M2) {
+    // CHECK: llvm.mlir.constant(56 : i8) : i8
+    %0 = kgen.param.constant: f8E4M3 = <1.>
+    // CHECK: llvm.mlir.constant(60 : i8) : i8
+    %1 = kgen.param.constant: f8E5M2 = <1.>
+    kgen.return %0, %1 : f8E4M3, f8E5M2
+  }
 }
