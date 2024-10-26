@@ -20,7 +20,7 @@ from builtin.uint import _temp_uint_from_int
 from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
 from gpu.host import Device, DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
-from gpu.shuffle import shuffle_up, shuffle_xor
+from gpu.shuffle import shuffle_up, shuffle_xor, warp_broadcast
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from layout.tensor_core import get_fragment_size
@@ -879,7 +879,7 @@ fn _online_softmax_kernel[
 
     alias frag_size = get_fragment_size[mma_shape]()[2]
 
-    var warp_id: UInt = ThreadIdx.x() // WARP_SIZE
+    var warp_id: UInt = warp_broadcast(ThreadIdx.x() // WARP_SIZE)
     var lane = lane_id()
 
     # If we do more than 2 iterations, the first N - 2 iterations won't be
@@ -1007,7 +1007,7 @@ fn _online_softmax_iter_for_mma_output[
 
     var tid = ThreadIdx.x()
     var lane = lane_id()
-    var warp_x = (tid // WARP_SIZE) % UInt(num_rowwise_warps)
+    var warp_x = warp_broadcast(tid // WARP_SIZE) % UInt(num_rowwise_warps)
 
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]

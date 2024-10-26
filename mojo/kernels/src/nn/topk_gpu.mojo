@@ -21,6 +21,7 @@ from gpu import (
     barrier,
     lane_id,
     shuffle_down,
+    warp_broadcast,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.dim import Dim
@@ -175,7 +176,7 @@ fn block_reduce_topk[
     ]()
 
     # Calculate warp id and thread information
-    var warp: UInt = ThreadIdx.x() // WARP_SIZE
+    var warp: UInt = warp_broadcast(ThreadIdx.x() // WARP_SIZE)
     alias num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value

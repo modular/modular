@@ -195,7 +195,7 @@ fn block_sum_broadcast[
     val: Scalar,
 ) -> __type_of(val):
     var local_warp_sum = warp_sum(val)
-    var warp = ThreadIdx.x() // WARP_SIZE
+    var warp = warp_broadcast(ThreadIdx.x() // WARP_SIZE)
     var lane = lane_id()
     if lane == 0:
         reduction_smem[warp][0] = rebind[Scalar[reduction_smem.dtype]](
@@ -272,7 +272,7 @@ fn mha_decoding_single_batch_warp_shuffle[
     alias num_elems_per_thread = head_size // thread_group_size
     alias kv_num_heads = num_heads // group
 
-    var warp_idx = ThreadIdx.x() // WARP_SIZE
+    var warp_idx = warp_broadcast(ThreadIdx.x() // WARP_SIZE)
 
     var head_idx = BlockIdx.y()
     var kv_head_idx = head_idx // group

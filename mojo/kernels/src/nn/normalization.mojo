@@ -61,7 +61,7 @@ fn block_reduce[type: DType](val: Scalar[type]) -> Scalar[type]:
 
     var warp_m2 = warp_sum(val)
 
-    var warp_id = tid // WARP_SIZE
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
     var lane_idx = lane_id()
 
     if lane_idx == 0:

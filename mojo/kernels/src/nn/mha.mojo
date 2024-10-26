@@ -25,6 +25,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.memory import AddressSpace, external_memory
+from gpu.shuffle import warp_broadcast
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams, KVCacheT
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -1153,7 +1154,7 @@ fn mha_single_batch[
     ]()
 
     var tid: UInt32 = ThreadIdx.x()
-    var warp_id: UInt32 = tid // WARP_SIZE
+    var warp_id: UInt32 = warp_broadcast(tid // WARP_SIZE)
     var lane: UInt32 = lane_id()
 
     # Coordinates of the current warp.
@@ -1995,7 +1996,7 @@ fn mha_decoding_single_batch[
     ]()
 
     var tid = ThreadIdx.x()
-    var warp_id = (tid // WARP_SIZE)
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
     var lane = lane_id()
 
     # Coordinates of the current warp.
