@@ -14,7 +14,6 @@ from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import simple_openai_request
-from max.serve.pipelines.deps import echo_token_pipeline, token_pipeline
 
 MAX_CHUNK_TO_READ_BYTES: int = 1024 * 10
 
@@ -38,9 +37,8 @@ def reset_sse_starlette_appstatus_event():
 def stream_app(reset_sse_starlette_appstatus_event):
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
-    pipeline = echo_token_pipeline(1)
-    fast_app = fastapi_app(settings, debug_settings, [pipeline])
-    fast_app.dependency_overrides[token_pipeline] = lambda: pipeline
+    # By default the echo pipeline is already registered.
+    fast_app = fastapi_app(settings, debug_settings)
     print(f"Created fast-app fixture {fast_app}")
     return fast_app
 
@@ -53,10 +51,9 @@ async def test_stream(stream_app, num_tasks):
         response_text = ""
         r = await client.post(
             "/v1/chat/completions",
-            json=simple_openai_request(msg)
-            | {
-                "stream": True,
-            },
+            json=simple_openai_request(
+                model_name="echo", content=msg, stream=True
+            ),
             stream=True,
         )
         async for response in r.iter_content(MAX_CHUNK_TO_READ_BYTES):

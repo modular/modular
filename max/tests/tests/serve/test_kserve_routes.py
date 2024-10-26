@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
+from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import (
     simple_kserve_request,
     simple_kserve_response,
@@ -18,7 +19,8 @@ from max.serve.mocks.mock_api_requests import (
 @pytest.fixture
 def app():
     settings = Settings(api_types=[APIType.KSERVE])
-    return fastapi_app(settings)
+    debug_settings = DebugSettings()
+    return fastapi_app(settings, debug_settings)
 
 
 @pytest.mark.skip(reason="Implementing infer/ for real is a WIP.")
