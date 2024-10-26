@@ -444,3 +444,15 @@ fn warp_sum[
         return rebind[Scalar[output_type]](warp_sum(x.reduce_add()))
     else:
         return tc_reduce[output_type](x.cast[intermediate_type]())
+
+
+# ===----------------------------------------------------------------------===#
+# warp_broadcast
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn warp_broadcast[
+    val_type: DType, simd_width: Int, //
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    return shuffle_idx(val, 0)
