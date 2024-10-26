@@ -456,7 +456,7 @@ fn mha_decoding_single_batch_warp_shuffle[
         var logits_v = logits.tile[softmax_simdwidth](token).vectorize[
             softmax_simdwidth
         ]()
-        logits_v[0] = logits_v[0] * inv_exp_sum
+        logits_v[0] *= inv_exp_sum
 
     for token_ in range(
         ThreadIdx.x(), num_keys % softmax_simdwidth, num_threads
@@ -510,7 +510,7 @@ fn mha_decoding_single_batch_warp_shuffle[
     # reduce output over warps
     @parameter
     for i in reversed(range(1, nstages + 1)):
-        alias mid = (1 << i) // 2
+        alias mid = 1 << (i - 1)
         if warp_idx >= mid and warp_idx < (i << 1):
             var dst = logits.tile[head_size](warp_idx - mid).tile[
                 num_rows_per_thread
