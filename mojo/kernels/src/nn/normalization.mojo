@@ -28,7 +28,7 @@ from gpu import (
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.device_context import DeviceContext
 from gpu.memory import AddressSpace
-from gpu.shuffle import _static_log2, shuffle_down, shuffle_idx, warp_sum
+from gpu.shuffle import _static_log2, shuffle_down, warp_broadcast, warp_sum
 from memory import stack_allocation
 from register import mogg_register, mogg_register_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
@@ -150,9 +150,9 @@ fn welford_warp_all_reduce[
         thread_mean, thread_m2, thread_count, res_mean, res_m2, res_count
     )
     # broadcasting res from warp lane_id 0 to all in a warp
-    res_mean = shuffle_idx(res_mean, 0)
-    res_m2 = shuffle_idx(res_m2, 0)
-    res_count = shuffle_idx(res_count, 0)
+    res_mean = warp_broadcast(res_mean)
+    res_m2 = warp_broadcast(res_m2)
+    res_count = warp_broadcast(res_count)
 
 
 fn welford_block_all_reduce[

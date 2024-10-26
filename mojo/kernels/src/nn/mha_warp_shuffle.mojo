@@ -27,10 +27,9 @@ from gpu.shuffle import (
     lane_group_sum,
     lane_group_max,
     warp_sum,
-    shuffle_idx,
     _static_log2,
     shuffle_down,
-    shuffle_idx,
+    warp_broadcast,
 )
 from pathlib import Path
 from layout.element import Element
@@ -210,7 +209,7 @@ fn block_sum_broadcast[
         sum = rebind[__type_of(sum)](reduction_smem[lane])
     sum = lane_group_sum[nthreads=num_warps](sum)
     # TODO: We can use shfl_xor in lane_group_max to remove the need of this broadcast
-    return shuffle_idx(sum, 0)
+    return warp_broadcast(sum)
 
 
 @always_inline
@@ -413,7 +412,7 @@ fn mha_decoding_single_batch_warp_shuffle[
         qk_max = Scalar[accum_type].MIN
     qk_max = lane_group_max[nthreads=num_warps](qk_max)
     # TODO: We can use shfl_xor in lane_group_max to remove the need of this broadcast
-    qk_max = shuffle_idx(qk_max, 0)
+    qk_max = warp_broadcast(qk_max)
 
     # compute softmax using all threads in a block
     # need softmax_simdwidth = 4 for best performance
