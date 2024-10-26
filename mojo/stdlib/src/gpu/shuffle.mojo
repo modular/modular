@@ -44,7 +44,7 @@ fn _shuffle[
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[type]
         ](Int32(mask), val, offset, WIDTH_MASK)
-    elif type is DType.int32:
+    elif type in (DType.int32, DType.uint32):
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[type]
         ](Int32(mask), val, offset, WIDTH_MASK)
@@ -67,7 +67,7 @@ fn _shuffle[
             return bitcast[type, simd_width](result_packed)
 
     else:
-        constrained[False, "unhandled type"]()
+        constrained[False, "unhandled shuffle type"]()
         return 0
 
 
@@ -479,3 +479,11 @@ fn warp_broadcast[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     return shuffle_idx(val, 0)
+
+
+fn warp_broadcast(val: Int) -> Int:
+    return int(shuffle_idx(Scalar[DType.int32](val), 0))
+
+
+fn warp_broadcast(val: UInt) -> UInt:
+    return int(shuffle_idx(Scalar[DType.int32](val), 0))
