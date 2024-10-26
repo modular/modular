@@ -24,7 +24,7 @@ alias _WIDTH_MASK_SHUFFLE_UP = 0
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@always_inline
 fn _shuffle[
     mnemonic: StringLiteral,
     type: DType,
@@ -76,7 +76,7 @@ fn _shuffle[
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@always_inline
 fn shuffle_idx[
     type: DType, simd_width: Int, //
 ](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
@@ -99,7 +99,7 @@ fn shuffle_idx[
     return shuffle_idx(0xFFFFFFFF, val, offset)
 
 
-@always_inline("nodebug")
+@always_inline
 fn shuffle_idx[
     type: DType, simd_width: Int, //
 ](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
@@ -133,7 +133,7 @@ fn shuffle_idx[
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@always_inline
 fn shuffle_up[
     type: DType, simd_width: Int, //
 ](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
@@ -156,7 +156,7 @@ fn shuffle_up[
     return shuffle_up(0xFFFFFFFF, val, offset)
 
 
-@always_inline("nodebug")
+@always_inline
 fn shuffle_up[
     type: DType, simd_width: Int, //
 ](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
@@ -187,7 +187,7 @@ fn shuffle_up[
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@always_inline
 fn shuffle_down[
     type: DType, simd_width: Int, //
 ](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
@@ -210,7 +210,7 @@ fn shuffle_down[
     return shuffle_down(0xFFFFFFFF, val, offset)
 
 
-@always_inline("nodebug")
+@always_inline
 fn shuffle_down[
     type: DType, simd_width: Int, //
 ](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
@@ -241,7 +241,7 @@ fn shuffle_down[
 # ===----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@always_inline
 fn shuffle_xor[
     type: DType, simd_width: Int, //
 ](val: SIMD[type, simd_width], offset: UInt32) -> SIMD[type, simd_width]:
@@ -264,7 +264,7 @@ fn shuffle_xor[
     return shuffle_xor(0xFFFFFFFF, val, offset)
 
 
-@always_inline("nodebug")
+@always_inline
 fn shuffle_xor[
     type: DType, simd_width: Int, //
 ](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
