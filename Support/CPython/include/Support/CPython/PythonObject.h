@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SDK_ENGINEAPI_PYTHON_PYTHONOBJECT_H
-#define SDK_ENGINEAPI_PYTHON_PYTHONOBJECT_H
+#ifndef SUPPORT_CPYTHON_PYTHONOBJECT_H
+#define SUPPORT_CPYTHON_PYTHONOBJECT_H
 
 #include <Python.h>
 
-namespace M::core {
+namespace M::CPython {
 
 struct PythonObjectWrapper {
   PythonObjectWrapper(PyObject *ptr);
@@ -24,6 +24,6 @@ struct PythonObjectWrapper {
 
 void freePythonObjectWrapper(void *ptr);
 
-} // namespace M::core
+} // namespace M::CPython
 
-#endif // SDK_ENGINEAPI_PYTHON_PYTHONOBJECT_H
+#endif // SUPPORT_CPYTHON_PYTHONOBJECT_H
