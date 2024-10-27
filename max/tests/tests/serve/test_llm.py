@@ -15,7 +15,11 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
 from max.pipelines import TokenGeneratorContext as Context
-from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.pipelines.interfaces import (
+    TokenGenerator,
+    TokenGeneratorFactory,
+    TokenGeneratorRequest,
+)
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
@@ -160,3 +164,12 @@ async def test_llm_new_context_value_error_stream(client, url):
         chunk = json.loads(chunk)
         assert chunk["result"] == "error"
         break
+
+
+@pytest.mark.parametrize("generator", [EchoTokenGenerator], indirect=True)
+@pytest.mark.asyncio
+async def test_exception_propagation(factory: TokenGeneratorFactory) -> None:
+    """Tests raising in the model worker context manager."""
+    with pytest.raises(AssertionError):
+        async with start_model_worker({"test": factory}):
+            raise AssertionError
