@@ -78,23 +78,23 @@ async def start_model_worker(
         },
     )
     assert worker.executor
-    with worker.executor:
-        running = running_workers()
-        if name in running:
-            existing = running[name]
-            existing.shutdown()
+    running = running_workers()
+    if name in running:
+        existing = running[name]
+        existing.shutdown()
 
-        loop = asyncio.get_running_loop()
-        worker.task = loop.create_task(
-            run_model_worker(worker, factories),
-            name="model_worker",
-        )
+    loop = asyncio.get_running_loop()
+    worker.task = loop.create_task(
+        run_model_worker(worker, factories),
+        name="model_worker",
+    )
 
-        running[name] = worker
-        await worker.started()
+    running[name] = worker
+    await worker.started()
 
+    try:
         yield worker
-
+    finally:
         worker.shutdown()
         if name in running:
             del running[name]
