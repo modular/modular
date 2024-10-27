@@ -704,7 +704,7 @@ kgen.generator @kernel() {
 
 kgen.generator export @top() {
   // expected-error @below {{custom op 'kgen.param.constant' 'compile_assembly' second operand should evaluate to either 'asm', 'llvm', or 'llvm-opt'}}
-  kgen.param.constant: string = <compile_assembly(current_target(), 3, 0, :() -> () @kernel)>
+  kgen.param.constant: string = <compile_assembly(current_target(), 3, "", 0, :() -> () @kernel)>
   kgen.return
 }
 

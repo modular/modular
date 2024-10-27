@@ -276,8 +276,9 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // Slice out a stanalone module to re-elaborate with the new target.
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
   EmitAs emissionKind = cast<EmitAsAttr>(op.getOperand(1)).getValue();
-  bool propagateError = cast<IntegerAttr>(op.getOperand(2)).getInt();
-  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(3));
+  StringRef emissionOptionsStr = cast<StringAttr>(op.getOperand(2)).getValue();
+  bool propagateError = cast<IntegerAttr>(op.getOperand(3)).getInt();
+  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(4));
   if (!symbol || !symbol.getType().isConcrete()) {
     emitError({*errorLoc, "'compile_assembly' function is not concrete"});
     return failure();
@@ -289,7 +290,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
 
   // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
-  Builder b(op.getContext());
+  Builder b(ctx);
   auto noneType = KGEN::NoneType::get(ctx);
   auto populateFnType = SignatureType::get(
       b.getFunctionType(PointerType::get(noneType), noneType), {}, {},
@@ -303,11 +304,16 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   StringAttr name =
       getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
 
+  // Parse the emission options from a comma separated list of values.
+  SmallVector<StringRef> emissionOptions;
+  emissionOptionsStr.split(emissionOptions, /*Separator=*/",",
+                           /*MaxSplit=*/-1, /*KeepEmpty=*/false);
+
   // Capture the diagnostics that may be emitted.
   DiagnosticHandler handler(ctx);
   ErrorOr<CrossDeviceFunction> closure = elaborator->compileAsmFn(
-      func, symbol, name, symtabCopy, target, emissionKind, elaborator->options,
-      elaborator->getOptions(), handler.getHandlerID());
+      func, symbol, name, symtabCopy, target, emissionKind, emissionOptions,
+      elaborator->options, elaborator->getOptions(), handler.getHandlerID());
   handler.release();
 
   if (closure.isError()) {
