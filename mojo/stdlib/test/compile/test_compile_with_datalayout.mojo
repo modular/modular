@@ -63,16 +63,17 @@ def test_data_layout_asm():
         barrier()
 
     var target_short_asm = _internal_compile_code[
-        my_func, emission_kind="asm", target=target_short_ptr
+        my_func,
+        emission_kind="asm",
+        compile_options="nvptx-short-ptr=true",
+        target=target_short_ptr,
     ]()
-    var target_regular_asm = _internal_compile_code[
-        my_func, emission_kind="asm", target=target_regular
-    ]()
-    assert_false(target_short_asm == target_regular_asm)
+
+    assert_true("mov.u32" in target_short_asm)
+    assert_false("mov.u64" in target_short_asm)
 
 
 def main():
     test_data_layout_llvm["llvm"]()
     test_data_layout_llvm["llvm-opt"]()
-    # TODO: Uncommend after figuring out MOCO-1390
-    # test_data_layout_asm()
+    test_data_layout_asm()
