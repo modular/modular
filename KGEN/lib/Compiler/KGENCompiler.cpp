@@ -268,17 +268,18 @@ compilePatterns(ModuleOp module, ArrayRef<SmallVector<StringAttr>> patterns) {
 static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
     const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
-    CompilationOptions options, ElaborateGeneratorsOptions elaboratorOptions,
+    EmissionOptions emissionOptions, CompilationOptions compilationOptions,
+    ElaborateGeneratorsOptions elaboratorOptions,
     mlir::DiagnosticEngine::HandlerID diagHandlerID) {
   // Configure the compilation options given the new target.
-  options.targetTriple = target.getTripleStr();
-  options.targetCpu = target.getArch();
-  options.targetFeatures = target.getFeatures();
-  options.relocModel = target.getRelocationModel();
+  compilationOptions.targetTriple = target.getTripleStr();
+  compilationOptions.targetCpu = target.getArch();
+  compilationOptions.targetFeatures = target.getFeatures();
+  compilationOptions.relocModel = target.getRelocationModel();
 
   // Initialize the object compiler.
   ErrorOr<std::unique_ptr<ObjectCompiler>> compilerOr =
-      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/
+      ObjectCompiler::create(".mojo_cache", compilationOptions, /*isJIT=*/
                              false, *target.getContext());
 
   if (compilerOr.isError())
@@ -287,7 +288,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
   std::unique_ptr<ObjectCompiler> compiler = compilerOr.takeValue();
 
   // Initialize the target machine.
-  auto tmOr = createTargetMachine(options, /*isJIT=*/false);
+  auto tmOr = createTargetMachine(compilationOptions, /*isJIT=*/false);
   if (tmOr.isError())
     return tmOr.takeError();
   std::unique_ptr<llvm::TargetMachine> tm = tmOr.takeValue();
@@ -324,20 +325,39 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
   configurePassManager(pm);
 
-  pm.addPass(createElaborateGenerators(target, elaboratorOptions, options,
-                                       compileElaboratorAsm));
+  pm.addPass(createElaborateGenerators(
+      target, elaboratorOptions, compilationOptions, compileElaboratorAsm));
   LibraryOptConfig lib;
   lib.buildElaboratePipeline = [&](mlir::PassManager &pm,
                                    const LibraryOptConfig &lib) {
-    buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm);
-    buildFirstOptPipeline(pm, options, lib);
+    buildElaborateModulePipeline(pm, target, compilationOptions,
+                                 compileElaboratorAsm);
+    buildFirstOptPipeline(pm, compilationOptions, lib);
   };
   lib.compilePatterns = compilePatterns;
-  buildPostElaborationPipeline(pm, options, lib);
+  buildPostElaborationPipeline(pm, compilationOptions, lib);
 
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
   auto [capturesFunc, numCaptures] = writeCaptureArgs(*module, name);
+
+  // Handle the emission options.
+  auto options = llvm::cl::getRegisteredOptions();
+  for (StringRef elem : emissionOptions) {
+    if (!elem.contains("="))
+      return Error("emission option must be of the form `option=value`");
+    auto [key, value] = elem.split("=");
+    if (value.equals_insensitive("true") || value.equals_insensitive("false")) {
+      auto *boolVal = static_cast<llvm::cl::opt<bool> *>(options[key]);
+      boolVal->setValue(value.equals_insensitive("true"));
+    } else if (llvm::all_of(value, llvm::isDigit)) {
+      auto *intVal = static_cast<llvm::cl::opt<int> *>(options[key]);
+      intVal->setValue(std::atoi(value.data()));
+    } else {
+      return Error("invalid emission option (only boolean and integer values "
+                   "are currently supported)");
+    }
+  }
 
   // Prepare a buffer to write string output to.
   SmallVector<char> buf;

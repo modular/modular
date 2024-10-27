@@ -801,12 +801,14 @@ kgen.generator @get_emission_kind(%arg: !kgen.int_literal) -> index {
 // CHECK-LABEL: @compile_assembly
 kgen.generator @compile_assembly<emission_kind: !kgen.int_literal>() {
   kgen.param.declare nvptx: target = <#kgen.target<triple = "nvptx64-nvidia-cuda", arch = "sm_75", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>>
-  // CHECK: constant: string = <compile_assembly(nvptx, =asm, 0, :() -> () @kernel)>
-  kgen.param.constant: string = <compile_assembly(nvptx, =asm, 0, :() -> () @kernel)>
-  // CHECK: constant: string = <compile_assembly(nvptx, =llvm, 1, :() -> () @kernel)>
-  kgen.param.constant: string = <compile_assembly(nvptx, =llvm, 1, :() -> () @kernel)>
-  // CHECK: constant: string = <compile_assembly(nvptx, apply(:(!kgen.int_literal) -> index @get_emission_kind, emission_kind), 1, :() -> () @kernel)>
-  kgen.param.constant: string = <compile_assembly(nvptx, apply(:(!kgen.int_literal) -> index @get_emission_kind, emission_kind), 1, :() -> () @kernel)>
+  // CHECK: constant: string = <compile_assembly(nvptx, =asm, "", 0, :() -> () @kernel)>
+  kgen.param.constant: string = <compile_assembly(nvptx, =asm, "", 0, :() -> () @kernel)>
+  // CHECK: constant: string = <compile_assembly(nvptx, =llvm, "", 1, :() -> () @kernel)>
+  kgen.param.constant: string = <compile_assembly(nvptx, =llvm, "", 1, :() -> () @kernel)>
+  // CHECK: constant: string = <compile_assembly(nvptx, =llvm, "option1=value1,option2=value2", 1, :() -> () @kernel)>
+  kgen.param.constant: string = <compile_assembly(nvptx, =llvm, "option1=value1,option2=value2", 1, :() -> () @kernel)>
+  // CHECK: constant: string = <compile_assembly(nvptx, apply(:(!kgen.int_literal) -> index @get_emission_kind, emission_kind), "", 1, :() -> () @kernel)>
+  kgen.param.constant: string = <compile_assembly(nvptx, apply(:(!kgen.int_literal) -> index @get_emission_kind, emission_kind), "", 1, :() -> () @kernel)>
   kgen.return
 }
 

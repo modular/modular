@@ -114,13 +114,14 @@ struct CrossDeviceFunction {
   OwningOpRef<Operation *> populateCapturesFn;
 };
 
+using EmissionOptions = ArrayRef<StringRef>;
 /// Function to slice and compile the generator to assembly with the provided
 /// input parameters and target. The expected mangled name of the generate is
 /// passed to be used as the entry point.
 using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
-    TargetInfoAttr, EmitAs, CompilationOptions, ElaborateGeneratorsOptions,
-    mlir::DiagnosticEngine::HandlerID);
+    TargetInfoAttr, EmitAs, EmissionOptions, CompilationOptions,
+    ElaborateGeneratorsOptions, mlir::DiagnosticEngine::HandlerID);
 
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.

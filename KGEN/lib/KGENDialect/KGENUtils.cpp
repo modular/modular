@@ -850,11 +850,13 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     return parseParamValue(p, operands.emplace_back(),
                            StringType::get(p.getContext()));
   case (uint32_t)POC::CompileAssembly: {
+    // Parse the target.
     if (parseParamValue(p, operands.emplace_back(),
                         TargetType::get(p.getContext())) ||
         p.parseComma())
       return failure();
 
+    // Parse the emission kind.
     if (succeeded(p.parseOptionalEqual())) {
       StringRef emissionKind;
       if (p.parseKeyword(&emissionKind))
@@ -871,10 +873,18 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       return failure();
     }
 
+    // Parse the emission options.
+    if (p.parseComma() || parseParamValue(p, operands.emplace_back(),
+                                          StringType::get(p.getContext())))
+      return failure();
+
+    // Parse the fallibility option.
     if (p.parseComma() ||
-        parseParamValue(p, operands.emplace_back(),
-                        p.getBuilder().getI1Type()) ||
-        p.parseComma() || parseColonTypeParamValue(p, operands.emplace_back()))
+        parseParamValue(p, operands.emplace_back(), p.getBuilder().getI1Type()))
+      return failure();
+
+    // Parse the type.
+    if (p.parseComma() || parseColonTypeParamValue(p, operands.emplace_back()))
       return failure();
 
     return success();
@@ -1179,7 +1189,9 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     p << ", ";
     printParamValue(p, operands[2]);
     p << ", ";
-    printColonTypeParamValue(p, operands[3]);
+    printParamValue(p, operands[3]);
+    p << ", ";
+    printColonTypeParamValue(p, operands[4]);
     break;
   }
   case POC::GetLinkageName:
