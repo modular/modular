@@ -78,13 +78,16 @@ fn _compile_info_failable_impl[
     func: func_type,
     /,
     emission_kind: IntLiteral,
-    target: __mlir_type.`!kgen.target` = _current_target(),
+    compile_options: StringLiteral,
+    target: __mlir_type.`!kgen.target`,
 ]() -> Info:
     alias impl = __mlir_attr[
         `#kgen.param.expr<compile_assembly,`,
         target,
         `,`,
         emission_kind.__as_mlir_index(),
+        `,`,
+        compile_options.value,
         `,`,
         True.__mlir_i1__(),
         `,`,
@@ -123,13 +126,16 @@ fn _compile_info_non_failable_impl[
     func: func_type,
     /,
     emission_kind: IntLiteral,
-    target: __mlir_type.`!kgen.target` = _current_target(),
+    compile_options: StringLiteral,
+    target: __mlir_type.`!kgen.target`,
 ]() -> Info:
     alias cls = __mlir_attr[
         `#kgen.param.expr<compile_assembly,`,
         target,
         `,`,
         emission_kind.__as_mlir_index(),
+        `,`,
+        compile_options.value,
         `,`,
         False.__mlir_i1__(),
         `,`,
@@ -161,6 +167,7 @@ fn compile_info[
     *,
     is_failable: Bool = False,
     emission_kind: StringLiteral = "asm",
+    compile_options: StringLiteral = "",
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> Info:
     @parameter
@@ -172,6 +179,7 @@ fn compile_info[
                 func_type,
                 func,
                 emission_kind=_EMISSION_KIND_LLVM,
+                compile_options=compile_options,
                 target=target,
             ]()
         else:
@@ -179,6 +187,7 @@ fn compile_info[
                 func_type,
                 func,
                 emission_kind=_EMISSION_KIND_LLVM,
+                compile_options=compile_options,
                 target=target,
             ]()
 
@@ -191,6 +200,7 @@ fn compile_info[
                 func_type,
                 func,
                 emission_kind=_EMISSION_KIND_LLVM_OPT,
+                compile_options=compile_options,
                 target=target,
             ]()
         else:
@@ -198,6 +208,7 @@ fn compile_info[
                 func_type,
                 func,
                 emission_kind=_EMISSION_KIND_LLVM_OPT,
+                compile_options=compile_options,
                 target=target,
             ]()
 
@@ -206,13 +217,18 @@ fn compile_info[
         @parameter
         if is_failable:
             return _compile_info_failable_impl[
-                func_type, func, emission_kind=_EMISSION_KIND_ASM, target=target
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_ASM,
+                compile_options=compile_options,
+                target=target,
             ]()
         else:
             return _compile_info_non_failable_impl[
                 func_type,
                 func,
                 emission_kind=_EMISSION_KIND_ASM,
+                compile_options=compile_options,
                 target=target,
             ]()
 
@@ -228,12 +244,16 @@ fn _internal_compile_code[
     /,
     *,
     emission_kind: StringLiteral = "asm",
+    compile_options: StringLiteral = "",
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> StringLiteral:
     """Compiles the function passed in to the assembly instruction. This is
     useful to take a peak into the function assembly without requiring one to
     invoke kgen on a file."""
     alias info = compile_info[
-        func, target=target, emission_kind=emission_kind
+        func,
+        target=target,
+        compile_options=compile_options,
+        emission_kind=emission_kind,
     ]()
     return info.asm
