@@ -8,7 +8,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from time import sleep, time
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
@@ -115,11 +115,14 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
     non_wait_secs = 0
 
     def next_token(
-        self, batch: dict[str, PerformanceFakingContext]
-    ) -> dict[str, np.ndarray]:
+        self, batch: dict[str, PerformanceFakingContext], num_steps: int = 1
+    ) -> list[dict[str, Any]]:
+        return [self.step(batch) for _ in range(num_steps)]
+
+    def step(self, batch: dict[str, PerformanceFakingContext]):
         context_lengths = [x.context_len for x in batch.values()]
         if sum(context_lengths) == 0:
-            self.logger.info(
+            self.logger.debug(
                 f"PerformanceFake: CE with batch_size = {len(batch)}"
             )
             # context encoding mode
@@ -128,7 +131,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
                 ctx.context_len += ctx.prompt_len
         else:
             # token generation mode
-            self.logger.info(
+            self.logger.debug(
                 f"PerformanceFake: TG with batch_size = {len(batch)}"
             )
             wait_time = self._tg_time_ms(

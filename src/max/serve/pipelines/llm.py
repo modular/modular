@@ -288,6 +288,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     async def __aenter__(self):
         self.logger.info("Starting workers")
         assert not self._background_tasks
+
         for queue in self.queues:
             # TODO@gaz: Move to queue constructor once the queue has constructor.
             if (

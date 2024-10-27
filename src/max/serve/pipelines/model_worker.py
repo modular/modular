@@ -150,22 +150,24 @@ def model_worker_run(factories: Mapping[str, TokenGeneratorFactory]):
                     if req_id in saved_contexts:
                         # Seen this context before. Use model side instance.
                         batch[req_id] = saved_contexts[req_id]
-                    else:
+                    elif context is not None:
                         batch[req_id] = saved_contexts[req_id] = context
 
-                # TODO: Buffer multiple executes as part of async single step.
-                try:
-                    batch_responses = model.next_token(batch)
-                except Exception:
-                    import traceback
+                if not batch:
+                    continue
 
-                    print(traceback.format_exc())
-                out_q.queue.put_nowait((entry.batch_key, batch_responses))
+                batch_responses_list = model.next_token(batch, entry.num_steps)
+                out_q.queue.put_nowait((entry.batch_key, batch_responses_list))
 
-                completed = batch.keys() - batch_responses.keys()
-                for req_id in completed:
-                    model.release(saved_contexts[req_id])
-                    del saved_contexts[req_id]
+                already_completed = set()
+                for batch_responses in batch_responses_list:
+                    completed = batch.keys() - batch_responses.keys()
+                    for req_id in completed:
+                        if req_id not in already_completed:
+                            model.release(saved_contexts[req_id])
+                            del saved_contexts[req_id]
+
+                    already_completed |= completed
 
             if i % 200 == 0:
                 # Occasionally clear out contexts cancelled out API worker side.

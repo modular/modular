@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
+from typing import Any
 
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.serve.pipelines.llm import IdentityTokenGeneratorTokenizer
@@ -37,8 +38,11 @@ class EchoTokenGeneratorTokenizer(
 @dataclass
 class EchoTokenGenerator(TokenGenerator[EchoTokenGeneratorContext]):
     def next_token(
-        self, batch: dict[str, EchoTokenGeneratorContext]
-    ) -> dict[str, str]:
+        self, batch: dict[str, EchoTokenGeneratorContext], num_steps: int = 1
+    ) -> list[dict[str, Any]]:
+        return [self.step(batch) for _ in range(num_steps)]
+
+    def step(self, batch: dict[str, EchoTokenGeneratorContext]):
         for _, ctx in batch.items():
             ctx.index += 1
             if ctx.index <= len(ctx.prompt) and ctx.index <= ctx.max_tokens:

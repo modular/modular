@@ -64,7 +64,12 @@ class BatchingStrategy(Enum):
 class BatchQueueConfig:
     strategy: BatchingStrategy
     size: int
-    timeout: float = 0.0  # Wait for upto timeout seconds if queue is empty.
+
+    timeout: float = 0.0
+    """How long to wait (in seconds) if a queue is empty."""
+
+    max_forward_steps: int = 1
+    """Maximum number of forwards steps to schedule at a time."""
 
     def __str__(self):
         txt = f"{self.strategy}, Max:{self.size}, Timeout: {self.timeout:0.2f}"
@@ -91,6 +96,7 @@ class BatchEntry:
     model_name: str
     batch_key: int
     batch: dict[Any, Any]
+    num_steps: int = 1
 
 
 @dataclass
@@ -207,14 +213,12 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
             ),
         )
 
-    async def model_forward(self, batch_key: int, batch: Batch):
+    async def model_forward(
+        self, batch_key: int, batch: Batch, num_steps: int = 1
+    ):
         batch = self.pre_forward_fn(batch)
         self.model_in_queue.queue.put_nowait(
-            BatchEntry(
-                self.model_name,
-                batch_key,
-                batch,
-            )
+            BatchEntry(self.model_name, batch_key, batch, num_steps)
         )
         model_out_futures = BatchMultiplexQueue.pending_model_out_futures()
         model_out_future = asyncio.get_running_loop().create_future()
@@ -225,6 +229,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
 
         for req_id in batch:
             batch[req_id] = None
+
         return responses
 
     async def dynamic_batching_worker(self):
@@ -245,36 +250,39 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         batch.keys(),
                     )
                     while batch:
-                        results = await self.model_forward(id(batch), batch)
-                        completed = self.completed_fn(batch, results)
-                        terminated = batch.keys() - results.keys()
-                        if completed or (
-                            self.config.strategy
-                            == BatchingStrategy.DYNAMIC_IMMUTABLE
-                            and completed == batch.keys()
-                        ):
-                            self.logger.debug(
-                                "DynamicBatcher(%s): Completed %d (%s)",
-                                self.name,
-                                len(completed),
-                                completed,
-                            )
-
-                            for req_id in terminated:
-                                results[req_id] = STOP_STREAM
-
-                            for req_id in completed:
-                                del batch[req_id]
+                        batch_responses_list = await self.model_forward(
+                            id(batch), batch, 1
+                        )
+                        for results in batch_responses_list:
+                            completed = self.completed_fn(batch, results)
+                            terminated = batch.keys() - results.keys()
+                            if completed or (
+                                self.config.strategy
+                                == BatchingStrategy.DYNAMIC_IMMUTABLE
+                                and completed == batch.keys()
+                            ):
                                 self.logger.debug(
-                                    (
-                                        "DynamicBatcher(%s): Deleted %s, %d"
-                                        " remaining"
-                                    ),
+                                    "DynamicBatcher(%s): Completed %d (%s)",
                                     self.name,
-                                    req_id,
-                                    len(batch),
+                                    len(completed),
+                                    completed,
                                 )
-                        await self.respond(results)
+
+                                for req_id in terminated:
+                                    results[req_id] = STOP_STREAM
+
+                                for req_id in completed:
+                                    del batch[req_id]
+                                    self.logger.debug(
+                                        (
+                                            "DynamicBatcher(%s): Deleted %s, %d"
+                                            " remaining"
+                                        ),
+                                        self.name,
+                                        req_id,
+                                        len(batch),
+                                    )
+                            await self.respond(results)
                 else:
                     await asyncio.sleep(0)
         except asyncio.CancelledError:
@@ -288,8 +296,10 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
             "ContinuousBatcher(%s): Started: %s", self.name, self.config
         )
 
-        batch: BatchInputs = {}
-        last_result: BatchOutputs = {}
+        batch: dict[BatchReqId, BatchReqInput] = {}
+        last_batch_result: list[
+            dict[BatchReqId, Union[BatchReqOutput, object]]
+        ] = []
 
         try:
             while True:
@@ -312,52 +322,71 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         )
 
                     task_results = await asyncio.gather(
-                        self.model_forward(id(batch), batch),
-                        self.respond(last_result),
-                    )  # type: ignore
-                    last_result = task_results[0]
+                        self.model_forward(
+                            id(batch), batch, self.config.max_forward_steps
+                        ),
+                        *map(self.respond, last_batch_result),
+                    )
+                    last_batch_result = task_results[0]
 
-                    # Determine completed requests.
-                    completed = self.completed_fn(batch, last_result)
-                    for req_id in completed:
-                        self.logger.debug(
-                            "ContinuousBatcher(%s): Completed %d (%s)",
-                            self.name,
-                            len(completed),
-                            completed,
-                        )
-                        last_result[req_id] = STOP_STREAM
+                    already_completed = set()
+                    already_cancelled = set()
+                    for last_result in last_batch_result:
+                        # Determine completed requests.
+                        completed = self.completed_fn(batch, last_result)
+                        for req_id in completed:
+                            if req_id in already_completed:
+                                continue
 
-                    # Determine cancelled requests.
-                    cancelled = last_result.keys() - self.out_queues.keys()
-                    if cancelled:
-                        self.model_cancel_queue.queue.put_many_nowait(cancelled)
-                        self.logger.debug(
-                            "ContinuousBatcher(%s): Cancelled %d (%s)",
-                            self.name,
-                            len(cancelled),
-                            cancelled,
-                        )
+                            self.logger.debug(
+                                "ContinuousBatcher(%s): Completed %d (%s)",
+                                self.name,
+                                len(completed),
+                                completed,
+                            )
+                            last_result[req_id] = STOP_STREAM
 
-                    # Remove batches which meet one of the following criteria.
-                    # 1. Cancelled: Batches which no longer have a output queue.
-                    # Output queues are removed by consumers when the connection
-                    # closes or when they are no longer interested in more outputs.
-                    # 2. Completed: Batches with results which are deemed complete.
-                    # We have terminated them by emitting a STOP_STEAM event above
-                    # and can immediately remove them from the batch.
-                    for req_id in cancelled | completed:
-                        del batch[req_id]
-                        self.logger.debug(
-                            "ContinuousBatcher(%s): Deleted %s, %d remaining",
-                            self.name,
-                            req_id,
-                            len(batch),
-                        )
-                elif last_result:
-                    # Explicitly report results from the last batch execution
-                    # before it is empty (via completion or cancellation).
-                    await self.respond(last_result)
+                        already_completed |= completed
+
+                        # Determine cancelled requests.
+                        cancelled = last_result.keys() - self.out_queues.keys()
+                        if cancelled:
+                            if req_id in already_cancelled:
+                                continue
+
+                            self.model_cancel_queue.queue.put_many_nowait(
+                                cancelled
+                            )
+                            self.logger.debug(
+                                "ContinuousBatcher(%s): Cancelled %d (%s)",
+                                self.name,
+                                len(cancelled),
+                                cancelled,
+                            )
+
+                        already_cancelled |= completed
+
+                        for req_id in cancelled | completed:
+                            # Remove batches which meet one of the following criteria.
+                            # 1. Cancelled: Batches which no longer have a output queue.
+                            # Output queues are removed by consumers when the connection
+                            # closes or when they are no longer interested in more outputs.
+                            # 2. Completed: Batches with results which are deemed complete.
+                            # We have terminated them by emitting a STOP_STEAM event above
+                            # and can immediately remove them from the batch.
+                            del batch[req_id]
+                            self.logger.debug(
+                                (
+                                    "ContinuousBatcher(%s): Deleted %s, %d"
+                                    " remaining"
+                                ),
+                                self.name,
+                                req_id,
+                                len(batch),
+                            )
+                elif last_batch_result:
+                    # We may have pending results even if the batch has completed.
+                    await asyncio.gather(*map(self.respond, last_batch_result))
                     last_result.clear()
                 else:
                     await asyncio.sleep(0)
@@ -386,8 +415,8 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
         try:
             while True:
                 try:
-                    batch_responses = model_out_q.queue.get_many_nowait()
-                    for batch_key, responses in batch_responses:
+                    keyed_batch_responses = model_out_q.queue.get_many_nowait()
+                    for batch_key, responses in keyed_batch_responses:
                         model_out_futures[batch_key].set_result(responses)
                 except queue.Empty:
                     await asyncio.sleep(0)
