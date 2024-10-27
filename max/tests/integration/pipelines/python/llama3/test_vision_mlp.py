@@ -50,15 +50,10 @@ def test_mlp(session, input_type: TensorType):
 
             # Transpose weights to match our Linear semantics.
             expected = TorchVisionEncoderMLP(w1, w2)(x).detach().numpy()
-            # TODO(MSDK-1071): Consolidate and figure out how to call
-            # assert_allclose(result, expected) to fire again on mismatched
-            # tensor values.
-            ACCURACY_RTOL = 1e-1
-            ACCURACY_ATOL = 1e-7
-            np.testing.assert_allclose(
-                result,
-                expected,
-                atol=ACCURACY_ATOL,
-                rtol=ACCURACY_RTOL,
-                equal_nan=True,
+            # Relative L2 norm threshold
+            threshold = 0.01
+            assert (
+                np.linalg.norm(result - expected)
+                / (np.linalg.norm(expected) + np.finfo(np.float32).eps)
+                < threshold
             )
