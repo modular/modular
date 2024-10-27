@@ -6,8 +6,6 @@
 
 #include "KGEN/ExecutionEngine/ExecutionEngine.h"
 #include "AsyncRT/Runtime/Algorithms.h"
-#include "Cache/BlobCache.h"
-#include "Cache/Support/Keys.h"
 #include "KGEN/ExecutionEngine/JIT/MaterializationLayer.h"
 #include "KGEN/ExecutionEngine/JIT/StaticArchiveLayer.h"
 #include "KGEN/Support/Configuration.h"
@@ -37,7 +35,6 @@
 
 using namespace M;
 using namespace KGEN;
-using namespace Cache;
 
 /// A standard name (that a user is unlikely to create) that we can use for a
 /// JITDylib to define platform-specific symbols we want to be in the JIT'ed
@@ -49,8 +46,6 @@ static constexpr StringLiteral mlirclibName = "$mlirc-lib";
 //===----------------------------------------------------------------------===//
 // ExecutionEngine implementation
 //===----------------------------------------------------------------------===//
-
-using Keys::ReadOnlyKey;
 
 /// Create a unix-like system platform of the given type, and set that as the
 /// platform of the given session.
