@@ -246,7 +246,7 @@ async def run_batch_scenario(
 
                         context_encoding_results = model.next_token(
                             context_encoding_batch
-                        )
+                        )[0]
                         assert (
                             context_encoding_results.keys()
                             == context_encoding_batch.keys()
@@ -302,7 +302,7 @@ async def run_batch_scenario(
                     ",".join(token_gen_batch.keys()),
                 )
                 batch_log.append(step_current, [x for x in token_gen_batch])
-                results = model.next_token(token_gen_batch)
+                results = model.next_token(token_gen_batch)[0]
                 for batch_id, token in results.items():
                     assert token is not None
                     batch_completions[batch_id] += token
