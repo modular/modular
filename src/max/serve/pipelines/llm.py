@@ -32,11 +32,7 @@ from max.serve.scheduler.queues import (
     BatchQueueConfig,
 )
 from max.serve.telemetry.stopwatch import StopWatch
-from transformers import (
-    PreTrainedTokenizer,
-    PreTrainedTokenizerBase,
-    PreTrainedTokenizerFast,
-)
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 
 @dataclass(frozen=True)
