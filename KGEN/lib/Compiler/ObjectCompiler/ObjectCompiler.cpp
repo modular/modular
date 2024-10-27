@@ -1069,9 +1069,6 @@ ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
   if (failed(machineOr))
     return machineOr.takeError();
 
-  // Set the data layout on the module.
-  llvmModule->setDataLayout((*machineOr)->createDataLayout());
-
   if (failed(runLLVMOptPasses(*llvmModule, **machineOr, options, runtime)))
     return Error("failed to run LLVM opt passes");
 
@@ -1096,9 +1093,6 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(ModuleOp module,
   auto machineOr = createTargetMachine(options, /*isJIT=*/false);
   if (failed(machineOr))
     return machineOr.takeError();
-
-  // Set the data layout on the module.
-  llvmModule->setDataLayout((*machineOr)->createDataLayout());
 
   // Emit the assembly.
   if (failed(KGEN::compileLLVMToAssembly(std::move(llvmModule), **machineOr, os,
