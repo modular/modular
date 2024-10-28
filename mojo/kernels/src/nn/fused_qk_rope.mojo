@@ -24,6 +24,7 @@ from runtime.asyncrt import (
 )
 from utils import IndexList
 from complex import ComplexSIMD
+from nn._ragged_utils import get_batch_from_row_offsets
 
 
 @always_inline
@@ -217,16 +218,9 @@ fn fused_qk_rope_ragged[
 
             var global_token_idx = idx[0]
 
-            var batch_idx: Int = -1
-            # loop through input_row_offset until we get to our sequence
-            # NOTE: this is O(N), we could do a binary search, but I'm not sure
-            # how that would perform vs a linear search on GPU
-            for i in range(batch_size):
-                if input_row_offset[i + 1] <= global_token_idx:
-                    continue
-                batch_idx = i
-                break
-            debug_assert(batch_idx != -1)
+            var batch_idx: Int = get_batch_from_row_offsets(
+                input_row_offset, global_token_idx
+            )
             var token_idx = int(global_token_idx - input_row_offset[batch_idx])
 
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx

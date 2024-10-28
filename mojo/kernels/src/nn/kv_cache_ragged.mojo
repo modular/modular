@@ -30,6 +30,7 @@ from nn.mha_mask import CausalMask
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
+from nn._ragged_utils import get_batch_from_row_offsets
 
 # ===----------------------------------------------------------------------===#
 # Fused QKV Matmul
@@ -293,16 +294,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
 
         global_token_idx = idx[0]
 
-        # loop through input_row_offset until we get to our sequence
-        # NOTE: this is O(N), we could do a binary search, but I'm not sure
-        # how that would perform vs a linear search on GPU
-        var batch_idx: Int = -1
-        for i in range(batch_size):
-            if input_row_offset[i + 1] <= global_token_idx:
-                continue
-
-            batch_idx = i
-            break
+        var batch_idx: Int = get_batch_from_row_offsets(
+            input_row_offset, global_token_idx
+        )
 
         token_idx = int(global_token_idx - input_row_offset[batch_idx])
 
