@@ -76,6 +76,7 @@ struct MHAConfig:
     var WM: UInt
     var WN: UInt
     var num_pipeline_stages: UInt
+    var k_group_size: UInt
 
     fn block_m(self) -> UInt:
         return self.num_queries_per_block
@@ -132,11 +133,13 @@ struct MHAConfig:
         WM: OptionalReg[UInt] = None,
         WN: OptionalReg[UInt] = None,
         num_pipeline_stages: UInt = 4,
+        k_group_size: UInt = 1,
     ):
         self.type = type
         self.num_heads = num_heads
         self.depth = depth
         self.num_pipeline_stages = num_pipeline_stages
+        self.k_group_size = k_group_size
         # Not all of these have to be `OptionalReg`, only
         # those that depend on `depth`.
         # Currently, all are `OptionalReg` for consistency.
@@ -1329,6 +1332,7 @@ fn mha_single_batch[
                 True,  # transpose_b
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
+                k_group_size = config.k_group_size,
             ](
                 p_reg_tile,
                 q_gmem_iter,
@@ -1355,6 +1359,7 @@ fn mha_single_batch[
                 True,  # transpose_b
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
+                k_group_size = config.k_group_size,
             ](
                 p_reg_tile,
                 # Pass shared memory iterator to hint not loading from global memory.
@@ -1533,6 +1538,7 @@ fn mha_single_batch[
                 False,  # transpose_b
                 swizzle_a=True,
                 prefetch_init=False,
+                k_group_size = config.k_group_size,
             ](
                 output_reg_tile,
                 p_smem_iter,
@@ -1561,6 +1567,7 @@ fn mha_single_batch[
                 swizzle_a=False,
                 static_num_iters = BN // BK,
                 prefetch_init=False,
+                k_group_size = config.k_group_size,
             ](
                 output_reg_tile,
                 p_reg_iter,
