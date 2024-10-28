@@ -539,6 +539,10 @@ struct BigRegExample:
   # CHECK-NEXT: kgen.return
 
 
+fn take_regexample_ref(ref [_] r: RegExample): pass
+fn ret_big_reg() -> BigRegExample:
+  return BigRegExample()
+
 # CHECK-LABEL: lit.func @"bigreg_test
 fn bigreg_test():
   # CHECK-NEXT: %varThing = lit.var.decl "varThing"
@@ -565,6 +569,18 @@ fn bigreg_test():
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%varThing)
   # CHECK-NEXT: lifetime.end %varThing
   varThing.a = RegExample()
+
+  # Must drop the value in a register to pass by-ref
+  # CHECK-NEXT: [[TMPREG:%.*]] = lit.call {{.*}}ret_big_reg
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: lit.var.lifetime.start [[TMP]]
+  # CHECK-NEXT: lit.ref.store [[TMPREG]], [[TMP]]
+  # CHECK-NEXT: [[ELT:%.*]] = lit.ref.struct.ger [[TMP]][a]
+  # CHECK-NEXT: [[ELTIMM:%.*]] = lit.ref.immut [[ELT]]
+  # CHECK-NEXT: lit.call {{.*}}take_regexample_ref{{.*}}([[ELTIMM]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
+  # CHECK-NEXT: lit.var.lifetime.end [[TMP]]
+  take_regexample_ref(ret_big_reg().a)
 
   # CHECK-NEXT: kgen.param.constant: none
 

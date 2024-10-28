@@ -741,38 +741,30 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
     return {};
   }
 
-  // If the base is an memory value, then project the field to the same mvalue.
-  if (base.ir.isMValue() && !base.ir.getIfMRValue()) {
-    auto fieldRef = emitter.builder->create<RefStructGEROp>(
-        mlirLoc, base.ir.getMValueReference(), fieldOp);
-    CValue result;
-    if (base.ir.getIfMLValue())
-      result = MLValue(fieldRef);
-    else if (base.ir.getIfMBValue())
-      result = MBValue(fieldRef);
-    else if (base.ir.getIfMBPValue())
-      result = MBPValue(fieldRef);
-    else
-      llvm_unreachable("unknown MValue");
-    return emitter.emitCResult(result, expr, dest);
-  }
-
-  // If we got an SSA value, then extract the field and return as SBValue.
-  if (base.ir.isSValue()) {
+  // If we got a trivial SSA value, extract the field and return as SBValue.
+  if (base.ir.isSValue() &&
+      base.ir.getRValueType().isTrivial(expr->getLoc(), emitter.shared)) {
     auto extractVal = emitter.builder->create<StructExtractOp>(
         mlirLoc, base.ir.getSValueRegister(), fieldOp);
     return emitter.emitCResult(SBValue(extractVal), expr, dest);
   }
 
-  // We know the base.ir is a RValue, DLValue or anything else fancy, decay to a
-  // MBValue.
+  // Otherwise emit this to memory, and work with that.
   MBValue baseBVal = emitter.emitMBValue(base, dest.getContext());
   if (!baseBVal)
     return {};
 
-  // Otherwise we have a PValue or MValue, recurse to handle it.
-  return emitStoredFieldRef({baseBVal, base.expr}, fieldOp, expr, dest,
-                            emitter);
+  auto fieldRef =
+      emitter.builder->create<RefStructGEROp>(mlirLoc, baseBVal, fieldOp);
+  // Result kind depends on the input kind.
+  CValue result;
+  if (base.ir.getIfMLValue())
+    result = MLValue(fieldRef);
+  else if (base.ir.getIfMBPValue())
+    result = MBPValue(fieldRef);
+  else
+    result = MBValue(fieldRef);
+  return emitter.emitCResult(result, expr, dest);
 }
 
 namespace {
@@ -2717,8 +2709,8 @@ AnyValue UnaryOpNode::emitTransfer(AnyValue argValue, ValueDest &dest,
   // The operand value must be in memory to have a origin.
   if (!argValue.isMValue()) {
     if (argValue.getIfSBValue()) {
-      emitter.emitError(loc, "expression is an immutable register value, "
-                             "transfer requires mutability");
+      emitter.emitError(loc, "expression is a register value, "
+                             "transfer requires ownership");
       return {};
     }
     // Note: a DLValue like a[i] could be copied into a local value, but that

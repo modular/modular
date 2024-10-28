@@ -777,7 +777,6 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     Type declaredArgType, ArrayRef<Value> callArgsSoFar) {
   assert(emitter.builder && "Should only be called in dynamic context");
 
-  Value arg;
   switch (convention) {
   case ArgConvention::OwnedInReg:
     llvm_unreachable("not used by the mojo parser");
@@ -795,12 +794,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       return emitter.builder->create<RefLoadOp>(
           argValAndExpr.expr->getLocation(emitter), refVal);
     }
-
-    arg = argValAndExpr.ir.getIfSBValue();
-    if (!arg)
-      arg = argValAndExpr.ir.getIfSRValue();
-    assert(arg && "unknown BValue");
-    return arg;
+    assert(argValAndExpr.ir.isSValue() && "unknown irvalue");
+    return argValAndExpr.ir.getSValueRegister();
 
   case ArgConvention::BorrowedInMem: {
     // Promote PValue's if needed.
