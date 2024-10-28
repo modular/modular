@@ -40,6 +40,8 @@ fn view_kernel():
 
 
 # Compile time Tensor informations
+@value
+@register_passable("trivial")
 struct StaticTensorSpec[type: DType, rank: Int]:
     # Represents the DimList type (not accessible from KGEN tests).
     alias in_lambda_t = fn[simd_width: Int] (IndexList[rank]) capturing -> SIMD[
