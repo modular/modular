@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 from typing import Callable
 
 from max._profiler import Trace
@@ -47,9 +48,18 @@ def traced(
     # Default to the function name if message wasn't passed.
     message = message if message is not None else func.__name__
 
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        with Trace(message, color):
-            return func(*args, **kwargs)
+    if inspect.iscoroutinefunction(func):
+
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            with Trace(message, color):
+                return await func(*args, **kwargs)
+
+    else:
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            with Trace(message, color):
+                return func(*args, **kwargs)
 
     return wrapper
