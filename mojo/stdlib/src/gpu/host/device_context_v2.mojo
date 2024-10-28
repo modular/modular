@@ -725,6 +725,9 @@ struct DeviceContextV2:
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
     ] as result:
+        result.dump_rep[
+            dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
+        ]()
         result = __type_of(result)(
             self,
             max_registers=max_registers,
@@ -733,9 +736,6 @@ struct DeviceContextV2:
             cache_config=cache_config,
             func_attribute=func_attribute,
         )
-        result.dump_rep[
-            dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
-        ]()
 
     @parameter
     fn enqueue_function[
