@@ -110,8 +110,7 @@ static void identifyGetterFunctions(CallGraphNode *node, SymbolTable &symTab) {
   // static spec info for a given tensor within a function.
   walker.addWalk([&](ParamOperatorAttr attr) {
     // Our intrinsic should always be Apply(intrinicFunc, "name_of_tensor")
-    if (attr.getOpcode() != KGEN::POC::ApplyResultSlot ||
-        attr.getOperands().size() != 2)
+    if (attr.getOpcode() != KGEN::POC::Apply || attr.getOperands().size() != 2)
       return;
     auto sym = dyn_cast<SymbolConstantAttr>(attr.getOperands()[0]);
     if (!sym)
@@ -371,8 +370,8 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
         LLVM_DEBUG(llvm::dbgs()
                    << "Add param (call) for " << tensorName << " (#"
                    << callerIdx << "): callee input #" << calleeIdx
-                   << " (param #" << (calleeParamIdx - 1) << ") " << "@"
-                   << oldCall.getCalleeSymbol() << ".\n");
+                   << " (param #" << (calleeParamIdx - 1) << ") "
+                   << "@" << oldCall.getCalleeSymbol() << ".\n");
       }
     }
   });

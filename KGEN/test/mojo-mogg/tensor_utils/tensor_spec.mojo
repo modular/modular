@@ -28,6 +28,8 @@ struct OptionalReg[T: AnyTrivialRegType]:
         return __mlir_op.`kgen.variant.get`[index = Int(0).value](self._value)
 
 
+@value
+@register_passable("trivial")
 struct StaticTensorSpec[type: DType, rank: Int]:
     # Represents the DimList type (not accessible from KGEN tests).
     alias _dims_type = __mlir_type[`!kgen.variadic<index>`]

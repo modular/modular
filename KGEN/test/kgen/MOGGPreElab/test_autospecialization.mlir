@@ -6,9 +6,8 @@
 module {
 
 // Stub we look for to know the type signature of the tensor spec.
-kgen.generator @CREATE_NONE_SPEC<type: dtype, rank>(%arg0: !kgen.pointer<struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<rank, index>) capturing -> !pop.simd<*(0,0), type>, i1>, variant<<index>(!pop.array<rank, index>, !pop.simd<*(0,0), type>) capturing -> !kgen.none, i1>) memoryOnly>> byref_result) -> !kgen.none {
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+kgen.generator @CREATE_NONE_SPEC<type: dtype, rank>() -> !kgen.struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<rank, index>) capturing -> !pop.simd<*(0,0), type>, i1>, variant<<index>(!pop.array<rank, index>, !pop.simd<*(0,0), type>) capturing -> !kgen.none, i1>)> {
+  kgen.unreachable
 }
 
 // Stub function we look for that fetches the static tensor spec. Calls to this
@@ -26,20 +25,18 @@ kgen.generator @CREATE_NONE_SPEC<type: dtype, rank>(%arg0: !kgen.pointer<struct<
 //    # Refers to the construct populated by "input"
 //    alias static_shape = static_spec.shape
 //    ...
-kgen.generator export @specsof<T: type>(%arg0: !kgen.string, %arg1: !kgen.pointer<struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>, i1>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>) capturing -> !kgen.none, i1>) memoryOnly>> byref_result) -> !kgen.none attributes {mogg.intrinsic_tensor_spec_hook} {
-  kgen.param.declare *"TENSOR_SPEC_NONE`1": struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>, i1>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>) capturing -> !kgen.none, i1>) memoryOnly> = <apply_result_slot(:(!kgen.pointer<struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>, i1>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>) capturing -> !kgen.none, i1>) memoryOnly>> byref_result) -> !kgen.none @CREATE_NONE_SPEC<:dtype apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype")), apply(:() -> index get_type_method(T, "_get_static_rank"))>)>
-  %0 = kgen.param.materialize: struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>, i1>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>) capturing -> !kgen.none, i1>) memoryOnly> = <*"TENSOR_SPEC_NONE`1">
-  pop.store %0, %arg1 : !kgen.pointer<struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>, i1>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>) capturing -> !kgen.none, i1>) memoryOnly>>
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
+kgen.generator export @specsof<T: type>(%arg0: !kgen.string) -> !kgen.struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>, i1>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>) capturing -> !kgen.none, i1>)> attributes {mogg.intrinsic_tensor_spec_hook} {
+  kgen.param.declare *"TENSOR_SPEC_NONE`1": struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>, i1>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>) capturing -> !kgen.none, i1>)> = <apply(:() -> !kgen.struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>, i1>, variant<<index>(!pop.array<apply(:() -> index get_type_method(T, "_get_static_rank")), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype"))>) capturing -> !kgen.none, i1>)> @CREATE_NONE_SPEC<:dtype apply(:() -> !kgen.dtype get_type_method(T, "_get_dtype")), apply(:() -> index get_type_method(T, "_get_static_rank"))>)>
+  kgen.unreachable
 }
+
 
 // Analogous to something like:
 //
 // fn function_with_attr[type: DType, rank: Int](a: ManagedTensorSlice[type, rank]):
 //    alias spec1 = specsof[type, rank]('a')
 kgen.generator @function_with_attr<type: dtype, rank>(%arg0: !kgen.pointer<struct<() memoryOnly>> borrow_in_mem) -> !kgen.none attributes {mogg.arg_params = [[#kgen.param.decl.ref<"type"> : !kgen.dtype, #kgen.param.decl.ref<"rank"> : index]], mogg.arg_src_names = ["a"], mogg.arg_type_names = ["tensor_utils::ManagedTensorSlice"]} {
-  kgen.param.declare *"spec`1": struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_static_rank()"<:dtype type, rank>), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_dtype()"<:dtype type, rank>)>, i1>, variant<<index>(!pop.array<apply(:() -> index @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_static_rank()"<:dtype type, rank>), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_dtype()"<:dtype type, rank>)>) capturing -> !kgen.none, i1>) memoryOnly> = <apply_result_slot(:(!kgen.string, !kgen.pointer<struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_static_rank()"<:dtype type, rank>), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_dtype()"<:dtype type, rank>)>, i1>, variant<<index>(!pop.array<apply(:() -> index @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_static_rank()"<:dtype type, rank>), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_dtype()"<:dtype type, rank>)>) capturing -> !kgen.none, i1>) memoryOnly>> byref_result) -> !kgen.none @specsof<:type #type_value>, "a")>
+  kgen.param.declare *"spec`1": struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_static_rank()"<:dtype type, rank>), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_dtype()"<:dtype type, rank>)>, i1>, variant<<index>(!pop.array<apply(:() -> index @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_static_rank()"<:dtype type, rank>), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_dtype()"<:dtype type, rank>)>) capturing -> !kgen.none, i1>)> = <apply(:(!kgen.string) -> !kgen.struct<(variadic<index>, variadic<index>, variant<<index>(!pop.array<apply(:() -> index @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_static_rank()"<:dtype type, rank>), index>) capturing -> !pop.simd<*(0,0), apply(:() -> !kgen.dtype @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_dtype()"<:dtype type, rank>)>, i1>, variant<<index>(!pop.array<apply(:() -> index @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_static_rank()"<:dtype type, rank>), index>, !pop.simd<*(0,0), apply(:() -> !kgen.dtype @"tensor_utils::managed_tensor_slice::ManagedTensorSlice::_get_dtype()"<:dtype type, rank>)>) capturing -> !kgen.none, i1>)> @specsof<:type #type_value>, "a")>
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -70,13 +67,13 @@ kgen.generator export @some_kernel<spec: struct<() memoryOnly>, type: dtype, ran
 // CHECK: kgen.generator export @some_kernel
 
 // CHECK: kgen.generator  @function_with_attr_{{[[0-9]]*}}<type: dtype, rank, __MOGG_SPEC0: struct<({{.*}}) memoryOnly>>
-// CHECK-NEXT: kgen.param.declare *"spec`1": struct<({{.*}}) memoryOnly> = <__MOGG_SPEC0>
+// CHECK-NEXT: kgen.param.declare *"spec`1": struct<({{.*}})> = <__MOGG_SPEC0>
 
 // CHECK: kgen.generator  @function_calling_func_with_attr_{{[[0-9]]*}}<type: dtype, rank, __MOGG_SPEC1: struct<({{.*}}) memoryOnly>>
-// CHECK-NEXT: kgen.call @function_with_attr_{{[[0-9]]*}}<:dtype type, rank, :struct<({{.*}}) memoryOnly> __MOGG_SPEC1>
+// CHECK-NEXT: kgen.call @function_with_attr_{{[[0-9]]*}}<:dtype type, rank, :struct<({{.*}})> __MOGG_SPEC1>
 
-// CHECK: kgen.generator export @some_kernel_{{[[0-9]]*}}<spec: struct<() memoryOnly>, type: dtype, rank, __MOGG_SPEC1: struct<({{.*}}) memoryOnly>, __MOGG_SPEC2: struct<({{.*}}) memoryOnly>>
+// CHECK: kgen.generator export @some_kernel_{{[[0-9]]*}}<spec: struct<() memoryOnly>, type: dtype, rank, __MOGG_SPEC1: struct<({{.*}})>, __MOGG_SPEC2: struct<({{.*}})>>
 // COM: Only arguments 1 and 2 have the tensor spec parameter
 // CHECK-SAME: mogg.tensor_spec_params = ["", "__MOGG_SPEC1", "__MOGG_SPEC2"]
-// CHECK-NEXT: kgen.call @function_with_attr_{{[[0-9]]*}}<:dtype type, rank, :struct<({{.*}}) memoryOnly> __MOGG_SPEC1>
-// CHECK-NEXT: kgen.call @function_calling_func_with_attr_{{[[0-9]]*}}<:dtype type, rank, :struct<({{.*}}) memoryOnly> __MOGG_SPEC2>
+// CHECK-NEXT: kgen.call @function_with_attr_{{[[0-9]]*}}<:dtype type, rank, :struct<({{.*}})> __MOGG_SPEC1>
+// CHECK-NEXT: kgen.call @function_calling_func_with_attr_{{[[0-9]]*}}<:dtype type, rank, :struct<({{.*}})> __MOGG_SPEC2>
