@@ -189,13 +189,10 @@ fn fused_qk_rope_ragged[
     context: Optional[DeviceContext],
 ):
     alias kv_params = cache_t.get_kv_params()
-
-    var batch_size = input_row_offset.dim[0]() - 1
-    var max_seq_len = input_row_offset[batch_size]
-
     alias num_q_heads = q_proj.shape.get[1]()
     alias num_k_heads = kv_params.num_heads
     alias head_size = q_proj.shape.get[2]()
+    var batch_size = input_row_offset.dim[0]() - 1
 
     var k_cache = kv_collection.get_key_cache[cache_t](int(layer_idx))
 
@@ -253,7 +250,7 @@ fn fused_qk_rope_ragged[
                 )
 
     var launch_shape = IndexList[3](
-        int(max_seq_len),
+        q_proj.dim[0](),
         num_q_heads + num_k_heads,  # concat q and k along head dim
         head_size,
     )
