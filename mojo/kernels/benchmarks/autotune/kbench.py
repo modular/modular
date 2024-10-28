@@ -18,7 +18,7 @@ from enum import Enum
 from itertools import chain, product
 from pathlib import Path
 from time import sleep, time
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 
 import click
 import numpy as np
@@ -94,21 +94,24 @@ class Param:
         return ["-D", f"{self.name}={self.value}"]
 
 
-def flatten(value) -> List[object]:
-    """Flattens a python value containing tensors into a list.
+def flatten(value: Union[int, object, Iterable]) -> List[Any]:
+    """Flattens an iterable into a list.
 
-    The function supports nested lists, dictionaries, and tuples.
+    Supports nested lists, dictionaries, and tuples.
+
+    Args:
+        value: The iterable to flatten.
+
+    Returns:
+        A list of flattened values.
     """
-    if not isinstance(value, Iterable):
+    if not isinstance(value, Iterable) or isinstance(value, str):
         return [value]
-    if isinstance(value, list):
-        res = functools.reduce(operator.concat, [value])
-        return res if isinstance(res, Iterable) else [res]  # type: ignore
-    if isinstance(value, dict):
-        return flatten(value.values())
-    if isinstance(value, tuple):
-        return flatten(list(value))
-    return [value]
+
+    result = []
+    for item in value:
+        result.extend(flatten(item))
+    return result
 
 
 @dataclass(repr=True)
