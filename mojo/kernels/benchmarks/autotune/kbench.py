@@ -132,8 +132,8 @@ class ParamSpace:
 
 @dataclass(repr=True)
 class ProcessOutput:
-    stdout: str = None
-    stderr: str = None
+    stdout: Optional[str] = None
+    stderr: Optional[str] = None
 
 
 @dataclass(frozen=True, repr=True)
