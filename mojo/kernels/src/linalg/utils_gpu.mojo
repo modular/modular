@@ -85,6 +85,8 @@ struct MatmulConfig[
 
     var num_k_partitions: UInt
 
+    var k_group_size: UInt
+
     alias accum_type = get_accum_type[a_type]()  # TODO: factor b_type
     alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
 
@@ -101,11 +103,13 @@ struct MatmulConfig[
         warp_tile_shape: IndexList[3] = Index(64, 64, 32),
         num_pipeline_stages: UInt = 4,
         num_k_partitions: UInt = 1,
+        k_group_size: UInt = 1,
     ):
         self.block_tile_shape = block_tile_shape
         self.warp_tile_shape = warp_tile_shape
         self.num_pipeline_stages = num_pipeline_stages
         self.num_k_partitions = num_k_partitions
+        self.k_group_size = k_group_size
 
     fn num_warps_m(self) -> UInt:
         return self.block_tile_shape[0] // self.warp_tile_shape[0]

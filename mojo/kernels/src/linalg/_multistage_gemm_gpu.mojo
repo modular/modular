@@ -96,6 +96,7 @@ fn multistage_mma[
     b_next_gmem_layout: Layout = Layout(),
     b_next_smem_layout: Layout = Layout(),
     next_op_b_iter_alignment: Int = alignof[b_type](),
+    k_group_size: UInt = 1,
 ](
     c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL, **_],
     a_iter_arg: LayoutTensorIter[_, a_layout, **_],
@@ -252,8 +253,13 @@ fn multistage_mma[
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
     alias num_k_mmas: UInt = BK // MMA_K
+    alias num_k_mma_iters: UInt = num_k_mmas // k_group_size
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
+    constrained[
+        num_k_mmas % (2 * k_group_size) == 0,
+        "num_k_mmas must be an integer multiple of 2*k_group_size",
+    ]()
 
     alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
@@ -261,14 +267,15 @@ fn multistage_mma[
     alias b_frag_size = frag_size[1]
     alias c_frag_size = frag_size[2]
 
+    alias num_reg_tiles = 2 * k_group_size
     # Register tiles.
     var a_reg_tiles = tb[a_type]().row_major[
-        2 * num_m_mmas, a_frag_size
-    ]().local().alloc().split[2]()
+        2 * k_group_size * num_m_mmas, a_frag_size
+    ]().local().alloc().split[2 * k_group_size]()
 
     var b_reg_tiles = tb[b_type]().row_major[
-        2 * num_n_mmas, b_frag_size
-    ]().local().alloc().vectorize[1, b_frag_size]().split[2]()
+        2 * k_group_size * num_n_mmas, b_frag_size
+    ]().local().alloc().vectorize[1, b_frag_size]().split[2 * k_group_size]()
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
 
@@ -283,17 +290,20 @@ fn multistage_mma[
     var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
 
     @parameter
-    if a_iter.address_space == AddressSpace.LOCAL:
-        # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
-        # Need to cast address space because it's not known at parse time to be LOCAL.
-        copy_local_to_local(a_reg_tiles[0], a_iter[])
-        a_iter._incr()
-    else:
-        mma_op.load_a[swizzle_a](
-            a_warp_tile, a_reg_tiles[0].vectorize[1, a_frag_size]()
-        )
+    for i in range(int(k_group_size)):
 
-    mma_op.load_b(b_warp_tile, b_reg_tiles[0], warp_tile_coordn=int(warp_x))
+        @parameter
+        if a_iter.address_space == AddressSpace.LOCAL:
+            # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
+            # Need to cast address space because it's not known at parse time to be LOCAL.
+            copy_local_to_local(a_reg_tiles[i], a_iter[])
+            a_iter._incr()
+        else:
+            mma_op.load_a[swizzle_a](
+                a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
+            )
+
+        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, int(warp_x))
 
     @parameter
     if a_iter.address_space == AddressSpace.LOCAL:
@@ -304,11 +314,7 @@ fn multistage_mma[
 
         @parameter
         for k_tile_id in range(static_num_iters.get()):
-            var b_smem_iter_tmp = b_smem_iter.next_unsafe(k_tile_id)
-
-            var b_warp_tile = b_smem_iter_tmp[].tile[
-                b_wtile_dim0, b_wtile_dim1
-            ](
+            var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
                 b_wtile_coord0,
                 b_wtile_coord1,
             )
@@ -316,69 +322,80 @@ fn multistage_mma[
             # Perform prefetch registers and mma until current shared memory tile's
             # data has all been loaded to registers.
             @parameter
-            for k_mma0 in range(int(num_k_mmas)):
-                alias k_mma = UInt32(k_mma0)
-                var current = k_mma % 2
-                var next = (k_mma + 1) % 2
+            for k_mma0 in range(int(num_k_mma_iters)):
 
                 @parameter
-                if k_mma == num_k_mmas - 1:
-                    var b_smem_next_tile = b_smem_iter_tmp.next_unsafe()[]
+                for k_mma1 in range(int(k_group_size)):
+                    alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
+                    alias current = k_mma % num_reg_tiles
+                    alias k_mma_next = k_mma + k_group_size
+                    alias next = int(k_mma_next % num_reg_tiles)
 
-                    b_warp_tile = b_smem_next_tile.tile[
-                        b_wtile_dim0, b_wtile_dim1
-                    ](b_wtile_coord0, b_wtile_coord1)
-
-                # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
-                copy_local_to_local(a_reg_tiles[int(next)], a_iter[])
-                a_iter._incr()
-
-                mma_op.load_b(
-                    b_warp_tile,
-                    b_reg_tiles[int(next)],
-                    int((k_mma + 1) % num_k_mmas),
-                    int(warp_x),
-                )
-
-                mma_op.mma(
-                    a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
-                    b_reg_tiles[int(current)],
-                    c.vectorize[1, c_frag_size](),
-                )
-
-                @parameter
-                if k_mma + 2 == num_k_mmas:
-                    alias prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
-
-                    # Prefetch one k tile (if valid) from global memory to current
-                    # shared memory buffer.
                     @parameter
-                    if prefetch_tile_id < static_num_iters.get():
+                    if k_mma_next == num_k_mmas:
+                        alias prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
 
+                        # Prefetch one k tile (if valid) from global memory to current
+                        # shared memory buffer.
                         @parameter
-                        if b_iter.address_space == AddressSpace.GENERIC:
-                            var b_smem_prefetch_tile = b_smem_iter_tmp.next_unsafe(
-                                num_pipeline_stages - 1
-                            )[]
+                        if prefetch_tile_id < static_num_iters.get():
 
-                            if num_b_rows:
-                                var num_rows_bound = num_b_rows.value() if transpose_b else max(
-                                    0,
-                                    num_b_rows.value() - prefetch_tile_id * BK,
-                                )
-                                _copy_dram_to_sram_async_b[masked=True](
-                                    b_smem_prefetch_tile,
-                                    num_rows_bound,
-                                )
-                            else:
-                                _copy_dram_to_sram_async_b(b_smem_prefetch_tile)
-                            b_iter._incr()
+                            @parameter
+                            if b_iter.address_space == AddressSpace.GENERIC:
+                                var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
+                                    num_pipeline_stages - 1
+                                )[]
 
-                    async_copy_commit_group()
+                                if num_b_rows:
+                                    var num_rows_bound = num_b_rows.value() if transpose_b else max(
+                                        0,
+                                        num_b_rows.value()
+                                        - prefetch_tile_id * BK,
+                                    )
+                                    _copy_dram_to_sram_async_b[masked=True](
+                                        b_smem_prefetch_tile, num_rows_bound
+                                    )
+                                else:
+                                    _copy_dram_to_sram_async_b(
+                                        b_smem_prefetch_tile
+                                    )
 
-                    # Guard the next k tile's shared memory buffer.
-                    async_copy_wait_group(num_pipeline_stages - 2)
-                    barrier()
+                                b_iter._incr()
+
+                        async_copy_commit_group()
+
+                        # Guard the next k tile's shared memory buffer.
+                        async_copy_wait_group(num_pipeline_stages - 2)
+                        barrier()
+
+                        b_smem_iter._incr()
+
+                        a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                        b_warp_tile = b_smem_iter[].tile[
+                            b_wtile_dim0, b_wtile_dim1
+                        ](b_wtile_coord0, b_wtile_coord1)
+
+                    # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
+                    copy_local_to_local(a_reg_tiles[int(next)], a_iter[])
+                    a_iter._incr()
+
+                    alias kidx = k_mma_next % num_k_mmas
+                    mma_op.load_b(
+                        b_warp_tile,
+                        b_reg_tiles[int(next)],
+                        int(kidx),
+                        int(warp_x),
+                    )
+
+                @parameter
+                for k_mma1 in range(int(k_group_size)):
+                    alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
+                    alias current = k_mma % num_reg_tiles
+                    mma_op.mma(
+                        a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
+                        b_reg_tiles[int(current)],
+                        c.vectorize[1, c_frag_size](),
+                    )
 
         return
 
@@ -392,121 +409,132 @@ fn multistage_mma[
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
         @parameter
-        for k_mma0 in range(int(num_k_mmas)):
-            alias k_mma = UInt(k_mma0)
-            var current = k_mma % 2
-            var next = (k_mma + 1) % 2
+        for k_mma0 in range(int(num_k_mma_iters)):
 
-            if k_mma == num_k_mmas - 1:
-                a_smem_iter._incr()
-                b_smem_iter._incr()
+            @parameter
+            for k_mma1 in range(int(k_group_size)):
+                alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
+                alias current = k_mma % num_reg_tiles
+                alias k_mma_next = k_mma + k_group_size
+                alias next = int(k_mma_next % num_reg_tiles)
 
-                a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
-                b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
-                    b_wtile_coord0, b_wtile_coord1
+                @parameter
+                if k_mma_next == num_k_mmas:
+                    var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
+
+                    # Prefetch one k tile (if valid) from global memory to current
+                    # shared memory buffer.
+                    if prefetch_tile_id < num_iters:
+
+                        @parameter
+                        if a_iter.address_space == AddressSpace.GENERIC:
+                            var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
+                                num_pipeline_stages - 1
+                            )[]
+
+                            if num_a_rows:
+                                _copy_dram_to_sram_async_a[masked=True](
+                                    a_smem_prefetch_tile, num_a_rows.value()
+                                )
+                            else:
+                                _copy_dram_to_sram_async_a(a_smem_prefetch_tile)
+
+                            a_iter._incr()
+
+                        @parameter
+                        if b_iter.address_space == AddressSpace.GENERIC:
+                            var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
+                                num_pipeline_stages - 1
+                            )[]
+
+                            if num_b_rows:
+                                var num_rows_bound = num_b_rows.value() if transpose_b else max(
+                                    0,
+                                    num_b_rows.value() - prefetch_tile_id * BK,
+                                )
+                                _copy_dram_to_sram_async_b[masked=True](
+                                    b_smem_prefetch_tile, num_rows_bound
+                                )
+                            else:
+                                _copy_dram_to_sram_async_b(b_smem_prefetch_tile)
+
+                            b_iter._incr()
+                    else:
+
+                        @parameter
+                        if continue_prefetch_b:
+                            var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
+                                num_pipeline_stages - 1
+                            )[].reshape[b_next_smem_layout]()
+
+                            # TODO: can we guard at compile time num_b_rows is set here?
+                            var num_rows_bound = num_b_rows.value() if transpose_b_next else max(
+                                0,
+                                num_b_rows.value()
+                                - (prefetch_tile_id - num_iters) * BK,
+                            )
+
+                            alias row_size = b_next_smem_layout.stride[
+                                0
+                            ].value()
+
+                            copy_dram_to_sram_async[
+                                thread_layout = Layout.row_major(
+                                    num_threads * simd_size // row_size,
+                                    row_size // simd_size,
+                                ),
+                                swizzle = transpose_b_next
+                                or b_type.is_half_float(),
+                                masked=True,
+                            ](
+                                b_smem_prefetch_tile.vectorize[1, simd_size](),
+                                next_b_iter[]
+                                .bitcast[
+                                    b_type, address_space = AddressSpace.GENERIC
+                                ]()
+                                .vectorize[1, simd_size](),
+                                num_rows_bound,
+                            )
+
+                            next_b_iter._incr()
+
+                    async_copy_commit_group()
+
+                    # Guard the next k tile's shared memory buffer.
+                    async_copy_wait_group(num_pipeline_stages - 2)
+                    barrier()
+
+                    a_smem_iter._incr()
+                    b_smem_iter._incr()
+
+                    a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                    b_warp_tile = b_smem_iter[].tile[
+                        b_wtile_dim0, b_wtile_dim1
+                    ](b_wtile_coord0, b_wtile_coord1)
+
+                alias kidx = int(k_mma_next % num_k_mmas)
+                mma_op.load_a[swizzle_a](
+                    a_warp_tile,
+                    a_reg_tiles[next].vectorize[1, a_frag_size](),
+                    kidx,
                 )
 
-            mma_op.load_a[swizzle_a](
-                a_warp_tile,
-                a_reg_tiles[next].vectorize[1, a_frag_size](),
-                (k_mma + 1) % num_k_mmas,
-            )
+                mma_op.load_b(
+                    b_warp_tile,
+                    b_reg_tiles[next],
+                    kidx,
+                    int(warp_x),
+                )
 
-            mma_op.load_b(
-                b_warp_tile,
-                b_reg_tiles[next],
-                (k_mma + 1) % num_k_mmas,
-                int(warp_x),
-            )
-
-            mma_op.mma(
-                a_reg_tiles[current].vectorize[1, a_frag_size](),
-                b_reg_tiles[current],
-                c.vectorize[1, c_frag_size](),
-            )
-
-            if k_mma + 2 == num_k_mmas:
-                var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
-
-                # Prefetch one k tile (if valid) from global memory to current
-                # shared memory buffer.
-                if prefetch_tile_id < num_iters:
-
-                    @parameter
-                    if a_iter.address_space == AddressSpace.GENERIC:
-                        var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
-                        )[]
-
-                        if num_a_rows:
-                            _copy_dram_to_sram_async_a[masked=True](
-                                a_smem_prefetch_tile, num_a_rows.value()
-                            )
-                        else:
-                            _copy_dram_to_sram_async_a(a_smem_prefetch_tile)
-
-                        a_iter._incr()
-
-                    @parameter
-                    if b_iter.address_space == AddressSpace.GENERIC:
-                        var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
-                        )[]
-
-                        if num_b_rows:
-                            var num_rows_bound = num_b_rows.value() if transpose_b else max(
-                                0,
-                                num_b_rows.value() - prefetch_tile_id * BK,
-                            )
-                            _copy_dram_to_sram_async_b[masked=True](
-                                b_smem_prefetch_tile, num_rows_bound
-                            )
-                        else:
-                            _copy_dram_to_sram_async_b(b_smem_prefetch_tile)
-
-                        b_iter._incr()
-                else:
-
-                    @parameter
-                    if continue_prefetch_b:
-                        var b_smem_prefetch_tile = b_smem_iter.next_unsafe(
-                            num_pipeline_stages - 1
-                        )[].reshape[b_next_smem_layout]()
-
-                        # TODO: can we guard at compile time num_b_rows is set here?
-                        var num_rows_bound = num_b_rows.value() if transpose_b_next else max(
-                            0,
-                            num_b_rows.value()
-                            - (prefetch_tile_id - num_iters) * BK,
-                        )
-
-                        alias row_size = b_next_smem_layout.stride[0].value()
-
-                        copy_dram_to_sram_async[
-                            thread_layout = Layout.row_major(
-                                num_threads * simd_size // row_size,
-                                row_size // simd_size,
-                            ),
-                            swizzle = transpose_b_next
-                            or b_type.is_half_float(),
-                            masked=True,
-                        ](
-                            b_smem_prefetch_tile.vectorize[1, simd_size](),
-                            next_b_iter[]
-                            .bitcast[
-                                b_type, address_space = AddressSpace.GENERIC
-                            ]()
-                            .vectorize[1, simd_size](),
-                            num_rows_bound,
-                        )
-
-                        next_b_iter._incr()
-
-                async_copy_commit_group()
-
-                # Guard the next k tile's shared memory buffer.
-                async_copy_wait_group(num_pipeline_stages - 2)
-                barrier()
+            @parameter
+            for k_mma1 in range(int(k_group_size)):
+                alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
+                alias current = k_mma % num_reg_tiles
+                mma_op.mma(
+                    a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
+                    b_reg_tiles[int(current)],
+                    c.vectorize[1, c_frag_size](),
+                )
 
 
 fn multistage_gemm_kernel[
@@ -644,6 +672,7 @@ fn multistage_gemm_kernel[
         num_threads,
         num_pipeline_stages,
         transpose_b,
+        k_group_size = config.k_group_size,
     ](
         c_reg_tile,
         a_gmem_iter,
