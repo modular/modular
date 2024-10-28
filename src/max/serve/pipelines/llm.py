@@ -70,7 +70,7 @@ class TokenGeneratorPipelineConfig:
 
     @classmethod
     def dynamic_homogenous(
-        cls, batch_size: int, batch_timeout=0.1
+        cls, batch_size: int, batch_timeout=0.1, max_forward_steps=1
     ) -> TokenGeneratorPipelineConfig:
         """The dynamic-homogenous config uses a single queue.
         Requests are dequed into a batch and the entire batch is
@@ -80,13 +80,18 @@ class TokenGeneratorPipelineConfig:
             strategy=BatchingStrategy.DYNAMIC_IMMUTABLE,
             size=batch_size,
             timeout=batch_timeout,
+            max_forward_steps=max_forward_steps,
         )
         config = cls(token_generation=token_generation_config)
         return config
 
     @classmethod
     def continuous_heterogenous(
-        cls, tg_batch_size: int, ce_batch_size: int, ce_batch_timeout=0.1
+        cls,
+        tg_batch_size: int,
+        ce_batch_size: int,
+        ce_batch_timeout=0.1,
+        max_forward_steps=1,
     ) -> TokenGeneratorPipelineConfig:
         """The continuous-hetrogenous config creates 2 queues.
         Context-encoding is done via dynamic batching.
@@ -96,6 +101,7 @@ class TokenGeneratorPipelineConfig:
             strategy=BatchingStrategy.CONTINUOUS,
             size=tg_batch_size,
             timeout=0.0,
+            max_forward_steps=max_forward_steps,
         )
         context_encoding_config = BatchQueueConfig(
             strategy=BatchingStrategy.DYNAMIC,

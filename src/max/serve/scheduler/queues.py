@@ -71,10 +71,6 @@ class BatchQueueConfig:
     max_forward_steps: int = 1
     """Maximum number of forwards steps to schedule at a time."""
 
-    def __str__(self):
-        txt = f"{self.strategy}, Max:{self.size}, Timeout: {self.timeout:0.2f}"
-        return txt
-
 
 YieldPredicate = Callable[[], bool]
 
@@ -251,7 +247,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     )
                     while batch:
                         batch_responses_list = await self.model_forward(
-                            id(batch), batch, 1
+                            id(batch), batch, self.config.max_forward_steps
                         )
                         for results in batch_responses_list:
                             completed = self.completed_fn(batch, results)
