@@ -289,31 +289,44 @@ struct DimList(
     """The underlying storage for the list of dimensions."""
 
     @always_inline("nodebug")
-    fn __init__(inout self, values: (Int,)):
+    fn __init__[Intable: Intable](inout self, values: (Intable,)):
         """Creates a dimension list from the given list of values.
+
+        Parameters:
+            Intable: A type able to be converted to an `Int`.
 
         Args:
             values: The initial dim values list.
         """
-        self.value = VariadicList[Dim](values[0])
+        self.value = VariadicList[Dim](int(values[0]))
 
     @always_inline("nodebug")
-    fn __init__(inout self, values: (Int, Int)):
+    fn __init__[Intable: Intable](inout self, values: (Intable, Intable)):
         """Creates a dimension list from the given list of values.
+
+        Parameters:
+            Intable: A type able to be converted to an `Int`.
 
         Args:
             values: The initial dim values list.
         """
-        self.value = VariadicList[Dim](values[0], values[1])
+        self.value = VariadicList[Dim](int(values[0]), int(values[1]))
 
     @always_inline("nodebug")
-    fn __init__(inout self, values: (Int, Int, Int)):
+    fn __init__[
+        Intable: Intable
+    ](inout self, values: (Intable, Intable, Intable)):
         """Creates a dimension list from the given list of values.
+
+        Parameters:
+            Intable: A type able to be converted to an `Int`.
 
         Args:
             values: The initial dim values list.
         """
-        self.value = VariadicList[Dim](values[0], values[1], values[2])
+        self.value = VariadicList[Dim](
+            int(values[0]), int(values[1]), int(values[2])
+        )
 
     @always_inline("nodebug")
     fn __init__(inout self, values: VariadicList[Dim]):
