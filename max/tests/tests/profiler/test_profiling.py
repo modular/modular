@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pytest
 from max.profiler import Trace, traced
 
 
@@ -26,3 +27,18 @@ def test_profiling() -> None:
     bar()
 
     Trace("I'm here").mark()
+
+
+@pytest.mark.asyncio
+async def test_async_profiling() -> None:
+    """Tests that profiling async functions doesn't error."""
+
+    async def bar() -> None:
+        pass
+
+    @traced(message="baz", color="red")
+    async def foo() -> None:
+        await bar()
+
+    with Trace("potato"):
+        await foo()
