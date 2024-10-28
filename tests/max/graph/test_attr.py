@@ -10,7 +10,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
-from max import _graph
+from max import _graph, mlir
 from max.dtype import DType
 from max.graph import TensorType
 
@@ -76,3 +76,13 @@ def test_shape_attr(mlir_context) -> None:
     dim2 = _graph.symbolic_dim(mlir_context, "x")
     attr = _graph.shape_attr(mlir_context, [dim1, dim2])
     assert "mosh<ape[3, x]" in str(attr)
+
+
+def test_device_attr(mlir_context: mlir.Context) -> None:
+    """Tests device attribute creation."""
+    device0 = _graph.device_attr(mlir_context, "cuda", 0)
+    device1 = _graph.device_attr(mlir_context, "cpu", 0)
+    device2 = _graph.device_attr(mlir_context, "cuda", 1)
+    assert '<"cuda", 0>' in str(device0)
+    assert '<"cpu", 0>' in str(device1)
+    assert '<"cuda", 1>' in str(device2)
