@@ -1813,8 +1813,11 @@ CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // Store the value to memory.  StoreOp takes ownership of the input SRValue.
     builder->create<RefStoreOp>(translateLocation(value.expr->getLoc()), val,
                                 destRef);
-
-    return SBValue(val);
+    // Must return a borrow of the result, use SBValue if we can to avoid a load
+    // but otherwise we need a MBValue for non-trivial types.
+    if (valueType.isTrivial(exprLoc, shared))
+      return SBValue(val);
+    return MBValue(destRef);
   }
 
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
