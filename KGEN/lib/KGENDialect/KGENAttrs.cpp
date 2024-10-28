@@ -1747,7 +1747,7 @@ struct DivOperandInfo {
 
   // tracks the coalesced constant terms, e.g. mul_nuw(5, 10, D1)
   // this would be 5 * 10 = 50.
-  int64_t constant = 1;
+  APInt constant;
 
   Type attrType;
 
@@ -1759,8 +1759,8 @@ struct DivOperandInfo {
 
   // Multiplies `constant` by `num`, checking overflow
   inline void updateConstant(IntegerAttr integerAttr) {
-    int64_t num = integerAttr.getInt();
-    int64_t new_constant = constant * num;
+    APInt num = integerAttr.getValue();
+
     if (num == 0) {
       // the power of 0 -- it's always going to be 0!
       constant = 0;
@@ -1770,17 +1770,22 @@ struct DivOperandInfo {
       return;
     }
 
+    bool overflow = false;
+    constant = isSignedIntType(integerAttr.getType())
+                   ? constant.smul_ov(num, overflow)
+                   : constant.umul_ov(num, overflow);
+
+    bool isIndex = attrType.isIndex();
+
     // poison if overflow on the current system OR would overflow on
     // 32 bit system for `index` types
-    isPoisoned = isPoisoned || (new_constant / num != constant) ||
-                 (new_constant > std::numeric_limits<int32_t>::max()) ||
-                 (new_constant < std::numeric_limits<int32_t>::min());
-    constant = new_constant;
+    isPoisoned = isPoisoned || overflow ||
+                 (isIndex && (constant.trunc(32).sext(64) != constant));
   }
 
   /// Construct an Info object using a MulNuw operator, or constant IntegerAttr
   DivOperandInfo(TypedAttr attr) {
-    constant = 1;
+    constant = IntegerAttr::get(attr.getType(), 1).getValue();
     attrType = attr.getType();
 
     if (auto constAttr = dyn_cast<IntegerAttr>(attr)) {
@@ -1861,11 +1866,14 @@ struct DivOperandInfo {
       denominator.symOccurences.clear();
     }
     if (numerator.constant != 0 && denominator.constant != 0) {
-      // abs to keep signedness of constants
-      int64_t gcd_term =
-          std::abs(std::gcd(numerator.constant, denominator.constant));
-      numerator.constant /= gcd_term;
-      denominator.constant /= gcd_term;
+      APInt gcdTerm = llvm::APIntOps::GreatestCommonDivisor(
+          numerator.constant, denominator.constant);
+
+      bool isSigned = isSignedIntType(numerator.attrType);
+      numerator.constant = isSigned ? numerator.constant.sdiv(gcdTerm)
+                                    : numerator.constant.udiv(gcdTerm);
+      denominator.constant = isSigned ? denominator.constant.sdiv(gcdTerm)
+                                      : denominator.constant.udiv(gcdTerm);
     }
   }
 };
