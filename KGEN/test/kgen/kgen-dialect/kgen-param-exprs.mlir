@@ -232,6 +232,18 @@ kgen.generator @fixed_width_integers<p1: i32, p2: i32>() {
   // CHECK-NEXT: constant: i32 = <0>
   %8 = kgen.param.constant: i32 = <div(0, 0)>
 
+  // CHECK-NEXT: constant: si32 = <5>
+  %9 = kgen.param.constant: si32 = <div(:si32 10, 2)>
+
+  // CHECK-NEXT: constant: si32 = <-5>
+  %10 = kgen.param.constant: si32 = <div(:si32 -10, 2)>
+
+  // CHECK-NEXT: constant: ui32 = <5>
+  %11 = kgen.param.constant: ui32 = <div(:ui32 10, 2)>
+
+  // CHECK-NEXT: constant: ui32 = <2147483647>
+  %12 = kgen.param.constant: ui32 = <div(:ui32 4294967295, 2)>
+
   kgen.return
 }
 
@@ -383,6 +395,9 @@ kgen.generator @param_canonicalize<p1, p2>() {
 
   // CHECK: = kgen.param.constant = <div(p1, 10)>
   kgen.param.constant = <div(mul_nuw(50, 2, p1), 1000)>
+
+  // CHECK: = kgen.param.constant = <p1>
+  kgen.param.constant = <div(mul_nuw(p1, -1), -1)>
 
   kgen.param.constant = <mul(p1, 1)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <mul(p1, 0, p2)>  // CHECK: kgen.param.constant = <0>
