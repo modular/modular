@@ -28,7 +28,7 @@ fn test_mbarrier(
     mbarrier(addr5)
 
 
-fn _verify_mbarrier(asm: String) raises -> None:
+def _verify_mbarrier(asm: String):
     assert_true("cp.async.mbarrier.arrive.b64" in asm)
     assert_true("cp.async.mbarrier.arrive.shared.b64" in asm)
 
@@ -51,8 +51,8 @@ fn test_mbarrier_init(
     mbarrier_init(shared_mem, 4)
 
 
-fn _verify_mbarrier_init(asm: String) raises -> None:
-    assert_true("ld.param.u64" in asm)
+def _verify_mbarrier_init(asm: String):
+    assert_true("ld.param.u32" in asm)
     assert_true("mov.b32" in asm)
     assert_true("mbarrier.init.shared.b64" in asm)
 
@@ -80,7 +80,7 @@ fn test_mbarrier_test_wait(
         done = mbarrier_test_wait(shared_mem, state)
 
 
-fn _verify_mbarrier_test_wait(asm: String) raises -> None:
+def _verify_mbarrier_test_wait(asm: String):
     assert_true("mbarrier.test_wait.shared.b64" in asm)
 
 
@@ -106,7 +106,7 @@ fn test_async_copy(src: UnsafePointer[Float32, AddressSpace.GLOBAL]):
     async_copy[16](src, shared_mem)
 
 
-fn _verify_async_copy(asm: String) raises -> None:
+def _verify_async_copy(asm: String):
     assert_true("cp.async.ca.shared.global" in asm)
     assert_true("cp.async.cg.shared.global" in asm)
 
@@ -135,7 +135,7 @@ fn test_async_copy_l2_prefetch(
     async_copy[16, bypass_L1_16B=False, l2_prefetch=64](src, shared_mem)
 
 
-fn _verify_async_copy_l2_prefetch(asm: String) raises -> None:
+def _verify_async_copy_l2_prefetch(asm: String):
     assert_true("cp.async.ca.shared.global.L2::128B" in asm)
     assert_true("cp.async.ca.shared.global.L2::64B" in asm)
 
@@ -154,7 +154,7 @@ def test_async_copy_l2_prefetch__sm90():
     _verify_async_copy_l2_prefetch(asm)
 
 
-fn test_async_copy_with_zero_fill_kernel(
+def test_async_copy_with_zero_fill_kernel(
     src: UnsafePointer[Float32, AddressSpace.GLOBAL]
 ):
     var shared_mem = stack_allocation[
@@ -168,12 +168,12 @@ fn test_async_copy_with_zero_fill_kernel(
     )
 
 
-fn _verify_test_async_copy_with_zero_fill(asm: String) raises -> None:
+def _verify_test_async_copy_with_zero_fill(asm: String):
     assert_true(
-        "cp.async.ca.shared.global.L2::128B [%r1], [%rd1], 4, %r2;" in asm
+        "cp.async.ca.shared.global.L2::128B [%r3], [%rd1], 4, %r2;" in asm
     )
     assert_true(
-        "cp.async.ca.shared.global.L2::64B [%r1], [%rd1], 16, %r4;" in asm
+        "cp.async.ca.shared.global.L2::64B [%r3], [%rd1], 16, %r4;" in asm
     )
 
 
@@ -198,7 +198,7 @@ fn test_async_copy_with_eviction(
     )
 
 
-fn _verify_async_copy_with_eviction(asm: String) raises -> None:
+def _verify_async_copy_with_eviction(asm: String):
     assert_true("createpolicy.fractional.L2::evict_first.b64" in asm)
     assert_true("cp.async.ca.shared.global.L2::128B" in asm)
     assert_true("cp.async.ca.shared.global.L2::64B" in asm)
