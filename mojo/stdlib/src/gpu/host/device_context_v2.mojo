@@ -916,6 +916,19 @@ struct DeviceContextV2:
             )
         )
 
+    fn enqueue_copy_device_to_device[
+        type: DType
+    ](
+        self,
+        dst: UnsafePointer[Scalar[type]],
+        src: UnsafePointer[Scalar[type]],
+        size: Int,
+    ) raises:
+        # Not directly implemented on DeviceContextV2, wrap in buffers first
+        var dst_buf = DeviceBufferV2(self, dst, size, owning=False)
+        var src_buf = DeviceBufferV2(self, src, size, owning=False)
+        self.enqueue_copy_device_to_device[type](dst_buf, src_buf)
+
     fn copy_to_device_sync[
         type: DType
     ](self, buf: DeviceBufferV2[type], ptr: UnsafePointer[Scalar[type]]) raises:
