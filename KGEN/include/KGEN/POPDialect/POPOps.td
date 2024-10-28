@@ -2361,7 +2361,7 @@ def POP_NVVMWGMAMMAAsyncOp : POPOp<"nvvm.wgmma.mma_async", [Pure]> {
   }];
   let arguments = (ins I64:$descriptor_a,
                        I64:$descriptor_b,
-                       UnboundOrFloatSIMD:$reg_c,
+                       UnboundOrFloatOrUnsignedSIMD:$reg_c,
                        TypeAttr:$type_a,
                        TypeAttr:$type_b,
                        TypeAttr:$type_c,
@@ -2371,7 +2371,7 @@ def POP_NVVMWGMAMMAAsyncOp : POPOp<"nvvm.wgmma.mma_async", [Pure]> {
                        AttrOfType<KGEN_StringType>:$layout_a,
                        AttrOfType<KGEN_StringType>:$layout_b);
 
-  let results = (outs UnboundOrFloatSIMD:$res);
+  let results = (outs UnboundOrFloatOrUnsignedSIMD:$res);
   let assemblyFormat = [{
     $descriptor_a $descriptor_b $reg_c $type_a $type_b $type_c
     attr-dict `:` type($reg_c) `->` type($res)
