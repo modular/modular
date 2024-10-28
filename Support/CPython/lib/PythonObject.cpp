@@ -4,24 +4,28 @@
 //
 //===----------------------------------------------------------------------===//
 #include "Support/CPython/PythonObject.h"
+#include "Support/CPython/PythonGIL.h"
+#include <Python.h>
 
-M::CPython::PythonObjectWrapper::PythonObjectWrapper(PyObject *ptr) : ptr(ptr) {
-  if (ptr) {
-    PyGILState_STATE state = PyGILState_Ensure();
+namespace M::CPython {
+
+PythonObjectWrapper::PythonObjectWrapper(PyObject *ptr, bool takeOwnership)
+    : ptr(ptr) {
+  if (ptr && takeOwnership) {
+    PythonGIL lock;
     Py_INCREF(ptr);
-    PyGILState_Release(state);
   }
 }
 
-M::CPython::PythonObjectWrapper::~PythonObjectWrapper() {
+PythonObjectWrapper::~PythonObjectWrapper() {
   if (ptr) {
-    PyGILState_STATE state = PyGILState_Ensure();
+    PythonGIL lock;
     Py_DECREF(ptr);
-    PyGILState_Release(state);
   }
 }
 
-void M::CPython::freePythonObjectWrapper(void *ptr) {
+void freePythonObjectWrapper(void *ptr) {
   PythonObjectWrapper *wrapper = static_cast<PythonObjectWrapper *>(ptr);
   delete wrapper;
 };
+} // namespace M::CPython
