@@ -197,6 +197,9 @@ fn b2b_gemm[
     # TODO: lift this restriction
     constrained[K % BK == 0, "K must be an integer multiple of BK"]()
     constrained[BN % BK == 0, "BN must be an integer multiple of BK"]()
+    constrained[
+        K == BK, "FIXME: currently, K == BK must be true, but that is a bug."
+    ]()
 
     var num_l_iter = ceildiv(L, BN)
     alias num_warps_m = config.num_warps_m()
@@ -333,6 +336,7 @@ fn b2b_gemm[
                 continue_prefetch_b=True,
                 prefetch_init=True,
                 transpose_b_next=transpose_c,
+                k_group_size=2,
             ](
                 ab_reg_tile,
                 a_gmem_iter,
@@ -358,6 +362,7 @@ fn b2b_gemm[
                 continue_prefetch_b=True,
                 prefetch_init=True,
                 transpose_b_next=transpose_c,
+                k_group_size=2,
             ](
                 ab_reg_tile,
                 a_smem_iter,  # don't prefetch a
@@ -660,7 +665,7 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     # alias M = 32
     alias M = 640
     alias N = 64
-    alias K = 32
+    alias K = 64
     # alias L = 64
     # alias L = 128
     alias L = 384
@@ -691,7 +696,7 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
             mat_b.tensor[k, l] = l + k * L
     for l in range(L):
         for n in range(N):
-            mat_c.tensor[l, n] = n * L + l
+            mat_c.tensor[l, n] = ((n * L + l) * 0.125).cast[src_type]()
             # mat_c.tensor[l, n] = n + l * N
     matmul_naive(host_ab, mat_a.tensor, mat_b.tensor)
     for m in range(M):
@@ -701,7 +706,7 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     # print("Host Matrix:\n", host_d_ref)
 
     alias config = BackToBackMatmulConfig[dst_type, src_type](
-        IndexList[3, unsigned=True](32, 64, 32),
+        IndexList[3, unsigned=True](32, 64, 64),
         IndexList[3, unsigned=True](16, 64, 16),
         num_pipeline_stages=2,
     )
@@ -710,7 +715,7 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
-    # print("Device Matrix:\n", host_d)
+    # print("Device Matrix:\n", mat_d.tensor)
 
     for m in range(M):
         for n in range(N):

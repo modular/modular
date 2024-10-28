@@ -10,6 +10,7 @@ from math import isqrt
 
 from algorithm import max
 from buffer import Buffer, Dim, DimList, NDBuffer
+from collections import OptionalReg
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
@@ -18,6 +19,11 @@ from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
 from nn.mha_mask import NullMask
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal, assert_equal
+
+from layout.tensor_core import (
+    get_accum_type,
+    get_mma_shape,
+)
 
 from utils import IndexList
 from utils.index import Index
@@ -260,51 +266,73 @@ def execute_flash_attention[
 
     @parameter
     for nps in range(2, 5):
-        alias config = MHAConfig(
-            type,
-            num_q_heads,
-            kv_params.head_size,
-            num_pipeline_stages=nps,
-        )
-        var config_str = "ampere_" + type.__str__() + "_"
-        config_str += kv_params.head_size.__str__() + "x"
-        config_str += (32 if type is DType.float32 else 64).__str__() + "_"
-        config_str += (16 if type is DType.float32 else 32).__str__()
-        config_str += "x" + nps.__str__()
-        assert_equal(config.__str__(), config_str)
-        flash_attention[target="cuda", config=config](
-            test_output_device.tensor,
-            q_device.tensor,
-            k_cache_device,
-            v_cache_device,
-            mask_device.tensor,
-            NullMask(),
-            valid_length_device.tensor,
-            # TODO take scale from argument GRA-750
-            isqrt(Float32(kv_params.head_size)),
-            ctx,
-        )
 
-        ctx.enqueue_copy_from_device(
-            test_output_host.tensor.data, test_output_device.buffer
-        )
-        ctx.enqueue_copy_from_device(
-            ref_output_host.tensor.data, ref_output_device.buffer
-        )
-        ctx.synchronize()
+        @parameter
+        for blf in range(2):
+            # FIXME illegal address if using larger BK and nps
+            alias BK = (UInt(32) if type is DType.float32 else UInt(64)) // (
+                1 if nps == 2 else 2
+            )
+            alias config = MHAConfig(
+                type,
+                num_q_heads,
+                kv_params.head_size,
+                num_pipeline_stages=nps,
+                k_group_size=1 << blf,
+                BK=OptionalReg(BK),
+            )
+            alias num_k_mmas = config.block_k() // get_mma_shape[
+                type, get_accum_type[type]()
+            ]()[2]
 
-        ref_out = ref_output_host.tensor
-        test_out = test_output_host.tensor
-        for bs in range(int(batch_size)):
-            for s in range(int(valid_length[bs])):
-                for h in range(int(kv_params.num_heads)):
-                    for hd in range(kv_params.head_size):
-                        assert_almost_equal(
-                            ref_out[bs, s, h, hd],
-                            test_out[bs, s, h, hd],
-                            atol=1e-5,
-                            rtol=8e-3,
-                        )
+            @parameter
+            if num_k_mmas % (2 * config.k_group_size) != 0:
+                continue
+
+            alias mma_shape = get_mma_shape[type, get_accum_type[type]()]()
+
+            @parameter
+            if (config.block_k() % (mma_shape[2] << blf)) != 0:
+                continue
+            var config_str = "ampere_" + type.__str__() + "_"
+            config_str += kv_params.head_size.__str__() + "x"
+            config_str += (32 if type is DType.float32 else 64).__str__() + "_"
+            config_str += BK.__str__()
+            config_str += "x" + nps.__str__()
+            assert_equal(config.__str__(), config_str)
+            flash_attention[target="cuda", config=config](
+                test_output_device.tensor,
+                q_device.tensor,
+                k_cache_device,
+                v_cache_device,
+                mask_device.tensor,
+                NullMask(),
+                valid_length_device.tensor,
+                # TODO take scale from argument GRA-750
+                isqrt(Float32(kv_params.head_size)),
+                ctx,
+            )
+
+            ctx.enqueue_copy_from_device(
+                test_output_host.tensor.data, test_output_device.buffer
+            )
+            ctx.enqueue_copy_from_device(
+                ref_output_host.tensor.data, ref_output_device.buffer
+            )
+            ctx.synchronize()
+
+            ref_out = ref_output_host.tensor
+            test_out = test_output_host.tensor
+            for bs in range(int(batch_size)):
+                for s in range(int(valid_length[bs])):
+                    for h in range(int(kv_params.num_heads)):
+                        for hd in range(kv_params.head_size):
+                            assert_almost_equal(
+                                ref_out[bs, s, h, hd],
+                                test_out[bs, s, h, hd],
+                                atol=1e-5,
+                                rtol=8e-3,
+                            )
 
     _ = q_device^
     _ = q_host^
