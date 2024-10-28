@@ -195,7 +195,7 @@ fn async_copy[
 
 
 @always_inline
-fn async_copy_sized[
+fn async_copy[
     type: AnyType, //,
     copy_size: Int,
     *,
