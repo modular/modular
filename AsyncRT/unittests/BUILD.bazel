@@ -2,6 +2,7 @@ load("//bazel:api.bzl", "modular_cc_test")
 
 modular_cc_test(
     name = "AllocatorTest",
+    timeout = "short",
     srcs = ["AllocatorTest.cpp"],
     deps = [
         "//AsyncRT:Runtime",
@@ -12,6 +13,7 @@ modular_cc_test(
 
 modular_cc_test(
     name = "AsyncValueTest",
+    size = "small",
     srcs = ["AsyncValueTest.cpp"],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
@@ -26,6 +28,7 @@ modular_cc_test(
 
 modular_cc_test(
     name = "DebuggingAllocatorsTest",
+    size = "small",
     srcs = ["DebuggingAllocatorsTest.cpp"],
     deps = [
         "//AsyncRT:Runtime",
@@ -36,6 +39,7 @@ modular_cc_test(
 
 modular_cc_test(
     name = "DeviceContextTest",
+    size = "small",
     srcs = ["DeviceContextTest.cpp"],
     deps = [
         "//AsyncRT:DeviceContext",
@@ -44,6 +48,7 @@ modular_cc_test(
 
 modular_cc_test(
     name = "CUDADeviceContextTest",
+    size = "small",
     srcs = ["CUDADeviceContextTest.cpp"],
     tags = [
         "A100",
@@ -57,12 +62,14 @@ modular_cc_test(
 
 modular_cc_test(
     name = "ResourceTest",
+    size = "small",
     srcs = ["ResourceTest.cpp"],
     deps = ["//AsyncRT:Support"],
 )
 
 modular_cc_test(
     name = "RuntimeTest",
+    size = "small",
     srcs = ["RuntimeTest.cpp"],
     target_compatible_with = select({
         "//:tsan": ["@platforms//:incompatible"],
@@ -77,6 +84,7 @@ modular_cc_test(
 
 modular_cc_test(
     name = "TypeIDTest",
+    size = "small",
     srcs = ["TypeIDTest.cpp"],
     deps = [
         "//AsyncRT:Support",
@@ -87,6 +95,7 @@ modular_cc_test(
 
 modular_cc_test(
     name = "TimerHeapTest",
+    size = "small",
     srcs = ["TimerHeapTest.cpp"],
     deps = [
         "//AsyncRT:Runtime",
