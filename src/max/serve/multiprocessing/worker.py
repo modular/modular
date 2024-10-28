@@ -149,7 +149,7 @@ def all_queues(pred: Union[Predicate, None] = None) -> dict[str, MPQueue]:
 
 def register_mp_queue(key: str, queue: Queue = None):
     if not queue:
-        queue = Queue()
+        queue = Queue(max_size_bytes=10_000_000)
 
     q = MPQueue(key, queue)
     ALL_QUEUES[key] = q
