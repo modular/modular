@@ -163,6 +163,16 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             )
         return False
 
+    def context_enc_full(self) -> bool:
+        """Check if the context queue has a full batch in it."""
+        self.logger.debug(
+            "Called context_enc_full with %s",
+            self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1,  # type: ignore
+        )
+        if self.context_enc_queue:
+            return self.context_enc_queue.in_queue.qsize() >= 32
+        return False
+
     def __init__(
         self,
         config: TokenGeneratorPipelineConfig,
@@ -198,6 +208,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         self.max_queue_size = max(q.config.size for q in self.queues)
 
         self.request_semaphore = asyncio.BoundedSemaphore(self.max_queue_size)
+        self.tokenizer_semaphore = asyncio.BoundedSemaphore(2)
         self.request_indices = set(range(self.max_queue_size))
 
         self._timers: dict[str, TokenGeneratorTimers] = {}
@@ -227,8 +238,18 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             request.index,
             timers.total.elapsed_ms,
         )
-        with timers.context_creation:
-            context = await self.tokenizer.new_context(request)
+
+        # try to defer to shipping a context encoding batch
+        while self.context_enc_full():
+            await asyncio.sleep(0.0)
+
+        # the semaphore acts like a dumb queue to prevent all of the coros
+        # from getting queued in the work loop all at once
+        # todo: replace with a proper work queue for tokenization
+        async with self.tokenizer_semaphore:
+            with timers.context_creation:
+                context = await self.tokenizer.new_context(request)
+
         self.logger.debug(
             "%s [%d]: Context-Creation: %0.2f ms, Elapsed: %0.2f ms",
             request.id,
