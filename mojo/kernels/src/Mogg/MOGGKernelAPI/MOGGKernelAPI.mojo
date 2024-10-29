@@ -57,6 +57,7 @@ from linalg.utils import (
 )
 from nn import arg_nonzero
 from nn.argmaxmin import argmax, argmin
+from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
@@ -1690,13 +1691,17 @@ struct ScatterMul:
 @no_inline
 fn view_copy_impl[
     synchronous: Bool, target: StringLiteral, type: DType, rank: Int
-](z: ManagedTensorSlice[type, rank], x: ManagedTensorSlice[type, rank]):
+](
+    z: ManagedTensorSlice[type, rank],
+    x: ManagedTensorSlice[type, rank],
+    ctx: MojoCallContextPtr,
+):
     @parameter
     @always_inline
     fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
         return x._simd_load_internal[width](idx)
 
-    foreach[func](z)
+    foreach[func, synchronous, target](z, ctx)
 
 
 @compiler.register("mo.static.broadcast_to")
@@ -1738,11 +1743,12 @@ struct BroadcastTo:
         z: ManagedTensorSlice[type, out_rank],
         x: ManagedTensorSlice[type, in_rank],
         output_shape: IndexList[out_rank],
+        ctx: MojoCallContextPtr,
     ):
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
         var x_view = Self.build_view(x, output_shape)
-        view_copy_impl[synchronous, target](z, x_view)
+        view_copy_impl[synchronous, target](z, x_view, ctx)
 
 
 @compiler.register("mo.static.reshape")
@@ -1758,6 +1764,7 @@ struct StaticReshape:
         output: ManagedTensorSlice[type=type, rank=output_rank],
         input: ManagedTensorSlice[type=type],
         shape: IndexList[output_rank],
+        ctx: MojoCallContextPtr,
     ):
         var view_buffer = reshape(
             managed_tensor_slice_to_ndbuffer(input), shape
@@ -1765,7 +1772,7 @@ struct StaticReshape:
         var view_tensor = ManagedTensorSlice[type, output_rank](
             view_buffer.data, shape, view_buffer.get_strides()
         )
-        view_copy_impl[synchronous, target](output, view_tensor)
+        view_copy_impl[synchronous, target](output, view_tensor, ctx)
 
 
 @compiler.register("mo.reshape")
@@ -1820,9 +1827,10 @@ struct Transpose:
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
         permutations: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
     ):
         view_copy_impl[synchronous, target](
-            output, Self.transpose_in_place(input, permutations)
+            output, Self.transpose_in_place(input, permutations), ctx
         )
 
     # TODO(GRA-1033) Make it possible to have multiple raises.
@@ -1876,6 +1884,7 @@ struct Slice:
         starts: ManagedTensorSlice[rank=1],
         stops: ManagedTensorSlice[rank=1],
         steps: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
     ):
         var view_buffer = slice_as_view(
             managed_tensor_slice_to_ndbuffer(input),
@@ -1888,7 +1897,7 @@ struct Slice:
             view_buffer.get_shape(),
             view_buffer.get_strides(),
         )
-        view_copy_impl[synchronous, target](output, view_tensor)
+        view_copy_impl[synchronous, target](output, view_tensor, ctx)
 
     @staticmethod
     fn shape(
@@ -1919,6 +1928,7 @@ struct MutableStoreSlice:
         starts: ManagedTensorSlice[rank=1],
         stops: ManagedTensorSlice[rank=1],
         steps: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
     ):
         var to_buffer_ndb_view = slice_as_view(
             managed_tensor_slice_to_ndbuffer(to_buffer),
@@ -1931,7 +1941,7 @@ struct MutableStoreSlice:
             to_buffer_ndb_view.get_shape(),
             to_buffer_ndb_view.get_strides(),
         )
-        view_copy_impl[synchronous, target](to_buffer_mts_view, from_slice)
+        view_copy_impl[synchronous, target](to_buffer_mts_view, from_slice, ctx)
 
     # No shape function as it currently just routes to mo.slice's (done in
     # legalize-rmo-operators) Can have a proper shape function once the whole
@@ -1957,6 +1967,7 @@ struct SliceDim:
         starts: ScalarTensor,
         stops: ScalarTensor,
         steps: ScalarTensor,
+        ctx: MojoCallContextPtr,
     ):
         var view_buffer = slice_dim_as_view[dim=axis](
             managed_tensor_slice_to_ndbuffer(input),
@@ -1969,7 +1980,7 @@ struct SliceDim:
             view_buffer.get_shape(),
             view_buffer.get_strides(),
         )
-        view_copy_impl[synchronous, target](output, view_tensor)
+        view_copy_impl[synchronous, target](output, view_tensor, ctx)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1980,10 +1991,13 @@ struct SliceDim:
 @compiler.register("mo.arg_max")
 struct ArgMax:
     @staticmethod
-    fn execute(
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[rank = output.rank],
+    fn execute[
+        target: StringLiteral, rank: Int
+    ](
+        output: ManagedTensorSlice[rank=rank],
+        input: ManagedTensorSlice[rank=rank],
         axis: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
     ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
@@ -1992,27 +2006,47 @@ struct ArgMax:
         alias input_shape = compiler.specsof[input.type, input.rank](
             "input"
         ).shape
+        var axis_val = int(normalize_neg_index(axis[0], rank))
 
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
-            static_shape=output_shape
-        ](output)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer[
-            static_shape=axis_shape
-        ](axis)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer[
-            static_shape=input_shape
-        ](input)
+        with Trace[TraceLevel.OP, target=target]("argmax"):
 
-        argmax(input_ndbuffer, axis_ndbuffer, output_ndbuffer)
+            @parameter
+            if target == "cpu":
+                var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
+                    static_shape=output_shape
+                ](output)
+                var input_ndbuffer = managed_tensor_slice_to_ndbuffer[
+                    static_shape=input_shape
+                ](input)
+
+                argmax(input_ndbuffer, axis_val, output_ndbuffer)
+            else:
+                if axis_val != rank - 1:
+                    raise Error("axis other than -1 not supported on GPU")
+
+                # Has no static shape info
+                var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
+                var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+
+                # TODO(KERN-1045): Add support for taking advantage of static_shapes
+                var cuda_ctx = ctx.get_device_context()
+                argmax_gpu(
+                    cuda_ctx,
+                    input_ndbuffer,
+                    output_ndbuffer,
+                )
 
 
 @compiler.register("mo.arg_min")
 struct ArgMin:
     @staticmethod
-    fn execute(
-        output: ManagedTensorSlice,
-        input: ManagedTensorSlice[rank = output.rank],
+    fn execute[
+        target: StringLiteral, rank: Int
+    ](
+        output: ManagedTensorSlice[rank=rank],
+        input: ManagedTensorSlice[rank=rank],
         axis: ManagedTensorSlice[rank=1],
+        ctx: MojoCallContextPtr,
     ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
@@ -2021,18 +2055,35 @@ struct ArgMin:
         alias input_shape = compiler.specsof[input.type, input.rank](
             "input"
         ).shape
+        var axis_val = int(normalize_neg_index(axis[0], rank))
 
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
-            static_shape=output_shape
-        ](output)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer[
-            static_shape=axis_shape
-        ](axis)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer[
-            static_shape=input_shape
-        ](input)
+        with Trace[TraceLevel.OP, target=target]("argmin"):
 
-        argmin(input_ndbuffer, axis_ndbuffer, output_ndbuffer)
+            @parameter
+            if target == "cpu":
+                var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
+                    static_shape=output_shape
+                ](output)
+                var input_ndbuffer = managed_tensor_slice_to_ndbuffer[
+                    static_shape=input_shape
+                ](input)
+
+                argmin(input_ndbuffer, axis_val, output_ndbuffer)
+            else:
+                if axis_val != rank - 1:
+                    raise Error("axis other than -1 not supported on GPU")
+
+                # Has no static shape info
+                var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
+                var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+
+                # TODO(KERN-1045): Add support for taking advantage of static_shapes
+                var cuda_ctx = ctx.get_device_context()
+                argmin_gpu(
+                    cuda_ctx,
+                    input_ndbuffer,
+                    output_ndbuffer,
+                )
 
 
 @compiler.register("mo.arg_nonzero")
@@ -2730,7 +2781,7 @@ struct GatherND:
         var data_ndbuffer = managed_tensor_slice_to_ndbuffer(data)
         var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
 
-        gather_nd[batch_dims=batchDims](
+        gather_nd[batch_dims=batchDims, target=target](
             data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
         )
 
@@ -2919,13 +2970,13 @@ struct RMSNorm:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[type, width]:
-            return input.load[width=width](
+            return input._fused_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
         var gamma_buf = managed_tensor_slice_to_ndbuffer(gamma)
-        var epsilon_val = epsilon._ptr.load(0)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var epsilon_val = epsilon._ptr.load(0)
 
         rms_norm[type, rank, input_fn, target=target](
             input._spec.shape, gamma_buf, epsilon_val, output_buf, ctx
