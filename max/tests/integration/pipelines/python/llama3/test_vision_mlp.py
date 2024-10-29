@@ -7,14 +7,11 @@
 reference implementation.
 """
 
-from dataclasses import dataclass
 import numpy as np
 import pytest
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import Graph, TensorType
 from modular_graph_test import modular_graph_test
 from nn import Linear
@@ -33,7 +30,7 @@ from llama3.vision.mlp import MLP
         TensorType(DType.float64, ["dim"]),
     ],
 )
-def test_mlp(session, input_type: TensorType):
+def test_mlp(session: InferenceSession, input_type: TensorType) -> None:
     dim = input_type.shape[-1]
     w1_type = TensorType(input_type.dtype, ["hidden_dim", dim])
     w2_type = TensorType(input_type.dtype, [dim, "hidden_dim"])
