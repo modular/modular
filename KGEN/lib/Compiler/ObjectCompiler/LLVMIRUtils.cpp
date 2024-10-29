@@ -615,7 +615,6 @@ void LLVMModulePerFunctionSplitterImpl::split(
 
       symbolLinkageTypes.insert({global.getName().str(), global.getLinkage()});
       global.setLinkage(llvm::GlobalValue::WeakAnyLinkage);
-      global.setDSOLocal(false);
       continue;
     }
 
