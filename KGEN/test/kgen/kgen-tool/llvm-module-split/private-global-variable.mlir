@@ -21,13 +21,13 @@ llvm.func @h() {
   llvm.return
 }
 
-// COM: check private global variable is handled 
+// COM: check private global variable is handled
 // CHECK: [LLVM Module Split: submodule 0]
-// CHECK: @str0 = weak constant [5 x i8] c"str0\00", align 16
-// CHECK: @str1 = weak constant [5 x i8] c"str1\00", align 16
-// CHECK: define void @f(ptr %0) 
+// CHECK: @str0 = weak dso_local constant [5 x i8] c"str0\00", align 16
+// CHECK: @str1 = weak dso_local constant [5 x i8] c"str1\00", align 16
+// CHECK: define void @f(ptr %0)
 // CHECK: [LLVM Module Split: submodule 1]
-// CHECK: @str0 = weak constant [5 x i8] c"str0\00", align 16
-// CHECK: @str1 = weak constant [5 x i8] c"str1\00", align 16
+// CHECK: @str0 = weak dso_local constant [5 x i8] c"str0\00", align 16
+// CHECK: @str1 = weak dso_local constant [5 x i8] c"str1\00", align 16
 // CHECK: declare void @f(ptr)
-// CHECK: define void @h() 
+// CHECK: define void @h()
