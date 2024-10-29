@@ -568,8 +568,8 @@ def run(
     build_opts = []
     if mode is KBENCH_MODE.BUILD:
         build_opts = ["build"]
-        if debug_level:
-            build_opts.extend(["--debug-level", debug_level])
+    if debug_level:
+        build_opts.extend(["--debug-level", debug_level])
 
     # Run the code over the mesh of param/values
     t_start_total = time()
