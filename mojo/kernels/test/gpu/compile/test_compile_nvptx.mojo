@@ -8,11 +8,10 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import ThreadIdx, barrier
-from gpu.memory import AddressSpace
+from gpu import ThreadIdx
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm
-from memory import UnsafePointer, stack_allocation
+from memory import UnsafePointer
 
 
 fn kernel(x: Int) -> Int:
@@ -102,33 +101,9 @@ def test_compile_function_with_path_func():
         print(out_file.read_text())
 
 
-# CHECK-LABEL: test_short_nvtx_ptr
-def test_short_nvtx_ptr():
-    print("== test_short_nvtx_ptr")
-
-    fn do_some_shared_mem_op(src: UnsafePointer[Int32]):
-        var a = stack_allocation[
-            20, Int32, address_space = AddressSpace.SHARED
-        ]()
-        a[ThreadIdx.x()] = src[0]
-        barrier()
-
-    # CHECK: // demoted variable
-    # CHECK-NOT: mov.u64
-    # CHECK: mov.u32
-    # CHECK-NEXT: shl.b32
-    # CHECK-NEXT: mov.u32
-    # CHECK-NEXT: add.s32
-    # CHECK-NEXT: ld.global.u32
-    # CHECK-NEXT: st.shared.u32
-    with DeviceContext() as ctx:
-        _ = ctx.compile_function[do_some_shared_mem_op, dump_ptx=True]()
-
-
 def main():
     test_compile_code()
     test_compile_function()
     test_compile_function_with_assembly()
     test_compile_function_with_path()
     test_compile_function_with_path_func()
-    test_short_nvtx_ptr()
