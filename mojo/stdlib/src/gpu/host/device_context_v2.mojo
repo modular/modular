@@ -56,7 +56,7 @@ fn not_implemented_yet[msg: StringLiteral]():
 
 fn _checked(err_msg: _CharPtr) raises:
     if err_msg:
-        err_str = String(StringRef(err_msg))
+        err_str = String(StringRef(ptr=err_msg))
         external_call["free", NoneType, _CharPtr](err_msg)
         raise Error(err_str)
 
@@ -642,7 +642,7 @@ struct DeviceContextV2:
         ](
             self._handle,
         )
-        result = String(StringRef(name_ptr))
+        result = String(StringRef(ptr=name_ptr))
         external_call["free", NoneType, _CharPtr](name_ptr)
         return result
 
