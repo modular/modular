@@ -22,6 +22,7 @@ from layout.layout_tensor import (
     copy_local_to_dram,
     copy_sram_to_local,
 )
+from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.math import outer_product_acc
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
@@ -141,16 +142,14 @@ fn sgemm_double_buffer[
 
     # Double buffer in registers (fragments in nvidia terms).
     var a_reg = InlineArray[_, 2](
-        LayoutTensor[a_type, Layout(TM)].stack_allocation(),
-        LayoutTensor[a_type, Layout(TM)].stack_allocation(),
+        tb[a_type]().row_major[TM]().local().alloc(),
+        tb[a_type]().row_major[TM]().local().alloc(),
     )
     var b_reg = InlineArray[_, 2](
-        LayoutTensor[b_type, Layout(TN)].stack_allocation(),
-        LayoutTensor[b_type, Layout(TN)].stack_allocation(),
+        tb[b_type]().row_major[TN]().local().alloc(),
+        tb[b_type]().row_major[TN]().local().alloc(),
     )
-    var c_reg = LayoutTensor[
-        c_type, Layout.row_major(TM, TN)
-    ].stack_allocation().fill(0)
+    var c_reg = tb[c_type]().row_major[TM, TN]().local().alloc().fill(0)
 
     # Thread swizzling
     # Warp has 2D Layout [warp_dim_x, warp_dim_y]. Current thread is mapped to

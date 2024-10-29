@@ -323,9 +323,7 @@ fn multistage_mma[
                         ](
                             a_smem_prefetch_tile.vectorize[1, simd_size](),
                             a_iter[]
-                            .bitcast[
-                                a_type, address_space = AddressSpace.GENERIC
-                            ]()
+                            .bitcast[a_type]()
                             .vectorize[1, simd_size](),
                         )
 
@@ -343,9 +341,7 @@ fn multistage_mma[
                         ](
                             b_smem_prefetch_tile.vectorize[1, simd_size](),
                             b_iter[]
-                            .bitcast[
-                                b_type, address_space = AddressSpace.GENERIC
-                            ]()
+                            .bitcast[b_type]()
                             .vectorize[1, simd_size](),
                         )
 

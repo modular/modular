@@ -17,6 +17,7 @@ from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.sync import barrier
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import copy_sram_to_local
+from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.math import outer_product_acc
 from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from linalg.matmul_gpu import matmul_kernel_naive
@@ -73,12 +74,9 @@ fn gemm_kernel[
     var warp_n = Int(warp_id) % n_warp_n
 
     # Allocate register tiles.
-
-    var a_reg = LayoutTensor[a_type, Layout(TM)].stack_allocation()
-    var b_reg = LayoutTensor[b_type, Layout(TN)].stack_allocation()
-    var c_reg = LayoutTensor[
-        c_type, Layout.row_major(TM, TN)
-    ].stack_allocation().fill(0)
+    var a_reg = tb[a_type]().row_major[TM]().local().alloc()
+    var b_reg = tb[b_type]().row_major[TN]().local().alloc()
+    var c_reg = tb[c_type]().row_major[TM, TN]().local().alloc().fill(0)
 
     alias warp_layout = Layout.row_major(8, 4)
 
