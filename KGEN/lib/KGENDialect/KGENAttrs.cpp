@@ -2645,8 +2645,7 @@ TypedAttr ParamOperatorAttr::getNot(TypedAttr operand) {
 /// Return (neg x) which is the same as (mul x, -1).  The `operand` value
 /// must have `index` type.
 TypedAttr ParamOperatorAttr::getNeg(TypedAttr operand) {
-  IntegerAttr minusOne =
-      IntegerAttr::get(IndexType::get(operand.getContext()), APInt(64, -1ULL));
+  IntegerAttr minusOne = IntegerAttr::get(operand.getType(), -1);
   return ParamOperatorAttr::get(POC::Mul, operand, minusOne);
 }
 
