@@ -2321,22 +2321,13 @@ struct LayoutTensor[
 
     @always_inline
     fn copy_from_async[
-        src_layout: Layout,
-        src_addr_space: AddressSpace,
-        src_element_layout: Layout,
-        *,
         masked: Bool = False,
         swizzle: OptionalReg[Swizzle] = None,
         fill: Fill = Fill.NONE,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
-        src: LayoutTensor[
-            dtype,
-            src_layout,
-            address_space=src_addr_space,
-            element_layout=src_element_layout, **_,
-        ],
+        src: LayoutTensor,
         src_idx_bound: Int = UNKNOWN_VALUE,
         base_offset: Self.uint_type = 0,
     ):
@@ -2345,8 +2336,12 @@ struct LayoutTensor[
             "Async is only supported for destinations in shared memory",
         ]()
 
+        constrained[
+            src.dtype == dtype, "src dtype must be the same as dst dtype."
+        ]()
+
         alias dst_size = layout.size()
-        alias src_size = src_layout.size()
+        alias src_size = src.layout.size()
 
         @parameter
         if not src.__experimental_non_homogeneous_tile:
@@ -2379,7 +2374,7 @@ struct LayoutTensor[
         constrained[dst_dims_known, "dst tensor must have static layout"]()
 
         alias src_dims_known = (
-            src_layout.all_dims_known() and src.element_layout.all_dims_known()
+            src.layout.all_dims_known() and src.element_layout.all_dims_known()
         )
 
         var dst_ptr = self.ptr.bitcast[
@@ -2388,12 +2383,12 @@ struct LayoutTensor[
         var src_ptr = src.ptr.bitcast[address_space = _GPUAddressSpace.GLOBAL]()
 
         # Coalesce element layouts to simplify vectorization condition.
-        alias coalesce_src_element_layout = coalesce(src_element_layout)
+        alias coalesce_src_element_layout = coalesce(src.element_layout)
         alias coalesce_dst_element_layout = coalesce(self.element_layout)
 
         @parameter
         if (
-            src_element_layout.all_dims_known()
+            src.element_layout.all_dims_known()
             and coalesce_src_element_layout.rank() == 1
             and coalesce_src_element_layout.stride[0] == 1
             and coalesce_dst_element_layout.rank() == 1
@@ -2437,7 +2432,7 @@ struct LayoutTensor[
                         var src_idx = 0
 
                         # only get index like this when it is vectorized form
-                        alias src_static_idx = src_layout(i)
+                        alias src_static_idx = src.layout(i)
                         alias dst_distance = layout(i) - layout(j)
 
                         @parameter
@@ -2452,7 +2447,7 @@ struct LayoutTensor[
                         if masked:
                             var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
                             async_copy[element_size_bytes](
-                                src_ptr + src_idx,
+                                src_ptr.bitcast[dtype]() + src_idx,
                                 dst_ptr + int(dst_idx),
                                 src_copy_size,
                             )
@@ -2461,7 +2456,13 @@ struct LayoutTensor[
                                 element_size_bytes,
                                 fill=fill,
                                 eviction_policy=eviction_policy,
-                            ](src_ptr + src_idx, dst_ptr + int(dst_idx))
+                            ](
+                                src_ptr.bitcast[dtype]() + src_idx,
+                                dst_ptr
+                                + int(
+                                    dst_idx,
+                                ),
+                            )
             else:
                 alias is_rank2 = src.rank == 2 and self.rank == 2
                 constrained[
@@ -2506,7 +2507,7 @@ struct LayoutTensor[
                         var src_idx = 0
 
                         # only get index like this when it is vectorized form
-                        alias src_static_idx = src_layout(j)
+                        alias src_static_idx = src.layout(j)
                         alias dst_distance = layout(j) - layout(i)
 
                         @parameter
@@ -2519,7 +2520,7 @@ struct LayoutTensor[
 
                         var copy_size_bytes = element_size_bytes if i * num_vecs_per_swizzle + j < copy_bound else 0
                         async_copy[element_size_bytes](
-                            src_ptr + src_idx,
+                            src_ptr.bitcast[dtype]() + src_idx,
                             dst_ptr + int(dst_idx),
                             copy_size_bytes,
                         )
@@ -2537,7 +2538,7 @@ struct LayoutTensor[
                     var src_idx = 0
 
                     alias src_static_idx = make_layout(
-                        src.element_layout, src_layout
+                        src.element_layout, src.layout
                     )(i)
                     alias dst_idx = make_layout(
                         self.element_layout, self.layout
@@ -2552,7 +2553,7 @@ struct LayoutTensor[
                         )(i)
 
                     async_copy[4, fill=fill, eviction_policy=eviction_policy](
-                        src_ptr + src_idx, dst_ptr + dst_idx
+                        src_ptr.bitcast[dtype]() + src_idx, dst_ptr + dst_idx
                     )
             else:
                 alias is_rank2 = src.rank == 2 and self.rank == 2
@@ -2598,7 +2599,7 @@ struct LayoutTensor[
                     )(i)
 
                     async_copy[4, fill=fill, eviction_policy=eviction_policy](
-                        src_ptr + src_idx, dst_ptr + dst_idx
+                        src_ptr.bitcast[dtype]() + src_idx, dst_ptr + dst_idx
                     )
 
     @always_inline
@@ -2820,29 +2821,24 @@ fn stack_allocation_like[
 #
 @always_inline
 fn copy_dram_to_sram[
-    src_layout: Layout,
-    dst_layout: Layout,
-    dtype: DType,
-    src_element_layout: Layout,
-    dst_element_layout: Layout, //,
-    *,
     src_thread_layout: Layout,
     dst_thread_layout: Layout = src_thread_layout,
     swizzle: OptionalReg[Swizzle] = None,
-](
-    dst: LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[
-        dtype,
-        src_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout, **_,
-    ],
-):
+](dst: LayoutTensor, src: LayoutTensor):
+    constrained[
+        dst.dtype == src.dtype, "src dtype and dst dtype must be the same."
+    ]()
+
+    constrained[
+        src.address_space == _GPUAddressSpace.GENERIC,
+        "src address space must be GENERIC.",
+    ]()
+
+    constrained[
+        dst.address_space == _GPUAddressSpace.SHARED,
+        "dst address space must be SHARED.",
+    ]()
+
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
     var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
         ThreadIdx.x()
@@ -2854,28 +2850,9 @@ fn copy_dram_to_sram[
 #
 @always_inline
 fn copy_dram_to_sram[
-    src_layout: Layout,
-    dst_layout: Layout,
-    dtype: DType,
-    src_element_layout: Layout,
-    dst_element_layout: Layout, //,
-    *,
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
-](
-    dst: LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[
-        dtype,
-        src_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout, **_,
-    ],
-):
+](dst: LayoutTensor, src: LayoutTensor):
     copy_dram_to_sram[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
@@ -2887,39 +2864,29 @@ fn copy_dram_to_sram[
 #
 @always_inline
 fn copy_dram_to_sram_async[
-    src_layout: Layout,
-    dst_layout: Layout,
-    dtype: DType,
-    src_element_layout: Layout,
-    dst_element_layout: Layout, //,
-    *,
     src_thread_layout: Layout,
     dst_thread_layout: Layout,
     swizzle: Bool = False,
     masked: Bool = False,
     fill: Fill = Fill.NONE,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](
-    dst: LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[
-        dtype,
-        src_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout, **_,
-    ],
-    num_rows: Int = UNKNOWN_VALUE,
-):
+](dst: LayoutTensor, src: LayoutTensor, num_rows: Int = UNKNOWN_VALUE):
+    constrained[
+        src.address_space == _GPUAddressSpace.GENERIC,
+        "src address space must be GENERIC.",
+    ]()
+
+    constrained[
+        dst.address_space == _GPUAddressSpace.SHARED,
+        "dst address space must be SHARED.",
+    ]()
+
     alias row_size = dst.stride[0]()
     # See make_ldmatrix_swizzle in Swizzle.mojo for `conflict_ways`.
     # TODO: use the above when MOCO-1048 is fixed.
     alias bytes_32_banks = 128
     alias conflict_ways = min(
-        8 * row_size * sizeof[dtype]() // bytes_32_banks, 8
+        8 * row_size * sizeof[dst.dtype]() // bytes_32_banks, 8
     )
     constrained[
         (swizzle and (conflict_ways in (4, 8))) or not swizzle,
@@ -2935,7 +2902,7 @@ fn copy_dram_to_sram_async[
     ]()
 
     alias swizzle_option = None if not swizzle else (
-        OptionalReg[Swizzle](make_ldmatrix_swizzle[dtype, row_size]())
+        OptionalReg[Swizzle](make_ldmatrix_swizzle[dst.dtype, row_size]())
     )
 
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
@@ -2950,12 +2917,12 @@ fn copy_dram_to_sram_async[
         ](src_fragments, base_offset=dst_frag_offset)
     else:
         constrained[
-            src_layout.stride[1].value() == src.element_size
-            and src_layout.rank() == 2,
+            src.layout.stride[1].value() == src.element_size
+            and src.layout.rank() == 2,
             "Only support masking rows and 2D row major layout.",
         ]()
         var src_frag_offset = src_fragments.distance(src.ptr)
-        alias stride = src_layout.stride[0].value()
+        alias stride = src.layout.stride[0].value()
         var src_idx_bound = num_rows * stride - src_frag_offset
         dst_fragments.copy_from_async[
             masked=True,
@@ -2973,32 +2940,12 @@ fn copy_dram_to_sram_async[
 #
 @always_inline
 fn copy_dram_to_sram_async[
-    src_layout: Layout,
-    dst_layout: Layout,
-    dtype: DType,
-    src_element_layout: Layout,
-    dst_element_layout: Layout, //,
-    *,
     thread_layout: Layout,
     swizzle: Bool = False,
     masked: Bool = False,
     fill: Fill = Fill.NONE,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](
-    dst: LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[
-        dtype,
-        src_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=src_element_layout, **_,
-    ],
-    num_rows: Int = UNKNOWN_VALUE,
-):
+](dst: LayoutTensor, src: LayoutTensor, num_rows: Int = UNKNOWN_VALUE):
     copy_dram_to_sram_async[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
@@ -3011,30 +2958,21 @@ fn copy_dram_to_sram_async[
 
 @always_inline
 fn copy_sram_to_dram[
-    src_layout: Layout,
-    dst_layout: Layout,
-    src_type: DType,
-    dst_type: DType,
     thread_layout: Layout,
-    src_element_layout: Layout,
-    dst_element_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
-](
-    dst: LayoutTensor[
-        dst_type,
-        dst_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[
-        src_type,
-        src_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=src_element_layout, **_,
-    ],
-):
+](dst: LayoutTensor, src: LayoutTensor):
     constrained[
-        src_layout.all_dims_known(), "Shared memory must have static layout"
+        dst.address_space == _GPUAddressSpace.GENERIC,
+        "dst address space must be GENERIC.",
+    ]()
+
+    constrained[
+        src.address_space == _GPUAddressSpace.SHARED,
+        "src address space must be SHARED.",
+    ]()
+
+    constrained[
+        src.layout.all_dims_known(), "Shared memory must have static layout"
     ]()
 
     var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
@@ -3042,24 +2980,24 @@ fn copy_sram_to_dram[
 
     # TODO: copy_from only allows static layout
     @parameter
-    if src_type == dst_type:
+    if src.dtype == dst.dtype:
         dst_fragments.copy_from(src_fragments)
     else:
         constrained[
-            src_type == DType.float32 and dst_type.is_half_float(),
+            src.dtype == DType.float32 and dst.dtype.is_half_float(),
             "Only support FP32 -> half precision downcast during copy.",
         ]()
 
-        alias simd_size = simdwidthof[dst_type]()
+        alias simd_size = simdwidthof[dst.dtype]()
         # TODO: generalize the copy to non-scalar case if possible.
         constrained[
-            src_element_layout.size() == simd_size
-            and dst_element_layout.size() == simd_size,
+            src.element_layout.size() == simd_size
+            and dst.element_layout.size() == simd_size,
             "Only FP32 -> half precision downcast for vectorized copy.",
         ]()
 
-        alias src_align = alignof[SIMD[src_type, simdwidthof[src_type]()]]()
-        alias dst_align = alignof[SIMD[dst_type, simd_size]]()
+        alias src_align = alignof[SIMD[src.dtype, simdwidthof[src.dtype]()]]()
+        alias dst_align = alignof[SIMD[dst.dtype, simd_size]]()
 
         var src_frag_offset = src_fragments.distance(src.ptr)
 
@@ -3099,7 +3037,7 @@ fn copy_sram_to_dram[
                     width=simd_size, alignment=src_align
                 ](swizzled_idx)
                 dst_fragments.ptr.store[alignment=dst_align](
-                    dst_idx, src_vec.cast[dst_type]()
+                    dst_idx, src_vec.cast[dst.dtype]()
                 )
         else:
             var copy_bound = dst_fragments.runtime_layout.size()
@@ -3138,61 +3076,49 @@ fn copy_sram_to_dram[
                         width=simd_size, alignment=src_align
                     ](swizzled_idx)
                     dst_fragments.ptr.store[alignment=dst_align](
-                        dst_idx, src_vec.cast[dst_type]()
+                        dst_idx, src_vec.cast[dst.dtype]()
                     )
 
 
 @always_inline
 fn copy_sram_to_dram[
-    src_layout: Layout,
-    dst_layout: Layout,
-    src_type: DType,
-    dst_type: DType,
     thread_layout: Layout,
-    src_element_layout: Layout,
-    dst_element_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
-](
-    dst: LayoutTensor[
-        dst_type,
-        dst_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[
-        src_type,
-        src_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=src_element_layout, **_,
-    ],
-    offset: Int,
-    rows: Int,
-    cols: Int,
-):
+](dst: LayoutTensor, src: LayoutTensor, offset: Int, rows: Int, cols: Int):
+    constrained[
+        dst.address_space == _GPUAddressSpace.GENERIC,
+        "dst address space must be GENERIC.",
+    ]()
+
+    constrained[
+        src.address_space == _GPUAddressSpace.SHARED,
+        "src address space must be SHARED.",
+    ]()
+
     var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
     var dst_fragments = dst.distribute[thread_layout](ThreadIdx.x())
     var thread_offset = offset + dst_fragments.distance(dst.ptr)
 
     @parameter
-    if src_type == dst_type:
+    if src.dtype == dst.dtype:
         dst_fragments.copy_from(src_fragments)
     else:
         constrained[
-            src_type == DType.float32 and dst_type.is_half_float(),
+            src.dtype == DType.float32 and dst.dtype.is_half_float(),
             "Only support FP32 -> half precision downcast during copy.",
         ]()
 
-        alias simd_size = simdwidthof[dst_type]()
+        alias simd_size = simdwidthof[dst.dtype]()
         # TODO: generalize the copy to non-scalar case if possible.
         constrained[
-            src_element_layout.size() == simd_size
-            and dst_element_layout.size() == simd_size,
+            src.element_layout.size() == simd_size
+            and dst.element_layout.size() == simd_size,
             "Only FP32 -> half precision downcast for vectorized copy.",
         ]()
 
         alias num_stores_per_thread = dst_fragments.layout.size()
-        alias src_align = alignof[SIMD[src_type, simdwidthof[src_type]()]]()
-        alias dst_align = alignof[SIMD[dst_type, simd_size]]()
+        alias src_align = alignof[SIMD[src.dtype, simdwidthof[src.dtype]()]]()
+        alias dst_align = alignof[SIMD[dst.dtype, simd_size]]()
 
         var src_frag_offset = src_fragments.distance(src.ptr)
 
@@ -3204,7 +3130,7 @@ fn copy_sram_to_dram[
             var dst_idx = 0
 
             @parameter
-            if dst_layout.all_dims_known():
+            if dst.layout.all_dims_known():
                 dst_idx = dst_static_idx
             else:
                 dst_idx = dst_fragments.runtime_layout(i)
@@ -3228,7 +3154,7 @@ fn copy_sram_to_dram[
                     width=simd_size, alignment=src_align
                 ](swizzled_idx)
                 dst_fragments.ptr.store[alignment=dst_align](
-                    dst_idx, src_vec.cast[dst_type]()
+                    dst_idx, src_vec.cast[dst.dtype]()
                 )
 
 
@@ -3236,27 +3162,23 @@ fn copy_sram_to_dram[
 #
 @always_inline
 fn copy_sram_to_local[
-    src_layout: Layout,
-    dst_layout: Layout,
-    dtype: DType,
     src_warp_layout: Layout,
-    src_element_layout: Layout,
-    dst_element_layout: Layout,
     axis: OptionalReg[Int] = None,
-](
-    dst: LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=dst_element_layout,
-    ],
-    src: LayoutTensor[
-        dtype,
-        src_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=src_element_layout,
-    ],
-):
+](dst: LayoutTensor, src: LayoutTensor):
+    constrained[
+        dst.dtype == src.dtype, "dst dtype must be the same as src dtype."
+    ]()
+
+    constrained[
+        src.address_space == _GPUAddressSpace.SHARED,
+        "src address space must be SHARED.",
+    ]()
+
+    constrained[
+        dst.address_space == _GPUAddressSpace.LOCAL,
+        "dst address space must be LOCAL.",
+    ]()
+
     @parameter
     if axis:
         var src_fragments = src.distribute[
@@ -3272,27 +3194,22 @@ fn copy_sram_to_local[
 #
 @always_inline
 fn copy_local_to_dram[
-    src_layout: Layout,
-    dst_layout: Layout,
-    dtype: DType,
     dst_thread_layout: Layout,
-    src_element_layout: Layout,
-    dst_element_layout: Layout,
-    src_addr_space: AddressSpace,
-](
-    dst: LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[
-        dtype,
-        src_layout,
-        address_space=src_addr_space,
-        element_layout=src_element_layout, **_,
-    ],
-):
+](dst: LayoutTensor, src: LayoutTensor):
+    constrained[
+        dst.dtype == src.dtype, "dst dtype must be the same as src dtype."
+    ]()
+
+    constrained[
+        src.address_space == _GPUAddressSpace.LOCAL,
+        "src address space must be LOCAL.",
+    ]()
+
+    constrained[
+        dst.address_space == _GPUAddressSpace.GENERIC,
+        "dst address space must be GENERIC.",
+    ]()
+
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
     dst_fragments.copy_from(src)
 
@@ -3301,30 +3218,22 @@ fn copy_local_to_dram[
 #
 @always_inline
 fn copy_local_to_dram[
-    src_layout: Layout,
-    dst_layout: Layout,
-    dtype: DType,
     dst_thread_layout: Layout,
-    src_element_layout: Layout,
-    dst_element_layout: Layout,
-    src_addr_space: AddressSpace,
-](
-    dst: LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space = _GPUAddressSpace.GENERIC,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[
-        dtype,
-        src_layout,
-        address_space=src_addr_space,
-        element_layout=src_element_layout, **_,
-    ],
-    offset: Int,
-    rows: Int,
-    cols: Int,
-):
+](dst: LayoutTensor, src: LayoutTensor, offset: Int, rows: Int, cols: Int):
+    constrained[
+        dst.dtype == src.dtype, "dst dtype must be the same as src dtype."
+    ]()
+
+    constrained[
+        src.address_space == _GPUAddressSpace.LOCAL,
+        "src address space must be LOCAL.",
+    ]()
+
+    constrained[
+        dst.address_space == _GPUAddressSpace.GENERIC,
+        "dst address space must be GENERIC.",
+    ]()
+
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
     var thread_offset = dst_fragments.distance(dst.ptr) + offset
     dst_fragments.copy_from(src, thread_offset, rows, cols)
@@ -3332,39 +3241,29 @@ fn copy_local_to_dram[
 
 @always_inline
 fn copy_local_to_sram[
-    src_layout: Layout,
-    dst_layout: Layout,
-    src_type: DType,
-    dst_type: DType,
     thread_layout: Layout,
-    src_element_layout: Layout,
-    dst_element_layout: Layout,
-    src_addr_space: AddressSpace,
     swizzle: OptionalReg[Swizzle] = None,
-](
-    dst: LayoutTensor[
-        dst_type,
-        dst_layout,
-        address_space = _GPUAddressSpace.SHARED,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[
-        src_type,
-        src_layout,
-        address_space=src_addr_space,
-        element_layout=src_element_layout, **_,
-    ],
-):
+](dst: LayoutTensor, src: LayoutTensor):
+    constrained[
+        dst.address_space == _GPUAddressSpace.SHARED,
+        "dst address space must be SHARED.",
+    ]()
+
+    constrained[
+        src.address_space == _GPUAddressSpace.LOCAL,
+        "src address space must be LOCAL.",
+    ]()
+
     var dst_frag = dst.distribute[thread_layout](ThreadIdx.x())
 
     @parameter
-    if src_type == dst_type:
+    if src.dtype == dst.dtype:
 
         @parameter
         if swizzle:
             alias swizzle_fn = swizzle.value()
-            alias num_vecs = src_layout.size()
-            alias align = alignof[SIMD[src_type, src.element_size]]()
+            alias num_vecs = src.layout.size()
+            alias align = alignof[SIMD[src.dtype, src.element_size]]()
 
             var dst_frag_offset = dst_frag.distance(dst.ptr)
 
@@ -3382,14 +3281,14 @@ fn copy_local_to_sram[
                     width = src.element_size, alignment=align
                 ](src_idx)
                 dst.ptr.store[alignment=align](
-                    swizzled_idx, src_vec.cast[dst_type]()
+                    swizzled_idx, src_vec.cast[dst.dtype]()
                 )
 
         else:
             dst_frag.copy_from(src)
     else:
         constrained[
-            src_type == DType.float32 and dst_type.is_half_float(),
+            src.dtype == DType.float32 and dst.dtype.is_half_float(),
             "Only support FP32 -> half precision downcast during copy.",
         ]()
 
@@ -3406,27 +3305,22 @@ fn copy_local_to_sram[
             alias dst_idx = dst_frag.layout(i)
 
             dst_frag.ptr.store[
-                alignment = alignof[SIMD[dst_type, src.element_size]](),
-            ](dst_idx, src.aligned_load[elem_size](i, 0).cast[dst_type]())
+                alignment = alignof[SIMD[dst.dtype, src.element_size]](),
+            ](dst_idx, src.aligned_load[elem_size](i, 0).cast[dst.dtype]())
 
 
 @always_inline
-fn copy_local_to_local[
-    dst_type: DType,
-    src_type: DType,
-    dst_layout: Layout,
-    src_layout: Layout,
-    dst_element_layout: Layout,
-    src_addr_space: AddressSpace,
-](
-    dst: LayoutTensor[
-        dst_type,
-        dst_layout,
-        address_space = _GPUAddressSpace.LOCAL,
-        element_layout=dst_element_layout, **_,
-    ],
-    src: LayoutTensor[src_type, src_layout, address_space=src_addr_space, **_],
-):
+fn copy_local_to_local(dst: LayoutTensor, src: LayoutTensor):
+    constrained[
+        dst.address_space == _GPUAddressSpace.LOCAL,
+        "dst address space must be LOCAL.",
+    ]()
+
+    constrained[
+        src.address_space == _GPUAddressSpace.LOCAL,
+        "src address space must be LOCAL.",
+    ]()
+
     constrained[
         dst.dtype.is_half_float() and src.dtype == DType.float32,
         "Only support copy float32 to bfloat16 for now",
@@ -3448,11 +3342,11 @@ fn copy_local_to_local[
         # This path is to map 16x8x16 mma output (16x8) to 16x8x16 mma input (16x16).
         # Output fragment has layout [2 * num_m_mmas, 4]
         # Input  fragment has layout [num_m_mmas, 8]
-        alias num_mmas = src_layout.shape[0].value()
-        alias src_frag_size = src_layout.shape[1].value()
+        alias num_mmas = src.layout.shape[0].value()
+        alias src_frag_size = src.layout.shape[1].value()
         alias a_frag_layout = composition(
-            src_layout,
-            make_layout(Layout.row_major(num_mmas // 2, 2), src_layout[1]),
+            src.layout,
+            make_layout(Layout.row_major(num_mmas // 2, 2), src.layout[1]),
         )
         # [num_m_mmas, 8] vectorized and transposed to [2, num_m_mmas] x 4
         var dst_vectorized = dst.vectorize[1, src_frag_size]().transpose()
@@ -3469,7 +3363,7 @@ fn copy_local_to_local[
             dst_vectorized.ptr.store(
                 dst_idx,
                 src_vectorized.ptr.load[width=src_frag_size](src_idx).cast[
-                    dst_type
+                    dst.dtype
                 ](),
             )
 
