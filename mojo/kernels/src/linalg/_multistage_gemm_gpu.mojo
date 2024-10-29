@@ -169,9 +169,7 @@ fn multistage_mma[
             eviction_policy=eviction_policy,
         ](
             a_tile.vectorize[1, simd_size](),
-            a_iter[]
-            .bitcast[a_type, address_space = AddressSpace.GENERIC]()
-            .vectorize[1, simd_size](),
+            a_iter[].bitcast[a_type]().vectorize[1, simd_size](),
             num_rows,
         )
 
@@ -200,9 +198,7 @@ fn multistage_mma[
             eviction_policy=eviction_policy,
         ](
             b_tile.vectorize[1, simd_size](),
-            b_iter[]
-            .bitcast[b_type, address_space = AddressSpace.GENERIC]()
-            .vectorize[1, simd_size](),
+            b_iter[].bitcast[b_type]().vectorize[1, simd_size](),
             num_rows,
         )
 
@@ -489,9 +485,7 @@ fn multistage_mma[
                             ](
                                 b_smem_prefetch_tile.vectorize[1, simd_size](),
                                 next_b_iter[]
-                                .bitcast[
-                                    b_type, address_space = AddressSpace.GENERIC
-                                ]()
+                                .bitcast[b_type]()
                                 .vectorize[1, simd_size](),
                                 num_rows_bound,
                             )
