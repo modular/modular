@@ -536,6 +536,7 @@ def run(
     param_list=None,
     filter_list=None,
     debug_level=None,
+    optimization_level=None,
     dryrun=False,
     verbose=False,
     tmp_path=None,
@@ -570,6 +571,8 @@ def run(
         build_opts = ["build"]
     if debug_level:
         build_opts.extend(["--debug-level", debug_level])
+    if optimization_level:
+        build_opts.extend(["-O", optimization_level])
 
     # Run the code over the mesh of param/values
     t_start_total = time()
@@ -809,6 +812,12 @@ help_str = (
 @click.option(
     "--debug-level", default=None, help="The debug level used during the build."
 )
+@click.option(
+    "-O",
+    "--optimization-level",
+    default=None,
+    help="The optimization level used during the build.",
+)
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
     "--dryrun",
@@ -829,6 +838,7 @@ def cli(
     build,
     param,
     debug_level,
+    optimization_level,
     force,
     dryrun,
     verbose,
@@ -855,6 +865,7 @@ def cli(
         param_list=param,
         filter_list=filter,
         debug_level=debug_level,
+        optimization_level=optimization_level,
         dryrun=dryrun,
         verbose=verbose,
     )
