@@ -6,8 +6,4 @@
 
 __version__ = "0.0.1"
 
-from .mojocell import MojoMagic
-
-
-def load_ipython_extension(ipython):
-    ipython.register_magics(MojoMagic)
+from .mojocell import load_ipython_extension
