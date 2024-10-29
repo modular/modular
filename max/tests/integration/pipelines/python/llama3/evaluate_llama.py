@@ -29,12 +29,9 @@ from llama3 import (
     Llama3Tokenizer,
     SupportedEncodings,
     SupportedVersions,
-    gguf_reader_and_params,
 )
-from max.driver import CPU, CUDA, DeviceSpec
-from nn.kv_cache import KVCacheStrategy
-
-from utils import tokenizer_from_gguf
+from max.driver import CPU, DeviceSpec
+from max.pipelines.interfaces import TokenGeneratorRequest
 
 
 def find_runtime_path(
@@ -89,9 +86,10 @@ class NumpyDecoder(JSONDecoder):
 
 
 def load_llama3(config: InferenceConfig):
-    reader, params = gguf_reader_and_params(config)
-    tokenizer = tokenizer_from_gguf(reader)
-    llama3 = Llama3(config, tokenizer.eos, tokenizer.vocab_size)
+    tokenizer = Llama3Tokenizer(config)
+    llama3 = Llama3(
+        config, tokenizer.delegate.eos_token_id, tokenizer.delegate.vocab_size
+    )
     return llama3, tokenizer
 
 
@@ -133,8 +131,14 @@ def run_llama3(
     results = []
     # Evaluate prompts individually (not batched).
     for prompt in prompts:
-        context = asyncio.run(tokenizer.new_context(prompt))
         curr_req_id = str(uuid.uuid4())
+        context = asyncio.run(
+            tokenizer.new_context(
+                TokenGeneratorRequest(
+                    id="", index=0, prompt=prompt, model_name="llama3"
+                )
+            )
+        )
         values: dict[str, list[Any]] = {curr_req_id: []}
         for _ in range(num_steps):
             next_token_with_logits(llama3, {curr_req_id: context}, values)
@@ -244,7 +248,10 @@ class _SupportedModelEncoding:
     """
 
     model: str
+    """Model Type. Can be `llama3`, `llama3_1`, or `tinyllama`"""
+
     encoding: SupportedEncodings
+    """The supported dtype."""
 
     @classmethod
     def init(cls, model, encoding):
@@ -396,50 +403,32 @@ class SupportedTestModels:
     TINY_LLAMA_F32 = _SupportedModelEncoding.init("tinyllama", "float32")
     TINY_LLAMA_BF16 = _SupportedModelEncoding.init("tinyllama", "bfloat16")
 
-    _supported_pairs: dict[tuple[str, str], _SupportedModelEncoding] = {}
-
     @staticmethod
-    def get(model, encoding, strict=True):
+    def get(model, encoding):
         """Returns the supported model encoding object.
 
         Args:
             model: Name of model ("tinyllama" or "llama3_1")
             encoding: A SupportedEncoding or str ("float32", "bfloat16", etc.).
-            strict: When strict mode is enabled, an error if the model and
-                encoding isn't in the pre-defined pairs. You can disable this
-                error by setting this option to False.
 
         Returns:
             A model encoding object that can be used to construct an
             InferenceConfig or get the golden data filename.
         """
-        try:
-            return SupportedTestModels._supported_pairs[(model, encoding)]
-        except KeyError:
-            if not strict:
-                return _SupportedModelEncoding.init(model, encoding)
-            raise ValueError(
-                f"{model=} {encoding=} does not have golden values. If you're "
-                "sure, please set `strict=False` when calling "
-                "`SupportedTestModels.get`."
-            )
+        return _SupportedModelEncoding.init(model, encoding)
 
 
-# Supported models and encodings are defined in SupportedTestModels.
-ALL_SUPPORTED_MODELS = {"all"}
+ALL_SUPPORTED_MODELS = {"all", "tinyllama"}
+for version in SupportedVersions:
+    ALL_SUPPORTED_MODELS.add(version.name)
+
 ALL_SUPPORTED_ENCODINGS = {"all"}
-
-for attr in dir(SupportedTestModels):
-    value = getattr(SupportedTestModels, attr)
-    if isinstance(value, _SupportedModelEncoding):
-        SupportedTestModels._supported_pairs[
-            (value.model, value.encoding)
-        ] = value
-        ALL_SUPPORTED_MODELS.add(value.model)
-        ALL_SUPPORTED_ENCODINGS.add(str(value.encoding))
+for encoding in SupportedEncodings:
+    ALL_SUPPORTED_ENCODINGS.add(encoding.name)
 
 
 def supported_model_encodings(model, encoding, strict=False):
+    """Yields all supported combination of model and encodings."""
     # TODO: Use driver to check if cuda available
     if encoding == "all":
         encodings = ALL_SUPPORTED_ENCODINGS - {"all"}
@@ -451,14 +440,7 @@ def supported_model_encodings(model, encoding, strict=False):
         models = [model]
 
     for encoding, model in itertools.product(encodings, models):
-        try:
-            yield SupportedTestModels.get(model, encoding, strict=False)
-        except:
-            print(
-                "Skipping golden generation for"
-                f" {model=} {encoding=} (combination not supported)."
-            )
-            continue
+        yield SupportedTestModels.get(model, encoding)
 
 
 @click.command

@@ -23,8 +23,6 @@ from evaluate_llama import (
 )
 from llama3 import Llama3, Llama3Tokenizer
 
-pytestmark = pytest.mark.skip("TODO(ylou): Fix!!")
-
 
 def kl_divergence_verifier(
     predicted: np.ndarray, expected: np.ndarray, description: str

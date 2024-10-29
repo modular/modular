@@ -45,9 +45,7 @@ def pipeline_config(testdata_directory, request) -> InferenceConfig:
     model_params: PipelineModelParams = request.param
     print(f"\nPipelineModel: {model_params}")
     encoding = model_params.encoding
-    test_model = SupportedTestModels.get(
-        model_params.name, encoding, strict=False
-    )
+    test_model = SupportedTestModels.get(model_params.name, encoding)
 
     if encoding in [SupportedEncodings.float32, SupportedEncodings.bfloat16]:
         cache_strategy = KVCacheStrategy.CONTINUOUS
