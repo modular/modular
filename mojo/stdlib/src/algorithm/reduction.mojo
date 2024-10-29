@@ -658,9 +658,13 @@ fn _reduce_generator_wrapper[
             )
         )
 
-    _reduce_generator[input_fn_wrapper, output_fn_wrapper, reduce_fn](
-        shape, init, reduce_dim, context
-    )
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_fn,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](shape, init, reduce_dim, context)
 
 
 @always_inline
@@ -1145,7 +1149,14 @@ fn max[
     ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
         return _max(v1, v2)
 
-    _reduce_generator_wrapper[type, input_fn, output_fn, reduce_fn](
+    _reduce_generator_wrapper[
+        type,
+        input_fn,
+        output_fn,
+        reduce_fn,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](
         input_shape,
         init=Scalar[type].MIN,
         reduce_dim=reduce_dim,
@@ -1254,7 +1265,14 @@ fn min[
     ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
         return _min(v1, v2)
 
-    _reduce_generator_wrapper[type, input_fn, output_fn, reduce_fn](
+    _reduce_generator_wrapper[
+        type,
+        input_fn,
+        output_fn,
+        reduce_fn,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](
         input_shape,
         init=Scalar[type].MAX,
         reduce_dim=reduce_dim,
@@ -1363,7 +1381,14 @@ fn sum[
     ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
         return v1 + v2
 
-    _reduce_generator_wrapper[type, input_fn, output_fn, reduce_fn](
+    _reduce_generator_wrapper[
+        type,
+        input_fn,
+        output_fn,
+        reduce_fn,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](
         input_shape,
         init=Scalar[type](0),
         reduce_dim=reduce_dim,
@@ -1472,7 +1497,14 @@ fn product[
     ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
         return v1 * v2
 
-    _reduce_generator_wrapper[type, input_fn, output_fn, reduce_fn](
+    _reduce_generator_wrapper[
+        type,
+        input_fn,
+        output_fn,
+        reduce_fn,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](
         input_shape,
         init=Scalar[type](1),
         reduce_dim=reduce_dim,
