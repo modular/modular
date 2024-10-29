@@ -9,6 +9,7 @@ from os import Atomic
 from runtime.asyncrt import run, TaskGroup
 from sys.ffi import DLHandle
 from time import perf_counter_ns
+from utils import StringRef
 
 from max.engine import InferenceSession, Model
 from max.engine._compilation import CCompiledModel
@@ -77,7 +78,7 @@ struct GRPCServer[
         self._lib = handle_from_config("serving", ".serve_lib")
         self._session = session^
         self._num_listeners = num_listeners
-        self._impl = CGRPCServer(self._lib, address.unsafe_ptr())
+        self._impl = CGRPCServer(self._lib, StringRef(ptr=address.unsafe_ptr()))
         self._stop_flag = Atomic[DType.int64](0)
         self._callbacks = CallbackSet(
             Guarded[ServerStats, STATS_ENABLED](ServerStats()),

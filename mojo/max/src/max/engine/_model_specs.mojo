@@ -7,6 +7,7 @@
 from max._utils import call_dylib_func, exchange, CString
 from memory import UnsafePointer
 from sys.ffi import DLHandle
+from utils import StringRef
 
 from ._compilation import CCompiledModel
 from ._status import Status
@@ -77,7 +78,7 @@ struct TensorNames(Sized):
     ):
         var status = Status(lib)
         self.ptr = call_dylib_func[CTensorNameArray](
-            lib, fn_name.unsafe_ptr(), ptr, status.borrow_ptr()
+            lib, StringRef(ptr=fn_name.unsafe_ptr()), ptr, status.borrow_ptr()
         )
         if status:
             print(status.__str__())

@@ -168,7 +168,7 @@ fn _set_tensors[
             shape.append(spec[i])
 
         var view = CTensorView(
-            name.unsafe_ptr(),
+            StringRef(ptr=name.unsafe_ptr()),
             dtype_str,
             shape.data,
             spec.rank(),

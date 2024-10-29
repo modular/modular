@@ -21,6 +21,7 @@ from python import PythonObject
 from python.python import _get_global_python_itf
 from runtime.asyncrt import TaskGroup
 from time import perf_counter_ns
+from utils import StringRef
 
 from max._utils import handle_from_config
 
@@ -112,7 +113,9 @@ struct PythonServer[
             callbacks: Extra lifecycle callbacks.
         """
         self._lib = handle_from_config("serving", ".serve_lib")
-        self._impl = CPythonServer(self._lib, address.unsafe_ptr())
+        self._impl = CPythonServer(
+            self._lib, StringRef(ptr=address.unsafe_ptr())
+        )
         self._callbacks = CallbackSet(
             Guarded[ServerStats, STATS_ENABLED](ServerStats()),
             callbacks^,

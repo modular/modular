@@ -81,7 +81,9 @@ fn graph_new(
             StringRef,
             _mlir.Type.cType,
         ) -> _mlir.Operation.cType,
-    ]()(module.c, loc.c, name.unsafe_ptr(), signature.to_mlir().c)
+    ]()(
+        module.c, loc.c, StringRef(ptr=name.unsafe_ptr()), signature.to_mlir().c
+    )
 
 
 # ===----------------------------------------------------------------------===#
@@ -107,7 +109,7 @@ fn attr_new_tensor[
             UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
     ]()(
-        name.unsafe_ptr(),
+        StringRef(ptr=name.unsafe_ptr()),
         data.data,
         type.c,
         is_owned,
@@ -131,7 +133,7 @@ fn attr_new_tensor(
             UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
     ]()(
-        name.unsafe_ptr(),
+        StringRef(ptr=name.unsafe_ptr()),
         data,
         type.c,
         is_owned,
@@ -148,8 +150,8 @@ fn attr_new_tensor_from_file(
             StringRef, StringRef, _mlir.Type.cType, UnsafePointer[NoneType]
         ) -> _mlir.NamedAttribute.cType,
     ]()(
-        name.unsafe_ptr(),
-        file_name.unsafe_ptr(),
+        StringRef(ptr=name.unsafe_ptr()),
+        StringRef(ptr=file_name.unsafe_ptr()),
         type.c,
         _get_current_runtime(),
     )
@@ -164,7 +166,7 @@ fn attr_new_dim_param_decl(
         fn (_mlir.Context.cType, StringRef) -> _mlir.Attribute.cType,
     ]()(
         ctx.c,
-        name.unsafe_ptr(),
+        StringRef(ptr=name.unsafe_ptr()),
     )
     return result
 
@@ -297,7 +299,7 @@ fn dim_new_symbolic(ctx: _mlir.Context, name: String) -> _mlir.Attribute:
     return cfunc[
         "MAXG_dimNewSymbolic",
         fn (_mlir.Context.cType, StringRef) -> _mlir.Attribute.cType,
-    ]()(ctx.c, name.unsafe_ptr())
+    ]()(ctx.c, StringRef(ptr=name.unsafe_ptr()))
 
 
 fn dim_is_dynamic(a: _mlir.Attribute) -> Bool:
@@ -362,7 +364,7 @@ fn opaque_type_new(ctx: _mlir.Context, name: String) -> _mlir.Type:
     return cfunc[
         "MAXG_opaqueTypeNew",
         fn (_mlir.Context.cType, StringRef) -> _mlir.Type.cType,
-    ]()(ctx.c, name.unsafe_ptr())
+    ]()(ctx.c, StringRef(ptr=name.unsafe_ptr()))
 
 
 fn opaque_type_name(t: _mlir.Type) -> StringRef:

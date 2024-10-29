@@ -159,7 +159,7 @@ struct Context:
 
     fn get_or_load_dialect(self, dialect_name: String) -> Optional[Dialect]:
         var result = _c.IR.mlirContextGetOrLoadDialect(
-            self.c, dialect_name.unsafe_ptr()
+            self.c, StringRef(ptr=dialect_name.unsafe_ptr())
         )
         return Optional(Dialect(result)) if result.ptr else None
 
@@ -171,7 +171,7 @@ struct Context:
 
     fn is_registered_operation(self, opname: String) -> Bool:
         var result = _c.IR.mlirContextIsRegisteredOperation(
-            self.c, opname.unsafe_ptr()
+            self.c, StringRef(ptr=opname.unsafe_ptr())
         )
         return result
 
@@ -204,7 +204,7 @@ struct Location(CollectionElement, Stringable):
         inout self, ctx: Context, filename: String, line: Int, col: Int
     ):
         self.c = _c.IR.mlirLocationFileLineColGet(
-            ctx.c, filename.unsafe_ptr(), line, col
+            ctx.c, StringRef(ptr=filename.unsafe_ptr()), line, col
         )
 
     @staticmethod
@@ -252,7 +252,9 @@ struct Module(Stringable, Writable):
     @staticmethod
     fn parse(ctx: Context, module: String) -> Self:
         # TODO: how can this fail?
-        var c = _c.IR.mlirModuleCreateParse(ctx.c, module.unsafe_ptr())
+        var c = _c.IR.mlirModuleCreateParse(
+            ctx.c, StringRef(ptr=module.unsafe_ptr())
+        )
         return Self(c)
 
     @staticmethod
@@ -346,7 +348,9 @@ struct Operation(CollectionElement, Stringable, Writable):
         regions: _OpBuilderList[Region] = [],
         successors: _OpBuilderList[Block] = [],
     ):
-        var state = _c.IR.mlirOperationStateGet(name.unsafe_ptr(), location.c)
+        var state = _c.IR.mlirOperationStateGet(
+            StringRef(ptr=name.unsafe_ptr()), location.c
+        )
         Self._init_op_state(
             state,
             attributes.elements,
@@ -369,7 +373,9 @@ struct Operation(CollectionElement, Stringable, Writable):
         regions: _OpBuilderList[Region] = [],
         successors: _OpBuilderList[Block] = [],
     ) raises:
-        var state = _c.IR.mlirOperationStateGet(name.unsafe_ptr(), location.c)
+        var state = _c.IR.mlirOperationStateGet(
+            StringRef(ptr=name.unsafe_ptr()), location.c
+        )
         Self._init_op_state(
             state,
             attributes.elements,
@@ -437,7 +443,9 @@ struct Operation(CollectionElement, Stringable, Writable):
     @staticmethod
     fn parse(ctx: Context, source: String, source_name: String) raises -> Self:
         var result = _c.IR.mlirOperationCreateParse(
-            ctx.c, source.unsafe_ptr(), source_name.unsafe_ptr()
+            ctx.c,
+            StringRef(ptr=source.unsafe_ptr()),
+            StringRef(ptr=source_name.unsafe_ptr()),
         )
         if not result.ptr:
             raise "Operation.parse failed"
@@ -551,23 +559,23 @@ struct Operation(CollectionElement, Stringable, Writable):
 
     fn set_inherent_attr(inout self, name: String, attr: Attribute):
         _c.IR.mlirOperationSetInherentAttributeByName(
-            self.c, name.unsafe_ptr(), attr.c
+            self.c, StringRef(ptr=name.unsafe_ptr()), attr.c
         )
 
     fn get_inherent_attr(self, name: String) -> Attribute:
         var result = _c.IR.mlirOperationGetInherentAttributeByName(
-            self.c, name.unsafe_ptr()
+            self.c, StringRef(ptr=name.unsafe_ptr())
         )
         return result
 
     fn set_discardable_attr(inout self, name: String, attr: Attribute):
         _c.IR.mlirOperationSetDiscardableAttributeByName(
-            self.c, name.unsafe_ptr(), attr.c
+            self.c, StringRef(ptr=name.unsafe_ptr()), attr.c
         )
 
     fn get_discardable_attr(self, name: String) -> Attribute:
         var result = _c.IR.mlirOperationGetDiscardableAttributeByName(
-            self.c, name.unsafe_ptr()
+            self.c, StringRef(ptr=name.unsafe_ptr())
         )
         return result
 
@@ -597,7 +605,9 @@ struct Identifier(CollectionElement, Stringable):
     var c: Self.cType
 
     fn __init__(inout self, ctx: Context, identifier: String):
-        self.c = _c.IR.mlirIdentifierGet(ctx.c, identifier.unsafe_ptr())
+        self.c = _c.IR.mlirIdentifierGet(
+            ctx.c, StringRef(ptr=identifier.unsafe_ptr())
+        )
 
     fn __str__(self) -> String:
         return _c.IR.mlirIdentifierStr(self.c)
@@ -614,7 +624,9 @@ struct Type(CollectionElement, Stringable, Writable):
 
     @staticmethod
     fn parse(ctx: Context, s: String) raises -> Self:
-        var result = _c.IR.mlirTypeParseGet(ctx.c, s.unsafe_ptr())
+        var result = _c.IR.mlirTypeParseGet(
+            ctx.c, StringRef(ptr=s.unsafe_ptr())
+        )
         if not result.ptr:
             raise "Failed to parse type: " + s
         return result
@@ -691,7 +703,9 @@ struct Attribute(CollectionElement, Stringable):
 
     @staticmethod
     fn parse(ctx: Context, attr: String) raises -> Self:
-        var result = _c.IR.mlirAttributeParseGet(ctx.c, attr.unsafe_ptr())
+        var result = _c.IR.mlirAttributeParseGet(
+            ctx.c, StringRef(ptr=attr.unsafe_ptr())
+        )
         if not result.ptr:
             raise "Failed to parse attribute:" + attr
         return result
