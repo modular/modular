@@ -995,6 +995,18 @@ ObjectCompiler::lowerLLVMModuleToObjects(
           AsyncRT::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
     }
 
+    {
+      // Deduplicate functions between splits.
+      // A mutex is needed here to make access to seenCodeGenFns thread-safe.
+      std::lock_guard<std::mutex> lock(dedupMutex);
+      for (auto &fn : module->functions()) {
+        if (fn.isDeclaration())
+          continue;
+        if (!seenCodeGenFns.insert(fn.getName()).second)
+          module.duplicatedFns.insert(fn.getName());
+      }
+    }
+
     SymbolAndMCInfo symbolAndMirInfo;
     SmallVector<AnyAsyncValueRef> buffers = compileOptimizedLLVMToObjects(
         std::move(module), loc, options, runtime, transformCache, parLLC, isJIT,

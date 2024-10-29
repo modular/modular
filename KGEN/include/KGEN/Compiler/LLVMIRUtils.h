@@ -10,6 +10,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/FunctionExtras.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/IR/Module.h"
 
 namespace M::KGEN {
@@ -31,6 +32,8 @@ public:
 
   llvm::Module &operator*() { return *module; }
   llvm::Module *operator->() { return module.get(); }
+
+  llvm::StringSet<> duplicatedFns;
 
 private:
   /// LLVM context stored in a unique pointer so that we can move this type.

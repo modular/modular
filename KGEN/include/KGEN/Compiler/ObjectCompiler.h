@@ -126,6 +126,13 @@ private:
 
   /// The AsyncRT runtime.
   AsyncRT::Runtime &runtime;
+
+  /// Mutex to protect deduplicating shared
+  /// data structure among parallel splits.
+  std::mutex dedupMutex;
+
+  /// StringSet to deduplicate functions among parallel splits.
+  llvm::StringSet<> seenCodeGenFns;
 };
 
 /// Setup the machine properties from the provided target.
