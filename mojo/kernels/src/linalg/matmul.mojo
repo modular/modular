@@ -3,13 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from collections import OptionalReg
+from collections import OptionalReg, Optional
 from math import align_up, ceildiv
 from sys.info import alignof, has_neon, simdwidthof
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
+from gpu.host import DeviceContext
 from memory import UnsafePointer, memset_zero
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -511,12 +512,6 @@ fn _matmul_cpu_impl[
         var rhs = Buffer[b.type](b.data, b.dim[0]())
         gemv[
             parallelize=True,
-            c_size = Dim(),
-            c_type = c.type,
-            a_shape = a.shape,
-            a_type = a.type,
-            b_size = Dim(),
-            b_type = b.type,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](out, lhs, rhs)
     else:
@@ -737,12 +732,6 @@ fn _matmul_cpu[
 
 @always_inline
 fn matmul[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList, //,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
@@ -752,13 +741,49 @@ fn matmul[
     trace_description: StringLiteral = "",
     target: StringLiteral = "cpu",
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[_, 2, _],
+    a: NDBuffer[_, 2, _],
+    b: NDBuffer[_, 2, _],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
+) raises:
+    var cuda_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else ctx.get_device_context()
+
+    return matmul[
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        b_packed=b_packed,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        saturated_vnni=saturated_vnni,
+        single_thread_blocking_override=single_thread_blocking_override,
+        trace_description=trace_description,
+        target=target,
+    ](c, a, b, cuda_ctx)
+
+
+@always_inline
+fn matmul[
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    b_packed: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    saturated_vnni: Bool = False,
+    single_thread_blocking_override: Bool = False,
+    trace_description: StringLiteral = "",
+    target: StringLiteral = "cpu",
+](
+    c: NDBuffer[_, 2, _],
+    a: NDBuffer[_, 2, _],
+    b: NDBuffer[_, 2, _],
+    ctx: Optional[DeviceContext],
 ) raises:
     constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
     constrained[not transpose_a, "transpose_a not yet supported"]()
+    debug_assert(
+        target == "cpu" or bool(ctx),
+        "expected DeviceContext to be provided if target != cpu",
+    )
 
     @always_inline
     @parameter
@@ -766,9 +791,9 @@ fn matmul[
         var shape = GemmShape.get[transpose_b](c, a, b)
         return String(";").join(
             str(target),
-            trace_arg("A", IndexList[2](shape.M, shape.K), a_type),
-            trace_arg("B", IndexList[2](shape.K, shape.N), b_type),
-            trace_arg("C", IndexList[2](shape.M, shape.N), c_type),
+            trace_arg("A", IndexList[2](shape.M, shape.K), a.type),
+            trace_arg("B", IndexList[2](shape.K, shape.N), b.type),
+            trace_arg("C", IndexList[2](shape.M, shape.N), c.type),
             "transpose_a=" + str(transpose_a),
             "transpose_b=" + str(transpose_b),
             "b_packed=" + str(b_packed),
@@ -784,7 +809,7 @@ fn matmul[
 
         @parameter
         if target == "cpu":
-            var kernel_type_m = a_shape.at[0]().or_else(0)
+            var kernel_type_m = a.shape.at[0]().or_else(0)
 
             _matmul_cpu[
                 transpose_b=transpose_b,
@@ -800,7 +825,7 @@ fn matmul[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 target=target,
-            ](c, a, b, ctx.get_device_context())
+            ](c, a, b, ctx.value())
 
 
 fn _submatmul_sequential_sync[
