@@ -15,15 +15,11 @@ from evaluate_llama import (
     NumpyDecoder,
     SupportedTestModels,
     find_runtime_path,
-    llama3_decode,
 )
-from llama3 import SupportedEncodings
+from llama3 import Llama3Tokenizer, SupportedEncodings
 from max.driver import DeviceSpec
 from max.serve.mocks.mock_api_requests import simple_openai_request
-from max.serve.schemas.openai import (
-    CreateChatCompletionResponse,
-    CreateCompletionResponse,
-)
+from max.serve.schemas.openai import CreateChatCompletionResponse
 
 from .params import ModelParams
 
@@ -79,8 +75,9 @@ async def test_tinyllama_serve_cpu_stream(
     app, testdata_directory, tinyllama_model
 ):
     NUM_TASKS = 16
+    model_encoding = SupportedTestModels.TINY_LLAMA_BF16
     golden_data_path = find_runtime_path(
-        SupportedTestModels.TINY_LLAMA_F32.golden_data_fname(),
+        model_encoding.golden_data_fname(),
         testdata_directory,
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
@@ -92,7 +89,12 @@ async def test_tinyllama_serve_cpu_stream(
         for e in v:
             t.append(e["next_token"])
         tokens.append(t)
-    expected_response = [llama3_decode(tinyllama_model, x) for x in tokens]
+
+    inference_config = model_encoding.build_config(testdata_directory)
+    tokenizer = Llama3Tokenizer(inference_config)
+    expected_response = [
+        await tokenizer.decode(tinyllama_model, x) for x in tokens
+    ]
 
     def openai_completion_request(content):
         """Create the json request for /v1/completion (not chat)."""

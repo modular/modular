@@ -17,9 +17,8 @@ from llama3.llama3 import (
     Llama3Context,
     Llama3Tokenizer,
 )
+from max.pipelines.interfaces import TokenGeneratorRequest
 from nn.kv_cache import KVCacheStrategy
-
-pytestmark = pytest.mark.skip("TODO(ylou): Fix!!")
 
 
 @dataclass(frozen=True)
@@ -106,11 +105,19 @@ async def test_pipeline_heterogeneous_batch_logits(
     stored_logits: dict[str, Llama3Context] = {"A": [], "B": [], "C": []}
 
     # Send in A for context encoding.
-    context_a = await pipeline_tokenizer.new_context(prompt_a)
+    context_a = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="", index=0, prompt=prompt_a, model_name="llama3"
+        )
+    )
     next_token_with_logits(pipeline_model, {"A": context_a}, stored_logits)
 
     # Send in B for context encoding
-    context_b = await pipeline_tokenizer.new_context(prompt_b)
+    context_b = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="", index=1, prompt=prompt_b, model_name="llama3"
+        )
+    )
     next_token_with_logits(pipeline_model, {"B": context_b}, stored_logits)
 
     # Send in both A and B for token generation
@@ -119,7 +126,11 @@ async def test_pipeline_heterogeneous_batch_logits(
     )
 
     # Send in C for context encoding
-    context_c = await pipeline_tokenizer.new_context(prompt_c)
+    context_c = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="", index=2, prompt=prompt_c, model_name="llama3"
+        )
+    )
     next_token_with_logits(pipeline_model, {"C": context_c}, stored_logits)
 
     # Send in both B and C for token generation

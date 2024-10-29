@@ -7,16 +7,22 @@
 golden values.
 """
 
-import dataclasses
 import re
+from dataclasses import dataclass
 from uuid import uuid4
 
 import pytest
 from evaluate_llama import PROMPTS, SupportedTestModels, run_llama3
-from llama3.llama3 import Llama3, Llama3Tokenizer, InferenceConfig
+from llama3.llama3 import InferenceConfig, Llama3, Llama3Tokenizer
+from max.pipelines.interfaces import TokenGeneratorRequest
 from nn.kv_cache import KVCacheStrategy
 
-pytestmark = pytest.mark.skip("TODO(ylou): Fix!!")
+
+@dataclass(frozen=True)
+class TestParams:
+    max_length: int
+    max_new_tokens: int = -1
+    naive_batching: bool = False
 
 
 @pytest.fixture(scope="session")
@@ -28,20 +34,16 @@ def pipeline_config(testdata_directory, request) -> InferenceConfig:
     invoking it with. `indirect=True` helps reduce the cache miss rate.
     https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
     """
-    max_length = request.param[0]
-    max_new_tokens = request.param[1]
+    params: TestParams = request.param
+    if params.naive_batching:
+        cache_strategy = KVCacheStrategy.NAIVE
+    else:
+        cache_strategy = KVCacheStrategy.CONTINUOUS
     return SupportedTestModels.TINY_LLAMA_F32.build_config(
-        testdata_directory, max_length=max_length, max_new_tokens=max_new_tokens
-    )
-
-
-@pytest.fixture(scope="session")
-def naive_pipeline_config(testdata_directory, request) -> InferenceConfig:
-    """Same as pipeline_config, except forces the naive KV cache."""
-    max_length = request.param[0]
-    max_new_tokens = request.param[1]
-    return SupportedTestModels.TINY_LLAMA_F32.build_config(
-        testdata_directory, max_length=max_length, max_new_tokens=max_new_tokens
+        testdata_directory,
+        max_length=params.max_length,
+        max_new_tokens=params.max_new_tokens,
+        cache_strategy=cache_strategy,
     )
 
 
@@ -59,17 +61,7 @@ def tinyllama_model(pipeline_config, pipeline_tokenizer):
     )
 
 
-@pytest.fixture(scope="session")
-def tinyllama_model_naive_kv_cache(naive_pipeline_config, pipeline_tokenizer):
-    """Same as tinyllama_model, except forces the naive KV cache."""
-    return Llama3(
-        naive_pipeline_config,
-        pipeline_tokenizer.delegate.eos_token_id,
-        pipeline_tokenizer.delegate.vocab_size,
-    )
-
-
-@pytest.mark.parametrize("pipeline_config", [(2048, -1)], indirect=True)
+@pytest.mark.parametrize("pipeline_config", [TestParams(2048)], indirect=True)
 def test_tiny_llama(tinyllama_model, pipeline_tokenizer):
     """Runs Llama3.1 on a tiny checkpoint and compares it to previously generated
     golden values.
@@ -80,10 +72,11 @@ def test_tiny_llama(tinyllama_model, pipeline_tokenizer):
     _ = run_llama3(tinyllama_model, pipeline_tokenizer, prompts=PROMPTS[:1])
 
 
-@pytest.mark.parametrize("naive_pipeline_config", [(2048, -1)], indirect=True)
+@pytest.mark.parametrize(
+    "pipeline_config", [TestParams(512, naive_batching=True)], indirect=True
+)
 def test_tiny_llama_naive_kv_cache(
-    tinyllama_model_naive_kv_cache: Llama3,
-    pipeline_tokenizer,
+    tinyllama_model: Llama3, pipeline_tokenizer
 ) -> None:
     """Runs tiny Llama with naive KV cache.
 
@@ -91,14 +84,9 @@ def test_tiny_llama_naive_kv_cache(
     weights were randomly initialized.
     """
     # Check that we indeed have a naive KV cache Llama model.
-    assert (
-        tinyllama_model_naive_kv_cache.config.cache_strategy
-        == KVCacheStrategy.NAIVE
-    )
+    assert tinyllama_model.config.cache_strategy == KVCacheStrategy.NAIVE
 
-    _ = run_llama3(
-        tinyllama_model_naive_kv_cache, pipeline_tokenizer, prompts=PROMPTS[:1]
-    )
+    _ = run_llama3(tinyllama_model, pipeline_tokenizer, prompts=PROMPTS[:1])
 
 
 def _prompt_to_test_id(prompt: str):
@@ -112,17 +100,21 @@ def prompt_fixture(request):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pipeline_config", [(512, -1)], indirect=True)
+@pytest.mark.parametrize("pipeline_config", [TestParams(512)], indirect=True)
 async def test_tinyllama_create_context(
     tinyllama_model,
     prompt_fixture,
+    pipeline_tokenizer,
 ):
-    context = tinyllama_model.new_context(prompt_fixture)
+    context = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="", index=0, prompt=prompt_fixture, model_name="llama3"
+        )
+    )
     assert context is not None
     assert context.prompt == prompt_fixture
-    assert context.decoded == prompt_fixture
 
-    encoded_prompt = tinyllama_model._tokenizer.encode(prompt_fixture)
+    encoded_prompt = await pipeline_tokenizer.encode(prompt_fixture)
     prompt_len = len(encoded_prompt)
     assert len(context.tokens) == prompt_len
 
@@ -131,20 +123,24 @@ async def test_tinyllama_create_context(
 
     assert context.max_tokens == tinyllama_model.config.max_length
     assert context.next_tokens is not None
-    tinyllama_model.release(context)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pipeline_config", [(2, -1), (4, -1)], indirect=True)
+@pytest.mark.parametrize(
+    "pipeline_config", [TestParams(2), TestParams(4)], indirect=True
+)
 async def test_tinyllama_context_exceeding_max_tokens_throws(
-    tinyllama_model,
-    prompt_fixture,
+    tinyllama_model, prompt_fixture, pipeline_tokenizer
 ):
-    encoded_prompt = tinyllama_model._tokenizer.encode(prompt_fixture)
-    prompt_len = len(encoded_prompt)
-    assert prompt_len > tinyllama_model.config.max_length
     with pytest.raises(ValueError, match="max model context length"):
-        context = tinyllama_model.new_context(prompt_fixture)
+        _ = await pipeline_tokenizer.encode(prompt_fixture)
+
+    with pytest.raises(ValueError, match="max model context length"):
+        context = await pipeline_tokenizer.new_context(
+            TokenGeneratorRequest(
+                id="", index=0, prompt=prompt_fixture, model_name="llama3"
+            )
+        )
         tinyllama_model.release(context)
 
 
@@ -155,15 +151,19 @@ def max_new_tokens_fixture(request):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "pipeline_config", [(512, -1), (512, 64)], indirect=True
+    "pipeline_config", [TestParams(512, -1), TestParams(512, 64)], indirect=True
 )
 async def test_tinyllama_max_new_tokens(
-    tinyllama_model,
-    prompt_fixture,
-    max_new_tokens_fixture,
+    tinyllama_model, prompt_fixture, max_new_tokens_fixture, pipeline_tokenizer
 ):
-    context = tinyllama_model.new_context(
-        prompt_fixture, max_new_tokens_fixture
+    context = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="",
+            index=0,
+            prompt=prompt_fixture,
+            model_name="llama3",
+            max_new_tokens=max_new_tokens_fixture,
+        )
     )
     prompt_size = len(context.tokens)
 
@@ -183,7 +183,7 @@ async def test_tinyllama_max_new_tokens(
     tokens = []
     request_id = str(uuid4())
     while True:
-        response = tinyllama_model.next_token({request_id: context})
+        response = tinyllama_model.next_token({request_id: context})[0]
         if request_id not in response:
             tinyllama_model.release(context)
             break
@@ -195,14 +195,20 @@ async def test_tinyllama_max_new_tokens(
 
     # Run the model a second time, provided an identical but new context object.
     # This will test that the model correctly resolves old cached sequences for reuse.
-    context = tinyllama_model.new_context(
-        prompt_fixture, max_new_tokens_fixture
+    context = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="",
+            index=0,
+            prompt=prompt_fixture,
+            model_name="llama3",
+            max_new_tokens=max_new_tokens_fixture,
+        )
     )
 
     tokens = []
     request_id = str(uuid4())
     while True:
-        response = tinyllama_model.next_token({request_id: context})
+        response = tinyllama_model.next_token({request_id: context})[0]
         if request_id not in response:
             tinyllama_model.release(context)
             break

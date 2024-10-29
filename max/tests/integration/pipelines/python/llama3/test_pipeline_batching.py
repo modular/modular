@@ -12,9 +12,8 @@ import pytest
 from evaluate_llama import PROMPTS, SupportedTestModels, next_token_with_logits
 from llama3.config import SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3, Llama3Tokenizer
+from max.pipelines.interfaces import TokenGeneratorRequest
 from nn.kv_cache import KVCacheStrategy
-
-pytestmark = pytest.mark.skip("TODO(ylou): Fix!!")
 
 
 @dataclass(frozen=True)
@@ -96,7 +95,11 @@ async def test_pipeline_static_batch_same_prompt_same_output(
     batch_size = pipeline_model.config.max_cache_batch_size
     context_batch = {}
     for i in range(batch_size):
-        context = await pipeline_tokenizer.new_context(prompt)
+        context = await pipeline_tokenizer.new_context(
+            TokenGeneratorRequest(
+                id="", index=i, prompt=prompt, model_name="llama3"
+            )
+        )
         batch_id = str(i)
         context_batch[batch_id] = context
 
@@ -160,8 +163,16 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
             (pipeline_model.config.max_length / batch_size) * (i + 1)
         )
         print(f"Batch: {i}, MaxNewTokens: {max_new_tokens}")
-        context = await pipeline_tokenizer.new_context(prompt, max_new_tokens)
-        print(f"Context: {i}, MaxTokens: {context.max_tokens}")
+        context = await pipeline_tokenizer.new_context(
+            TokenGeneratorRequest(
+                id="",
+                index=i,
+                prompt=prompt,
+                model_name="llama3",
+                max_new_tokens=max_new_tokens,
+            )
+        )
+        print(f"Context: {i}, MaxNewTokens: {context.max_new_tokens}")
         batch_id = str(i)
         context_batch[batch_id] = context
 
@@ -240,7 +251,11 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 
         context_batch = {}
         for i in range(batch_size):
-            context = await pipeline_tokenizer.new_context(prompt)
+            context = await pipeline_tokenizer.new_context(
+                TokenGeneratorRequest(
+                    id="", index=i, prompt=prompt, model_name="llama3"
+                )
+            )
             batch_id = str(i)
             context_batch[batch_id] = context
 
@@ -310,11 +325,19 @@ async def test_pipeline_heterogeneous_batch_logits(
     stored_logits = {"A": [], "B": [], "C": []}
 
     # Send in A for context encoding.
-    context_a = await pipeline_tokenizer.new_context(prompt_a)
+    context_a = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="", index=0, prompt=prompt_a, model_name="llama3"
+        )
+    )
     next_token_with_logits(pipeline_model, {"A": context_a}, stored_logits)
 
     # Send in B for context encoding
-    context_b = await pipeline_tokenizer.new_context(prompt_b)
+    context_b = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="", index=1, prompt=prompt_b, model_name="llama3"
+        )
+    )
     next_token_with_logits(pipeline_model, {"B": context_b}, stored_logits)
 
     # Send in both A and B for token generation
@@ -323,7 +346,11 @@ async def test_pipeline_heterogeneous_batch_logits(
     )
 
     # Send in C for context encoding
-    context_c = await pipeline_tokenizer.new_context(prompt_c)
+    context_c = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="", index=2, prompt=prompt_c, model_name="llama3"
+        )
+    )
     next_token_with_logits(pipeline_model, {"C": context_c}, stored_logits)
 
     # Send in both B and C for token generation

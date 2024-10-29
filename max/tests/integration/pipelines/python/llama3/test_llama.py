@@ -19,8 +19,6 @@ from evaluate_llama import (
 )
 from llama3.llama3 import Llama3, Llama3Tokenizer
 
-pytestmark = pytest.mark.skip("TODO(ylou): Fix!!")
-
 
 @pytest.mark.parametrize(
     "model,encoding",
