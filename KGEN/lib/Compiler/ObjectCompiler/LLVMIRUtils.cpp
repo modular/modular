@@ -200,7 +200,7 @@ private:
 static LLVMModuleAndContext readAndMaterializeDependencies(
     BufferRef buf,
     const llvm::MapVector<const llvm::GlobalValue *, unsigned> &set,
-    const StringConstantTable &strtab) {
+    const StringConstantTable &strtab, llvm::StringSet<> ignoreFns) {
 
   // First, create a lazy module with an internal bitcode materializer.
   // TODO: Not sure how to make lazy loading metadata work.
@@ -249,7 +249,15 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
   for (llvm::Function &func : result->functions()) {
     if (idxIt != idxEnd && curIdx == *idxIt) {
       ++idxIt;
-      llvm::cantFail(func.materialize());
+
+      if (ignoreFns.contains(func.getName())) {
+        // Don't materialize if the function is a duplicate.
+        func.deleteBody();
+        func.setComdat(nullptr);
+        func.setLinkage(llvm::GlobalValue::ExternalLinkage);
+      } else {
+        llvm::cantFail(func.materialize());
+      }
     } else {
       func.deleteBody();
       func.setComdat(nullptr);
@@ -288,6 +296,7 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
 /// module.
 void KGEN::splitPerExported(LLVMModuleAndContext module,
                             LLVMSplitProcessFn processFn) {
+
   CompilerTimeTraceScope traceScope("splitPerExported");
   LLVMModuleSplitterImpl impl(std::move(module));
   impl.split(processFn);
@@ -442,7 +451,8 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     unsigned next = numFunctions + set->size();
     auto makeModule = [set = std::move(*set), buf = BufferRef(buf.copy()),
                        strtab = strtab.copy()]() mutable {
-      return readAndMaterializeDependencies(std::move(buf), set, *strtab);
+      return readAndMaterializeDependencies(std::move(buf), set, *strtab,
+                                            /*ignoreFns=*/{});
     };
     processFn(std::move(makeModule), idx, numFunctions);
     numFunctions = next;
@@ -510,6 +520,18 @@ private:
   llvm::MapVector<const llvm::GlobalValue *, ValueInfo> valueInfos;
 };
 } // namespace
+
+static void
+checkDuplicates(llvm::MapVector<const llvm::GlobalValue *, unsigned> &set,
+                llvm::StringSet<> &seenFns, llvm::StringSet<> &dupFns) {
+  for (auto [gv, _] : set) {
+    if (auto fn = dyn_cast<llvm::Function>(gv)) {
+      if (!seenFns.insert(fn->getName()).second) {
+        dupFns.insert(fn->getName());
+      }
+    }
+  }
+}
 
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
@@ -658,6 +680,8 @@ void LLVMModulePerFunctionSplitterImpl::split(
     return processFn(forwardModule(std::move(mainModule)), std::nullopt,
                      numFunctionBase);
 
+  auto duplicatedFns = std::move(mainModule.duplicatedFns);
+
   // Prepare to materialize slices of the module by first writing the main
   // module as bitcode to a shared buffer.
   auto buf = WriteableBuffer::get();
@@ -668,14 +692,19 @@ void LLVMModulePerFunctionSplitterImpl::split(
   }
 
   unsigned numFunctions = numFunctionBase;
+  llvm::StringSet<> seenFns;
   for (auto [idx, set] : llvm::enumerate(setsToProcess)) {
     // Giving each function a unique ID across all splits for proper MC level
     // linking and codegen into one object file where duplicated functions
     // in each split will be deduplicated (with the linking).
+    llvm::StringSet<> currDuplicatedFns = duplicatedFns;
+    checkDuplicates(set, seenFns, currDuplicatedFns);
+
     unsigned next = numFunctions + set.size();
     auto makeModule = [set = std::move(set), buf = BufferRef(buf.copy()),
-                       strtab = strtab.copy()]() mutable {
-      return readAndMaterializeDependencies(std::move(buf), set, *strtab);
+                       strtab = strtab.copy(), currDuplicatedFns]() mutable {
+      return readAndMaterializeDependencies(std::move(buf), set, *strtab,
+                                            currDuplicatedFns);
     };
     processFn(std::move(makeModule), idx, numFunctions);
     numFunctions = next;

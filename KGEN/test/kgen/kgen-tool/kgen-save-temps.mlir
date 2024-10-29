@@ -13,8 +13,8 @@ kgen.func @noop() {
 
 kgen.global export @exported_global : i32 [@noop, @noop](0)
 
-// ASM-DAG: .section 
-// ASM-DAG: KGEN_EE_JIT_GlobalConstructor:
+// ASM-DAG: .section
+// ASM-DAG: KGEN_EE_JIT_GlobalDestructor
 
 // PRESPLIT-LABEL: ; ModuleID = 'kgen-save-temps.mlir'
 // PRESPLIT-DAG: @exported_global = global i32 undef
