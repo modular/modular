@@ -968,6 +968,19 @@ fn mgp_tensor_spec_equal_static[
     return True
 
 
+@mogg_register("mgp.tensor_spec.get_dim")
+@always_inline
+@export
+fn mgp_tensor_spec_get_dim[
+    spec_rank: Int, axis: UInt64
+](spec: StaticTensorSpec[spec_rank]) -> Int:
+    debug_assert(
+        axis < len(spec),
+        "axis for get_dim must be less than rank of TensorSpec",
+    )
+    return spec.shape[int(axis)]
+
+
 # ===----------------------------------------------------------------------===#
 # MGP Device Context Primitives
 # ===----------------------------------------------------------------------===#
