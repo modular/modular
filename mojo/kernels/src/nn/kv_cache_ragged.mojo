@@ -17,8 +17,7 @@ from kv_cache.types import (
     KVCacheT,
     KVCollectionT,
 )
-from linalg.matmul import _matmul_cpu, elementwise_epilogue_type
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul import matmul, elementwise_epilogue_type
 from sys.intrinsics import _type_is_eq
 from utils.index import IndexList, Index
 from runtime.asyncrt import MojoCallContextPtr
@@ -400,23 +399,15 @@ fn _matmul_common[
             IndexList[2](TOTAL_SEQ_LEN, N),
         )
 
+    matmul[
+        target=target,
+        transpose_b=True,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](c_nd, hidden_state, weight, context)
+
     @parameter
     if target == "cpu":
-        var kernel_type_m = hidden_state.shape.at[0]().or_else(0)
-
-        _matmul_cpu[
-            transpose_b=True,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c_nd, hidden_state, weight, kernel_type_m)
         c_nd.data.free()
-
-    else:
-        _matmul_gpu[
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            use_tensor_core=True,
-            transpose_b=True,
-            target=target,
-        ](c_nd, hidden_state, weight, context.value())
 
 
 # ===----------------------------------------------------------------------===#

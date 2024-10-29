@@ -23,8 +23,7 @@ from kv_cache.types import (
     KVCollectionT,
 )
 from linalg import transpose
-from linalg.matmul import _matmul_cpu, elementwise_epilogue_type
-from linalg.matmul_gpu import _matmul_gpu
+from linalg.matmul import matmul, elementwise_epilogue_type
 from memory import UnsafePointer, memcpy
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
@@ -912,24 +911,15 @@ fn _matmul_common[
             IndexList[2](BS * SEQ_LEN, N),
         )
 
-    # TODO unify with other matmul
+    matmul[
+        transpose_b=True,
+        target=target,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+    ](c_nd, hidden_state_2d, weight, context)
+
     @parameter
     if target == "cpu":
-        var kernel_type_m = hidden_state_2d.shape.at[0]().or_else(0)
-
-        _matmul_cpu[
-            transpose_b=True,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c_nd, hidden_state_2d, weight, kernel_type_m)
         c_nd.data.free()
-
-    else:
-        _matmul_gpu[
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            use_tensor_core=True,
-            transpose_b=True,
-            target=target,
-        ](c_nd, hidden_state_2d, weight, context.value())
 
 
 @mogg_register("fused_qk_rope_h6_d48_bshd")
