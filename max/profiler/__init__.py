@@ -7,6 +7,7 @@
 """MAX profiler python package.
 
 There are 2 ways to profile currently: context manager or decorator.
+(Decorators need to have the MODULAR_ENABLE_PROFILING = 1 env variable set.)
 
 Context manager:
 
