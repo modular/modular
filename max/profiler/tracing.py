@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import os
 from typing import Callable
 
 from max._profiler import Trace
@@ -42,6 +43,9 @@ def traced(
             # The span is named "bar".
             pass
     """
+    if not is_profiling_enabled():
+        return func if func is not None else lambda f: func  # type: ignore
+
     if func is None:
         return lambda f: traced(f, message=message, color=color)
 
@@ -63,3 +67,14 @@ def traced(
                 return func(*args, **kwargs)
 
     return wrapper
+
+
+def is_profiling_enabled() -> bool:
+    """Returns true if profiling is enabled via `MODULAR_ENABLE_PROFILING = 1`
+    """
+    enable_profiling: str | None = os.getenv("MODULAR_ENABLE_PROFILING")
+    truthy_values: list[str] = ["1", "t", "true", "yes", "y"]
+    return (
+        enable_profiling is not None
+        and enable_profiling.lower() in truthy_values
+    )
