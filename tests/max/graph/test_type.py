@@ -10,7 +10,7 @@ import re
 import pytest
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
-from max import _graph
+from max import _graph, mlir
 from max.dtype import DType
 from max.graph import (
     BufferType,
@@ -163,6 +163,26 @@ def test_tensor_type_accessors(mlir_context) -> None:
 
     assert _graph.tensor_type_get_dtype(tensor_type) == DType.float32._mlir
     assert _graph.tensor_type_get_rank(tensor_type) == 2
+
+
+def test_tensor_type_with_device_accessors(mlir_context: mlir.Context) -> None:
+    """Tests tensor type with device property accessors."""
+    dtype = _graph.dtype_type(mlir_context, "f32")
+    dim1 = _graph.static_dim(mlir_context, 3)
+    dim2 = _graph.symbolic_dim(mlir_context, "x")
+    cpu_device = _graph.device_attr(mlir_context, "cpu", 0)
+    cpu_tensor_type = _graph.tensor_type(
+        mlir_context, dtype, [dim1, dim2], cpu_device
+    )
+    cuda_device0 = _graph.device_attr(mlir_context, "cuda", 0)
+    cuda_tensor_type = _graph.tensor_type(
+        mlir_context, dtype, [dim1, dim2], cuda_device0
+    )
+    default_tensor_type = _graph.tensor_type(mlir_context, dtype, [dim1, dim2])
+
+    assert _graph.tensor_type_get_device(cpu_tensor_type) == cpu_device
+    assert _graph.tensor_type_get_device(cuda_tensor_type) == cuda_device0
+    assert not _graph.tensor_type_get_device(default_tensor_type)
 
 
 def test_opaque_type(mlir_context) -> None:
