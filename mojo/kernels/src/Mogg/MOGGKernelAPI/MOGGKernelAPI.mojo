@@ -2063,13 +2063,14 @@ struct Mean:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: ScalarTensor,
+        ctx: MojoCallContextPtr,
     ) raises:
         @parameter
         @always_inline
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input.load[width=width](
+            return input._fused_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -2078,7 +2079,7 @@ struct Mean:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output.store[width=width](
+            output._fused_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -2091,7 +2092,7 @@ struct Mean:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val, output._spec.shape)
+        ](input._spec.shape, axis_val, output._spec.shape, ctx)
 
     @staticmethod
     fn shape[
@@ -2113,13 +2114,14 @@ struct ReduceAdd:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: ScalarTensor,
+        ctx: MojoCallContextPtr,
     ) raises:
         @parameter
         @always_inline
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input.load[width=width](
+            return input._fused_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -2128,7 +2130,7 @@ struct ReduceAdd:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output.store[width=width](
+            output._fused_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -2141,7 +2143,7 @@ struct ReduceAdd:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val)
+        ](input._spec.shape, axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -2163,13 +2165,14 @@ struct ReduceMul:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: ScalarTensor,
+        ctx: MojoCallContextPtr,
     ) raises:
         @parameter
         @always_inline
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input.load[width=width](
+            return input._fused_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -2178,7 +2181,7 @@ struct ReduceMul:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output.store[width=width](
+            output._fused_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -2191,7 +2194,7 @@ struct ReduceMul:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val)
+        ](input._spec.shape, axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -2213,13 +2216,14 @@ struct ReduceMax:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: ScalarTensor,
+        ctx: MojoCallContextPtr,
     ) raises:
         @parameter
         @always_inline
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input.load[width=width](
+            return input._fused_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -2228,7 +2232,7 @@ struct ReduceMax:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output.store[width=width](
+            output._fused_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -2241,7 +2245,7 @@ struct ReduceMax:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val)
+        ](input._spec.shape, axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -2263,13 +2267,14 @@ struct ReduceMin:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
         axis: ScalarTensor,
+        ctx: MojoCallContextPtr,
     ) raises:
         @parameter
         @always_inline
         fn input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input.load[width=width](
+            return input._fused_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -2278,7 +2283,7 @@ struct ReduceMin:
         fn output_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output.store[width=width](
+            output._fused_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -2291,7 +2296,7 @@ struct ReduceMin:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val)
+        ](input._spec.shape, axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -2331,7 +2336,7 @@ struct ReduceMinMax:
         fn input_0_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[input.type, width]:
-            return input.load[width=width](
+            return input._fused_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -2340,7 +2345,7 @@ struct ReduceMinMax:
         fn output_0_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.type, width]):
-            output.store[width=width](
+            output._fused_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
