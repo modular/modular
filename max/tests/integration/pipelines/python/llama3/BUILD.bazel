@@ -64,6 +64,7 @@ modular_py_binary(
         srcs = [
             "conftest.py",
             "torch_utils.py",
+            "torch_vision_encoder.py",
             src,
         ],
         data = [
@@ -129,6 +130,7 @@ modular_py_test(
     ) + [
         "conftest.py",
         "torch_utils.py",
+        "torch_vision_encoder.py",
     ],
     data = [
         "//KGEN:CompilerRT",
