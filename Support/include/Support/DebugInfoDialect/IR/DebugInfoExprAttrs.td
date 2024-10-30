@@ -17,11 +17,7 @@ include "Support/DebugInfoDialect/IR/DebugInfoExprAttrInterfaces.td"
 class DIExprAttrBase<string attrName, string attrMnemonic,
   list<Trait> traits = []>
     : DIAttr<attrName, attrMnemonic,
-             traits # [TypedAttrInterface, DebugInfo_DIExprAttrInterface]> {
-  code diExprExtraClassDeclaration = [{}];
-  let extraClassDeclaration = diExprExtraClassDeclaration # [{
-    Type getType() const { return getDIType(); }
-  }];
+             traits # [DebugInfo_DIExprAttrInterface]> {
 }
 
 //===----------------------------------------------------------------------===//
@@ -32,12 +28,14 @@ def DebugInfo_DIAggregatesIntoExprAttr
   : DIExprAttrBase<"DIAggregatesIntoExpr", "expr.agg"> {
   let summary = "DI Expression fragment-to-aggregate operator.";
   let description = [{
+    TODO: Create lower-level version with offset & size instead of field index.
+
     The `debuginfo.expr.agg` attribute represents a DI Expression operator
     that aggregates together a struct from a single field of that struct. Its
     operands are
       - A DI Expression of type T, and
       - A constant index i,
-    and it has a DIStructType result where the i-th field has type T.
+    and it has a result where the i-th field has type T.
 
     Example:
 
@@ -50,7 +48,7 @@ def DebugInfo_DIAggregatesIntoExprAttr
   let parameters = (ins
     "DIExprAttr":$fieldExpr,
     "unsigned":$fieldIndex,
-    AttributeSelfTypeParameter<"", "::M::DebugInfo::DIStructType">:$DIType
+    AttributeSelfTypeParameter<"">:$type
   );
   let assemblyFormat = "`<` $fieldExpr `,` $fieldIndex `>`";
   let genVerifyDecl = 1;
@@ -58,7 +56,7 @@ def DebugInfo_DIAggregatesIntoExprAttr
   let builders = [
     TypeBuilderWithInferredContext<(ins "DIExprAttr":$fieldExpr,
                                         "unsigned":$fieldIndex,
-                                        "DIStructType":$type), [{
+                                        "Type":$type), [{
       return get(type.getContext(), fieldExpr, fieldIndex, type);
     }]>
   ];
@@ -72,8 +70,7 @@ def DebugInfo_DIDerefExprAttr : DIExprAttrBase<"DIDerefExpr", "expr.deref"> {
   let summary = "DI Expression dereference operator.";
   let description = [{
     The `#debuginfo.expr.deref` attribute represents a DI Expression operator
-    that performs dereference on a pointer. Its operand is a DI Expression of
-    type DITargetIndependentPointer<T> or DIPointer<T>, and has result type T.
+    that performs dereference on a pointer.
 
     Example:
 
@@ -82,13 +79,14 @@ def DebugInfo_DIDerefExprAttr : DIExprAttrBase<"DIDerefExpr", "expr.deref"> {
     #deref = #debuginfo.expr.deref<#ir_value>
     ```
   }];
-  let parameters = (ins "DIExprAttr":$ptrExpr);
+  let parameters = (ins
+    "DIExprAttr":$ptrExpr,
+    AttributeSelfTypeParameter<"">:$type
+  );
   let assemblyFormat = "`<` $ptrExpr `>`";
   let genVerifyDecl = 1;
-  let diExprExtraClassDeclaration = [{ DIType getDIType() const; }];
-
   let builders = [TypeBuilderWithInferredContext<
-    (ins "DIExprAttr":$ptrExpr), "", "DIExprAttr">];
+    (ins "DIExprAttr":$ptrExpr, "Type":$type), "", "DIExprAttr">];
 }
 
 //===----------------------------------------------------------------------===//
@@ -115,11 +113,11 @@ def DebugInfo_DIIRValueExprAttr
     ```
   }];
   let parameters = (ins
-    AttributeSelfTypeParameter<"", "::M::DebugInfo::DIType">:$DIType
+    AttributeSelfTypeParameter<"">:$type
   );
   let assemblyFormat = "";
 
-  let builders = [TypeBuilderWithInferredContext<(ins "DIType":$type), [{
+  let builders = [TypeBuilderWithInferredContext<(ins "Type":$type), [{
     return get(type.getContext(), type);
   }]>];
 }
@@ -132,8 +130,7 @@ def DebugInfo_DIRefOfExprAttr : DIExprAttrBase<"DIRefOfExpr", "expr.refof"> {
   let summary = "DI Expression reference-of operator.";
   let description = [{
     The `#debuginfo.expr.refof` attribute represents a DI Expression operator
-    that gets a reference from a value. Its operand is a DI Expression of any
-    type T, and has result type DITargetIndependentPointer<T> or DIPointer<T>.
+    that gets a reference from a value.
 
     Example:
 
@@ -144,12 +141,12 @@ def DebugInfo_DIRefOfExprAttr : DIExprAttrBase<"DIRefOfExpr", "expr.refof"> {
   }];
   let parameters = (ins
     "DIExprAttr":$valueExpr,
-    AttributeSelfTypeParameter<"", "::M::DebugInfo::DIType">:$DIType
+    AttributeSelfTypeParameter<"">:$type
   );
   let assemblyFormat = "`<` $valueExpr `>`";
 
   let builders = [TypeBuilderWithInferredContext<
-    (ins "DIExprAttr":$valueExpr, "DIType":$type), "", "DIExprAttr">];
+    (ins "DIExprAttr":$valueExpr, "Type":$type), "", "DIExprAttr">];
 }
 
 #endif // DEBUGINFOEXPRATTRS_TD

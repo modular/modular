@@ -78,7 +78,7 @@ namespace M::DebugInfo {
 /// replacer cache.
 class DIExprLeafReplacer {
 public:
-  DIExprLeafReplacer(std::function<ErrorOr<DIExprAttr>(DIType)> conversionFunc);
+  DIExprLeafReplacer(std::function<ErrorOr<DIExprAttr>(Type)> conversionFunc);
 
   // Apply the leafReplacer to the input expression.
   // In practice, this means replacing the leaves of expr with the result of the
@@ -90,7 +90,7 @@ private:
   // Always cleared before running the replacer.
   std::string currErrorMsg;
 
-  std::function<ErrorOr<DIExprAttr>(DIType)> leafReplacer;
+  std::function<ErrorOr<DIExprAttr>(Type)> leafReplacer;
   mlir::AttrTypeReplacer replacer;
 };
 
@@ -103,7 +103,7 @@ template <typename KeyT>
 class DIExprParameterizedLeafReplacer {
 public:
   DIExprParameterizedLeafReplacer(
-      std::function<ErrorOr<DIExprAttr>(DIType, KeyT)> conversionFunc)
+      std::function<ErrorOr<DIExprAttr>(Type, KeyT)> conversionFunc)
       : leafReplacer(std::move(conversionFunc)) {}
 
   ErrorOr<DIExprAttr> apply(DIExprAttr expr, KeyT key) {
@@ -124,14 +124,14 @@ private:
       it->second.addReplacement(
           [&, key = std::move(key)](DIIRValueExprAttr irValue)
               -> std::optional<std::pair<Attribute, WalkResult>> {
-            auto result = leafReplacer(irValue.getDIType(), key);
+            auto result = leafReplacer(irValue.getType(), key);
             if (failed(result)) {
               currErrorMsg = result.getError();
               return std::make_pair(nullptr, WalkResult::skip());
             }
 
             auto conversionResult = result.get();
-            if (conversionResult.getDIType() != irValue.getDIType()) {
+            if (conversionResult.getType() != irValue.getType()) {
               currErrorMsg = "Converter result type differs from input type.";
               return std::make_pair(nullptr, WalkResult::skip());
             }
@@ -143,7 +143,7 @@ private:
 
   std::string currErrorMsg;
 
-  std::function<ErrorOr<DIExprAttr>(DIType, KeyT)> leafReplacer;
+  std::function<ErrorOr<DIExprAttr>(Type, KeyT)> leafReplacer;
   DenseMap<KeyT, mlir::AttrTypeReplacer> replacers;
 };
 

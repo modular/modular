@@ -166,8 +166,9 @@ MetadataConverter::convertAttrImpl(DIAggregatesIntoExprAttr attr) {
   if (!prefix)
     return {};
 
-  auto llvmStructType =
-      cast<LLVM::DICompositeTypeAttr>(convertType(attr.getDIType()));
+  // The type of the struct field must have been lowered to a DIStructType.
+  auto llvmStructType = cast<LLVM::DICompositeTypeAttr>(
+      convertType(cast<DIType>(attr.getType())));
 
   // Fragments for single-element structs are elided in the LLVM representation.
   if (llvmStructType.getElements().size() == 1)
