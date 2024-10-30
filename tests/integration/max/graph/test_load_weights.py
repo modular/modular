@@ -113,11 +113,18 @@ def test_load_gguf(session, graph_testdata) -> None:
 
 def test_load_safetensors(session, graph_testdata) -> None:
     """Tests adding an external weight to a graph."""
-    expected_dict = _test_data()
+    expected_base_dict = _test_data()
+    expected_dict = {
+        f"{i}.{k}": v
+        for k, v in expected_base_dict.items()
+        for i in range(1, 3)
+    }
     flat_keys = list(expected_dict.keys())
     expected = [expected_dict[k] for k in flat_keys]
 
-    weights = SafetensorWeights(graph_testdata / "example_data.safetensors")
+    weights = SafetensorWeights(
+        [graph_testdata / f"example_data_{i}.safetensors" for i in range(1, 3)]
+    )
     with Graph("graph_with_pt_weights") as graph:
         loaded = {k: graph.add_weight(w.allocate()) for k, w in weights.items()}
         graph.output(*[loaded[k] for k in flat_keys])
@@ -127,7 +134,7 @@ def test_load_safetensors(session, graph_testdata) -> None:
         output = compiled.execute()
         assert len(expected) == len(output)
         for n, expected in enumerate(expected):
-            if flat_keys[n] == "bf16":
+            if flat_keys[n].endswith("bf16"):
                 assert torch.equal(expected, torch.from_dlpack(output[n]))
             else:
                 np.testing.assert_array_equal(expected, output[n].to_numpy())

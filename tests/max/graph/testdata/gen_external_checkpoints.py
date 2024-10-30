@@ -73,16 +73,17 @@ def write_pytorch(filename):
     torch.save(data, filename)
 
 
-def write_safetensors(filename):
-    data = {
-        "a": torch.arange(10, dtype=torch.int32).reshape(5, 2),
-        "b": torch.full((1, 2, 3), 3.5, dtype=torch.float64),
-        "c": torch.tensor(5432.1, dtype=torch.float32),
-        "fancy/name": torch.tensor([1, 2, 3], dtype=torch.int64),
-        "bf16": torch.tensor([123, 45], dtype=torch.bfloat16),
-    }
+def write_safetensors(filename_prefix):
+    for i in range(1, 3):
+        data = {
+            f"{i}.a": torch.arange(10, dtype=torch.int32).reshape(5, 2),
+            f"{i}.b": torch.full((1, 2, 3), 3.5, dtype=torch.float64),
+            f"{i}.c": torch.tensor(5432.1, dtype=torch.float32),
+            f"{i}.fancy/name": torch.tensor([1, 2, 3], dtype=torch.int64),
+            f"{i}.bf16": torch.tensor([123, 45], dtype=torch.bfloat16),
+        }
 
-    safe_torch.save_file(data, filename)
+        safe_torch.save_file(data, f"{filename_prefix}_{i}.safetensors")
 
 
 @click.command()
@@ -90,7 +91,7 @@ def write_safetensors(filename):
 def main(output_directory):
     write_pytorch(output_directory / "example_data.pt")
     write_gguf(output_directory / "example_data.gguf")
-    write_safetensors(output_directory / "example_data.safetensors")
+    write_safetensors(output_directory / "example_data")
 
 
 if __name__ == "__main__":

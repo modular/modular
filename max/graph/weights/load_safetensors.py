@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence, Set
 from os import PathLike
 from typing import Optional
 
@@ -42,10 +43,14 @@ class SafetensorWeights:
     creates a weight with the name "a.b.1.c".
     """
 
+    _filepaths: Sequence[PathLike]
+    _tensors: Set[str]
+    _tensors_to_file_idx: Mapping[str, int]
+
     def __init__(
         self,
-        filepath: PathLike,
-        tensors: Optional[set[str]] = None,
+        filepaths: Sequence[PathLike],
+        tensors: Optional[Set[str]] = None,
         prefix: str = "",
         allocated=None,
     ):
@@ -60,12 +65,17 @@ class SafetensorWeights:
                 "Unable to import torch. Please make sure that PyTorch is"
                 " installed on your system."
             )
-        self._filepath = filepath
+        self._filepaths = filepaths
         if tensors is not None:
+            assert len(self._filepaths) == 1
             self._tensors = tensors
         else:
-            with safe_open(filepath, framework="numpy") as f:
-                self._tensors = set(f.keys())
+            self._tensors_to_file_idx = {}
+            self._tensors = set()
+            for idx, filepath in enumerate(self._filepaths):
+                with safe_open(filepath, framework="numpy") as f:
+                    self._tensors |= set(f.keys())
+                    self._tensors_to_file_idx |= {k: idx for k in f.keys()}
         self._prefix = prefix
         self._allocated = {} if allocated is None else allocated
 
@@ -79,7 +89,7 @@ class SafetensorWeights:
         for name in self._tensors:
             if name.startswith(self._prefix):
                 yield name, SafetensorWeights(
-                    self._filepath,
+                    [self._filepaths[self._tensors_to_file_idx[name]]],
                     self._tensors,
                     prefix=name,
                     allocated=self._allocated,
@@ -93,7 +103,7 @@ class SafetensorWeights:
         if not any(name.startswith(full_path) for name in self._tensors):
             raise AttributeError(f"No weight {full_path} found")
         return SafetensorWeights(
-            self._filepath,
+            [self._filepaths[self._tensors_to_file_idx[full_path]]],
             self._tensors,
             prefix=full_path,
             allocated=self._allocated,
@@ -114,7 +124,8 @@ class SafetensorWeights:
                 "Quantization encodings are not supported in safetensor"
                 f" format. Got: {quantization_encoding}"
             )
-        with safe_open(self._filepath, framework="pt") as f:
+        assert len(self._filepaths) == 1
+        with safe_open(self._filepaths[0], framework="pt") as f:
             tensor = f.get_tensor(self._prefix)
         if tensor.dtype == torch.bfloat16:
             np_tensor = tensor.view(torch.float16).numpy()
