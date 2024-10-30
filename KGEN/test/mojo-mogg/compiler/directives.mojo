@@ -52,3 +52,8 @@ fn uses_opaque():
     TODO(GRA-1145): Remove the need for this.
     """
     return
+
+
+@__mogg_intrinsic_attr("mogg.mutable")
+fn mutable(*names: StringLiteral):
+    return
