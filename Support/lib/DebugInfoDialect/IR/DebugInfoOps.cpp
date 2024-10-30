@@ -82,7 +82,7 @@ static LogicalResult verifyValueOpType(ValueOp op) {
   auto conversionExpr = op.getConversionExprAttr();
   auto walkResult = conversionExpr.walk([&](DIIRValueExprAttr irValue) {
     // We can only compare types if the irValue type is not yet resolved.
-    if (auto unresolved = dyn_cast<DIUnresolvedMLIRType>(irValue.getDIType())) {
+    if (auto unresolved = dyn_cast<DIUnresolvedMLIRType>(irValue.getType())) {
       if (unresolved.getType() != inputType) {
         op->emitOpError("conversion expression input expr.irvalue type ")
             << unresolved.getType() << " does not match actual IR Value type "
@@ -95,7 +95,7 @@ static LogicalResult verifyValueOpType(ValueOp op) {
   if (walkResult.wasInterrupted())
     return failure();
 
-  DIType outputType = conversionExpr.getDIType();
+  Type outputType = conversionExpr.getType();
   DIType declaredType = op.getValueInfo().getType();
   if (declaredType != outputType) {
     return op.emitOpError("conversion expression output type ")
@@ -126,7 +126,7 @@ static void printValueOpAttrs(OpAsmPrinter &p, ValueOp value,
   p.printAttribute(varInfo);
 
   if (auto irValue = llvm::dyn_cast<DIIRValueExprAttr>(conversionExpr)) {
-    if (irValue.getDIType() == varInfo.getType()) {
+    if (irValue.getType() == varInfo.getType()) {
       // Omit identity conversion.
       return;
     }

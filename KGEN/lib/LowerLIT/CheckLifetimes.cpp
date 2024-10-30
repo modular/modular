@@ -124,7 +124,7 @@ insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
       auto diPointerType =
           DebugInfo::DITargetIndependentPointerType::get(sourceType);
       auto newIrValue = DebugInfo::DIIRValueExprAttr::get(diPointerType);
-      diExpr = DebugInfo::DIDerefExprAttr::get(newIrValue);
+      diExpr = DebugInfo::DIDerefExprAttr::get(newIrValue, sourceType);
     }
   }
 
@@ -3316,7 +3316,8 @@ void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
     auto diPointerType = DebugInfo::DITargetIndependentPointerType::get(
         info.debugVariable.getType());
     auto newIrValue = DebugInfo::DIIRValueExprAttr::get(diPointerType);
-    auto conversion = DebugInfo::DIDerefExprAttr::get(newIrValue);
+    auto conversion = DebugInfo::DIDerefExprAttr::get(
+        newIrValue, info.debugVariable.getType());
     builder.create<DebugInfo::ValueOp>(value, info.debugVariable, conversion);
   }
 }

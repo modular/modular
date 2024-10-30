@@ -58,8 +58,7 @@ static bool canPromote(StackAllocationOp alloc) {
   return true;
 }
 
-static ErrorOr<DebugInfo::DIExprAttr>
-mem2RegLeafConversion(DebugInfo::DIType irType) {
+static ErrorOr<DebugInfo::DIExprAttr> mem2RegLeafConversion(Type irType) {
   // Unwrap the DIPointerType if there is one and use the new type.
   DebugInfo::DIType valueType;
   if (auto ptr = dyn_cast<DebugInfo::DIPointerType>(irType))

@@ -333,13 +333,17 @@ bool DILocalScopeAttr::classof(Attribute attr) {
 LogicalResult
 DIAggregatesIntoExprAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                  DIExprAttr fieldExpr, unsigned index,
-                                 DIStructType type) {
-  if (type.getMembers().size() <= index)
-    return emitError() << "field index out of bounds for struct type: " << type;
-  if (type.getMembers()[index].getType() != fieldExpr.getDIType()) {
-    return emitError()
-           << "operand type does not match struct field type at index "
-           << index;
+                                 Type type) {
+  // Verify type consistency if the expression has been lowered into DITypes.
+  if (auto structType = ::dyn_cast<DIStructType>(type)) {
+    if (structType.getMembers().size() <= index)
+      return emitError() << "field index out of bounds for struct type: "
+                         << type;
+    if (structType.getMembers()[index].getType() != fieldExpr.getType()) {
+      return emitError()
+             << "operand type does not match struct field type at index "
+             << index;
+    }
   }
   return success();
 }
@@ -348,26 +352,27 @@ DIAggregatesIntoExprAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // DIDerefExprAttr
 //===----------------------------------------------------------------------===//
 
-DIExprAttr DIDerefExprAttr::get(DIExprAttr ptrExpr) {
+DIExprAttr DIDerefExprAttr::get(DIExprAttr ptrExpr, Type type) {
   if (auto refExpr = ::dyn_cast<DIRefOfExprAttr>(ptrExpr))
     return refExpr.getValueExpr();
-  return DIDerefExprAttr::get(ptrExpr.getContext(), ptrExpr);
-}
-
-DIType DIDerefExprAttr::getDIType() const {
-  auto operandType = getPtrExpr().getDIType();
-  if (auto tiPtr = ::dyn_cast<DITargetIndependentPointerType>(operandType))
-    return tiPtr.getElementType();
-  return ::cast<DIPointerType>(operandType).getElementType();
+  return get(ptrExpr.getContext(), ptrExpr, type);
 }
 
 LogicalResult
 DIDerefExprAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                        DIExprAttr ptrExpr) {
-  if (!::isa<DIPointerType, DITargetIndependentPointerType>(
-          ptrExpr.getDIType())) {
-    return emitError()
-           << "attribute operand must be one of the DI pointer types.";
+                        DIExprAttr ptrExpr, Type type) {
+  // Verify type consistency if the expression has been lowered into DITypes.
+  if (auto ptrType = ::dyn_cast<DIPointerType>(ptrExpr.getType())) {
+    if (ptrType.getElementType() != type) {
+      return emitError() << "result type is not the element type of the "
+                            "operand DIPointerType";
+    }
+  } else if (auto ptrType = ::dyn_cast<DITargetIndependentPointerType>(
+                 ptrExpr.getType())) {
+    if (ptrType.getElementType() != type) {
+      return emitError() << "result type is not the element type of the "
+                            "operand DITargetIndependentPointerType";
+    }
   }
   return success();
 }
@@ -376,7 +381,7 @@ DIDerefExprAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 // DIRefOfExprAttr
 //===----------------------------------------------------------------------===//
 
-DIExprAttr DIRefOfExprAttr::get(DIExprAttr valueExpr, DIType type) {
+DIExprAttr DIRefOfExprAttr::get(DIExprAttr valueExpr, Type type) {
   if (auto derefExpr = ::dyn_cast<DIDerefExprAttr>(valueExpr))
     return derefExpr.getPtrExpr();
   return DIRefOfExprAttr::get(valueExpr.getContext(), valueExpr, type);
@@ -398,19 +403,19 @@ DISubprogramAttr DISubprogramAttr::cloneWith(SourceNameAttr sourceName,
 // DI Expression Support
 //===----------------------------------------------------------------------===//
 DebugInfo::DIExprLeafReplacer::DIExprLeafReplacer(
-    std::function<ErrorOr<DIExprAttr>(DIType)> conversionFunc)
+    std::function<ErrorOr<DIExprAttr>(Type)> conversionFunc)
     : leafReplacer(std::move(conversionFunc)) {
   replacer.addReplacement(
       [&](DIIRValueExprAttr irValue)
           -> std::optional<std::pair<Attribute, WalkResult>> {
-        auto result = leafReplacer(irValue.getDIType());
+        auto result = leafReplacer(irValue.getType());
         if (failed(result)) {
           currErrorMsg = result.getError();
           return std::make_pair(nullptr, WalkResult::skip());
         }
 
         auto conversionResult = result.get();
-        if (conversionResult.getDIType() != irValue.getDIType()) {
+        if (conversionResult.getType() != irValue.getType()) {
           currErrorMsg = "Converter result type differs from input type.";
           return std::make_pair(nullptr, WalkResult::skip());
         }
