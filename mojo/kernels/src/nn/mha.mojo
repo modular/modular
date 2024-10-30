@@ -11,7 +11,7 @@ from os import abort
 from sys import alignof, bitwidthof, simdwidthof
 
 from algorithm import elementwise
-from algorithm.functional import unswitch, vectorize
+from algorithm.functional import unswitch, vectorize, tile_and_unswitch
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
@@ -1333,7 +1333,20 @@ fn mha_single_batch[
 
     alias num_pipeline_stages = config.num_pipeline_stages
 
-    for kv_tile_start_row in range(0, seq_len, BN):
+    # Iterate over KV, equivalent to the following with if hoisted out.
+    #   ```
+    #   for i in range(start, end, tile_size):
+    #     if i + tile_size >= end:
+    #       loop_over_kvcache[tile_size, False]
+    #     else:
+    #       loop_over_kvcache[tile_size, True]
+    #   ```
+    # Only the last iteration is doing boundary check.
+    @always_inline
+    @parameter
+    fn loop_over_kvcache[
+        tile_size: Int, not_last_iter: Bool
+    ](kv_tile_start_row: Int, seq_len: Int):
         if (
             mask.status(
                 Index[element_bitwidth=32, unsigned=True](
@@ -1343,7 +1356,7 @@ fn mha_single_batch[
             )
             == TileMaskStatus.FULL_MASK
         ):
-            continue
+            return
 
         var k_gmem_block = LayoutTensor[
             k_type,
@@ -1363,9 +1376,13 @@ fn mha_single_batch[
         ](v_ptr + int(kv_offset + kv_tile_start_row * kv_num_heads * depth))
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
-        var kv_tile_num_rows = min(Int(BN), seq_len - kv_tile_start_row)
-
+        # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
+
+        var kv_tile_num_rows = min(int(tile_size), seq_len - kv_tile_start_row)
+        var num_b_rows = None if not_last_iter else OptionalReg[Int](
+            kv_tile_num_rows
+        )
 
         # First iteration load q from global memory to shared memory.
         if kv_tile_start_row == 0:
@@ -1390,7 +1407,7 @@ fn mha_single_batch[
                 depth // BK,
                 next_op_b_iter=v_gmem_iter.bitcast[k_type](),
                 num_a_rows=int(q_tile_num_rows),
-                num_b_rows=int(kv_tile_num_rows),
+                num_b_rows=num_b_rows,
             )
         # Subsequent iterations just use q in share memory.
         # TODO: Figure out a better function interface instead of passing in
@@ -1417,8 +1434,7 @@ fn mha_single_batch[
                 k_smem_iter,
                 depth // BK,
                 next_op_b_iter=v_gmem_iter.bitcast[k_type](),
-                num_a_rows=int(q_tile_num_rows),
-                num_b_rows=int(kv_tile_num_rows),
+                num_b_rows=num_b_rows,
             )
 
         # Increment V iterator since it's prefetched inside 1st matmul.
@@ -1508,10 +1524,11 @@ fn mha_single_batch[
                         for i in range(2):
                             # The row in score matrix of shape seq_len x num_keys.
                             # Mask col is score col since we don't partition in col.
+                            var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
+                            var score_col = mask_frag_col
+
                             @parameter
                             if masked:
-                                var score_row = mask_block_row + mask_frag_row + i * MMA_M // 2
-                                var score_col = mask_frag_col
                                 p_reg_vec2[mma_id, i] = mask.mask(
                                     IndexList[
                                         4, element_bitwidth=32, unsigned=True
@@ -1524,20 +1541,21 @@ fn mha_single_batch[
                                     p_reg_vec2[mma_id, i]
                                     * scale.cast[accum_type](),
                                 )
-                                p_reg_vec2[mma_id, i] = _kernel_mask(
-                                    IndexList[
-                                        2, element_bitwidth=32, unsigned=True
-                                    ](int(score_row), int(score_col)),
-                                    IndexList[
-                                        2, element_bitwidth=32, unsigned=True
-                                    ](seq_len, seq_len),
-                                    p_reg_vec2[mma_id, i],
-                                )
                             else:
                                 p_reg_vec2[mma_id, i] = (
                                     p_reg_vec2[mma_id, i]
                                     * scale.cast[accum_type]()
                                 )
+
+                            p_reg_vec2[mma_id, i] = _kernel_mask(
+                                IndexList[
+                                    2, element_bitwidth=32, unsigned=True
+                                ](int(score_row), int(score_col)),
+                                IndexList[
+                                    2, element_bitwidth=32, unsigned=True
+                                ](seq_len, seq_len),
+                                p_reg_vec2[mma_id, i],
+                            )
 
             unswitch[_apply_mask](
                 mask.status(
@@ -1594,7 +1612,7 @@ fn mha_single_batch[
                 p_smem_iter,
                 v_smem_iter,
                 BN // BK,
-                num_b_rows=int(kv_tile_num_rows),
+                num_b_rows=num_b_rows,
             )
         else:
             # Reuse 1st mma output (MMA_M, MMA_N) as 2nd mma's input (MMA_M, MMA_K).
@@ -1623,8 +1641,10 @@ fn mha_single_batch[
                 p_smem_iter,
                 v_smem_iter,
                 BN // BK,
-                num_b_rows=int(kv_tile_num_rows),
+                num_b_rows=num_b_rows,
             )
+
+    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](0, seq_len)
 
     # Apply softmax denumerator.
     @parameter
