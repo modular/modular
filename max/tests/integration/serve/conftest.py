@@ -18,6 +18,7 @@ from llama3 import (
     Llama3Tokenizer,
     SupportedVersions,
 )
+from max.pipelines import PreTrainedTokenGeneratorTokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
@@ -27,7 +28,6 @@ from max.serve.pipelines.deps import (
     all_pipeline_states,
 )
 from max.serve.pipelines.llm import (
-    PreTrainedTokenGeneratorTokenizer,
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
