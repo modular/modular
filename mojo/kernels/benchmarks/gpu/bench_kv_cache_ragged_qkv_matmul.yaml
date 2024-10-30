@@ -1,0 +1,48 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_kv_cache_ragged_qkv_matmul
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_kv_cache_ragged_qkv_matmul.mojo
+
+params:
+
+# llama3.1 shapes
+- seq_len: 1
+  batch_size: [50, 64, 150, 200, 250]
+  num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  use_random_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+- seq_len: [512, 1024]
+  batch_size: [1, 25, 50, 100]
+  num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  use_random_lengths: [False, True]
+  metadata:
+    MODEL: llama3.1
+
+# llama 3.2 shape
+- seq_len: 1
+  batch_size: [50, 64, 150, 200, 250]
+  num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  use_random_lengths: False
+  metadata:
+    MODEL: llama3.2
+
+- seq_len: [512, 1024]
+  batch_size: [1, 25, 50, 100]
+  num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  use_random_lengths: True
+  metadata:
+    MODEL: llama3.2
