@@ -39,6 +39,11 @@ fn view_kernel():
     return
 
 
+@__mogg_intrinsic_attr("mogg.mutable")
+fn mutable(*names: StringLiteral):
+    return
+
+
 # Compile time Tensor informations
 @value
 @register_passable("trivial")

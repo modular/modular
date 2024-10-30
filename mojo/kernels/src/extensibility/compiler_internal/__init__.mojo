@@ -11,4 +11,5 @@ from .directives import (
     register,
     specsof,
     view_kernel,
+    mutable,
 )
