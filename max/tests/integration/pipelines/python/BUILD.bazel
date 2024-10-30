@@ -32,8 +32,25 @@ modular_py_binary(
     srcs = ["verify_pipelines.py"],
     data = [
         "//KGEN:CompilerRT",
+        "//Kernels/tools/gpu-query",
+        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
+        "//SDK/integration-test/pipelines/python/llama3:verify",
+        "//SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama",
         "@llvm-project//compiler-rt:orc_rt",
+        "@rules_python//python/runfiles",
+        "@torch_llama_golden",
     ],
+    env = {
+        "LLAMA3_MODULAR_BIN": "$(execpath //SDK/integration-test/pipelines/python/llama3:evaluate_llama)",
+        "LLAMA3_TORCH_BIN": "$(execpath //SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama)",
+        "LLAMA3_VERIFY_BIN": "$(execpath //SDK/integration-test/pipelines/python/llama3:verify)",
+        # MODULAR_CUDA_QUERY_PATH is required by the Llama3 scripts.
+        "MODULAR_CUDA_QUERY_PATH": "$(execpath //Kernels/tools/gpu-query)",
+        # PIPELINES_TESTDATA is required by the Llama3 scripts.
+        "PIPELINES_TESTDATA": (
+            "SDK/integration-test/pipelines/python/llama3/testdata"
+        ),
+    },
     visibility = ["//visibility:public"],
     deps = [
         requirement("click"),

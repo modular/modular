@@ -4,18 +4,194 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
+from dataclasses import dataclass
+import enum
 import os
+from pathlib import Path
+import subprocess
 import sys
-from typing import Optional, TextIO
+import traceback
+from typing import Callable, Mapping, Optional, Sequence, TextIO
 
 import click
 
 DUMMY_PIPELINE = "dummy"
 
 
-def dump_results(*, to: TextIO = sys.stdout) -> None:
-    pipeline = DUMMY_PIPELINE
-    print(f"  ✅ {pipeline}", file=to)
+class VerificationVerdict(enum.Enum):
+    OK = "ok"
+    INVALID = "invalid"
+    ERROR = "error"
+
+    @property
+    def emoji(self) -> str:
+        return _VERDICT_EMOJI[self]
+
+
+_VERDICT_EMOJI = {
+    VerificationVerdict.OK: "✅",
+    VerificationVerdict.INVALID: "🟡",
+    VerificationVerdict.ERROR: "❌",
+}
+
+
+def resolve_rlocation(rloc: str) -> Path:
+    from python.runfiles import runfiles
+
+    r = runfiles.Create()
+    return Path(r.Rlocation(rloc))
+
+
+def dump_results(
+    verdicts: Mapping[str, VerificationVerdict], *, to: TextIO = sys.stdout
+) -> None:
+    for pipeline, verdict in verdicts.items():
+        print(f"  {verdict.emoji} {pipeline}", file=to)
+
+
+def run_llama_verification(
+    *,
+    model: str,
+    encoding: str,
+    kl_div_threshold: float,
+    cos_dist_threshold: float,
+    absolute_tolerance: float,
+    relative_tolerance: float,
+) -> VerificationVerdict:
+    """Run a Llama3 verification with the given model and weights encoding.
+
+    See SDK/integration-test/pipelines/python/llama3/evaluate_llama.py for
+    definitions of acceptable values for model and encoding.
+
+    extra_verify_flags are passed to
+    SDK/integration-test/pipelines/python/llama3/verify.py -- check that script
+    for details on acceptable flags.
+    """
+    subprocess.run(
+        [
+            os.environ["LLAMA3_MODULAR_BIN"],
+            "--model",
+            model,
+            "--encoding",
+            encoding,
+        ],
+        check=True,
+    )
+    modular_golden_file = next(
+        iter(Path("/tmp").glob(f"{model}_{encoding}_*_golden.json"))
+    )
+    if encoding == "bfloat16":
+        # This workflow runs on an A10.  The Torch reference runs out of memory
+        # on an A10, so it was run manually on an A100 and the result goldens
+        # uploaded.  Use these pre-generated goldens in this case.
+        torch_golden_file = resolve_rlocation(
+            f"torch_llama_golden/torch_{model}_{encoding}_golden.json"
+        )
+        # Note: If there were no memory issue and we were to run with GPU, the
+        # invocation would still need to differ in that 'run_torch_llama_gpu'
+        # must be used instead of 'run_torch_llama'.
+    else:
+        subprocess.run(
+            [
+                os.environ["LLAMA3_TORCH_BIN"],
+                "--model",
+                model,
+                "--encoding",
+                encoding,
+            ],
+            check=True,
+        )
+        torch_golden_file = Path(f"/tmp/torch_{model}_{encoding}_golden.json")
+    try:
+        subprocess.run(
+            [
+                os.environ["LLAMA3_VERIFY_BIN"],
+                str(modular_golden_file),
+                str(torch_golden_file),
+                "--eval-metric=tol,cos,kl",
+                f"--kl-div-threshold={kl_div_threshold}",
+                f"--cos-dist-threshold={cos_dist_threshold}",
+                f"--absolute-tolerance={absolute_tolerance}",
+                f"--relative-tolerance={relative_tolerance}",
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        return VerificationVerdict.INVALID
+    return VerificationVerdict.OK
+
+
+class DeviceType(enum.Enum):
+    CPU = "cpu"
+    GPU = "gpu"
+
+
+@dataclass
+class PipelineDef:
+    """Definition of the requirements and method of running a pipeline.
+
+    'compatible_with' lists all device types this pipeline is compatible with.
+    'run' should run and verify the pipeline results, returning a
+    VerificationVerdict with the result of the verification, or alternatively
+    raising an exception (same as returning VerificationVerdict.ERROR).
+    """
+
+    compatible_with: Sequence[DeviceType]
+    run: Callable[[], VerificationVerdict]
+
+    def run_protected(self) -> VerificationVerdict:
+        try:
+            return self.run()
+        except Exception:
+            traceback.print_exc()
+            return VerificationVerdict.ERROR
+
+
+PIPELINES = {
+    "llama3_1-q4_k": PipelineDef(
+        compatible_with=[DeviceType.CPU],
+        run=lambda: run_llama_verification(
+            model="llama3_1",
+            encoding="q4_k",
+            # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
+            # pipeline.  We only pass with these sky-high tolerances --
+            # something is very wrong but at least we will be able to detect
+            # further regressions with this.
+            kl_div_threshold=30.0,
+            cos_dist_threshold=2.0,
+            absolute_tolerance=25.0,
+            relative_tolerance=2.1,
+        ),
+    ),
+    "llama3_1-float32": PipelineDef(
+        compatible_with=[DeviceType.CPU],
+        run=lambda: run_llama_verification(
+            model="llama3_1",
+            encoding="float32",
+            kl_div_threshold=0.005,
+            cos_dist_threshold=0.002,
+            # TODO(AIPIPE-134): The absolute and relative differences here seem
+            # too high.
+            absolute_tolerance=0.8,
+            relative_tolerance=2.1,
+        ),
+    ),
+    "llama3_1-bfloat16": PipelineDef(
+        compatible_with=[DeviceType.GPU],
+        run=lambda: run_llama_verification(
+            model="llama3_1",
+            encoding="bfloat16",
+            kl_div_threshold=0.005,
+            cos_dist_threshold=0.002,
+            # TODO(AIPIPE-134): The absolute and relative differences here seem
+            # too high.
+            absolute_tolerance=0.8,
+            relative_tolerance=2.1,
+        ),
+    ),
+}
 
 
 @click.command()
@@ -24,14 +200,58 @@ def dump_results(*, to: TextIO = sys.stdout) -> None:
     type=click.File("w"),
     help="Output the coverage report to the specified file",
 )
+@click.option("--devices", "devices_str", help="Devices to run pipeline on")
 @click.option("--pipeline", help="Run only a specified pipeline")
-def main(report: Optional[TextIO], pipeline: Optional[str]) -> None:
+def main(
+    report: Optional[TextIO],
+    devices_str: Optional[str],
+    pipeline: Optional[str],
+) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
-    if pipeline is not None and pipeline != DUMMY_PIPELINE:
-        raise click.ClickException(f"Unknown pipeline {pipeline!r}")
+
+    if devices_str is not None and "," in devices_str:
+        raise NotImplementedError(
+            "Only one device at a time currently supported"
+        )
+    if devices_str is None:
+        device_type = DeviceType.CPU
+    else:
+        device_type = DeviceType(devices_str)
+
+    verdicts: dict[str, VerificationVerdict] = {}
+    if pipeline is None:
+        for pipeline_name, pipeline_def in PIPELINES.items():
+            if device_type not in pipeline_def.compatible_with:
+                continue
+            print(f"Running {pipeline_name}...", flush=True)
+            verdicts[pipeline_name] = pipeline_def.run_protected()
+    else:
+        if pipeline not in PIPELINES:
+            raise click.ClickException(f"Unknown pipeline {pipeline!r}")
+        pipeline_def = PIPELINES[pipeline]
+        if device_type not in pipeline_def.compatible_with:
+            raise click.ClickException(
+                f"Pipeline {pipeline!r} not compatible with {device_type!r}"
+            )
+        verdicts[pipeline] = pipeline_def.run_protected()
+
     if report:
-        dump_results(to=report)
-    dump_results()
+        dump_results(verdicts, to=report)
+
+    print()
+    print("-" * 40)
+    print()
+    print("# pipelines run:", len(verdicts))
+    for verdict in list(VerificationVerdict):
+        print(
+            f"# pipelines {verdict.name}:",
+            sum(v == verdict for v in verdicts.values()),
+        )
+    print()
+    dump_results(verdicts)
+
+    if any(v != VerificationVerdict.OK for v in verdicts.values()):
+        sys.exit(1)
 
 
 if __name__ == "__main__":
