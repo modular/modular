@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug %s
 from internal_utils import env_get_dtype, DeviceNDBuffer, HostNDBuffer, random
-from random import random_ui64
+from random import random_ui64, seed
 from sys import env_get_int, sizeof, env_get_bool
 from gpu.host.device_context import DeviceBuffer, DeviceContext
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -202,6 +202,8 @@ def main():
     alias head_dim = env_get_int["head_dim", 128]()
     alias num_q_heads = env_get_int["num_q_heads", 128]()
     alias num_kv_heads = env_get_int["num_kv_heads", 128]()
+
+    seed(0)
 
     var m = Bench()
     try:
