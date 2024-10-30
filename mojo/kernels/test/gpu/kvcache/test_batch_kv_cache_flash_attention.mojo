@@ -294,12 +294,12 @@ def execute_flash_attention[
             @parameter
             if (config.block_k() % (mma_shape[2] << blf)) != 0:
                 continue
-            var config_str = "ampere_" + type.__str__() + "_"
-            config_str += kv_params.head_size.__str__() + "x"
-            config_str += (32 if type is DType.float32 else 64).__str__() + "_"
-            config_str += BK.__str__()
-            config_str += "x" + nps.__str__()
-            assert_equal(config.__str__(), config_str)
+            var config_str = "ampere_" + str(type) + "_"
+            config_str += str(kv_params.head_size) + "x"
+            config_str += str(32 if type is DType.float32 else 64) + "_"
+            config_str += str(BK)
+            config_str += "x" + str(nps)
+            assert_equal(str(config), config_str)
             flash_attention[target="cuda", config=config](
                 test_output_device.tensor,
                 q_device.tensor,
