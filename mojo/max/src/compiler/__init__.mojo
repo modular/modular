@@ -9,6 +9,7 @@ from compiler_internal import (
     elementwise,
     enable_fusion_for,
     view_kernel,
+    mutable,
     specsof,
     StaticTensorSpec,
 )
