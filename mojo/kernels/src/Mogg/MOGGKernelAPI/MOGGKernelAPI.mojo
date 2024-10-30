@@ -242,7 +242,6 @@ fn get_address_space() -> AddressSpace:
 
 # Build the StaticTensorSpec parameter for the DPS kernels
 @mogg_register_override("build_static_tensor_specs", 1)
-@export
 fn build_static_tensor_specs[
     type: DType, rank: Int
 ](shape: DimList, strides: DimList) -> StaticTensorSpec[type, rank]:
@@ -256,7 +255,6 @@ fn build_static_tensor_specs[
 
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
 @mogg_register_override("to_managed_tensor_slice", 1)
-@export
 @always_inline
 fn to_managed_tensor_slice[
     type: DType, rank: Int
