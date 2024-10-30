@@ -8,7 +8,7 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import ThreadIdx, BlockDim, GridDim
+from gpu import ThreadIdx, BlockDim, GridDim, barrier
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from memory import UnsafePointer
@@ -32,9 +32,23 @@ fn load_store(
     output[tid] = input[tid]
 
 
-# CHECK-LABEL: test_compile_code
-def test_compile_code():
-    print("== test_compile_code")
+# CHECK-LABEL: test_barrier_compile
+def test_barrier_compile():
+    print("== test_barrier_compile")
+
+    # CHECK: fence syncscope("workgroup") release
+    # CHECK: tail call void @llvm.amdgcn.s.barrier()
+    # CHECK: syncscope("workgroup") acquire
+    print(
+        _compile_code_asm[
+            barrier, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
+
+
+# CHECK-LABEL: test_threadid_compile
+def test_threadid_compile():
+    print("== test_threadid_compile")
 
     # CHECK: .amdgcn_target "amdgcn-amd-amdhsa--gfx942"
     # CHECK: s_waitcnt lgkmcnt
@@ -66,4 +80,5 @@ def test_compile_code():
 
 
 def main():
-    test_compile_code()
+    test_barrier_compile()
+    test_threadid_compile()
