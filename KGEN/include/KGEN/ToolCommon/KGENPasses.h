@@ -140,7 +140,7 @@ using CAPICanonicalizationFn =
     std::function<bool(MlirOperation *, MlirRewriterBase *, void *)>;
 using CompilePatternsFn =
     ErrorOr<SmallVector<SmallVector<CAPICanonicalizationFn>>> (*)(
-        ModuleOp, ArrayRef<SmallVector<StringAttr>>);
+        OwningOpRef<ModuleOp>, ArrayRef<SmallVector<StringAttr>>);
 using BuildPipelineFn =
     std::function<void(mlir::PassManager &, const LibraryOptConfig &)>;
 

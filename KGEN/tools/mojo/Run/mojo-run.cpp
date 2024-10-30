@@ -249,18 +249,18 @@ static void internTimeTraceProfile(M::Context &maxContext) {
 /// successfully, and an unsuccessful exit code otherwise.
 static int executeModule(const State &state, AsyncRT::Runtime &runtime,
                          MLIRContext &context,
-                         const CompilationOptions &options, ModuleOp moduleOp,
-                         TargetInfoAttr target,
+                         const CompilationOptions &options,
+                         OwningOpRef<ModuleOp> module, TargetInfoAttr target,
                          ArrayRef<const char *> arguments,
                          M::Context &maxContext) {
   // Compile the Mojo module to the end of the KGEN pipeline.
   KGENCompiler compiler(context, options);
-  if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, target))
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(*module, target))
     return state.reportError(err.getError());
 
   // Validate that `main` was defined in the module.
-  SymbolTable symtab(moduleOp);
-  ExportMap exports = getExportedSymbols(moduleOp);
+  SymbolTable symtab(*module);
+  ExportMap exports = getExportedSymbols(*module);
   if (exports.find(StringAttr::get(&context, "main")) == exports.end())
     return state.reportError("module does not define a `main` function");
 
@@ -270,7 +270,7 @@ static int executeModule(const State &state, AsyncRT::Runtime &runtime,
   if (failed(objCompilerOr))
     return state.reportError(objCompilerOr.getError());
   ObjectCompiler &objCompiler = **objCompilerOr;
-  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(moduleOp);
+  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(std::move(module));
   if (failed(archiveOr))
     return state.reportError(archiveOr.getError());
 
@@ -363,7 +363,7 @@ static int run(const State &subcommandState) {
 
   // Execute the Mojo program.
   return executeModule(
-      state, runtime, mlirCtx, options, **moduleOp, target,
+      state, runtime, mlirCtx, options, moduleOp.takeValue(), target,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()),
       *ctx);
 }

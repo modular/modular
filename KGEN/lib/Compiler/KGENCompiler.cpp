@@ -188,8 +188,9 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
 /// module. Requires the module symbol table, and the exportMap of all the
 /// canonicalization functions.
 static ErrorOr<SmallVector<SmallVector<CAPICanonicalizationFn>>>
-compilePatterns(ModuleOp module, ArrayRef<SmallVector<StringAttr>> patterns) {
-  MLIRContext *ctx = module.getContext();
+compilePatterns(OwningOpRef<ModuleOp> module,
+                ArrayRef<SmallVector<StringAttr>> patterns) {
+  MLIRContext *ctx = module->getContext();
 
   // Start the execution engine.
   CompilationOptions options;
@@ -217,7 +218,7 @@ compilePatterns(ModuleOp module, ArrayRef<SmallVector<StringAttr>> patterns) {
   auto dict = DictionaryAttr::get(
       ctx, {{StringAttr::get("MLIRCAPI_LINKED", StringType::get(ctx)),
              UnitAttr::get(ctx)}});
-  module->setAttr(EnvAttr::getEnvAttrName(), EnvAttr::get(dict));
+  (*module)->setAttr(EnvAttr::getEnvAttrName(), EnvAttr::get(dict));
 
   // Run the KGEN pipeline, and compile it to an archive.
   KGENCompiler kgenCompiler(*ctx, options);
@@ -225,9 +226,9 @@ compilePatterns(ModuleOp module, ArrayRef<SmallVector<StringAttr>> patterns) {
       *getTargetInfoFor(ctx, llvm::sys::getDefaultTargetTriple(),
                         llvm::sys::getHostCPUName(), getHostCPUFeatures());
   if (auto err = kgenCompiler.runElaborationPipeline(
-          module, target, *loadContext(ctx)->get<AsyncRT::Runtime>()))
+          *module, target, *loadContext(ctx)->get<AsyncRT::Runtime>()))
     return err.takeError();
-  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(module);
+  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(std::move(module));
   if (archiveOr.isError())
     return archiveOr.takeError();
 

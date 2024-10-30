@@ -47,11 +47,11 @@ public:
          PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
   /// Emit the module to a object archive.
-  ErrorOr<BufferRef> emitArchive(ModuleOp module);
+  ErrorOr<BufferRef> emitArchive(OwningOpRef<ModuleOp> module);
 
   /// Emit the module to a object archive as an ElementsAttr that can be used as
   /// an attribute on another operation.
-  ErrorOr<ElementsAttr> emitArchiveAttr(ModuleOp module);
+  ErrorOr<ElementsAttr> emitArchiveAttr(OwningOpRef<ModuleOp> module);
 
   /// Lower the given module to LLVM. Returns the LLVM module on success, and
   /// nullptr on failure.
@@ -94,7 +94,7 @@ private:
   /// Split llvm module and compile them in parallel towards the end of codegen
   /// but stop before AsmPrint. Return the MC compilation results.
   SmallVector<AsyncRT::AnyAsyncValueRef> emitArchiveParallelCompilation(
-      LLVMModuleAndContext llvmModule, Operation *op,
+      LLVMModuleAndContext llvmModule, Location opLoc,
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
 
   /// Link parallel compilation results and call AsmPrint to generate one object

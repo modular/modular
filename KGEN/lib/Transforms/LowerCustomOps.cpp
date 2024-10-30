@@ -693,7 +693,8 @@ void LowerCustomOpsPass::runOnOperation() {
     return;
 
   // Compile the patterns.
-  auto compiledPatterns = lib.compilePatterns(*patternModule, patterns);
+  auto compiledPatterns =
+      lib.compilePatterns(std::move(patternModule), patterns);
   if (compiledPatterns.isError()) {
     mlir::emitError(module.getLoc(), "failed to compile patterns: ")
         << compiledPatterns.getError();

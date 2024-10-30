@@ -680,7 +680,7 @@ static LogicalResult writeBufToTemp(const std::string &saveTempsPrefix,
 
 SmallVector<AsyncRT::AnyAsyncValueRef>
 ObjectCompiler::emitArchiveParallelCompilation(
-    LLVMModuleAndContext llvmModule, Operation *op,
+    LLVMModuleAndContext llvmModule, Location opLoc,
     llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes) {
   CompilerTimeTraceScope traceScope("split-input-module");
 
@@ -693,9 +693,9 @@ ObjectCompiler::emitArchiveParallelCompilation(
   SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
 
   if (noSplitting) {
-    cacheResults.push_back(lowerLLVMModuleToObjects(
-        forwardModule(std::move(llvmModule)), op->getLoc(), parLLC,
-        std::nullopt, /*numFunctionsBase=*/0));
+    cacheResults.push_back(
+        lowerLLVMModuleToObjects(forwardModule(std::move(llvmModule)), opLoc,
+                                 parLLC, std::nullopt, /*numFunctionsBase=*/0));
   } else {
     (void)writeTempModule("pre-split", options.saveTempsPrefix, *llvmModule);
 
@@ -703,7 +703,7 @@ ObjectCompiler::emitArchiveParallelCompilation(
         [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
             std::optional<int64_t> idx, unsigned numFunctionsBase) {
           cacheResults.push_back(lowerLLVMModuleToObjects(
-              std::move(produceModule), op->getLoc(),
+              std::move(produceModule), opLoc,
               !options.enableLLVMPerFunctionSplitting && parLLC, idx,
               numFunctionsBase));
         };
@@ -771,8 +771,8 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
   llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
 
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
-      emitArchiveParallelCompilation(std::move(llvmModule),
-                                     module.getOperation(), symbolLinkageTypes);
+      emitArchiveParallelCompilation(std::move(llvmModule), module->getLoc(),
+                                     symbolLinkageTypes);
 
   andThenSyncMoving(
       cachedResults,
@@ -811,7 +811,7 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
 // emitArchive
 //===----------------------------------------------------------------------===//
 
-ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
+ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
   CompilerTimeTraceScope traceScope("produce-archive");
 
   // Perform a cache aware transformation to translate the module to an archive
@@ -838,15 +838,24 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
 
       // Lower the module to LLVM.
       LLVMModuleAndContext llvmModule;
+      Location moduleLoc = op->getLoc();
+      MLIRContext *moduleCtx = op->getContext();
+
       if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
             return lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
           })) {
+        op->erase();
         return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
             Twine(
                 "failed to lower module to LLVM IR for archive compilation, ") +
                 err.getError(),
-            op->getLoc()));
+            moduleLoc));
       }
+
+      // Release mlir::ModuleOp before codegen happens to reduce memory
+      // pressure.
+      if (options.saveTempsPrefix.empty())
+        op->erase();
 
       CompilerTimeTraceScope traceScope("split-input-module");
 
@@ -857,18 +866,19 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
 
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
       SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
-          emitArchiveParallelCompilation(std::move(llvmModule), op,
+          emitArchiveParallelCompilation(std::move(llvmModule), moduleLoc,
                                          symbolLinkageTypes);
 
       andThenSyncMoving(
-          cachedResults, [this, moduleName = std::move(moduleName), op,
-                          buf = buf.copy(), output = output.copy(),
-                          emitAssembly, options = options, symbolLinkageTypes](
-                             MutableArrayRef<AnyAsyncValueRef> values) mutable {
+          cachedResults,
+          [this, moduleName = std::move(moduleName), op, moduleLoc, moduleCtx,
+           buf = buf.copy(), output = output.copy(), emitAssembly,
+           options = options, symbolLinkageTypes](
+              MutableArrayRef<AnyAsyncValueRef> values) mutable {
 
 #ifdef MODULAR_ENABLE_TELEMETRY
             [[maybe_unused]] auto timeScope =
-                loadContext(op->getContext())
+                loadContext(moduleCtx)
                     ->get<M::Telemetry::TelemetryContext>()
                     ->createUInt64Timer<std::chrono::milliseconds>(
                         "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
@@ -880,7 +890,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
             if (mcLinkResult.isError()) {
 
               return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                  Error(mcLinkResult.getError()), op->getLoc()));
+                  Error(mcLinkResult.getError()), moduleLoc));
             }
 
             WriteableBufferRef linkedObj = *mcLinkResult;
@@ -888,7 +898,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
               if (failed(writeBufToTemp(options.saveTempsPrefix, ".s",
                                         linkedObj))) {
                 return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                    "failed to save asm to saveTempsPrefix", op->getLoc()));
+                    "failed to save asm to saveTempsPrefix", moduleLoc));
               }
               *buf << linkedObj->Buffer::getBuffer();
               std::move(output).emplace(buf.copy());
@@ -916,16 +926,17 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
             if (!result) {
               return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                   "failed to concatenate object files into archive",
-                  op->getLoc()));
+                  moduleLoc));
             }
 
             // Print assembly for saveTemps if needed.
             if (!options.saveTempsPrefix.empty()) {
               ErrorOrSuccess saveTempsResult =
                   emitArchiveSaveTemps(cast<ModuleOp>(op), moduleName);
+              op->erase();
               if (saveTempsResult.isError()) {
                 return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                    saveTempsResult.takeError(), op->getLoc()));
+                    saveTempsResult.takeError(), moduleLoc));
               }
             }
 
@@ -942,6 +953,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
         loadContext(op->getContext()))
         .recordCacheHit("ObjectCompiler::emitArchive");
 #endif
+    op->erase();
     return buf.copy();
   };
 
@@ -952,7 +964,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(ModuleOp module) {
                      << options.enableLLVMPerFunctionSplitting << ')';
 
   auto output = cachedTransform(
-      module, transformCache.copy(),
+      module.release(), transformCache.copy(),
       AsyncRT::AsyncValueRef<Chain>::createReady(runtime),
       std::move(produceArchiveKey), runTransformation, onCacheHit);
   await(output);
@@ -1027,19 +1039,23 @@ ObjectCompiler::lowerLLVMModuleToObjects(
   return result;
 }
 
-ErrorOr<ElementsAttr> ObjectCompiler::emitArchiveAttr(ModuleOp module) {
-  auto bufferOr = emitArchive(module);
-  if (bufferOr.isError())
-    return bufferOr.takeError();
-  BufferRef buffer = bufferOr.takeValue();
-
+ErrorOr<ElementsAttr>
+ObjectCompiler::emitArchiveAttr(OwningOpRef<ModuleOp> module) {
   // Get the standalone archive key to use as the archive name.
   WriteableBufferRef produceStandaloneArchiveKey = WriteableBuffer::get();
   options.print(*produceStandaloneArchiveKey << "emitArchiveAttr(");
   *produceStandaloneArchiveKey << ")";
-  if (failed(mlir::writeBytecodeToFile(module.getOperation(),
+  if (failed(mlir::writeBytecodeToFile(module->getOperation(),
                                        *produceStandaloneArchiveKey)))
     return Error("failed to write bytecode file");
+
+  MLIRContext *moduleCtx = module->getContext();
+
+  auto bufferOr = emitArchive(std::move(module));
+  if (bufferOr.isError())
+    return bufferOr.takeError();
+  BufferRef buffer = bufferOr.takeValue();
+
   // Hash it so the name isn't enormous.
   auto hash = llvm::BLAKE3::hash(
       ArrayRef((const uint8_t *)produceStandaloneArchiveKey->getBufferStart(),
@@ -1047,7 +1063,7 @@ ErrorOr<ElementsAttr> ObjectCompiler::emitArchiveAttr(ModuleOp module) {
 
   // Produce a DenseResourceElementsAttr from the file.
   auto resourceManager =
-      DenseResourceElementsHandle::getManagerInterface(module.getContext());
+      DenseResourceElementsHandle::getManagerInterface(moduleCtx);
 
   // Pretend this is a "tensor" of data.
   // TODO (#6986) It would be much nicer if we didn't have to clone this data
@@ -1055,7 +1071,7 @@ ErrorOr<ElementsAttr> ObjectCompiler::emitArchiveAttr(ModuleOp module) {
   //   prevent us from having to hash the module above.
   auto attrType = RankedTensorType::get(
       {(int64_t)buffer->getBufferSize()},
-      IntegerType::get(module.getContext(), 8, IntegerType::Unsigned));
+      IntegerType::get(moduleCtx, 8, IntegerType::Unsigned));
   auto attrName = "archive_" + llvm::toHex(hash, /*LowerCase=*/true);
   ArrayRef<char> blobData(buffer->getBufferStart(), buffer->getBufferSize());
   auto blob = mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(blobData,

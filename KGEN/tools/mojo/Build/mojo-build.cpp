@@ -142,7 +142,7 @@ enum class OutputType {
 static std::optional<int>
 compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
                        MLIRContext &context, const CompilationOptions &options,
-                       ModuleOp moduleOp, TargetInfoAttr target,
+                       OwningOpRef<ModuleOp> module, TargetInfoAttr target,
                        BufferRef &archive, OutputType outputType) {
   KGENCompiler compiler(context, options);
 
@@ -154,13 +154,13 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
   if (objectCompilerOr.isError())
     return state.reportError(objectCompilerOr.getError());
 
-  if (ErrorOrSuccess err = compiler.runKGENPipeline(moduleOp, target))
+  if (ErrorOrSuccess err = compiler.runKGENPipeline(*module, target))
     return state.reportError(err.getError());
 
   std::unique_ptr<ObjectCompiler> objectCompiler = objectCompilerOr.takeValue();
 
   // Generate a symbol table and an export map for the module post-compile.
-  SymbolTable symtab(moduleOp);
+  SymbolTable symtab(*module);
   switch (outputType) {
   case OutputType::executable:
     if (!symtab.lookup("main"))
@@ -175,7 +175,7 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
   }
 
   // Generate an archive for the module.
-  auto archiveOr = objectCompiler->emitArchive(moduleOp);
+  auto archiveOr = objectCompiler->emitArchive(std::move(module));
   if (failed(archiveOr))
     return state.reportError("failed to produce an archive for the module: " +
                              Twine(archiveOr.getError()));
@@ -503,9 +503,9 @@ static int build(const State &subcommandState) {
 
   // Compile the module to a static archive.
   BufferRef archive;
-  if (std::optional<int> exitCode =
-          compileModuleToArchive(state, runtime, mlirCtx, options, **moduleOp,
-                                 target, archive, outputType))
+  if (std::optional<int> exitCode = compileModuleToArchive(
+          state, runtime, mlirCtx, options, moduleOp.takeValue(), target,
+          archive, outputType))
     return *exitCode;
 
   return linkOutput(outputType, state, args, options, archive);
