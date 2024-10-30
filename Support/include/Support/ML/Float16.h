@@ -59,7 +59,17 @@ constexpr bool is_little_endian =
 namespace Bfloat {
 
 struct bfloat16_t {
+  // https://en.wikipedia.org/wiki/Bfloat16_floating-point_format
+  // Minimum negative value found by enabling sign bit on maximum value
+  static constexpr uint16_t MIN_BITS = 0xFF7F;
+  static constexpr uint16_t MAX_BITS = 0x7F7F;
+
   bfloat16_t(float v) : bits(floatToBf16Bits(v)) {}
+  explicit bfloat16_t(uint16_t rawBits) : bits(rawBits) {}
+
+  static bfloat16_t min() { return bfloat16_t(MIN_BITS); }
+  static bfloat16_t max() { return bfloat16_t(MAX_BITS); }
+
   operator float() {
     constexpr size_t index = is_little_endian ? 1 : 0;
     float result = 0.;
