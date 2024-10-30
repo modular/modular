@@ -450,13 +450,18 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
     func->setAttr(kMOGGViewKernel, UnitAttr::get(func->getContext()));
   func->setDiscardableAttr(kMOGGNumDPSOutputs, registrationInfo.numDPSOperands);
 
-  // Iterate over the decorators to find enable_fusion_for
+  // Iterate over the decorators to find enable_fusion_for/mutable
   for (auto decorator : func.getDecorators()) {
+    std::optional<SmallVector<TypedAttr>> mutableOperands =
+        getDecoratorLambdaArgument(moduleOp, decorator, MOGG_INTRINSIC_MUTABLE,
+                                   SmallVector<size_t>{1});
+
     std::optional<SmallVector<TypedAttr>> enableFusionOperand =
         getDecoratorLambdaArgument(moduleOp, decorator,
                                    MOGG_INTRINSIC_ENABLE_FUSION_FOR,
                                    SmallVector<size_t>{1});
-    if (!enableFusionOperand.has_value())
+
+    if (!enableFusionOperand.has_value() && !mutableOperands.has_value())
       continue;
 
     ArrayAttr argSrcNamesAttr =
@@ -465,7 +470,17 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
       continue;
 
     SmallVector<Attribute> argIdxsAttrs;
-    auto nameArgs = cast<KGEN::VariadicAttr>(enableFusionOperand.value()[0]);
+
+    auto nameArgs = [&]() {
+      if (enableFusionOperand)
+        return cast<KGEN::VariadicAttr>(enableFusionOperand.value()[0]);
+
+      else if (mutableOperands)
+        return cast<KGEN::VariadicAttr>(mutableOperands.value()[0]);
+
+      llvm_unreachable("Unsupported decorator!");
+    }();
+
     for (TypedAttr operandAttr : nameArgs.getValues()) {
       auto [_, nameAttr] =
           cast<LIT::LITStructAttr>(operandAttr).getValues().front();
@@ -475,18 +490,32 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
           llvm::find_if(argSrcNamesAttr.getValue(), [&](Attribute attr) {
             return cast<StringAttr>(attr).getValue() == argName;
           });
+
       if (argIt == argSrcNamesAttr.getValue().end()) {
+        StringRef decorator_name =
+            enableFusionOperand ? "enable_fusion_for" : "mutable";
+
         emitError(structDeclOp->getLoc(),
-                  "enable_fusion_for decorator: invalid argument "
-                  "name");
+                  llvm::formatv("{0} decorator: invalid argument name: {1}",
+                                decorator_name, argName));
         return false;
       }
-      argIdxsAttrs.push_back(builder.getIndexAttr(
-          std::distance(argSrcNamesAttr.getValue().begin(), argIt)));
+
+      auto idx = std::distance(argSrcNamesAttr.getValue().begin(), argIt);
+
+      if (mutableOperands) {
+        idx -= registrationInfo.numDPSOperands.getInt();
+      }
+
+      argIdxsAttrs.push_back(builder.getIndexAttr(idx));
     }
 
-    if (!argIdxsAttrs.empty()) {
+    if (!argIdxsAttrs.empty() && enableFusionOperand) {
       func->setAttr(kMOGGFusableArgs, builder.getArrayAttr(argIdxsAttrs));
+    }
+
+    if (!argIdxsAttrs.empty() && mutableOperands) {
+      func->setAttr(kMOGGBufferArgs, builder.getArrayAttr(argIdxsAttrs));
     }
   }
   return true;

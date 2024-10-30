@@ -74,6 +74,9 @@ constexpr StringLiteral MOGG_INTRINSIC_INPUT_FUSION_HOOK =
 constexpr StringLiteral MOGG_INTRINSIC_OUTPUT_FUSION_HOOK =
     "mogg.dps_output_fusion_hook";
 
+/// MOGG Intrinsic for marking a kernel operand being a `mo.buffer`
+constexpr StringLiteral MOGG_INTRINSIC_MUTABLE = "mogg.mutable";
+
 /// Track the pair of the decorator as it is seen in the LIT IR in its raw from
 /// and the clean processed attribute which is added after it is processed.
 struct MOGGDecorator {
@@ -181,6 +184,8 @@ static constexpr StringLiteral kMOGGLambdasHaveFusionParameterName =
 
 // An ArrayAttr of indices which correspond which operands have fusion enabled.
 static constexpr StringLiteral kMOGGFusableArgs = "mogg.fusable_args";
+
+static constexpr StringLiteral kMOGGBufferArgs = "mogg.buffer_args";
 
 // Fusion interface implementation details.
 static constexpr StringLiteral kMOGGInputLambdas = "_in_lambdas";

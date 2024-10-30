@@ -223,6 +223,7 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "register",
       "elementwise",
       "view_kernel",
+      "mutable",
       "enable_fusion_for",
   };
   auto validateSymbol = [&](TypedAttr callee) {
