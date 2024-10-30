@@ -513,6 +513,9 @@ def main():
         run_matmul_transpose[DType.bfloat16, 1, 5120, 12288](
             ctx, atol=0.5, rng_width=1.0
         )
+        run_matmul_transpose[DType.bfloat16, 1, 131072, 5120](
+            ctx, atol=0.5, rng_width=1.0
+        )
         run_matmul_transpose[DType.bfloat16, 1, 3072, 12288](
             ctx, atol=0.5, rng_width=1.0
         )
