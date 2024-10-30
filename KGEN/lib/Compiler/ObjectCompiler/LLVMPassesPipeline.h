@@ -17,7 +17,8 @@ struct MCInfo;
 
 /// Build a module pass pipeline for a given set of compilation options.
 llvm::ModulePassManager
-buildLLVMOptimizationPipeline(const CompilationOptions &options);
+buildLLVMOptimizationPipeline(llvm::PassBuilder &passBuilder,
+                              const CompilationOptions &options);
 
 bool addPassesToEmitFile(CompilationOptions &options,
                          llvm::LLVMTargetMachine &targetMachine,

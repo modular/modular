@@ -16,6 +16,7 @@
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Transforms/AggressiveInstCombine/AggressiveInstCombine.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
@@ -360,12 +361,15 @@ static void addVectorPasses(FunctionPassManager &FPM,
   FPM.addPass(AlignmentFromAssumptionsPass());
 }
 
-static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
+static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
+                                         const CompilationOptions &options) {
   ModulePassManager MPM;
 
   // Do basic inference of function attributes from known properties of system
   // libraries and other oracles.
   MPM.addPass(InferFunctionAttrsPass());
+
+  passBuilder.invokePipelineStartEPCallbacks(MPM, OptimizationLevel::O3);
 
   // Create an early function pass manager to cleanup the output of the
   // frontend.
@@ -507,8 +511,10 @@ static ModulePassManager buildO3Pipeline(const CompilationOptions &options) {
   return MPM;
 }
 
-static ModulePassManager buildO0Pipeline(const CompilationOptions &options) {
+static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
+                                         const CompilationOptions &options) {
   ModulePassManager MPM;
+  passBuilder.invokePipelineStartEPCallbacks(MPM, OptimizationLevel::O0);
 
   // Build a minimal pipeline based on the semantics required by LLVM,
   // which is just that always inlining occurs. Further, disable generating
@@ -526,13 +532,14 @@ static ModulePassManager buildO0Pipeline(const CompilationOptions &options) {
 }
 
 ModulePassManager
-M::KGEN::buildLLVMOptimizationPipeline(const CompilationOptions &options) {
+M::KGEN::buildLLVMOptimizationPipeline(PassBuilder &passBuilder,
+                                       const CompilationOptions &options) {
   CodeGenOptLevel optLevel = options.getCodeGenOptLevel();
 
   if (optLevel == CodeGenOptLevel::None)
-    return buildO0Pipeline(options);
+    return buildO0Pipeline(passBuilder, options);
   // All non-zero optimization levels are currently equivalent.
-  return buildO3Pipeline(options);
+  return buildO3Pipeline(passBuilder, options);
 }
 
 static TargetPassConfig *

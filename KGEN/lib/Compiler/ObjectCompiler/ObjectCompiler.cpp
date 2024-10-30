@@ -194,7 +194,8 @@ static LogicalResult runLLVMOptPasses(llvm::Module &module,
   passBuilder.crossRegisterProxies(loopAnalysisMgr, funcAnalysisMgr,
                                    sccAnalysisMgr, moduleAnalysisMgr);
 
-  ModulePassManager modulePassMgr = buildLLVMOptimizationPipeline(options);
+  ModulePassManager modulePassMgr =
+      buildLLVMOptimizationPipeline(passBuilder, options);
 
   // Now that we have all of the passes ready, run them.
   modulePassMgr.run(module, moduleAnalysisMgr);
