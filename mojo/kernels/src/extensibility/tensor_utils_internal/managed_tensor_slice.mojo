@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray, OptionalReg
-from math import ceil
+from math import ceil, fma
 from sys import simdwidthof
 from sys.intrinsics import strided_load, strided_store
 
@@ -232,10 +232,25 @@ struct ManagedTensorSlice[
             return self._simd_load_internal[width](ridx)
 
     @always_inline
+    fn _compute_offset(self: Self, index: IndexList[rank]) -> Int:
+        # TODO(GRA-1017): Add address space cases.
+        @parameter
+        if rank == 0:
+            return 0
+
+        var offset = 0
+
+        @parameter
+        for i in range(rank):
+            offset = fma(index[i], self._strides[i], offset)
+
+        return offset
+
+    @always_inline
     fn _simd_load_internal[
         width: Int,
     ](self, index: IndexList[rank]) -> SIMD[type, width]:
-        var flat_index = _dot_prod(index, self._strides)
+        var flat_index = self._compute_offset(index)
         var stride = self._strides[rank - 1]
 
         if stride == 0:
@@ -297,7 +312,7 @@ struct ManagedTensorSlice[
     fn _simd_store_internal[
         width: Int,
     ](self, index: IndexList[rank], val: SIMD[type, width]):
-        var flat_index = _dot_prod(index, self._strides)
+        var flat_index = self._compute_offset(index)
 
         var stride = self._strides[rank - 1]
         if stride == 0:
