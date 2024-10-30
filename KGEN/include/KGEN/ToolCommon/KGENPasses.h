@@ -137,7 +137,7 @@ createElaborateGenerators(TargetInfoAttr target,
 
 struct LibraryOptConfig;
 using CAPICanonicalizationFn =
-    std::function<bool(MlirOperation *, MlirRewriterBase *)>;
+    std::function<bool(MlirOperation *, MlirRewriterBase *, void *)>;
 using CompilePatternsFn =
     ErrorOr<SmallVector<SmallVector<CAPICanonicalizationFn>>> (*)(
         ModuleOp, ArrayRef<SmallVector<StringAttr>>);

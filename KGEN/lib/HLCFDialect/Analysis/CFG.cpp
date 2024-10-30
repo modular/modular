@@ -21,25 +21,27 @@ CFGAnalysis::CFGAnalysis(Operation *op) {
       SmallVector<Attribute> operands(op->getNumOperands());
       SmallVector<ControlFlowTarget> targets;
       node.getEntryTargets(operands, targets);
-      SmallVector<CFGNode> successors;
+      SmallVector<CFGNode> curSuccessors;
       for (const ControlFlowTarget &target : targets) {
-        successors.emplace_back(node, target.index);
-        predecessors[successors.back()].push_back(op);
+        curSuccessors.emplace_back(node, target.index);
+        predecessors[curSuccessors.back()].push_back(op);
       }
+      successors.try_emplace(op, std::move(curSuccessors));
     } else if (auto term = dyn_cast<ControlFlowTerminator>(op)) {
       SmallVector<Attribute> operands(op->getNumOperands());
       SmallVector<ControlFlowTarget> targets;
       term.getBranchTargets(operands, targets);
-      SmallVector<CFGNode> successors;
+      SmallVector<CFGNode> curSuccessors;
       auto node = dyn_cast<ControlFlowNode>(HLCF::getParentNode(term));
       // If the successor is not a control-flow node, then it must be a
       // function, which does not participate in the CFG.
       if (!node)
         return;
       for (const ControlFlowTarget &target : targets) {
-        successors.emplace_back(node, target.index);
-        predecessors[successors.back()].push_back(op);
+        curSuccessors.emplace_back(node, target.index);
+        predecessors[curSuccessors.back()].push_back(op);
       }
+      successors.try_emplace(op, std::move(curSuccessors));
     }
   });
 }

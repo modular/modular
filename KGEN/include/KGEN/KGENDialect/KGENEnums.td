@@ -86,6 +86,7 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   /// Replace the symbol reference to a StructGeneratorOp with a reference to
   /// the concreteized StructInstanceOp.
   I32EnumAttrCase<"InstantiateStructRef", 37, "inst_struct_ref">,
+  I32EnumAttrCase<"AttrToStr", 38, "attr_to_str">,
 ]>;
 
 //===----------------------------------------------------------------------===//

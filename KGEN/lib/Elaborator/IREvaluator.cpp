@@ -120,6 +120,9 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
     return evaluateApplyLike(op, /*withResultSlot=*/true);
   case POC::InstantiateStructRef:
     return evaluateInstantiateStruct(op);
+  case POC::AttrToStr:
+    return {StringAttr::get(mlir::debugString(op.getOperands().front()),
+                            StringType::get(op.getContext()))};
   case POC::Rebind:
     // Catch unfolded rebinds to emit a nicer error message.
     emitError(ErrorTree(
