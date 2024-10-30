@@ -57,6 +57,8 @@ fn mha_decoding_cpu_seq[
     num_heads: Int,
     group: Int,
 ](
+    # S = 1 because it is a decoding kernel
+    # B = 1 because the offsets are calculated when this function is called
     # [B, S, H, D]
     q_ptr: UnsafePointer[Scalar[q_type]],
     # [B, K, H, D]
@@ -72,8 +74,6 @@ fn mha_decoding_cpu_seq[
     batch_idx: Int,
 ):
     # we assume batch size is 1 also seq_length is 1
-    alias batch_size = 1
-    alias seq_length = 1
     alias kv_num_heads = num_heads // group
     var kv_head_idx = head_idx // group
     alias accum_type = get_accum_type[q_type]()
@@ -81,39 +81,33 @@ fn mha_decoding_cpu_seq[
 
     var qk_max = Scalar[accum_type].MIN
     # calculate k.q
-    var q = tb[q_type]().row_major[
-        batch_size, seq_length, num_heads, head_size
-    ]().view(q_ptr)
-    var output = tb[output_type]().row_major[
-        batch_size, seq_length, num_heads, head_size
-    ]().view(output_ptr)
+    var q = tb[q_type]().row_major[num_heads, head_size]().view(q_ptr)
+    var output = tb[output_type]().row_major[num_heads, head_size]().view(
+        output_ptr
+    )
 
     var k = tb[k_type]().row_major(
-        static[batch_size](),
         num_keys,
         static[kv_num_heads](),
         static[head_size](),
     ).view(k_ptr)
 
     var v = tb[v_type]().row_major(
-        static[batch_size](),
         num_keys,
         static[kv_num_heads](),
         static[head_size](),
     ).view(v_ptr)
 
-    var qi = q.tile[batch_size, seq_length, 1, head_size](0, 0, head_idx, 0)
-    var oi = output.tile[batch_size, seq_length, 1, head_size](
-        0, 0, head_idx, 0
-    )
+    var qi = q.tile[1, head_size](head_idx, 0)
+    var oi = output.tile[1, head_size](head_idx, 0)
     for key_idx in range(num_keys):
         # this memory is contiguous so we can use LayoutTensor
-        var k = k.tile[batch_size, 1, 1, head_size](0, key_idx, kv_head_idx, 0)
+        var k = k.tile[1, 1, head_size](key_idx, kv_head_idx, 0)
         var logits_i = Scalar[accum_type](0)
         for d in range(head_size):
             logits_i += (
-                k[0, 0, 0, d][0].cast[accum_type]()
-                * qi[0, 0, 0, d][0].cast[accum_type]()
+                k[0, 0, d][0].cast[accum_type]()
+                * qi[0, d][0].cast[accum_type]()
             )
         logits_i = mask.mask(
             Index(batch_idx, head_idx, num_keys - 1, key_idx),
@@ -136,17 +130,17 @@ fn mha_decoding_cpu_seq[
     var accumulator = tb[accum_type]().layout[head_size]().alloc().fill(0)
 
     for key_idx in range(num_keys):
-        var v = v.tile[batch_size, 1, 1, head_size](0, key_idx, kv_head_idx, 0)
+        var v = v.tile[1, 1, head_size](key_idx, kv_head_idx, 0)
         var logits_i = logits[key_idx]
         for d in range(head_size):
-            accumulator[d] += logits_i * v[0, 0, 0, d][0].cast[accum_type]()
+            accumulator[d] += logits_i * v[0, 0, d][0].cast[accum_type]()
 
     for d in range(head_size):
         oi[d] = accumulator[d].cast[output_type]()
     logits.free()
 
 
-fn mha_decoding_cpu[
+fn run_mha_decoding_cpu[
     q_type: DType,
     k_type: DType,
     v_type: DType,
@@ -172,13 +166,17 @@ fn mha_decoding_cpu[
 ):
     for head_idx in range(num_heads):
         for batch_idx in range(batch_size):
+            var q_batch_offset = head_size * num_heads * batch_idx
+            var kv_batch_offset = head_size * (
+                num_heads // group
+            ) * num_keys * batch_idx
             mha_decoding_cpu_seq[
                 head_size=head_size, num_heads=num_heads, group=group
             ](
-                q_ptr,
-                k_ptr,
-                v_ptr,
-                output_ptr,
+                q_ptr.offset(q_batch_offset),
+                k_ptr.offset(kv_batch_offset),
+                v_ptr.offset(kv_batch_offset),
+                output_ptr.offset(q_batch_offset),
                 scale,
                 num_keys,
                 mask,
@@ -243,6 +241,8 @@ fn mha_decoding_single_batch_warp_shuffle[
     num_threads: Int,
     block_size: Int,  # number of rows of keys one warp processes, 32 means one row per thread
 ](
+    # S = 1 because it is a decoding kernel
+    # B = 1 because the offsets are calculated when this function is called
     # [B, S, H, D]
     q_ptr: UnsafePointer[Scalar[q_type]],
     # vllm uses BHKD for k and BHDK for v, this kernel is slightly different
@@ -261,8 +261,6 @@ fn mha_decoding_single_batch_warp_shuffle[
     alias k_simdwidth = simdwidthof[k_type]()
     alias v_simdwidth = 4  # because one warp reads/writes head_size (= 128) elements, i.e. 4 elements per thread
     alias q_simdwidth = simdwidthof[q_type]()
-    alias batch_size = 1
-    alias seq_length = 1
     alias num_warps = num_threads // WARP_SIZE
 
     # one group of threads will process one row of keys, for block size = 32 thread_group_size == 1 so this
@@ -273,9 +271,7 @@ fn mha_decoding_single_batch_warp_shuffle[
     alias kv_num_heads = num_heads // group
 
     var warp_idx = warp_broadcast(ThreadIdx.x() // WARP_SIZE)
-
-    var head_idx = BlockIdx.y()
-    var kv_head_idx = head_idx // group
+    var kv_head_idx = BlockIdx.y()
 
     # logits shared memory, used to store intermediate calculations
     var logits_smem_ptr = external_memory[
@@ -289,41 +285,44 @@ fn mha_decoding_single_batch_warp_shuffle[
         Scalar[accum_type], alignment = alignof[Scalar[accum_type]]()
     ]()
 
-    var logits = tb[accum_type]().layout(num_keys).shared().view(logits_ptr)
+    var logits = tb[accum_type]().row_major(
+        static[group](), num_keys
+    ).shared().view(logits_ptr)
 
-    var q = tb[q_type]().row_major[
-        batch_size, seq_length, num_heads, head_size
-    ]().view(q_ptr)
+    var q = tb[q_type]().row_major[num_heads, head_size]().view(q_ptr)
 
     var k = tb[k_type]().row_major(
-        static[batch_size](),
         num_keys,
         static[kv_num_heads](),
         static[head_size](),
     ).view(k_ptr)
 
     var v = tb[v_type]().row_major(
-        static[batch_size](),
         num_keys,
         static[kv_num_heads](),
         static[head_size](),
     ).view(v_ptr)
 
-    var q_gmem_tile = q.tile[batch_size, seq_length, 1, head_size](
-        0, 0, head_idx, 0
-    ).reshape[Layout.row_major(thread_group_size, num_elems_per_thread)]()
+    var q_gmem_tile = q.tile[group, head_size](kv_head_idx, 0).reshape[
+        Layout.row_major(thread_group_size, num_elems_per_thread)
+    ]()
 
     var q_smem_tile = tb[q_type]().row_major[
-        thread_group_size, num_elems_per_thread
+        group, thread_group_size, num_elems_per_thread
     ]().shared().alloc()
 
-    alias thread_layout = Layout.row_major(
-        thread_group_size, num_threads // thread_group_size
+    alias thread_layout = Layout.row_major(group, num_threads // group)
+    alias layout = Layout.row_major(
+        group, thread_group_size * num_elems_per_thread
     )
-    copy_dram_to_sram[thread_layout=thread_layout](q_smem_tile, q_gmem_tile)
+    copy_dram_to_sram[thread_layout=thread_layout](
+        q_smem_tile.reshape[layout](), q_gmem_tile.reshape[layout]()
+    )
     barrier()
 
-    var qk_max = Scalar[accum_type].MIN
+    var qk_max = tb[accum_type]().layout[group]().local().alloc().fill(
+        Scalar[accum_type].MIN
+    )
     var nblocks = ceildiv(num_keys, block_size)
 
     # This block calculates dot(q, k) for all the tokens and blocks.
@@ -331,18 +330,15 @@ fn mha_decoding_single_batch_warp_shuffle[
     # constrained[num_warps == block_size]()
     var thread_group_idx = lane_id() // thread_group_size
     var thread_group_offset = lane_id() % thread_group_size
+
     for block_idx in range(warp_idx, nblocks, num_warps):
         # this memory is contiguous so we can use LayoutTensor
         var key_idx = thread_group_idx + block_idx * block_size
-        var k_gmem = k.tile[batch_size, 1, 1, num_elems_per_thread](
-            0, key_idx, kv_head_idx, thread_group_offset
+        var k_gmem = k.tile[1, 1, num_elems_per_thread](
+            key_idx, kv_head_idx, thread_group_offset
         ).reshape[Layout(num_elems_per_thread)]()
 
         var k_register = tb[k_type]().layout[
-            num_elems_per_thread
-        ]().local().alloc()
-
-        var q_register = tb[q_type]().layout[
             num_elems_per_thread
         ]().local().alloc()
 
@@ -353,132 +349,124 @@ fn mha_decoding_single_batch_warp_shuffle[
             k_gmem.vectorize[k_simdwidth]()
         )
 
-        q_register.vectorize[q_simdwidth]().copy_from(
-            q_smem_tile.tile[1, num_elems_per_thread](
-                thread_group_offset, 0
-            ).vectorize[1, q_simdwidth]()
-        )
+        @parameter
+        for group_idx in range(group):
+            var q_register = tb[q_type]().layout[
+                num_elems_per_thread
+            ]().local().alloc()
+            # dot product
+            var q_smem_tile_group = q_smem_tile.tile[
+                1, thread_group_size, num_elems_per_thread
+            ](group_idx, 0, 0).reshape[
+                Layout.row_major(thread_group_size, num_elems_per_thread)
+            ]()
+            q_register.vectorize[q_simdwidth]().copy_from(
+                q_smem_tile_group.tile[1, num_elems_per_thread](
+                    thread_group_offset, 0
+                )
+                .reshape[k_register.layout]()
+                .vectorize[q_simdwidth]()
+            )
 
-        # dot product
-        var qk = inner_product[accum_type](k_register, q_register)
-        # reduce in a thread_group
-        qk = (
-            lane_group_sum[nthreads=thread_group_size](qk)
-            * scale.cast[qk.type]()
-        )
+            var qk = inner_product[accum_type](k_register, q_register)
+            # reduce in a thread_group
+            qk = (
+                lane_group_sum[nthreads=thread_group_size](qk)
+                * scale.cast[qk.type]()
+            )
 
-        qk = mask.mask(
-            Index(
-                int(BlockIdx.z()), int(BlockIdx.y()), num_keys - 1, int(key_idx)
-            ),
-            qk,
-        )
+            qk = mask.mask(
+                Index(
+                    int(BlockIdx.z()),
+                    int(BlockIdx.y()),
+                    num_keys - 1,
+                    int(key_idx),
+                ),
+                qk,
+            )
 
-        # 0th thread of the thread group writes to the shared memory and also
-        # update qk_max
-        if thread_group_offset == 0:
-            if key_idx < num_keys:
-                logits[key_idx] = qk
-                qk_max = max(qk, qk_max)
+            # 0th thread of the thread group writes to the shared memory and also
+            # update qk_max
+            if thread_group_offset == 0:
+                if key_idx < num_keys:
+                    logits[group_idx, key_idx] = qk
+                    qk_max[group_idx] = max(qk, qk_max[group_idx][0])
 
-    # To calculate qk_max, we will have to reduce over threads in a warp and then warp in a block
-    # In one warp only threads with thread_group_offset == 0 contains the valid value of qk_max
-    # Example: if num_threads_groups == 4 then only thread 0, 8, 16 and 24 contains the valid value
-
-    # do reduction in in a warp
     @parameter
-    for i in range(
-        _static_log2[WARP_SIZE // 2](),
-        _static_log2[thread_group_size]() - 1,
-        -1,
-    ):
-        alias offset = 1 << i
-        qk_max = max(qk_max, shuffle_down(qk_max, offset))
+    for group_idx in range(group):
+        # To calculate qk_max, we will have to reduce over threads in a warp and then warp in a block
+        # In one warp only threads with thread_group_offset == 0 contains the valid value of qk_max
+        # Example: if num_threads_groups == 4 then only thread 0, 8, 16 and 24 contains the valid value
 
-    # do reduction in a block
-    var qk_max_reduction_smem = tb[accum_type]().layout[
-        num_warps
-    ]().shared().alloc()
-    # reduce over warps
-    if lane_id() == 0:
-        qk_max_reduction_smem[warp_idx] = qk_max
-    barrier()
+        # do reduction in in a warp
+        @parameter
+        for i in range(
+            _static_log2[WARP_SIZE // 2](),
+            _static_log2[thread_group_size]() - 1,
+            -1,
+        ):
+            alias offset = 1 << i
+            qk_max[group_idx] = max(
+                qk_max[group_idx], shuffle_down(qk_max[group_idx], offset)
+            )
 
-    # this reduction operation is identical on all warps
-    # since all threads need the value qk_max
-    if lane_id() < num_warps:
-        qk_max = rebind[__type_of(qk_max)](qk_max_reduction_smem[lane_id()])
-    else:
-        qk_max = Scalar[accum_type].MIN
-    qk_max = lane_group_max[nthreads=num_warps](qk_max)
-    # TODO: We can use shfl_xor in lane_group_max to remove the need of this broadcast
-    qk_max = warp_broadcast(qk_max)
+        # do reduction in a block
+        var qk_max_reduction_smem = tb[accum_type]().layout[
+            num_warps
+        ]().shared().alloc()
+        # reduce over warps
+        if lane_id() == 0:
+            qk_max_reduction_smem[warp_idx] = qk_max[group_idx]
+        barrier()
 
-    # compute softmax using all threads in a block
-    # need softmax_simdwidth = 4 for best performance
-    alias softmax_simdwidth = 4
+        # this reduction operation is identical on all warps
+        # since all threads need the value qk_max
+        if lane_id() < num_warps:
+            qk_max[group_idx] = rebind[__type_of(qk_max[0])](
+                qk_max_reduction_smem[lane_id()]
+            )
+        else:
+            qk_max[group_idx] = Scalar[accum_type].MIN
+        qk_max[group_idx] = lane_group_max[nthreads=num_warps](
+            qk_max[group_idx]
+        )
+        # TODO: We can use shfl_xor in lane_group_max to remove the need of this broadcast
+        qk_max[group_idx] = warp_broadcast(qk_max[group_idx])
 
-    var exp_sum_ = SIMD[accum_type, softmax_simdwidth](0)
+        # compute softmax using all threads in a block
+        # need softmax_simdwidth = 4 for best performance
 
-    for token in range(
-        ThreadIdx.x(), num_keys // softmax_simdwidth, num_threads
-    ):
-        var logits_v = logits.tile[softmax_simdwidth](token).vectorize[
-            softmax_simdwidth
-        ]()
-        var val = exp(logits_v[0] - qk_max)
-        exp_sum_ += rebind[__type_of(exp_sum_)](val)
-        logits_v[0] = val
+        var exp_sum = Scalar[accum_type](0)
+        for token in range(ThreadIdx.x(), num_keys, num_threads):
+            var val = exp(logits[group_idx, token] - qk_max[group_idx])
+            exp_sum += rebind[__type_of(exp_sum)](val)
+            logits[group_idx, token] = val
 
-    for token_ in range(
-        ThreadIdx.x(), num_keys % softmax_simdwidth, num_threads
-    ):
-        var token = token_ + num_keys // softmax_simdwidth * softmax_simdwidth
-        var val = exp(logits[token] - qk_max)
-        exp_sum_[0] = val[0] + exp_sum_[0]
-        logits[token] = val
+        # shared memory used for block reduction
+        var block_sum_reduction_smem = tb[accum_type]().layout[
+            num_warps
+        ]().shared().alloc()
 
-    var exp_sum = exp_sum_.reduce_add()
+        exp_sum = block_sum_broadcast[num_warps=num_warps](
+            block_sum_reduction_smem, exp_sum
+        )
 
-    # shared memory used for block reduction
-    var block_sum_reduction_smem = tb[accum_type]().layout[
-        num_warps
-    ]().shared().alloc()
+        var inv_exp_sum = 1.0 / exp_sum
+        for token in range(ThreadIdx.x(), num_keys, num_threads):
+            logits[group_idx, token] *= inv_exp_sum
 
-    exp_sum = block_sum_broadcast[num_warps=num_warps](
-        block_sum_reduction_smem, exp_sum
-    )
-
-    var inv_exp_sum = 1.0 / exp_sum
-    for token in range(
-        ThreadIdx.x(), num_keys // softmax_simdwidth, num_threads
-    ):
-        var logits_v = logits.tile[softmax_simdwidth](token).vectorize[
-            softmax_simdwidth
-        ]()
-        logits_v[0] *= inv_exp_sum
-
-    for token_ in range(
-        ThreadIdx.x(), num_keys % softmax_simdwidth, num_threads
-    ):
-        var token = token_ + num_keys // softmax_simdwidth * softmax_simdwidth
-        logits[token] = logits[token] * inv_exp_sum
-
-    # wait for the completion of softmax
-    barrier()
+        # wait for the completion of softmax
+        barrier()
 
     alias num_rows_per_thread = head_size // WARP_SIZE
     constrained[num_rows_per_thread % v_simdwidth == 0]()
 
-    var accumulator = tb[accum_type]().layout[
-        num_rows_per_thread
+    var accumulator = tb[accum_type]().row_major[
+        group, num_rows_per_thread
     ]().local().alloc().fill(0)
 
     for block_idx in range(warp_idx, nblocks, num_warps):
-        var logits_reg = tb[accum_type]().layout[block_size]().local().alloc()
-        logits_reg.vectorize[v_simdwidth]().copy_from(
-            logits.tile[block_size](block_idx).vectorize[v_simdwidth]()
-        )
+        var logits_reg = logits.tile[group, block_size](0, block_idx)
 
         @parameter
         for token in range(block_size):
@@ -487,76 +475,145 @@ fn mha_decoding_single_batch_warp_shuffle[
             # this is faster than simple continue or break
             # but this and min in loading v
             # drops the performance by ~6%
-            var logits_key = logits_reg[token][0] if key_idx < num_keys else 0
+            var logits_key = tb[accum_type]().layout[
+                group
+            ]().local().alloc().fill(0)
+
+            @parameter
+            for group_idx in range(group):
+                logits_key[group_idx] = (
+                    logits_reg[group_idx, token][0] if key_idx < num_keys else 0
+                )
 
             @parameter
             for i in range(num_rows_per_thread // v_simdwidth):
-                var v = v.tile[batch_size, 1, 1, num_rows_per_thread](
-                    0,
+                var v = v.tile[1, 1, num_rows_per_thread](
                     int(min(Int32(key_idx), Int32(num_keys - 1))),
                     kv_head_idx,
                     lane_id(),
                 ).reshape[Layout(head_size)]()
                 var v_vec = v.vectorize[v_simdwidth]()[i]
-                var accumulator_vec = accumulator.vectorize[v_simdwidth]()
-                accumulator_vec[i] += rebind[accumulator_vec.element_type](
-                    logits_key * v_vec.cast[accum_type]()
-                )
+                var accumulator_vec = accumulator.vectorize[1, v_simdwidth]()
+
+                @parameter
+                for group_idx in range(group):
+                    accumulator_vec[group_idx, i] += rebind[
+                        accumulator_vec.element_type
+                    ](logits_key[group_idx][0] * v_vec.cast[accum_type]())
 
     barrier()
 
     alias nstages = _static_log2[num_warps]()
 
-    # reduce output over warps
     @parameter
-    for i in reversed(range(1, nstages + 1)):
-        alias mid = 1 << (i - 1)
-        if warp_idx >= mid and warp_idx < (i << 1):
-            var dst = logits.tile[head_size](warp_idx - mid).tile[
-                num_rows_per_thread
-            ](lane_id())
-            dst.vectorize[v_simdwidth]().copy_from(
-                accumulator.vectorize[v_simdwidth]()
-            )
+    for group_idx in range(group):
         barrier()
-        if warp_idx < mid:
-            var src = logits.tile[head_size](warp_idx).tile[
-                num_rows_per_thread
-            ](lane_id())
+        # reduce output over warps
+        var logits_reduction = tb[accum_type]().layout[
+            head_size * num_warps // 2
+        ]().shared().view(logits.ptr)
+        var accumulator_group = accumulator.tile[1, num_rows_per_thread](
+            group_idx, 0
+        ).reshape[Layout(num_rows_per_thread)]()
 
-            @parameter
-            for t in range(num_rows_per_thread // v_simdwidth):
-                var acc_vec = accumulator.vectorize[v_simdwidth]()
-                acc_vec[t] += rebind[acc_vec.element_type](
-                    src.vectorize[v_simdwidth]()[t]
-                )
-
-        barrier()
-
-    var output = tb[output_type]().row_major[
-        batch_size, seq_length, num_heads, head_size
-    ]().view(output_ptr)
-
-    var output_vec = output.tile[
-        batch_size, seq_length, 1, num_rows_per_thread
-    ](0, 0, head_idx, lane_id()).reshape[
-        Layout(num_rows_per_thread)
-    ]().vectorize[
-        v_simdwidth
-    ]()
-
-    constrained[num_rows_per_thread % v_simdwidth == 0]()
-
-    if warp_idx == 0:
-        # warp zero writes to the global memory
         @parameter
-        for i in range(num_rows_per_thread // v_simdwidth):
-            output_vec[i] = rebind[output_vec.element_type](
-                accumulator.vectorize[v_simdwidth]()[i].cast[output_type]()
-            )
+        for i in reversed(range(1, nstages + 1)):
+            alias mid = 1 << (i - 1)
+            if warp_idx >= mid and warp_idx < (i << 1):
+                var dst = logits_reduction.tile[head_size](warp_idx - mid).tile[
+                    num_rows_per_thread
+                ](lane_id())
+                dst.vectorize[v_simdwidth]().copy_from(
+                    accumulator_group.vectorize[v_simdwidth]()
+                )
+            barrier()
+            if warp_idx < mid:
+                var src = logits_reduction.tile[head_size](warp_idx).tile[
+                    num_rows_per_thread
+                ](lane_id())
+
+                @parameter
+                for t in range(num_rows_per_thread // v_simdwidth):
+                    var acc_vec = accumulator_group.vectorize[v_simdwidth]()
+                    acc_vec[t] += rebind[acc_vec.element_type](
+                        src.vectorize[v_simdwidth]()[t]
+                    )
+
+            barrier()
+
+        var output = tb[output_type]().row_major[num_heads, head_size]().view(
+            output_ptr
+        )
+
+        var output_group = output.tile[group, head_size](kv_head_idx, 0)
+
+        var output_vec = output_group.tile[1, num_rows_per_thread](
+            group_idx, lane_id()
+        ).reshape[Layout(num_rows_per_thread)]().vectorize[v_simdwidth]()
+
+        constrained[num_rows_per_thread % v_simdwidth == 0]()
+        if warp_idx == 0:
+            # warp zero writes to the global memory
+            @parameter
+            for i in range(num_rows_per_thread // v_simdwidth):
+                output_vec[i] = rebind[output_vec.element_type](
+                    accumulator_group.vectorize[v_simdwidth]()[i].cast[
+                        output_type
+                    ]()
+                )
 
 
 fn mha_decoding_warp_shuffle[
+    q_type: DType,
+    k_type: DType,
+    v_type: DType,
+    output_type: DType,
+    mask_t: MHAMask,
+    head_size: Int,
+    num_heads: Int,
+    group: Int,
+    num_threads: Int,
+    block_size: Int,  # number of rows of keys one warp processes, 32 means one row per thread
+](
+    # S = 1 because it is a decoding kernel
+    # B = 1 because the offsets are calculated when this kernel is called
+    # [B, S, H, D]
+    q_ptr: UnsafePointer[Scalar[q_type]],
+    # vllm uses BHKD for k and BHDK for v, this kernel is slightly different
+    # from vllm because of this
+    # [B, K, H, D]
+    k_ptr: UnsafePointer[Scalar[k_type]],
+    # [B, K, H, D]
+    v_ptr: UnsafePointer[Scalar[v_type]],
+    # [B, S, H, D]
+    output_ptr: UnsafePointer[Scalar[output_type]],
+    scale: Float32,
+    num_keys: Int,
+    mask: mask_t,
+):
+    var batch_idx = BlockIdx.z()
+    var q_batch_offset = head_size * num_heads * batch_idx
+    var kv_batch_offset = head_size * (
+        num_heads // group
+    ) * num_keys * batch_idx
+    mha_decoding_single_batch_warp_shuffle[
+        head_size=head_size,
+        num_heads=num_heads,
+        group=group,
+        num_threads=num_threads,
+        block_size=block_size,
+    ](
+        q_ptr.offset(q_batch_offset),
+        k_ptr.offset(kv_batch_offset),
+        v_ptr.offset(kv_batch_offset),
+        output_ptr.offset(q_batch_offset),
+        scale,
+        num_keys,
+        mask,
+    )
+
+
+fn run_mha_decoding_warp_shuffle[
     q_type: DType,
     k_type: DType,
     v_type: DType,
@@ -584,7 +641,7 @@ fn mha_decoding_warp_shuffle[
     alias num_threads = 128
     alias block_size = 32
     var func = ctx.compile_function[
-        mha_decoding_single_batch_warp_shuffle[
+        mha_decoding_warp_shuffle[
             q_type,
             k_type,
             v_type,
@@ -596,8 +653,8 @@ fn mha_decoding_warp_shuffle[
             num_threads,
             block_size,
         ],
-        dump_ptx=False,
     ]()
+
     alias accum_type = get_accum_type[q_type]()
     alias num_warps = num_threads // WARP_SIZE
     var shared_mem_bytes = max(
@@ -606,7 +663,7 @@ fn mha_decoding_warp_shuffle[
         align_up(num_keys, block_size),
         # shared memory for scratch space when doing block reductions
         head_size * num_warps // 2,
-    ) * sizeof[accum_type]()
+    ) * sizeof[accum_type]() * group
     ctx.enqueue_function(
         func,
         q_ptr,
@@ -616,7 +673,7 @@ fn mha_decoding_warp_shuffle[
         scale,
         num_keys,
         mask,
-        grid_dim=(1, num_heads, batch_size),
+        grid_dim=(1, num_heads // group, batch_size),
         block_dim=num_threads,
         shared_mem_bytes=shared_mem_bytes,
     )

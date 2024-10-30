@@ -6,7 +6,7 @@
 
 
 from collections import OptionalReg
-from math import align_down, ceildiv, exp, iota, recip
+from math import align_down, ceildiv, exp, iota, recip, align_up
 from os import abort
 from sys import alignof, bitwidthof, simdwidthof
 
@@ -569,6 +569,26 @@ fn flash_attention[
                 alias WN = 32
                 # num warps in M and N, multipled by warp size.
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+
+                var shared_mem_bytes = 80 * 1024
+                var num_blocks_y = num_heads
+
+                alias block_size_warp_shuffle = 16
+
+                @parameter
+                if not add_attn_mask:
+                    num_blocks_y = num_blocks_y // group
+                    alias accum_type = get_accum_type[q.type]()
+                    alias num_warps = num_threads // WARP_SIZE
+                    var shared_mem_bytes = max(
+                        # shared memory to store number of logits
+                        # align up by block size because we don't check oob in copy_from when doing the second gevm
+                        align_up(
+                            int(max_cache_valid_length), block_size_warp_shuffle
+                        ),
+                        # shared memory for scratch space when doing block reductions
+                        int(depth * num_warps // 2),
+                    ) * sizeof[accum_type]() * group
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask.rank,
@@ -590,10 +610,11 @@ fn flash_attention[
                         use_mask_tensor=add_attn_mask,
                         use_tensor_core=use_tensor_core,
                         ragged=ragged,
+                        block_size_warp_shuffle=block_size_warp_shuffle,
                     ]
                 ](
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80 * 1024
+                        shared_mem_bytes
                     ),
                 )
 
@@ -609,9 +630,9 @@ fn flash_attention[
                     max_cache_valid_length,
                     valid_length,
                     mask_functor,
-                    grid_dim=(1, Int(num_heads), Int(batch_size)),
+                    grid_dim=(1, Int(num_blocks_y), Int(batch_size)),
                     block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=80 * 1024,
+                    shared_mem_bytes=shared_mem_bytes,
                 )
             else:
                 mha_gpu_naive[
@@ -798,6 +819,24 @@ fn flash_attention[
                 # num warps in M and N, multipled by warp size.
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
+                var shared_mem_bytes = 80 * 1024
+                var num_blocks_y = num_heads
+
+                alias block_size_warp_shuffle = 16
+
+                @parameter
+                if not add_attn_mask:
+                    num_blocks_y = num_blocks_y // group
+                    alias accum_type = get_accum_type[q.type]()
+                    alias num_warps = num_threads // WARP_SIZE
+                    var shared_mem_bytes = max(
+                        # shared memory to store number of logits
+                        # align up by block size because we don't check oob in copy_from when doing the second gevm
+                        align_up(num_keys, block_size_warp_shuffle),
+                        # shared memory for scratch space when doing block reductions
+                        depth * num_warps // 2,
+                    ) * sizeof[accum_type]() * group
+
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask.rank,
@@ -819,14 +858,14 @@ fn flash_attention[
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_tensor_core=use_tensor_core,
+                        block_size_warp_shuffle=block_size_warp_shuffle,
                     ]
                 ](
                     # TODO: Avoid hard coding shared memory needed.
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80 * 1024
+                        shared_mem_bytes
                     ),
                 )
-
                 ctx.enqueue_function(
                     func,
                     q.data,
@@ -838,9 +877,9 @@ fn flash_attention[
                     batch_size,
                     num_keys,
                     mask_functor,
-                    grid_dim=(1, num_heads, batch_size),
+                    grid_dim=(1, num_blocks_y, batch_size),
                     block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=80 * 1024,
+                    shared_mem_bytes=shared_mem_bytes,
                 )
 
             else:
@@ -1697,6 +1736,7 @@ fn mha_decoding[
     use_mask_tensor: Bool = True,
     use_tensor_core: Bool = True,
     ragged: Bool = False,
+    block_size_warp_shuffle: Int = 16,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: cache_t,
@@ -1778,7 +1818,7 @@ fn mha_decoding[
             group=group,
             num_threads=num_threads,
             # TODO: select block_size based on num_keys, 32 is better for large num_keys ~ 512
-            block_size=16,
+            block_size=block_size_warp_shuffle,
         ](
             q_ptr.offset(q_batch_offset),
             k_ptr,
@@ -1811,6 +1851,7 @@ fn mha_decoding[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_tensor_core: Bool = True,
+    block_size_warp_shuffle: Int = 16,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_ptr: UnsafePointer[Scalar[k_type]],
@@ -1862,7 +1903,7 @@ fn mha_decoding[
             group=group,
             num_threads=num_threads,
             # TODO: select block_size based on num_keys, 32 is better for large num_keys ~ 512
-            block_size=16,
+            block_size=block_size_warp_shuffle,
         ](
             q_ptr.offset(q_batch_offset),
             k_ptr.offset(kv_batch_offset),
