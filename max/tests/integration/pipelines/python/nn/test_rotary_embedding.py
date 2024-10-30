@@ -17,7 +17,7 @@ from max.graph import Dim, Graph, TensorType, TensorValue, TensorValueLike, ops
 from modular_graph_test import modular_graph_test
 from nn import RotaryEmbedding
 from nn.kernels import fused_qk_ragged_rope
-from nn.kv_cache import (
+from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,

@@ -12,7 +12,7 @@ from max.dtype import DType
 from max.graph import BufferType, Graph, TensorType, TensorValue, ops
 from modular_graph_test import modular_graph_test
 from nn import NaiveAttentionWithRope, Linear, RotaryEmbedding
-from nn.kv_cache import KVCacheParams, KVCacheStrategy
+from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
 from torch import nn
 from transformers import StaticCache
 from transformers.models.llama.configuration_llama import LlamaConfig

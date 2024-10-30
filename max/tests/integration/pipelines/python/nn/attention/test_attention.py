@@ -16,7 +16,7 @@ from modular_graph_test import modular_graph_test
 from nn import Linear
 from nn.attention import Attention
 from nn.kernels import flash_attention_ragged_with_causal_mask
-from nn.kv_cache import (
+from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,

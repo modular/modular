@@ -8,7 +8,11 @@ import asyncio
 
 from max.driver import CUDA
 from max.dtype import DType
-from nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
+from max.pipelines.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    load_kv_manager,
+)
 
 
 def test_kv_cache_gpu():

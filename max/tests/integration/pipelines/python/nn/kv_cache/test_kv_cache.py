@@ -9,7 +9,7 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
-from nn.kv_cache import (
+from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,

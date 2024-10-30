@@ -12,17 +12,17 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import Graph, TensorType
+from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
 from nn import (
     MLP,
-    NaiveAttentionWithRope,
     Embedding,
     Linear,
+    NaiveAttentionWithRope,
     RMSNorm,
     RotaryEmbedding,
     Transformer,
     TransformerBlock,
 )
-from nn.kv_cache import KVCacheParams, KVCacheStrategy
 
 
 class Weights:

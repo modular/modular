@@ -13,7 +13,7 @@ from evaluate_llama import PROMPTS, SupportedTestModels, next_token_with_logits
 from llama3.config import SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3, Llama3Tokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
-from nn.kv_cache import KVCacheStrategy
+from max.pipelines.kv_cache import KVCacheStrategy
 
 
 @dataclass(frozen=True)

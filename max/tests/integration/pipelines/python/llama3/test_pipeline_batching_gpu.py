@@ -18,7 +18,7 @@ from llama3.llama3 import (
     Llama3Tokenizer,
 )
 from max.pipelines.interfaces import TokenGeneratorRequest
-from nn.kv_cache import KVCacheStrategy
+from max.pipelines.kv_cache import KVCacheStrategy
 
 
 @dataclass(frozen=True)

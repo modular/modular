@@ -7,7 +7,11 @@
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from nn.kv_cache import KVCacheParams, KVCacheStrategy, load_kv_manager
+from max.pipelines.kv_cache import (
+    KVCacheParams,
+    KVCacheStrategy,
+    load_kv_manager,
+)
 
 
 @pytest.mark.asyncio

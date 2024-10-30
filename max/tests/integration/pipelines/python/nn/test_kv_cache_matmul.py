@@ -12,7 +12,7 @@ from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 from modular_graph_test import modular_graph_test
 from nn.kernels import fused_qkv_ragged_matmul
-from nn.kv_cache import (
+from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
@@ -72,9 +72,15 @@ def test_fused_qkv_ragged_matmul(session):
             is_cache_empty_type,
         ],
     ) as g:
-        input, input_row_offset, wqkv, blocks, cache_lengths, lookup_table, is_cache_empty = (
-            g.inputs
-        )
+        (
+            input,
+            input_row_offset,
+            wqkv,
+            blocks,
+            cache_lengths,
+            lookup_table,
+            is_cache_empty,
+        ) = g.inputs
         layer_idx = ops.constant(
             0,
             DType.uint32,
