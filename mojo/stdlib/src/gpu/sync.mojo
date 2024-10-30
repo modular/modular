@@ -24,7 +24,22 @@ fn barrier():
     """Performs a synchronization barrier on block (equivelent to `__syncthreads`
     in CUDA).
     """
-    __mlir_op.`nvvm.barrier0`()
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        __mlir_op.`nvvm.barrier0`()
+    else:
+        __mlir_op.`pop.fence`[
+            _type=None,
+            syncscope = "workgroup".value,
+            ordering = __mlir_attr.`#pop<atomic_ordering release>`,
+        ]()
+        llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
+        __mlir_op.`pop.fence`[
+            _type=None,
+            syncscope = "workgroup".value,
+            ordering = __mlir_attr.`#pop<atomic_ordering acquire>`,
+        ]()
 
 
 # ===----------------------------------------------------------------------===#
