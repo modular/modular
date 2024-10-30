@@ -469,6 +469,7 @@ struct AddBiasToDouble:
 
 @compiler.register("inplace_increment_elem", num_dps_outputs=0)
 struct BasicInplace:
+    @compiler.mutable("input")
     @staticmethod
     fn execute[
         type: DType,
@@ -481,6 +482,7 @@ struct BasicInplace:
 # Have this nearly identical version as having a raise changes the Mojo function's signature
 @compiler.register("inplace_increment_elem_raises", num_dps_outputs=0)
 struct BasicInplaceRaises:
+    @compiler.mutable("input")
     @staticmethod
     fn execute[
         type: DType,
