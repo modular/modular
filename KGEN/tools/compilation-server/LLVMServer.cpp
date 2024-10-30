@@ -97,7 +97,7 @@ std::string LLVMServer::emitArchive(const EmitArchiveParams &params) {
   ObjectCompiler &objCompiler = **compilerOr;
 
   // Emit archive.
-  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(*moduleOp);
+  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(std::move(moduleOp));
   if (failed(archiveOr))
     return "Error: cannot execute emitArchive";
 

@@ -480,7 +480,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   // -emit and -execute both require compiled objects.
-  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(*theModule);
+  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(std::move(theModule));
   if (failed(archiveOr)) {
     return failure(clOptions.reportError("failed to emit archive: " +
                                          Twine(archiveOr.getError())));

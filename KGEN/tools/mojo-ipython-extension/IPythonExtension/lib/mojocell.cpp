@@ -491,7 +491,7 @@ static int build(llvm::StringRef code, llvm::StringRef inputName) {
 
   std::unique_ptr<ObjectCompiler> objectCompiler = objectCompilerOr.takeValue();
   // Generate an archive for the module.
-  auto archiveOr = objectCompiler->emitArchive(*module);
+  auto archiveOr = objectCompiler->emitArchive(std::move(module));
   if (failed(archiveOr))
     return state.reportError("failed to produce an archive for the module: " +
                              Twine(archiveOr.getError()));

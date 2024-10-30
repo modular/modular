@@ -473,7 +473,7 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
                           ExportedSymbol(ExportKind::Exported)});
   OwningOpRef<ModuleOp> sliceModule =
       produceStandaloneModule(symbolTable, exportedSymbols);
-  auto bufferOr = impl->objCompiler->emitArchive(*sliceModule);
+  auto bufferOr = impl->objCompiler->emitArchive(std::move(sliceModule));
   if (bufferOr.isError()) {
     impl->expressionLogger->errorLog(
         "Failed to produce standalone archive: {0}", bufferOr.getError());
