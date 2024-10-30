@@ -166,7 +166,6 @@ struct LayoutTensor[
     """
 
     alias index_type: DType = _get_index_type(layout, address_space)
-    alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
 
     var ptr: UnsafePointer[Scalar[dtype], address_space]
 
@@ -2034,16 +2033,13 @@ struct LayoutTensor[
 
     @always_inline
     fn distance[
-        _layout: Layout,
-        _uint_dtype: DType = _get_unsigned_type(_layout, address_space),
+        _layout: Layout  # see MOCO-1089
     ](
         self, src: LayoutTensor[dtype, _layout, address_space=address_space]
-    ) -> Scalar[_uint_dtype]:
+    ) -> UInt:
         """Returns the distance from the input address."""
 
-        return Scalar[_uint_dtype](
-            (int(self.ptr) - int(src.ptr)) // sizeof[dtype]()
-        )
+        return UInt(int(self.ptr) - int(src.ptr)) // sizeof[dtype]()
 
     # Returns the linear index of an elem_i 0 ... size(layout).
     #
@@ -2329,7 +2325,7 @@ struct LayoutTensor[
         self,
         src: LayoutTensor,
         src_idx_bound: Int = UNKNOWN_VALUE,
-        base_offset: Self.uint_type = 0,
+        base_offset: Int = UNKNOWN_VALUE,
     ):
         constrained[
             self.address_space == _GPUAddressSpace.SHARED,
@@ -2406,7 +2402,7 @@ struct LayoutTensor[
 
                 @parameter
                 for j in range(num_vecs_per_swizzle):
-                    alias dst_offset = Self.uint_type(layout(j))
+                    alias dst_offset = layout(j)
                     var swizzled_offset = dst_offset
 
                     # Swizzle each vector within the first 2^bits rows.
@@ -2414,13 +2410,10 @@ struct LayoutTensor[
                     if swizzle:
                         alias swizzle_fn = swizzle.value()
                         swizzled_offset = (
-                            Self.uint_type(
-                                swizzle_fn(
-                                    (base_offset + dst_offset)
-                                    // self.element_size
-                                )
-                                * self.element_size
+                            swizzle_fn(
+                                (base_offset + dst_offset) // self.element_size
                             )
+                            * self.element_size
                             - base_offset
                         )
 
@@ -2448,7 +2441,7 @@ struct LayoutTensor[
                             var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
                             async_copy[element_size_bytes](
                                 src_ptr.bitcast[dtype]() + src_idx,
-                                dst_ptr + int(dst_idx),
+                                dst_ptr + dst_idx,
                                 src_copy_size,
                             )
                         else:
@@ -2458,10 +2451,7 @@ struct LayoutTensor[
                                 eviction_policy=eviction_policy,
                             ](
                                 src_ptr.bitcast[dtype]() + src_idx,
-                                dst_ptr
-                                + int(
-                                    dst_idx,
-                                ),
+                                dst_ptr + dst_idx,
                             )
             else:
                 alias is_rank2 = src.rank == 2 and self.rank == 2
@@ -2486,17 +2476,14 @@ struct LayoutTensor[
                 for i in range(num_vecs_per_swizzle):
                     alias dst_offset = layout(i)
 
-                    var swizzled_offset = Self.uint_type(dst_offset)
+                    var swizzled_offset = dst_offset
 
                     @parameter
                     if swizzle:
                         alias swizzle_fn = swizzle.value()
                         swizzled_offset = (
-                            Self.uint_type(
-                                swizzle_fn(
-                                    (base_offset + dst_offset)
-                                    // self.element_size
-                                )
+                            swizzle_fn(
+                                (base_offset + dst_offset) // self.element_size
                             )
                             * self.element_size
                             - base_offset
@@ -2521,7 +2508,7 @@ struct LayoutTensor[
                         var copy_size_bytes = element_size_bytes if i * num_vecs_per_swizzle + j < copy_bound else 0
                         async_copy[element_size_bytes](
                             src_ptr.bitcast[dtype]() + src_idx,
-                            dst_ptr + int(dst_idx),
+                            dst_ptr + dst_idx,
                             copy_size_bytes,
                         )
 
