@@ -12,16 +12,13 @@ import os
 import signal
 from dataclasses import dataclass, field
 from typing import (
-    Any,
     AsyncGenerator,
     Generic,
     Mapping,
     Optional,
     TypeVar,
-    Union,
 )
 
-import numpy as np
 from max.pipelines.interfaces import (
     TokenGeneratorRequest,
     TokenGeneratorTokenizer,
@@ -32,7 +29,6 @@ from max.serve.scheduler.queues import (
     BatchQueueConfig,
 )
 from max.serve.telemetry.stopwatch import StopWatch
-from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 
 @dataclass(frozen=True)
@@ -380,45 +376,3 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         # Request ids which were in the input batch but were not produced
         # in the output batch are assumed completed.
         return batch_input.keys() - batch_output.keys()
-
-
-class IdentityTokenGeneratorTokenizer(
-    Generic[TokenGeneratorContext],
-    TokenGeneratorTokenizer[TokenGeneratorContext, str],
-):
-    async def encode(self, prompt: str) -> str:
-        return prompt
-
-    async def decode(
-        self,
-        context: TokenGeneratorContext,
-        encoded: Any,
-    ) -> str:
-        if isinstance(encoded, str):
-            return encoded
-        return ""
-
-
-class PreTrainedTokenGeneratorTokenizer(
-    Generic[TokenGeneratorContext],
-    TokenGeneratorTokenizer[TokenGeneratorContext, np.ndarray],
-):
-    def __init__(
-        self,
-        delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast, None],
-    ) -> None:
-        self.delegate = delegate
-
-    async def encode(self, prompt: str) -> np.ndarray:
-        if self.delegate:
-            return np.array(self.delegate.encode(prompt))
-        return np.ones([0])
-
-    async def decode(
-        self,
-        context: TokenGeneratorContext,
-        encoded: np.ndarray,
-    ) -> str:
-        if self.delegate:
-            return self.delegate.decode(encoded)
-        return ""

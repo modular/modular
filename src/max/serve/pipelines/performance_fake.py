@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 import numpy as np
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
-from max.serve.pipelines.llm import PreTrainedTokenGeneratorTokenizer
+from max.pipelines import PreTrainedTokenGeneratorTokenizer
 
 
 @dataclass
@@ -208,7 +208,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
 
 
 def get_performance_fake(
-    mode: Literal["no-op", "speed-of-light", "vllm"]
+    mode: Literal["no-op", "speed-of-light", "vllm"],
 ) -> PerformanceFakingTokenGenerator:
     """Construct a performance fake for the given performance mode."""
     if mode == "no-op":

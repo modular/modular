@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
-from max.serve.pipelines.llm import IdentityTokenGeneratorTokenizer
+from max.pipelines import IdentityTokenGeneratorTokenizer
 
 
 @dataclass

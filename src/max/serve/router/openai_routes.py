@@ -16,9 +16,9 @@ from typing import AsyncGenerator, List, Literal, Optional, cast
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from max.pipelines import PreTrainedTokenGeneratorTokenizer
 from max.serve.pipelines.deps import token_pipeline_state
 from max.serve.pipelines.llm import (
-    PreTrainedTokenGeneratorTokenizer,
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
 )
