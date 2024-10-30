@@ -8,10 +8,12 @@
 
 from math import align_down
 from sys import simdwidthof, sizeof
+from memory.unsafe import bitcast
 
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, lane_id
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
+from gpu.intrinsics import lop
 from layout._utils import load_to_simd
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -422,6 +424,88 @@ struct TensorCore[
                         fragments[num_frags_round_even, 0] = rebind[frag_type](
                             vec
                         )
+
+    @always_inline
+    fn load_b[
+        *,
+        type_b: DType,
+        type0: DType,
+        type_scales: DType,
+        layout0: Layout,
+        element_layout0: Layout,
+        layout1: Layout,
+        element_layout1: Layout,
+        layout2: Layout,
+        element_layout2: Layout,
+    ](
+        self,
+        warp_tile: LayoutTensor[
+            type_b,
+            layout0,
+            address_space = AddressSpace.SHARED,
+            element_layout=element_layout0, **_,
+        ],
+        fragments: LayoutTensor[
+            type0,
+            layout1,
+            element_layout=element_layout1,
+            address_space = AddressSpace.LOCAL, **_,
+        ],
+        scales: LayoutTensor[
+            type_scales,
+            layout2,
+            element_layout=element_layout2,
+            address_space = AddressSpace.LOCAL, **_,
+        ],
+        mma_tile_coordk: UInt = 0,  # the k corrdinate of mma tile
+    ):
+        constrained[self.supported_half]()
+
+        alias frag_type = fragments.element_type
+        alias simd_size = simdwidthof[in_type]()
+        alias num_frags = fragments.shape[0]()
+        alias pack_factor = 8
+        alias repack_tile = Index(64, 16)
+
+        @always_inline
+        fn int4tobf16(
+            i4: Int32, scale: SIMD[DType.bfloat16, 1]
+        ) -> SIMD[DType.bfloat16, 2]:
+            alias MASK: Int32 = 0x000F000F
+            alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
+
+            # May introduce numerical error here
+            var BF16_BIAS = -136 * SIMD[DType.bfloat16, 2](scale)
+            alias lut: Int32 = (0xF0 & 0xCC) | 0xAA
+            var BF16_SCALE = SIMD[DType.bfloat16, 2](scale, scale)
+
+            var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
+
+            var v = bitcast[DType.bfloat16, 2](t).fma(BF16_SCALE, BF16_BIAS)
+            return v
+
+        # The wrap_tile is of shape [WK // 64, 128 * n_mma]
+        # Every contigous 128 ints stores a 64x16 repacked tile
+        var mma_tile = warp_tile.tile[
+            1, (repack_tile[0] * repack_tile[1]) // pack_factor
+        ](0, mma_tile_coordk)
+
+        var vec = bitcast[DType.int32, 4](
+            mma_tile.vectorize[1, 4]()[ThreadIdx.x() % WARP_SIZE]
+        )
+
+        @parameter
+        for i in range(0, num_frags, 2):
+            var q_int = vec[i // 2]
+            var v1 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i]))
+            q_int >>= 4
+            var v2 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i]))
+            fragments[i, 0] = rebind[frag_type](v1.join(v2))
+            q_int >>= 4
+            v1 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1]))
+            q_int >>= 4
+            v2 = int4tobf16(q_int, bitcast[DType.bfloat16, 1](scales[i + 1]))
+            fragments[i + 1, 0] = rebind[frag_type](v1.join(v2))
 
     @always_inline
     fn mma(
