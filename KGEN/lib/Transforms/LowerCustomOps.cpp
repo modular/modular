@@ -109,7 +109,11 @@ static StringAttr generateInstantiateStub(SymbolTable &symtab, StringAttr name,
       cast<FunctionType>(evaluator.getReboundType(callee.getFunctionType()));
   ImplicitLocOpBuilder b{callee.getLoc(), OpBuilder(name.getContext())};
   StringAttr instName = b.getStringAttr(prefix + Twine(counter++));
-  auto inst = b.create<GeneratorOp>(instName, SignatureType::get(funcType));
+  SignatureType calleeSig = callee.getSignature().getSpecializedSignature(
+      params, [&] { return mlir::emitError(callee.getLoc()); });
+  auto inst = b.create<GeneratorOp>(
+      instName, SignatureType::get(funcType, calleeSig.getArgConventions(),
+                                   calleeSig.getFnEffects()));
   inst.setExported();
   symtab.insert(inst);
 
@@ -117,8 +121,6 @@ static StringAttr generateInstantiateStub(SymbolTable &symtab, StringAttr name,
   SmallVector<Value> args;
   for (Type type : funcType.getInputs())
     args.push_back(body->addArgument(type, b.getLoc()));
-  SignatureType calleeSig =
-      callee.getSignature().getSpecializedSignature(params);
   auto call =
       b.create<CallOp>(SymbolConstantAttr::get(name, calleeSig, params), args);
   b.create<ReturnOp>(call.getResults());
@@ -147,12 +149,13 @@ static void sliceInto(SymbolTable &dst, SymbolTable &src, StringAttr name) {
 
   while (!worklist.empty()) {
     StringAttr attr = worklist.pop_back_val();
-    if (dst.lookup(attr))
-      continue;
     Operation *op = src.lookup(attr);
-    assert(op && "op was already moved?");
+    if (!op)
+      continue;
     src.remove(op);
     op->remove();
+    if (Operation *existing = dst.lookup(attr))
+      dst.erase(existing);
     dst.insert(op);
     if (auto func = dyn_cast<FuncOp>(op))
       func.setNotExported();
@@ -225,7 +228,7 @@ struct MemoryUseNode {
 };
 
 struct ModRefAnalysis : public mlir::RewriterBase::Listener {
-  ModRefAnalysis(AsyncRT::Runtime &runtime, const SymbolTable &symtab)
+  ModRefAnalysis(AsyncRT::Runtime &runtime, SymbolTable &symtab)
       : symtab(symtab), runtime(runtime), cg(symtab) {}
 
   void computeCaptures(ModuleOp module);
@@ -248,7 +251,7 @@ struct ModRefAnalysis : public mlir::RewriterBase::Listener {
     }
   }
 
-  const SymbolTable &symtab;
+  SymbolTable &symtab;
   AsyncRT::Runtime &runtime;
   CallGraph cg;
   DenseMap<Operation *, std::unique_ptr<MemoryUseNode>> allResults;
@@ -301,6 +304,15 @@ mlirCMRAnalysisGetPrevModRefValues(void *ptr, MlirOperation op,
     (*results) = wrap(op);
     ++results;
   }
+}
+
+MLIR_CAPI_EXPORTED MlirSymbolTable mlirCMRAnalysisGetSymbolTable(void *ptr) {
+  return wrap(&((CMRAnalysis *)ptr)->mr.symtab);
+}
+
+MLIR_CAPI_EXPORTED MlirAttribute
+mlirSymbolConstantGetSymbolRef(MlirAttribute attr) {
+  return wrap(cast<SymbolConstantAttr>(unwrap(attr)).getSymbol());
 }
 }
 
@@ -710,7 +722,9 @@ void LowerCustomOpsPass::runOnOperation() {
                 << (void *)mlirCMRAnalysisGetNextModRefCount
                 << (void *)mlirCMRAnalysisGetPrevModRefCount
                 << (void *)mlirCMRAnalysisGetNextModRefValues
-                << (void *)mlirCMRAnalysisGetPrevModRefValues;
+                << (void *)mlirCMRAnalysisGetPrevModRefValues
+                << (void *)mlirCMRAnalysisGetSymbolTable
+                << (void *)mlirSymbolConstantGetSymbolRef;
 
   // Raise all calls.
   llvm::MapVector<std::pair<StringAttr, ArrayAttr>, StringAttr> instances;
@@ -783,9 +797,21 @@ void LowerCustomOpsPass::runOnOperation() {
     if (concrete)
       continue;
     auto [name, attrs] = instance;
+    mlir::AttrTypeWalker symFinder;
+    symFinder.addWalk([&, symtabRef = &instanceSymtab](FlatSymbolRefAttr ref) {
+      if (symtabRef->lookup(ref.getAttr()))
+        return;
+      Operation *op = symtab.lookup(ref.getAttr());
+      if (!op)
+        return;
+      symtabRef->insert(op->clone());
+      return;
+    });
     SmallVector<TypedAttr> params;
-    for (Attribute attr : attrs)
+    for (Attribute attr : attrs) {
+      symFinder.walk(attr);
       params.push_back(cast<TypedAttr>(attr));
+    }
     concrete = generateInstantiateStub(instanceSymtab, name,
                                        ParameterExprArrayAttr::get(ctx, params),
                                        "__op_inst_", counter);

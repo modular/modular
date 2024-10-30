@@ -99,7 +99,7 @@ struct ModRefAnalysis:
         ptr.free()
         return result^
 
-    fn get_prev_movref(inout self, op: Operation) -> List[Operation]:
+    fn get_prev_modref(inout self, op: Operation) -> List[Operation]:
         size = external_call["mlirCMRAnalysisGetPrevModRefCount", Int](
             UnsafePointer.address_of(self), op
         )
@@ -146,7 +146,7 @@ fn unused_str(
     inout op: Operation, inout b: Rewriter, inout mr: ModRefAnalysis
 ) -> Bool:
     nextOps = mr.get_next_modref(op)
-    prevOps = mr.get_prev_movref(op)
+    prevOps = mr.get_prev_modref(op)
     if len(nextOps) != 0:
         return False
     if len(prevOps) != 1:
@@ -195,7 +195,7 @@ fn str_attr[T: AnyTrivialRegType, //, value: T]() -> StringLiteral:
 fn opt_push_pop[
     T: Movable
 ](inout op: Operation, inout b: Rewriter, inout mr: ModRefAnalysis) -> Bool:
-    prevOps = mr.get_prev_movref(op)
+    prevOps = mr.get_prev_modref(op)
     if len(prevOps) != 1:
         return False
     prev = prevOps[0]
@@ -288,16 +288,17 @@ fn test_push_pop():
 struct Thing:
     var x: Int
 
+    @no_inline
+    fn __moveinit__(inout self, owned existing: Self):
+        self.x = existing.x
+
 
 # CHECK-LABEL: kgen.func export @test_push_pop_nontrivial
 @export
 fn test_push_pop_nontrivial() -> Thing:
-    # CHECK-NEXT: %struct =
-    # CHECK-NEXT: %0 = pop.stack_allocation
-    # CHECK-NEXT: lifetime.start(%0)
-    # CHECK-NEXT: store %struct, %0
-    # CHECK-NEXT: call {{.*}}(%arg0, %0)
-    # CHECK-NEXT: lifetime.end(%0)
+    # CHECK-NEXT: %struct = kgen.param.constant: struct<(index) memoryOnly> = <{ 1 }>
+    # CHECK-NEXT: %0 = kgen.call {{.*}}(%struct)
+    # CHECK-NEXT: store %0, %arg0
     var stack = Stack[Thing]()
 
     stack.push(Thing(1))

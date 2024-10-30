@@ -546,7 +546,7 @@ Elaborator::instantiateGeneratorReference(
   StringAttr name = cast<FlatSymbolRefAttr>(calleeSymbol.getSymbol()).getAttr();
   Operation *calleeOp = oldSymTab.lookup(name);
 
-  if (!calleeOp) {
+  if (!calleeOp || !isa<GeneratorOpInterface>(calleeOp)) {
     InstantiatedOpInterface inst =
         concreteInsts.read([name](auto &map) { return map.at(name); });
     ImplNode *node =
