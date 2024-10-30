@@ -39,10 +39,8 @@ LSPBatchClient M::createTestClient(bool attachDebugger) {
 
 Document M::createDocumentFromInputFile(StringRef fileName) {
   std::string fullPath = std::filesystem::canonical(
-                             std::filesystem::path(std::getenv("MODULAR_PATH")))
-                             .lexically_normal() /
-                         "KGEN" / "unittests" / "mojo-lsp-server" / "inputs" /
-                         fileName.str();
+      std::filesystem::path(std::getenv("MODULAR_PATH")).lexically_normal() /
+      "KGEN" / "unittests" / "mojo-lsp-server" / "inputs" / fileName.str());
   auto bufferOr = toModularErrorOr(llvm::MemoryBuffer::getFile(fullPath));
   if (failed(bufferOr))
     llvm::report_fatal_error(Twine("Error reading the file ") + fullPath +
@@ -53,10 +51,9 @@ Document M::createDocumentFromInputFile(StringRef fileName) {
 
 Document M::createDocumentFromInputFileWithinPackage(StringRef fileName) {
   std::string fullPath = std::filesystem::canonical(
-                             std::filesystem::path(std::getenv("MODULAR_PATH")))
-                             .lexically_normal() /
-                         "KGEN" / "unittests" / "mojo-lsp-server" /
-                         "inputs_with_package" / fileName.str();
+      std::filesystem::path(std::getenv("MODULAR_PATH")).lexically_normal() /
+      "KGEN" / "unittests" / "mojo-lsp-server" / "inputs_with_package" /
+      fileName.str());
   auto bufferOr = toModularErrorOr(llvm::MemoryBuffer::getFile(fullPath));
   if (failed(bufferOr))
     llvm::report_fatal_error(Twine("Error reading the file ") + fullPath +
