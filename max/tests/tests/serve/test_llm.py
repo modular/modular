@@ -14,7 +14,7 @@ from typing import Optional
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
-from max.pipelines import TokenGeneratorContext as Context
+from max.pipelines import IdentityTokenGeneratorTokenizer
 from max.pipelines.interfaces import (
     TokenGenerator,
     TokenGeneratorFactory,
@@ -27,7 +27,6 @@ from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.llm import (
-    IdentityTokenGeneratorTokenizer,
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )

@@ -13,7 +13,6 @@ import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
 from fastapi.testclient import TestClient as SyncTestClient
-from max.pipelines.interfaces import TokenGeneratorRequest
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
@@ -24,7 +23,6 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGeneratorTokenizer,
 )
 from max.serve.pipelines.llm import (
-    IdentityTokenGeneratorTokenizer,
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
