@@ -23,7 +23,7 @@ from sys import (
 
 from bit import is_power_of_two
 from buffer import NDBuffer
-from gpu import BlockIdx, GridDim, ThreadIdx
+from gpu import BlockIdx, GridDim, ThreadIdx, BlockDim
 from gpu.host import Device, DeviceContext
 from gpu.host.info import Info
 from runtime import tracing
@@ -287,7 +287,6 @@ fn _perfect_vectorized_impl[
     var vector_end_unrolled_simd = align_down(
         UInt(size), UInt(unrolled_simd_width)
     )
-
     for unrolled_simd_idx in range(
         0, vector_end_unrolled_simd, unrolled_simd_width
     ):
@@ -1764,8 +1763,11 @@ fn parallelize_over_rows[
 # stencil
 # ===----------------------------------------------------------------------===#
 
+alias stencil = _stencil_impl_cpu
+alias stencil_gpu = _stencil_impl_gpu
 
-fn stencil[
+
+fn _stencil_impl_cpu[
     rank: Int,
     stencil_rank: Int,
     stencil_axis: IndexList[stencil_rank],
@@ -1922,3 +1924,128 @@ fn stencil[
             )
 
     sync_parallelize[task_func](num_workers)
+
+
+fn _stencil_impl_gpu[
+    rank: Int,
+    stencil_rank: Int,
+    stencil_axis: IndexList[stencil_rank],
+    simd_width: Int,
+    type: DType,
+    map_fn: fn (IndexList[stencil_rank]) capturing [_] -> (
+        IndexList[stencil_rank],
+        IndexList[stencil_rank],
+    ),
+    map_strides: fn (dim: Int) capturing [_] -> Int,
+    load_fn: fn[simd_width: Int, type: DType] (IndexList[rank]) capturing [
+        _
+    ] -> SIMD[type, simd_width],
+    compute_init_fn: fn[simd_width: Int] () capturing [_] -> SIMD[
+        type, simd_width
+    ],
+    compute_fn: fn[simd_width: Int] (
+        IndexList[rank], SIMD[type, simd_width], SIMD[type, simd_width]
+    ) capturing [_] -> SIMD[type, simd_width],
+    compute_finalize_fn: fn[simd_width: Int] (
+        IndexList[rank], SIMD[type, simd_width]
+    ) capturing [_] -> None,
+](
+    ctx: DeviceContext, shape: IndexList[rank], input_shape: IndexList[rank]
+) raises:
+    """(Naive implementation) Computes stencil operation in parallel on GPU.
+
+    Parameters:
+        rank: Input and output domain rank.
+        stencil_rank: Rank of stencil subdomain slice.
+        stencil_axis: Stencil subdomain axes.
+        simd_width: The SIMD vector width to use.
+        type: The input and output data type.
+        map_fn: A function that a point in the output domain to the input co-domain.
+        map_strides: A function that returns the stride for the dim.
+        load_fn: A function that loads a vector of simd_width from input.
+        compute_init_fn: A function that initializes vector compute over the stencil.
+        compute_fn: A function the process the value computed for each point in the stencil.
+        compute_finalize_fn: A function that finalizes the computation of a point in the output domain given a stencil.
+
+    Args:
+        ctx: The DeviceContext to use for GPU execution.
+        shape: The shape of the output buffer.
+        input_shape: The shape of the input buffer.
+    """
+    constrained[rank == 4, "Only stencil of rank-4 supported"]()
+    constrained[
+        stencil_axis[0] == 1 and stencil_axis[1] == 2,
+        "Only stencil spatial axes [1, 2] are supported",
+    ]()
+
+    # GPU kernel implementation
+    @always_inline
+    @parameter
+    fn stencil_kernel():
+        # Get thread indices
+        var tid_x = ThreadIdx.x()
+        var tid_y = ThreadIdx.y()
+        var bid_x = BlockIdx.x()
+        var bid_y = BlockIdx.y()
+        var bid_z = BlockIdx.z()
+
+        # Calculate global indices
+        var x = bid_x * BlockDim.x() + tid_x
+        var y = bid_y * BlockDim.y() + tid_y
+
+        # Early exit if outside bounds
+        if x >= shape[2] or y >= shape[1]:
+            return
+
+        # Create output point indices
+        var indices = IndexList[rank](bid_z, y, x, 0)
+
+        # Process stencil for this point
+        var stencil_indices = IndexList[stencil_rank](
+            indices[stencil_axis[0]], indices[stencil_axis[1]]
+        )
+        var bounds = map_fn(stencil_indices)
+        var lower_bound = bounds[0]
+        var upper_bound = bounds[1]
+        var step_i = map_strides(0)
+        var step_j = map_strides(1)
+        var result = compute_init_fn[simd_width]()
+        var input_height = input_shape[1]
+        var input_width = input_shape[2]
+
+        # Handle boundary conditions
+        if lower_bound[0] < 0:
+            var mul_i = ceildiv(-lower_bound[0], step_i)
+            lower_bound[0] = lower_bound[0] + mul_i * step_i
+        if lower_bound[1] < 0:
+            var mul_j = ceildiv(-lower_bound[1], step_j)
+            lower_bound[1] = lower_bound[1] + mul_j * step_j
+
+        # Process stencil window
+        for i in range(
+            lower_bound[0],
+            min(input_height, upper_bound[0]),
+            step_i,
+        ):
+            for j in range(
+                lower_bound[1],
+                min(input_width, upper_bound[1]),
+                step_j,
+            ):
+                var point_idx = IndexList[rank](indices[0], i, j, indices[3])
+                var val = load_fn[simd_width, type](point_idx)
+                result = compute_fn[simd_width](point_idx, result, val)
+
+        compute_finalize_fn[simd_width](indices, result)
+
+    # Calculate grid and block dimensions
+    var block_dim = (32, 32, 1)
+    var grid_dim = (
+        ceildiv(shape[2], block_dim[0]),  # width
+        ceildiv(shape[1], block_dim[1]),  # height
+        shape[0],  # batch size
+    )
+
+    # Compile and launch kernel
+    var kernel = ctx.compile_function[stencil_kernel]()
+    ctx.enqueue_function(kernel, grid_dim=grid_dim, block_dim=block_dim)
