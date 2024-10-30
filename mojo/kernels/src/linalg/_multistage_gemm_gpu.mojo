@@ -463,32 +463,52 @@ fn multistage_mma[
                                 num_pipeline_stages - 1
                             )[].reshape[b_next_smem_layout]()
 
-                            # TODO: can we guard at compile time num_b_rows is set here?
-                            var num_rows_bound = num_b_rows.value() if transpose_b_next else max(
-                                0,
-                                num_b_rows.value()
-                                - (prefetch_tile_id - num_iters) * BK,
-                            )
-
                             alias row_size = b_next_smem_layout.stride[
                                 0
                             ].value()
 
-                            copy_dram_to_sram_async[
-                                thread_layout = Layout.row_major(
-                                    num_threads * simd_size // row_size,
-                                    row_size // simd_size,
-                                ),
-                                swizzle = transpose_b_next
-                                or b_type.is_half_float(),
-                                masked=True,
-                            ](
-                                b_smem_prefetch_tile.vectorize[1, simd_size](),
-                                next_b_iter[]
-                                .bitcast[b_type]()
-                                .vectorize[1, simd_size](),
-                                num_rows_bound,
-                            )
+                            if not num_b_rows:
+                                copy_dram_to_sram_async[
+                                    thread_layout = Layout.row_major(
+                                        num_threads * simd_size // row_size,
+                                        row_size // simd_size,
+                                    ),
+                                    swizzle = transpose_b_next
+                                    or b_type.is_half_float(),
+                                ](
+                                    b_smem_prefetch_tile.vectorize[
+                                        1, simd_size
+                                    ](),
+                                    next_b_iter[]
+                                    .bitcast[b_type]()
+                                    .vectorize[1, simd_size](),
+                                )
+
+                            else:
+                                # TODO: can we guard at compile time num_b_rows is set here?
+                                var num_rows_bound = num_b_rows.value() if transpose_b_next else max(
+                                    0,
+                                    num_b_rows.value()
+                                    - (prefetch_tile_id - num_iters) * BK,
+                                )
+
+                                copy_dram_to_sram_async[
+                                    thread_layout = Layout.row_major(
+                                        num_threads * simd_size // row_size,
+                                        row_size // simd_size,
+                                    ),
+                                    swizzle = transpose_b_next
+                                    or b_type.is_half_float(),
+                                    masked=True,
+                                ](
+                                    b_smem_prefetch_tile.vectorize[
+                                        1, simd_size
+                                    ](),
+                                    next_b_iter[]
+                                    .bitcast[b_type]()
+                                    .vectorize[1, simd_size](),
+                                    num_rows_bound,
+                                )
 
                             next_b_iter._incr()
 
