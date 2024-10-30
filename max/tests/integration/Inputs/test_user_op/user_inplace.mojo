@@ -9,7 +9,6 @@ from register import mogg_register
 
 
 @mogg_register("mutable_test_op")
-@export
 fn mutable_test_op[
     type: DType,
     rank: Int,
