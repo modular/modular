@@ -490,7 +490,6 @@ struct Mode:
         return self.value == other.value
 
 
-@value
 struct Bench:
     """Defines the main Benchmark struct which executes a Benchmark and print result.
     """
