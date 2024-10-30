@@ -269,7 +269,7 @@ class Graph:
             yield None
         except Exception as e:
             diags = "\n  ".join(diagnostics)
-            raise ValueError(f"Diagnostics:\n    {diags}\n") from e
+            raise ValueError(f"Diagnostics:\n    {diags}\n{e}") from None
         finally:
             handle.detach()
 
@@ -400,7 +400,8 @@ class Graph:
             raise ValueError(
                 "Graph failed to verify. Please file an issue. This should be"
                 " impossible."
-            ) from e
+                + f"\n{e}"
+            ) from None
 
     def _load_mlir(self, path: Path):
         self._unique_symbolic_dim_counter = 0
