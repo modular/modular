@@ -580,15 +580,20 @@ fn flash_attention[
                     num_blocks_y = num_blocks_y // group
                     alias accum_type = get_accum_type[q.type]()
                     alias num_warps = num_threads // WARP_SIZE
-                    var shared_mem_bytes = max(
-                        # shared memory to store number of logits
-                        # align up by block size because we don't check oob in copy_from when doing the second gevm
-                        align_up(
-                            int(max_cache_valid_length), block_size_warp_shuffle
-                        ),
-                        # shared memory for scratch space when doing block reductions
-                        int(depth * num_warps // 2),
-                    ) * sizeof[accum_type]() * group
+                    shared_mem_bytes = (
+                        max(
+                            # shared memory to store number of logits
+                            # align up by block size because we don't check oob in copy_from when doing the second gevm
+                            align_up(
+                                int(max_cache_valid_length),
+                                block_size_warp_shuffle,
+                            ),
+                            # shared memory for scratch space when doing block reductions
+                            int(depth * num_warps // 2),
+                        )
+                        * sizeof[accum_type]()
+                        * group
+                    )
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask.rank,
@@ -829,13 +834,17 @@ fn flash_attention[
                     num_blocks_y = num_blocks_y // group
                     alias accum_type = get_accum_type[q.type]()
                     alias num_warps = num_threads // WARP_SIZE
-                    var shared_mem_bytes = max(
-                        # shared memory to store number of logits
-                        # align up by block size because we don't check oob in copy_from when doing the second gevm
-                        align_up(num_keys, block_size_warp_shuffle),
-                        # shared memory for scratch space when doing block reductions
-                        depth * num_warps // 2,
-                    ) * sizeof[accum_type]() * group
+                    shared_mem_bytes = (
+                        max(
+                            # shared memory to store number of logits
+                            # align up by block size because we don't check oob in copy_from when doing the second gevm
+                            align_up(num_keys, block_size_warp_shuffle),
+                            # shared memory for scratch space when doing block reductions
+                            depth * num_warps // 2,
+                        )
+                        * sizeof[accum_type]()
+                        * group
+                    )
 
                 var func = ctx.compile_function[
                     mha_decoding[
