@@ -40,7 +40,6 @@ from utils.numerics import isnan, min_finite
 
 
 @mogg_register("kv_cache_length_h8_d128_bshd_bf16")
-@export
 fn kv_cache_length_h8_d128_bshd_bf16[
     target: StringLiteral = "cpu"
 ](
@@ -55,7 +54,6 @@ fn kv_cache_length_h8_d128_bshd_bf16[
 
 
 @mogg_register("kv_cache_length_h6_d48_bshd_f32")
-@export
 fn kv_cache_length_h6_d48_bshd_f32[
     target: StringLiteral = "cpu"
 ](
@@ -70,7 +68,6 @@ fn kv_cache_length_h6_d48_bshd_f32[
 
 
 @mogg_register("kv_cache_length_h8_d128_bshd_f32")
-@export
 fn kv_cache_length_h8_d128_bshd_f32[
     target: StringLiteral = "cpu"
 ](
@@ -85,7 +82,6 @@ fn kv_cache_length_h8_d128_bshd_f32[
 
 
 @mogg_register("kv_cache_length_h1_d16_bshd_f32")
-@export
 fn kv_cache_length_h1_d16_bshd_f32[
     target: StringLiteral = "cpu"
 ](
@@ -100,7 +96,6 @@ fn kv_cache_length_h1_d16_bshd_f32[
 
 
 @mogg_register("kv_cache_length_h1_d16_bshd_bf16")
-@export
 fn kv_cache_length_h1_d16_bshd_bf16[
     target: StringLiteral = "cpu"
 ](
@@ -115,7 +110,6 @@ fn kv_cache_length_h1_d16_bshd_bf16[
 
 
 @mogg_register("kv_cache_length_h8_d32_bshd_bf16")
-@export
 fn kv_cache_length_h8_d32_bshd_bf16[
     target: StringLiteral = "cpu"
 ](
@@ -130,7 +124,6 @@ fn kv_cache_length_h8_d32_bshd_bf16[
 
 
 @mogg_register("kv_cache_length_h8_d32_bshd_f32")
-@export
 fn kv_cache_length_h8_d32_bshd_f32[
     target: StringLiteral = "cpu"
 ](
@@ -145,7 +138,6 @@ fn kv_cache_length_h8_d32_bshd_f32[
 
 
 @mogg_register("kv_cache_length_h8_d64_bshd_bf16")
-@export
 fn kv_cache_length_h8_d64_bshd_bf16[
     target: StringLiteral = "cpu"
 ](
@@ -160,7 +152,6 @@ fn kv_cache_length_h8_d64_bshd_bf16[
 
 
 @mogg_register("kv_cache_length_h8_d64_bshd_f32")
-@export
 fn kv_cache_length_h8_d64_bshd_f32[
     target: StringLiteral = "cpu"
 ](
@@ -175,7 +166,6 @@ fn kv_cache_length_h8_d64_bshd_f32[
 
 
 @mogg_register("kv_cache_length_h8_d128_bshd_bf16_continuous_batch")
-@export
 fn kv_cache_length_h8_d128_bshd_bf16_continuous_batch[
     target: StringLiteral = "cpu"
 ](
@@ -190,7 +180,6 @@ fn kv_cache_length_h8_d128_bshd_bf16_continuous_batch[
 
 
 @mogg_register("kv_cache_length_h8_d128_bshd_f32_continuous_batch")
-@export
 fn kv_cache_length_h8_d128_bshd_f32_continuous_batch[
     target: StringLiteral = "cpu"
 ](
@@ -205,7 +194,6 @@ fn kv_cache_length_h8_d128_bshd_f32_continuous_batch[
 
 
 @mogg_register("kv_cache_length_h1_d16_bshd_bf16_continuous_batch")
-@export
 fn kv_cache_length_h1_d16_bshd_bf16_continuous_batch[
     target: StringLiteral = "cpu"
 ](
@@ -220,7 +208,6 @@ fn kv_cache_length_h1_d16_bshd_bf16_continuous_batch[
 
 
 @mogg_register("kv_cache_length_h1_d16_bshd_f32_continuous_batch")
-@export
 fn kv_cache_length_h1_d16_bshd_f32_continuous_batch[
     target: StringLiteral = "cpu"
 ](
@@ -235,7 +222,6 @@ fn kv_cache_length_h1_d16_bshd_f32_continuous_batch[
 
 
 @mogg_register("kv_cache_length_h8_d32_bshd_bf16_continuous_batch")
-@export
 fn kv_cache_length_h8_d32_bshd_bf16_continuous_batch[
     target: StringLiteral = "cpu"
 ](
@@ -250,7 +236,6 @@ fn kv_cache_length_h8_d32_bshd_bf16_continuous_batch[
 
 
 @mogg_register("kv_cache_length_h8_d32_bshd_f32_continuous_batch")
-@export
 fn kv_cache_length_h8_d32_bshd_f32_continuous_batch[
     target: StringLiteral = "cpu"
 ](
@@ -265,7 +250,6 @@ fn kv_cache_length_h8_d32_bshd_f32_continuous_batch[
 
 
 @mogg_register("kv_cache_length_h8_d64_bshd_bf16_continuous_batch")
-@export
 fn kv_cache_length_h8_d64_bshd_bf16_continuous_batch[
     target: StringLiteral = "cpu"
 ](
@@ -280,7 +264,6 @@ fn kv_cache_length_h8_d64_bshd_bf16_continuous_batch[
 
 
 @mogg_register("kv_cache_length_h8_d64_bshd_f32_continuous_batch")
-@export
 fn kv_cache_length_h8_d64_bshd_f32_continuous_batch[
     target: StringLiteral = "cpu"
 ](
@@ -323,7 +306,6 @@ fn _kv_cache_length[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h6_d48_bshd")
-@export
 fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
     type: DType,
     hidden_state_shape: DimList,
@@ -364,7 +346,6 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_bshd")
-@export
 fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
     type: DType,
     hidden_state_shape: DimList,
@@ -405,7 +386,6 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h1_d16_bshd")
-@export
 fn fused_qkv_matmul_kv_cache_h1_d16_bshd[
     type: DType,
     hidden_state_shape: DimList,
@@ -451,7 +431,6 @@ alias embed_fn_type = fn[type: DType, width: Int] (
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d32_bshd")
-@export
 fn fused_qkv_matmul_kv_cache_h8_d32_bshd[
     type: DType,
     hidden_state_shape: DimList,
@@ -492,7 +471,6 @@ fn fused_qkv_matmul_kv_cache_h8_d32_bshd[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d64_bshd")
-@export
 fn fused_qkv_matmul_kv_cache_h8_d64_bshd[
     type: DType,
     hidden_state_shape: DimList,
@@ -533,7 +511,6 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch")
-@export
 fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
     type: DType,
     hidden_state_shape: DimList,
@@ -574,7 +551,6 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch")
-@export
 fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
     type: DType,
     hidden_state_shape: DimList,
@@ -615,7 +591,6 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch")
-@export
 fn fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch[
     type: DType,
     hidden_state_shape: DimList,
@@ -656,7 +631,6 @@ fn fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch")
-@export
 fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
     type: DType,
     hidden_state_shape: DimList,
@@ -1264,7 +1238,6 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch[
 
 
 @mogg_register("flash_attention_kv_cache_h6_d48_bshd")
-@export
 fn flash_attention_kv_cache_h6_d48_bshd[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1299,7 +1272,6 @@ fn flash_attention_kv_cache_h6_d48_bshd[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d128_bshd")
-@export
 fn flash_attention_kv_cache_h8_d128_bshd[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1334,7 +1306,6 @@ fn flash_attention_kv_cache_h8_d128_bshd[
 
 
 @mogg_register("flash_attention_kv_cache_h1_d16_bshd")
-@export
 fn flash_attention_kv_cache_h1_d16_bshd[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1369,7 +1340,6 @@ fn flash_attention_kv_cache_h1_d16_bshd[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d32_bshd")
-@export
 fn flash_attention_kv_cache_h8_d32_bshd[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1404,7 +1374,6 @@ fn flash_attention_kv_cache_h8_d32_bshd[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d64_bshd")
-@export
 fn flash_attention_kv_cache_h8_d64_bshd[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1439,7 +1408,6 @@ fn flash_attention_kv_cache_h8_d64_bshd[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d128_bshd_continuous_batch")
-@export
 fn flash_attention_kv_cache_h8_d128_bshd_continuous_batch[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1474,7 +1442,6 @@ fn flash_attention_kv_cache_h8_d128_bshd_continuous_batch[
 
 
 @mogg_register("flash_attention_kv_cache_h1_d16_bshd_continuous_batch")
-@export
 fn flash_attention_kv_cache_h1_d16_bshd_continuous_batch[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1509,7 +1476,6 @@ fn flash_attention_kv_cache_h1_d16_bshd_continuous_batch[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d32_bshd_continuous_batch")
-@export
 fn flash_attention_kv_cache_h8_d32_bshd_continuous_batch[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1544,7 +1510,6 @@ fn flash_attention_kv_cache_h8_d32_bshd_continuous_batch[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d64_bshd_continuous_batch")
-@export
 fn flash_attention_kv_cache_h8_d64_bshd_continuous_batch[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1669,7 +1634,6 @@ fn _flash_attention_kv_cache_impl[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch")
-@export
 fn flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1694,7 +1658,6 @@ fn flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch")
-@export
 fn flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1719,7 +1682,6 @@ fn flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch")
-@export
 fn flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -1744,7 +1706,6 @@ fn flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch[
 
 
 @mogg_register("flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch")
-@export
 fn flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -2017,7 +1978,6 @@ alias kv_params_h8_d64_bshd = KVCacheStaticParams(num_heads=8, head_size=64)
 
 
 @mogg_register("contiguous_kv_cache_collection_h6_d48_bshd")
-@export
 fn contiguous_kv_cache_collection_h6_d48_bshd[
     type: DType, //, target: StringLiteral
 ](
@@ -2042,7 +2002,6 @@ fn contiguous_kv_cache_collection_h6_d48_bshd[
 
 
 @mogg_register("contiguous_kv_cache_collection_h8_d128_bshd")
-@export
 fn contiguous_kv_cache_collection_h8_d128_bshd[
     type: DType, //, target: StringLiteral
 ](
@@ -2067,7 +2026,6 @@ fn contiguous_kv_cache_collection_h8_d128_bshd[
 
 
 @mogg_register("contiguous_kv_cache_collection_h1_d16_bshd")
-@export
 fn contiguous_kv_cache_collection_h1_d16_bshd[
     type: DType, //, target: StringLiteral
 ](
@@ -2092,7 +2050,6 @@ fn contiguous_kv_cache_collection_h1_d16_bshd[
 
 
 @mogg_register("contiguous_kv_cache_collection_h8_d32_bshd")
-@export
 fn contiguous_kv_cache_collection_h8_d32_bshd[
     type: DType, //, target: StringLiteral
 ](
@@ -2117,7 +2074,6 @@ fn contiguous_kv_cache_collection_h8_d32_bshd[
 
 
 @mogg_register("contiguous_kv_cache_collection_h8_d64_bshd")
-@export
 fn contiguous_kv_cache_collection_h8_d64_bshd[
     type: DType, //, target: StringLiteral
 ](
@@ -2142,7 +2098,6 @@ fn contiguous_kv_cache_collection_h8_d64_bshd[
 
 
 @mogg_register("continuous_batching_kv_cache_collection_h8_d128_bshd")
-@export
 fn continuous_batching_kv_cache_collection_h8_d128_bshd[
     type: DType, //, target: StringLiteral
 ](
@@ -2163,7 +2118,6 @@ fn continuous_batching_kv_cache_collection_h8_d128_bshd[
 
 
 @mogg_register("continuous_batching_kv_cache_collection_h8_d32_bshd")
-@export
 fn continuous_batching_kv_cache_collection_h8_d32_bshd[
     type: DType, //, target: StringLiteral
 ](
@@ -2184,7 +2138,6 @@ fn continuous_batching_kv_cache_collection_h8_d32_bshd[
 
 
 @mogg_register("continuous_batching_kv_cache_collection_h8_d64_bshd")
-@export
 fn continuous_batching_kv_cache_collection_h8_d64_bshd[
     type: DType, //, target: StringLiteral
 ](
@@ -2205,7 +2158,6 @@ fn continuous_batching_kv_cache_collection_h8_d64_bshd[
 
 
 @mogg_register("continuous_batching_kv_cache_collection_h1_d16_bshd")
-@export
 fn continuous_batching_kv_cache_collection_h1_d16_bshd[
     type: DType, //, target: StringLiteral
 ](

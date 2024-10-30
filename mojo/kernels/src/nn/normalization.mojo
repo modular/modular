@@ -602,7 +602,6 @@ fn layer_norm_cpu[
 
 
 @mogg_register("mo.layer_norm")
-@export
 fn layer_norm[
     type: DType,
     rank: Int,
@@ -951,7 +950,6 @@ fn rms_norm_cpu[
 
 @mogg_register("rms_norm")
 @always_inline
-@export
 fn rms_norm[
     type: DType,
     rank: Int,

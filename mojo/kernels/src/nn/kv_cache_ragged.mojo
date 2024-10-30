@@ -37,7 +37,6 @@ from nn._ragged_utils import get_batch_from_row_offsets
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
-@export
 fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -85,7 +84,6 @@ fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged")
-@export
 fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -133,7 +131,6 @@ fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged[
 
 
 @mogg_register("fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged")
-@export
 fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -835,7 +832,6 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
 
 
 @mogg_register("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
-@export
 fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
@@ -859,7 +855,6 @@ fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
-@export
 fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
@@ -883,7 +878,6 @@ fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
 
 
 @mogg_register("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
-@export
 fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
