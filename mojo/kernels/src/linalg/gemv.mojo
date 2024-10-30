@@ -19,6 +19,8 @@ from gpu.host import (
     DeviceContext,
     FuncAttribute,
     LaunchAttribute,
+    Device,
+    DeviceAttribute,
 )
 from gpu.host._compile import _get_nvptx_target
 from gpu.memory import AddressSpace, CacheOperation, load
@@ -722,7 +724,12 @@ fn gemv_gpu[
         @parameter
         if a.type == DType.bfloat16:
             if k % simd_width == 0:
-                kernel_func = GEMVAlgorithm.GEMV_SPLIT_K
+                if ceildiv(n, 2) <= Device()._query(
+                    DeviceAttribute.MAX_GRID_DIM_Y
+                ):
+                    kernel_func = GEMVAlgorithm.GEMV_SPLIT_K
+                else:
+                    kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR
             else:
                 kernel_func = GEMVAlgorithm.GEMV_KERNEL
         else:
