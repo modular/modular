@@ -21,7 +21,10 @@ from testing import assert_almost_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
-from nn.mha_warp_shuffle import mha_decoding_cpu, mha_decoding_warp_shuffle
+from nn.mha_warp_shuffle import (
+    run_mha_decoding_cpu,
+    run_mha_decoding_warp_shuffle,
+)
 from memory import memset, memset_zero
 
 
@@ -34,11 +37,10 @@ fn is_benchmark() -> Bool:
 
 fn test[
     qkv_type: DType,
-    mask_type: DType,
     depth: Int,
     num_heads: Int,
     group: Int = 1,
-    fast_mha: Bool = False,
+    batch_size: Int = 1,
 ](
     seq_len: Int,
     num_keys: Int,
@@ -48,95 +50,41 @@ fn test[
     print("test_mha_causal_mask")
     debug_assert(seq_len == 1)
     # Query, key, value dimensions.
-    alias batch_size = 1
     alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
-    alias mask_rank = 3
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var v_size = k_size
     var o_size = q_size
-    var mask_size = num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
     var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
     var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
-    var output_ref_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
     var output_ptr_cpu = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
-
-    # Contruct buffers.
-    var q = NDBuffer[qkv_type, 4](
-        q_ptr, Index(batch_size, seq_len, num_heads, depth)
-    )
-    var k = NDBuffer[qkv_type, 4](
-        k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
-    )
-    var v = NDBuffer[qkv_type, 4](
-        v_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
-    )
-    var mask = NDBuffer[mask_type, 4](
-        mask_ptr, Index(batch_size, num_heads, seq_len, num_keys)
-    )
-    var output = NDBuffer[qkv_type, 4](
-        output_ptr, Index(batch_size, seq_len, num_heads, depth)
-    )
 
     # Q, K, V are randomly initalized.
     rand[qkv_type](q_ptr, q_size)
     rand[qkv_type](k_ptr, k_size)
     rand[qkv_type](v_ptr, v_size)
 
-    # Initialize causal mask.
-    for b in range(batch_size):
-        for h in range(num_heads):
-            for q_idx in range(seq_len):
-                for k_idx in range(num_keys):
-                    mask.store(
-                        Index(b, h, q_idx, k_idx),
-                        0 if q_idx + num_keys - seq_len
-                        >= k_idx else min_or_neg_inf[mask_type](),
-                    )
-
     # Device pointers
     var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
     var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
     var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
-    var mask_device_ptr = ctx.create_buffer[mask_type](mask_size)
     var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
-    var output_device_ref_ptr = ctx.create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy_to_device(q_device_ptr, q_ptr)
     ctx.enqueue_copy_to_device(k_device_ptr, k_ptr)
     ctx.enqueue_copy_to_device(v_device_ptr, v_ptr)
-    ctx.enqueue_copy_to_device(mask_device_ptr, mask_ptr)
-
-    # Contruct device buffers.
-    var q_device = NDBuffer[
-        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
-    ](q_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
-    var k_device = NDBuffer[
-        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](k_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
-    var v_device = NDBuffer[
-        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](v_device_ptr.ptr, Index(batch_size, num_keys, kv_num_heads, depth))
-    var mask4d = NDBuffer[mask_type, 4, DimList.create_unknown[4]()](
-        mask_device_ptr.ptr, Index(batch_size, num_heads, seq_len, num_keys)
-    )
-    var output_device_ref = NDBuffer[
-        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
-    ](output_device_ref_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
 
     @parameter
     @always_inline
-    @__copy_capture(q_device, k_device, v_device, output_device_ptr)
     fn kernel_launch(ctx: DeviceContext) raises:
-        mha_decoding_warp_shuffle[
+        run_mha_decoding_warp_shuffle[
             head_size=depth, num_heads=num_heads, group=group
         ](
             ctx,
@@ -162,70 +110,51 @@ fn test[
 
     else:
         kernel_launch(ctx)
+        # run cpu for verification
+        run_mha_decoding_cpu[head_size=depth, num_heads=num_heads, group=group](
+            q_ptr,
+            k_ptr,
+            v_ptr,
+            output_ptr_cpu,
+            scale,
+            num_keys,
+            CausalMask(),
+            batch_size,
+        )
 
-    mha_decoding_cpu[head_size=depth, num_heads=num_heads, group=group](
-        q_ptr,
-        k_ptr,
-        v_ptr,
-        output_ptr_cpu,
-        scale,
-        num_keys,
-        CausalMask(),
-        batch_size,
-    )
+        ctx.enqueue_copy_from_device(output_ptr, output_device_ptr)
+        ctx.synchronize()
+        var atol = Scalar[qkv_type](1e-5)
+        var rtol = Scalar[qkv_type](1e-4)
+        if qkv_type == DType.bfloat16:
+            atol = 1e-3
+            rtol = 8e-3
 
-    flash_attention[add_attn_mask=False](
-        output_device_ref,
-        q_device,
-        k_device,
-        v_device,
-        mask4d,
-        CausalMask(),
-        scale,
-        ctx,
-    )
-
-    ctx.enqueue_copy_from_device(output_ref_ptr, output_device_ref_ptr)
-    ctx.enqueue_copy_from_device(output_ptr, output_device_ptr)
-    ctx.synchronize()
-
-    fn verify_results(
-        ptr: __type_of(output_ptr_cpu),
-        name: String,
-        atol: Scalar[qkv_type],
-        rtol: Scalar[qkv_type],
-    ) raises:
-        for h in range(num_heads):
-            for s in range(seq_len):
-                for d in range(depth):
-                    var expect = output_ref_ptr.load(
-                        d + depth * (h + s * num_heads)
-                    )
-                    var actual = ptr.load(d + depth * (h + s * num_heads))
-                    if not isclose(actual, expect, atol=atol, rtol=rtol):
-                        var rerr = abs((actual - expect) / expect)
-                        print(name, h, s, d, actual, expect, rerr)
-                    assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
-
-    var atol = Scalar[qkv_type](1e-5)
-    var rtol = Scalar[qkv_type](1e-4)
-    if qkv_type == DType.bfloat16:
-        atol = 1e-3
-        rtol = 8e-3
-    verify_results(output_ptr_cpu, "cpu", atol, rtol)
-    verify_results(output_ptr, "gpu", atol, rtol)
-
+        for b in range(batch_size):
+            for h in range(num_heads):
+                for s in range(seq_len):
+                    for d in range(depth):
+                        var gpu = output_ptr.load(
+                            d
+                            + depth * (h + s * num_heads)
+                            + b * num_heads * depth
+                        )
+                        var cpu = output_ptr_cpu.load(
+                            d
+                            + depth * (h + s * num_heads)
+                            + b * num_heads * depth
+                        )
+                        if not isclose(cpu, gpu, atol=atol, rtol=rtol):
+                            var rerr = abs((cpu - gpu) / gpu)
+                            print("cpu vs gpu", b, h, s, d, cpu, gpu, rerr)
+                        assert_almost_equal(cpu, gpu, atol=atol, rtol=rtol)
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
-    _ = mask_device_ptr
     _ = output_device_ptr
-    _ = output_device_ref_ptr
     q_ptr.free()
     k_ptr.free()
     v_ptr.free()
-    mask_ptr.free()
-    output_ref_ptr.free()
     output_ptr.free()
     output_ptr_cpu.free()
 
@@ -235,13 +164,13 @@ def main():
         # BF16 token gen
         test[
             DType.bfloat16,
-            DType.bfloat16,
             128,
             32,
+            group=4,
+            batch_size=128,
         ](1, 512, ctx, is_benchmark())
 
         test[
-            DType.bfloat16,
             DType.bfloat16,
             128,
             11,
@@ -249,13 +178,11 @@ def main():
 
         test[
             DType.bfloat16,
-            DType.float32,
             128,
             1,
         ](1, 11, ctx, is_benchmark())
 
         test[
-            DType.bfloat16,
             DType.bfloat16,
             128,
             2,
@@ -263,7 +190,6 @@ def main():
 
         test[
             DType.bfloat16,
-            DType.float32,
             128,
             24,
             group=3,
@@ -271,14 +197,12 @@ def main():
 
         test[
             DType.bfloat16,
-            DType.bfloat16,
             128,
             3,
             group=3,
         ](1, 156, ctx, is_benchmark())
 
         test[
-            DType.bfloat16,
             DType.bfloat16,
             128,
             3,
