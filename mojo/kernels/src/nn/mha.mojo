@@ -260,7 +260,7 @@ fn fused_attention[
             var seq_offset = M - N
             var fused_val = out_val
 
-            fused_val *= rebind[SIMD[inner_type, 1]](scale)
+            fused_val *= scale.cast[inner_type]()
 
             @parameter
             if add_causal_mask:
