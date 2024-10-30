@@ -6,12 +6,16 @@
 
 #include "KGEN/ToolCommon/KGENPasses.h"
 
+#include "AsyncRT/CompilerSupport/Context.h"
 #include "KGEN/CustomDialect/CustomDialect.h"
 #include "KGEN/CustomDialect/CustomUtils.h"
+#include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/TransformUtils/SCCUtils.h"
 #include "KGEN/TransformUtils/SlicingUtils.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -26,6 +30,10 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+//===----------------------------------------------------------------------===//
+// ODS-Generated Definitions
+//===----------------------------------------------------------------------===//
+
 using namespace M;
 using namespace KGEN;
 using namespace Custom;
@@ -34,6 +42,10 @@ namespace M::KGEN {
 #define GEN_PASS_DEF_LOWERCUSTOMOPS
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
+
+//===----------------------------------------------------------------------===//
+// Pass Declaration
+//===----------------------------------------------------------------------===//
 
 namespace {
 class LowerCustomOpsPass : public impl::LowerCustomOpsBase<LowerCustomOpsPass> {
@@ -45,6 +57,10 @@ public:
 private:
   LibraryOptConfig lib;
 };
+
+//===----------------------------------------------------------------------===//
+// CustomOpPattern
+//===----------------------------------------------------------------------===//
 
 using CompiledPattern = std::function<mlir::LogicalResult(
     mlir::Operation *, mlir::PatternRewriter &)>;
@@ -64,6 +80,10 @@ private:
   CompiledPattern canonicalizationFn;
 };
 } // namespace
+
+//===----------------------------------------------------------------------===//
+// Bytecode Instantiation Helpers
+//===----------------------------------------------------------------------===//
 
 static std::pair<OwningOpRef<ModuleOp>, SymbolTable>
 loadBytecodeForInstantiation(DenseResourceElementsAttr bytecode) {
@@ -148,6 +168,485 @@ static void sliceInto(SymbolTable &dst, SymbolTable &src, StringAttr name) {
   }
 }
 
+//===----------------------------------------------------------------------===//
+// MemorySSA Helpers
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct CallGraphNode : public SCCNode<CallGraphNode, FuncOp, CallOp> {
+  CallGraphNode(FuncOp func)
+      : SCCNode(func), doesCapture(func ? func.getNumArguments() : 0, false) {}
+
+  llvm::BitVector doesCapture;
+};
+
+/// Interprocedural pointer argument capture analysis.
+struct CallGraph : public SCCGraph<CallGraph, CallGraphNode> {
+  CallGraph(const SymbolTable &symtab) : symtab(symtab) {}
+
+  bool shouldAddToGraph(CallOp call, CallGraphNode *node) { return true; }
+
+  CallGraphNode *getCalleeNode(TypedAttr symbol) {
+    auto callee = symtab.lookup<FuncOp>(
+        cast<SymbolConstantAttr>(symbol).getSymbol().getRootReference());
+    assert(callee);
+    return &nodes.find(callee)->second;
+  }
+
+  bool doAnalysis(CallGraphNode *node);
+  void doRewrite(const CallGraphNode *node) {}
+
+  LLVM_DUMP_METHOD void dump() {
+    for (auto &[func, node] : nodes) {
+      if (!func)
+        continue;
+      llvm::errs() << '@' << func.getSymName() << '[';
+      for (unsigned i = 0, e = func.getNumArguments(); i != e; ++i)
+        llvm::errs() << node.doesCapture[i];
+      llvm::errs() << ']' << "\n";
+    }
+  }
+
+  const SymbolTable &symtab;
+};
+
+struct ModRefResult {
+  DenseSet<Operation *> prevModRef;
+  DenseSet<Operation *> nextModRef;
+
+  DenseSet<Value> varReads;
+  DenseSet<Value> varWrites;
+  bool refEscaped = false;
+};
+
+struct MemoryUseNode {
+  llvm::SetVector<Operation *> prevModRef;
+  llvm::SetVector<Operation *> nextModRef;
+};
+
+struct ModRefAnalysis : public mlir::RewriterBase::Listener {
+  ModRefAnalysis(AsyncRT::Runtime &runtime, const SymbolTable &symtab)
+      : symtab(symtab), runtime(runtime), cg(symtab) {}
+
+  void computeCaptures(ModuleOp module);
+  void processRegion(
+      Region &region, const HLCF::CFGAnalysis &cfg,
+      llvm::SetVector<Operation *> &prev,
+      llvm::MapVector<Operation *, ModRefResult> &results,
+      DenseMap<HLCF::CFGNode, llvm::SetVector<Operation *>> &virtualPhiNodes);
+  void compute(ModuleOp module);
+
+  void rauw(ArrayRef<Operation *> from, ArrayRef<Operation *> to);
+  void notifyOperationErased(Operation *op) override {
+    if (allResults.contains(op)) {
+      std::string msg;
+      llvm::raw_string_ostream os(msg);
+      os << "erasing operation that still has memory effect observers, please "
+            "use rauw on the dependency analysis: "
+         << *op;
+      llvm::report_fatal_error(StringRef(msg));
+    }
+  }
+
+  const SymbolTable &symtab;
+  AsyncRT::Runtime &runtime;
+  CallGraph cg;
+  DenseMap<Operation *, std::unique_ptr<MemoryUseNode>> allResults;
+};
+
+struct CMRAnalysis {
+  ModRefAnalysis &mr;
+};
+} // namespace
+
+extern "C" {
+MLIR_CAPI_EXPORTED void mlirCMRAnalysisRAUW(void *ptr,
+                                            ArrayRef<MlirOperation> from,
+                                            ArrayRef<MlirOperation> to) {
+  SmallVector<Operation *> fromOps, toOps;
+  for (MlirOperation op : from)
+    fromOps.push_back(unwrap(op));
+  for (MlirOperation op : to)
+    toOps.push_back(unwrap(op));
+  ((CMRAnalysis *)ptr)->mr.rauw(fromOps, toOps);
+}
+
+MLIR_CAPI_EXPORTED size_t mlirCMRAnalysisGetNextModRefCount(void *ptr,
+                                                            MlirOperation op) {
+  return ((CMRAnalysis *)ptr)->mr.allResults.at(unwrap(op))->nextModRef.size();
+}
+
+MLIR_CAPI_EXPORTED size_t mlirCMRAnalysisGetPrevModRefCount(void *ptr,
+                                                            MlirOperation op) {
+  return ((CMRAnalysis *)ptr)->mr.allResults.at(unwrap(op))->prevModRef.size();
+}
+
+MLIR_CAPI_EXPORTED void
+mlirCMRAnalysisGetNextModRefValues(void *ptr, MlirOperation op,
+                                   MlirOperation *results) {
+  for (Operation *op : ((CMRAnalysis *)ptr)
+                           ->mr.allResults.at(unwrap(op))
+                           ->nextModRef.getArrayRef()) {
+    (*results) = wrap(op);
+    ++results;
+  }
+}
+
+MLIR_CAPI_EXPORTED void
+mlirCMRAnalysisGetPrevModRefValues(void *ptr, MlirOperation op,
+                                   MlirOperation *results) {
+  for (Operation *op : ((CMRAnalysis *)ptr)
+                           ->mr.allResults.at(unwrap(op))
+                           ->prevModRef.getArrayRef()) {
+    (*results) = wrap(op);
+    ++results;
+  }
+}
+}
+
+static bool isEscapedPointer(Value arg, CallGraph &cg) {
+  if (!isa<PointerType>(arg.getType()))
+    return false;
+
+  // Build a worklist of all SSA values that trivially alias the block
+  // argument.
+  SmallVector<Value> worklist;
+  worklist.push_back(arg);
+
+  // Iterate while the worklist isn't empty and if the analysis for the value
+  // is not at fixed point.
+  while (!worklist.empty()) {
+    Value value = worklist.pop_back_val();
+    for (OpOperand &use : value.getUses()) {
+      // Aliasing ops.
+      Operation *user = use.getOwner();
+      if (isa<POP::ArrayGEPOp, StructGEPOp, POP::OffsetOp,
+              POP::PointerBitcastOp>(user)) {
+        assert(user->getNumResults() == 1);
+        worklist.push_back(user->getResult(0));
+        continue;
+      }
+
+      // Loads are terminals.
+      if (isa<POP::LoadOp, POP::StackAllocLifetimeStartOp,
+              POP::StackAllocLifetimeEndOp>(use.getOwner()))
+        continue;
+
+      // Stores that don't capture the value are terminals.
+      if (auto store = dyn_cast<POP::StoreOp>(user)) {
+        if (store.getArg() == value)
+          return true;
+        continue;
+      }
+
+      // Handle calls specially.
+      auto callee = user->getAttrOfType<SymbolConstantAttr>("custom_op_callee");
+      if (!callee)
+        return true;
+
+      CallGraphNode *calleeNode = cg.getCalleeNode(callee);
+      if (calleeNode->doesCapture.test(use.getOperandNumber()))
+        return true;
+    }
+  }
+  return false;
+}
+
+bool CallGraph::doAnalysis(CallGraphNode *node) {
+  bool changed = false;
+
+  // Check every block argument.
+  for (BlockArgument arg : node->func.getArguments()) {
+    if (!isa<PointerType>(arg.getType()) ||
+        node->doesCapture.test(arg.getArgNumber()))
+      continue;
+
+    if (isEscapedPointer(arg, *this)) {
+      changed = true;
+      node->doesCapture.set(arg.getArgNumber());
+    }
+  }
+
+  return changed;
+}
+
+void ModRefAnalysis::computeCaptures(ModuleOp module) {
+  cg.build(module, symtab);
+  cg.run(runtime);
+}
+
+void ModRefAnalysis::processRegion(
+    Region &region, const HLCF::CFGAnalysis &cfg,
+    llvm::SetVector<Operation *> &prev,
+    llvm::MapVector<Operation *, ModRefResult> &results,
+    DenseMap<HLCF::CFGNode, llvm::SetVector<Operation *>> &virtualPhiNodes) {
+  assert(llvm::hasSingleElement(region));
+  for (Operation &op : region.getOps()) {
+    ModRefResult &result = results[&op];
+
+    // For each terminator, propagate the prev set to the virtual phi node set.
+    if (auto term = dyn_cast<HLCF::ControlFlowTerminator>(op)) {
+      if (auto it = cfg.successors.find(term); it != cfg.successors.end())
+        for (HLCF::CFGNode node : it->second)
+          virtualPhiNodes[node].insert(prev.begin(), prev.end());
+      continue;
+    }
+
+    // Skip side-effect free ops and lifetime markers.
+    if (mlir::isMemoryEffectFree(&op) ||
+        isa<POP::StackAllocLifetimeStartOp, POP::StackAllocLifetimeEndOp>(op))
+      continue;
+
+    auto node = dyn_cast<HLCF::ControlFlowNode>(op);
+    if (!node) {
+      // For all operations, chain the prev and next operations.
+      for (Operation *prevOp : prev) {
+        result.prevModRef.insert(prevOp);
+        results[prevOp].nextModRef.insert(&op);
+      }
+      prev.clear();
+      prev.insert(&op);
+
+      // For unknown region operations, treat the region as isolated.
+      for (Region &region : op.getRegions()) {
+        llvm::SetVector<Operation *> nestedPrev;
+        processRegion(region, cfg, nestedPrev, results, virtualPhiNodes);
+      }
+      continue;
+    }
+
+    for (int i = 0; i < 2; ++i) { // dirty iteration hack to propagate backedges
+      for (Region &region : op.getRegions()) {
+        llvm::SetVector<Operation *> &phiEntry =
+            virtualPhiNodes[{node, region.getRegionNumber()}];
+        // Initialize the prev set with the phi node set of the region.
+        phiEntry.insert(prev.begin(), prev.end());
+        llvm::SetVector<Operation *> nestedPrev = phiEntry;
+        processRegion(region, cfg, nestedPrev, results, virtualPhiNodes);
+      }
+    }
+
+    // Take the phi node set of the parent op and set it as the current prev
+    // set.
+    prev = virtualPhiNodes[{node, std::nullopt}];
+  }
+}
+
+static Value getIdentifiedVariable(Value value) {
+  Operation *defOp = value.getDefiningOp();
+  if (isa_and_nonnull<POP::StackAllocationOp>(defOp))
+    return value;
+  if (isa_and_nonnull<POP::ArrayGEPOp, StructGEPOp, POP::OffsetOp,
+                      POP::PointerBitcastOp>(defOp)) {
+    assert(defOp->getNumOperands() == 1);
+    return getIdentifiedVariable(defOp->getOperand(0));
+  }
+  auto arg = dyn_cast<BlockArgument>(value);
+  if (!arg)
+    return {};
+  auto func = dyn_cast<FuncOp>(arg.getOwner()->getParentOp());
+  if (!func)
+    return {};
+  ArgConvention conv = func.getSignature().getArgConvention(arg.getArgNumber());
+  if (llvm::is_contained({ArgConvention::OwnedInMem, ArgConvention::InOut,
+                          ArgConvention::MutRef, ArgConvention::ByRefResult,
+                          ArgConvention::ByRefError, ArgConvention::InitSelf},
+                         conv))
+    return arg;
+  return {};
+}
+
+void ModRefAnalysis::compute(ModuleOp module) {
+  for (FuncOp func : module.getOps<FuncOp>()) {
+    HLCF::CFGAnalysis cfg(func);
+    llvm::SetVector<Operation *> prev;
+    llvm::MapVector<Operation *, ModRefResult> results;
+    DenseMap<HLCF::CFGNode, llvm::SetVector<Operation *>> virtualPhiNodes;
+    processRegion(func.getBodyRegion(), cfg, prev, results, virtualPhiNodes);
+
+    // Now prune the modref results. First consider the specific memory effects.
+    for (auto &[op, result] : results) {
+      if (result.prevModRef.empty() && result.nextModRef.empty())
+        continue;
+
+      // For read-only ops, they have no next affected op.
+      if (mlir::hasSingleEffect<mlir::MemoryEffects::Read>(op))
+        result.nextModRef.clear();
+
+      // Remove read-only ops from previously affecting ops.
+      DenseSet<Operation *> filtered;
+      for (Operation *prev : result.prevModRef) {
+        if (!mlir::hasSingleEffect<mlir::MemoryEffects::Read>(prev))
+          filtered.insert(prev);
+      }
+      result.prevModRef = std::move(filtered);
+    }
+
+    // Now consider aliasing between nonescaping identified variables. The user
+    // only cares about modref relationships between operations on these
+    // variables.
+    for (auto &[op, result] : results) {
+      // The user doesn't care about anything other than function calls, because
+      // those ops cannot be optimized.
+      auto callee = op->getAttrOfType<SymbolConstantAttr>("custom_op_callee");
+      if (!callee)
+        continue;
+
+      // Find nonescaping identified variables that are known written to and
+      // read from by the function call.
+      SignatureType sig = callee.getType();
+      for (auto [i, arg] : llvm::enumerate(op->getOperands())) {
+        Value obj = getIdentifiedVariable(arg);
+        if (!obj)
+          continue;
+        if (isEscapedPointer(obj, cg)) {
+          result.refEscaped = true;
+          continue;
+        }
+        if (llvm::is_contained(
+                {ArgConvention::BorrowedInMem, ArgConvention::Ref},
+                sig.getArgConvention(i)))
+          result.varReads.insert(arg);
+        else
+          result.varWrites.insert(arg);
+      }
+    }
+    for (auto &[op, result] : results) {
+      allResults.try_emplace(op,
+                             std::make_unique<MemoryUseNode>(MemoryUseNode{}));
+    }
+
+    for (auto &[op, result] : results) {
+      MemoryUseNode &allResult = *allResults.at(op);
+
+      if (result.refEscaped) {
+        for (Operation *prev : result.prevModRef) {
+          allResult.prevModRef.insert(prev);
+        }
+        for (Operation *next : result.nextModRef) {
+          allResult.nextModRef.insert(next);
+        }
+      }
+
+      if (result.varWrites.empty() && result.varReads.empty())
+        continue;
+
+      SmallVector<Operation *> worklist;
+      DenseSet<Operation *> visited;
+      llvm::append_range(worklist, result.prevModRef);
+      while (!worklist.empty()) {
+        Operation *prev = worklist.pop_back_val();
+        if (!visited.insert(prev).second)
+          continue;
+        const ModRefResult &prevResult = results[prev];
+        bool keep = false;
+        for (Value v :
+             llvm::concat<const Value>(result.varWrites, result.varReads)) {
+          if (prevResult.varWrites.contains(v)) {
+            keep = true;
+            break;
+          }
+        }
+        if (keep) {
+          allResult.prevModRef.insert(prev);
+          continue;
+        }
+        llvm::append_range(worklist, prevResult.prevModRef);
+      }
+
+      visited.clear();
+      llvm::append_range(worklist, result.nextModRef);
+      while (!worklist.empty()) {
+        Operation *next = worklist.pop_back_val();
+        if (!visited.insert(next).second)
+          continue;
+        const ModRefResult &nextResult = results[next];
+        bool keep = false;
+        for (Value v : result.varWrites) {
+          if (nextResult.varReads.contains(v) ||
+              nextResult.varWrites.contains(v)) {
+            keep = true;
+            break;
+          }
+        }
+        if (keep) {
+          allResult.nextModRef.insert(next);
+          continue;
+        }
+        llvm::append_range(worklist, nextResult.nextModRef);
+      }
+    }
+  }
+}
+
+void ModRefAnalysis::rauw(ArrayRef<Operation *> from,
+                          ArrayRef<Operation *> to) {
+  if (from.empty()) {
+    llvm::report_fatal_error("source dependency chain is empty");
+  }
+
+  SmallVector<std::pair<Operation *, MemoryUseNode *>> srcChain;
+  for (auto [i, op] : llvm::enumerate(from)) {
+    MemoryUseNode *ch = allResults.at(op).get();
+    if (!srcChain.empty()) {
+      auto [prevOp, prev] = srcChain.back();
+      if (prev->nextModRef.size() != 1 || !prev->nextModRef.contains(op) ||
+          ch->prevModRef.size() != 1 || !ch->prevModRef.contains(prevOp)) {
+        std::string msg;
+        llvm::raw_string_ostream os(msg);
+        os << "index " << i << " source chain from " << *prevOp
+           << " does not uniquely connect to " << *op;
+        llvm::report_fatal_error(StringRef(msg));
+      }
+    }
+
+    srcChain.emplace_back(op, ch);
+  }
+
+  SmallVector<std::pair<Operation *, MemoryUseNode *>> dstChain;
+  for (Operation *op : to) {
+    allResults.try_emplace(op,
+                           std::make_unique<MemoryUseNode>(MemoryUseNode{}));
+    MemoryUseNode *ch = allResults.at(op).get();
+    if (!dstChain.empty()) {
+      auto [prevOp, prev] = dstChain.back();
+      prev->nextModRef.insert(op);
+      ch->prevModRef.insert(prevOp);
+    }
+    dstChain.emplace_back(op, ch);
+  }
+
+  assert(!srcChain.empty());
+  llvm::SetVector<Operation *> &head = srcChain.front().second->prevModRef;
+  llvm::SetVector<Operation *> &tail = srcChain.back().second->nextModRef;
+  for (Operation *prevOp : head) {
+    MemoryUseNode *prev = allResults.at(prevOp).get();
+    prev->nextModRef.remove(srcChain.front().first);
+    if (dstChain.empty()) {
+      prev->nextModRef.insert(tail.begin(), tail.end());
+    } else {
+      prev->nextModRef.insert(dstChain.front().first);
+    }
+  }
+  for (Operation *nextOp : tail) {
+    MemoryUseNode *next = allResults.at(nextOp).get();
+    next->prevModRef.remove(srcChain.back().first);
+    if (dstChain.empty()) {
+      next->prevModRef.insert(head.begin(), head.end());
+    } else {
+      next->prevModRef.insert(dstChain.back().first);
+    }
+  }
+
+  for (auto [op, result] : srcChain) {
+    allResults.erase(op);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// Pass Definition
+//===----------------------------------------------------------------------===//
+
 void LowerCustomOpsPass::runOnOperation() {
   ModuleOp module = getOperation();
   auto templates =
@@ -172,14 +671,16 @@ void LowerCustomOpsPass::runOnOperation() {
       continue;
     // Build the reverse map.
     remap.try_emplace(func.getSymNameAttr(), impl);
-    if (impl.getPatterns().empty())
+    auto patternsAttr = cast<ArrayAttr>(impl.getPatterns().getValue());
+    if (patternsAttr.empty())
       continue;
 
     // Build an instantiate stub for every pattern.
     SmallVector<StringAttr> funcs;
-    for (auto ref : impl.getPatterns().getAsRange<ArrayAttr>()) {
+    ParameterEvaluator evaluator;
+    for (auto ref : patternsAttr.getAsRange<ArrayAttr>()) {
       auto name = cast<StringAttr>(ref[0]);
-      ParameterExprArrayAttr params = unwrapPreservedParams(ref[1]);
+      auto params = cast<ParameterExprArrayAttr>(ref[1]);
       funcs.push_back(generateInstantiateStub(patternSymtab, name, params,
                                               "__pattern_inst_", counter));
     }
@@ -199,8 +700,19 @@ void LowerCustomOpsPass::runOnOperation() {
     return signalPassFailure();
   }
 
+  // Compute modref before raising.
+  AsyncRT::Runtime &runtime =
+      *loadContext(&getContext())->get<AsyncRT::Runtime>();
+  ModRefAnalysis mr(runtime, symtab);
+  mr.computeCaptures(getOperation());
+  llvm::nulls() << (void *)mlirCMRAnalysisRAUW
+                << (void *)mlirCMRAnalysisGetNextModRefCount
+                << (void *)mlirCMRAnalysisGetPrevModRefCount
+                << (void *)mlirCMRAnalysisGetNextModRefValues
+                << (void *)mlirCMRAnalysisGetPrevModRefValues;
+
   // Raise all calls.
-  DenseMap<std::pair<StringAttr, ArrayAttr>, StringAttr> instances;
+  llvm::MapVector<std::pair<StringAttr, ArrayAttr>, StringAttr> instances;
   getOperation().walk([&](CallOp call) {
     StringAttr concreteName = call.getCallee().getSymbol().getLeafReference();
     CustomOpImplAttr impl = remap.lookup(concreteName);
@@ -215,19 +727,22 @@ void LowerCustomOpsPass::runOnOperation() {
     auto params = ArrayAttr::get(ctx, attrs);
     instances[{impl.getProto(), params}] = concreteName;
     state.addAttribute("params", params);
+    state.addAttribute("custom_op_callee", call.getCallee());
     Operation *op = b.create(state);
     call->replaceAllUsesWith(op->getResults());
     call.erase();
   });
 
   // Now run the canonicalizer.
+  mr.compute(getOperation());
   mlir::RewritePatternSet rewritePatterns(ctx);
   for (auto [name, patternFuncs] : llvm::zip(names, *compiledPatterns)) {
     for (CAPICanonicalizationFn &fn : patternFuncs) {
       CompiledPattern pattern = [&](Operation *op, PatternRewriter &b) {
         MlirOperation opWrapped = wrap(op);
         MlirRewriterBase bWrapped = wrap(&b);
-        return mlir::success(fn(&opWrapped, &bWrapped));
+        CMRAnalysis cmr{mr};
+        return mlir::success(fn(&opWrapped, &bWrapped, (void *)&cmr));
       };
       rewritePatterns.add<CustomOpPattern>(
           StringAttr::get(ctx, "custom." + name.getValue()),
@@ -238,6 +753,7 @@ void LowerCustomOpsPass::runOnOperation() {
   mlir::FrozenRewritePatternSet frozenPatterns(std::move(rewritePatterns));
   mlir::GreedyRewriteConfig config;
   config.enableRegionSimplification = mlir::GreedySimplifyRegionLevel::Disabled;
+  config.listener = &mr;
   (void)applyPatternsAndFoldGreedily(getOperation(), frozenPatterns, config);
 
   // Now collect all required instantiations.

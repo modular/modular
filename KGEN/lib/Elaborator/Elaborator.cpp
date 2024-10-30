@@ -1378,6 +1378,8 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
                            generatorOp.getSignature().getFnEffects()),
         generatorOp.getInlineLevel(), generatorOp.getExportKind(),
         generatorOp.getDecorators(), generatorOp.getLLVMMetadata()));
+    if (ArrayAttr patterns = generatorOp.getPatternsAttr())
+      instance->setAttr("tmp_patterns", patterns);
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
     instance = cast<InstantiatedOpInterface>(*b.create<StructInstanceOp>(
@@ -1846,10 +1848,11 @@ Elaborator::run(ModuleOp theModule,
         mlir::debugString(node.inputParams), node.impl->inst});
 
     if (auto gen = dyn_cast<GeneratorOp>(*node.gen)) {
-      if (ArrayAttr patterns = gen.getPatternsAttr()) {
+      if (auto patterns = dyn_cast_or_null<ArrayAttr>(
+              node.impl->inst->removeAttr("tmp_patterns"))) {
         auto impl = CustomOpImplAttr::get(gen.getSymNameAttr(),
                                           PreservedAttr::get(node.inputParams),
-                                          patterns);
+                                          PreservedAttr::get(patterns));
         cast<FuncOp>(*node.impl->inst).setPatternsAttr(impl);
       }
     }

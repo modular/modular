@@ -247,9 +247,10 @@ compilePatterns(ModuleOp module, ArrayRef<SmallVector<StringAttr>> patterns) {
       // Both the operation and the rewriter are passed as pointers, as the
       // mojo canonicalization pattern is marked as inout.
       compiledPatternList.push_back(
-          [engine = engine, func = *funcOrRes](
-              MlirOperation *op, MlirRewriterBase *rewriter) mutable {
-            return func.invoke<bool>(op, rewriter);
+          [engine = engine, func = *funcOrRes](MlirOperation *op,
+                                               MlirRewriterBase *rewriter,
+                                               void *payload) mutable {
+            return func.invoke<bool>(op, rewriter, payload);
           });
     }
     compiledFns.push_back(std::move(compiledPatternList));

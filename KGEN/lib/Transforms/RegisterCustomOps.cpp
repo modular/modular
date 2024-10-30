@@ -53,8 +53,8 @@ void RegisterCustomOpsPass::runOnOperation() {
     for (auto sym : patterns.getAsRange<SymbolConstantAttr>()) {
       StringAttr name = sym.getSymbol().getLeafReference();
       auto params = ParameterExprArrayAttr::get(ctx, sym.getParamValues());
-      patternTemplates.push_back(ArrayAttr::get(
-          ctx, ArrayRef<Attribute>{name, PreservedAttr::get(params)}));
+      patternTemplates.push_back(
+          ArrayAttr::get(ctx, ArrayRef<Attribute>{name, params}));
       exportedSymbols.try_emplace(name, ExportKind::Exported);
     }
     updates.emplace_back(gen, ArrayAttr::get(ctx, patternTemplates));
@@ -63,9 +63,7 @@ void RegisterCustomOpsPass::runOnOperation() {
     return;
 
   // Slice a module containing the custom op definitions.
-  OwningOpRef<ModuleOp> slice = produceStandaloneModule(
-      getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable(),
-      exportedSymbols);
+  OwningOpRef<ModuleOp> slice = getOperation().clone();
   for (auto [gen, patterns] : updates)
     gen.setPatternsAttr(patterns);
 

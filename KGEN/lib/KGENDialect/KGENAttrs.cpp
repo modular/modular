@@ -1100,6 +1100,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetTypeMethod:
   case POC::PtrBitcast:
   case POC::InstantiateStructRef:
+  case POC::AttrToStr:
   case POC::VariadicPtrMap:
   case POC::VariadicPtrRemoveMap:
     break;
@@ -1310,6 +1311,8 @@ LogicalResult ParamOperatorAttr::verify(
     return verifyVariadicPtrMap(operands, type, emitError);
   case POC::VariadicPtrRemoveMap:
     return verifyVariadicPtrRemoveMap(operands, type, emitError);
+  case POC::AttrToStr:
+    break;
   }
   return success();
 }
@@ -2578,6 +2581,7 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     result = simplifyLoadFromMem(operands, resultType);
     break;
   case POC::InstantiateStructRef:
+  case POC::AttrToStr:
     result = {};
     break;
   case POC::VariadicPtrMap:

@@ -1106,14 +1106,14 @@ def KGEN_CustomOpImplAttr : KGENAttr<"CustomOpImpl", "custom.op_impl"> {
   let parameters = (ins
     "StringAttr":$proto,
     "PreservedAttr":$params,
-    "ArrayAttr":$patterns
+    "PreservedAttr":$patterns
   );
   let assemblyFormat = "`<` $proto `,` $params `,` $patterns `>`";
 
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-        "StringAttr":$proto, "PreservedAttr":$params, "ArrayAttr":$patterns), [{
+        "StringAttr":$proto, "PreservedAttr":$params, "PreservedAttr":$patterns), [{
       return $_get(proto.getContext(), proto, params, patterns);
     }]>,
   ];
