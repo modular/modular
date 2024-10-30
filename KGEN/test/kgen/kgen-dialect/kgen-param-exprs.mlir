@@ -126,11 +126,17 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant = <mul(p1, -1)>
   %33 = kgen.param.constant = <neg(p1)>
 
+  // CHECK: = kgen.param.constant: si64 = <-15>
+  kgen.param.constant : si64 = <neg(15)>
+
   // CHECK: = kgen.param.constant = <add(mul(p2, -1), p1)>
   %34 = kgen.param.constant = <sub(p1, p2)>
 
   // CHECK: = kgen.param.constant = <5>
   %35 = kgen.param.constant = <sub(9, 4)>
+
+  // CHECK: kgen.param.constant: si64 = <5>
+  kgen.param.constant : si64 = <sub(9, 4)>
 
   // CHECK: = kgen.param.constant: i1 = <1>
   %36 = kgen.param.constant : i1 = <eq(:i1 int1, int1)>

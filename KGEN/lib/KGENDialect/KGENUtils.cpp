@@ -1020,8 +1020,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     // opcode in question.
     if (!operandType) {
       switch (opcode) {
-      case (uint32_t)POCAliases::NEG:
-      case (uint32_t)POCAliases::SUB:
       case (uint32_t)POC::EQ:
       case (uint32_t)POC::LT:
       case (uint32_t)POC::LE:
@@ -1055,7 +1053,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (opcode == (uint32_t)POCAliases::NEG) {
       if (operands.size() != 1)
         return p.emitError(loc, "neg operator expects a single operand");
-      operands.emplace_back(p.getBuilder().getIndexAttr(-1));
+      operands.emplace_back(
+          p.getBuilder().getIntegerAttr(operands[0].getType(), -1));
       opcode = (uint32_t)POC::Mul;
     }
 
@@ -1063,8 +1062,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
     if (opcode == (uint32_t)POCAliases::SUB) {
       if (operands.size() != 2)
         return p.emitError(loc, "sub operator expects two operands");
-      operands[1] = ParamOperatorAttr::get(
-          POC::Mul, {operands[1], p.getBuilder().getIndexAttr(-1)});
+      operands[1] = ParamOperatorAttr::getNeg(operands[1]);
       opcode = (uint32_t)POC::Add;
     }
 
