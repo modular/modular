@@ -350,7 +350,7 @@ fn _matmul_gpu[
             if (
                 a_type == b_type
                 and a_type.is_half_float()
-                and Info.from_target_name[target]() is A100
+                and "sm_80" in target
                 and transpose_b
             ):
                 alias static_K = a_shape.get[1]()
