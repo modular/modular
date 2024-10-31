@@ -129,30 +129,34 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
     )
 
     logger: logging.Logger = field(init=False)
+    debug_logging: bool = False
 
     def __post_init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.debug_logging = logger.isEnabledFor(logging.DEBUG)
 
     @contextlib.asynccontextmanager
     async def open_channel(self, req_id: BatchReqId, data: BatchReqInput):
-        self.logger.debug(
-            "BatchOpen(%s): %s, current-size %s",
-            self.name,
-            req_id,
-            self.in_queue.qsize(),
-        )
+        if self.debug_logging:
+            self.logger.debug(
+                "BatchOpen(%s): %s, current-size %s",
+                self.name,
+                req_id,
+                self.in_queue.qsize(),
+            )
         try:
             self.out_queues[req_id] = state = asyncio.Queue()  # type: ignore
             self.in_queue.put_nowait((req_id, data))
             yield state
         finally:
             del self.out_queues[req_id]
-            self.logger.debug(
-                "BatchClose(%s): %s, current-size %s",
-                self.name,
-                req_id,
-                self.in_queue.qsize(),
-            )
+            if self.debug_logging:
+                self.logger.debug(
+                    "BatchClose(%s): %s, current-size %s",
+                    self.name,
+                    req_id,
+                    self.in_queue.qsize(),
+                )
 
     async def submit(
         self, req_id: BatchReqId, data: BatchReqInput
@@ -239,12 +243,13 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                     batch, self.config.size, self.config.timeout
                 )
                 if batch:
-                    self.logger.debug(
-                        "DynamicBatcher(%s): Dequeued %d, (%s)",
-                        self.name,
-                        len(batch),
-                        batch.keys(),
-                    )
+                    if self.debug_logging:
+                        self.logger.debug(
+                            "DynamicBatcher(%s): Dequeued %d, (%s)",
+                            self.name,
+                            len(batch),
+                            batch.keys(),
+                        )
                     while batch:
                         batch_responses_list = await self.model_forward(
                             id(batch), batch, self.config.max_forward_steps
@@ -257,27 +262,29 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                                 == BatchingStrategy.DYNAMIC_IMMUTABLE
                                 and completed == batch.keys()
                             ):
-                                self.logger.debug(
-                                    "DynamicBatcher(%s): Completed %d (%s)",
-                                    self.name,
-                                    len(completed),
-                                    completed,
-                                )
+                                if self.debug_logging:
+                                    self.logger.debug(
+                                        "DynamicBatcher(%s): Completed %d (%s)",
+                                        self.name,
+                                        len(completed),
+                                        completed,
+                                    )
 
                                 for req_id in terminated:
                                     results[req_id] = STOP_STREAM
 
                                 for req_id in completed:
                                     del batch[req_id]
-                                    self.logger.debug(
-                                        (
-                                            "DynamicBatcher(%s): Deleted %s, %d"
-                                            " remaining"
-                                        ),
-                                        self.name,
-                                        req_id,
-                                        len(batch),
-                                    )
+                                    if self.debug_logging:
+                                        self.logger.debug(
+                                            (
+                                                "DynamicBatcher(%s): Deleted"
+                                                " %s, %d remaining"
+                                            ),
+                                            self.name,
+                                            req_id,
+                                            len(batch),
+                                        )
                             await self.respond(results)
                 else:
                     await asyncio.sleep(0)
@@ -306,16 +313,17 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                 if batch:
                     new_req_ids = batch.keys() - req_ids_before_deque
                     if new_req_ids:
-                        self.logger.debug(
-                            (
-                                "ContinuousBatcher(%s): Dequeued %d, Total %d,"
-                                " (%s)"
-                            ),
-                            self.name,
-                            len(batch),
-                            len(new_req_ids),
-                            new_req_ids,
-                        )
+                        if self.debug_logging:
+                            self.logger.debug(
+                                (
+                                    "ContinuousBatcher(%s): Dequeued %d, Total"
+                                    " %d, (%s)"
+                                ),
+                                self.name,
+                                len(batch),
+                                len(new_req_ids),
+                                new_req_ids,
+                            )
 
                     task_results = await asyncio.gather(
                         self.model_forward(
@@ -333,13 +341,13 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         for req_id in completed:
                             if req_id in already_completed:
                                 continue
-
-                            self.logger.debug(
-                                "ContinuousBatcher(%s): Completed %d (%s)",
-                                self.name,
-                                len(completed),
-                                completed,
-                            )
+                            if self.debug_logging:
+                                self.logger.debug(
+                                    "ContinuousBatcher(%s): Completed %d (%s)",
+                                    self.name,
+                                    len(completed),
+                                    completed,
+                                )
                             last_result[req_id] = STOP_STREAM
 
                         already_completed |= completed
@@ -353,12 +361,13 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                             self.model_cancel_queue.queue.put_many_nowait(
                                 cancelled
                             )
-                            self.logger.debug(
-                                "ContinuousBatcher(%s): Cancelled %d (%s)",
-                                self.name,
-                                len(cancelled),
-                                cancelled,
-                            )
+                            if self.debug_logging:
+                                self.logger.debug(
+                                    "ContinuousBatcher(%s): Cancelled %d (%s)",
+                                    self.name,
+                                    len(cancelled),
+                                    cancelled,
+                                )
 
                         already_cancelled |= completed
 
@@ -371,15 +380,16 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                             # We have terminated them by emitting a STOP_STEAM event above
                             # and can immediately remove them from the batch.
                             del batch[req_id]
-                            self.logger.debug(
-                                (
-                                    "ContinuousBatcher(%s): Deleted %s, %d"
-                                    " remaining"
-                                ),
-                                self.name,
-                                req_id,
-                                len(batch),
-                            )
+                            if self.debug_logging:
+                                self.logger.debug(
+                                    (
+                                        "ContinuousBatcher(%s): Deleted %s, %d"
+                                        " remaining"
+                                    ),
+                                    self.name,
+                                    req_id,
+                                    len(batch),
+                                )
                 elif last_batch_result:
                     # We may have pending results even if the batch has completed.
                     await asyncio.gather(*map(self.respond, last_batch_result))

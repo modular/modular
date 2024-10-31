@@ -114,6 +114,8 @@ def fastapi_app(
 
 def fastapi_config(app: FastAPI) -> Config:
     config = Config(app=app, host="0.0.0.0", log_config=None)
+    for route in app.routes:
+        logger.info("Route enabled : %s", route)
     return config
 
 

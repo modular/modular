@@ -130,34 +130,12 @@ TokenGeneratorContext = TypeVar("TokenGeneratorContext")
 class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     """Base class for LLM pipelines."""
 
-    def call_wrapper(self, batch):
-        self.stats.token_gen_batch_size = self.stats.token_gen_batch_size + len(
-            batch
-        )
-        self.stats.token_gen_batch_calls = self.stats.token_gen_batch_calls + 1
-        self.logger.info(
-            (
-                "Executing token-gen with, %s, step, %s, average, %s,"
-                " context-encoding-inq, %s, context-enc-outq, %s,"
-                " token-gen-inq, %s, token-gen-outq, %s"
-            ),
-            len(batch),
-            self.stats.token_gen_batch_calls,
-            self.stats.token_gen_batch_size / self.stats.token_gen_batch_calls,
-            self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1,
-            len(
-                self.context_enc_queue.out_queues
-            ) if self.context_enc_queue else -1,
-            self.token_gen_queue.in_queue.qsize(),
-            len(self.token_gen_queue.out_queues),
-        )
-        return batch
-
     def context_enc_non_empty(self) -> bool:
-        self.logger.debug(
-            "Called context_enc_non_empty with %s",
-            self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1,  # type: ignore
-        )
+        if self.debug_logging:
+            self.logger.debug(
+                "Called context_enc_non_empty with %s",
+                self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1,  # type: ignore
+            )
         if self.context_enc_queue:
             return (
                 self.context_enc_queue.in_queue.qsize()
@@ -168,10 +146,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
 
     def context_enc_full(self) -> bool:
         """Check if the context queue has a full batch in it."""
-        self.logger.debug(
-            "Called context_enc_full with %s",
-            self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1,  # type: ignore
-        )
+        if self.debug_logging:
+            self.logger.debug(
+                "Called context_enc_full with %s",
+                self.context_enc_queue.in_queue.qsize() if self.context_enc_queue else -1,  # type: ignore
+            )
         if self.context_enc_queue:
             return self.context_enc_queue.in_queue.qsize() >= 32
         return False
@@ -188,6 +167,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         self.tokenizer = tokenizer
         self.config = config
         self.stats = TokenGeneratorStats()
+        self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 
         self.queues: list[BatchMultiplexQueue] = []
         self.token_gen_queue = BatchMultiplexQueue(
@@ -253,14 +233,15 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         async with self.tokenizer_semaphore:
             with timers.context_creation:
                 context = await self.tokenizer.new_context(request)
+        if self.debug_logging:
+            self.logger.debug(
+                "%s [%d]: Context-Creation: %0.2f ms, Elapsed: %0.2f ms",
+                request.id,
+                request.index,
+                timers.context_creation.elapsed_ms,
+                timers.total.elapsed_ms,
+            )
 
-        self.logger.debug(
-            "%s [%d]: Context-Creation: %0.2f ms, Elapsed: %0.2f ms",
-            request.id,
-            request.index,
-            timers.context_creation.elapsed_ms,
-            timers.total.elapsed_ms,
-        )
         INPUT_TOKENS.inc(context.seq_len)
         tokenIdx = 0
         try:
@@ -283,13 +264,17 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                         )
                     else:
                         return
-                self.logger.debug(
-                    "%s [%d]: Context-Encoding: %0.2f ms, Elapsed: %0.2f ms",
-                    request.id,
-                    request.index,
-                    timers.context_encoding.elapsed_ms,
-                    timers.total.elapsed_ms,
-                )
+                if self.debug_logging:
+                    self.logger.debug(
+                        (
+                            "%s [%d]: Context-Encoding: %0.2f ms, Elapsed:"
+                            " %0.2f ms"
+                        ),
+                        request.id,
+                        request.index,
+                        timers.context_encoding.elapsed_ms,
+                        timers.total.elapsed_ms,
+                    )
             with timers.token_generation:
                 async for encoded_token in self.token_gen_queue.stream(
                     request.id, context
@@ -299,21 +284,24 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                         TTFT.observe(timers.ttft.elapsed_s)
                     tokenIdx += 1
                     yield await self.tokenizer.decode(context, encoded_token)
-            self.logger.debug(
-                "%s [%d]: Token-Generation: %0.2f ms, Elapsed: %0.2f ms",
-                request.id,
-                request.index,
-                timers.token_generation.elapsed_ms,
-                timers.total.elapsed_ms,
-            )
+            if self.debug_logging:
+                self.logger.debug(
+                    "%s [%d]: Token-Generation: %0.2f ms, Elapsed: %0.2f ms",
+                    request.id,
+                    request.index,
+                    timers.token_generation.elapsed_ms,
+                    timers.total.elapsed_ms,
+                )
         finally:
             self._complete_request(request)
-            self.logger.debug(
-                "%s [%d]: Completed: Elapsed: %0.2f ms",
-                request.id,
-                request.index,
-                timers.total.elapsed_ms,
-            )
+            if self.debug_logging:
+                self.logger.debug(
+                    "%s [%d]: Completed: Elapsed: %0.2f ms",
+                    request.id,
+                    request.index,
+                    timers.total.elapsed_ms,
+                )
+
             OUTPUT_TOKENS.inc(tokenIdx)
 
     async def all_tokens(self, request: TokenGeneratorRequest) -> list[str]:
