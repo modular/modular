@@ -10,12 +10,10 @@ from functools import reduce
 from random import Random
 
 import pytest
-from conftest import shapes, tensor_types, MAX_INT32
-from hypothesis import assume, given, example
+from conftest import MAX_INT32, shapes, tensor_types
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
-from max.dtype import DType
 from max.graph import Graph, TensorType
-
 
 # TODO(GRA-1015): remove limit to MAX_INT32
 input_shapes = st.shared(shapes(max_size=MAX_INT32))
@@ -82,6 +80,7 @@ def test_flatten_failure_indexing(input_type: TensorType, start: int, end: int):
             out = graph.inputs[0].flatten(start, end)
 
 
+@settings(suppress_health_check=[HealthCheck.filter_too_much])
 @given(
     input_type=tensor_types(shapes=input_shapes),
     normalized_start=within_rank,
