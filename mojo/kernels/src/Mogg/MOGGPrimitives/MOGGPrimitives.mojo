@@ -179,6 +179,19 @@ fn create_index_async(
     )
 
 
+@mogg_register("builtin.create_si64_async")
+@always_inline
+@export
+fn create_si64_async(
+    value: Scalar[DType.int64],
+    async_ptr: UnsafePointer[NoneType],
+    runtime: UnsafePointer[NoneType],
+):
+    external_call["KGEN_CompilerRT_CreateAsync_int64t", NoneType](
+        value, async_ptr, runtime
+    )
+
+
 @mogg_register("builtin.create_chain_async")
 @always_inline
 fn create_chain_async(
