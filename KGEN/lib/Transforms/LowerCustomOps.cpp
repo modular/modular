@@ -406,8 +406,14 @@ void ModRefAnalysis::processRegion(
 
     // Skip side-effect free ops and lifetime markers.
     if (mlir::isMemoryEffectFree(&op) ||
-        isa<POP::StackAllocLifetimeStartOp, POP::StackAllocLifetimeEndOp>(op))
+        isa<POP::StackAllocLifetimeStartOp, POP::StackAllocLifetimeEndOp>(op)) {
+      // For unknown region operations, treat the region as isolated.
+      for (Region &region : op.getRegions()) {
+        llvm::SetVector<Operation *> nestedPrev;
+        processRegion(region, cfg, nestedPrev, results, virtualPhiNodes);
+      }
       continue;
+    }
 
     auto node = dyn_cast<HLCF::ControlFlowNode>(op);
     if (!node) {
@@ -450,7 +456,6 @@ static Value getIdentifiedVariable(Value value) {
     return value;
   if (isa_and_nonnull<POP::ArrayGEPOp, StructGEPOp, POP::OffsetOp,
                       POP::PointerBitcastOp>(defOp)) {
-    assert(defOp->getNumOperands() == 1);
     return getIdentifiedVariable(defOp->getOperand(0));
   }
   auto arg = dyn_cast<BlockArgument>(value);
@@ -476,24 +481,6 @@ void ModRefAnalysis::compute(ModuleOp module) {
     DenseMap<HLCF::CFGNode, llvm::SetVector<Operation *>> virtualPhiNodes;
     processRegion(func.getBodyRegion(), cfg, prev, results, virtualPhiNodes);
 
-    // Now prune the modref results. First consider the specific memory effects.
-    for (auto &[op, result] : results) {
-      if (result.prevModRef.empty() && result.nextModRef.empty())
-        continue;
-
-      // For read-only ops, they have no next affected op.
-      if (mlir::hasSingleEffect<mlir::MemoryEffects::Read>(op))
-        result.nextModRef.clear();
-
-      // Remove read-only ops from previously affecting ops.
-      DenseSet<Operation *> filtered;
-      for (Operation *prev : result.prevModRef) {
-        if (!mlir::hasSingleEffect<mlir::MemoryEffects::Read>(prev))
-          filtered.insert(prev);
-      }
-      result.prevModRef = std::move(filtered);
-    }
-
     // Now consider aliasing between nonescaping identified variables. The user
     // only cares about modref relationships between operations on these
     // variables.
@@ -501,8 +488,35 @@ void ModRefAnalysis::compute(ModuleOp module) {
       // The user doesn't care about anything other than function calls, because
       // those ops cannot be optimized.
       auto callee = op->getAttrOfType<SymbolConstantAttr>("custom_op_callee");
-      if (!callee)
+      if (!callee) {
+        if (auto alloc = dyn_cast<POP::StackAllocationOp>(op)) {
+          result.varWrites.insert(alloc.getResult());
+          continue;
+        }
+        if (auto load = dyn_cast<POP::LoadOp>(op)) {
+          Value obj = getIdentifiedVariable(load.getPtr());
+          if (!obj)
+            continue;
+          if (isEscapedPointer(obj, cg)) {
+            result.refEscaped = true;
+            continue;
+          }
+          result.varReads.insert(obj);
+          continue;
+        }
+        if (auto store = dyn_cast<POP::StoreOp>(op)) {
+          Value obj = getIdentifiedVariable(store.getPtr());
+          if (!obj)
+            continue;
+          if (isEscapedPointer(obj, cg)) {
+            result.refEscaped = true;
+            continue;
+          }
+          result.varWrites.insert(obj);
+          continue;
+        }
         continue;
+      }
 
       // Find nonescaping identified variables that are known written to and
       // read from by the function call.
@@ -574,20 +588,36 @@ void ModRefAnalysis::compute(ModuleOp module) {
           continue;
         const ModRefResult &nextResult = results[next];
         bool keep = false;
+        bool foundDef = false;
         for (Value v : result.varWrites) {
-          if (nextResult.varReads.contains(v) ||
-              nextResult.varWrites.contains(v)) {
+          if (nextResult.varReads.contains(v)) {
             keep = true;
-            break;
+          }
+          if (nextResult.varWrites.contains(v)) {
+            keep = true;
+            foundDef = true;
           }
         }
         if (keep) {
           allResult.nextModRef.insert(next);
-          continue;
+          if (foundDef)
+            continue;
         }
         llvm::append_range(worklist, nextResult.nextModRef);
       }
     }
+
+    /*
+    for (auto &[op, result] : allResults) {
+      llvm::errs() << "\n\n" << *op << "\n";
+      llvm::errs() << "prev:\n";
+      for (Operation *op : result->prevModRef)
+        llvm::errs() << "  " << *op << "\n";
+      llvm::errs() << "next:\n";
+      for (Operation *op : result->nextModRef)
+        llvm::errs() << "  " << *op << "\n";
+    }
+    */
   }
 }
 
@@ -665,6 +695,7 @@ void LowerCustomOpsPass::runOnOperation() {
       module->getAttrOfType<DenseResourceElementsAttr>(kCustomOpImplModuleAttr);
   if (!templates)
     return;
+  module->removeAttr(kCustomOpImplModuleAttr);
   MLIRContext *ctx = &getContext();
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
@@ -818,15 +849,13 @@ void LowerCustomOpsPass::runOnOperation() {
   }
 
   // Instantiate ops if required.
-  if (counter) {
-    mlir::PassManager mgr(ctx);
-    lib.buildElaboratePipeline(mgr, lib);
-    if (failed(mgr.run(*instanceModule))) {
-      mlir::emitError(instanceModule->getLoc(), "op instantiation failed");
-      return signalPassFailure();
-    }
-    instanceSymtab = SymbolTable(*instanceModule);
+  mlir::PassManager mgr(ctx);
+  lib.buildElaboratePipeline(mgr, lib);
+  if (failed(mgr.run(*instanceModule))) {
+    mlir::emitError(instanceModule->getLoc(), "op instantiation failed");
+    return signalPassFailure();
   }
+  instanceSymtab = SymbolTable(*instanceModule);
 
   // Now go rewrite all the ops, lazily pulling in instantiated ops.
   for (const OpRewrite &rewrite : rewrites) {
@@ -852,7 +881,6 @@ void LowerCustomOpsPass::runOnOperation() {
       func.setInlineLevel(InlineLevel::Automatic);
     }
   }
-  module->removeAttr(kCustomOpImplModuleAttr);
 }
 
 std::unique_ptr<Pass> KGEN::createLowerCustomOps(const LibraryOptConfig &lib) {

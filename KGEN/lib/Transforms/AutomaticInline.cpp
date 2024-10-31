@@ -588,6 +588,11 @@ void AutomaticInline::runOnOperation() {
     }
     state.join();
   }
+
+  for (auto &[func, node] : graph.nodes) {
+    if (node.func && node.isFunctionDead())
+      symtab.remove(func);
+  }
 }
 
 std::unique_ptr<mlir::Pass> KGEN::createAutomaticInline(
