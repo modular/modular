@@ -862,7 +862,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
       std::string moduleName = llvmModule->getName().str();
 
       // Split the module into multiple slices and compile each in parallel.
-      bool emitAssembly = llvm::Triple(options.targetTriple).isNVPTX();
+      bool emitAssembly = isGPUBackend(options);
 
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
       SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =

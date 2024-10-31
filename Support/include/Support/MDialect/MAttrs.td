@@ -315,6 +315,11 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
       return getTriple().normalize();
     }
 
+    /// Returns whether the triple is a GPU target.
+    bool isGPU() const {
+      return getTriple().isNVPTX() || getTriple().isAMDGPU();
+    }
+
     /// Check if the target supports a specific hardware feature.
     bool hasFeature(StringRef feature) const {
       return getFeatures().contains(feature);

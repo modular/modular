@@ -217,13 +217,15 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
     }
   }
 
-  // For each argument and result, leverage signature information to generate
-  // the correpsonding LLVM argument and result attributes.
-  SmallVector<Attribute> argAttrs;
+  // Only GPU functions pass borrowed arguments by value.
   bool needsByVal =
       target.getTriple().isNVPTX() &&
       func->hasAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName()) &&
       func.getLinkage() == LLVM::Linkage::External;
+
+  // For each argument and result, leverage signature information to generate
+  // the corresponding LLVM argument and result attributes.
+  SmallVector<Attribute> argAttrs;
   for (auto [i, conv, type] :
        llvm::enumerate(sig.getArgConventions(), sig.getArguments())) {
     NamedAttrList &list = argAttrLists[i];
@@ -388,11 +390,16 @@ public:
     if (func.isExported()) {
       funcOp.setDsoLocal(true);
 
-      // Exported functions to the NVVM target get a special metadata
+      // Exported functions to the GPU target get a special metadata
       // attribute to tell LLVM that these are kernel functions.
-      if (target.getTriple().isNVPTX())
-        funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
-                        b.getUnitAttr());
+      if (target.isGPU()) {
+        if (target.getTriple().isNVPTX()) {
+          funcOp->setAttr(mlir::NVVM::NVVMDialect::getKernelFuncAttrName(),
+                          b.getUnitAttr());
+        } else {
+          funcOp.setCConv(mlir::LLVM::cconv::CConv::AMDGPU_KERNEL);
+        }
+      }
     }
     if (failed(convertLLVMMetadata(funcOp, func.getSignature(),
                                    func.getLLVMMetadataAttr(), ids,
@@ -802,7 +809,7 @@ static LogicalResult convertGlobals(ModuleOp module, POPToLLVMTypeConverter &tc,
 
   // HACK HACK HACK https://github.com/modularml/modular/issues/22959
   // HACK: NVPTX doesn't support global destructors.
-  if (tc.getTarget().getTriple().isNVPTX())
+  if (tc.getTarget().isGPU())
     return success();
 
   auto b = OpBuilder::atBlockBegin(module.getBody());
@@ -1121,8 +1128,8 @@ void LowerKGENToLLVMPass::runOnOperation() {
   }
 
   // HACK HACK HACK: Our current name mangling scheme is not compatible with the
-  // NVPTX backend. Change the symbol names to be compatbile.
-  if (targetInfo.getTriple().isNVPTX()) {
+  // GPU backends. Change the symbol names to be compatible.
+  if (targetInfo.isGPU()) {
     DenseMap<StringAttr, StringAttr> renamed;
     for (auto symbol : getOperation().getOps<mlir::SymbolOpInterface>()) {
       StringAttr name = symbol.getNameAttr();
