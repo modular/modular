@@ -49,6 +49,7 @@ class PerformanceFakingTokenGeneratorTokenizer(
             encoded_prompt = self._tokenize(request.prompt)
             prompt_length = len(encoded_prompt)
         else:
+            encoded_prompt = request.prompt
             prompt_length = len(request.prompt)
         num_tokens = request.max_new_tokens or prompt_length
         return PerformanceFakingContext(
