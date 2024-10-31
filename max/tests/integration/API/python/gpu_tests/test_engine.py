@@ -12,7 +12,7 @@ from max import mlir
 from max.driver import CPU, CUDA, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Value
+from max.graph import DeviceType, Device, Graph, TensorType, Value
 from max.mlir.dialects import mo
 
 
@@ -116,8 +116,10 @@ class Model:
 
         # Set the constant external op's device explicitly.
         const_external_op = weights_tensor._mlir_value.owner
-        const_external_op.attributes["device"] = mlir.Attribute.parse(
-            '#M.device_ref<"cpu", 0>' if self.device.is_host else '#M.device_ref<"cuda", 0>'
+        const_external_op.attributes["device"] = (
+            Device(DeviceType.CPU, 0)
+            .to_mlir() if self.device.is_host else Device(DeviceType.CUDA, 0)
+            .to_mlir()
         )
 
         return input + weights_tensor
