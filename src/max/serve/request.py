@@ -6,6 +6,7 @@
 
 
 import logging
+from time import perf_counter_ns
 import uuid
 from typing import Callable
 
@@ -27,6 +28,7 @@ def register_request(app: FastAPI):
         with REQ_TIME.labels(request.url.path).time():
             request_id = str(uuid.uuid4())
             request.state.request_id = request_id
+            request.state.recv_time_ns = perf_counter_ns()
             try:
                 response: Response = await call_next(request)
                 status_code = response.status_code

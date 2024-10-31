@@ -48,3 +48,7 @@ class StopWatch:
     @property
     def elapsed_ms(self) -> float:
         return self.elapsed_ns / 1e6
+
+    @property
+    def elapsed_s(self) -> float:
+        return self.elapsed_ns / 1e9

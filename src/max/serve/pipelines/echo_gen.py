@@ -16,6 +16,7 @@ class EchoTokenGeneratorContext:
     prompt: str
     index: int
     max_tokens: int
+    seq_len: int
     tokens: str = ""
 
 
@@ -32,6 +33,7 @@ class EchoTokenGeneratorTokenizer(
             request.max_new_tokens if request.max_new_tokens else len(
                 request.prompt
             ),
+            len(request.prompt),
         )
 
 

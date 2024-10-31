@@ -250,6 +250,7 @@ async def openai_create_chat_completion(request: Request) -> Response:
             id=request_id,
             prompt=request_prompt,
             model_name=completion_request.model,
+            req_recv_time_ns=request.state.recv_time_ns,
             max_new_tokens=completion_request.max_tokens,
         )
 
@@ -408,6 +409,7 @@ async def openai_create_completion(request: Request) -> Response:
             id=request_id,
             prompt=request_prompt,
             model_name=completion_request.model,
+            req_recv_time_ns=request.state.recv_time_ns,
             max_new_tokens=completion_request.max_tokens,
         )
 

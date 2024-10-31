@@ -12,6 +12,7 @@ from typing import Optional
 @dataclass
 class RandomTokenGeneratorContext:
     prompt: str
+    seq_len: int
 
 
 @dataclass
@@ -21,7 +22,7 @@ class RandomTokenGenerator:
     ) -> RandomTokenGeneratorContext:
         if max_new_tokens is not None:
             raise NotImplementedError("max_new_tokens is not supported.")
-        return RandomTokenGeneratorContext(prompt)
+        return RandomTokenGeneratorContext(prompt, len(prompt))
 
     def next_token(
         self, batch: dict[str, RandomTokenGeneratorContext]
