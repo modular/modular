@@ -16,12 +16,12 @@ from memory import UnsafePointer
 alias MI300X_TARGET = _get_nvptx_target["mi300x"]()
 
 
-fn kernel(x: Int) -> Int:
-    return ThreadIdx.x()
+fn kernel(x: UnsafePointer[Int]):
+    x[0] = ThreadIdx.x()
 
 
-fn parametric[f: fn (Int) -> Int]() -> Int:
-    return f(42)
+fn parametric[f: fn (UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
+    f(ptr)
 
 
 # from https://rocm.blogs.amd.com/software-tools-optimization/amdgcn-isa/README.html#naive-load-and-store
@@ -66,7 +66,7 @@ def test_threadid_compile():
         ]()
     )
 
-    # CHECK-LABEL: test_compile_gcn::load_store
+    # CHECK-LABEL: @test_compile_gcn_load_store_
     # CHECK: llvm.amdgcn.workitem.id.x
     # CHECK: %[[VAR:.*]] = tail call ptr addrspace(4) @llvm.amdgcn.implicitarg.ptr()
     # CHECK: getelementptr i8, ptr addrspace(4) %[[VAR]], i64 12
