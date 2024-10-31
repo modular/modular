@@ -34,7 +34,7 @@ PythonObjectWrapper stringToPythonObject(llvm::StringRef str) {
 /// Get value from a Python dict
 /// returns nullptr if dict is not a dict or key not found
 PythonObjectWrapper getDictValue(PyObject *dict, llvm::StringRef keyStr) {
-  if (!PyDict_Check(dict))
+  if (!dict || !PyDict_Check(dict))
     return {};
 
   auto key = stringToPythonObject(keyStr);
@@ -53,10 +53,68 @@ std::optional<bool> getDictBool(PyObject *dict, llvm::StringRef keyStr) {
   return std::nullopt;
 }
 
-void setDictKeyValue(PyObject *dict, llvm::StringRef key, llvm::StringRef val) {
+bool setDictKeyValueString(PyObject *dict, llvm::StringRef key,
+                           llvm::StringRef val) {
+  PythonGIL gil;
+
+  if (!dict || !PyDict_Check(dict))
+    return false;
+
   auto pyKey = stringToPythonObject(key);
+  if (!pyKey)
+    return false;
+
   auto pyVal = stringToPythonObject(val);
-  // FIXME: Error checking
-  PyDict_SetItem(dict, pyKey.ptr, pyVal.ptr);
+  if (!pyVal)
+    return false;
+
+  if (PyDict_SetItem(dict, pyKey.ptr, pyVal.ptr) < 0)
+    return false;
+
+  return true;
+}
+
+bool setDictKeyValueBool(PyObject *dict, llvm::StringRef key, bool val) {
+  PythonGIL gil;
+
+  if (!dict || !PyDict_Check(dict))
+    return false;
+
+  // Convert the key to a Python string object
+  PythonObjectWrapper pyKey = stringToPythonObject(key);
+  if (!pyKey)
+    return false;
+
+  // Convert the bool value to a Python boolean object
+  PyObject *pyVal = val ? Py_True : Py_False;
+
+  // Set the key-value pair in the dictionary
+  if (PyDict_SetItem(dict, pyKey.ptr, pyVal) < 0)
+    return false;
+
+  return true;
+}
+
+bool setDictKeyValueLong(PyObject *dict, llvm::StringRef key, long value) {
+  PythonGIL gil;
+
+  if (!dict || !PyDict_Check(dict))
+    return false;
+
+  // Convert the key to a Python string object
+  PythonObjectWrapper pyKey = stringToPythonObject(key);
+  if (!pyKey)
+    return false;
+
+  // Convert the int value to a Python integer object
+  PythonObjectWrapper pyVal{PyLong_FromLong(value), false};
+  if (!pyVal)
+    return false;
+
+  // Set the key-value pair in the dictionary
+  if (PyDict_SetItem(dict, pyKey.ptr, pyVal.ptr) < 0)
+    return false;
+
+  return true;
 }
 } // namespace M::CPython

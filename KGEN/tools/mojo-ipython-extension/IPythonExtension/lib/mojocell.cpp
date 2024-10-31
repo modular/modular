@@ -96,17 +96,14 @@ iPythonMagicMojoCellExecute(PyObject *opts) {
   PyObject *result = PyDict_New();
 
   // This is probably not necessary as it's the same data passed in
-  setDictKeyValue(result, "cell", cell);
+  setDictKeyValueString(result, "cell", cell);
 
-  // TODO: setDictKeyValue w/ bool value instead of string
-  setDictKeyValue(result, "built", llvm::Twine(doBuild).str());
-
-  // TODO: setDictKeyValue w/ int isntead of string.
-  setDictKeyValue(result, "result_code", llvm::Twine(result_code).str());
+  setDictKeyValueBool(result, "built", doBuild);
+  setDictKeyValueLong(result, "result_code", result_code);
 
   if (!errors.empty())
-    setDictKeyValue(result, "error_msg",
-                    llvm::join(errors.begin(), errors.end(), "\n"));
+    setDictKeyValueString(result, "error_msg",
+                          llvm::join(errors.begin(), errors.end(), "\n"));
 
   return result;
 }
