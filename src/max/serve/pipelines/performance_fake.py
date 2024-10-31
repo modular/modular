@@ -20,6 +20,7 @@ class PerformanceFakingContext:
     # simulation attributes
     prompt_len: int
     context_len: int
+    seq_len: int
     max_tokens: int
 
     # correctness attributes
@@ -52,6 +53,7 @@ class PerformanceFakingTokenGeneratorTokenizer(
         num_tokens = request.max_new_tokens or prompt_length
         return PerformanceFakingContext(
             prompt_length,
+            0,
             0,
             num_tokens,
             request.prompt,
