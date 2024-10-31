@@ -176,33 +176,17 @@ struct LayoutTensor[
     alias element_size = element_layout.size()
     alias element_type = SIMD[dtype, Self.element_size]
 
-    # An offset of the global coords.
-    var org_coords_offset: IndexList[rank]
-    # The stride of the global coords.
-    var org_coords_stride: IndexList[rank]
-
     # ===------------------------------------------------------------------=== #
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
     @always_inline
-    fn __init__(
-        inout self,
-        ptr: UnsafePointer[Scalar[dtype], address_space],
-        /,
-        *,
-        org_coords_offset: IndexList[rank] = IndexList[rank](0),
-        org_coords_stride: IndexList[rank] = IndexList[rank](1),
-    ):
+    fn __init__(inout self, ptr: UnsafePointer[Scalar[dtype], address_space]):
         """Create a LayoutTensor with an UnsafePointer. Expect layout to be
         fully static.
 
         Args:
             ptr: The UnsafePointer pointing to the underlying data.
-            org_coords_offset: The coordinate offset with respect to the global
-                               coordinates of the pointer.
-            org_coords_stride: The coordinate stride with respect to the global
-                               coordinates of the pointer.
         """
 
         constrained[layout.all_dims_known(), "Layout must be fully static"]()
@@ -211,18 +195,12 @@ struct LayoutTensor[
             layout, bitwidth = Self.layout_bitwidth
         ]()
         self.runtime_element_layout = RuntimeLayout[element_layout]()
-        self.org_coords_offset = org_coords_offset
-        self.org_coords_stride = org_coords_stride
 
     @always_inline
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[dtype], address_space],
         runtime_layout: RuntimeLayout[layout, **_],
-        /,
-        *,
-        org_coords_offset: IndexList[rank] = IndexList[rank](0),
-        org_coords_stride: IndexList[rank] = IndexList[rank](1),
     ):
         """Create a LayoutTensor with an UnsafePointer. Expect element layout
         to be fully static.
@@ -230,10 +208,6 @@ struct LayoutTensor[
         Args:
             ptr: The UnsafePointer pointing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
-            org_coords_offset: The coordinate offset with respect to the global
-                               coordinates of the pointer.
-            org_coords_stride: The coordinate stride with respect to the global
-                               coordinates of the pointer.
         """
 
         constrained[
@@ -250,8 +224,6 @@ struct LayoutTensor[
             RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]
         ](runtime_layout)
         self.runtime_element_layout = RuntimeLayout[element_layout]()
-        self.org_coords_offset = org_coords_offset
-        self.org_coords_stride = org_coords_stride
 
     @always_inline
     fn __init__(
@@ -259,10 +231,6 @@ struct LayoutTensor[
         ptr: UnsafePointer[Scalar[dtype], address_space],
         runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
         element_runtime_layout: RuntimeLayout[element_layout],
-        /,
-        *,
-        org_coords_offset: IndexList[rank] = IndexList[rank](0),
-        org_coords_stride: IndexList[rank] = IndexList[rank](1),
     ):
         """Create a LayoutTensor with an UnsafePointer, a runtime layout of the
         Tensor, the runtime layout of each element.
@@ -271,16 +239,10 @@ struct LayoutTensor[
             ptr: The UnsafePointer pointing to the underlying data.
             runtime_layout: The runtime layout of the LayoutTensor.
             element_runtime_layout: The runtime layout of each element.
-            org_coords_offset: The coordinate offset with respect to the global
-                               coordinates of the pointer.
-            org_coords_stride: The coordinate stride with respect to the global
-                               coordinates of the pointer.
         """
         self.ptr = ptr
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = element_runtime_layout
-        self.org_coords_offset = org_coords_offset
-        self.org_coords_stride = org_coords_stride
 
     fn __init__(inout self, *, other: Self):
         """Explicitly copy the other LayoutTensor.
@@ -1157,19 +1119,9 @@ struct LayoutTensor[
                 alias stride = to_int(__tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
-            # Update offset to account for tile coords.
-            var org_coords_offset = self.org_coords_offset
-
-            @parameter
-            for i in range(rank):
-                org_coords_offset[i] += tile_sizes[i] * tile_coords[i]
-
             return __type_of(result)(
                 self.ptr.offset(offset),
                 RuntimeLayout(runtime_shape, runtime_stride),
-                org_coords_offset=rebind[IndexList[result.layout.rank()]](
-                    org_coords_offset
-                ),
             )
 
         else:
@@ -1533,10 +1485,6 @@ struct LayoutTensor[
 
         var runtime_stride = RuntimeTuple[result.layout.stride, unsigned=True]()
 
-        # Update org_coords offset and stride according to thread_id.
-        var org_coords_offset = IndexList[res_rank]()
-        var org_coords_stride = IndexList[res_rank]()
-
         @parameter
         for i in range(res_rank):
             alias stride_i: UInt = to_int(
@@ -1545,9 +1493,6 @@ struct LayoutTensor[
             alias shape_i: UInt = to_int(
                 flatten(coalesce_thread_layout.shape)[axis.value()]
             ) if axis else to_int(flatten(coalesce_thread_layout.shape)[i])
-            var thread_corrrds_i: UInt = (thread_id // stride_i) % shape_i
-            org_coords_offset[i] = thread_corrrds_i + self.org_coords_offset[i]
-            org_coords_stride[i] = self.org_coords_stride[i] * shape_i
 
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
@@ -1597,12 +1542,6 @@ struct LayoutTensor[
             return __type_of(result)(
                 self.ptr.offset(int(swizzled_offset)),
                 RuntimeLayout(runtime_shape, runtime_stride),
-                org_coords_offset=rebind[IndexList[result.layout.rank()]](
-                    org_coords_offset
-                ),
-                org_coords_stride=rebind[IndexList[result.layout.rank()]](
-                    org_coords_stride
-                ),
             )
 
         else:
@@ -1664,39 +1603,13 @@ struct LayoutTensor[
                 return __type_of(result)(
                     self.ptr.offset(int(swizzled_offset)),
                     RuntimeLayout(runtime_shape, runtime_stride),
-                    org_coords_offset=rebind[IndexList[result.layout.rank()]](
-                        org_coords_offset
-                    ),
-                    org_coords_stride=rebind[IndexList[result.layout.rank()]](
-                        org_coords_stride
-                    ),
                 )
             else:
                 return __type_of(result)(
                     self.ptr.offset(int(swizzled_offset)),
                     RuntimeLayout(runtime_shape, runtime_stride),
                     self.runtime_element_layout,
-                    org_coords_offset=rebind[IndexList[result.layout.rank()]](
-                        org_coords_offset
-                    ),
-                    org_coords_stride=rebind[IndexList[result.layout.rank()]](
-                        org_coords_stride
-                    ),
                 )
-
-    # Returns the original coordiantes a specific tensor element at `idx`.
-    @always_inline
-    fn element_coords[idx: Int](self) -> IndexList[rank]:
-        constrained[
-            layout.known_shape(),
-            "element_coords only support layouts of know shape",
-        ]()
-        alias layout_coords = Layout(Self.layout.shape)
-        alias coords = Self._toStatic[layout_coords.idx2crd(idx)]()
-        return (
-            self.org_coords_offset
-            + rebind[IndexList[rank]](coords) * self.org_coords_stride
-        )
 
     @always_inline
     fn vectorize[
@@ -1708,9 +1621,6 @@ struct LayoutTensor[
         element_layout = Self._divide_tiles[*vector_shape]()[0],
         __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
-        # Update element stride to account for vector shapes.
-        var org_coords_stride = IndexList[rank]()
-
         @parameter
         @always_inline
         fn __check_vector_shape[*vec_shape: Int]():
@@ -1743,10 +1653,6 @@ struct LayoutTensor[
             __check_vector_shape[*vector_shape]()
 
         @parameter
-        for i in range(rank):
-            org_coords_stride[i] = vector_shape[i]
-
-        @parameter
         if layout.all_dims_known():
             runtime_shape = RuntimeTuple[
                 result.layout.shape,
@@ -1768,14 +1674,7 @@ struct LayoutTensor[
                     )
 
             return __type_of(result)(
-                self.ptr,
-                RuntimeLayout(runtime_shape, runtime_stride),
-                org_coords_offset=rebind[IndexList[result.layout.rank()]](
-                    self.org_coords_offset
-                ),
-                org_coords_stride=rebind[IndexList[result.layout.rank()]](
-                    org_coords_stride
-                ),
+                self.ptr, RuntimeLayout(runtime_shape, runtime_stride)
             )
         else:
             constrained[
@@ -1815,9 +1714,6 @@ struct LayoutTensor[
                         runtime_element_layout_shape,
                         runtime_element_layout_stride,
                     )
-                ),
-                org_coords_offset=rebind[IndexList[result.layout.rank()]](
-                    self.org_coords_offset
                 ),
             )
 
@@ -2060,10 +1956,7 @@ struct LayoutTensor[
             return idx
 
     @always_inline
-    fn copy_from[
-        dst_coords_bound: OptionalReg[IndexList[rank]] = None,
-        src_coords_bound: OptionalReg[IndexList[rank]] = None,
-    ](self, other: LayoutTensor):
+    fn copy_from(self, other: LayoutTensor):
         alias other_layout = other.layout
 
         alias dst_element_size = int(self.element_size)
@@ -2097,57 +1990,10 @@ struct LayoutTensor[
             dst_element_size == src_element_size, "copy_from should move"
         ]()
 
-        alias has_copy_bounds = dst_coords_bound or src_coords_bound
-
-        @parameter
-        @always_inline
-        fn __is_in_bound[
-            rank: Int
-        ](coords: IndexList[rank], bounds: IndexList[rank]) -> Bool:
-            var in_bound = True
-
-            @parameter
-            for dim in range(rank):
-                in_bound &= coords[dim] < bounds[dim]
-            return in_bound
-
-        @parameter
-        @always_inline
-        fn __compute_element_bound[
-            element_layout: Layout
-        ](coords: IndexList[rank], bounds: IndexList[rank]) -> IndexList[rank]:
-            var element_bound = IndexList[rank]()
-
-            @parameter
-            for dim in range(rank):
-                alias dim_size = to_int(element_layout.shape[dim])
-                element_bound[dim] = (
-                    min(dim_size, bounds[dim] - coords[dim]) if coords[dim]
-                    < bounds[dim] else 0
-                )
-            return element_bound
-
         @parameter
         @always_inline
         fn __load_element[i: Int]() -> Element[dtype, other.element_layout]:
             var src_idx = other.__get_element_idx[i]()
-
-            @parameter
-            if src_element_size != 1 and src_coords_bound.__bool__():
-                var element_bounds = __compute_element_bound[
-                    other.element_layout
-                ](
-                    rebind[IndexList[rank]](other.element_coords[i]()),
-                    src_coords_bound.value(),
-                )
-                return Element[dtype, other.element_layout].masked_load(
-                    rebind[UnsafePointer[Scalar[dtype], other.address_space]](
-                        other.ptr
-                    ).offset(src_idx),
-                    element_bounds,
-                    other.runtime_element_layout,
-                )
-
             return Element[dtype, other.element_layout].load(
                 rebind[UnsafePointer[Scalar[dtype], other.address_space]](
                     other.ptr
@@ -2161,50 +2007,17 @@ struct LayoutTensor[
             i: Int
         ](src_element: Element[dtype, other.element_layout]):
             var dst_idx = self.__get_element_idx[i]()
-
-            @parameter
-            if dst_element_size != 1 and dst_coords_bound.__bool__():
-                var element_bounds = __compute_element_bound[
-                    self.element_layout
-                ](self.element_coords[i](), dst_coords_bound.value())
-                Element[dtype, self.element_layout](
-                    rebind[
-                        Element[dtype, self.element_layout].element_data_type
-                    ](src_element.element_data)
-                ).masked_store(self.ptr.offset(dst_idx), element_bounds)
-            else:
-                Element[dtype, self.element_layout](
-                    rebind[
-                        Element[dtype, self.element_layout].element_data_type
-                    ](src_element.element_data)
-                ).store(self.ptr.offset(dst_idx))
+            Element[dtype, self.element_layout](
+                rebind[Element[dtype, self.element_layout].element_data_type](
+                    src_element.element_data
+                )
+            ).store(self.ptr.offset(dst_idx))
 
         @parameter
         if not __experimental_non_homogeneous_tile:
 
             @parameter
             for i in range(dst_size):
-
-                @parameter
-                if has_copy_bounds:
-
-                    @parameter
-                    if src_coords_bound.__bool__() and dst_element_size == 1:
-                        if not __is_in_bound(
-                            self.element_coords[i](), dst_coords_bound.value()
-                        ):
-                            continue
-
-                    @parameter
-                    if dst_coords_bound.__bool__() and src_element_size == 1:
-                        if not __is_in_bound(
-                            other.element_coords[i](),
-                            rebind[IndexList[other.rank]](
-                                dst_coords_bound.value()
-                            ),
-                        ):
-                            continue
-
                 __store_element[i](__load_element[i]())
 
         else:

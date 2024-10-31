@@ -133,15 +133,10 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
     @staticmethod
     fn masked_load(
         ptr: UnsafePointer[Scalar[dtype], *_, **_],
-        element_bounds: IndexList,
         runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
     ) -> Self:
         # TODO: Use partial_simd_load after closing KERN-729.
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
-        constrained[
-            element_bounds.size == layout.rank(),
-            "bounds rank must match layout rank",
-        ]()
         var element_data = Self.element_data_type()
 
         @parameter
@@ -151,11 +146,11 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
             @parameter
             if layout.stride[0] == 1:
                 alias alignment = alignof[Self.element_data_type]()
-                if element_bounds[0] < size:
+                if runtime_layout.dim(0) < size:
 
                     @parameter
                     for i in range(size):
-                        if i >= element_bounds[0]:
+                        if i >= runtime_layout.dim(0):
                             break
                         element_data[i] = ptr[__get_offset[i](runtime_layout)]
                     return Element(element_data, runtime_layout)
@@ -166,7 +161,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
 
             @parameter
             for i in range(size):
-                if i >= element_bounds[0]:
+                if i >= runtime_layout.dim(0):
                     break
                 element_data[i] = ptr[__get_offset[i](runtime_layout)]
             return Element(element_data, runtime_layout)
@@ -179,18 +174,18 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]
             var element_data = Self.element_data_type()
-            if element_bounds[0] < size:
+            if runtime_layout.dim(0) < size:
                 alias dim_0 = to_int(layout.shape[0])
                 alias dim_1 = to_int(layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
-                    if i >= element_bounds[0]:
+                    if i >= runtime_layout.dim(0):
                         break
 
                     @parameter
                     for j in range(dim_1):
-                        if j >= element_bounds[1]:
+                        if j >= runtime_layout.dim(1):
                             break
                         element_data[i + j * dim_0] = ptr[
                             __get_offset[i, j](runtime_layout)
@@ -199,7 +194,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
 
             @parameter
             for i in range(elements):
-                if i >= element_bounds[0]:
+                if i >= runtime_layout.dim(0):
                     break
                 var vec_i = ptr.load[width=size](
                     __get_offset[0, i](runtime_layout)
@@ -213,18 +208,18 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]
             var element_data = Self.element_data_type()
-            if element_bounds[1] < size:
+            if runtime_layout.dim(1) < size:
                 alias dim_0 = to_int(layout.shape[0])
                 alias dim_1 = to_int(layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
-                    if i >= element_bounds[0]:
+                    if i >= runtime_layout.dim(0):
                         break
 
                     @parameter
                     for j in range(dim_1):
-                        if j >= element_bounds[1]:
+                        if j >= runtime_layout.dim(1):
                             break
                         element_data[i + j * dim_0] = ptr[
                             __get_offset[i, j](runtime_layout)
@@ -233,7 +228,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
 
             @parameter
             for i in range(elements):
-                if i >= element_bounds[0]:
+                if i >= runtime_layout.dim(0):
                     break
                 var vec_i = ptr.load[width=size](
                     __get_offset[i, 0](runtime_layout)
@@ -246,12 +241,12 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
 
         @parameter
         for i in range(dim_0):
-            if i >= element_bounds[0]:
+            if i >= runtime_layout.dim(0):
                 break
 
             @parameter
             for j in range(dim_1):
-                if j >= element_bounds[1]:
+                if j >= runtime_layout.dim(1):
                     break
                 element_data[i + j * dim_0] = ptr[
                     __get_offset[i, j](runtime_layout)
@@ -317,17 +312,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
                     self.element_data[i + j * dim_0]
                 )
 
-    fn masked_store[
-        rank: Int
-    ](
-        self,
-        ptr: UnsafePointer[Scalar[dtype], *_, **_],
-        element_bounds: IndexList[rank],
-    ):
+    fn masked_store(self, ptr: UnsafePointer[Scalar[dtype], *_, **_]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
-        constrained[
-            rank == layout.rank(), "bounds rank must match layout rank"
-        ]()
 
         @parameter
         if layout.rank() == 1:
@@ -335,11 +321,11 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
 
             @parameter
             if layout.stride[0] == 1:
-                if element_bounds[0] < size:
+                if self.runtime_layout.dim(0) < size:
 
                     @parameter
                     for i in range(size):
-                        if i >= element_bounds[0]:
+                        if i >= self.runtime_layout.dim(0):
                             break
                         ptr[
                             __get_offset[i](self.runtime_layout)
@@ -352,7 +338,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
 
             @parameter
             for i in range(size):
-                if i >= element_bounds[0]:
+                if i >= self.runtime_layout.dim(0):
                     break
                 ptr[__get_offset[i](self.runtime_layout)] = self.element_data[i]
             return
@@ -363,25 +349,25 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
             alias elements = to_int(layout.shape[1])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
-            if element_bounds[1] < size:
+            if self.runtime_layout.dim(1) < size:
                 alias dim_0 = to_int(layout.shape[0])
                 alias dim_1 = to_int(layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
-                    if i >= element_bounds[0]:
+                    if i >= self.runtime_layout.dim(0):
                         break
 
                     @parameter
                     for j in range(dim_1):
-                        if j >= element_bounds[1]:
+                        if j >= self.runtime_layout.dim(1):
                             break
                         ptr[] = __get_offset[i, j](self.runtime_layout)
                 return
 
             @parameter
             for i in range(elements):
-                if i >= element_bounds[0]:
+                if i >= self.runtime_layout.dim(0):
                     break
                 (ptr + __get_offset[i, 0](self.runtime_layout)).store[
                     alignment=alignment
@@ -395,18 +381,18 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
             alias elements = to_int(layout.shape[0])
             alias vec_type = SIMD[dtype, size]
             alias alignment = alignof[vec_type]()
-            if element_bounds[1] < size:
+            if self.runtime_layout.dim(1) < size:
                 alias dim_0 = to_int(layout.shape[0])
                 alias dim_1 = to_int(layout.shape[1])
 
                 @parameter
                 for i in range(dim_0):
-                    if i >= element_bounds[0]:
+                    if i >= self.runtime_layout.dim(0):
                         break
 
                     @parameter
                     for j in range(dim_1):
-                        if j >= element_bounds[1]:
+                        if j >= self.runtime_layout.dim(1):
                             break
                         (ptr + __get_offset[i, j](self.runtime_layout)).store(
                             self.element_data[i + j * dim_0],
@@ -415,7 +401,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
 
             @parameter
             for i in range(elements):
-                if i >= element_bounds[0]:
+                if i >= self.runtime_layout.dim(0):
                     break
                 (ptr + __get_offset[i, 0](self.runtime_layout)).store[
                     alignment=alignment
@@ -429,12 +415,12 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
 
         @parameter
         for i in range(dim_0):
-            if i >= element_bounds[0]:
+            if i >= self.runtime_layout.dim(0):
                 break
 
             @parameter
             for j in range(dim_1):
-                if j >= element_bounds[1]:
+                if j >= self.runtime_layout.dim(1):
                     break
                 (ptr + __get_offset[i, j](self.runtime_layout)).store(
                     self.element_data[i + j * dim_0]
