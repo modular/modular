@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef SUPPORT_CPYTHON_UTIL_H
+#define SUPPORT_CPYTHON_UTIL_H
+
 #include "Support/CPython/PythonObject.h"
 #include "llvm/ADT/StringRef.h"
 #include <optional>
@@ -21,9 +24,6 @@ PythonObjectWrapper stringToPythonObject(llvm::StringRef str);
 /// Get wrapped Python value from key:string in a Python dict
 /// returns empty wrapper if dict is not a dict or key not found
 PythonObjectWrapper getDictValue(PyObject *dict, llvm::StringRef keyStr);
-
-/// Set a value in a dict[key:string, key:string]
-void setDictKeyValue(PyObject *dict, llvm::StringRef key, llvm::StringRef val);
 
 /// Get a PyBool value from a key::string
 std::optional<bool> getDictBool(PyObject *dict, llvm::StringRef keyStr);
@@ -50,4 +50,16 @@ std::optional<bool> getDictValueAs<bool>(PyObject *dict, llvm::StringRef key) {
   return getDictBool(dict, key);
 }
 
+/// Set a string value in a dict[key:string, key:string]
+bool setDictKeyValueString(PyObject *dict, llvm::StringRef key,
+                           llvm::StringRef val);
+
+/// Set a boolean vlaue in a dict[key:string, value: bool]
+bool setDictKeyValueBool(PyObject *dict, llvm::StringRef key, bool val);
+
+/// Set an integer value in a dict[key:string, value:int]
+bool setDictKeyValueLong(PyObject *dict, llvm::StringRef key, long val);
+
 } // namespace M::CPython
+
+#endif // SUPPORT_CPYTHON_UTIL_H
