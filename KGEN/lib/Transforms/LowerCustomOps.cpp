@@ -236,12 +236,15 @@ struct ModRefAnalysis : public mlir::RewriterBase::Listener {
       Region &region, const HLCF::CFGAnalysis &cfg,
       llvm::SetVector<Operation *> &prev,
       llvm::MapVector<Operation *, ModRefResult> &results,
-      DenseMap<HLCF::CFGNode, llvm::SetVector<Operation *>> &virtualPhiNodes);
+      DenseMap<HLCF::CFGNode, llvm::SetVector<Operation *>> &virtualPhiNodes,
+      bool dryRun);
   void compute(ModuleOp module);
 
   void rauw(ArrayRef<Operation *> from, ArrayRef<Operation *> to);
   void notifyOperationErased(Operation *op) override {
-    if (allResults.contains(op)) {
+    if (auto it = allResults.find(op); it != allResults.end()) {
+      if (it->second->nextModRef.empty() && it->second->prevModRef.empty())
+        return;
       std::string msg;
       llvm::raw_string_ostream os(msg);
       os << "erasing operation that still has memory effect observers, please "
@@ -352,7 +355,7 @@ static bool isEscapedPointer(Value arg, CallGraph &cg) {
       }
 
       // Handle calls specially.
-      auto callee = user->getAttrOfType<SymbolConstantAttr>("custom_op_callee");
+      auto callee = user->getAttrOfType<SymbolConstantAttr>("callee");
       if (!callee)
         return true;
 
@@ -391,7 +394,8 @@ void ModRefAnalysis::processRegion(
     Region &region, const HLCF::CFGAnalysis &cfg,
     llvm::SetVector<Operation *> &prev,
     llvm::MapVector<Operation *, ModRefResult> &results,
-    DenseMap<HLCF::CFGNode, llvm::SetVector<Operation *>> &virtualPhiNodes) {
+    DenseMap<HLCF::CFGNode, llvm::SetVector<Operation *>> &virtualPhiNodes,
+    bool dryRun) {
   assert(llvm::hasSingleElement(region));
   for (Operation &op : region.getOps()) {
     ModRefResult &result = results[&op];
@@ -410,7 +414,8 @@ void ModRefAnalysis::processRegion(
       // For unknown region operations, treat the region as isolated.
       for (Region &region : op.getRegions()) {
         llvm::SetVector<Operation *> nestedPrev;
-        processRegion(region, cfg, nestedPrev, results, virtualPhiNodes);
+        processRegion(region, cfg, nestedPrev, results, virtualPhiNodes,
+                      /*dryRun=*/false);
       }
       continue;
     }
@@ -423,26 +428,42 @@ void ModRefAnalysis::processRegion(
         results[prevOp].nextModRef.insert(&op);
       }
       prev.clear();
+      if (dryRun)
+        return;
       prev.insert(&op);
 
       // For unknown region operations, treat the region as isolated.
       for (Region &region : op.getRegions()) {
         llvm::SetVector<Operation *> nestedPrev;
-        processRegion(region, cfg, nestedPrev, results, virtualPhiNodes);
+        processRegion(region, cfg, nestedPrev, results, virtualPhiNodes,
+                      /*dryRun=*/false);
       }
       continue;
     }
 
-    for (int i = 0; i < 2; ++i) { // dirty iteration hack to propagate backedges
-      for (Region &region : op.getRegions()) {
-        llvm::SetVector<Operation *> &phiEntry =
-            virtualPhiNodes[{node, region.getRegionNumber()}];
-        // Initialize the prev set with the phi node set of the region.
-        phiEntry.insert(prev.begin(), prev.end());
-        llvm::SetVector<Operation *> nestedPrev = phiEntry;
-        processRegion(region, cfg, nestedPrev, results, virtualPhiNodes);
+    for (Region &region : op.getRegions()) {
+      llvm::SetVector<Operation *> &phiEntry =
+          virtualPhiNodes[{node, region.getRegionNumber()}];
+      // Initialize the prev set with the phi node set of the region.
+      phiEntry.insert(prev.begin(), prev.end());
+      prev.clear();
+
+      size_t curPhiSize = phiEntry.size();
+
+      llvm::SetVector<Operation *> nestedPrev = phiEntry;
+      processRegion(region, cfg, nestedPrev, results, virtualPhiNodes, dryRun);
+
+      // Re-query because the map might reallocate.
+      const llvm::SetVector<Operation *> &nextPhiEntry =
+          virtualPhiNodes.at({node, region.getRegionNumber()});
+      if (nextPhiEntry.size() != curPhiSize) {
+        llvm::SetVector<Operation *> nestedPrev = nextPhiEntry;
+        processRegion(region, cfg, nestedPrev, results, virtualPhiNodes,
+                      /*dryRun=*/true);
       }
     }
+    if (dryRun)
+      return;
 
     // Take the phi node set of the parent op and set it as the current prev
     // set.
@@ -479,7 +500,8 @@ void ModRefAnalysis::compute(ModuleOp module) {
     llvm::SetVector<Operation *> prev;
     llvm::MapVector<Operation *, ModRefResult> results;
     DenseMap<HLCF::CFGNode, llvm::SetVector<Operation *>> virtualPhiNodes;
-    processRegion(func.getBodyRegion(), cfg, prev, results, virtualPhiNodes);
+    processRegion(func.getBodyRegion(), cfg, prev, results, virtualPhiNodes,
+                  /*dryRun=*/false);
 
     // Now consider aliasing between nonescaping identified variables. The user
     // only cares about modref relationships between operations on these
@@ -487,7 +509,7 @@ void ModRefAnalysis::compute(ModuleOp module) {
     for (auto &[op, result] : results) {
       // The user doesn't care about anything other than function calls, because
       // those ops cannot be optimized.
-      auto callee = op->getAttrOfType<SymbolConstantAttr>("custom_op_callee");
+      auto callee = op->getAttrOfType<SymbolConstantAttr>("callee");
       if (!callee) {
         if (auto alloc = dyn_cast<POP::StackAllocationOp>(op)) {
           result.varWrites.insert(alloc.getResult());
@@ -736,6 +758,9 @@ void LowerCustomOpsPass::runOnOperation() {
     return;
 
   // Compile the patterns.
+  for (auto func : patternModule->getOps<GeneratorOp>()) {
+    func.removePatternsAttr();
+  }
   auto compiledPatterns =
       lib.compilePatterns(std::move(patternModule), patterns);
   if (compiledPatterns.isError()) {
@@ -773,7 +798,7 @@ void LowerCustomOpsPass::runOnOperation() {
     auto params = ArrayAttr::get(ctx, attrs);
     instances[{impl.getProto(), params}] = concreteName;
     state.addAttribute("params", params);
-    state.addAttribute("custom_op_callee", call.getCallee());
+    state.addAttribute("callee", call.getCallee());
     Operation *op = b.create(state);
     call->replaceAllUsesWith(op->getResults());
     call.erase();
