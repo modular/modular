@@ -14,9 +14,10 @@ import pytest
 import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from max.driver import DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import Graph, TensorType, Weight, ops
 from nn.conv import Conv2D
 from nn.linear import Linear
 from nn.norm import RMSNorm
@@ -653,6 +654,21 @@ def test_pixtral_attention(imgs, img_sizes):
         imgs = [
             np.ascontiguousarray(torch.permute(img, (1, 2, 0))) for img in imgs
         ]
+
+        # Collect all the weights into the weights registry.
+        weights_registry: dict[str, DLPackArray] = {}
+
+        def linear(name: str, array: DLPackArray) -> Linear:
+            """Creates a Linear layer backed by a weight."""
+            weights_registry[name] = array
+            return Linear(
+                Weight(
+                    name=name,
+                    dtype=DType.from_numpy(array.numpy().dtype),
+                    shape=array.shape,
+                )
+            )
+
         rms_norm_weight = np.ones(hidden_size)
         mlp_gate_weights = []
         for i in range(num_hidden_layers):
@@ -714,15 +730,35 @@ def test_pixtral_attention(imgs, img_sizes):
             attention_layers = []
             for i in range(num_hidden_layers):
                 # TODO: init weights for Linear? should be similar o nn.Linear
-                gate_proj = Linear(mlp_gate_weights[i])
-                down_proj = Linear(mlp_down_weights[i])
-                up_proj = Linear(mlp_up_weights[i])
+                gate_proj = linear(
+                    name=f"mlp_gate_weights_{i}", array=mlp_gate_weights[i]
+                )
+                down_proj = linear(
+                    name=f"mlp_down_weights_{i}", array=mlp_down_weights[i]
+                )
+                up_proj = linear(
+                    name=f"mlp_up_weights_{i}", array=mlp_up_weights[i]
+                )
                 mlp = MLP(gate_proj, down_proj, up_proj)
                 # TODO: init weights
-                wq = Linear(attention_q_proj_weights[i])
-                wk = Linear(attention_k_proj_weights[i])
-                wv = Linear(attention_v_proj_weights[i])
-                wo = Linear(attention_o_proj_weights[i])
+
+                wq = linear(
+                    name=f"attention_q_proj_weights_{i}",
+                    array=attention_q_proj_weights[i],
+                )
+                wk = linear(
+                    name=f"attention_k_proj_weights_{i}",
+                    array=attention_k_proj_weights[i],
+                )
+                wv = linear(
+                    name=f"attention_v_proj_weights_{i}",
+                    array=attention_v_proj_weights[i],
+                )
+                wo = linear(
+                    name=f"attention_o_proj_weights_{i}",
+                    array=attention_o_proj_weights[i],
+                )
+
                 attention = Attention(
                     n_heads=num_attention_heads,
                     dim=hidden_size,
@@ -770,9 +806,13 @@ def test_pixtral_attention(imgs, img_sizes):
                 norm_patch_embeds,
             )
 
-            # graph_encoder_output = graph_transformer(norm_graph_patch_embeds, graph_attention_mask, graph_position_embedding)
+            # graph_encoder_output = graph_transformer(
+            #    norm_graph_patch_embeds,
+            #    graph_attention_mask,
+            #    graph_position_embedding,
+            # )
             graph.output(graph_position_embedding[0])
-            compiled = session.load(graph)
+            compiled = session.load(graph, weights_registry=weights_registry)
 
             output = compiled.execute(*imgs)[0].to_numpy()
 
