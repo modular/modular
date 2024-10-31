@@ -345,3 +345,27 @@ def main():
             3,
             group=3,
         ](1, 208, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            32,
+            group=4,
+        ](1, 1208, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            32,
+            group=4,
+        ](1, 2008, ctx)
+
+        test[
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+            32,
+            group=4,
+        ](1, 5000, ctx)
