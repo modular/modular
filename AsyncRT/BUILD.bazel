@@ -94,6 +94,7 @@ modular_cc_library(
     deps = [
         ":CUDADeviceContext",
         ":DeviceContext.headers",
+        ":HIPDeviceContext",
     ],
 )
 
@@ -106,6 +107,21 @@ modular_cc_library(
     ],
     hdrs = [
         "lib/DeviceContext/CUDA/CUDADeviceContext.h",
+    ],
+    deps = [
+        ":DeviceContext.headers",
+    ],
+)
+
+modular_cc_library(
+    name = "HIPDeviceContext",
+    srcs = [
+        "lib/DeviceContext/HIP/HIPDeviceContext.cpp",
+        "lib/DeviceContext/HIP/HIPDriver.cpp",
+        "lib/DeviceContext/HIP/HIPDriver.h",
+    ],
+    hdrs = [
+        "lib/DeviceContext/HIP/HIPDeviceContext.h",
     ],
     deps = [
         ":DeviceContext.headers",
