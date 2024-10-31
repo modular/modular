@@ -210,11 +210,20 @@ def build_prompt(
             }
             for message in completion_request.messages
         ]
-        request_prompt = str(
-            pipeline.tokenizer.delegate.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
+        # TODO: This is being addressed in an upcoming design doc
+        # Currently, not all PreTrainedTokenGeneratorTokenizer's use a chat template
+        print(f"model name: {completion_request.model}")
+        if completion_request.model == "replit":
+            request_prompt = str(
+                "\n".join([message["content"] for message in messages])
             )
-        )
+        else:
+            request_prompt = str(
+                pipeline.tokenizer.delegate.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            )
+
     else:
         request_prompt = " ".join(
             [
