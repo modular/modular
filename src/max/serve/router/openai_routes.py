@@ -36,6 +36,8 @@ from max.serve.schemas.openai import (
     CreateChatCompletionStreamResponse,
     CreateCompletionRequest,
     CreateCompletionResponse,
+    Error,
+    ErrorResponse,
     Logprobs,
     Logprobs2,
 )
@@ -128,8 +130,11 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             )
             yield "[DONE]"
         except ValueError as e:
-            logger.error(traceback.format_exc())
-            yield json.dumps({"result": "error", "message": str(e)})
+            logger.exception("ValueError in request %s", request.id)
+            error_response = ErrorResponse(
+                error=Error(code="500", message=str(e), param="", type="")
+            )
+            yield error_response
         finally:
             if self.request_limiter:
                 self.request_limiter.release()
@@ -165,11 +170,12 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             )
             return response
         except ValueError as e:
-            logger.error(traceback.format_exc())
+            logger.exception("ValueError in %s", request.id)
+            # TODO (SI-722) how to handle error in a stream response via ChatCompletion API.
             return json.dumps({"result": "error", "message": str(e)})
         finally:
             if self.request_limiter:
-                logger.debug("Releasing rate limiter semaphor")
+                logger.debug("Releasing rate limiter semaphore")
                 self.request_limiter.release()
 
 
@@ -220,7 +226,7 @@ def build_prompt(
             request_prompt = str(
                 pipeline.tokenizer.delegate.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True
-                )
+                ) if pipeline.tokenizer.delegate else messages
             )
 
     else:
@@ -247,8 +253,11 @@ async def openai_create_chat_completion(request: Request) -> Response:
         request_prompt = build_prompt(pipeline, completion_request)
 
         logger.info(
-            f"Processing {request.url.path}, {request_id} -"
-            f" {'streaming' if completion_request.stream else ''} {completion_request.model} request."
+            "Processing path, %s, req-id,%s%s, for model, %s.",
+            request.url.path,
+            request_id,
+            " (streaming) " if completion_request.stream else "",
+            completion_request.model,
         )
 
         response_generator = OpenAIChatResponseGenerator(
@@ -268,24 +277,17 @@ async def openai_create_chat_completion(request: Request) -> Response:
         response = await response_generator.complete(token_request)
         return JSONResponse(response.model_dump_json())
     except JSONDecodeError as e:
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=400, detail="Missing JSON.")
+        logger.exception("JSONDecodeError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Missing JSON.") from e
     except (TypeError, ValidationError) as e:
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=400, detail="Invalid JSON.")
+        logger.exception("TypeError in request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.error(traceback.format_exc())
-        # NOTE(matt): These errors need to return more helpful details,
+        logger.exception("ValueError in request %s", request_id)
+        # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
-        raise HTTPException(status_code=400, detail="Value error.")
-
-
-"""
-Legacy OpenAI /completion endpoint.
-https://platform.openai.com/docs/api-reference/completions
-Public benchmarking such as vLLM use this endpoint.
-"""
+        raise HTTPException(status_code=400, detail="Value error.") from e
 
 
 class CompletionResponseStreamChoice(BaseModel):
@@ -347,7 +349,8 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             )
             yield "[DONE]"
         except ValueError as e:
-            logger.error(traceback.format_exc())
+            logger.exception("ValueError in request %s", request.id)
+            # TODO (SI-722) - propagate better errors back.
             yield json.dumps({"result": "error", "message": str(e)})
         finally:
             if self.request_limiter:
@@ -394,6 +397,11 @@ def openai_get_prompt_from_completion_request(
 
 @router.post("/completions")
 async def openai_create_completion(request: Request) -> Response:
+    """
+    Legacy OpenAI /completion endpoint.
+    https://platform.openai.com/docs/api-reference/completions
+    Public benchmarking such as vLLM use this endpoint.
+    """
     request_id = request.state.request_id
     try:
         request_json = await request.json()
@@ -403,8 +411,11 @@ async def openai_create_completion(request: Request) -> Response:
         pipeline_state = token_pipeline_state(completion_request.model)
         pipeline = pipeline_state.batched_generator
         logger.info(
-            f"Processing {request.url.path}, {request_id} -"
-            f" {'streaming' if completion_request.stream else ''} {completion_request.model} request."
+            "Processing path, %s, req-id,%s%s, for model, %s.",
+            request.url.path,
+            request_id,
+            " (streaming) " if completion_request.stream else "",
+            completion_request.model,
         )
 
         request_prompt = openai_get_prompt_from_completion_request(
@@ -427,20 +438,20 @@ async def openai_create_completion(request: Request) -> Response:
         response = await response_generator.complete(token_request)
         return JSONResponse(response.model_dump_json())
     except JSONDecodeError as e:
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=400, detail="Missing JSON.")
+        logger.exception("JSONDecodeError for request %s", request_id)
+        raise HTTPException(status_code=400, detail="Missing JSON.") from e
     except (TypeError, ValidationError) as e:
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=400, detail="Invalid JSON.")
+        logger.exception("Validation error for request %s", request_id)
+        raise HTTPException(status_code=400, detail="Invalid JSON.") from e
     except ValueError as e:
-        logger.error(traceback.format_exc())
-        # NOTE(matt): These errors need to return more helpful details,
+        logger.exception("ValueError for request %s", request_id)
+        # NOTE(SI-722): These errors need to return more helpful details,
         # but we don't necessarily want to expose the full error description
         # to the user. There are many different ValueErrors that can be raised.
-        raise HTTPException(status_code=400, detail="Value error.")
+        raise HTTPException(status_code=400, detail="Value error.") from e
 
 
 @router.get("/health")
-async def health(raw_request: Request) -> Response:
+async def health() -> Response:
     """Health check."""
     return Response(status_code=200)
