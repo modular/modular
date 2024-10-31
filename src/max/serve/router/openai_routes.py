@@ -137,32 +137,40 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
     async def complete(
         self, request: TokenGeneratorRequest
     ) -> CreateChatCompletionResponse:
-        completed_tokens = await self.pipeline.all_tokens(request)
+        try:
+            completed_tokens = await self.pipeline.all_tokens(request)
 
-        response_message = "".join(completed_tokens)
-        response_choices = [
-            Choice1(
-                index=0,
-                message=ChatCompletionResponseMessage(
-                    content=response_message,
-                    role="assistant",
-                    function_call=None,
-                    refusal="",
-                ),
-                finish_reason="stop",
-                logprobs=Logprobs2(content=[], refusal=[]),
+            response_message = "".join(completed_tokens)
+            response_choices = [
+                Choice1(
+                    index=0,
+                    message=ChatCompletionResponseMessage(
+                        content=response_message,
+                        role="assistant",
+                        function_call=None,
+                        refusal="",
+                    ),
+                    finish_reason="stop",
+                    logprobs=Logprobs2(content=[], refusal=[]),
+                )
+            ]
+            response = CreateChatCompletionResponse(
+                id=request.id,
+                choices=response_choices,
+                created=int(datetime.now().timestamp()),
+                model="",
+                object="chat.completion",
+                system_fingerprint=None,
+                service_tier=None,
             )
-        ]
-        response = CreateChatCompletionResponse(
-            id=request.id,
-            choices=response_choices,
-            created=int(datetime.now().timestamp()),
-            model="",
-            object="chat.completion",
-            system_fingerprint=None,
-            service_tier=None,
-        )
-        return response
+            return response
+        except ValueError as e:
+            logger.error(traceback.format_exc())
+            return json.dumps({"result": "error", "message": str(e)})
+        finally:
+            if self.request_limiter:
+                logger.debug("Releasing rate limiter semaphor")
+                self.request_limiter.release()
 
 
 def openai_get_content_from_message(message: ChatCompletionRequestMessage):
