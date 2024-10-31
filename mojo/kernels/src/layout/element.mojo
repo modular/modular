@@ -64,10 +64,8 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
         self.runtime_layout = runtime_layout
 
     @staticmethod
-    fn load[
-        address_space: AddressSpace
-    ](
-        ptr: UnsafePointer[Scalar[dtype], address_space],
+    fn load(
+        ptr: UnsafePointer[Scalar[dtype], *_, **_],
         runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
     ) -> Self:
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
@@ -133,17 +131,16 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
         return Element(element_data, runtime_layout)
 
     @staticmethod
-    fn masked_load[
-        address_space: AddressSpace, rank: Int
-    ](
-        ptr: UnsafePointer[Scalar[dtype], address_space],
-        element_bounds: IndexList[rank],
+    fn masked_load(
+        ptr: UnsafePointer[Scalar[dtype], *_, **_],
+        element_bounds: IndexList,
         runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
     ) -> Self:
         # TODO: Use partial_simd_load after closing KERN-729.
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
         constrained[
-            rank == layout.rank(), "bounds rank must match layout rank"
+            element_bounds.size == layout.rank(),
+            "bounds rank must match layout rank",
         ]()
         var element_data = Self.element_data_type()
 
@@ -261,9 +258,7 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
                 ]
         return Element(element_data, runtime_layout)
 
-    fn store[
-        address_space: AddressSpace
-    ](self, ptr: UnsafePointer[Scalar[dtype], address_space]):
+    fn store(self, ptr: UnsafePointer[Scalar[dtype], *_, **_]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
@@ -323,10 +318,10 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
                 )
 
     fn masked_store[
-        address_space: AddressSpace, rank: Int
+        rank: Int
     ](
         self,
-        ptr: UnsafePointer[Scalar[dtype], address_space],
+        ptr: UnsafePointer[Scalar[dtype], *_, **_],
         element_bounds: IndexList[rank],
     ):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()

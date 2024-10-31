@@ -2140,9 +2140,7 @@ struct LayoutTensor[
                     rebind[IndexList[rank]](other.element_coords[i]()),
                     src_coords_bound.value(),
                 )
-                return Element[dtype, other.element_layout].masked_load[
-                    other.address_space
-                ](
+                return Element[dtype, other.element_layout].masked_load(
                     rebind[UnsafePointer[Scalar[dtype], other.address_space]](
                         other.ptr
                     ).offset(src_idx),
@@ -2150,9 +2148,7 @@ struct LayoutTensor[
                     other.runtime_element_layout,
                 )
 
-            return Element[dtype, other.element_layout].load[
-                other.address_space
-            ](
+            return Element[dtype, other.element_layout].load(
                 rebind[UnsafePointer[Scalar[dtype], other.address_space]](
                     other.ptr
                 ).offset(src_idx),
@@ -2241,9 +2237,7 @@ struct LayoutTensor[
 
                 var src_idx = src_layout(i)
 
-                var src_element = Element[dtype, other.element_layout].load[
-                    other.address_space
-                ](
+                var src_element = Element[dtype, other.element_layout].load(
                     rebind[UnsafePointer[Scalar[dtype], other.address_space]](
                         other.ptr
                     ).offset(src_idx),
@@ -2300,9 +2294,7 @@ struct LayoutTensor[
                 dst_idx = self.runtime_layout(i)
 
             if offset + dst_idx < rows * cols:
-                var src_element = Element[dtype, other.element_layout].load[
-                    other.address_space
-                ](
+                var src_element = Element[dtype, other.element_layout].load(
                     rebind[UnsafePointer[Scalar[dtype], other.address_space]](
                         other.ptr
                     ).offset(src_idx),

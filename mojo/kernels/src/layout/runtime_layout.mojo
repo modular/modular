@@ -130,6 +130,9 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     fn __len__() -> Int:
         return len(layout)
 
+    fn dim(self, i: Int) -> Int:
+        return self.shape.value[i]
+
 
 fn coalesce[
     l: Layout,
