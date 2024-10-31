@@ -10,8 +10,8 @@ from typing import Literal
 
 import pytest
 from evaluate_llama import PROMPTS, SupportedTestModels, next_token_with_logits
-from llama3.config import SupportedEncodings, SupportedVersions
-from llama3.llama3 import Llama3, Llama3Tokenizer
+from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
+from llama3.llama3_token_gen import Llama3Tokenizer, Llama3TokenGenerator
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 
@@ -62,8 +62,10 @@ def pipeline_tokenizer(pipeline_config):
 
 
 @pytest.fixture(scope="session")
-def pipeline_model(pipeline_config, pipeline_tokenizer):
-    return Llama3(
+def pipeline_model(
+    pipeline_config: InferenceConfig, pipeline_tokenizer: Llama3Tokenizer
+):
+    return Llama3TokenGenerator(
         pipeline_config,
         pipeline_tokenizer.delegate.eos_token_id,
         pipeline_tokenizer.delegate.vocab_size,
@@ -318,6 +320,8 @@ async def test_pipeline_heterogeneous_batch_logits(
     This should only be expected to run with the continuous batching kv cache.
     As such, it should only work with tinyllama/fp32 on CPU.
     """
+
+    llama3 = pipeline_model.model
     prompt_a = PROMPTS[0]
     prompt_b = PROMPTS[1]
     prompt_c = PROMPTS[2]
@@ -330,7 +334,7 @@ async def test_pipeline_heterogeneous_batch_logits(
             id="", index=0, prompt=prompt_a, model_name="llama3"
         )
     )
-    next_token_with_logits(pipeline_model, {"A": context_a}, stored_logits)
+    next_token_with_logits(llama3, {"A": context_a}, stored_logits)
 
     # Send in B for context encoding
     context_b = await pipeline_tokenizer.new_context(
@@ -338,11 +342,11 @@ async def test_pipeline_heterogeneous_batch_logits(
             id="", index=1, prompt=prompt_b, model_name="llama3"
         )
     )
-    next_token_with_logits(pipeline_model, {"B": context_b}, stored_logits)
+    next_token_with_logits(llama3, {"B": context_b}, stored_logits)
 
     # Send in both A and B for token generation
     next_token_with_logits(
-        pipeline_model, {"A": context_a, "B": context_b}, stored_logits
+        llama3, {"A": context_a, "B": context_b}, stored_logits
     )
 
     # Send in C for context encoding
@@ -351,17 +355,17 @@ async def test_pipeline_heterogeneous_batch_logits(
             id="", index=2, prompt=prompt_c, model_name="llama3"
         )
     )
-    next_token_with_logits(pipeline_model, {"C": context_c}, stored_logits)
+    next_token_with_logits(llama3, {"C": context_c}, stored_logits)
 
     # Send in both B and C for token generation
     next_token_with_logits(
-        pipeline_model, {"B": context_b, "C": context_c}, stored_logits
+        llama3, {"B": context_b, "C": context_c}, stored_logits
     )
 
     # Send in A, B, C out of order
     # This evaluates if the order of the batch can be mutated
     next_token_with_logits(
-        pipeline_model,
+        llama3,
         {"C": context_c, "B": context_b, "A": context_a},
         stored_logits,
     )

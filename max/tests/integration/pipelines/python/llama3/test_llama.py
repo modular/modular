@@ -17,7 +17,8 @@ from evaluate_llama import (
     find_runtime_path,
     run_llama3,
 )
-from llama3.llama3 import Llama3, Llama3Tokenizer
+from llama3.llama3 import Llama3
+from llama3.llama3_token_gen import Llama3Tokenizer
 
 
 @pytest.mark.parametrize(
@@ -32,11 +33,7 @@ def test_llama(model, encoding, testdata_directory):
 
     tokenizer = Llama3Tokenizer(config)
     actual = run_llama3(
-        Llama3(
-            config,
-            tokenizer.delegate.eos_token_id,
-            tokenizer.delegate.vocab_size,
-        ),
+        Llama3(config),
         tokenizer,
         prompts=PROMPTS[:1],
     )

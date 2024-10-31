@@ -13,7 +13,9 @@ from uuid import uuid4
 
 import pytest
 from evaluate_llama import PROMPTS, SupportedTestModels, run_llama3
-from llama3.llama3 import InferenceConfig, Llama3, Llama3Tokenizer
+from llama3.config import InferenceConfig
+from llama3.llama3 import Llama3
+from llama3.llama3_token_gen import Llama3Tokenizer, Llama3TokenGenerator
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 
@@ -48,13 +50,15 @@ def pipeline_config(testdata_directory, request) -> InferenceConfig:
 
 
 @pytest.fixture(scope="session")
-def pipeline_tokenizer(pipeline_config) -> Llama3Tokenizer:
+def pipeline_tokenizer(pipeline_config: InferenceConfig) -> Llama3Tokenizer:
     return Llama3Tokenizer(pipeline_config)
 
 
 @pytest.fixture(scope="session")
-def tinyllama_model(pipeline_config, pipeline_tokenizer):
-    return Llama3(
+def tinyllama_model(
+    pipeline_config: InferenceConfig, pipeline_tokenizer: Llama3Tokenizer
+):
+    return Llama3TokenGenerator(
         pipeline_config,
         pipeline_tokenizer.delegate.eos_token_id,
         pipeline_tokenizer.delegate.vocab_size,
@@ -69,7 +73,9 @@ def test_tiny_llama(tinyllama_model, pipeline_tokenizer):
     NOTE: Intentionally don't compare results with "goldens" because TinyLlama
     weights were randomly initialized.
     """
-    _ = run_llama3(tinyllama_model, pipeline_tokenizer, prompts=PROMPTS[:1])
+    _ = run_llama3(
+        tinyllama_model.model, pipeline_tokenizer, prompts=PROMPTS[:1]
+    )
 
 
 @pytest.mark.parametrize(
@@ -86,7 +92,9 @@ def test_tiny_llama_naive_kv_cache(
     # Check that we indeed have a naive KV cache Llama model.
     assert tinyllama_model.config.cache_strategy == KVCacheStrategy.NAIVE
 
-    _ = run_llama3(tinyllama_model, pipeline_tokenizer, prompts=PROMPTS[:1])
+    _ = run_llama3(
+        tinyllama_model.model, pipeline_tokenizer, prompts=PROMPTS[:1]
+    )
 
 
 def _prompt_to_test_id(prompt: str):

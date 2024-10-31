@@ -10,13 +10,9 @@ from typing import Literal
 
 import pytest
 from evaluate_llama import PROMPTS, SupportedTestModels, next_token_with_logits
-from llama3.config import SupportedEncodings, SupportedVersions
-from llama3.llama3 import (
-    InferenceConfig,
-    Llama3,
-    Llama3Context,
-    Llama3Tokenizer,
-)
+from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
+from llama3.llama3 import Llama3
+from llama3.llama3_token_gen import Llama3Context, Llama3Tokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 
@@ -62,17 +58,13 @@ def pipeline_config(testdata_directory, request) -> InferenceConfig:
 
 
 @pytest.fixture(scope="session")
-def pipeline_tokenizer(pipeline_config) -> Llama3Tokenizer:
+def pipeline_tokenizer(pipeline_config: InferenceConfig) -> Llama3Tokenizer:
     return Llama3Tokenizer(pipeline_config)
 
 
 @pytest.fixture(scope="session")
-def pipeline_model(pipeline_config, pipeline_tokenizer) -> Llama3:
-    return Llama3(
-        pipeline_config,
-        pipeline_tokenizer.delegate.eos_token_id,
-        pipeline_tokenizer.delegate.vocab_size,
-    )
+def pipeline_model(pipeline_config: InferenceConfig) -> Llama3:
+    return Llama3(pipeline_config)
 
 
 @pytest.mark.asyncio

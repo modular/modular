@@ -83,11 +83,7 @@ def test_llama(model, encoding, testdata_directory):
     config = test_model.build_config()
     tokenizer = Llama3Tokenizer(config)
     actual = run_llama3(
-        Llama3(
-            config,
-            tokenizer.delegate.eos_token_id,
-            tokenizer.delegate.vocab_size,
-        ),
+        Llama3(config),
         tokenizer,
         prompts=PROMPTS[:1],
     )
