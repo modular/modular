@@ -309,6 +309,20 @@ KGEN_CompilerRT_CreateAsync_ssizet(ssize_t data,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsync_int64t(int64_t data,
+                                   AsyncRTWrapper<AnyAsyncValueRef> async,
+                                   AsyncRTWrapper<Runtime> runtimePtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<int64_t>(data);
+  } else {
+    assert(!value.isReady());
+    value = value.createReady<int64_t>(runtime, data);
+  }
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
                                     AsyncRTWrapper<AnyAsyncValueRef> async,
                                     AsyncRTWrapper<Runtime> runtimePtr) {
