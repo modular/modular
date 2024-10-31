@@ -18,12 +18,15 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
 from nn.conv import Conv2D
+from nn.linear import Linear
 from nn.norm import RMSNorm
+from pixtral.model.attention import Attention
+from pixtral.model.attention_utils import causal_attention_mask_2d
 from pixtral.model.rotary_embedding_2d import (
     RotaryEmbedding2D,
     patch_position_ids,
 )
-from pixtral.model.vision_encoder import VisionEncoder
+from pixtral.model.transformer import MLP, Transformer, TransformerBlock
 from torch import Tensor, nn
 
 num_channels = 3  # Number of input channels in the input images.
@@ -34,10 +37,10 @@ rope_theta = 10000.0  # The base period of the RoPE embeddings.
 num_attention_heads = (
     16  #  Number of attention heads in the Transformer encoder.
 )
-
 head_dim = (
     hidden_size // num_attention_heads
 )  # dim of positional embeddings and attention heads
+scale = head_dim**-0.5
 num_hidden_layers = 24  # Number of hidden layers in the Transformer encoder.
 hidden_act = "gelu"  # Activation function used in the hidden layers.
 image_size = 1024  # Max dimension of the input images. Should be 1024
@@ -171,18 +174,25 @@ class PixtralRotaryEmbedding(nn.Module):
     def __init__(self, device):
         super().__init__()
         self.rope_type = "default"
-        self.dim = head_dim
+        self.dim = head_dim  # 64
         self.base = rope_theta
-        max_patches_per_side = image_size // patch_size
+        max_patches_per_side = image_size // patch_size  # 64
+
+        # 1D tensor of length head_dim // 2 = 32
         freqs = 1.0 / (
             self.base ** (torch.arange(0, self.dim, 2).float() / self.dim)
         )
 
+        # 1D tensor of length max_patches_per_side = 64
         h = torch.arange(max_patches_per_side, device=freqs.device)
+        # 1D tensor of length max_patches_per_side = 64
         w = torch.arange(max_patches_per_side, device=freqs.device)
 
+        # 2D tensors of shape (max_patches_per_side = 64, len(freqs)//2 =16)
         freqs_h = torch.outer(h, freqs[::2]).float()
         freqs_w = torch.outer(w, freqs[1::2]).float()
+
+        # 2D tensor of shape (max_patches_per_side*max_patches_per_side = 4096,  head_dim // 2 = 32)
         inv_freq = torch.cat(
             [
                 freqs_h[:, None, :].repeat(1, max_patches_per_side, 1),
@@ -195,6 +205,7 @@ class PixtralRotaryEmbedding(nn.Module):
         # Different from paper, but it uses a different permutation in order to obtain the same calculation
 
         # TODO maybe make it torch compatible later on. We can also just slice
+        # 2D tensor of shape (max_patches_per_side*max_patches_per_side =4096, head_dim=64)
         self.register_buffer(
             "inv_freq",
             torch.cat((inv_freq, inv_freq), dim=-1),
@@ -207,6 +218,7 @@ class PixtralRotaryEmbedding(nn.Module):
             self._dynamic_frequency_update(position_ids, device=x.device)
 
         # Core RoPE block
+        # 2D tensor of shape (actual num_patches, head_dim=64)
         freqs = self.inv_freq[position_ids]
         # position_ids_expanded = position_ids[:, None, :].float()
         # Force float32 (see https://github.com/huggingface/transformers/pull/29285)
@@ -217,6 +229,7 @@ class PixtralRotaryEmbedding(nn.Module):
         )
         with torch.autocast(device_type=device_type, enabled=False):
             emb = freqs
+            # 2D tensors of shape (actual num_patches, head_dim=64)
             cos = emb.cos()
             sin = emb.sin()
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
@@ -252,6 +265,7 @@ def generate_block_attention_mask(patch_embeds_list, tensor):
     device = tensor.device
     seq_len = tensor.shape[1]
     d_min = torch.finfo(dtype).min
+    d_min = -10000.0
     causal_mask = torch.full(
         (seq_len, seq_len), fill_value=d_min, dtype=dtype, device=device
     )
@@ -587,7 +601,7 @@ PIXTRAL_START_DOCSTRING = r"""
 """
 
 
-def test_pix_vision_encoder(imgs, img_dtype, img_sizes):
+def test_pixtral_attention(imgs, img_sizes):
     # TODO: Check the values of pixels are expected to be in [0, 255]
     # https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/models/pixtral/modeling_pixtral.py#L465
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -605,21 +619,23 @@ def test_pix_vision_encoder(imgs, img_dtype, img_sizes):
 
     with torch.no_grad():
         filters = patch_conv.weight.data
+        # list of size (batch_size, hidden_size, num_height_patches, num_width_patches)
         patch_embeds_list = [patch_conv(img.unsqueeze(0)) for img in imgs]
 
-        # flatten to a single sequence
+        # seq_len = sum(num_height_patches*num_width_patches) for all images in imgs
+        # flatten to a single sequence of shape (batch_size, seq_len=num_patches, hidden_size)
         patch_embeds = torch.cat(
             [p.flatten(2).permute(0, 2, 1) for p in patch_embeds_list], dim=1
         )
         norm_patch_embeds = ln_pre(patch_embeds)
-        # positional embeddings
+        # positional embeddings (seq_len)
         position_ids = position_ids_in_meshgrid(
             patch_embeds_list, max_width=image_size // patch_size
         ).to(device)
+        # a tuple of 2 tensors of shape (seq_len, hidden_size/num_attention_heads=64)
         position_embedding = patch_positional_embedding(
             norm_patch_embeds, position_ids
         )
-        # a tuple of 2 tensors of shape (, hidden_size/num_attention_heads)
         attention_mask = generate_block_attention_mask(
             [p.shape[-2] * p.shape[-1] for p in patch_embeds_list],
             norm_patch_embeds,
@@ -638,6 +654,41 @@ def test_pix_vision_encoder(imgs, img_dtype, img_sizes):
             np.ascontiguousarray(torch.permute(img, (1, 2, 0))) for img in imgs
         ]
         rms_norm_weight = np.ones(hidden_size)
+        mlp_gate_weights = []
+        for i in range(num_hidden_layers):
+            mlp_gate_weights.append(
+                transformer.layers[i].feed_forward.gate_proj.weight.data
+            )
+        mlp_up_weights = []
+        for i in range(num_hidden_layers):
+            mlp_up_weights.append(
+                transformer.layers[i].feed_forward.up_proj.weight.data
+            )
+        mlp_down_weights = []
+        for i in range(num_hidden_layers):
+            mlp_down_weights.append(
+                transformer.layers[i].feed_forward.down_proj.weight.data
+            )
+        attention_k_proj_weights = []
+        for i in range(num_hidden_layers):
+            attention_k_proj_weights.append(
+                transformer.layers[i].attention.k_proj.weight.data
+            )
+        attention_v_proj_weights = []
+        for i in range(num_hidden_layers):
+            attention_v_proj_weights.append(
+                transformer.layers[i].attention.v_proj.weight.data
+            )
+        attention_q_proj_weights = []
+        for i in range(num_hidden_layers):
+            attention_q_proj_weights.append(
+                transformer.layers[i].attention.q_proj.weight.data
+            )
+        attention_o_proj_weights = []
+        for i in range(num_hidden_layers):
+            attention_o_proj_weights.append(
+                transformer.layers[i].attention.o_proj.weight.data
+            )
 
         ########### Graph API Pixtral Layers #########
         session = InferenceSession()
@@ -649,22 +700,55 @@ def test_pix_vision_encoder(imgs, img_dtype, img_sizes):
             ],
         ) as graph:
             graph_inputs = graph.inputs
-
             graph_patch_conv = Conv2D(
                 filters.numpy(), stride=(patch_size, patch_size)
             )
             graph_ln_pre = RMSNorm(weight=rms_norm_weight, eps=1e-5)
+            # TODO: max_seq_len should be the max number of patches.
             graph_rope = RotaryEmbedding2D(
                 dim=hidden_size,
                 n_heads=num_attention_heads,
                 theta=rope_theta,
-                max_seq_len=image_size,
+                max_patches_per_side=image_size // patch_size,
+            )
+            attention_layers = []
+            for i in range(num_hidden_layers):
+                # TODO: init weights for Linear? should be similar o nn.Linear
+                gate_proj = Linear(mlp_gate_weights[i])
+                down_proj = Linear(mlp_down_weights[i])
+                up_proj = Linear(mlp_up_weights[i])
+                mlp = MLP(gate_proj, down_proj, up_proj)
+                # TODO: init weights
+                wq = Linear(attention_q_proj_weights[i])
+                wk = Linear(attention_k_proj_weights[i])
+                wv = Linear(attention_v_proj_weights[i])
+                wo = Linear(attention_o_proj_weights[i])
+                attention = Attention(
+                    n_heads=num_attention_heads,
+                    dim=hidden_size,
+                    head_dim=hidden_size // num_attention_heads,
+                    dropout=attention_dropout,
+                    wq=wq,
+                    wk=wk,
+                    wv=wv,
+                    wo=wo,
+                )
+                attention_norm = RMSNorm(weight=np.ones(hidden_size), eps=1e-5)
+                mlp_norm = RMSNorm(weight=np.ones(hidden_size), eps=1e-5)
+                attention_layers.append(
+                    TransformerBlock(attention, mlp, attention_norm, mlp_norm)
+                )
+
+            graph_transformer = Transformer(
+                num_attention_heads, attention_layers
             )
 
+            # Vision Encoder Code.
             # list of [batch_size, new_height, new_width, hidden_size]
             graph_patch_embeds_list = [
                 graph_patch_conv(ops.unsqueeze(img, 0)) for img in graph_inputs
             ]
+            # tensor of shape [batch_size, seq_len=num_patches, hidden_size]
             graph_patch_embeds = ops.concat(
                 [  # p.shape = batch_size, patches_per_height, patches_per_width, hidden_size
                     p.reshape((p.shape[0], -1, p.shape[3]))
@@ -673,21 +757,39 @@ def test_pix_vision_encoder(imgs, img_dtype, img_sizes):
                 axis=1,
             )
             norm_graph_patch_embeds = graph_ln_pre(graph_patch_embeds)
+            # tensor of shape [seq_len = n_patches]
             graph_position_ids = patch_position_ids(
                 patch_embeds_list, max_width=image_size // patch_size
             )
+            graph_position_embedding = graph_rope(
+                norm_graph_patch_embeds, graph_position_ids
+            )
 
-            graph.output(graph_position_ids)
+            graph_attention_mask = causal_attention_mask_2d(
+                [p.shape[1] * p.shape[2] for p in graph_patch_embeds_list],
+                norm_patch_embeds,
+            )
+
+            # graph_encoder_output = graph_transformer(norm_graph_patch_embeds, graph_attention_mask, graph_position_embedding)
+            graph.output(graph_position_embedding[0])
             compiled = session.load(graph)
 
             output = compiled.execute(*imgs)[0].to_numpy()
 
-            ACCURACY_RTOL = 1e-2
-            ACCURACY_ATOL = 1e-3
+            ACCURACY_RTOL = 1e-4
+            ACCURACY_ATOL = 1e-6
 
             np.testing.assert_allclose(
                 output,
-                position_ids.detach().numpy(),
+                position_embedding[0].detach().numpy(),
+                equal_nan=True,
+                rtol=ACCURACY_RTOL,
+                atol=ACCURACY_ATOL,
+            )
+
+            np.testing.assert_allclose(
+                graph_attention_mask,
+                attention_mask.detach().numpy(),
                 equal_nan=True,
                 rtol=ACCURACY_RTOL,
                 atol=ACCURACY_ATOL,
