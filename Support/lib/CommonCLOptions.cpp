@@ -70,12 +70,24 @@ CommonOptions::getIntermediateFile(StringRef inputName, StringRef ext) const {
                      "': " + errorCode.message()));
   }
 
-  llvm::outs() << "Emitting intermediate file to '"
-               << absoluteOutputFile.string() << "'.\n";
+  // Get a unique filename by adding numerical suffix if file exists
+  std::filesystem::path uniquePath = absoluteOutputFile;
+  std::string stem = uniquePath.stem().string();
+  std::string extension = uniquePath.extension().string();
+  int suffix = 1;
+
+  // Only try up to 999 suffixes before falling back to overwriting
+  while (std::filesystem::exists(uniquePath) && suffix <= 999) {
+    uniquePath = uniquePath.parent_path() /
+                 (stem + "_" + std::to_string(suffix) + extension);
+    suffix++;
+  }
+
+  llvm::outs() << "Emitting intermediate file to '" << uniquePath.string()
+               << "'.\n";
 
   std::string errorMessage;
-  auto result =
-      mlir::openOutputFile(absoluteOutputFile.string(), &errorMessage);
+  auto result = mlir::openOutputFile(uniquePath.string(), &errorMessage);
   if (!result)
     exit(reportError(errorMessage));
   return result;
