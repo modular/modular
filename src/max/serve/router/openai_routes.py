@@ -212,7 +212,6 @@ def build_prompt(
         ]
         # TODO: This is being addressed in an upcoming design doc
         # Currently, not all PreTrainedTokenGeneratorTokenizer's use a chat template
-        print(f"model name: {completion_request.model}")
         if completion_request.model == "replit":
             request_prompt = str(
                 "\n".join([message["content"] for message in messages])
