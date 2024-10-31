@@ -9,6 +9,8 @@
 from .type import (
     AlgebraicDim,
     BufferType,
+    Device,
+    DeviceType,
     Dim,
     DimLike,
     Shape,

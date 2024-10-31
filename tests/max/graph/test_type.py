@@ -14,6 +14,8 @@ from max import _graph, mlir
 from max.dtype import DType
 from max.graph import (
     BufferType,
+    Device,
+    DeviceType,
     Dim,
     StaticDim,
     SymbolicDim,
@@ -154,6 +156,25 @@ def test_tensor_type(mlir_context) -> None:
     assert str(tensor_type) == "!mo.tensor<[3, x], f32>"
 
 
+def test_tensor_type_with_device(mlir_context: mlir.Context) -> None:
+    """Tests tensor type creation."""
+    device_type = Device(DeviceType.CUDA, 2)
+    mlir_device_type = device_type.to_mlir()
+    print(str(mlir_device_type))
+    tensor_type = TensorType(DType.float32, shape=[3], device=device_type)
+    dtype = _graph.dtype_type(mlir_context, "f32")
+    dim1 = _graph.static_dim(mlir_context, 3)
+    cuda_device0 = _graph.device_attr(mlir_context, "cuda", 0)
+    cuda_tensor_type0 = _graph.tensor_type_with_device(
+        mlir_context, dtype, [dim1], cuda_device0
+    )
+    cuda_tensor_type2 = _graph.tensor_type_with_device(
+        mlir_context, dtype, [dim1], mlir_device_type
+    )
+    assert tensor_type.to_mlir() == cuda_tensor_type2
+    assert tensor_type.to_mlir() != cuda_tensor_type0
+
+
 def test_tensor_type_accessors(mlir_context) -> None:
     """Tests tensor type property accessors."""
     dtype = _graph.dtype_type(mlir_context, "f32")
@@ -171,11 +192,11 @@ def test_tensor_type_with_device_accessors(mlir_context: mlir.Context) -> None:
     dim1 = _graph.static_dim(mlir_context, 3)
     dim2 = _graph.symbolic_dim(mlir_context, "x")
     cpu_device = _graph.device_attr(mlir_context, "cpu", 0)
-    cpu_tensor_type = _graph.tensor_type(
+    cpu_tensor_type = _graph.tensor_type_with_device(
         mlir_context, dtype, [dim1, dim2], cpu_device
     )
     cuda_device0 = _graph.device_attr(mlir_context, "cuda", 0)
-    cuda_tensor_type = _graph.tensor_type(
+    cuda_tensor_type = _graph.tensor_type_with_device(
         mlir_context, dtype, [dim1, dim2], cuda_device0
     )
     default_tensor_type = _graph.tensor_type(mlir_context, dtype, [dim1, dim2])

@@ -12,8 +12,8 @@ import math
 import re
 import sys
 from dataclasses import dataclass
-from enum import IntEnum
-from typing import Any, Iterable, Union
+from enum import Enum, IntEnum
+from typing import Any, Iterable, Union, Optional
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -472,6 +472,37 @@ class Shape(list[Dim]):
         return [StaticDim(d).dim for d in self if isinstance(d, StaticDim)]
 
 
+@dataclass(frozen=True)
+class DeviceType(str, Enum):
+    """A device type representation."""
+
+    CPU = "cpu"
+    CUDA = "cuda"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class Device:
+    """A device representation.
+
+    Device representation consists of a DeviceType and an id. This is a direct
+    representation of the device attribute in mlir.
+    """
+
+    device_type: DeviceType
+    id: int
+
+    def __init__(self, device_type: DeviceType, id: int = 0):
+        self.device_type = device_type
+        self.id = id
+
+    def to_mlir(self) -> mlir.Attribute:
+        return _graph.device_attr(
+            mlir.Context.current, str(self.device_type), self.id
+        )
+
+
 StaticShape = list[StaticDim]
 
 DimLike = Union[int, str, Dim, np.integer]
@@ -524,14 +555,24 @@ class TensorType(Type):
     It can also represent a fully dynamic rank tensor. The presence of dynamic
     rank tensors in a graph will often degrade performance dramatically and
     prevents many classes of optimizations.
+
+    An optional device (``device``) can also be provided to indicate the explicit
+    device the tensor is associated with.
     """
 
     dtype: DType
     """The element type of the tensor value."""
     shape: Shape
     """The dimensions of the tensor value."""
+    device: Optional[Device]
+    """The device of the tensor value."""
 
-    def __init__(self, dtype: DType, shape: ShapeLike) -> None:
+    def __init__(
+        self,
+        dtype: DType,
+        shape: ShapeLike,
+        device: Optional[Device] = None,
+    ) -> None:
         """Constructs a tensor type.
 
         Args:
@@ -541,6 +582,7 @@ class TensorType(Type):
         """
         self.dtype = dtype
         self.shape = Shape(shape)
+        self.device = device
 
     def to_mlir(self) -> mlir.Type:
         """Converts to an ``mlir.Type`` instance.
@@ -550,11 +592,19 @@ class TensorType(Type):
         """
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
-        return _graph.tensor_type(
-            mlir.Context.current,
-            _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
-            [dim.to_mlir() for dim in self.shape],
-        )
+        if self.device:
+            return _graph.tensor_type_with_device(
+                mlir.Context.current,
+                _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
+                [dim.to_mlir() for dim in self.shape],
+                self.device.to_mlir(),
+            )
+        else:
+            return _graph.tensor_type(
+                mlir.Context.current,
+                _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
+                [dim.to_mlir() for dim in self.shape],
+            )
 
     @staticmethod
     def from_mlir(t: mlir.Type) -> TensorType:
@@ -574,8 +624,8 @@ class TensorType(Type):
         shape = [
             Dim.from_mlir(_graph.tensor_type_get_dim(t, i)) for i in range(rank)
         ]
-
-        return TensorType(DType(dtype), shape)
+        device = _graph.tensor_type_get_device(t)
+        return TensorType(DType(dtype), shape, device)
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -655,9 +705,9 @@ class TensorType(Type):
             dtype: The new element type for the tensor.
 
         Returns:
-            A new tensor type with the same shape, and the new element type.
+            A new tensor type with the same shape, device, and the new element type.
         """
-        return TensorType(dtype, self.shape)
+        return TensorType(dtype, self.shape, self.device)
 
 
 @dataclass
