@@ -24,6 +24,7 @@ from gpu import (
     warp_reduce,
 )
 from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.info import _get_info_from_target
 from gpu.memory import AddressSpace, external_memory
 from gpu.shuffle import warp_broadcast
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams, KVCacheT
@@ -619,7 +620,14 @@ fn flash_attention[
                     ]
                 ](
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        shared_mem_bytes
+                        80
+                        * 1024  # Hardcoding for now, see KERN-1134
+                        # max shared memory per block is "maximum - ~3k" on A100
+                        # subtracting 4096 to not worry about the exact number
+                        # _get_info_from_target[
+                        #    target
+                        # ]().shared_memory_per_multiprocessor
+                        # - 4096
                     ),
                 )
 
@@ -845,7 +853,6 @@ fn flash_attention[
                         * sizeof[accum_type]()
                         * group
                     )
-
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask.rank,
@@ -870,9 +877,15 @@ fn flash_attention[
                         block_size_warp_shuffle=block_size_warp_shuffle,
                     ]
                 ](
-                    # TODO: Avoid hard coding shared memory needed.
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        shared_mem_bytes
+                        80
+                        * 1024  # Hardcoding for now, see KERN-1134
+                        # max shared memory per block is "maximum - ~3k" on A100
+                        # subtracting 4096 to not worry about the exact number
+                        # _get_info_from_target[
+                        #    target
+                        # ]().shared_memory_per_multiprocessor
+                        # - 4096
                     ),
                 )
                 ctx.enqueue_function(
