@@ -146,7 +146,7 @@ class GGUFWeights:
             allocated=self._allocated,
         )
 
-    def __getitem__(self, idx: int) -> GGUFWeights:
+    def __getitem__(self, idx: int | str) -> GGUFWeights:
         return self.__getattr__(str(idx))
 
     def raw_tensors(self):

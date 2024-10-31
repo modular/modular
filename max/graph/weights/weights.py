@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from typing import Optional, Protocol, TypeVar
 
 import numpy.typing as npt
@@ -39,7 +41,7 @@ class Weights(Protocol):
     def __getattr__(self: _Self, attr) -> _Self:
         ...
 
-    def __getitem__(self: _Self, idx: int) -> _Self:
+    def __getitem__(self: _Self, idx: int | str) -> _Self:
         ...
 
     def allocate(

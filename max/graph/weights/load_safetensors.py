@@ -51,6 +51,7 @@ class SafetensorWeights:
         self,
         filepaths: Sequence[PathLike],
         tensors: Optional[Set[str]] = None,
+        tensors_to_file_idx: Mapping[str, int] | None = None,
         prefix: str = "",
         allocated=None,
     ):
@@ -67,8 +68,9 @@ class SafetensorWeights:
             )
         self._filepaths = filepaths
         if tensors is not None:
-            assert len(self._filepaths) == 1
             self._tensors = tensors
+            assert tensors_to_file_idx is not None
+            self._tensors_to_file_idx = tensors_to_file_idx
         else:
             self._tensors_to_file_idx = {}
             self._tensors = set()
@@ -89,8 +91,9 @@ class SafetensorWeights:
         for name in self._tensors:
             if name.startswith(self._prefix):
                 yield name, SafetensorWeights(
-                    [self._filepaths[self._tensors_to_file_idx[name]]],
+                    self._filepaths,
                     self._tensors,
+                    tensors_to_file_idx=self._tensors_to_file_idx,
                     prefix=name,
                     allocated=self._allocated,
                 )
@@ -103,13 +106,14 @@ class SafetensorWeights:
         if not any(name.startswith(full_path) for name in self._tensors):
             raise AttributeError(f"No weight {full_path} found")
         return SafetensorWeights(
-            [self._filepaths[self._tensors_to_file_idx[full_path]]],
+            self._filepaths,
             self._tensors,
+            tensors_to_file_idx=self._tensors_to_file_idx,
             prefix=full_path,
             allocated=self._allocated,
         )
 
-    def __getitem__(self, idx: int) -> SafetensorWeights:
+    def __getitem__(self, idx: int | str) -> SafetensorWeights:
         return self.__getattr__(str(idx))
 
     def allocate(
@@ -124,8 +128,20 @@ class SafetensorWeights:
                 "Quantization encodings are not supported in safetensor"
                 f" format. Got: {quantization_encoding}"
             )
-        assert len(self._filepaths) == 1
-        with safe_open(self._filepaths[0], framework="pt") as f:
+        if self._prefix not in self._tensors_to_file_idx:
+            valid_tensors = "\n\t".join(
+                [
+                    name
+                    for name in self._tensors
+                    if name.startswith(self._prefix)
+                ]
+            )
+            raise ValueError(
+                f"'{self._prefix}' is not a weight in the Safetensor ckpt. "
+                f"You may be looking for one of:\n\t{valid_tensors}"
+            )
+        filepath = self._filepaths[self._tensors_to_file_idx[self._prefix]]
+        with safe_open(filepath, framework="pt") as f:
             tensor = f.get_tensor(self._prefix)
         if tensor.dtype == torch.bfloat16:
             np_tensor = tensor.view(torch.float16).numpy()
