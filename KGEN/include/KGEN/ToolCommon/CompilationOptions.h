@@ -105,6 +105,9 @@ public:
   bool enableLLVMPerFunctionSplitting = false;
   bool enableParallelLLC = true;
 };
+
+bool isGPUBackend(const CompilationOptions &options);
+
 } // namespace M::KGEN
 
 #endif // KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H

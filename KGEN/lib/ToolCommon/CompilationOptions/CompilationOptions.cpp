@@ -100,3 +100,8 @@ void CompilationOptions::print(raw_ostream &os) const {
   os << ", debugInfoLang: " << debugInfoLanguage;
   os << " }";
 }
+
+bool M::KGEN::isGPUBackend(const CompilationOptions &options) {
+  llvm::Triple triple(options.targetTriple);
+  return triple.isNVPTX() || triple.isAMDGPU();
+}

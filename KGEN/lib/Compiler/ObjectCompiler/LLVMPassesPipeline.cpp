@@ -76,11 +76,6 @@
 using namespace llvm;
 using namespace M::KGEN;
 
-static bool isGPUBackend(const CompilationOptions &options) {
-  llvm::Triple triple(options.targetTriple);
-  return triple.isNVPTX();
-}
-
 static SimplifyCFGOptions
 adjustSimplifyCFGOptions(SimplifyCFGOptions simplifyCFGOptions,
                          const CompilationOptions &options) {
@@ -103,7 +98,7 @@ adjustSimplifyCFGOptions(SimplifyCFGOptions simplifyCFGOptions,
 
 static void addSanitizers(ModulePassManager &modulePassManager,
                           const CompilationOptions &options) {
-  // LLVM's sanitizer instrumentation is not supported for NVPTX.
+  // LLVM's sanitizer instrumentation is not supported for GPUs.
   if (isGPUBackend(options))
     return;
 
@@ -543,9 +538,9 @@ M::KGEN::buildLLVMOptimizationPipeline(PassBuilder &passBuilder,
 }
 
 static TargetPassConfig *
-buildPassesToGenerateNVPTXCode(LLVMTargetMachine &tm, PassManagerBase &pm,
-                               bool disableVerify,
-                               MachineModuleInfoWrapperPass &mmiwp) {
+buildPassesToGenerateGPUCode(LLVMTargetMachine &tm, PassManagerBase &pm,
+                             bool disableVerify,
+                             MachineModuleInfoWrapperPass &mmiwp) {
   // Targets may override createPassConfig to provide a target-specific
   // subclass.
   TargetPassConfig *passConfig = tm.createPassConfig(pm);
@@ -565,14 +560,14 @@ buildPassesToGenerateNVPTXCode(LLVMTargetMachine &tm, PassManagerBase &pm,
   return passConfig;
 }
 
-static bool buildNVPTXLLcPipeline(LLVMTargetMachine &targetMachine,
-                                  llvm::legacy::PassManagerBase &pm,
-                                  raw_pwrite_stream &out,
-                                  raw_pwrite_stream *dwoOut,
-                                  CodeGenFileType fileType, bool disableVerify,
-                                  MachineModuleInfoWrapperPass *mmiwp) {
+static bool buildGPULLcPipeline(LLVMTargetMachine &targetMachine,
+                                llvm::legacy::PassManagerBase &pm,
+                                raw_pwrite_stream &out,
+                                raw_pwrite_stream *dwoOut,
+                                CodeGenFileType fileType, bool disableVerify,
+                                MachineModuleInfoWrapperPass *mmiwp) {
   TargetPassConfig *passConfig =
-      buildPassesToGenerateNVPTXCode(targetMachine, pm, disableVerify, *mmiwp);
+      buildPassesToGenerateGPUCode(targetMachine, pm, disableVerify, *mmiwp);
 
   if (!passConfig)
     return true;
@@ -600,8 +595,8 @@ bool M::KGEN::addPassesToEmitFile(CompilationOptions &options,
                                   MachineModuleInfoWrapperPass *mmiwp) {
 
   if (isGPUBackend(options)) {
-    return buildNVPTXLLcPipeline(targetMachine, pm, out, dwoOut, fileType,
-                                 disableVerify, mmiwp);
+    return buildGPULLcPipeline(targetMachine, pm, out, dwoOut, fileType,
+                               disableVerify, mmiwp);
   }
 
   return targetMachine.addPassesToEmitFile(pm, out, dwoOut, fileType,
