@@ -47,6 +47,7 @@ from internal_utils._measure import cosine
 from math import exp2
 from utils.numerics import FPUtils
 from testing import assert_equal
+from gpu.host.info import DEFAULT_GPU_ARCH
 
 alias init_fn_type = fn (buff: NDBuffer) capturing -> None
 
@@ -185,6 +186,7 @@ fn test[
     @parameter
     if lambda_fn:
         _matmul_gpu[
+            target=DEFAULT_GPU_ARCH,
             use_tensor_core=True,
             transpose_b=transpose_b,
             elementwise_lambda_fn=epilogue_fn,
@@ -197,7 +199,10 @@ fn test[
         )
     else:
         _matmul_gpu[
-            use_tensor_core=True, transpose_b=transpose_b, config=config
+            target=DEFAULT_GPU_ARCH,
+            use_tensor_core=True,
+            transpose_b=transpose_b,
+            config=config,
         ](
             c_device.tensor,
             a_device.tensor,

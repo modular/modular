@@ -17,6 +17,7 @@ from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 from utils import IndexList
+from gpu.host.info import DEFAULT_GPU_ARCH
 
 
 fn _size[rank: Int](dims: IndexList[rank, **_]) -> Int:
@@ -122,7 +123,9 @@ fn matmul_test_case[
     ctx.enqueue_copy_to_device(mat_a_dev[0], mat_a_host.data)
     ctx.enqueue_copy_to_device(mat_b_dev[0], mat_b_host.data)
 
-    _matmul_gpu(mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx)
+    _matmul_gpu[target=DEFAULT_GPU_ARCH](
+        mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx
+    )
 
     ctx.enqueue_copy_from_device(mat_c_host.data, mat_c_dev[0])
     ctx.synchronize()
