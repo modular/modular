@@ -46,7 +46,7 @@ class JITExecutionUnit : public std::enable_shared_from_this<JITExecutionUnit>,
                          public lldb_private::ObjectFileJITDelegate {
 public:
   JITExecutionUnit(SymbolTable symbolTable, ExportMap exportedSymbols,
-                   OwningBinary<llvm::object::Archive> archive,
+                   OwningBinary<llvm::object::Binary> object,
                    lldb_private::ConstString &name,
                    const lldb::TargetSP &target,
                    const lldb_private::SymbolContext &symCtx,

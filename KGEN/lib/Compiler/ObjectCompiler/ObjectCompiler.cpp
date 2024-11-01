@@ -905,30 +905,6 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
               return;
             }
 
-            // Now that all the object files have been compiled, merge them
-            // all into a single archive.
-            // (TODO) since we only one .o to archive here now, there is no need
-            // to create an archive anymore.
-            SmallVector<std::string> archiveMemberNames;
-            SmallVector<llvm::NewArchiveMember> archiveMembers;
-            archiveMemberNames.push_back((moduleName + ".o"));
-
-            archiveMembers.emplace_back(
-                llvm::MemoryBufferRef(StringRef(linkedObj->getBufferStart(),
-                                                linkedObj->getBufferSize()),
-                                      archiveMemberNames[0]));
-
-            auto result = llvm::writeArchiveToBuffer(
-                archiveMembers,
-                /*WriteSymtab=*/llvm::SymtabWritingMode::NormalSymtab,
-                archiveMembers.front().detectKindFromObject(),
-                /*Deterministic=*/true, /*Thin=*/false);
-            if (!result) {
-              return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
-                  "failed to concatenate object files into archive",
-                  moduleLoc));
-            }
-
             // Print assembly for saveTemps if needed.
             if (!options.saveTempsPrefix.empty()) {
               ErrorOrSuccess saveTempsResult =
@@ -941,7 +917,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
             }
 
             // Copy the result into the output buffer.
-            *buf << (*result)->getBuffer();
+            *buf << linkedObj->Buffer::getBuffer();
             std::move(output).emplace(buf.copy());
           });
     });

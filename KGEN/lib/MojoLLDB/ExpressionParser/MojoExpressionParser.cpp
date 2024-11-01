@@ -68,8 +68,8 @@ struct MojoExpressionParser::Impl {
   /// The parsed Mojo module.
   OwningOpRef<ModuleOp> mlirModule;
 
-  /// The compiled archive.
-  OwningBinary<llvm::object::Archive> archive;
+  /// The compiled object.
+  OwningBinary<llvm::object::Binary> object;
 
   /// The options to use when evaluating the expression.
   EvaluateExpressionOptions options;
@@ -479,16 +479,19 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
         "Failed to produce standalone archive: {0}", bufferOr.getError());
     return returnErrorCleanup();
   }
-  auto archiveOr = toModularErrorOr(
-      llvm::object::Archive::create((*bufferOr)->getMemBufferRef()));
-  if (archiveOr.isError()) {
-    impl->expressionLogger->errorLog("Failed to create the archive: {0}",
-                                     archiveOr.getError());
+
+  auto objectOr = toModularErrorOr(
+      llvm::object::createBinary((*bufferOr)->getMemBufferRef()));
+
+  if (objectOr.isError()) {
+    impl->expressionLogger->errorLog("Failed to create the binary object: {0}",
+                                     objectOr.getError());
     return returnErrorCleanup();
   }
+
   impl->mlirModule = std::move(module);
-  impl->archive = OwningBinary<llvm::object::Archive>(std::move(*archiveOr),
-                                                      std::move(*bufferOr));
+  impl->object = OwningBinary<llvm::object::Binary>(std::move(*objectOr),
+                                                    std::move(*bufferOr));
 
   return success();
 }
@@ -504,11 +507,6 @@ Status MojoExpressionParser::prepareForExecution(
   OwningOpRef<ModuleOp> mlirModule = std::move(impl->mlirModule);
   if (!mlirModule)
     return Status::FromErrorString("Can't prepare a NULL module for execution");
-
-  OwningBinary<llvm::object::Archive> archive = std::move(impl->archive);
-  if (!archive.getBinary())
-    return Status::FromErrorString(
-        "Can't prepare a NULL archive for execution");
 
   // Retrieve an appropriate symbol context.
   SymbolContext sc;
@@ -530,7 +528,7 @@ Status MojoExpressionParser::prepareForExecution(
       {StringAttr::get(mlirModule->getContext(), functionName.GetStringRef()),
        ExportedSymbol(ExportKind::Exported)});
   executionUnit = std::make_shared<JITExecutionUnit>(
-      symbolTable, exportedSymbols, std::move(archive), functionName,
+      symbolTable, exportedSymbols, std::move(impl->object), functionName,
       exeCtx.GetTargetSP(), sc, features);
 
   // Extract the function information for the expression entry point.
