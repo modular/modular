@@ -1869,10 +1869,18 @@ struct DivOperandInfo {
       denominator.symOccurences.clear();
     }
     if (numerator.constant != 0 && denominator.constant != 0) {
-      APInt gcdTerm = llvm::APIntOps::GreatestCommonDivisor(
-          numerator.constant, denominator.constant);
-
       bool isSigned = isSignedIntType(numerator.attrType);
+
+      APInt gcdTerm = llvm::APIntOps::GreatestCommonDivisor(
+          isSigned ? numerator.constant.abs() : numerator.constant,
+          isSigned ? denominator.constant.abs() : denominator.constant);
+
+      bool bothNegative = isSigned && numerator.constant.isNegative() &&
+                          denominator.constant.isNegative();
+
+      if (bothNegative)
+        gcdTerm = -gcdTerm;
+
       numerator.constant = isSigned ? numerator.constant.sdiv(gcdTerm)
                                     : numerator.constant.udiv(gcdTerm);
       denominator.constant = isSigned ? denominator.constant.sdiv(gcdTerm)

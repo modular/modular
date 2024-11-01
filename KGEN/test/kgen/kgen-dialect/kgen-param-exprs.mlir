@@ -405,6 +405,31 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: = kgen.param.constant = <p1>
   kgen.param.constant = <div(mul_nuw(p1, -1), -1)>
 
+  // CHECK: = kgen.param.constant: si64 = <1>
+  kgen.param.constant: si64 = <div(-4, -4)>
+
+  // CHECK: = kgen.param.constant: si64 = <3>
+  kgen.param.constant: si64 = <div(11, 3)>
+
+  // CHECK: = kgen.param.constant: si64 = <-3>
+  kgen.param.constant: si64 = <div(-11, 3)>
+
+  // CHECK: = kgen.param.constant: si64 = <-3>
+  kgen.param.constant: si64 = <div(11, -3)>
+
+  // CHECK: = kgen.param.constant: si64 = <3>
+  kgen.param.constant: si64 = <div(-11, -3)>
+
+  // CHECK: = kgen.param.constant: si64 = <3>
+  kgen.param.constant: si64 = <div(11, 3)>
+
+  // Test that the high-bit is interpreted correctly for unsigned integers
+  // CHECK: = kgen.param.constant: ui64 = <4611686018427387904>
+  kgen.param.constant: ui64 = <div(9223372036854775808, 2)>
+
+  // CHECK: = kgen.param.constant: ui64 = <9223372036854775807>
+  kgen.param.constant: ui64 = <div(18446744073709551615, 2)>
+
   kgen.param.constant = <mul(p1, 1)>  // CHECK: kgen.param.constant = <p1>
   kgen.param.constant = <mul(p1, 0, p2)>  // CHECK: kgen.param.constant = <0>
   kgen.param.constant = <mul_nuw(p1, 1)>  // CHECK: kgen.param.constant = <p1>
