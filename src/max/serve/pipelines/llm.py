@@ -11,13 +11,7 @@ import logging
 import os
 import signal
 from dataclasses import dataclass, field
-from typing import (
-    AsyncGenerator,
-    Generic,
-    Mapping,
-    Optional,
-    TypeVar,
-)
+from typing import AsyncGenerator, Generic, Mapping, Optional, TypeVar
 
 from max.pipelines.interfaces import (
     TokenGeneratorRequest,
@@ -29,7 +23,6 @@ from max.serve.scheduler.queues import (
     BatchQueueConfig,
 )
 from max.serve.telemetry.stopwatch import StopWatch
-
 from prometheus_client import Counter, Histogram
 
 TTFT = Histogram("time_to_first_token_seconds", "Time to first token")
@@ -76,7 +69,7 @@ class TokenGeneratorPipelineConfig:
         cls, batch_size: int, batch_timeout=0.1, max_forward_steps=1
     ) -> TokenGeneratorPipelineConfig:
         """The dynamic-homogenous config uses a single queue.
-        Requests are dequed into a batch and the entire batch is
+        Requests are dequeued into a batch and the entire batch is
         executed until all requests are completed.
         """
         token_generation_config = BatchQueueConfig(
