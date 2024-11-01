@@ -146,7 +146,6 @@ struct LayoutTensor[
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
     layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
-    __experimental_non_homogeneous_tile: Bool = False,
 ](CollectionElement, CollectionElementNew, Stringable, Writable):
     """This is a Tensor type that has a specified memory layout and rank. The
     following example demonstrate a LayoutTensor of float32 with a row major
@@ -162,7 +161,6 @@ struct LayoutTensor[
         address_space: The address space of the underlying pointer.
         element_layout: The memory layout of each element in the Tensor.
         layout_bitwidth: The bitwidth of each dimension of runtime layout.
-        __experimental_non_homogeneous_tile: An experimental feature for dynamic tile sizes.
     """
 
     alias index_type: DType = _get_index_type(layout, address_space)
@@ -263,7 +261,6 @@ struct LayoutTensor[
         layout,
         address_space=address_space,
         element_layout=element_layout,
-        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
     ] as result:
         """Bitcast the underlying pointer to a new data type.
 
@@ -322,7 +319,6 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         @parameter
@@ -442,7 +438,6 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         """Do an addition with another LayoutTensor and return the added
@@ -475,7 +470,6 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ):
         """Do an addition with another LayoutTensor in place.
@@ -525,7 +519,6 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         """Perform a multiplication with another LayoutTensor and return the
@@ -578,7 +571,6 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ):
         """Do a multiplication with another LayoutTensor in place.
@@ -628,7 +620,6 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         """Do an subtraction with another LayoutTensor and return the subtracted
@@ -676,7 +667,6 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ):
         """Subtracts other from the LayoutTensor. Currently only support tensors
@@ -725,7 +715,6 @@ struct LayoutTensor[
             address_space=address_space,
             element_layout=element_layout,
             layout_bitwidth=layout_bitwidth,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
     ) -> Self:
         """Do an truediv with another LayoutTensor and return the divided
@@ -1054,7 +1043,6 @@ struct LayoutTensor[
         dtype,
         Self._compute_tile_layout[*tile_sizes]()[0],
         address_space=address_space,
-        __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
         """Tiles the layout and returns a tensor tile with the specified
         tile_sizes at specific tile coordinates.
@@ -1096,19 +1084,11 @@ struct LayoutTensor[
         if result.layout.all_dims_known():
             var offset = 0
 
-            @parameter
-            if __experimental_non_homogeneous_tile:
-                runtime_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ](self._clamp_tile[*tile_sizes](tile_coords))
-            else:
-                runtime_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ]()
+            runtime_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = result.layout_bitwidth,
+                unsigned=True,
+            ]()
 
             var runtime_stride = RuntimeTuple[
                 result.layout.stride, unsigned=True
@@ -1128,19 +1108,11 @@ struct LayoutTensor[
             # Dynamic layout, use strides
             var offset = 0
 
-            @parameter
-            if __experimental_non_homogeneous_tile:
-                dynamic_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ](self._clamp_tile[*tile_sizes](tile_coords))
-            else:
-                dynamic_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ]()
+            dynamic_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = result.layout_bitwidth,
+                unsigned=True,
+            ]()
 
             var dynamic_stride = RuntimeTuple[
                 result.layout.stride, unsigned=True
@@ -1181,7 +1153,6 @@ struct LayoutTensor[
         circular=False,
         axis=axis,
         layout_bitwidth = Self.layout_bitwidth,
-        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
     ] as result:
         """Returns the tiled iterator of the LayoutTensor.
 
@@ -1209,20 +1180,11 @@ struct LayoutTensor[
 
         @parameter
         if layout.all_dims_known():
-
-            @parameter
-            if __experimental_non_homogeneous_tile:
-                runtime_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ](self._clamp_tile[*tile_sizes](tile_coords))
-            else:
-                runtime_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = Self.layout_bitwidth,
-                    unsigned=True,
-                ]()
+            var runtime_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = Self.layout_bitwidth,
+                unsigned=True,
+            ]()
             var runtime_stride = RuntimeTuple[
                 result.layout.stride, unsigned=True
             ]()
@@ -1248,20 +1210,11 @@ struct LayoutTensor[
             )
 
         else:
-
-            @parameter
-            if __experimental_non_homogeneous_tile:
-                runtime_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = result.layout_bitwidth,
-                    unsigned=True,
-                ](self._clamp_tile[*tile_sizes](tile_coords))
-            else:
-                runtime_shape = RuntimeTuple[
-                    result.layout.shape,
-                    element_bitwidth = Self.layout_bitwidth,
-                    unsigned=True,
-                ]()
+            var runtime_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = Self.layout_bitwidth,
+                unsigned=True,
+            ]()
             var runtime_stride = RuntimeTuple[
                 result.layout.stride, unsigned=True
             ]()
@@ -1299,7 +1252,6 @@ struct LayoutTensor[
             ]()[0],
             address_space=address_space,
             element_layout=element_layout,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ],
         count,
     ] as result:
@@ -1338,7 +1290,6 @@ struct LayoutTensor[
                 ]()[0],
                 address_space=address_space,
                 element_layout=element_layout,
-                __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
             ](self.ptr.offset(i * tile_size * stride))
 
         return tiles
@@ -1446,7 +1397,6 @@ struct LayoutTensor[
         ]()[1],
         address_space=address_space,
         element_layout=element_layout,
-        __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
         """Distribute tiled workload to threads.
 
@@ -1469,19 +1419,11 @@ struct LayoutTensor[
 
         alias res_rank = result.layout.rank()
 
-        @parameter
-        if __experimental_non_homogeneous_tile:
-            runtime_shape = RuntimeTuple[
-                result.layout.shape,
-                element_bitwidth = result.layout_bitwidth,
-                unsigned=True,
-            ](self._clamp_distribute_shape[threads_layout](thread_id))
-        else:
-            runtime_shape = RuntimeTuple[
-                result.layout.shape,
-                element_bitwidth = result.layout_bitwidth,
-                unsigned=True,
-            ]()
+        var runtime_shape = RuntimeTuple[
+            result.layout.shape,
+            element_bitwidth = result.layout_bitwidth,
+            unsigned=True,
+        ]()
 
         var runtime_stride = RuntimeTuple[result.layout.stride, unsigned=True]()
 
@@ -1545,16 +1487,13 @@ struct LayoutTensor[
             )
 
         else:
-
-            @parameter
-            if not __experimental_non_homogeneous_tile:
-                constrained[
-                    layout.known_shape() and threads_layout.all_dims_known(),
-                    (
-                        "Distribute expecting layout with static shapes and"
-                        " fully static threads_layout"
-                    ),
-                ]()
+            constrained[
+                layout.known_shape() and threads_layout.all_dims_known(),
+                (
+                    "Distribute expecting layout with static shapes and"
+                    " fully static threads_layout"
+                ),
+            ]()
 
             # Only extract coordinates in the given axis.
             # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
@@ -1619,7 +1558,6 @@ struct LayoutTensor[
         coalesce(Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True),
         address_space=address_space,
         element_layout = Self._divide_tiles[*vector_shape]()[0],
-        __experimental_non_homogeneous_tile = self.__experimental_non_homogeneous_tile,
     ] as result:
         @parameter
         @always_inline
@@ -1649,10 +1587,6 @@ struct LayoutTensor[
                     ]()
 
         @parameter
-        if __experimental_non_homogeneous_tile:
-            __check_vector_shape[*vector_shape]()
-
-        @parameter
         if layout.all_dims_known():
             runtime_shape = RuntimeTuple[
                 result.layout.shape,
@@ -1660,18 +1594,6 @@ struct LayoutTensor[
                 unsigned=True,
             ]()
             runtime_stride = RuntimeTuple[result.layout.stride, unsigned=True]()
-
-            @parameter
-            if __experimental_non_homogeneous_tile:
-
-                @parameter
-                for i in range(runtime_shape.scalar_length):
-                    runtime_shape.value[i] = (
-                        self.runtime_layout.shape.value[i] // vector_shape[i]
-                    )
-                    runtime_stride.value[i] = (
-                        self.runtime_layout.stride.value[i] * vector_shape[i]
-                    )
 
             return __type_of(result)(
                 self.ptr, RuntimeLayout(runtime_shape, runtime_stride)
@@ -1891,7 +1813,6 @@ struct LayoutTensor[
         ),
         address_space=address_space,
         element_layout=element_layout,
-        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
     ] as result:
         return __type_of(result)(self.ptr)
 
@@ -1903,7 +1824,6 @@ struct LayoutTensor[
         dst_layout,
         address_space=address_space,
         element_layout=element_layout,
-        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
     ] as result:
         return __type_of(result)(self.ptr)
 
@@ -1965,26 +1885,15 @@ struct LayoutTensor[
         alias dst_size = layout.size()
         alias src_size = other_layout.size()
 
-        @parameter
-        if not __experimental_non_homogeneous_tile:
-            constrained[
-                layout.known_shape() and other_layout.known_shape(),
-                "copy_from must move data of statically known shape",
-            ]()
+        constrained[
+            layout.known_shape() and other_layout.known_shape(),
+            "copy_from must move data of statically known shape",
+        ]()
 
-            constrained[
-                dst_size == src_size,
-                "copy_from should move data of the same size",
-            ]()
-        else:
-            alias is_rank2 = self.rank == 2 and other.rank == 2
-            constrained[
-                is_rank2,
-                (
-                    "non homogeneous tile copy is only available for rank-2"
-                    " tensor."
-                ),
-            ]()
+        constrained[
+            dst_size == src_size,
+            "copy_from should move data of the same size",
+        ]()
 
         constrained[
             dst_element_size == src_element_size, "copy_from should move"
@@ -2014,55 +1923,8 @@ struct LayoutTensor[
             ).store(self.ptr.offset(dst_idx))
 
         @parameter
-        if not __experimental_non_homogeneous_tile:
-
-            @parameter
-            for i in range(dst_size):
-                __store_element[i](__load_element[i]())
-
-        else:
-            var d0 = min(other.dim(0), self.dim(0))
-            var d1 = min(other.dim(1), self.dim(1))
-
-            var dst_layout = RuntimeLayout[
-                self.layout, bitwidth = Self.layout_bitwidth
-            ](
-                RuntimeTuple[
-                    self.layout.shape,
-                    element_bitwidth = Self.layout_bitwidth,
-                    unsigned=True,
-                ](d0, d1),
-                self.runtime_layout.stride,
-            )
-            var src_layout = RuntimeLayout[
-                other.layout, bitwidth = other.layout_bitwidth
-            ](
-                RuntimeTuple[
-                    other.layout.shape,
-                    element_bitwidth = other.layout_bitwidth,
-                    unsigned=True,
-                ](d0, d1),
-                other.runtime_layout.stride,
-            )
-
-            for i in range(dst_layout.size()):
-                var dst_idx = dst_layout(i)
-
-                var src_idx = src_layout(i)
-
-                var src_element = Element[dtype, other.element_layout].load(
-                    rebind[UnsafePointer[Scalar[dtype], other.address_space]](
-                        other.ptr
-                    ).offset(src_idx),
-                    other.runtime_element_layout,
-                )
-
-                alias dst_element_type = Element[dtype, self.element_layout]
-                dst_element_type(
-                    rebind[dst_element_type.element_data_type](
-                        src_element.element_data
-                    )
-                ).store(self.ptr.offset(dst_idx))
+        for i in range(dst_size):
+            __store_element[i](__load_element[i]())
 
     @always_inline
     fn copy_from(
@@ -2144,13 +2006,6 @@ struct LayoutTensor[
         alias dst_size = layout.size()
         alias src_size = src.layout.size()
 
-        @parameter
-        if not src.__experimental_non_homogeneous_tile:
-            constrained[
-                dst_size == src_size,
-                "copy_from_async should move data of the same size",
-            ]()
-
         alias dst_element_size = int(self.element_size)
         alias src_element_size = int(src.element_size)
         constrained[
@@ -2197,124 +2052,63 @@ struct LayoutTensor[
         ):
             # Swizzle does `^bits`. Every 2^bits rows is xor-ed with the same binary number.
             # For vectors within 2^bits, we swizzle each of them.
+            alias num_vecs_per_swizzle = ceildiv(
+                swizzle.value().size(),
+                layout.stride[0].value() // self.element_size,
+            ) if swizzle.__bool__() and layout.size() > 1 else 1
 
             @parameter
-            if not src.__experimental_non_homogeneous_tile:
-                alias num_vecs_per_swizzle = ceildiv(
-                    swizzle.value().size(),
-                    layout.stride[0].value() // self.element_size,
-                ) if swizzle.__bool__() and layout.size() > 1 else 1
+            for j in range(num_vecs_per_swizzle):
+                alias dst_offset = layout(j)
+                var swizzled_offset = dst_offset
 
+                # Swizzle each vector within the first 2^bits rows.
                 @parameter
-                for j in range(num_vecs_per_swizzle):
-                    alias dst_offset = layout(j)
-                    var swizzled_offset = dst_offset
-
-                    # Swizzle each vector within the first 2^bits rows.
-                    @parameter
-                    if swizzle:
-                        alias swizzle_fn = swizzle.value()
-                        swizzled_offset = (
-                            swizzle_fn(
-                                (base_offset + dst_offset) // self.element_size
-                            )
-                            * self.element_size
-                            - base_offset
+                if swizzle:
+                    alias swizzle_fn = swizzle.value()
+                    swizzled_offset = (
+                        swizzle_fn(
+                            (base_offset + dst_offset) // self.element_size
                         )
+                        * self.element_size
+                        - base_offset
+                    )
 
-                    # Group vectors that are more than (multiple of) 2^bits rows part.
-                    # The vector's idx is swizzled_offset + distance to the first vector
-                    # in the group, which is within the first 2^bits rows.
-                    @parameter
-                    for i in range(j, dst_size, num_vecs_per_swizzle):
-                        var src_idx = 0
-
-                        # only get index like this when it is vectorized form
-                        alias src_static_idx = src.layout(i)
-                        alias dst_distance = layout(i) - layout(j)
-
-                        @parameter
-                        if src_dims_known:
-                            src_idx = src_static_idx
-                        else:
-                            src_idx = src.runtime_layout(i)
-
-                        var dst_idx = swizzled_offset + dst_distance
-
-                        @parameter
-                        if masked:
-                            var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                            async_copy[element_size_bytes](
-                                src_ptr.bitcast[dtype]() + src_idx,
-                                dst_ptr + dst_idx,
-                                src_copy_size,
-                            )
-                        else:
-                            async_copy[
-                                element_size_bytes,
-                                fill=fill,
-                                eviction_policy=eviction_policy,
-                            ](
-                                src_ptr.bitcast[dtype]() + src_idx,
-                                dst_ptr + dst_idx,
-                            )
-            else:
-                alias is_rank2 = src.rank == 2 and self.rank == 2
-                constrained[
-                    is_rank2,
-                    (
-                        "async copy for dynamic tiles is only available for"
-                        " rank-2 tensor."
-                    ),
-                ]()
-
-                alias num_vecs_per_swizzle = ceildiv(
-                    swizzle.value().size(),
-                    layout.stride[0].value() // self.element_size,
-                ) if swizzle.__bool__() and layout.size() > 1 else 1
-
-                var d0 = min(src.dim(0), self.dim(0))
-                var d1 = min(src.dim(1), self.dim(1))
-                var copy_bound = d0 * d1
-
+                # Group vectors that are more than (multiple of) 2^bits rows part.
+                # The vector's idx is swizzled_offset + distance to the first vector
+                # in the group, which is within the first 2^bits rows.
                 @parameter
-                for i in range(num_vecs_per_swizzle):
-                    alias dst_offset = layout(i)
+                for i in range(j, dst_size, num_vecs_per_swizzle):
+                    var src_idx = 0
 
-                    var swizzled_offset = dst_offset
-
-                    @parameter
-                    if swizzle:
-                        alias swizzle_fn = swizzle.value()
-                        swizzled_offset = (
-                            swizzle_fn(
-                                (base_offset + dst_offset) // self.element_size
-                            )
-                            * self.element_size
-                            - base_offset
-                        )
+                    # only get index like this when it is vectorized form
+                    alias src_static_idx = src.layout(i)
+                    alias dst_distance = layout(i) - layout(j)
 
                     @parameter
-                    for j in range(i, dst_size, num_vecs_per_swizzle):
-                        var src_idx = 0
+                    if src_dims_known:
+                        src_idx = src_static_idx
+                    else:
+                        src_idx = src.runtime_layout(i)
 
-                        # only get index like this when it is vectorized form
-                        alias src_static_idx = src.layout(j)
-                        alias dst_distance = layout(j) - layout(i)
+                    var dst_idx = swizzled_offset + dst_distance
 
-                        @parameter
-                        if src_dims_known:
-                            src_idx = src_static_idx
-                        else:
-                            src_idx = src.runtime_layout(j)
-
-                        var dst_idx = swizzled_offset + dst_distance
-
-                        var copy_size_bytes = element_size_bytes if i * num_vecs_per_swizzle + j < copy_bound else 0
+                    @parameter
+                    if masked:
+                        var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
                         async_copy[element_size_bytes](
                             src_ptr.bitcast[dtype]() + src_idx,
                             dst_ptr + dst_idx,
-                            copy_size_bytes,
+                            src_copy_size,
+                        )
+                    else:
+                        async_copy[
+                            element_size_bytes,
+                            fill=fill,
+                            eviction_policy=eviction_policy,
+                        ](
+                            src_ptr.bitcast[dtype]() + src_idx,
+                            dst_ptr + dst_idx,
                         )
 
         # Async copy should only be used for 16B vector for bypassing L1.
@@ -2323,76 +2117,23 @@ struct LayoutTensor[
             constrained[not swizzle, "Should not swizzle scalar copy."]()
 
             @parameter
-            if not src.__experimental_non_homogeneous_tile:
+            for i in range(dst_size * dst_element_size):
+                var src_idx = 0
+                alias src_static_idx = make_layout(
+                    src.element_layout, src.layout
+                )(i)
+                alias dst_idx = make_layout(self.element_layout, self.layout)(i)
 
                 @parameter
-                for i in range(dst_size * dst_element_size):
-                    var src_idx = 0
-
-                    alias src_static_idx = make_layout(
-                        src.element_layout, src.layout
+                if src_dims_known:
+                    src_idx = src_static_idx
+                else:
+                    src_idx = make_runtime_layout(
+                        src.runtime_element_layout, src.runtime_layout
                     )(i)
-                    alias dst_idx = make_layout(
-                        self.element_layout, self.layout
-                    )(i)
-
-                    @parameter
-                    if src_dims_known:
-                        src_idx = src_static_idx
-                    else:
-                        src_idx = make_runtime_layout(
-                            src.runtime_element_layout, src.runtime_layout
-                        )(i)
-
-                    async_copy[4, fill=fill, eviction_policy=eviction_policy](
-                        src_ptr.bitcast[dtype]() + src_idx, dst_ptr + dst_idx
-                    )
-            else:
-                alias is_rank2 = src.rank == 2 and self.rank == 2
-                constrained[
-                    is_rank2,
-                    (
-                        "async copy for dynamic tiles is only available for"
-                        " rank-2 tensor."
-                    ),
-                ]()
-
-                var d0 = min(src.dim(0), self.dim(0))
-                var d1 = min(src.dim(1), self.dim(1))
-
-                var dst_runtime_layout = RuntimeLayout[
-                    self.layout, bitwidth = Self.layout_bitwidth
-                ](
-                    RuntimeTuple[
-                        self.layout.shape,
-                        element_bitwidth = Self.layout_bitwidth,
-                        unsigned=True,
-                    ](d0, d1),
-                    self.runtime_layout.stride,
+                async_copy[4, fill=fill, eviction_policy=eviction_policy](
+                    src_ptr.bitcast[dtype]() + src_idx, dst_ptr + dst_idx
                 )
-                var src_runtime_layout = RuntimeLayout[
-                    src.layout, bitwidth = src.layout_bitwidth
-                ](
-                    RuntimeTuple[
-                        src.layout.shape,
-                        element_bitwidth = src.layout_bitwidth,
-                        unsigned=True,
-                    ](d0, d1),
-                    src.runtime_layout.stride,
-                )
-
-                for i in range(d0 * d1 * dst_element_size):
-                    var src_idx = make_runtime_layout(
-                        src.runtime_element_layout, src_runtime_layout
-                    )(i)
-
-                    var dst_idx = make_runtime_layout(
-                        self.runtime_element_layout, dst_runtime_layout
-                    )(i)
-
-                    async_copy[4, fill=fill, eviction_policy=eviction_policy](
-                        src_ptr.bitcast[dtype]() + src_idx, dst_ptr + dst_idx
-                    )
 
     @always_inline
     fn copy_from_async_masked_src[
@@ -2793,83 +2534,38 @@ fn copy_sram_to_dram[
 
         var src_frag_offset = src_fragments.distance(src.ptr)
 
+        alias num_stores_per_thread = dst_fragments.layout.size()
+
         @parameter
-        if not dst.__experimental_non_homogeneous_tile:
-            alias num_stores_per_thread = dst_fragments.layout.size()
+        for i in range(num_stores_per_thread):
+            var dst_idx = 0
+            alias src_idx = src_fragments.layout(i)
+            alias dst_static_idx = dst_fragments.layout(i)
 
             @parameter
-            for i in range(num_stores_per_thread):
-                var dst_idx = 0
+            if dst_fragments.layout.all_dims_known():
+                dst_idx = dst_static_idx
+            else:
+                dst_idx = dst_fragments.runtime_layout(i)
+            var swizzled_idx = src_frag_offset + src_idx
 
-                alias src_idx = src_fragments.layout(i)
-                alias dst_static_idx = dst_fragments.layout(i)
-
-                @parameter
-                if dst_fragments.layout.all_dims_known():
-                    dst_idx = dst_static_idx
-                else:
-                    dst_idx = dst_fragments.runtime_layout(i)
-
-                var swizzled_idx = src_frag_offset + src_idx
-
-                @parameter
-                if swizzle:
-                    alias swizzle_fn = swizzle.value()
-                    alias src_idx_base = src_idx % swizzle_fn.size()
-                    alias src_idx_diff = src_idx - src_idx_base
-                    # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
-                    # xor computation.
-                    swizzled_idx = (
-                        swizzle_fn(src_frag_offset + src_idx_base)
-                        + src_idx_diff
-                    )
-
-                var src_vec = src.ptr.load[
-                    width=simd_size, alignment=src_align
-                ](swizzled_idx)
-                dst_fragments.ptr.store[alignment=dst_align](
-                    dst_idx, src_vec.cast[dst.dtype]()
+            @parameter
+            if swizzle:
+                alias swizzle_fn = swizzle.value()
+                alias src_idx_base = src_idx % swizzle_fn.size()
+                alias src_idx_diff = src_idx - src_idx_base
+                # `src_frag_offset + src_idx_base` should be a value already seen
+                # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                # xor computation.
+                swizzled_idx = (
+                    swizzle_fn(src_frag_offset + src_idx_base) + src_idx_diff
                 )
-        else:
-            var copy_bound = dst_fragments.runtime_layout.size()
-            alias num_stores_per_thread = dst_fragments.layout.size()
-
-            @parameter
-            for i in range(num_stores_per_thread):
-                var dst_idx = 0
-
-                alias src_idx = src_fragments.layout(i)
-                alias dst_static_idx = dst_fragments.layout(i)
-
-                @parameter
-                if dst_fragments.layout.all_dims_known():
-                    dst_idx = dst_static_idx
-                else:
-                    dst_idx = dst_fragments.runtime_layout(i)
-
-                var swizzled_idx = src_frag_offset + src_idx
-
-                @parameter
-                if swizzle:
-                    alias swizzle_fn = swizzle.value()
-                    alias src_idx_base = src_idx % swizzle_fn.size()
-                    alias src_idx_diff = src_idx - src_idx_base
-                    # `src_frag_offset + src_idx_base` should be a value already seen
-                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
-                    # xor computation.
-                    swizzled_idx = (
-                        swizzle_fn(src_frag_offset + src_idx_base)
-                        + src_idx_diff
-                    )
-
-                if i < copy_bound:
-                    var src_vec = src.ptr.load[
-                        width=simd_size, alignment=src_align
-                    ](swizzled_idx)
-                    dst_fragments.ptr.store[alignment=dst_align](
-                        dst_idx, src_vec.cast[dst.dtype]()
-                    )
+            var src_vec = src.ptr.load[width=simd_size, alignment=src_align](
+                swizzled_idx
+            )
+            dst_fragments.ptr.store[alignment=dst_align](
+                dst_idx, src_vec.cast[dst.dtype]()
+            )
 
 
 @always_inline
@@ -3185,7 +2881,6 @@ struct LayoutTensorIter[
     circular: Bool = False,
     axis: OptionalReg[Int] = None,
     layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
-    __experimental_non_homogeneous_tile: Bool = False,
 ]:
     """Iterate through a memory buffer and construct layout tensor.
 
@@ -3280,12 +2975,7 @@ struct LayoutTensorIter[
     @always_inline
     fn get(
         self,
-    ) -> LayoutTensor[
-        type,
-        layout,
-        address_space=address_space,
-        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
-    ] as result:
+    ) -> LayoutTensor[type, layout, address_space=address_space] as result:
         """Return the layout tensor at current iterator."""
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
@@ -3299,12 +2989,7 @@ struct LayoutTensorIter[
     @always_inline
     fn __getitem__(
         self,
-    ) -> LayoutTensor[
-        type,
-        layout,
-        address_space=address_space,
-        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
-    ]:
+    ) -> LayoutTensor[type, layout, address_space=address_space]:
         """Return the layout tensor at current iterator."""
         return self.get()
 
@@ -3322,18 +3007,6 @@ struct LayoutTensorIter[
             self.idx += int(rhs)
 
         @parameter
-        if __experimental_non_homogeneous_tile:
-            new_shape = self.runtime_layout.shape
-            var cur_dim = new_shape.value[axis.value()]
-            new_shape.value[axis.value()] = int(
-                cur_dim if self.idx * cur_dim + cur_dim
-                < int(self.dim_bound) else self.dim_bound - (self.idx * cur_dim)
-            )
-            self.runtime_layout = RuntimeLayout(
-                new_shape, self.runtime_layout.stride
-            )
-
-        @parameter
         if circular:
             self.offset = self.offset % self.bound
 
@@ -3346,18 +3019,6 @@ struct LayoutTensorIter[
         @parameter
         if axis:
             self.idx += 1
-
-        @parameter
-        if __experimental_non_homogeneous_tile:
-            new_shape = self.runtime_layout.shape
-            var cur_dim = new_shape.value[axis.value()]
-            new_shape.value[axis.value()] = int(
-                cur_dim if self.idx * cur_dim + cur_dim
-                < int(self.dim_bound) else self.dim_bound - (self.idx * cur_dim)
-            )
-            self.runtime_layout = RuntimeLayout(
-                new_shape, self.runtime_layout.stride
-            )
 
         @parameter
         if circular:
@@ -3386,14 +3047,6 @@ struct LayoutTensorIter[
         @parameter
         if axis:
             next_idx = int(self.idx) + int(rhs)
-
-        @parameter
-        if __experimental_non_homogeneous_tile:
-            var cur_dim = new_shape.value[axis.value()]
-            new_shape.value[axis.value()] = int(
-                cur_dim if next_idx * cur_dim + cur_dim
-                < int(self.dim_bound) else self.dim_bound - (next_idx * cur_dim)
-            )
 
         @parameter
         if circular:
@@ -3425,14 +3078,6 @@ struct LayoutTensorIter[
         @parameter
         if axis:
             next_idx = int(self.idx) + int(rhs)
-
-        @parameter
-        if __experimental_non_homogeneous_tile:
-            var cur_dim = new_shape.value[axis.value()]
-            new_shape.value[axis.value()] = int(
-                cur_dim if next_idx * cur_dim
-                < int(self.dim_bound) else self.dim_bound - (self.idx * cur_dim)
-            )
 
         @parameter
         if circular:

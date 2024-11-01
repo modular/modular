@@ -165,7 +165,6 @@ fn max[
     inp.rank - 1,
     address_space = inp.address_space,
     element_layout = inp.element_layout,
-    __experimental_non_homogeneous_tile = inp.__experimental_non_homogeneous_tile,
 ] as res:
     var res_tensor = __type_of(res).stack_allocation()
     max[axis](inp, res_tensor)
@@ -195,7 +194,6 @@ fn sum[
     inp.rank - 1,
     address_space = inp.address_space,
     element_layout = inp.element_layout,
-    __experimental_non_homogeneous_tile = inp.__experimental_non_homogeneous_tile,
 ] as res:
     var res_tensor = __type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)

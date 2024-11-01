@@ -75,14 +75,12 @@ struct ManagedLayoutTensor[
     free_fn: free_fn_type = cpu_free,
     alloc_runtime_fn: alloc_runtime_fn = cpu_alloc_runtime,
     *,
-    __experimental_non_homogeneous_tile: Bool = False,
 ]:
     alias layout_bitwidth = bitwidthof[_get_index_type(AddressSpace.GENERIC)]()
 
     var tensor: LayoutTensor[
         dtype,
         layout,
-        __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
     ]
 
     @always_inline
@@ -90,7 +88,6 @@ struct ManagedLayoutTensor[
         self.tensor = LayoutTensor[
             dtype,
             layout,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
         ](alloc_fn[layout, dtype]())
 
     @always_inline
@@ -98,11 +95,7 @@ struct ManagedLayoutTensor[
         inout self,
         runtime_layout: RuntimeLayout[layout, **_],
     ):
-        self.tensor = LayoutTensor[
-            dtype,
-            layout,
-            __experimental_non_homogeneous_tile=__experimental_non_homogeneous_tile,
-        ](
+        self.tensor = LayoutTensor[dtype, layout,](
             alloc_runtime_fn[layout, dtype](runtime_layout),
             rebind[RuntimeLayout[layout, bitwidth = Self.layout_bitwidth]](
                 runtime_layout

@@ -199,9 +199,9 @@ fn test_element_dynamic_layout():
         IndexList[2](8, 8)
     )
 
-    var tensor_Ux8 = ManagedLayoutTensor[
-        DType.float32, layoutUx8, __experimental_non_homogeneous_tile=True
-    ](runtime_layoutUx8)
+    var tensor_Ux8 = ManagedLayoutTensor[DType.float32, layoutUx8](
+        runtime_layoutUx8
+    )
     arange(tensor_Ux8.tensor, 0, 0.5)
     # CHECK: 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
     # CHECK: 4.0 4.5 5.0 5.5 6.0 6.5 7.0 7.5
@@ -232,9 +232,9 @@ fn test_element_dynamic_layout():
         IndexList[2](8, 2)
     )
 
-    var tensor_8xU = ManagedLayoutTensor[
-        DType.float32, layout8xU, __experimental_non_homogeneous_tile=True
-    ](runtime_layout8xU)
+    var tensor_8xU = ManagedLayoutTensor[DType.float32, layout8xU](
+        runtime_layout8xU
+    )
     arange(tensor_8xU.tensor, 0, 0.5)
     # CHECK: 0.0 0.5
     # CHECK: 1.0 1.5

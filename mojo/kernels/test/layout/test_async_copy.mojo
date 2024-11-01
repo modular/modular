@@ -102,19 +102,9 @@ fn async_dynamic_copy_kernel[
     output_layout: Layout,
     BM: Int,
     BN: Int,
-    /,
-    _is_homogeneous: Bool = False,
 ](
-    input: LayoutTensor[
-        DType.float32,
-        input_layout,
-        __experimental_non_homogeneous_tile=_is_homogeneous,
-    ],
-    output: LayoutTensor[
-        DType.float32,
-        output_layout,
-        __experimental_non_homogeneous_tile=_is_homogeneous,
-    ],
+    input: LayoutTensor[DType.float32, input_layout],
+    output: LayoutTensor[DType.float32, output_layout],
 ):
     var input_tile = input.tile[BM, BN](BlockIdx.x(), BlockIdx.y())
     var output_tile = output.tile[BM, BN](BlockIdx.x(), BlockIdx.y())
@@ -123,7 +113,6 @@ fn async_dynamic_copy_kernel[
         DType.float32,
         Layout(IntTuple(BM, BN)),
         address_space = AddressSpace.SHARED,
-        __experimental_non_homogeneous_tile=True,
     ].stack_allocation()
 
     smem_tile.copy_from_async(input_tile)
@@ -153,7 +142,6 @@ fn test_dynamic_async_copy[
         gpu_managed_alloc,
         gpu_free,
         gpu_managed_alloc_runtime,
-        __experimental_non_homogeneous_tile=True,
     ](input_runtime_layout)
     arange(input.tensor)
 
@@ -163,11 +151,10 @@ fn test_dynamic_async_copy[
         gpu_managed_alloc,
         gpu_free,
         gpu_managed_alloc_runtime,
-        __experimental_non_homogeneous_tile=True,
     ](output_runtime_layout)
 
     alias kernel_type = async_dynamic_copy_kernel[
-        unknown_layout, unknown_layout, BM, BN, _is_homogeneous=True
+        unknown_layout, unknown_layout, BM, BN
     ]
 
     var kernel = ctx.compile_function[kernel_type]()
@@ -354,14 +341,7 @@ fn swizzle_copy[
     num_threads: Int,
     /,
     _is_homogeneous: Bool = False,
-](
-    a: LayoutTensor[
-        type, a_layout, __experimental_non_homogeneous_tile=_is_homogeneous
-    ],
-    b: LayoutTensor[
-        type, b_layout, __experimental_non_homogeneous_tile=_is_homogeneous
-    ],
-):
+](a: LayoutTensor[type, a_layout], b: LayoutTensor[type, b_layout],):
     alias simd_size = simdwidthof[type]()
 
     var M = a.shape[0]()
@@ -532,13 +512,7 @@ fn copy_sram_to_dram_kernel[
     layout: Layout,
     M: Int,
     N: Int,
-    /,
-    __non_homogeneous_tile: Bool = False,
-](
-    input: LayoutTensor[
-        type, layout, __experimental_non_homogeneous_tile=__non_homogeneous_tile
-    ]
-):
+](input: LayoutTensor[type, layout]):
     alias simd_size = simdwidthof[type]()
     alias thread_layout = Layout.row_major(simd_size, N // simd_size)
 
@@ -564,7 +538,6 @@ fn test_copy_sram_to_dram[
     *,
     skew_M: Int = 0,
     skew_N: Int = 0,
-    __non_homogeneous_tile: Bool = False,
 ](ctx: DeviceContext) raises:
     print("=== test_copy_sram_to_dram")
 
@@ -578,16 +551,13 @@ fn test_copy_sram_to_dram[
         gpu_managed_alloc,
         gpu_free,
         gpu_managed_alloc_runtime,
-        __experimental_non_homogeneous_tile=__non_homogeneous_tile,
     ](runtime_layout)
 
     alias tile_layout = Layout.row_major(M - skew_M, N - skew_N)
 
     var tile_tensor = input.tensor.tile[M - skew_M, N - skew_N](0, 0)
 
-    alias kernel_type = copy_sram_to_dram_kernel[
-        type, tile_layout, M, N, __non_homogeneous_tile
-    ]
+    alias kernel_type = copy_sram_to_dram_kernel[type, tile_layout, M, N]
     var kernel = ctx.compile_function[kernel_type]()
 
     ctx.enqueue_function(
@@ -829,5 +799,4 @@ fn main() raises:
             8,
             skew_M=1,
             skew_N=0,
-            __non_homogeneous_tile=True,
         ](ctx)
