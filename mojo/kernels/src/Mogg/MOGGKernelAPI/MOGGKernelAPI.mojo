@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
+from collections import OptionalReg, Optional
 from math import (
     ceil,
     cos,
@@ -38,6 +38,15 @@ from algorithm import min as reduce_min
 from algorithm import product, sum
 from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
 from utils import StaticTuple
+from nn.kv_cache import (
+    _continuous_batch_kv_cache_collection,
+    kv_params_h8_d128_bshd,
+    ContinuousBatchingKVCacheCollection,
+    KVCacheStaticParams,
+    _fused_qkv_matmul_kv_cache,
+    fused_qk_rope,
+    _flash_attention_kv_cache_causal_mask,
+)
 
 # ===----------------------------------------------------------------------===#
 # General imports
@@ -98,7 +107,7 @@ from utils.index import Index
 from utils.numerics import isinf, isnan
 from compiler_internal import StaticTensorSpec
 
-from register import mogg_register_override
+from register import mogg_register_override, uses_opaque
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 
@@ -117,6 +126,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
+from gpu.host import DeviceContext
 
 # ===----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
@@ -2949,8 +2959,11 @@ struct LayerNorm:
         return input._spec.shape
 
 
+# TODO(GRA-1216): This kernel slows down pipeline by 2x for some reason.
+# Likely due to something related to fusion.
 @compiler.register("rms_norm")
 struct RMSNorm:
+    @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
         type: DType,
@@ -4825,3 +4838,193 @@ struct VroomQ6KRepackWeights:
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
         return b.get_static_spec().shape
+
+
+# ===----------------------------------------------------------------------===#
+# KV Cache
+# ===----------------------------------------------------------------------===#
+
+
+@compiler.register(
+    "continuous_batching_kv_cache_collection_h8_d128_bshd", num_dps_outputs=0
+)
+struct Struct_continuous_batching_kv_cache_collection_h8_d128_bshd:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        blocks: ManagedTensorSlice[type, 6],
+        cache_lengths: ManagedTensorSlice[DType.uint32, 1],
+        lookup_table: ManagedTensorSlice[DType.uint32, 1],
+        is_cache_empty: ManagedTensorSlice[DType.bool, 1],
+    ) -> ContinuousBatchingKVCacheCollection[
+        type,
+        kv_params_h8_d128_bshd,
+    ]:
+        return _continuous_batch_kv_cache_collection[kv_params_h8_d128_bshd](
+            managed_tensor_slice_to_ndbuffer(blocks),
+            managed_tensor_slice_to_ndbuffer(cache_lengths),
+            managed_tensor_slice_to_ndbuffer(lookup_table),
+            managed_tensor_slice_to_ndbuffer(is_cache_empty),
+        )
+
+
+# TODO(GRA-1216): This kernel under new path leads to 50% drop in pipeline throughput
+@compiler.register("fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch")
+struct Struct_fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        hidden_state: ManagedTensorSlice[type, 3],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=8, head_size=128),
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        """Performs a fused QKV matmul. Q outputs are written to the output argument
+        while K and V outputs are written in-place into k_cache and v_cache.
+
+        Args:
+            output: The pre-allocated output buffer for Q projections. K and V
+                projections are written in-place to k_cache and v_cache.
+            hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
+            weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+            kv_collection: The historical KVCache for keys and values. The KVCache for
+                this layer is retrieved via layer_idx.
+            layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+                for the given layer from kv_collection.
+            ctx: The call context pointer, passed by the graph compiler.
+        """
+        alias output_shape = compiler.specsof[type, 3]("output").shape
+        alias hidden_state_shape = compiler.specsof[type, 3](
+            "hidden_state"
+        ).shape
+        alias weight_shape = compiler.specsof[type, 2]("weight").shape
+
+        with Trace[TraceLevel.OP, target=target](
+            "fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch"
+        ):
+            return _fused_qkv_matmul_kv_cache[
+                kv_collection.CacheType, target=target
+            ](
+                managed_tensor_slice_to_ndbuffer[
+                    static_shape=hidden_state_shape
+                ](hidden_state),
+                managed_tensor_slice_to_ndbuffer[static_shape=weight_shape](
+                    weight
+                ),
+                kv_collection,
+                layer_idx[0],
+                managed_tensor_slice_to_ndbuffer[static_shape=output_shape](
+                    output
+                ),
+                ctx,
+            )
+
+
+@compiler.register("fused_qk_rope_h8_d128_bshd_continuous_batch")
+struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 4],
+        q_proj: ManagedTensorSlice[type, 4],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=8, head_size=128),
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        """Performs a fused RoPE projection for Q and K projections.
+
+        We have a manually fused QKV projection with mo.opaque types in our Llama model.
+        Due to a limitation in custom op definitions, we can't declare both a tensor
+        and opaque type as output from a custom kernel. This requires us to only note
+        Q_proj as an output from the QKV projection. If we immediately follow the
+        QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+        because the graph compiler doesn't know about the dependency between these
+        kernels in the graph definition. Here we fuse the RoPE kernel applied to
+        Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+        """
+
+        alias output_shape = compiler.specsof[type, 4]("output").shape
+        alias q_proj_shape = compiler.specsof[type, 4]("q_proj").shape
+        alias freqs_cis_shape = compiler.specsof[type, 2]("freqs_cis").shape
+
+        # Pass device context only on GPU.
+        var dev_ctx = Optional[
+            DeviceContext
+        ]() if target == "cpu" else ctx.get_device_context()
+        with Trace[TraceLevel.OP, target=target](
+            "fused_qk_rope_h8_d128_bshd_continuous_batch"
+        ):
+            fused_qk_rope[kv_collection.CacheType, target=target](
+                managed_tensor_slice_to_ndbuffer[static_shape=q_proj_shape](
+                    q_proj
+                ),
+                kv_collection,
+                managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
+                    freqs_cis
+                ),
+                layer_idx[0],
+                managed_tensor_slice_to_ndbuffer[static_shape=output_shape](
+                    output
+                ),
+                dev_ctx,
+            )
+
+
+@compiler.register(
+    "flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch"
+)
+struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 4],
+        q: ManagedTensorSlice[type, 4],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            KVCacheStaticParams(num_heads=8, head_size=128),
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        scale: ScalarTensor[DType.float32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        alias output_shape = compiler.specsof[type, 4]("output").shape
+        alias q_shape = compiler.specsof[type, 4]("q").shape
+
+        with Trace[TraceLevel.OP, target=target](
+            "flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch"
+        ):
+            return _flash_attention_kv_cache_causal_mask[
+                kv_collection.CacheType, target=target
+            ](
+                managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
+                kv_collection,
+                layer_idx[0],
+                managed_tensor_slice_to_ndbuffer(valid_lengths),
+                scale[0],
+                managed_tensor_slice_to_ndbuffer[static_shape=output_shape](
+                    output
+                ),
+                ctx,
+            )
