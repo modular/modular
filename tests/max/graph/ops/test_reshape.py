@@ -10,12 +10,10 @@ from collections.abc import Collection
 
 import pytest
 from conftest import (
-    MAX_INT32,
     MAX_INT64,
     axes,
     shapes,
     static_dims,
-    static_known_shape_size,
     symbolic_dims,
     tensor_types,
 )
@@ -79,8 +77,6 @@ shared_static_shapes = st.shared(shapes(max_rank=4, is_static=True))
 def test_reshape__can_permute_input_shape(
     input_type: TensorType, output_shape: list[Dim]
 ):
-    # TODO(GRA-1015): remove this assumption
-    assume(static_known_shape_size(input_type.shape) <= MAX_INT32)
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(output_shape)
         assert out.shape == output_shape
@@ -94,11 +90,6 @@ def test_reshape__can_permute_input_shape(
 def test_reshapes__can_replace_any_dims_with_negative_one(
     input_type: TensorType, reshape_shape: list[Dim]
 ):
-    assume(0 not in input_type.shape)
-
-    # TODO(GRA-1015): remove this assumption
-    assume(static_known_shape_size(input_type.shape) <= MAX_INT32)
-
     with Graph("reshape", input_types=[input_type]) as graph:
         out = graph.inputs[0].reshape(reshape_shape)
         assert out.dtype == input_type.dtype
@@ -169,8 +160,6 @@ def test_reshape__fails_with_different_symbolic_dim(
     output_shape: list[Dim],
     dim: Dim,
 ):
-    assert static_known_shape_size(input_type.shape) <= MAX_INT64
-    assume(0 not in input_type.shape)
     assume(dim not in input_type.shape)
     with Graph("reshape", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
@@ -179,38 +168,26 @@ def test_reshape__fails_with_different_symbolic_dim(
 
 @given(
     input_type=tensor_types(shapes=shared_static_shapes),
-    output_shape=shared_static_shapes.flatmap(st.permutations),
-    dim=shared_static_shapes.flatmap(
-        # Draw a dim such that the new shape's dim product fits in an int64.
-        lambda shape: st.integers(
-            # Sample 1 only if >= 2 would lead to a dim prod > int64 max.
-            min_value=min(2, MAX_INT64 // static_known_shape_size(shape)),
-            max_value=min(128, MAX_INT64 // static_known_shape_size(shape)),
-        )
-    ),
+    output_shape=shared_static_shapes.flatmap(st.permutations)
+    .filter(lambda shape: shape[-1] > 1)
+    .map(lambda shape: shape[:-1]),
 )
 @example(
     # Specifically test an example whose dim product can be represented by an
     # int64, but not by an int32.
     input_type=TensorType(
         DType.int8,
-        Shape([268435456]),
+        Shape([268435456, 17]),
     ),
     output_shape=Shape([268435456]),
-    dim=17,
 )
 def test_reshape__fails_with_different_number_of_elements(
     input_type: TensorType,
     output_shape: Shape,
-    dim: int,
 ) -> None:
-    assert static_known_shape_size([*input_type.shape, dim]) <= MAX_INT64
-    assert all(isinstance(d, StaticDim) for d in input_type.shape)
-    assume(0 not in input_type.shape)
-    assume(dim > 1)  # 0 and 1 should both work
     with Graph("reshape", input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
-            graph.inputs[0].reshape([*output_shape, dim])
+            graph.inputs[0].reshape(output_shape)
 
 
 @given(

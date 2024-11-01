@@ -45,11 +45,6 @@ MAX_INT32 = np.iinfo(np.int32).max
 MAX_INT64 = np.iinfo(np.int64).max
 
 
-def static_known_shape_size(shape: ShapeLike):
-    """Returns the size of a shape only considering static dims"""
-    return math.prod(dim.dim for dim in shape if isinstance(dim, StaticDim))
-
-
 dtypes = st.sampled_from([d for d in DType if d is not DType._unknown])
 
 

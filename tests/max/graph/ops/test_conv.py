@@ -9,7 +9,6 @@ from math import sqrt
 from conftest import (
     MAX_INT32,
     static_dims,
-    static_known_shape_size,
     tensor_types,
 )
 from hypothesis import assume, given
@@ -45,9 +44,6 @@ stride_type = st.tuples(pos_int, pos_int)
 def test_conv_valid(
     x_type: TensorType, filter_type: TensorType, stride, padding
 ):
-    # TODO(GRA-1015): remove the next two assumptions.
-    assume(static_known_shape_size(filter_type.shape) <= MAX_INT32)
-    assume(static_known_shape_size(x_type.shape) <= MAX_INT32)
     assume(filter_type.shape[0] <= x_type.shape[1])
     assume(filter_type.shape[1] <= x_type.shape[2])
     with Graph("conv", input_types=[x_type, filter_type]) as graph:

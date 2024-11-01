@@ -10,13 +10,12 @@ from functools import reduce
 from random import Random
 
 import pytest
-from conftest import MAX_INT32, shapes, tensor_types
+from conftest import shapes, tensor_types
 from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 from max.graph import Graph, TensorType
 
-# TODO(GRA-1015): remove limit to MAX_INT32
-input_shapes = st.shared(shapes(max_size=MAX_INT32))
+input_shapes = st.shared(shapes())
 rank = input_shapes.map(len)
 within_rank = rank.flatmap(lambda r: st.integers(min_value=0, max_value=r - 1))
 
