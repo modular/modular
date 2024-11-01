@@ -6,6 +6,7 @@
 """This module includes NVIDIA GPUs id operations."""
 
 from sys import llvm_intrinsic, triple_is_nvidia_cuda
+from os import abort
 
 # ===----------------------------------------------------------------------===#
 # ThreadIdx
@@ -285,3 +286,29 @@ fn lane_id() -> UInt:
             ]().cast[DType.uint32]()
         )
     )
+
+
+# ===----------------------------------------------------------------------===#
+# sm_id
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn sm_id() -> UInt:
+    """Returns the SM ID of the current thread.
+    Returns:
+        The SM ID of the the current thread.
+    """
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.smid", Int32, has_side_effect=False
+                ]().cast[DType.uint32]()
+            )
+        )
+    else:
+        constrained[False, "The sm_id function is not supported by AMD GPUs."]()
+        return abort[Int]("function not available")
