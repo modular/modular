@@ -79,21 +79,6 @@ def arrays(tensor_type: TensorType, static_dims={}, **kwargs):
     )
 
 
-def assert_allclose(result, expected):
-    try:
-        np.testing.assert_allclose(
-            result,
-            expected,
-            rtol=ACCURACY_RTOL,
-            atol=ACCURACY_ATOL,
-            equal_nan=True,
-        )
-        # TODO(MSDK-830): Don't filter out tests where we NaN and torch doesn't
-    except AssertionError:
-        if np.isnan(result).any():
-            reject()
-
-
 def given_input_types(
     input_types,
     static_dims: Dict[str, int] = {},
