@@ -30,6 +30,7 @@ from utils.numerics import min_or_neg_inf
 from testing import assert_almost_equal
 
 from gpu.host.device_context import DeviceContext
+from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import bench_compile_time, env_get_dtype
 
 
@@ -116,7 +117,7 @@ fn run_mha[
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[add_attn_mask=False](
+        flash_attention[target=DEFAULT_GPU_ARCH, add_attn_mask=False](
             output_device,
             q_device,
             k_device,
