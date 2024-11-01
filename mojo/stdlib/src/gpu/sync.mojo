@@ -6,6 +6,7 @@
 """This module includes intrinsics for NVIDIA GPUs sync instructions."""
 
 from sys import llvm_intrinsic
+from os import abort
 
 from memory import UnsafePointer
 from memory.pointer import AddressSpace
@@ -110,7 +111,13 @@ fn mbarrier[
       address: The mbarrier object is at the location.
     """
 
-    _mbarrier_impl(address)
+    @parameter
+    if triple_is_nvidia_cuda():
+        _mbarrier_impl(address)
+    else:
+        constrained[
+            False, "The mbarrier function is not supported by AMD GPUs."
+        ]()
 
 
 @always_inline("nodebug")
@@ -126,9 +133,16 @@ fn mbarrier_init[
         shared_mem: Shared memory barrier to initialize.
         num_threads: Number of threads participating.
     """
-    llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
-        shared_mem, num_threads
-    )
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
+            shared_mem, num_threads
+        )
+    else:
+        constrained[
+            False, "The mbarrier_init function is not supported by AMD GPUs."
+        ]()
 
 
 @always_inline("nodebug")
@@ -143,7 +157,17 @@ fn mbarrier_arrive[
     Returns:
         An Int64 value representing the state of the memory barrier.
     """
-    return llvm_intrinsic["llvm.nvvm.mbarrier.arrive.shared", Int](shared_mem)
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        return llvm_intrinsic["llvm.nvvm.mbarrier.arrive.shared", Int](
+            shared_mem
+        )
+    else:
+        constrained[
+            False, "The mbarrier_arrive function is not supported by AMD GPUs."
+        ]()
+        return abort[Int]("function not available")
 
 
 @always_inline("nodebug")
@@ -162,9 +186,18 @@ fn mbarrier_test_wait[
     Returns:
         True if all particpating thread arrived to the barrier.
     """
-    return llvm_intrinsic["llvm.nvvm.mbarrier.test.wait.shared", Bool](
-        shared_mem, state
-    )
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        return llvm_intrinsic["llvm.nvvm.mbarrier.test.wait.shared", Bool](
+            shared_mem, state
+        )
+    else:
+        constrained[
+            False,
+            "The mbarrier_test_wait function is not supported by AMD GPUs.",
+        ]()
+        return abort[Int]("function not available")
 
 
 @always_inline("nodebug")
@@ -180,9 +213,20 @@ fn mbarrier_arrive_expect_tx_shared[
         addr: Shared memory barrier address.
         tx_count: Number of element to the expect-tx operatio.
     """
-    __mlir_op.`nvvm.mbarrier.arrive.expect_tx.shared`(
-        to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
-    )
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        __mlir_op.`nvvm.mbarrier.arrive.expect_tx.shared`(
+            to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
+        )
+    else:
+        constrained[
+            False,
+            (
+                "The mbarrier_arrive_expect_tx_shared function is not supported"
+                " by AMD GPUs."
+            ),
+        ]()
 
 
 @always_inline("nodebug")
@@ -201,6 +245,17 @@ fn mbarrier_try_wait_parity_shared[
         phase: Phase number.
         ticks: Time in nano seconds.
     """
-    __mlir_op.`nvvm.mbarrier.try_wait.parity.shared`(
-        to_llvm_shared_mem_ptr(addr), to_i32(phase), to_i32(ticks)
-    )
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        __mlir_op.`nvvm.mbarrier.try_wait.parity.shared`(
+            to_llvm_shared_mem_ptr(addr), to_i32(phase), to_i32(ticks)
+        )
+    else:
+        constrained[
+            False,
+            (
+                "The mbarrier_try_wait_arity_shared function is not supported"
+                " by AMD GPUs."
+            ),
+        ]()
