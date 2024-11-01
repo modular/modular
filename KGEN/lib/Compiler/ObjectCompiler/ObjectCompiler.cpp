@@ -1086,7 +1086,8 @@ ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess ObjectCompiler::emitAssembly(ModuleOp module,
-                                            llvm::raw_pwrite_stream &os) {
+                                            llvm::raw_pwrite_stream &os,
+                                            bool verboseOutput) {
   CompilerTimeTraceScope traceScope("emitAssembly");
 
   LLVMModuleAndContext llvmModule;
@@ -1098,6 +1099,15 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(ModuleOp module,
   auto machineOr = createTargetMachine(options, /*isJIT=*/false);
   if (failed(machineOr))
     return machineOr.takeError();
+
+  llvm::LLVMTargetMachine &llvmTargetMachine =
+      static_cast<llvm::LLVMTargetMachine &>((**machineOr));
+
+  llvmTargetMachine.Options.MCOptions.AsmVerbose = verboseOutput;
+  llvmTargetMachine.Options.MCOptions.PreserveAsmComments = verboseOutput;
+
+  // Set the data layout on the module.
+  llvmModule->setDataLayout((*machineOr)->createDataLayout());
 
   // Emit the assembly.
   if (failed(KGEN::compileLLVMToAssembly(std::move(llvmModule), **machineOr, os,

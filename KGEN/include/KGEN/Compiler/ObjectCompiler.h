@@ -64,7 +64,8 @@ public:
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// assembly file. The assembly output is written to the provided stream.
-  ErrorOrSuccess emitAssembly(ModuleOp module, llvm::raw_pwrite_stream &os);
+  ErrorOrSuccess emitAssembly(ModuleOp module, llvm::raw_pwrite_stream &os,
+                              bool verboseOutput = false);
 
   /// Writes C++ function declarations for all exported symbols.
   LogicalResult emitCXXHeader(ModuleOp module, StringRef filename,
