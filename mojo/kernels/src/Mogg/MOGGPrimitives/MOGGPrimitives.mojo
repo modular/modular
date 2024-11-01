@@ -203,6 +203,7 @@ fn create_chain_async(
     )
 
 
+@mogg_register("builtin.create_bool_async")
 @mogg_register("builtin.create_i1_async")
 @always_inline
 fn create_i1_async(
