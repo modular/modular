@@ -55,9 +55,16 @@ fn syncwarp(mask: Int = -1):
     Args:
       mask: The mask of the warp lanes.
     """
-    __mlir_op.`nvvm.bar.warp.sync`(
-        __mlir_op.`index.casts`[_type = __mlir_type.i32](mask.value)
-    )
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        __mlir_op.`nvvm.bar.warp.sync`(
+            __mlir_op.`index.casts`[_type = __mlir_type.i32](mask.value)
+        )
+    else:
+        constrained[
+            False, "The syncwarp function is not support on AMD GPUs."
+        ]()
 
 
 # ===----------------------------------------------------------------------===#
