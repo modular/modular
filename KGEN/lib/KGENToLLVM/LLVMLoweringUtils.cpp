@@ -141,9 +141,11 @@ std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
     return IntegerType::get(ctx, dtype.getIntegerWidthInBits());
 
   if (dtype.isFloat()) {
-    if (FloatType fpType = getEquivalentFloatType(ctx, dtype))
+    if (FloatType fpType = getEquivalentFloatType(ctx, dtype)) {
+      if (fpType.isFloat8E5M2() || fpType.isFloat8E4M3())
+        return IntegerType::get(ctx, 8);
       return fpType;
-    return {};
+    }
   }
 
   return {};
@@ -766,8 +768,13 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
       return b.create<LLVM::IntToPtrOp>(
           LLVM::LLVMPointerType::get(b.getContext()), addr);
     }
-    return asConst(b.getFloatAttr(getEquivalentFloatType(b.getContext(), dtype),
-                                  value.getFloatVal()));
+
+    FloatType fpType = getEquivalentFloatType(b.getContext(), dtype);
+    FloatAttr attrVal = b.getFloatAttr(fpType, value.getFloatVal());
+    if (fpType.isFloat8E5M2() || fpType.isFloat8E4M3())
+      return b.create<LLVM::ConstantOp>(b.getI8Type(), attrVal);
+
+    return asConst(attrVal);
   }
 
   // Handle vector constants.
@@ -804,10 +811,17 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
   SmallVector<APFloat> values;
   for (const POP::DTypeValue &value : simd.getValues())
     values.push_back(value.getFloatVal());
-  return asConst(cast<TypedAttr>(FloatArrayElementsAttr::get(
-      VectorType::get(values.size(),
-                      getEquivalentFloatType(b.getContext(), dtype)),
-      values)));
+
+  auto fpType = getEquivalentFloatType(b.getContext(), dtype);
+  auto attrVal = cast<TypedAttr>(FloatArrayElementsAttr::get(
+      VectorType::get(values.size(), fpType), values));
+
+  if (fpType.isFloat8E5M2() || fpType.isFloat8E4M3()) {
+    return b.create<LLVM::ConstantOp>(
+        VectorType::get(values.size(), b.getI8Type()), attrVal);
+  }
+
+  return asConst(attrVal);
 }
 
 /// Lower the string to a pop.global_constant and create a llvm struct of type

@@ -280,3 +280,28 @@ kgen.func export @kgen_fp8_param_constant() {
   kgen.return
 }
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+
+// CHECK-LABEL: kgen_fp8_args
+// CHECK-SAME: %[[ARG0:.+]]: vector<16xi8>
+kgen.func @kgen_fp8_args(%arg0: !pop.simd<16,f8e5m2>) -> !pop.simd<16,f8e5m2> {
+  // CHECK: llvm.return %[[ARG0]] : vector<16xi8>
+  kgen.return %arg0: !pop.simd<16,f8e5m2>
+}
+}
+
+// -----
+
+module attributes {M.target_info = #M.target<triple = "nvptx64-nvidia-cuda", arch = "sm_90", data_layout = "e-i64:64-i128:128-v16:16-v32:32-n16:32:64", simd_bit_width = 128>} {
+
+// CHECK-LABEL: kgen_fp8_ptr_arg
+kgen.func @kgen_fp8_ptr_arg(%arg0: !kgen.pointer<scalar<f8e5m2>>) -> !pop.scalar<f8e5m2>{
+  %0 = pop.load %arg0 : !kgen.pointer<scalar<f8e5m2>>
+  // CHECK: llvm.return %2 : i8
+  kgen.return %0 : !pop.scalar<f8e5m2>
+}
+
+}
