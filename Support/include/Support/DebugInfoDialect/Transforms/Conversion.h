@@ -26,6 +26,9 @@ public:
   /// case of failure.
   DIType convertDebugType(Type type);
 
+  /// Convert all types that occur inside `attr` into a debug info type.
+  Attribute convertDebugTypesIn(Attribute attr);
+
   /// Attach a conversion the produces a new debug type for the given MLIR type.
   template <typename FnT,
             typename T = typename llvm::function_traits<FnT>::template arg_t<0>>

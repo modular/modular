@@ -88,13 +88,12 @@ def DebugInfo_ValueOp : DebugInfoOp<"value"> {
   let builders = [
     OpBuilder<(ins "mlir::Value":$value, "DILocalVariableAttr":$valueInfo), [{
       build($_builder, $_state, value, valueInfo,
-            DIIRValueExprAttr::get(valueInfo.getType()));
+            DIIRValueExprAttr::get(value.getType()));
     }]>
   ];
 
   let assemblyFormat = [{
-    custom<ValueOpAttrs>($valueInfo, $conversionExpr)
-      `=` $value `:` type($value) attr-dict
+    $valueInfo custom<ValueOpOperand>($conversionExpr, $value, type($value)) attr-dict
   }];
 
   let hasVerifier = 1;

@@ -112,28 +112,21 @@ insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
   if (!fileLoc)
     return {};
 
-  DebugInfo::DIType sourceType;
-  DebugInfo::DIExprAttr diExpr;
+  DebugInfo::DIExprAttr diExpr =
+      DebugInfo::DIIRValueExprAttr::get(arg.getType());
+
+  // If this argument has address, its needs an initial deref.
   ArgConvention convention =
       func.getSignature().getArgConvention(arg.getArgNumber());
   if (SignatureType::hasAddress(convention)) {
-    // If this argument has address, its source type is the raw type.
     if (auto argRefType = dyn_cast<RefType>(arg.getType())) {
-      sourceType =
-          DebugInfo::DIUnresolvedMLIRType::get(argRefType.getElementType());
-      auto diPointerType =
-          DebugInfo::DITargetIndependentPointerType::get(sourceType);
-      auto newIrValue = DebugInfo::DIIRValueExprAttr::get(diPointerType);
-      diExpr = DebugInfo::DIDerefExprAttr::get(newIrValue, sourceType);
+      diExpr =
+          DebugInfo::DIDerefExprAttr::get(diExpr, argRefType.getElementType());
     }
   }
 
-  if (!sourceType) {
-    // Otherwise, its source type is the arg type itself.
-    sourceType = DebugInfo::DIUnresolvedMLIRType::get(arg.getType());
-    diExpr = DebugInfo::DIIRValueExprAttr::get(sourceType);
-  }
-
+  DebugInfo::DIType sourceType =
+      DebugInfo::DIUnresolvedMLIRType::get(diExpr.getType());
   DebugInfo::DIFlags flags = DebugInfo::DIFlags::Zero;
   if (convention == ArgConvention::ByRefError ||
       convention == ArgConvention::ByRefResult)
@@ -3313,11 +3306,11 @@ void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
       valueRef.endBit == info.endValueBit) {
     // The IR type needs to be deref'ed to get the source type. Encode the IR
     // type as a pointer type.
-    auto diPointerType = DebugInfo::DITargetIndependentPointerType::get(
-        info.debugVariable.getType());
-    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(diPointerType);
+    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(value.getType());
     auto conversion = DebugInfo::DIDerefExprAttr::get(
-        newIrValue, info.debugVariable.getType());
+        newIrValue,
+        cast<DebugInfo::DIUnresolvedMLIRType>(info.debugVariable.getType())
+            .getType());
     builder.create<DebugInfo::ValueOp>(value, info.debugVariable, conversion);
   }
 }

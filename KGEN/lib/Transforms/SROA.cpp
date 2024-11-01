@@ -135,19 +135,19 @@ private:
   /// Expects leaves to be of DIStructType.
   static ErrorOr<DebugInfo::DIExprAttr> directLeafConversion(Type irType,
                                                              unsigned i) {
-    auto structType = dyn_cast<DebugInfo::DIStructType>(irType);
+    auto structType = dyn_cast<StructType>(irType);
     if (!structType)
-      return Error("expected ir type to be a pointer to a struct type");
+      return Error("expected ir type to be a struct type");
 
-    // The element type of the struct is used directly.
-    auto newElementType = structType.getMembers()[i].getType();
+    // The field type of the struct is used directly.
+    auto newFieldType = structType.getElementTypes()[i];
 
-    // The leaf type is the struct element.
-    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newElementType);
+    // The leaf type is the struct field.
+    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newFieldType);
     // The expr is wrapped in an AggregatesInto expr to get back the
     // struct.
     auto aggregateExpr =
-        DebugInfo::DIAggregatesIntoExprAttr::get(newIrValue, i, structType);
+        DebugInfo::DIAggregatesIntoExprAttr::get(newIrValue, i, irType);
 
     return aggregateExpr;
   }
@@ -156,28 +156,21 @@ private:
   /// Expects leaves to be a pointer to a DIStructType.
   static ErrorOr<DebugInfo::DIExprAttr> indirectLeafConversion(Type irType,
                                                                unsigned i) {
-    DebugInfo::DIType elementType;
-    if (auto ptr = dyn_cast<DebugInfo::DIPointerType>(irType)) {
-      elementType = ptr.getElementType();
-    } else if (auto ptr = dyn_cast<DebugInfo::DITargetIndependentPointerType>(
-                   irType)) {
-      elementType = ptr.getElementType();
-    } else {
+    auto ptrType = dyn_cast<PointerType>(irType);
+    if (!ptrType)
       return Error("expected ir type to be a pointer type");
-    }
 
-    auto structType = dyn_cast<DebugInfo::DIStructType>(elementType);
+    auto structType = dyn_cast<StructType>(ptrType.getElementType());
     if (!structType)
       return Error("expected ir type to be a pointer to a struct type");
-    DebugInfo::DIType fieldType = structType.getMembers()[i].getType();
+    Type fieldType = structType.getElementTypes()[i];
 
     // The element of the struct is immediately allocated into memory,
     // so we add a pointer type and wrap the expression with a deref.
-    auto newElementType =
-        DebugInfo::DITargetIndependentPointerType::get(fieldType);
+    auto newFieldType = PointerType::get(fieldType);
 
     // The leaf type is a pointer to the struct element.
-    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newElementType);
+    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(newFieldType);
     // The struct element was allocated to memory, so need to deref.
     auto derefExpr = DebugInfo::DIDerefExprAttr::get(newIrValue, fieldType);
     // The expr is wrapped in an AggregatesInto expr to get back the

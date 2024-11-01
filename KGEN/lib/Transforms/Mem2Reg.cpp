@@ -59,21 +59,12 @@ static bool canPromote(StackAllocationOp alloc) {
 }
 
 static ErrorOr<DebugInfo::DIExprAttr> mem2RegLeafConversion(Type irType) {
-  // Unwrap the DIPointerType if there is one and use the new type.
-  DebugInfo::DIType valueType;
-  if (auto ptr = dyn_cast<DebugInfo::DIPointerType>(irType))
-    valueType = ptr.getElementType();
-  else if (auto ptr =
-               dyn_cast<DebugInfo::DITargetIndependentPointerType>(irType))
-    valueType = ptr.getElementType();
-  else if (auto unresolved = dyn_cast<DebugInfo::DIUnresolvedMLIRType>(irType))
-    if (auto ptr = dyn_cast<PointerType>(unresolved.getType()))
-      valueType = DebugInfo::DIUnresolvedMLIRType::get(ptr.getElementType());
+  auto ptrType = dyn_cast<PointerType>(irType);
+  if (!ptrType)
+    return Error("expected ir type to be a pointer type");
 
-  if (!valueType)
-    return Error("Unexpected non-pointer type being unwrapped.");
-
-  auto newIrValue = DebugInfo::DIIRValueExprAttr::get(valueType);
+  Type elementType = ptrType.getElementType();
+  auto newIrValue = DebugInfo::DIIRValueExprAttr::get(elementType);
   return DebugInfo::DIRefOfExprAttr::get(newIrValue, irType);
 }
 

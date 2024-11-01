@@ -76,6 +76,13 @@ DIType DebugInfoTypeConverter::convertDebugType(Type type) {
   return dyn_cast_or_null<DIType>(replacer.replace(type));
 }
 
+Attribute DebugInfoTypeConverter::convertDebugTypesIn(Attribute attr) {
+  auto result = replacer.replace(attr);
+  if (auto expr = dyn_cast<DIAggregatesIntoExprAttr>(result))
+    assert(isa<DIStructType>(expr.getType()));
+  return result;
+}
+
 void DebugInfoTypeConverter::addUnresolvedConverter(TypeConverter &converter) {
   replacer.addReplacement(
       [&](Type type) -> std::optional<std::pair<Type, WalkResult>> {
@@ -97,6 +104,8 @@ void DebugInfoTypeConverter::applyRecursively(Operation *op) {
   DIAttrTypeReplacer opReplacer;
   opReplacer.addReplacement(
       [&](DIType type) { return replacer.replace(type); });
+  opReplacer.addReplacement(
+      [&](DIExprAttr attr) { return replacer.replace(attr); });
   opReplacer.recursivelyReplaceElementsIn(op);
 }
 
@@ -147,12 +156,19 @@ public:
       return rewriter.notifyMatchFailure(op,
                                          "failed to convert debuginfo type");
     }
+    DIExprAttr diExpr =
+        cast<DIExprAttr>(ditc.convertDebugTypesIn(op.getConversionExprAttr()));
+    if (!diExpr) {
+      return rewriter.notifyMatchFailure(
+          op, "failed to convert debug value conversion expr");
+    }
     rewriter.modifyOpInPlace(op, [&] {
       op.setOperand(adaptor.getValue());
       DILocalVariableAttr info = op.getValueInfo();
       op.setValueInfoAttr(DILocalVariableAttr::get(
           info.getScope(), info.getName(), info.getFile(), info.getLine(),
           info.getArg(), info.getAlignInBits(), diType, info.getFlags()));
+      op.setConversionExprAttr(diExpr);
     });
     return success();
   }
