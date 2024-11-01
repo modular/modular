@@ -27,7 +27,7 @@ from gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from gpu.host.info import A100, Info
+from gpu.host.info import A100, Info, _get_info_from_target
 from gpu.host._compile import _get_nvptx_target
 from gpu.memory import (
     AddressSpace,
@@ -61,6 +61,7 @@ from utils import IndexList
 from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
+from gpu.host.info import DEFAULT_GPU_ARCH
 
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
@@ -268,10 +269,10 @@ fn _matmul_gpu[
     c_type: DType,
     a_type: DType,
     b_type: DType, //,
+    target: StringLiteral,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    target: StringLiteral = "cuda",
     config: OptionalReg[
         MatmulConfig[a_type, b_type, c_type, transpose_b]
     ] = None,
@@ -350,7 +351,7 @@ fn _matmul_gpu[
             if (
                 a_type == b_type
                 and a_type.is_half_float()
-                and "sm_80" in target
+                and _get_info_from_target[target]() is A100
                 and transpose_b
             ):
                 alias static_K = a_shape.get[1]()
@@ -876,7 +877,9 @@ fn split_k_reduce[
             vec += B.load[width=simd_width](i, j + k * N)
         A.store[width=simd_width](idx, vec)
 
-    elementwise[_reduce, pack_size, target="cuda"](IndexList[2](M, N), ctx)
+    elementwise[_reduce, pack_size, target=DEFAULT_GPU_ARCH](
+        IndexList[2](M, N), ctx
+    )
 
 
 @always_inline
@@ -920,7 +923,7 @@ fn split_k_reduce[
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
 
-    elementwise[_reduce, simd_width, target="cuda"](Index(M, N), ctx)
+    elementwise[_reduce, simd_width, target=DEFAULT_GPU_ARCH](Index(M, N), ctx)
 
 
 fn multistage_gemm[
