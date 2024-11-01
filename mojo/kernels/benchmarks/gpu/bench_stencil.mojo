@@ -221,6 +221,11 @@ fn bench_stencil_avg_pool[
         ThroughputMeasure(BenchMetric.flops, compute_flops()),
     )
 
+    # Ensure correctness
+    ctx.enqueue_copy_from_device(h_output.data, d_output_buf)
+    ctx.synchronize()
+    assert_allclose(h_output_ref, h_output)
+
     _ = d_input_buf^
     _ = d_output_buf^
     h_input_ptr.free()
@@ -401,9 +406,6 @@ fn bench_stencil_max_pool[
             input_height * input_width * pool_window_h * pool_window_w
         )  # One comparison per window element
 
-    # Ensure correctness
-    assert_allclose(h_output_ref, h_output)
-
     # Run benchmarks
     var bench_name = "stencil_max_pool_" + str(batch_size) + "x" + str(
         input_height
@@ -417,6 +419,11 @@ fn bench_stencil_max_pool[
         BenchId(bench_name + "_cpu"),
         ThroughputMeasure(BenchMetric.flops, compute_flops()),
     )
+
+    # Ensure correctness
+    ctx.enqueue_copy_from_device(h_output.data, d_output_buf)
+    ctx.synchronize()
+    assert_allclose(h_output_ref, h_output)
 
     _ = d_input_buf^
     _ = d_output_buf^
@@ -620,6 +627,11 @@ fn bench_stencil_avg_pool_padded[
         BenchId(bench_name + "_cpu"),
         ThroughputMeasure(BenchMetric.flops, compute_flops()),
     )
+
+    # Ensure correctness
+    ctx.enqueue_copy_from_device(h_output.data, d_output_buf)
+    ctx.synchronize()
+    assert_allclose(h_output_ref, h_output)
 
     _ = d_input_buf^
     _ = d_output_buf^
