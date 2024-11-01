@@ -136,6 +136,12 @@ class ProcessOutput:
     stderr: Optional[str] = None
 
 
+class KBENCH_MODE(Enum):
+    RUN = 0x1
+    TUNE = 0x2
+    BUILD = 0x4
+
+
 @dataclass(frozen=True, repr=True)
 class SpecInstance:
     name: str
@@ -161,6 +167,7 @@ class SpecInstance:
         *,
         output_file: Optional[Path] = None,
         build_opts: List[str] = [],
+        mode: KBENCH_MODE,
         dryrun: bool = False,
         verbose: bool = False,
     ) -> ProcessOutput:
@@ -191,7 +198,7 @@ class SpecInstance:
                 str(file_abs_path),
             ]
         )
-        if not build_opts:
+        if not mode == KBENCH_MODE.BUILD:
             cmd.extend(["-o", str(output_file)])
 
         # TODO: refactor the following into a separate function call, or invoke alias directly.
@@ -517,12 +524,6 @@ class Spec:
         return "\n".join(rs)
 
 
-class KBENCH_MODE(Enum):
-    RUN = 0x1
-    TUNE = 0x2
-    BUILD = 0x4
-
-
 def _get_tmp_path(file_path):
     base = os.path.basename(file_path).split(".")[0]
     tf = tempfile.NamedTemporaryFile(prefix=str(base) + "_").name + "/"
@@ -604,6 +605,7 @@ def run(
                 output_msg = s.compile(
                     output_file=output_file,
                     build_opts=build_opts,
+                    mode=mode,
                     dryrun=dryrun,
                     verbose=verbose,
                 )
