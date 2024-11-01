@@ -1081,6 +1081,9 @@ fn mha[
         )
         seq_len = int(valid_length[batch_idx])
 
+    if seq_len < BlockIdx.x() * config.block_m():
+        return
+
     var mask_batch_offset = batch_idx * max_seq_len * max_seq_len * (
         config.num_heads if mask_rank == 4 else 1
     )
