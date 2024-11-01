@@ -31,10 +31,8 @@
   !debuginfo.member<first: !debuginfo.ti.ptr<index>>
 )>
 
-// CHECK-DAG: ![[INDEX_TYPE:.*]] = !debuginfo.unresolved<index>
-// CHECK-DAG: ![[PTR_TYPE:.*]] = !debuginfo.ti.ptr<index>
-// CHECK-DAG: #[[IRVALUE_EXPR:.*]] = #debuginfo.expr.irvalue : ![[INDEX_TYPE]]
-// CHECK-DAG: #[[REFOF_EXPR:.*]] = #debuginfo.expr.refof<#[[IRVALUE_EXPR]]> : ![[PTR_TYPE]]
+// CHECK-DAG: #[[IRVALUE_EXPR:.*]] = #debuginfo.expr.irvalue : index
+// CHECK-DAG: #[[REFOF_EXPR:.*]] = #debuginfo.expr.refof<#[[IRVALUE_EXPR]]> : !kgen.pointer<index>
 // CHECK-DAG: #[[AGG_REGOF_EXPR:.*]] = #debuginfo.expr.agg<#[[REFOF_EXPR]], 0>
 
 // CHECK-DAG: #[[VAR:.*]] = #debuginfo.local_variable<scope = #[[CALLER_SP]], name = "0"
@@ -46,7 +44,7 @@
 #local_variable_callee = #debuginfo.local_variable<scope = #calleeSp, name = "2", arg = 1> : !debuginfo.ti.ptr<index>
 #local_variable_nested_callee = #debuginfo.local_variable<scope = #nestedCalleeSp, name = "3", arg = 1> : !debuginfo.ti.ptr<index>
 
-#agg_expr = #debuginfo.expr.agg<#debuginfo.expr.irvalue : !debuginfo.ti.ptr<index>, 0> : !struct_with_single_index_ptr
+#agg_expr = #debuginfo.expr.agg<#debuginfo.expr.irvalue : !kgen.pointer<index>, 0> : !kgen.struct<(!kgen.pointer<index>)>
 
 // CHECK-LABEL: @mem2reg_valueop_no_undef
 kgen.func @mem2reg_valueop_no_undef(%arg0: index, %arg1: index) {

@@ -1,9 +1,8 @@
 // RUN: kgen-opt -check-lifetimes -split-input-file -mlir-print-debuginfo %s | FileCheck %s
 
-// CHECK: ![[DI_PTR_TYPE:.*]] = !debuginfo.ti.ptr<!lit.struct<@S>>
 // CHECK: ![[DI_S_TYPE:.*]] = !debuginfo.unresolved<!lit.struct<@S>>
-// CHECK: #[[DIEXPR_IRVALUE:.*]] = #debuginfo.expr.irvalue : ![[DI_PTR_TYPE]]
-// CHECK: #[[DIEXPR_DEREF:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE]]> : ![[DI_S_TYPE]]
+// CHECK: #[[DIEXPR_IRVALUE_X:.*]] = #debuginfo.expr.irvalue : !lit.ref<@S, mut xlife>
+// CHECK: #[[DIEXPR_DEREF_X:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE_X]]> : !lit.struct<@S>
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, sourceName = <"test">, linkageName = "test", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 // CHECK: #[[DIVAR_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10, flags = Zero> : ![[DI_S_TYPE]]
 // CHECK: #[[DIVAR_Y:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "y", file = #{{.*}}, line = 13, flags = Zero> : ![[DI_S_TYPE]]
@@ -40,18 +39,18 @@ lit.struct.decl @S attributes {
 lit.func @test_var() -> index {
   // Create `x`.
   // CHECK-NEXT: %x = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
-  %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
+  %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
   %0 = kgen.param.constant: index = <42> loc(#locX)
-  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %x : ![[VAR_X_TYPE]]
+  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF_X]] = %x : ![[VAR_X_TYPE]]
   // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__{{.*}}(%x,
-  lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+  lit.call @S::@__init__[mut xlife](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
 
   // Use `x.a`.
   // CHECK: lit.ref.struct.ger {{.*}} loc(#[[LOC_USE:.*]])
   // CHECK-NEXT: lit.ref.load
-  %x_a = lit.ref.struct.ger %x[a] : <@S, mut *"x`0"> -> index loc(#locUse)
-  %x_a_val = lit.ref.load %x_a : <index, mut *"x`0"->a> loc(#locUse)
+  %x_a = lit.ref.struct.ger %x[a] : <@S, mut xlife> -> index loc(#locUse)
+  %x_a_val = lit.ref.load %x_a : <index, mut xlife->a> loc(#locUse)
 
   // `x` can be destroyed here.
   // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]] loc(#[[LOC_USE]])
@@ -59,7 +58,7 @@ lit.func @test_var() -> index {
   // CHECK-NEXT: lifetime.end %x
 
   // `y` is a synthetic variable. Should not have any debuginfo generated.
-  %y = lit.var.decl "y"  synth : !lit.ref<@S, mut *"y`0"> loc(#locY)
+  %y = lit.var.decl "y"  synth : !lit.ref<@S, mut ylife> loc(#locY)
   // CHECK-NOT: debuginfo.{{(value)|(kill)}}
 
   kgen.return %x_a_val : index loc(#locRet)
@@ -68,7 +67,7 @@ lit.func @test_var() -> index {
 // CHECK-LABEL: lit.func @test_uninit_var
 lit.func @test_uninit_var() {
   // CHECK-NOT: debuginfo.{{(value)|(kill)}}
-  %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
+  %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
   kgen.return loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
 
@@ -76,14 +75,14 @@ lit.func @test_uninit_var() {
 lit.func @test_def_in_loop() {
   // Create `x`.
   // CHECK-NEXT: %x = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
-  %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
+  %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
   // CHECK: hlcf.loop "loop0"
   hlcf.loop "loop0" {
     %0 = kgen.param.constant: index = <42> loc(#locX)
-    // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %x : ![[VAR_X_TYPE]]
+    // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF_X]] = %x : ![[VAR_X_TYPE]]
     // CHECK-NEXT: lifetime.start %x
     // CHECK-NEXT: lit.call @S::@__init__{{.*}}(%x,
-    lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+    lit.call @S::@__init__[mut xlife](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
     // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]]
     // CHECK-NEXT: call @S::@__del__
     // CHECK-NEXT: lifetime.end %x
@@ -96,13 +95,13 @@ lit.func @test_def_in_loop() {
 lit.func @test_def_twice() -> index {
   // Create `x`.
   // CHECK-NEXT: %x = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
-  %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
+  %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
   %0 = kgen.param.constant: index = <42> loc(#locX)
 
-  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %x : ![[VAR_X_TYPE]]
+  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF_X]] = %x : ![[VAR_X_TYPE]]
   // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__
-  lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+  lit.call @S::@__init__[mut xlife](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
   // CHECK: debuginfo.kill #[[DIVAR_X]]
   // CHECK-NEXT: call @S::@__del__
   // CHECK-NEXT: lifetime.end %x
@@ -110,7 +109,7 @@ lit.func @test_def_twice() -> index {
   // CHECK-NEXT: debuginfo.value #[[DIVAR_X]]
   // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__
-  lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+  lit.call @S::@__init__[mut xlife](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
   // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]]
   // CHECK-NEXT: call @S::@__del__
   // CHECK-NEXT: lifetime.end %x
@@ -124,7 +123,7 @@ lit.func @test_consumed() -> index {
   // CHECK-NEXT: %x = lit.var.decl "x" var
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
   %0 = kgen.param.constant: index = <42> loc(#locX)
-  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %x
+  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF_X]] = %x
   // CHECK-NEXT: lifetime.start %x
   // CHECK-NEXT: lit.call @S::@__init__
   lit.call @S::@__init__(%x, %0) : !lit.signature<("self": !lit.ref<@S, mut xlife> init_self, |, "num": index) -> !kgen.none> loc(#locX)
@@ -151,12 +150,12 @@ lit.func @test_consumed() -> index {
 } loc(fused<#sp>["test.mlir":10:10])
 
 // CHECK-LABEL: lit.func @test_arg(%x: {{.*}}, %ys: {{.*}}, %z:
-lit.func @test_arg(%x: !lit.ref<@S, mut *"x"> loc(#locX) owned_in_mem, %ys: !kgen.variadic<!lit.ref<@S, imm *"ys">, borrow_in_mem> loc(#locY) borrow|var, %z: index loc(#locZ) owned) -> index {
-  // CHECK: debuginfo.value #[[DIARG_X]] #[[DIEXPR_DEREF]] = %x
+lit.func @test_arg(%x: !lit.ref<@S, mut xlife> loc(#locX) owned_in_mem, %ys: !kgen.variadic<!lit.ref<@S, imm *"ys">, borrow_in_mem> loc(#locY) borrow|var, %z: index loc(#locZ) owned) -> index {
+  // CHECK: debuginfo.value #[[DIARG_X]] #[[DIEXPR_DEREF_X]] = %x
   // CHECK-NOT: debuginfo.value {{.*}} = %ys
   // CHECK-NOT: debuginfo.value {{.*}} = %z
-  %x_a = lit.ref.struct.ger %x[a] : <@S, mut *"x"> -> index loc(#locUse)
-  %x_a_val = lit.ref.load %x_a : <index, mut *"x"->a> loc(#locUse)
+  %x_a = lit.ref.struct.ger %x[a] : <@S, mut xlife> -> index loc(#locUse)
+  %x_a_val = lit.ref.load %x_a : <index, mut xlife->a> loc(#locUse)
 
   // `x` can be destroyed here.
   // CHECK: debuginfo.kill #[[DIARG_X]] loc(#[[LOC_USE]])

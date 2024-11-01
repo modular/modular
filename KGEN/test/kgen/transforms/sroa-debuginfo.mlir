@@ -12,17 +12,15 @@
 #fileLoc = loc("foo.mlir":0:0)
 #loc = loc(fused<#subprogram>[#fileLoc])
 
-// CHECK-DAG: ![[INDEX:.*]] = !debuginfo.unresolved<index>
 // CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<Foo(!{{.*}}, !{{.*}})>
-// CHECK-DAG: ![[INDEX_PTR:.*]] = !debuginfo.ti.ptr<index>
 // CHECK-DAG: ![[STRUCT_PTR:.*]] = !debuginfo.ti.ptr<![[STRUCT]]>
 
-// CHECK-DAG: #[[IRVAL:.*]] = #debuginfo.expr.irvalue : ![[INDEX_PTR]]
-// CHECK-DAG: #[[DEREF:.*]] = #debuginfo.expr.deref<#[[IRVAL]]> : ![[INDEX]]
-// CHECK-DAG: #[[AGG0:.*]] = #debuginfo.expr.agg<#[[DEREF]], 0> : ![[STRUCT]]
-// CHECK-DAG: #[[AGG1:.*]] = #debuginfo.expr.agg<#[[DEREF]], 1> : ![[STRUCT]]
-// CHECK-DAG: #[[REF0:.*]] = #debuginfo.expr.refof<#[[AGG0]]> : ![[STRUCT_PTR]]
-// CHECK-DAG: #[[REF1:.*]] = #debuginfo.expr.refof<#[[AGG1]]> : ![[STRUCT_PTR]]
+// CHECK-DAG: #[[IRVAL:.*]] = #debuginfo.expr.irvalue : !kgen.pointer<index>
+// CHECK-DAG: #[[DEREF:.*]] = #debuginfo.expr.deref<#[[IRVAL]]> : index
+// CHECK-DAG: #[[AGG0:.*]] = #debuginfo.expr.agg<#[[DEREF]], 0> : !kgen.struct<(index, index)>
+// CHECK-DAG: #[[AGG1:.*]] = #debuginfo.expr.agg<#[[DEREF]], 1> : !kgen.struct<(index, index)>
+// CHECK-DAG: #[[REF0:.*]] = #debuginfo.expr.refof<#[[AGG0]]> : !kgen.pointer<struct<(index, index)>>
+// CHECK-DAG: #[[REF1:.*]] = #debuginfo.expr.refof<#[[AGG1]]> : !kgen.pointer<struct<(index, index)>>
 
 // CHECK-DAG: #[[VAR:.*]] = #debuginfo.local_variable<{{.*}}, name = "self"> : ![[STRUCT_PTR]]
 
@@ -48,12 +46,11 @@ kgen.func @sroa_valueop() {
 
 #loc = loc(fused<#sp>["foo.mojo":0:0])
 
-// CHECK-DAG: ![[INDEX:.*]] = !debuginfo.unresolved<index>
 // CHECK-DAG: ![[STRUCT:.*]] = !debuginfo.struct<Foo(!{{.*}}, !{{.*}})>
 
-// CHECK-DAG: #[[IRVAL:.*]] = #debuginfo.expr.irvalue : ![[INDEX]]
-// CHECK-DAG: #[[AGG0:.*]] = #debuginfo.expr.agg<#[[IRVAL]], 0> : ![[STRUCT]]
-// CHECK-DAG: #[[AGG1:.*]] = #debuginfo.expr.agg<#[[IRVAL]], 1> : ![[STRUCT]]
+// CHECK-DAG: #[[IRVAL:.*]] = #debuginfo.expr.irvalue : index
+// CHECK-DAG: #[[AGG0:.*]] = #debuginfo.expr.agg<#[[IRVAL]], 0> : !kgen.struct<(index, index)>
+// CHECK-DAG: #[[AGG1:.*]] = #debuginfo.expr.agg<#[[IRVAL]], 1> : !kgen.struct<(index, index)>
 
 // CHECK-DAG: #[[VAR:.*]] = #debuginfo.local_variable<{{.*}}, name = "x"> : ![[STRUCT]]
 
