@@ -19,6 +19,7 @@ struct ThreadIdx:
     @always_inline
     @staticmethod
     fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+        @parameter
         if triple_is_nvidia_cuda():
             return "llvm.nvvm.read.ptx.sreg.tid." + dim
         else:
@@ -75,6 +76,7 @@ struct BlockIdx:
     @always_inline
     @staticmethod
     fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
+        @parameter
         if triple_is_nvidia_cuda():
             return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
         else:
@@ -280,27 +282,6 @@ fn lane_id() -> UInt:
         int(
             llvm_intrinsic[
                 "llvm.nvvm.read.ptx.sreg.laneid", Int32, has_side_effect=False
-            ]().cast[DType.uint32]()
-        )
-    )
-
-
-# ===----------------------------------------------------------------------===#
-# sm_id
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-fn sm_id() -> UInt:
-    """Returns the SM ID of the current thread.
-
-    Returns:
-        The SM ID of the the current thread.
-    """
-    return UInt(
-        int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.smid", Int32, has_side_effect=False
             ]().cast[DType.uint32]()
         )
     )
