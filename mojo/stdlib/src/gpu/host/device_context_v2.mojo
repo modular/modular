@@ -1102,7 +1102,6 @@ struct DeviceContextV2:
     fn get_memory_info(self) raises -> (_SizeT, _SizeT):
         var free = _SizeT(0)
         var total = _SizeT(0)
-        print("Calling AsyncRT_DeviceContext_getMemoryInfo")
         # const char *AsyncRT_DeviceContext_getMemoryInfo(const DeviceContext *ctx, size_t *free, size_t *total)
         _checked(
             external_call[
