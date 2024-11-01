@@ -106,7 +106,7 @@ fn ldexp2kf_opt[
         m = 255
 
     #   u = intBitsToFloat(((int32_t)m) << 23);
-    var u = bitcast[dtype, simd_width, DType.int32, simd_width](m << 23)
+    var u = bitcast[dtype, simd_width](m << 23)
     var x = x_in * u * u * u * u
     #   u = intBitsToFloat(((int32_t)(q + 0x7f)) << 23);
     var xu = (
@@ -121,7 +121,7 @@ fn pow2if[
     var x = (
         ((q + SIMD[DType.int32, simd_width](0x7F)).cast[DType.int32]())
     ) << 23
-    return bitcast[DType.float32, simd_width, DType.int32, simd_width](x)
+    return bitcast[DType.float32, simd_width](x)
 
 
 fn ldexp2kf[
@@ -131,7 +131,7 @@ fn ldexp2kf[
 ]:
     # return d * (pow2if[simd_width](e >> 1) * pow2if[simd_width](e - (e >> 1))).cast[dtype]();
     var ans = d * (pow2if[simd_width](e)).cast[dtype]()
-    var y = bitcast[DType.int32, simd_width, dtype, simd_width](ans)
+    var y = bitcast[DType.int32, simd_width](ans)
 
     var msb = y
     var idx = 0
@@ -145,7 +145,7 @@ fn ldexp2kf[
     #     y=y-(y&mask)
     # if e>=23:
     #     y=y+1
-    ans = bitcast[dtype, simd_width, DType.int32, simd_width](y)
+    ans = bitcast[dtype, simd_width](y)
     return ans
 
 
