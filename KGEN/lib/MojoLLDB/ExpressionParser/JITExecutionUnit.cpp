@@ -149,13 +149,13 @@ getSectionTypeFromSectionName(const StringRef &name, AllocationKind allocKind) {
 
 struct JITExecutionUnit::Impl {
   Impl(SymbolTable symbolTable, ExportMap exportedSymbols,
-       OwningBinary<llvm::object::Archive> newArchive, ConstString &name,
+       OwningBinary<llvm::object::Binary> newObject, ConstString &name,
        const SymbolContext &symCtx, std::vector<std::string> &cpuFeatures)
       : context(std::make_unique<llvm::LLVMContext>()),
         symbolTable(std::move(symbolTable)),
         exportedSymbols(std::move(exportedSymbols)), cpuFeatures(cpuFeatures),
         name(name), symCtx(symCtx) {
-    std::tie(archive, archiveBuffer) = newArchive.takeBinary();
+    std::tie(object, objectBuffer) = newObject.takeBinary();
   }
 
   std::vector<AllocationRecord> records;
@@ -165,8 +165,9 @@ struct JITExecutionUnit::Impl {
   std::unique_ptr<llvm::ObjectCache> objectCache;
   SymbolTable symbolTable;
   ExportMap exportedSymbols;
-  std::unique_ptr<llvm::object::Archive> archive;
-  BufferRef archiveBuffer;
+  std::unique_ptr<llvm::object::Binary> object;
+  BufferRef objectBuffer;
+
   std::vector<std::string> cpuFeatures;
 
   /// The jitted functions and global variables.
@@ -200,15 +201,15 @@ struct JITExecutionUnit::Impl {
 
 JITExecutionUnit::JITExecutionUnit(SymbolTable symbolTable,
                                    ExportMap exportedSymbols,
-                                   OwningBinary<llvm::object::Archive> archive,
+                                   OwningBinary<llvm::object::Binary> object,
                                    ConstString &name,
                                    const lldb::TargetSP &target,
                                    const SymbolContext &symCtx,
                                    std::vector<std::string> &cpuFeatures)
     : IRMemoryMap(target),
-      impl(std::make_unique<Impl>(
-          std::move(symbolTable), std::move(exportedSymbols),
-          std::move(archive), name, symCtx, cpuFeatures)) {}
+      impl(std::make_unique<Impl>(std::move(symbolTable),
+                                  std::move(exportedSymbols), std::move(object),
+                                  name, symCtx, cpuFeatures)) {}
 JITExecutionUnit::~JITExecutionUnit() = default;
 
 lldb_private::ConstString JITExecutionUnit::getFunctionName() {
@@ -808,8 +809,7 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
   std::string errorString;
   builder.setEngineKind(llvm::EngineKind::JIT)
       .setErrorStr(&errorString)
-      .setRelocationModel(impl->archive->isMachO() ? llvm::Reloc::PIC_
-                                                   : llvm::Reloc::Static)
+      .setRelocationModel(llvm::Reloc::Static)
       .setMCJITMemoryManager(std::make_unique<MemoryManager>(*this))
       .setOptLevel(llvm::CodeGenOptLevel::Less);
 
@@ -858,22 +858,17 @@ Status JITExecutionUnit::getRunnableInfo(lldb::addr_t &funcAddr,
 
   llvm::Error err = llvm::Error::success();
   SmallVector<std::unique_ptr<llvm::object::ObjectFile>> objFiles;
-  for (auto &child : impl->archive->children(err)) {
-    if (err)
-      return Status::FromError(std::move(err));
-    auto binOrErr = child.getAsBinary();
-    if (!binOrErr)
-      return Status::FromError(binOrErr.takeError());
-    auto objectFile = dyn_cast<llvm::object::ObjectFile>(*binOrErr);
-    if (!objectFile)
-      return Status("archive member was not an object file");
-    objFiles.push_back(std::move(objectFile));
-  }
+
+  auto objectFile = dyn_cast<llvm::object::ObjectFile>(impl->object);
+
+  if (!objectFile)
+    return Status("not an object file");
+
+  objFiles.push_back(std::move(objectFile));
 
   // If this is arm elf, we need to add the object files in reverse order. This
   // works around relocation issues related to using MCJIT.
-  if (!impl->archive->isMachO() &&
-      GetArchitecture().GetMachine() >= llvm::Triple::arm &&
+  if (GetArchitecture().GetMachine() >= llvm::Triple::arm &&
       GetArchitecture().GetMachine() <= llvm::Triple::aarch64_32) {
     for (auto &it : llvm::reverse(objFiles))
       impl->executionEngine->addObjectFile(std::move(it));

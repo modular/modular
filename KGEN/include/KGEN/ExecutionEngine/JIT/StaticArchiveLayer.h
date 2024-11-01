@@ -26,7 +26,7 @@ public:
   /// Add the archive in `archive` to the library `libName`. Stores a reference
   /// to `archive` inside the class to ensure its lifetime matches the lifetime
   /// of the ExecutionEngine.
-  ErrorOrSuccess add(StringRef libName, BufferRef archive);
+  ErrorOrSuccess add(StringRef libName, BufferRef object);
 
   static bool classof(const MaterializationLayer *layer) {
     return layer->getKind() == LayerKind::kStaticArchiveLayer;
@@ -34,7 +34,7 @@ public:
 
 private:
   llvm::orc::ObjectLayer &objectLayer;
-  SmallVector<BufferRef> archiveBuffers;
+  SmallVector<BufferRef> objectBuffers;
 };
 } // namespace M::KGEN
 
