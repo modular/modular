@@ -4,11 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import numpy as np
 import pytest
 import torch
 from max.dtype import DType
 from max.graph import Graph, TensorType
-from modular_graph_test import assert_allclose, modular_graph_test
+from modular_graph_test import modular_graph_test
 from nn import RMSNorm
 
 
@@ -38,4 +39,12 @@ def test_norm(session, input_type):
         def test_correctness(execute, inputs, torch_inputs):
             result = execute(inputs)
             expected = torch_rms_norm(*torch_inputs).detach().numpy()
-            assert_allclose(result, expected)
+            ACCURACY_RTOL = 1e-2
+            ACCURACY_ATOL = 1e-8
+            np.testing.assert_allclose(
+                result,
+                expected,
+                atol=ACCURACY_ATOL,
+                rtol=ACCURACY_RTOL,
+                equal_nan=True,
+            )

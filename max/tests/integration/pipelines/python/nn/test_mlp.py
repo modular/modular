@@ -61,9 +61,6 @@ def test_mlp(session, input_type: TensorType):
 
             # Transpose weights to match our Linear semantics.
             expected = TorchMLP(w1, w2, w3)(x).detach().numpy()
-            # TODO(MSDK-1071): Consolidate and figure out how to call
-            # assert_allclose(result, expected) to fire again on mismatched
-            # tensor values.
             ACCURACY_RTOL = 1e-1
             ACCURACY_ATOL = 1e-6
             np.testing.assert_allclose(
