@@ -24,6 +24,7 @@ from nn.mha_mask import NullMask
 from testing import assert_almost_equal
 
 from utils.index import Index
+from gpu.host.info import DEFAULT_GPU_ARCH
 
 
 fn is_benchmark() -> Bool:
@@ -184,7 +185,7 @@ fn test[
     fn kernel_launch(ctx: DeviceContext) raises:
         @parameter
         if mask_rank == 3:
-            flash_attention(
+            flash_attention[target=DEFAULT_GPU_ARCH](
                 output_device,
                 q_device,
                 k_device,
@@ -195,7 +196,7 @@ fn test[
                 ctx,
             )
         else:
-            flash_attention(
+            flash_attention[target=DEFAULT_GPU_ARCH](
                 output_device,
                 q_device,
                 k_device,

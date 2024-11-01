@@ -21,6 +21,7 @@ from testing import assert_almost_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
+from gpu.host.info import DEFAULT_GPU_ARCH
 
 
 fn is_benchmark() -> Bool:
@@ -131,7 +132,7 @@ fn test[
     @always_inline
     @__copy_capture(q_device, k_device, v_device, mask4d, output_device)
     fn kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[add_attn_mask=False](
+        flash_attention[target=DEFAULT_GPU_ARCH, add_attn_mask=False](
             output_device,
             q_device,
             k_device,
@@ -166,7 +167,7 @@ fn test[
         qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
     ](output_ref_device_ptr.ptr, Index(batch_size, seq_len, num_heads, depth))
 
-    flash_attention(
+    flash_attention[target=DEFAULT_GPU_ARCH](
         output_device_ref,
         q_device,
         k_device,
