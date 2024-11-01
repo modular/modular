@@ -18,8 +18,6 @@ from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.resources import Resource
 from pythonjsonlogger import jsonlogger
 
-from max.driver import CUDA
-
 
 def _getCloudProvider() -> str:
     providers = ["amazon", "google", "microsoft", "oracle"]
@@ -35,15 +33,6 @@ def _getCloudProvider() -> str:
             except Exception:
                 pass
     return ""
-
-
-def _getGPUInfo() -> tuple[str, str]:
-    try:
-        device = CUDA(0)
-        return str(device), device.stats["total_memory"]
-    except ValueError:
-        # GPU not present
-        return "", ""
 
 
 # Configure logging to console and OTEL.  This should be called before any
@@ -93,7 +82,6 @@ def configureLogging(
 
     if otlp_level is not None:
         # Create an OTEL handler
-        gpuInfo, gpuMem = _getGPUInfo()
         logger_provider = LoggerProvider(
             resource=Resource.create(
                 {
@@ -104,8 +92,6 @@ def configureLogging(
                     "os.version": platform.release(),
                     "cpu.description": platform.processor(),
                     "cpu.arch": platform.architecture()[0],
-                    "system.gpu.info": gpuInfo,
-                    "system.gpu.memory": gpuMem,
                     "system.cloud": _getCloudProvider(),
                 }
             ),
