@@ -176,7 +176,9 @@ from nn.pad import pad_reflect as _pad_reflect
 from nn.pad import pad_repeat as _pad_repeat
 from nn.pad import pad_shape
 from nn.pool import avg_pool as _avg_pool
+from nn.pool import avg_pool_gpu as _avg_pool_gpu
 from nn.pool import max_pool as _max_pool
+from nn.pool import max_pool_gpu as _max_pool_gpu
 from nn.pool import pool_shape, pool_shape_ceil
 from nn.reshape import ndbuffer_reshape, reshape, reshape_shape
 from nn.resize import CoordinateTransformationMode, RoundMode
@@ -1334,6 +1336,7 @@ fn avg_pool[
     type: DType,
     int_type: DType,
     count_boundary: Bool,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[type, 4],
     filter: NDBuffer[int_type, 1],
@@ -1342,10 +1345,21 @@ fn avg_pool[
     paddings: NDBuffer[int_type, 1],
     output: NDBuffer[type, 4],
     ctx: MojoCallContextPtr,
-):
-    return _avg_pool[count_boundary=count_boundary](
-        input, filter, strides, dilations, paddings, output
-    )
+) raises:
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    with Trace[TraceLevel.OP, target=target]("avg_pool"):
+
+        @parameter
+        if target == "cpu":
+            _avg_pool[count_boundary=count_boundary](
+                input, filter, strides, dilations, paddings, output
+            )
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            _avg_pool_gpu[count_boundary=count_boundary](
+                cuda_ctx, input, filter, strides, dilations, paddings, output
+            )
 
 
 # This handles avg_pool in the case where ceilMode = True. The default
@@ -1356,6 +1370,7 @@ fn avg_pool_ceil_mode_true[
     type: DType,
     int_type: DType,
     count_boundary: Bool,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[type, 4],
     filter: NDBuffer[int_type, 1],
@@ -1364,10 +1379,28 @@ fn avg_pool_ceil_mode_true[
     paddings: NDBuffer[int_type, 1],
     output: NDBuffer[type, 4],
     ctx: MojoCallContextPtr,
-):
-    return _avg_pool[count_boundary=count_boundary](
-        input, filter, strides, dilations, paddings, output, True
-    )
+) raises:
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    with Trace[TraceLevel.OP, target=target]("avg_pool_ceil_mode_true"):
+
+        @parameter
+        if target == "cpu":
+            _avg_pool[count_boundary=count_boundary](
+                input, filter, strides, dilations, paddings, output, True
+            )
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            _avg_pool_gpu[count_boundary=count_boundary](
+                cuda_ctx,
+                input,
+                filter,
+                strides,
+                dilations,
+                paddings,
+                output,
+                True,
+            )
 
 
 # ===----------------------------------------------------------------------===#
@@ -1380,6 +1413,7 @@ fn avg_pool_ceil_mode_true[
 fn max_pool[
     type: DType,
     int_type: DType,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[type, 4],
     filter: NDBuffer[int_type, 1],
@@ -1388,8 +1422,19 @@ fn max_pool[
     paddings: NDBuffer[int_type, 1],
     output: NDBuffer[type, 4],
     ctx: MojoCallContextPtr,
-):
-    return _max_pool(input, filter, strides, dilations, paddings, output)
+) raises:
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    with Trace[TraceLevel.OP, target=target]("max_pool"):
+
+        @parameter
+        if target == "cpu":
+            _max_pool(input, filter, strides, dilations, paddings, output)
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            _max_pool_gpu(
+                cuda_ctx, input, filter, strides, dilations, paddings, output
+            )
 
 
 # This handles max_pool in the case where ceilMode = True. The default
@@ -1399,6 +1444,7 @@ fn max_pool[
 fn max_pool_ceil_mode_true[
     type: DType,
     int_type: DType,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[type, 4],
     filter: NDBuffer[int_type, 1],
@@ -1407,8 +1453,26 @@ fn max_pool_ceil_mode_true[
     paddings: NDBuffer[int_type, 1],
     output: NDBuffer[type, 4],
     ctx: MojoCallContextPtr,
-):
-    return _max_pool(input, filter, strides, dilations, paddings, output, True)
+) raises:
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+
+    with Trace[TraceLevel.OP, target=target]("max_pool_ceil_mode_true"):
+
+        @parameter
+        if target == "cpu":
+            _max_pool(input, filter, strides, dilations, paddings, output, True)
+        else:
+            var cuda_ctx = ctx.get_device_context()
+            _max_pool_gpu(
+                cuda_ctx,
+                input,
+                filter,
+                strides,
+                dilations,
+                paddings,
+                output,
+                True,
+            )
 
 
 # ===----------------------------------------------------------------------===#
