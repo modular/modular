@@ -1421,15 +1421,15 @@ fn _elementwise_impl[
     target: StringLiteral = "cpu",
 ](shape: IndexList[rank, **_], context: DeviceContext):
     @parameter
-    if "cuda" in target:
+    if "cpu" in target:
+        _elementwise_impl_cpu[
+            func, simd_width, use_blocking_impl=use_blocking_impl
+        ](shape)
+    else:
         _elementwise_impl_gpu[func, simd_width, target=target](
             shape,
             context,
         )
-    else:
-        _elementwise_impl_cpu[
-            func, simd_width, use_blocking_impl=use_blocking_impl
-        ](shape)
 
 
 @always_inline
