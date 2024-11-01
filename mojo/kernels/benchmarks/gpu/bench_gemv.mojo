@@ -12,6 +12,7 @@ from gpu.host.device_context import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from internal_utils import DeviceNDBuffer
 from utils import IndexList
+from gpu.host.info import DEFAULT_GPU_ARCH
 
 
 fn _get_run_name[
@@ -60,9 +61,9 @@ fn bench_matmul[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _matmul_gpu[transpose_b=False, use_tensor_core=True](
-                mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx
-            )
+            _matmul_gpu[
+                target=DEFAULT_GPU_ARCH, transpose_b=False, use_tensor_core=True
+            ](mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -106,9 +107,11 @@ fn bench_matmul_transpose[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _matmul_gpu[transpose_b=True, use_tensor_core=True](
-                mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx
-            )
+            _matmul_gpu[
+                target=DEFAULT_GPU_ARCH,
+                transpose_b=True,
+                use_tensor_core=True,
+            ](mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 

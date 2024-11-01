@@ -146,9 +146,9 @@ fn bench_matmul[
 
             else:
                 _matmul_gpu[
+                    target=DEFAULT_GPU_ARCH,
                     use_tensor_core=True,
                     transpose_b=transpose_b,
-                    target=DEFAULT_GPU_ARCH,
                 ](tensor_c, tensor_a, tensor_b, ctx)
 
         b.iter_custom[kernel_launch](ctx)
