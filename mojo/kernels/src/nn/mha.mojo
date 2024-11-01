@@ -325,8 +325,8 @@ fn flash_attention[
     rank: Int,
     type: DType,
     q_shape: DimList, //,
+    target: StringLiteral,
     add_attn_mask: Bool = True,
-    target: StringLiteral = "cuda",
     use_tensor_core: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
@@ -379,8 +379,8 @@ fn flash_attention[
     mask_t: MHAMask,
     type: DType,
     q_shape: DimList, //,
+    target: StringLiteral,
     add_attn_mask: Bool = True,
-    target: StringLiteral = "cuda",
     use_tensor_core: Bool = True,
     config: MHAConfig = MHAConfig(
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
@@ -421,7 +421,9 @@ fn flash_attention[
     This kernels handles batches with different valid lengths (i.e., before the
     padding). Such lengths are passed in valid_length argument.
     """
-    constrained["cuda" in target, "only valid on Nvidia GPUs"]()
+    constrained[
+        "cuda" in target or "sm" in target, "only valid on Nvidia GPUs"
+    ]()
     constrained[
         ragged or rank == 4, "only support rank 4 inputs for non-ragged inputs."
     ]()
@@ -699,8 +701,8 @@ fn flash_attention[
     mask_t: MHAMask,
     type: DType,
     q_shape: DimList, //,
+    target: StringLiteral,
     add_attn_mask: Bool = True,
-    target: StringLiteral = "cuda",
     use_tensor_core: Bool = True,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
@@ -734,7 +736,9 @@ fn flash_attention[
     This kernel also handles grouped attention optimization. In this case the shape of
     K and V are BShD where h = H / num_groups.
     """
-    constrained["cuda" in target, "only valid on Nvidia GPUs"]()
+    constrained[
+        "cuda" in target or "sm" in target, "only valid on Nvidia GPUs"
+    ]()
     constrained[rank == 4, "only support rank 4 inputs."]()
     constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
 
