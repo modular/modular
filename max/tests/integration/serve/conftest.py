@@ -14,7 +14,6 @@ import pytest
 from llama3 import (
     InferenceConfig,
     Llama3,
-    Llama3Context,
     Llama3Tokenizer,
     SupportedVersions,
 )

@@ -12,7 +12,8 @@ import pytest
 from evaluate_llama import SupportedTestModels
 from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3
-from llama3.llama3_token_gen import Llama3Context, Llama3Tokenizer
+from llama3.llama3_token_gen import Llama3Tokenizer
+from nn.context import TextContext
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, next_token_with_logits
@@ -95,7 +96,7 @@ async def test_pipeline_heterogeneous_batch_logits(
     prompt_b = PROMPTS[1]
     prompt_c = PROMPTS[2]
 
-    stored_logits: dict[str, Llama3Context] = {"A": [], "B": [], "C": []}
+    stored_logits: dict[str, TextContext] = {"A": [], "B": [], "C": []}
 
     # Send in A for context encoding.
     context_a = await pipeline_tokenizer.new_context(
