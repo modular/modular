@@ -126,6 +126,36 @@ class TestMojoPythonInterop(unittest.TestCase):
             ),
         )
 
+    def test_case_mojo_value_convert_from_python(self):
+        mojo_int = feature_overview.Int()
+        self.assertEqual(repr(mojo_int), "0")
+
+        feature_overview.add_to_int(mojo_int, 5)
+        self.assertEqual(repr(mojo_int), "5")
+
+        feature_overview.add_to_int(mojo_int, 3)
+        self.assertEqual(repr(mojo_int), "8")
+
+        #
+        # Wrong type of argument
+        #
+
+        with self.assertRaises(Exception) as cm:
+            feature_overview.add_to_int(mojo_int, "foo")
+
+        self.assertEqual(
+            cm.exception.args,
+            (
+                (
+                    "TypeError: add_to_int() expected argument at position"
+                    " 1 to be instance of (or convertible to) Mojo 'Int';"
+                    " got 'str'."
+                    " (Note: attempted conversion failed due to: an integer"
+                    " is required)"
+                ),
+            ),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

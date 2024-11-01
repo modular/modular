@@ -22,6 +22,7 @@ from builtin._pybind import (
     check_arguments_arity,
     check_argument_type,
     check_and_get_arg,
+    try_convert_arg,
 )
 from python._cpython import (
     PyMethodDef,
@@ -69,6 +70,10 @@ fn PyInit_mojo_module() -> PythonObject:
         PyMethodDef.function[
             py_c_function_wrapper[incr_int__wrapper],
             "incr_int",
+        ](),
+        PyMethodDef.function[
+            py_c_function_wrapper[add_to_int__wrapper],
+            "add_to_int",
         ](),
     )
 
@@ -222,6 +227,15 @@ fn incr_int(inout arg: Int):
     arg += 1
 
 
+fn add_to_int(inout arg: Int, owned value: Int):
+    arg += value
+
+
+#
+# Manual Wrappers
+#
+
+
 fn incr_int__wrapper(
     py_self: PythonObject,
     py_args: TypedPythonObject["Tuple"],
@@ -234,5 +248,37 @@ fn incr_int__wrapper(
 
     # Note: Pass an `inout` reference to the wrapped function
     incr_int(arg_0[])
+
+    return PythonObject(None)
+
+
+fn add_to_int__wrapper(
+    py_self: PythonObject,
+    py_args: TypedPythonObject["Tuple"],
+) raises -> PythonObject:
+    check_arguments_arity("add_to_int", 2, py_args)
+
+    var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
+        "add_to_int", "Int", py_args, 0
+    )
+
+    var arg_1: UnsafePointer[Int]
+    # Stack space to hold a converted value for this argument, if needed.
+    # TODO: It should not be necessary to provide a default value for this.
+    var arg_1_owned: Int = 0
+
+    try:
+        arg_1 = check_and_get_arg[Int]("add_to_int", "Int", py_args, 1)
+    except e:
+        arg_1_owned = try_convert_arg[Int](
+            "add_to_int",
+            "Int",
+            py_args,
+            1,
+        )
+        arg_1 = UnsafePointer.address_of(arg_1_owned)
+
+    # Note: Pass an `inout` reference to the wrapped function
+    add_to_int(arg_0[], arg_1[])
 
     return PythonObject(None)
