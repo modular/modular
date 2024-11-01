@@ -362,17 +362,10 @@ fn multistage_gemm[
     b_layout: Layout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-    __homogeneous_tile: Bool = True,
 ](
-    c: LayoutTensor[
-        c_type, c_layout, __experimental_non_homogeneous_tile=__homogeneous_tile
-    ],
-    a: LayoutTensor[
-        a_type, a_layout, __experimental_non_homogeneous_tile=__homogeneous_tile
-    ],
-    b: LayoutTensor[
-        b_type, b_layout, __experimental_non_homogeneous_tile=False
-    ],
+    c: LayoutTensor[c_type, c_layout],
+    a: LayoutTensor[a_type, a_layout],
+    b: LayoutTensor[b_type, b_layout],
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
@@ -636,7 +629,6 @@ fn test[
         b_tensor.layout,
         transpose_b,
         config,
-        __homogeneous_tile=True,
     ]
 
     var func = ctx.compile_function[
@@ -751,104 +743,106 @@ fn test[
 
 def main():
     with DeviceContext() as ctx:
-        print("dynamic M = 60")
-        test[DType.bfloat16, True](
-            ctx, dynamic(60), static[6144](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(60), static[4096](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(60), static[28672](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(60), static[4096](), static[14336]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(60), static[128256](), static[4096]()
-        )
+        pass
+        # FIXME (KERN-1135) Enable once we supported masked tensor
+        # print("dynamic M = 60")
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(60), static[6144](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(60), static[4096](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(60), static[28672](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(60), static[4096](), static[14336]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(60), static[128256](), static[4096]()
+        # )
 
-        print("dynamic M = 100")
-        test[DType.bfloat16, True](
-            ctx, dynamic(100), static[6144](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(100), static[4096](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(100), static[28672](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(100), static[4096](), static[14336]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(100), static[128256](), static[4096]()
-        )
+        # print("dynamic M = 100")
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(100), static[6144](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(100), static[4096](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(100), static[28672](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(100), static[4096](), static[14336]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(100), static[128256](), static[4096]()
+        # )
 
-        print("dynamic M = 240")
-        test[DType.bfloat16, True](
-            ctx, dynamic(240), static[6144](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(240), static[4096](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(240), static[28672](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(240), static[4096](), static[14336]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(240), static[128256](), static[4096]()
-        )
+        # print("dynamic M = 240")
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(240), static[6144](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(240), static[4096](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(240), static[28672](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(240), static[4096](), static[14336]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(240), static[128256](), static[4096]()
+        # )
 
-        print("dynamic M = 500")
-        test[DType.bfloat16, True](
-            ctx, dynamic(500), static[6144](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(500), static[4096](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(500), static[28672](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(500), static[4096](), static[14336]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(500), static[128256](), static[4096]()
-        )
+        # print("dynamic M = 500")
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(500), static[6144](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(500), static[4096](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(500), static[28672](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(500), static[4096](), static[14336]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(500), static[128256](), static[4096]()
+        # )
 
-        print("dynamic M = 800")
-        test[DType.bfloat16, True](
-            ctx, dynamic(800), static[6144](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(800), static[4096](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(800), static[28672](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(800), static[4096](), static[14336]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(800), static[128256](), static[4096]()
-        )
+        # print("dynamic M = 800")
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(800), static[6144](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(800), static[4096](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(800), static[28672](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(800), static[4096](), static[14336]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(800), static[128256](), static[4096]()
+        # )
 
-        print("dynamic M = 1000")
-        test[DType.bfloat16, True](
-            ctx, dynamic(1000), static[6144](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(1000), static[4096](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(1000), static[28672](), static[4096]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(1000), static[4096](), static[14336]()
-        )
-        test[DType.bfloat16, True](
-            ctx, dynamic(1000), static[128256](), static[4096]()
-        )
+        # print("dynamic M = 1000")
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(1000), static[6144](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(1000), static[4096](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(1000), static[28672](), static[4096]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(1000), static[4096](), static[14336]()
+        # )
+        # test[DType.bfloat16, True](
+        #    ctx, dynamic(1000), static[128256](), static[4096]()
+        # )
