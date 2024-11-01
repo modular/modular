@@ -9,16 +9,12 @@ golden values.
 
 
 import pytest
-from evaluate_llama import (
-    PROMPTS,
-    NumpyDecoder,
-    SupportedTestModels,
-    compare_values,
-    find_runtime_path,
-    run_llama3,
-)
+from evaluate_llama import SupportedTestModels
 from llama3.llama3 import Llama3
 from llama3.llama3_token_gen import Llama3Tokenizer
+from test_common.evaluate import PROMPTS, compare_values, run_model
+from test_common.numpy_encoder import NumpyDecoder
+from test_common.path import find_runtime_path
 
 
 @pytest.mark.parametrize(
@@ -32,7 +28,7 @@ def test_llama(model, encoding, testdata_directory):
     config = test_model.build_config()
 
     tokenizer = Llama3Tokenizer(config)
-    actual = run_llama3(
+    actual = run_model(
         Llama3(config),
         tokenizer,
         prompts=PROMPTS[:1],

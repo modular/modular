@@ -9,12 +9,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pytest
-from evaluate_llama import PROMPTS, SupportedTestModels, next_token_with_logits
+from evaluate_llama import SupportedTestModels
 from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3
 from llama3.llama3_token_gen import Llama3Context, Llama3Tokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
+from test_common.evaluate import PROMPTS, next_token_with_logits
 
 
 @dataclass(frozen=True)

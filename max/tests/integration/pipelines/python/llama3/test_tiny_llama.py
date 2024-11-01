@@ -12,12 +12,13 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import pytest
-from evaluate_llama import PROMPTS, SupportedTestModels, run_llama3
+from evaluate_llama import SupportedTestModels
 from llama3.config import InferenceConfig
 from llama3.llama3 import Llama3
 from llama3.llama3_token_gen import Llama3Tokenizer, Llama3TokenGenerator
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
+from test_common.evaluate import PROMPTS, run_model
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ def pipeline_config(testdata_directory, request) -> InferenceConfig:
         cache_strategy = KVCacheStrategy.NAIVE
     else:
         cache_strategy = KVCacheStrategy.CONTINUOUS
-    return SupportedTestModels.TINY_LLAMA_F32.build_config(
+    return SupportedTestModels.get("tinyllama", "float32").build_config(
         testdata_directory,
         max_length=params.max_length,
         max_new_tokens=params.max_new_tokens,
@@ -73,7 +74,7 @@ def test_tiny_llama(tinyllama_model, pipeline_tokenizer):
     NOTE: Intentionally don't compare results with "goldens" because TinyLlama
     weights were randomly initialized.
     """
-    _ = run_llama3(
+    _ = run_model(
         tinyllama_model.model, pipeline_tokenizer, prompts=PROMPTS[:1]
     )
 
@@ -92,7 +93,7 @@ def test_tiny_llama_naive_kv_cache(
     # Check that we indeed have a naive KV cache Llama model.
     assert tinyllama_model.config.cache_strategy == KVCacheStrategy.NAIVE
 
-    _ = run_llama3(
+    _ = run_model(
         tinyllama_model.model, pipeline_tokenizer, prompts=PROMPTS[:1]
     )
 

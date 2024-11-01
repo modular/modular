@@ -1,0 +1,155 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Utilities for evaluating models and comparing the logits."""
+
+
+import asyncio
+import uuid
+from typing import Any, Iterable
+
+import numpy as np
+from max.driver import CPU
+from max.pipelines.interfaces import (
+    TokenGeneratorRequest,
+    TokenGeneratorTokenizer,
+)
+
+NUM_STEPS = 10
+PROMPTS = (
+    """One of the most important aspects of performance benchmarking when it pertains to comparison of different implementations is making sure comparisons are fair. This is a place where most discussions occur, as deviation from best practices can make one’s performance claims easy to dismiss. For faster results of a given implementation (the Mojo implementation in our case) to be meaningful, the comparison needs to be apples-to-apples.
+    * Make sure you use equivalent optimization flags across implementations; even though flags (like -O3 in C) that enable multiple optimizations at once cannot always be equivalent to another language’s -O3, make sure you don’t compare something like a debug build with an implementation that uses the fast optimization flag.
+    * Make sure that if one implementation has auto-vectorization or automatic multithreading enabled the same applies to all implementations to be compared (unless for a given language one of these performs worse when turned-on, in which case one could keep the fastest implementation for comparison purposes).
+    * Use the latest (or best) combination of compilers, libraries, etc. — an older compiler version (for example) may perform better for whatever reason; however it should be considered sufficient to test with the latest stable version. One can test with older or experimental versions if they are so inclined.
+    * Use the same input file (if applicable) or same input data. Avoid random data generation that may stress different code paths.
+    * Use the same algorithm (if applicable) across all your implementations.
+    * Use equivalent error testing as it applies to different domains’ best practices (e.g., input sanitizing, corner case testing).
+    * Remove any unnecessary I/O (e.g., writing to file/screen for debug purposes) and keep only what is practically necessary — make sure you do so in a manner that code is not optimized out (see #6)!
+    * Try to apply the same level of manual optimization (within reason) — if you write multi-threaded/vectorized code in Mojo, you should try to compare it to an equivalent implementation of the other language. There is a case to be made here, however, if the other language does not have such capabilities or they are so difficult to use that implementing them is beyond what one can reasonably do. This can highlight the programmability aspect of Mojo (or one language against another more generally), but this fact should be listed so that people can take the performance claims under this light.""",
+    "def is_prime(x):\n",
+    "The meaning of life is ",
+    """Translate the English text to Italian.
+    Text: Sometimes, I've believed as many as six impossible things before breakfast.
+    Translation:""",
+)
+
+
+def run_model(
+    model: Any,  # TODO(kathywu): Update to PipelineModel
+    tokenizer: TokenGeneratorTokenizer,
+    prompts: Iterable[str] = PROMPTS,
+    num_steps: int = NUM_STEPS,
+):
+    """Runs the model for N steps on each prompt provide."""
+    results = []
+    # Evaluate prompts individually (not batched).
+    for prompt in prompts:
+        curr_req_id = str(uuid.uuid4())
+        context = asyncio.run(
+            tokenizer.new_context(
+                TokenGeneratorRequest(
+                    id="", index=0, prompt=prompt, model_name="llama3"
+                )
+            )
+        )
+        values: dict[str, list[Any]] = {curr_req_id: []}
+        for _ in range(num_steps):
+            next_token_with_logits(model, {curr_req_id: context}, values)
+        results.append({"prompt": prompt, "values": values[curr_req_id]})
+        model.release(context)
+    return results
+
+
+def next_token_with_logits(
+    model: Any,  # TODO(kathywu): Update to PipelineModel
+    req_to_context_dict: dict[str, Any],
+    update_values: dict[str, list[Any]],
+):
+    """Generates the next token and stores the logits.
+
+    This method runs llama3.execute, stores the logits, and updates the context
+    with the next token.
+
+    Args:
+        model: Model to execute.
+        req_to_context_dict: Dictionary of request ids to Llama3Context.
+        update_values: Dictionary of request ids to lists of next_token &
+            logits. These lists are updated in this method.
+    """
+    logits = model._execute(req_to_context_dict).to(CPU())
+
+    for req_id, logits in zip(req_to_context_dict, logits.to_numpy()):
+        next_token = logits.argmax(axis=-1)
+        update_values[req_id].append(
+            {
+                "next_token": next_token,
+                "next_token_logits": logits[next_token],
+                "logits": logits,
+            }
+        )
+        # Update the context for the next input.
+        req_to_context_dict[req_id].next_tokens = next_token.reshape(-1)
+
+
+def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
+    """Compares the values between two computed logits.
+
+    The data structure of the actual/expected logits should be:
+    [
+        {"prompt": "prompt 1", "values": [{"key": value, ...}],
+        {"prompt": "prompt 2", "values": [{"key": value, ...}],
+        ...
+    ]
+
+    The "values" list contains the logits at each step for the prompt.
+
+    The `actual` logits structure must be a subset of the expected logits.
+    E.g. if the `expected` values contains logits for 10 steps, the `actual`
+    values can contain any number of steps between 1-10.
+
+    Args:
+        actual: Data structure containing computed values.
+        expected: Data structure containing reference values.
+        rtol: The relative tolerance (used if `compare_fn` is not provided).
+        atol: The absolute tolerance (used if `compare_fn` is not provided).
+        compare_fn: A callable that takes the arguments
+            (actual, expected, description) and raises an assertion error
+            if the check fails.
+    """
+    expected_prompts = {x["prompt"]: x["values"] for x in expected}
+    actual_prompts = {x["prompt"]: x["values"] for x in actual}
+
+    if expected_prompts.keys() < actual_prompts.keys():
+        diff = actual_prompts.keys() - expected_prompts.keys()
+        raise ValueError(
+            f"Golden values for prompts {diff} not found. Please re-run"
+            " `gen_golden_values`."
+        )
+
+    for prompt, values in actual_prompts.items():
+        expected_values = expected_prompts[prompt]
+        actual_steps = len(values)
+        expected_steps = len(expected_values)
+        assert actual_steps <= expected_steps
+
+        for step in range(actual_steps):
+            inference_results = values[step]
+            expected_results = expected_values[step]
+
+            for key, value in inference_results.items():
+                expected_value = expected_results[key]
+                short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
+                description = f"'{key}' on step={step} for the prompt='{short}'"
+                if compare_fn:
+                    compare_fn(value, expected_value, description)
+                else:
+                    np.testing.assert_allclose(
+                        value,
+                        expected_value,
+                        rtol=rtol,
+                        atol=atol,
+                        err_msg=f"Got different values for {description}.",
+                        verbose=True,
+                    )

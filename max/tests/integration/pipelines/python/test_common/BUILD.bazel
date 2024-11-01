@@ -1,0 +1,50 @@
+# Common code shared by different pipeline tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "requirement",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+modular_py_library(
+    name = "test_common",
+    srcs = ["__init__.py"],
+    imports = ["."],
+    deps = [
+        requirement("numpy"),
+        ":evaluate",
+        ":numpy_encoder",
+        ":path",
+    ],
+)
+
+modular_py_library(
+    name = "numpy_encoder",
+    srcs = ["numpy_encoder.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "evaluate",
+    srcs = ["evaluate.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        "//SDK/lib/API/python/max/driver",
+        "//SDK/lib/API/python/max/pipelines",
+    ],
+)
+
+modular_py_library(
+    name = "path",
+    srcs = ["path.py"],
+    imports = [".."],
+    deps = [
+        "//SDK/public/max-repo/pipelines/python/llama3",
+    ],
+)

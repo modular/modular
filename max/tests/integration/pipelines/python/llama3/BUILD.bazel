@@ -31,6 +31,7 @@ modular_py_binary(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/public/max-repo/pipelines/python/llama3",
         requirement("click"),
         requirement("py-cpuinfo"),
@@ -53,6 +54,7 @@ modular_py_binary(
     deps = [
         ":evaluate_llama",
         "//GenericML/tools/model",
+        "//SDK/integration-test/pipelines/python/test_common",
         requirement("click"),
     ],
 )
@@ -101,6 +103,7 @@ modular_py_binary(
         deps = [
             ":evaluate_llama",
             "//SDK/integration-test/API/python:modular_graph_test",
+            "//SDK/integration-test/pipelines/python/test_common",
             "//SDK/lib/API/python/max/engine",
             "//SDK/lib/API/python/max/serve",
             "//SDK/public/max-repo/pipelines/python/dataprocessing",
@@ -167,6 +170,7 @@ modular_py_test(
     ),
     deps = [
         ":evaluate_llama",
+        "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/utils",

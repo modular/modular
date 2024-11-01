@@ -13,15 +13,12 @@ import numpy as np
 import pytest
 import torch
 import torch.nn.functional as F
-from evaluate_llama import (
-    PROMPTS,
-    NumpyDecoder,
-    SupportedTestModels,
-    compare_values,
-    find_runtime_path,
-    run_llama3,
-)
-from llama3 import Llama3, Llama3Tokenizer
+from evaluate_llama import SupportedTestModels
+from llama3.llama3 import Llama3
+from llama3.llama3_token_gen import Llama3Tokenizer
+from test_common.evaluate import PROMPTS, compare_values, run_model
+from test_common.numpy_encoder import NumpyDecoder
+from test_common.path import find_runtime_path
 
 
 def kl_divergence_verifier(
@@ -82,16 +79,12 @@ def test_llama(model, encoding, testdata_directory):
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config()
     tokenizer = Llama3Tokenizer(config)
-    actual = run_llama3(
-        Llama3(config),
-        tokenizer,
-        prompts=PROMPTS[:1],
-    )
+    actual = run_model(Llama3(config), tokenizer, prompts=PROMPTS[:1])
 
     golden_data_path = find_runtime_path(
         "torch_llama3_1_bfloat16_golden.json",
         testdata_directory,
-        subdir=Path("torch_llama_golden"),
+        bazel_dir=Path("torch_llama_golden"),
     )
     expected_results = NumpyDecoder().decode(golden_data_path.read_text())
     compare_values(

@@ -10,16 +10,14 @@ import json
 
 import pytest
 from async_asgi_testclient import TestClient
-from evaluate_llama import (
-    PROMPTS,
-    NumpyDecoder,
-    SupportedTestModels,
-    find_runtime_path,
-)
+from evaluate_llama import SupportedTestModels
 from llama3 import Llama3Tokenizer, SupportedEncodings
 from max.driver import DeviceSpec
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import CreateChatCompletionResponse
+from test_common.evaluate import PROMPTS
+from test_common.numpy_encoder import NumpyDecoder
+from test_common.path import find_runtime_path
 
 from .params import ModelParams
 
@@ -91,7 +89,7 @@ async def test_tinyllama_serve_gpu_stream(
     app, testdata_directory, tinyllama_model
 ):
     NUM_TASKS = 16
-    model_encoding = SupportedTestModels.TINY_LLAMA_BF16
+    model_encoding = SupportedTestModels.get("tinyllama", "bfloat16")
     golden_data_path = find_runtime_path(
         model_encoding.golden_data_fname(),
         testdata_directory,

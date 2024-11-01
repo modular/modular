@@ -8,233 +8,41 @@
 Can also be used as a standalone binary to save out the golden values as a JSON.
 """
 
-import asyncio
-import base64
 import itertools
 import os
-import subprocess
-import uuid
 from dataclasses import dataclass
-from json import JSONDecoder, JSONEncoder
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
+from test_common.numpy_encoder import NumpyEncoder
+from test_common.path import golden_data_fname
+from test_common.evaluate import run_model, PROMPTS
 import click
-import numpy as np
 from huggingface_hub import hf_hub_download
 from llama3 import (
     InferenceConfig,
     Llama3,
-    Llama3Context,
     Llama3Tokenizer,
     SupportedEncodings,
     SupportedVersions,
 )
-from max.driver import CPU, DeviceSpec
-from max.pipelines.interfaces import TokenGeneratorRequest
-
-
-def find_runtime_path(
-    fname: str,
-    testdata_directory: Path,
-    subdir: Path = Path("test_llama_golden"),
-) -> Path:
-    try:
-        from python.runfiles import runfiles
-    except ModuleNotFoundError:
-        # Default to expecting data in the testdata directory when running
-        # outside Bazel.
-        return testdata_directory / fname
-
-    r = runfiles.Create()
-    path = r.Rlocation(str(subdir / fname))
-
-    if path is None:
-        raise Exception(f"Runtime path for {fname} was not found.")
-    else:
-        print(f"Runtime path for {fname} was located at {path}")
-    return Path(path)
-
-
-class NumpyEncoder(JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, np.ndarray):
-            return {
-                "__np__": base64.b64encode(obj.tobytes()).decode("ascii"),
-                "shape": obj.shape,
-                "dtype": str(obj.dtype),
-            }
-        elif isinstance(obj, np.generic):
-            return obj.item()
-        return JSONEncoder.default(self, obj)
-
-
-class NumpyDecoder(JSONDecoder):
-    def __init__(self, *args, **kwargs):
-        JSONDecoder.__init__(
-            self, object_hook=self.object_hook, *args, **kwargs
-        )
-
-    def object_hook(self, dct):
-        if "__np__" in dct:
-            shape = dct["shape"]
-            dtype = np.dtype(dct["dtype"])
-            return np.frombuffer(
-                base64.b64decode(dct["__np__"]), dtype=dtype
-            ).reshape(shape)
-        return dct
-
-
-def load_llama3(config: InferenceConfig):
-    tokenizer = Llama3Tokenizer(config)
-    llama3 = Llama3(
-        config, tokenizer.delegate.eos_token_id, tokenizer.delegate.vocab_size
-    )
-    return llama3, tokenizer
-
-
-NUM_STEPS = 10
-PROMPTS = (
-    """One of the most important aspects of performance benchmarking when it pertains to comparison of different implementations is making sure comparisons are fair. This is a place where most discussions occur, as deviation from best practices can make one’s performance claims easy to dismiss. For faster results of a given implementation (the Mojo implementation in our case) to be meaningful, the comparison needs to be apples-to-apples.
-    * Make sure you use equivalent optimization flags across implementations; even though flags (like -O3 in C) that enable multiple optimizations at once cannot always be equivalent to another language’s -O3, make sure you don’t compare something like a debug build with an implementation that uses the fast optimization flag.
-    * Make sure that if one implementation has auto-vectorization or automatic multithreading enabled the same applies to all implementations to be compared (unless for a given language one of these performs worse when turned-on, in which case one could keep the fastest implementation for comparison purposes).
-    * Use the latest (or best) combination of compilers, libraries, etc. — an older compiler version (for example) may perform better for whatever reason; however it should be considered sufficient to test with the latest stable version. One can test with older or experimental versions if they are so inclined.
-    * Use the same input file (if applicable) or same input data. Avoid random data generation that may stress different code paths.
-    * Use the same algorithm (if applicable) across all your implementations.
-    * Use equivalent error testing as it applies to different domains’ best practices (e.g., input sanitizing, corner case testing).
-    * Remove any unnecessary I/O (e.g., writing to file/screen for debug purposes) and keep only what is practically necessary — make sure you do so in a manner that code is not optimized out (see #6)!
-    * Try to apply the same level of manual optimization (within reason) — if you write multi-threaded/vectorized code in Mojo, you should try to compare it to an equivalent implementation of the other language. There is a case to be made here, however, if the other language does not have such capabilities or they are so difficult to use that implementing them is beyond what one can reasonably do. This can highlight the programmability aspect of Mojo (or one language against another more generally), but this fact should be listed so that people can take the performance claims under this light.""",
-    "def is_prime(x):\n",
-    "The meaning of life is ",
-    """Translate the English text to Italian.
-    Text: Sometimes, I've believed as many as six impossible things before breakfast.
-    Translation:""",
-)
-
-
-def run_llama3(
-    llama3: Llama3,
-    tokenizer: Llama3Tokenizer,
-    prompts=PROMPTS,
-    num_steps=NUM_STEPS,
-):
-    results = []
-    # Evaluate prompts individually (not batched).
-    for prompt in prompts:
-        curr_req_id = str(uuid.uuid4())
-        context = asyncio.run(
-            tokenizer.new_context(
-                TokenGeneratorRequest(
-                    id="", index=0, prompt=prompt, model_name="llama3"
-                )
-            )
-        )
-        values: dict[str, list[Any]] = {curr_req_id: []}
-        for _ in range(num_steps):
-            next_token_with_logits(llama3, {curr_req_id: context}, values)
-        results.append({"prompt": prompt, "values": values[curr_req_id]})
-        llama3.release(context)
-    return results
-
-
-def next_token_with_logits(
-    llama3: Llama3,
-    req_to_context_dict: dict[str, Llama3Context],
-    update_values: dict[str, list[Any]],
-):
-    """Generates the next token and stores the logits.
-
-    This method runs llama3.execute, stores the logits, and updates the context
-    with the next token.
-
-    Args:
-        llama3: Llama3 model to execute.
-        req_to_context_dict: Dictionary of request ids to Llama3Context.
-        update_values: Dictionary of request ids to lists of next_token &
-            logits. These lists are updated in this method.
-    """
-    logits = llama3._execute(req_to_context_dict).to(CPU())
-
-    for req_id, logits in zip(req_to_context_dict, logits.to_numpy()):
-        next_token = logits.argmax(axis=-1)
-        update_values[req_id].append(
-            {
-                "next_token": next_token,
-                "next_token_logits": logits[next_token],
-                "logits": logits,
-            }
-        )
-        # Update the context for the next input.
-        req_to_context_dict[req_id].next_tokens = next_token.reshape(-1)
-
-
-def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
-    """Compares the values between two computed logits.
-
-    The data structure of the actual/expected logits should be:
-    [
-        {"prompt": "prompt 1", "values": [{"key": value, ...}],
-        {"prompt": "prompt 2", "values": [{"key": value, ...}],
-        ...
-    ]
-
-    The "values" list contains the logits at each step for the prompt.
-
-    The `actual` logits structure must be a subset of the expected logits.
-    E.g. if the `expected` values contains logits for 10 steps, the `actual`
-    values can contain any number of steps between 1-10.
-
-    Args:
-        actual: Data structure containing computed values.
-        expected: Data structure containing reference values.
-        rtol: The relative tolerance (used if `compare_fn` is not provided).
-        atol: The absolute tolerance (used if `compare_fn` is not provided).
-        compare_fn: A callable that takes the arguments
-            (actual, expected, description) and raises an assertion error
-            if the check fails.
-    """
-    expected_prompts = {x["prompt"]: x["values"] for x in expected}
-    actual_prompts = {x["prompt"]: x["values"] for x in actual}
-
-    if expected_prompts.keys() < actual_prompts.keys():
-        diff = actual_prompts.keys() - expected_prompts.keys()
-        raise ValueError(
-            f"Golden values for prompts {diff} not found. Please re-run"
-            " `gen_golden_values`."
-        )
-
-    for prompt, values in actual_prompts.items():
-        expected_values = expected_prompts[prompt]
-        actual_steps = len(values)
-        expected_steps = len(expected_values)
-        assert actual_steps <= expected_steps
-
-        for step in range(actual_steps):
-            inference_results = values[step]
-            expected_results = expected_values[step]
-
-            for key, value in inference_results.items():
-                expected_value = expected_results[key]
-                short = f"{prompt[:15]}..." if len(prompt) > 15 else prompt
-                description = f"'{key}' on step={step} for the prompt='{short}'"
-                if compare_fn:
-                    compare_fn(value, expected_value, description)
-                else:
-                    np.testing.assert_allclose(
-                        value,
-                        expected_value,
-                        rtol=rtol,
-                        atol=atol,
-                        err_msg=f"Got different values for {description}.",
-                        verbose=True,
-                    )
+from max.driver import DeviceSpec
 
 
 @dataclass(frozen=True)
-class _SupportedModelEncoding:
+class SupportedTestModels:
     """Standardizes config and golden filename based on the model and encoding.
 
-    This class should not be used directly, instead use SupportedTestModel.
+    Usage:
+
+    ```
+    @pytest.mark.parametrize(...)
+    def test_model(model, encoding):
+        test_model = SupportedTestModels.get(model, encoding)
+        config = test_model.build_config()
+        golden_file = test_model.golden_data_fname()
+    ```
+
     """
 
     model: str
@@ -244,7 +52,7 @@ class _SupportedModelEncoding:
     """The supported dtype."""
 
     @classmethod
-    def init(cls, model, encoding):
+    def get(cls, model, encoding):
         """Initialize with type cast."""
         return cls(model, SupportedEncodings[encoding])
 
@@ -308,33 +116,7 @@ class _SupportedModelEncoding:
         )
 
     def golden_data_fname(self, *, framework: Literal["max", "torch"] = "max"):
-        # TODO(MSDK-948): Actually support a distinction between device and encoding
-        # instead of letting bfloat16 _imply_ GPU as is done multiple times in this file
-        if self.encoding == "bfloat16":
-            result = subprocess.run(
-                [os.environ["MODULAR_CUDA_QUERY_PATH"]], stdout=subprocess.PIPE
-            )
-            hardware = (
-                result.stdout.decode()
-                .split("name:")[1]
-                .split("\n")[0]
-                .strip()
-                .replace(" ", "")
-            )
-        else:
-            # TODO: MSDK-968 address the hardware variance that makes
-            # this untenable
-            # info = _system_info()
-            # hardware = info["arch"]
-            hardware = "all"
-
-        # This becomes a file path
-        hardware = hardware.replace(" ", "")
-
-        if framework == "max":
-            return f"{self.model}_{self.encoding}_{hardware}_golden.json"
-        else:
-            return f"{framework}_{self.model}_{self.encoding}_{hardware}_golden.json"
+        return golden_data_fname(self.model, self.encoding, framework=framework)
 
     def hf_config_path(self, testdata_directory: Optional[Path] = None) -> Path:
         if self.model == "tinyllama":
@@ -354,58 +136,6 @@ class _SupportedModelEncoding:
             return Path(
                 hf_hub_download(repo_id=self.hf_repo_id, filename="config.json")
             )
-
-
-def _system_info():
-    result = subprocess.run(
-        [os.getenv("MODULAR_SYSTEM_INFO_PATH")], stdout=subprocess.PIPE
-    )
-    system_info = {}
-    for line in result.stdout.decode().split("\n"):
-        try:
-            k, v = line.split(": ")
-            system_info[k.strip()] = v.strip()
-        except:
-            pass
-
-    return system_info
-
-
-class SupportedTestModels:
-    """Models with supported golden data files.
-
-    Usage: `SupportedTestModels.TINY_LLAMA_F32.golden_data_fname()`
-
-    Also works with parametrized tests:
-
-    ```
-    @pytest.mark.parametrize(...)
-    def test_model(model, encoding):
-        test_model = SupportedTestModels.get(model, encoding)
-        config = test_model.build_config()
-        golden_file = test_model.golden_data_fname()
-    ```
-
-    """
-
-    LLAMA_3_1_BF16 = _SupportedModelEncoding.init("llama3_1", "bfloat16")
-    LLAMA_3_1_Q4_K = _SupportedModelEncoding.init("llama3_1", "q4_k")
-    TINY_LLAMA_F32 = _SupportedModelEncoding.init("tinyllama", "float32")
-    TINY_LLAMA_BF16 = _SupportedModelEncoding.init("tinyllama", "bfloat16")
-
-    @staticmethod
-    def get(model, encoding):
-        """Returns the supported model encoding object.
-
-        Args:
-            model: Name of model ("tinyllama" or "llama3_1")
-            encoding: A SupportedEncoding or str ("float32", "bfloat16", etc.).
-
-        Returns:
-            A model encoding object that can be used to construct an
-            InferenceConfig or get the golden data filename.
-        """
-        return _SupportedModelEncoding.init(model, encoding)
 
 
 ALL_SUPPORTED_MODELS = {"all", "tinyllama"}
@@ -462,8 +192,9 @@ def main(model, encoding, verbose):
     ):
         try:
             config = model_encoding.build_config(testdata_directory)
-            llama3, tokenizer = load_llama3(config)
-            results = run_llama3(llama3, tokenizer, PROMPTS)
+            tokenizer = Llama3Tokenizer(config)
+            llama3 = Llama3(config)
+            results = run_model(llama3, tokenizer, PROMPTS)
 
             output_full_path = os.path.join(
                 "/tmp", model_encoding.golden_data_fname()
