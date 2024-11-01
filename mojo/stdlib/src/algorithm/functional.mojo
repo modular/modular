@@ -1993,12 +1993,16 @@ fn _stencil_impl_gpu[
         var x = bid_x * BlockDim.x() + tid_x
         var y = bid_y * BlockDim.y() + tid_y
 
+        # Calculate batch and channel from bid_z
+        var batch_idx = bid_z // shape[3]
+        var channel = bid_z % shape[3]
+
         # Early exit if outside bounds
         if x >= shape[2] or y >= shape[1]:
             return
 
-        # Create output point indices
-        var indices = IndexList[rank](bid_z, y, x, 0)
+        # Create output point indices with computed batch and channel
+        var indices = IndexList[rank](batch_idx, y, x, channel)
 
         # Process stencil for this point
         var stencil_indices = IndexList[stencil_rank](
@@ -2043,7 +2047,7 @@ fn _stencil_impl_gpu[
     var grid_dim = (
         ceildiv(shape[2], block_dim[0]),  # width
         ceildiv(shape[1], block_dim[1]),  # height
-        shape[0],  # batch size
+        shape[0] * shape[3],  # batch_size * num_channels
     )
 
     # Compile and launch kernel

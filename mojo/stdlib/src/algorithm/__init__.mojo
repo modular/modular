@@ -20,6 +20,7 @@ from .functional import (
     parallelize,
     parallelize_over_rows,
     stencil,
+    stencil_gpu,
     sync_parallelize,
     tile,
     tile_and_unswitch,
