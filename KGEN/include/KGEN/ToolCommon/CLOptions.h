@@ -27,6 +27,7 @@ enum class Command {
   kEmitLLVM,
   kEmitLLVMOpt,
   kEmitAssembly,
+  kEmitAssemblyVerbose,
   kEmitHeader,
   kEmit,
   kExecute,
@@ -333,6 +334,9 @@ private:
                      "Emit funcs as optimized LLVM IR."),
           clEnumValN(Command::kEmitAssembly, "emit-asm",
                      "Emit the funcs as assembly."),
+          clEnumValN(
+              Command::kEmitAssemblyVerbose, "emit-asm-verbose",
+              "Emit the funcs as vevrbose assembly with preserved comments"),
           clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
           clEnumValN(Command::kEmitHeader, "emit-header",
                      "Emit a C header file with declarations of "

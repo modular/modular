@@ -393,12 +393,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   // Handle assembly output.
-  if (clOptions.cmd == Command::kEmitAssembly) {
+  if (clOptions.cmd == Command::kEmitAssembly ||
+      clOptions.cmd == Command::kEmitAssemblyVerbose) {
     auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/false, ".s");
     if (!outFile)
       return failure(clOptions.reportError("could not open .s output file"));
 
-    auto standaloneOr = objCompiler.emitAssembly(*theModule, outFile->os());
+    bool verboseOutput = clOptions.cmd == Command::kEmitAssemblyVerbose;
+    ErrorOrSuccess standaloneOr =
+        objCompiler.emitAssembly(*theModule, outFile->os(), verboseOutput);
     if (failed(standaloneOr))
       return failure(
           clOptions.reportError("could not produce standalone asm: " +
