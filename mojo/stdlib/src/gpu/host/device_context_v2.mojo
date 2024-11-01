@@ -456,7 +456,10 @@ struct DeviceFunctionV2[
         @parameter
         if Self._dump_q[dump_llvm]():
             alias llvm = _compile_code_asm[
-                Self.func, emission_kind="llvm-opt"
+                Self.func,
+                emission_kind="llvm-opt",
+                is_failable=_is_failable,
+                target=target,
             ]()
 
             @parameter
@@ -725,7 +728,11 @@ struct DeviceContextV2:
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
     ] as result:
-        result = __type_of(result)(
+        alias result_type = __type_of(result)
+        result_type.dump_rep[
+            dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
+        ]()
+        result = result_type(
             self,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
@@ -733,9 +740,6 @@ struct DeviceContextV2:
             cache_config=cache_config,
             func_attribute=func_attribute,
         )
-        result.dump_rep[
-            dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
-        ]()
 
     @parameter
     fn enqueue_function[
