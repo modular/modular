@@ -81,8 +81,17 @@ from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
-from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
-from nn.conv_transpose import conv_transpose_shape, conv_transposed
+from nn.conv import (
+    ConvInfoStatic,
+    conv_nhwc_direct,
+    conv_shape,
+    pack_filter_shape as pack_filter_shape_conv,
+)
+from nn.conv_transpose import (
+    conv_transpose_shape,
+    conv_transposed,
+    pack_filter_shape as pack_filter_shape_conv_transpose,
+)
 from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.flash_attention import flash_attention_split_kv
@@ -140,6 +149,7 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 from gpu.host import DeviceContext
+from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 
 # ===----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
@@ -309,41 +319,6 @@ fn get_scalar_from_ndbuffer[
 ](tensor: NDBuffer[dtype, 1]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
     return tensor[0]
-
-
-# Wrappers that take `num_groups` as a parameter.
-# This is required unti `mo.layout.transform` passes `num_groups` as a runtime
-# value.
-@mogg_register_override("layout_transform_QRSCF_to_FQRSCf", 1)
-@mogg_register_override("layout_transform_RSCF_to_FRSCf", 1)
-@always_inline
-fn pack_conv_filter[
-    filter_type: DType,
-    rank: Int,
-    num_groups: Int,
-    input_1_static_shape: DimList,
-](
-    filter: NDBuffer[filter_type, rank],
-    packed_filter: NDBuffer[filter_type, rank + 1, input_1_static_shape],
-    ctx: MojoCallContextPtr,
-):
-    _pack_conv_filter(filter, packed_filter, num_groups)
-
-
-@mogg_register_override("layout_transform_RSFC_to_FRSCf", 1)
-@mogg_register_override("layout_transform_QRSFC_to_FQRSCf", 1)
-@always_inline
-fn pack_conv_transpose_filter[
-    filter_type: DType,
-    rank: Int,
-](
-    filter: NDBuffer[filter_type, rank],
-    packed_filter: NDBuffer[filter_type, rank + 1],
-    ctx: MojoCallContextPtr,
-):
-    # last param is num_groups which is currently not an available
-    # arg for the MO level op
-    _pack_conv_transpose_filter(filter, packed_filter, 1)
 
 
 @mogg_register_override("get_int_from_shape", 1)
@@ -7039,3 +7014,282 @@ struct Struct_continuous_batching_kv_cache_collection_h1_d16_bshd:
         return generic_get_contiguous_cache_kernel_api[
             kv_params=kv_params_h1_d16_bshd
         ](blocks, cache_lengths, lookup_table, is_cache_empty)
+
+
+# ===----------------------------------------------------------------------===#
+# LayoutTransforms
+# ===----------------------------------------------------------------------===#
+
+
+fn layout_transform_conv_transpose_filter_common[
+    type: DType, filter_rank: Int
+](
+    packed_filter: ManagedTensorSlice[type, filter_rank + 1],
+    filter: ManagedTensorSlice[type, filter_rank],
+):
+    # last param is num_groups which is currently not an available
+    # arg for the MO level op
+    _pack_conv_transpose_filter(
+        managed_tensor_slice_to_ndbuffer(filter),
+        managed_tensor_slice_to_ndbuffer(packed_filter),
+        1,
+    )
+
+
+@compiler.register("layout_transform_RSFC_to_FRSCf")
+struct LayoutTransformRSFC2FRSCf:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, filter_rank: Int
+    ](
+        packed_filter: ManagedTensorSlice[type, filter_rank + 1],
+        filter: ManagedTensorSlice[type, filter_rank],
+    ):
+        layout_transform_conv_transpose_filter_common(packed_filter, filter)
+
+
+@compiler.register("layout_transform_QRSFC_to_FQRSCf")
+struct LayoutTransformQRSFC2FQRSCf:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, filter_rank: Int
+    ](
+        packed_filter: ManagedTensorSlice[type, filter_rank + 1],
+        filter: ManagedTensorSlice[type, filter_rank],
+    ):
+        layout_transform_conv_transpose_filter_common(packed_filter, filter)
+
+
+@compiler.register("pack_conv_filter_shape")
+struct PackConvFilterShape:
+    @always_inline
+    @staticmethod
+    fn execute() raises:
+        raise Error("Only meant to be used for shape function!")
+
+    @always_inline
+    @staticmethod
+    fn shape[
+        rank: Int,
+        filter_type: DType,
+        input_shape: DimList,
+        filter_shape: DimList,
+        output_shape: DimList,
+        strides: DimList,
+        dilations: DimList,
+        paddings: DimList,
+        num_groups: Int,
+        synchronous: Bool,
+    ](filter_buf: ManagedTensorSlice[filter_type, rank]) -> IndexList[rank + 1]:
+        """
+        Compute the output shape of convolution filter packing.
+
+        Parameters:
+            rank: Rank of the un-packed filter.
+            filter_type: Type of the filter.
+            input_shape: NHWC layout.
+            filter_shape: Filter shape.
+            output_shape: NHWC layout.
+            strides: Should be rank 1 size 2.
+            dilations: Should be rank 1 size 2.
+            paddings: Should be rank 1 size 4.
+            num_groups: The number of groups in the convolution.
+            synchronous: If True, then reduction is run sync with 1 thread.
+
+        Args:
+            filter_buf: The filter to be packed.
+
+        Returns:
+            The output shape.
+        """
+
+        return pack_filter_shape_conv[
+            filter_type,
+            input_shape,
+            filter_shape,
+            output_shape,
+            strides,
+            dilations,
+            paddings,
+            num_groups,
+            synchronous,
+        ](managed_tensor_slice_to_ndbuffer(filter_buf))
+
+
+@compiler.register("pack_conv_transpose_filter_shape")
+struct PackConvTransposeFilterShape:
+    @always_inline
+    @staticmethod
+    fn execute() raises:
+        raise Error("Only meant to be used for shape function!")
+
+    @always_inline
+    @staticmethod
+    fn shape[
+        rank: Int,
+        filter_type: DType,
+        synchronous: Bool,
+    ](filter_buf: NDBuffer[filter_type, rank]) -> IndexList[rank + 1]:
+        return pack_filter_shape_conv_transpose(
+            managed_tensor_slice_to_ndbuffer(filter_buf), 1
+        )
+
+
+# Wrapper that take `num_groups` as a parameter.
+# This is required unti `mo.layout.transform` passes `num_groups` as a runtime
+# value.
+fn layout_transform_conv_filter_common[
+    type: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+](
+    packed_filter: ManagedTensorSlice[type, packed_rank],
+    filter: ManagedTensorSlice[type, filter_rank],
+):
+    constrained[packed_rank == filter_rank + 1]()
+    alias packed_filter_shape = compiler.specsof[
+        packed_filter.type, packed_filter.rank
+    ]("packed_filter").shape
+
+    # last param is num_groups which is currently not an available
+    # arg for the MO level op
+    _pack_conv_filter(
+        managed_tensor_slice_to_ndbuffer(filter),
+        managed_tensor_slice_to_ndbuffer[static_shape=packed_filter_shape](
+            packed_filter
+        ),
+        num_groups,
+    )
+
+
+@compiler.register("layout_transform_QRSCF_to_FQRSCf")
+struct LayoutTransformQRSCF2FQRSCf:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: ManagedTensorSlice[type, packed_rank],
+        filter: ManagedTensorSlice[type, filter_rank],
+    ):
+        layout_transform_conv_filter_common[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+@compiler.register("layout_transform_RSCF_to_FRSCf")
+struct LayoutTransformRSCF2FRSCf:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: ManagedTensorSlice[type, packed_rank],
+        filter: ManagedTensorSlice[type, filter_rank],
+    ):
+        layout_transform_conv_filter_common[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+@compiler.register("layout_transform_KN_to_KNkni")
+struct LayoutTransformMatmulKN2KNkni:
+    @always_inline
+    @staticmethod
+    fn execute[
+        a_type: DType,
+        a_shape: DimList,
+        b_type: DType,
+        b_shape: DimList,
+        c_type: DType,
+        c_shape: DimList,
+    ](
+        output_buffer: ManagedTensorSlice[b_type, 2],
+        b_input: ManagedTensorSlice[b_type, 2],
+    ) raises:
+        # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+        var kernel_type_m = 0
+
+        @parameter
+        if a_shape.at[0]().has_value():
+            kernel_type_m = a_shape.at[0]().get()
+        _pack_b_ndbuffer_impl[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transposed=False,
+        ](
+            managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b_input),
+            managed_tensor_slice_to_ndbuffer(output_buffer),
+            kernel_type_m,
+        )
+
+
+@compiler.register("layout_transform_NK_to_KNkni")
+struct LayoutTransformMatmulNK2KNkni:
+    @always_inline
+    @staticmethod
+    fn execute[
+        a_type: DType,
+        a_shape: DimList,
+        b_type: DType,
+        b_shape: DimList,
+        c_type: DType,
+        c_shape: DimList,
+    ](
+        output_buffer: ManagedTensorSlice[b_type, 2],
+        b_input: ManagedTensorSlice[b_type, 2],
+    ) raises:
+        # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
+        var kernel_type_m = 0
+
+        @parameter
+        if a_shape.at[0]().has_value():
+            kernel_type_m = a_shape.at[0]().get()
+        _pack_b_ndbuffer_impl[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transposed=True,
+        ](
+            managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b_input),
+            managed_tensor_slice_to_ndbuffer(output_buffer),
+            kernel_type_m,
+        )
+
+
+@compiler.register("pack_matmul_b_shape_func")
+struct PackMatmulBShapeFunc:
+    @always_inline
+    @staticmethod
+    fn execute() raises:
+        raise Error("Only meant to be used for shape function!")
+
+    @always_inline
+    @staticmethod
+    fn shape[
+        a_type: DType,
+        a_shape: DimList,
+        b_type: DType,
+        b_shape: DimList,
+        c_type: DType,
+        c_shape: DimList,
+        transpose_in_0: Bool,
+        synchronous: Bool,
+    ](b_input: ManagedTensorSlice[b_type, 2]) -> IndexList[2]:
+        return pack_matmul_b_shape_func[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transpose_in_0,
+            synchronous,
+        ](managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b_input))
