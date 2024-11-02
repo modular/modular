@@ -3527,7 +3527,7 @@ fn gather_nd[
     data_rank: Int,
     indices_rank: Int,
     output_rank: Int,
-    batch_dims: Int,
+    batchDims: Int,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
@@ -3542,7 +3542,7 @@ fn gather_nd[
         data_rank,
         indices_rank,
         output_rank,
-        batch_dims,
+        batchDims,
         target=target,
     ](data, indices, output, ctx)
 

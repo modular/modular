@@ -99,6 +99,7 @@ from nn.gather_scatter import (
     Axis,
     gather,
     gather_nd,
+    gather_nd_shape,
     gather_reduce,
     gather_shape,
     normalize_neg_index,
@@ -3110,6 +3111,22 @@ struct GatherND:
 
         gather_nd[batch_dims=batchDims, target=target](
             data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
+        )
+
+    @staticmethod
+    fn shape[
+        batch_dims: Int, output_rank: Int, synchronous: Bool
+    ](
+        data: ManagedTensorSlice,
+        indices: ManagedTensorSlice,
+    ) raises -> IndexList[output_rank]:
+        return gather_nd_shape[
+            batch_dims=batch_dims,
+            output_rank=output_rank,
+            single_thread_blocking_override=synchronous,
+        ](
+            managed_tensor_slice_to_ndbuffer(data),
+            managed_tensor_slice_to_ndbuffer(indices),
         )
 
 
