@@ -158,7 +158,7 @@ struct Foo:
 
     @staticmethod
     fn shape(x: ManagedTensorSlice, y: ManagedTensorSlice) -> IndexList[x.rank]:
-        return x.get_static_spec().shape
+        return x.get_runtime_spec().shape
 
 
 @always_inline
@@ -168,7 +168,7 @@ fn toNDBuffer[
     # TODO(GRA-734): forward other static params automatically
     return rebind[NDBuffer[out_dtype, out_rank]](
         NDBuffer[tensor.type, tensor.rank](
-            tensor._ptr, tensor.get_static_spec().shape
+            tensor._ptr, tensor.get_runtime_spec().shape
         )
     )
 
@@ -234,7 +234,7 @@ struct ImposterMHANoMask:
         v: ManagedTensorSlice,
         scale: ManagedTensorSlice,
     ) -> IndexList[q.rank]:
-        return q.get_static_spec().shape
+        return q.get_runtime_spec().shape
 
 
 # c = a @ b, should support CPU and GPU
@@ -279,8 +279,8 @@ struct ImposterMatmul:
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
     ) -> IndexList[2]:
-        var shape = a.get_static_spec().shape
-        shape[1] = b.get_static_spec().shape[1]
+        var shape = a.get_runtime_spec().shape
+        shape[1] = b.get_runtime_spec().shape[1]
         return rebind[IndexList[2]](shape)
 
 
@@ -306,7 +306,7 @@ struct PrintShapeStridesOp:
 
     @staticmethod
     fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
-        return x.get_static_spec().shape
+        return x.get_runtime_spec().shape
 
 
 @compiler.register("imposter_add_elementwise")
@@ -404,8 +404,8 @@ struct MatmulFuseOut:
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
     ) -> IndexList[2]:
-        var shape = a.get_static_spec().shape
-        shape[1] = b.get_static_spec().shape[1]
+        var shape = a.get_runtime_spec().shape
+        shape[1] = b.get_runtime_spec().shape[1]
         return rebind[IndexList[2]](shape)
 
 

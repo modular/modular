@@ -354,7 +354,7 @@ fn managed_tensor_slice_to_ndbuffer[
     static_shape: DimList = DimList.create_unknown[rank](),
 ](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank, static_shape]:
     return NDBuffer[type, rank, static_shape](
-        tensor._ptr, tensor.get_static_spec().shape, tensor._strides
+        tensor._ptr, tensor.get_runtime_spec().shape, tensor._strides
     )
 
 
@@ -391,7 +391,7 @@ fn reduce_shape[
         )
 
     # compute and return the output shape
-    var output_shape = input_buf.get_static_spec().shape
+    var output_shape = input_buf.get_runtime_spec().shape
     output_shape[axis] = 1
     return output_shape
 
@@ -2787,7 +2787,7 @@ struct ReduceMinMax:
                 single_thread_blocking_override=synchronous,
                 target=target,
             ](
-                input.get_static_spec().shape,
+                input.get_runtime_spec().shape,
                 init=init,
                 reduce_dim=axis,
                 context=ctx,
@@ -2798,7 +2798,7 @@ struct ReduceMinMax:
     fn shape(
         input: ManagedTensorSlice, axis0: ScalarTensor
     ) -> IndexList[input.rank]:
-        var new_shape = input.get_static_spec().shape
+        var new_shape = input.get_runtime_spec().shape
         var axis = int(normalize_neg_index(axis0[0], input.rank))
         new_shape[axis] = 2
 
@@ -3674,7 +3674,7 @@ struct LinalgBandPart:
             single_thread_blocking_override=synchronous,
             target=target,
         ](
-            input.get_static_spec().shape,
+            input.get_runtime_spec().shape,
             num_lower_buf,
             num_upper_buf,
             exclude_buf,
@@ -3939,7 +3939,7 @@ struct Softmax:
             input_fn,
             target,
         ](
-            output.get_static_spec().shape,
+            output.get_runtime_spec().shape,
             output_ndbuffer,
             output.rank - 1,
             context=ctx,
@@ -3985,7 +3985,7 @@ struct LogSoftmax:
             output.rank,
             static_shape,
             input_fn,
-        ](output.get_static_spec().shape, output_ndbuffer, output.rank - 1)
+        ](output.get_runtime_spec().shape, output_ndbuffer, output.rank - 1)
 
 
 # ===----------------------------------------------------------------------===#
@@ -4046,15 +4046,15 @@ fn concat_shape_impl[
     for i in range(len(inputs)):
         concat_axis_dim_sum += inputs[i].dim_size(axis)
         if not shape_equal_ignore_axis(
-            inputs[0].get_static_spec().shape,
-            inputs[i].get_static_spec().shape,
+            inputs[0].get_runtime_spec().shape,
+            inputs[i].get_runtime_spec().shape,
         ):
             raise Error(
                 "[concat] input shapes must match except at concat axis"
             )
 
     # compute and return the output shape
-    var output_shape = inputs[0].get_static_spec().shape
+    var output_shape = inputs[0].get_runtime_spec().shape
     output_shape[axis] = concat_axis_dim_sum
     return output_shape
 
@@ -4163,15 +4163,15 @@ fn concat_from_list_shape_impl[
     for i in range(len(inputs)):
         concat_axis_dim_sum += inputs[i].dim_size(axis)
         if not shape_equal_ignore_axis(
-            inputs[0].get_static_spec().shape,
-            inputs[i].get_static_spec().shape,
+            inputs[0].get_runtime_spec().shape,
+            inputs[i].get_runtime_spec().shape,
         ):
             raise Error(
                 "[concat] input shapes must match except at concat axis"
             )
 
     # compute and return the output shape
-    var output_shape = inputs[0].get_static_spec().shape
+    var output_shape = inputs[0].get_runtime_spec().shape
     output_shape[axis] = concat_axis_dim_sum
     return output_shape
 
@@ -4304,7 +4304,7 @@ struct SplitOutputShapeHelper:
             )
 
         # compute and return the output shape
-        var output_shape = input_buf.get_static_spec().shape
+        var output_shape = input_buf.get_runtime_spec().shape
         output_shape[split_axis] = output_split_size
         return output_shape
 
@@ -4848,8 +4848,8 @@ struct NoMaskFlashAttentionCPU:
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_fn,](
             managed_tensor_slice_to_ndbuffer(q),
-            k.get_static_spec().shape,
-            v.get_static_spec().shape,
+            k.get_runtime_spec().shape,
+            v.get_runtime_spec().shape,
             IndexList[0](),
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
             scale[0].cast[DType.float32](),
@@ -4923,18 +4923,18 @@ struct WithMaskFlashAttentionSplitKVCPU:
             mask_input_fn,
         ](
             managed_tensor_slice_to_ndbuffer(q),
-            k.get_static_spec().shape,
-            v.get_static_spec().shape,
-            k_cache.get_static_spec().shape,
-            v_cache.get_static_spec().shape,
-            mask.get_static_spec().shape,
+            k.get_runtime_spec().shape,
+            v.get_runtime_spec().shape,
+            k_cache.get_runtime_spec().shape,
+            v_cache.get_runtime_spec().shape,
+            mask.get_runtime_spec().shape,
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
             scale[0].cast[DType.float32](),
         )
 
     @staticmethod
     fn shape(q: ManagedTensorSlice) -> IndexList[q.rank]:
-        return q.get_static_spec().shape
+        return q.get_runtime_spec().shape
 
 
 @compiler.register("with_mask_flash_attention_cpu")
@@ -4978,9 +4978,9 @@ struct WithMaskFlashAttentionCPU:
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn,](
             managed_tensor_slice_to_ndbuffer(q),
-            k.get_static_spec().shape,
-            v.get_static_spec().shape,
-            mask.get_static_spec().shape,
+            k.get_runtime_spec().shape,
+            v.get_runtime_spec().shape,
+            mask.get_runtime_spec().shape,
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
             scale[0].cast[DType.float32](),
         )
@@ -5007,7 +5007,7 @@ struct GGMLQ40Dequantize:
             Q4sym[group_size=32].dequantize_and_write_to_tensor(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
-                output.get_static_spec().shape,
+                output.get_runtime_spec().shape,
             )
 
     @staticmethod
@@ -5066,7 +5066,7 @@ struct VroomQ40RepackWeights:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return b.get_static_spec().shape
+        return b.get_runtime_spec().shape
 
 
 ######
@@ -5146,7 +5146,7 @@ struct VroomQ4KRepackWeights:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return b.get_static_spec().shape
+        return b.get_runtime_spec().shape
 
 
 ######
@@ -5166,7 +5166,7 @@ struct GGMLQ6KDequantize:
             q6_k_dequantize_impl(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
-                output.get_static_spec().shape,
+                output.get_runtime_spec().shape,
             )
 
     @staticmethod
@@ -5227,7 +5227,7 @@ struct VroomQ6KRepackWeights:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return b.get_static_spec().shape
+        return b.get_runtime_spec().shape
 
 
 # ===----------------------------------------------------------------------===#
