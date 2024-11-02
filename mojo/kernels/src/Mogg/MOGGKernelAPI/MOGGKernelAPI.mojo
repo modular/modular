@@ -85,6 +85,7 @@ from nn.gather_scatter import (
     scatter_elements_shape,
     scatter_nd,
     scatter_nd_generator,
+    scatter_nd_shape,
 )
 from nn.mha import flash_attention, fused_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -1389,6 +1390,20 @@ struct ScatterND:
             context=ctx,
         )
 
+    @staticmethod
+    fn shape[
+        synchronous: Bool,
+    ](
+        input: ManagedTensorSlice,
+        updates: ManagedTensorSlice[input.type, *_],
+        indices: ManagedTensorSlice,
+    ) raises -> IndexList[input.rank]:
+        return scatter_nd_shape[single_thread_blocking_override=synchronous](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(updates),
+            managed_tensor_slice_to_ndbuffer(indices),
+        )
+
 
 @compiler.register("mo.scatter_nd.add")
 struct ScatterNDAdd:
@@ -1431,6 +1446,20 @@ struct ScatterNDAdd:
             updates_ndbuffer,
             output_ndbuffer,
             context=ctx,
+        )
+
+    @staticmethod
+    fn shape[
+        synchronous: Bool,
+    ](
+        input: ManagedTensorSlice,
+        updates: ManagedTensorSlice[input.type, *_],
+        indices: ManagedTensorSlice,
+    ) raises -> IndexList[input.rank]:
+        return scatter_nd_shape[single_thread_blocking_override=synchronous](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(updates),
+            managed_tensor_slice_to_ndbuffer(indices),
         )
 
 
@@ -1477,6 +1506,20 @@ struct ScatterNDMul:
             context=ctx,
         )
 
+    @staticmethod
+    fn shape[
+        synchronous: Bool,
+    ](
+        input: ManagedTensorSlice,
+        updates: ManagedTensorSlice[input.type, *_],
+        indices: ManagedTensorSlice,
+    ) raises -> IndexList[input.rank]:
+        return scatter_nd_shape[single_thread_blocking_override=synchronous](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(updates),
+            managed_tensor_slice_to_ndbuffer(indices),
+        )
+
 
 @compiler.register("mo.scatter_nd.min")
 struct ScatterNDMin:
@@ -1521,6 +1564,20 @@ struct ScatterNDMin:
             context=ctx,
         )
 
+    @staticmethod
+    fn shape[
+        synchronous: Bool,
+    ](
+        input: ManagedTensorSlice,
+        updates: ManagedTensorSlice[input.type, *_],
+        indices: ManagedTensorSlice,
+    ) raises -> IndexList[input.rank]:
+        return scatter_nd_shape[single_thread_blocking_override=synchronous](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(updates),
+            managed_tensor_slice_to_ndbuffer(indices),
+        )
+
 
 @compiler.register("mo.scatter_nd.max")
 struct ScatterNDMax:
@@ -1563,6 +1620,20 @@ struct ScatterNDMax:
             updates_ndbuffer,
             output_ndbuffer,
             context=ctx,
+        )
+
+    @staticmethod
+    fn shape[
+        synchronous: Bool,
+    ](
+        input: ManagedTensorSlice,
+        updates: ManagedTensorSlice[input.type, *_],
+        indices: ManagedTensorSlice,
+    ) raises -> IndexList[input.rank]:
+        return scatter_nd_shape[single_thread_blocking_override=synchronous](
+            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer(updates),
+            managed_tensor_slice_to_ndbuffer(indices),
         )
 
 
