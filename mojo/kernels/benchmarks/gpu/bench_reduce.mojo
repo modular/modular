@@ -9,7 +9,7 @@ from sys import alignof, simdwidthof
 
 from algorithm._gpu.reduction import reduce_launch
 from buffer import NDBuffer
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from testing import assert_equal
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure

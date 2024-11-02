@@ -9,7 +9,7 @@
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
 from internal_utils import DeviceNDBuffer, env_get_dtype
 from internal_utils._utils import static, dynamic, ValOrDim

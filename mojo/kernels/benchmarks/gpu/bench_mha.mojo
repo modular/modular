@@ -29,7 +29,7 @@ from utils.index import Index
 from utils.numerics import min_or_neg_inf
 from testing import assert_almost_equal
 
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import bench_compile_time, env_get_dtype
 

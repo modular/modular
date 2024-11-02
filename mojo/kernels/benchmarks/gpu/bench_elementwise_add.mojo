@@ -12,7 +12,7 @@ from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from memory import UnsafePointer
 from utils import IndexList
 

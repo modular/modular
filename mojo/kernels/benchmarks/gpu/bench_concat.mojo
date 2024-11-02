@@ -13,7 +13,7 @@ from builtin._closure import __ownership_keepalive
 from algorithm.functional import elementwise
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
-from gpu.host.device_context import DeviceContext, DeviceBuffer
+from gpu.host import DeviceContext, DeviceBuffer
 from memory import UnsafePointer
 from nn.concat import _concat_gpu_elementwise
 

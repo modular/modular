@@ -19,7 +19,7 @@ from internal_utils import parse_shape
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_tuple
-from gpu.host.device_context import DeviceContext, DeviceBuffer
+from gpu.host import DeviceContext, DeviceBuffer
 from gpu.host._compile import _get_nvptx_target
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from internal_utils import DeviceNDBuffer

@@ -7,7 +7,7 @@
 
 from sys import sizeof, env_get_int
 from memory import UnsafePointer
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from gpu.host._utils import _human_memory
 

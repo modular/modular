@@ -7,7 +7,7 @@
 from internal_utils import env_get_dtype, DeviceNDBuffer, HostNDBuffer, random
 from random import random_ui64, seed
 from sys import env_get_int, sizeof, env_get_bool
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import Dim, DimList
 from utils.index import IndexList
