@@ -1291,7 +1291,7 @@ fn gather_elements[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("gather_nd_shape")
+@mogg_register_shape_func("mo.gather_nd")
 @always_inline
 fn gather_nd_shape[
     input_rank: Int,
