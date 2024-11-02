@@ -7,13 +7,11 @@
 
 import math
 from collections import OrderedDict
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import pytest
 import torch
-from hypothesis import given, settings
-from hypothesis import strategies as st
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -30,6 +28,7 @@ from pixtral.model.rotary_embedding_2d import (
 from pixtral.model.transformer import MLP, Transformer, TransformerBlock
 from pixtral.model.vision_encoder import VisionEncoder
 from torch import Tensor, nn
+from transformers import PixtralVisionConfig, PixtralVisionModel
 
 ACCURACY_RTOL = 1e-1
 ACCURACY_ATOL = 1e-1
@@ -71,6 +70,13 @@ def imgs(img_sizes, img_dtype):
         )
         for height, width in img_sizes
     ]
+
+
+@pytest.fixture
+def pytorch_pixtral_vision_encoder():
+    config = PixtralVisionConfig()
+    model = PixtralVisionModel(config)
+    return model
 
 
 # TODO(KERN-1066): Fix and enable test
@@ -810,54 +816,16 @@ def test_pixtral_attention(imgs, img_sizes):
             )
 
 
-def test_vision_encoder(imgs, img_sizes):
+def test_vision_encoder(imgs, img_sizes, pytorch_pixtral_vision_encoder):
     # TODO: Check the values of pixels are expected to be in [0, 255]
     # https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/models/pixtral/modeling_pixtral.py#L465
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    patch_conv = nn.Conv2d(
-        in_channels=num_channels,
-        out_channels=hidden_size,
-        kernel_size=patch_size,
-        stride=patch_size,
-        bias=False,
-    )
-    ln_pre = PixtralRMSNorm(hidden_size, eps=1e-5)
-    patch_positional_embedding = PixtralRotaryEmbedding(device=device)
-    transformer = PixtralTransformer()
+    pytorch_model = pytorch_pixtral_vision_encoder
 
     with torch.no_grad():
-        filters = patch_conv.weight.data
-        # list of size (batch_size, hidden_size, num_height_patches, num_width_patches)
-        patch_embeds_list = [patch_conv(img.unsqueeze(0)) for img in imgs]
-
-        # seq_len = sum(num_height_patches*num_width_patches) for all images in imgs
-        # flatten to a single sequence of shape (batch_size, seq_len=num_patches, hidden_size)
-        patch_embeds = torch.cat(
-            [p.flatten(2).permute(0, 2, 1) for p in patch_embeds_list], dim=1
-        )
-        norm_patch_embeds = ln_pre(patch_embeds)
-        # positional embeddings (seq_len)
-        position_ids = position_ids_in_meshgrid(
-            patch_embeds_list, max_width=image_size // patch_size
-        ).to(device)
-        # a tuple of 2 tensors of shape (seq_len, hidden_size/num_attention_heads=64)
-        position_embedding = patch_positional_embedding(
-            norm_patch_embeds, position_ids
-        )
-        attention_mask = generate_block_attention_mask(
-            [p.shape[-2] * p.shape[-1] for p in patch_embeds_list],
-            norm_patch_embeds,
-        )
-        # (, hidden_size)
-        encoder_output = transformer(
-            norm_patch_embeds, attention_mask, position_embedding
-        )
+        encoder_output = pytorch_pixtral_vision_encoder(imgs).last_hidden_state
 
         ####### Permute torch inputs for the graph API and init weights ########
-        patch_embeds_list = [
-            torch.permute(img, (0, 2, 3, 1)) for img in patch_embeds_list
-        ]
+        filters = pytorch_pixtral_vision_encoder.patch_conv.weight.data
         filters = torch.permute(filters, (2, 3, 1, 0))
         imgs = [
             np.ascontiguousarray(torch.permute(img, (1, 2, 0))) for img in imgs
@@ -879,32 +847,36 @@ def test_vision_encoder(imgs, img_sizes):
 
         rms_norm_weight = np.ones(hidden_size)
         mlp_gate_weights = [
-            transformer.layers[i].feed_forward.gate_proj.weight.data
+            pytorch_model.transformer.layers[
+                i
+            ].feed_forward.gate_proj.weight.data
             for i in range(num_hidden_layers)
         ]
         mlp_up_weights = [
-            transformer.layers[i].feed_forward.up_proj.weight.data
+            pytorch_model.transformer.layers[i].feed_forward.up_proj.weight.data
             for i in range(num_hidden_layers)
         ]
         mlp_down_weights = [
-            transformer.layers[i].feed_forward.down_proj.weight.data
+            pytorch_model.transformer.layers[
+                i
+            ].feed_forward.down_proj.weight.data
             for i in range(num_hidden_layers)
         ]
 
         attention_k_proj_weights = [
-            transformer.layers[i].attention.k_proj.weight.data
+            pytorch_model.transformer.layers[i].attention.k_proj.weight.data
             for i in range(num_hidden_layers)
         ]
         attention_v_proj_weights = [
-            transformer.layers[i].attention.v_proj.weight.data
+            pytorch_model.transformer.layers[i].attention.v_proj.weight.data
             for i in range(num_hidden_layers)
         ]
         attention_q_proj_weights = [
-            transformer.layers[i].attention.q_proj.weight.data
+            pytorch_model.transformer.layers[i].attention.q_proj.weight.data
             for i in range(num_hidden_layers)
         ]
         attention_o_proj_weights = [
-            transformer.layers[i].attention.o_proj.weight.data
+            pytorch_model.transformer.layers[i].attention.o_proj.weight.data
             for i in range(num_hidden_layers)
         ]
 
