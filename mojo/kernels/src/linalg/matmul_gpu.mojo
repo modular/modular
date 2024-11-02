@@ -72,38 +72,6 @@ from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
 from .utils_gpu import MatmulConfig, MatmulKernels, select_config, _bk_base
 
 
-@always_inline
-fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
-    # Load a register variable from global state space via non-coherent cache.
-
-    alias alignment = Int32(alignof[SIMD[type, 4]]())
-
-    @parameter
-    if type == DType.float32:
-        return bitcast[type, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4f32.p0v4f32", SIMD[DType.float32, 4]
-            ](x.bitcast[DType.float32](), alignment)
-        )
-    elif type == DType.bfloat16:
-        return bitcast[type, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4bf16.p0v4bf16",
-                SIMD[DType.bfloat16, 4],
-            ](x.bitcast[DType.bfloat16](), alignment)
-        )
-    elif type == DType.float16:
-        return bitcast[type, 4](
-            llvm_intrinsic[
-                "llvm.nvvm.ldg.global.f.v4f16.p0v4f16",
-                SIMD[DType.float16, 4],
-            ](x.bitcast[DType.float16](), alignment)
-        )
-    else:
-        constrained[False, "Unhandled DType"]()
-        return 0
-
-
 fn matmul_kernel[
     c_type: DType,
     a_type: DType,
