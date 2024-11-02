@@ -12,7 +12,7 @@ from time import time_function as time_function_sync
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from gpu.host.event import time_function as time_function_cuda
 from gpu.host.sync import synchronize
 from memory import UnsafePointer

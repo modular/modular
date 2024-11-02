@@ -9,7 +9,7 @@ from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from testing import assert_equal
 
 from random import random_float64
