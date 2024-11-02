@@ -11,7 +11,7 @@ from os import abort
 from pathlib import Path
 from sys.arg import argv
 
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from stdlib.builtin.file import FileHandle
 from stdlib.builtin.io import _snprintf
 from testing import assert_true
