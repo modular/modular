@@ -9,6 +9,8 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import llvm_intrinsic
+from sys.info import alignof
+from memory import bitcast
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
@@ -16,7 +18,6 @@ from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
-from linalg.matmul_gpu import __nvvm_ldg_f4
 from linalg.utils import elementwise_epilogue_type
 from memory import UnsafePointer, memset_zero, stack_allocation
 
@@ -30,6 +31,24 @@ alias BLOCK_DIM = 8
 alias MMA_M = 16
 alias MMA_N = 8
 alias MMA_K = 8
+
+
+@always_inline
+fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
+    # Load a register variable from global state space via non-coherent cache.
+
+    alias alignment = Int32(alignof[SIMD[type, 4]]())
+
+    @parameter
+    if type in (DType.float32, DType.bfloat16, DType.float16):
+        return bitcast[type, 4](
+            llvm_intrinsic["llvm.nvvm.ldg.global.f", SIMD[DType.float32, 4]](
+                x.bitcast[DType.float32](), alignment
+            )
+        )
+    else:
+        constrained[False, "Unhandled DType"]()
+        return 0
 
 
 # BM: The threadblock size for M dimension SMEM caching.
