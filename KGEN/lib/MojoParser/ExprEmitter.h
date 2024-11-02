@@ -509,9 +509,13 @@ public:
 
   /// This helper emits the specified expression tree as a type, e.g. turning
   /// "Int" into the type for it.  This emits an error and returns null on
-  /// failure. If `allowUnbound` is set, then a type with no bound paramaters is
+  /// failure. If `allowUnbound` is set, then a type with no bound parameters is
   /// allowed.
   ASTType emitExprType(const ExprNode *expr, bool allowUnbound = false);
+
+  /// This emits the specified PValue as a type, binding defaulted parameters
+  /// etc if needed.
+  ASTType emitType(ASTExprAnd<PValue> value, bool allowUnbound = false);
 
   /// Emit the specified expression as a condition, converting it to an MLIR
   /// I1 value that we can test directly.  This reports and error and returns

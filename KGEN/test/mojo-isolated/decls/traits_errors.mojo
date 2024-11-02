@@ -31,7 +31,7 @@ struct ParamType[x: int](FooTrait):
 
 
 fn invalid_trait_bind():
-    # expected-error @below {{parametric type 'ParamType[?]' cannot bind to trait with missing parameters}}
+    # expected-error @below {{'ParamType' missing required parameter 'x'}}
     alias Bound: FooTrait = ParamType
 
 
