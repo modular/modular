@@ -7,7 +7,7 @@
 
 from builtin.io import _printf
 from gpu import BlockIdx, GridDim, ThreadIdx, barrier
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from gpu.memory import (
     _GPUAddressSpace,
     async_copy_commit_group,
