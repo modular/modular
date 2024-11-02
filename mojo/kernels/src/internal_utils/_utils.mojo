@@ -21,7 +21,7 @@ from benchmark import (
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from compile import _internal_compile_code
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal, assert_true
 from tensor_utils_internal import ManagedTensorSlice
