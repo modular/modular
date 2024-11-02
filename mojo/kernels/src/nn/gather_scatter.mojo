@@ -945,7 +945,11 @@ fn scatter_nd[
     ](data, indices, updates, output, context)
 
 
-@mogg_register("scatter_nd_shape")
+@mogg_register_shape_func("mo.scatter_nd")
+@mogg_register_shape_func("mo.scatter_nd.add")
+@mogg_register_shape_func("mo.scatter_nd.mul")
+@mogg_register_shape_func("mo.scatter_nd.min")
+@mogg_register_shape_func("mo.scatter_nd.max")
 @always_inline
 fn scatter_nd_shape[
     input_rank: Int,
