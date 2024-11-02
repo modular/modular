@@ -12,7 +12,7 @@ from sys import is_defined
 from sys.intrinsics import _mlirtype_is_eq
 
 from builtin._location import __call_location
-from gpu.host.device_context import DeviceBuffer
+from gpu.host import DeviceBuffer
 from memory import stack_allocation
 
 from utils.lock import BlockingScopedLock, BlockingSpinLock
