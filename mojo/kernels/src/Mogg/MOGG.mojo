@@ -2064,7 +2064,7 @@ fn calculate_squeeze_shape[
         output_shape_index += 1
 
 
-@mogg_register("squeeze_shape_shape")
+@mogg_register_shape_func("mo.squeeze_shape")
 @always_inline
 fn squeeze_shape_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
@@ -2141,7 +2141,7 @@ fn calculate_unsqueeze_shape[
         orig_shape_index += 1
 
 
-@mogg_register("unsqueeze_shape_shape")
+@mogg_register_shape_func("mo.unsqueeze_shape")
 @always_inline
 fn unsqueeze_shape_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool

@@ -1212,6 +1212,144 @@ struct Abs:
         foreach[func, synchronous, target](y, ctx)
 
 
+@compiler.register("mo.squeeze_shape")
+@compiler.elementwise
+struct SqueezeShape:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        indices_type: DType,
+    ](
+        output_shape: ManagedTensorSlice[type, 1],
+        input_shape: ManagedTensorSlice[type, 1],
+        remove_indices: ManagedTensorSlice[indices_type, 1],
+    ):
+        # remove_indices may not be sorted so our strategy is to use -1 to
+        # represent removed dimensions in a copied version of our input shape buffer
+        var num_input_dims = input_shape.dim_size(0)
+        var num_remove_indices = remove_indices.dim_size(0)
+        var final_rank = num_input_dims - num_remove_indices
+
+        debug_assert(
+            final_rank == output_shape.dim_size(0),
+            "Incorrect output shape.",
+        )
+
+        alias MAX_VECTOR_LIMIT = 12
+        debug_assert(
+            num_input_dims <= MAX_VECTOR_LIMIT,
+            "Only support shape vectors up to rank-12.",
+        )
+        var input_shape_copy = IndexList[MAX_VECTOR_LIMIT]()
+        for i in range(num_input_dims):
+            input_shape_copy[i] = int(input_shape[i])
+
+        # Mark every squeezed dimension as -1 in our copy of the shape tensor
+        for remove_index_index in range(num_remove_indices):
+            var remove_index = int(remove_indices[remove_index_index])
+            var remove_index_normalize = remove_index + num_input_dims * int(
+                remove_indices[remove_index_index] < 0
+            )
+            input_shape_copy[remove_index_normalize] = -1
+
+        # # Copy over the non -1 dimensions
+        var output_shape_index = 0
+        for input_shape_index in range(num_input_dims):
+            if input_shape_copy[input_shape_index] == -1:
+                continue
+            output_shape[output_shape_index] = input_shape_copy[
+                input_shape_index
+            ]
+            output_shape_index += 1
+
+    @staticmethod
+    fn shape[
+        type: DType, indices_type: DType
+    ](
+        input_shape: ManagedTensorSlice[type, 1],
+        remove_indices: ManagedTensorSlice[indices_type, 1],
+    ) raises -> IndexList[1]:
+        var out_dim = input_shape.dim_size(0) - remove_indices.dim_size(0)
+
+        if out_dim < 0:
+            raise Error(
+                "[squeeze_shape] cannot remove more dimensions than there"
+                " exists"
+            )
+
+        return IndexList[1](out_dim)
+
+
+@compiler.register("mo.unsqueeze_shape")
+@compiler.elementwise
+struct UnsqueezeShape:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+        indices_type: DType,
+    ](
+        output_shape: ManagedTensorSlice[type, 1],
+        input_shape: ManagedTensorSlice[type, 1],
+        padding_indices: ManagedTensorSlice[indices_type, 1],
+    ):
+        # represent uninitialized dimensions, add the padding dimensions, and copy
+        # over the remaining dimensions later.
+        var num_input_dims = input_shape.dim_size(0)
+        var num_padding_indices = padding_indices.dim_size(0)
+        var final_rank = num_input_dims + num_padding_indices
+        debug_assert(
+            final_rank == output_shape.dim_size(0),
+            "Incorrect output shape.",
+        )
+        for output_index in range(final_rank):
+            output_shape[output_index] = -1
+
+        for padding_index_index in range(num_padding_indices):
+            var padding_index = int(padding_indices[padding_index_index])
+            var padding_index_normalize = padding_index + final_rank * int(
+                padding_indices[padding_index_index] < 0
+            )
+
+            debug_assert(
+                padding_index_normalize >= 0
+                and padding_index_normalize < final_rank,
+                (
+                    "Padding indices must be between [-r, r-1] where r is the"
+                    " final output rank."
+                ),
+            )
+            debug_assert(
+                output_shape[padding_index_normalize] == -1,
+                (
+                    "Duplicate padding indices point to the same dimension in"
+                    " the final output shape."
+                ),
+            )
+            output_shape[padding_index_normalize] = 1
+
+        # Copy over the remaining shapes
+        var orig_shape_index = 0
+        for output_shape_index in range(final_rank):
+            if output_shape[output_shape_index] != -1:
+                continue
+            output_shape[output_shape_index] = input_shape[orig_shape_index]
+            orig_shape_index += 1
+
+    @staticmethod
+    fn shape[
+        type: DType, indices_type: DType
+    ](
+        input_shape: ManagedTensorSlice[type, 1],
+        remove_indices: ManagedTensorSlice[indices_type, 1],
+    ) -> IndexList[1]:
+        var out_dim = input_shape.dim_size(0) + remove_indices.dim_size(0)
+        return IndexList[1](out_dim)
+
+
 # ===----------------------------------------------------------------------===#
 # ScatterND kernels
 # ===----------------------------------------------------------------------===#
