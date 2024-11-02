@@ -11,7 +11,7 @@ from random import rand, random_float64, seed
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
 from memory import UnsafePointer

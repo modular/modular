@@ -14,7 +14,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from linalg.matmul_gpu import __nvvm_ldg_f4
 from linalg.utils import elementwise_epilogue_type

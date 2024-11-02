@@ -15,8 +15,7 @@ from gpu.cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
-from gpu.host import FuncAttribute
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host import FuncAttribute, DeviceBuffer, DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,

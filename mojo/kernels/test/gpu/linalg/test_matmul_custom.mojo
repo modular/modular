@@ -11,7 +11,7 @@ from sys import bitwidthof
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import UnsafePointer

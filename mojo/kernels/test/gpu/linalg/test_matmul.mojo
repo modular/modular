@@ -20,7 +20,7 @@ from gpu.cublas.cublas import (
     cublasDestroy,
 )
 from gpu.host._compile import _get_nvptx_target
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,

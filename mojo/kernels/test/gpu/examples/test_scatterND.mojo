@@ -10,7 +10,7 @@ from math import ceildiv
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from memory import UnsafePointer, memcpy
 
 from utils.index import Index

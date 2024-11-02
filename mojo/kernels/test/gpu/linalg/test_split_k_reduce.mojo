@@ -9,7 +9,7 @@ from math import isclose
 from random import rand
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import split_k_reduce
 from memory import UnsafePointer, memcpy
 from testing import assert_almost_equal

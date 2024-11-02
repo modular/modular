@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from gpu import *
-from gpu.host.device_context import DeviceBuffer, DeviceContext, DeviceFunction
+from gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
 
 
 # A Simple Kernel performing the sum of two arrays

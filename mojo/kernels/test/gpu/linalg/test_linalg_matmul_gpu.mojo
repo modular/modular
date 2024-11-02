@@ -9,7 +9,7 @@
 from math import isclose
 
 from buffer import Dim, DimList, NDBuffer
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul import matmul
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer

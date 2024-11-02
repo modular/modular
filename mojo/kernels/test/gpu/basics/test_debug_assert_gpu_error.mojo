@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: not --crash %bare-mojo -D ASSERT=all %s 2>&1 | FileCheck %s -check-prefix=CHECK-FAIL
 
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 
 
 # CHECK-FAIL-LABEL: test_fail

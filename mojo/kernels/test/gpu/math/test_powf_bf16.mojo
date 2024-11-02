@@ -11,7 +11,7 @@ from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host._compile import _get_nvptx_target
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from testing import assert_almost_equal
 
 from utils import Index

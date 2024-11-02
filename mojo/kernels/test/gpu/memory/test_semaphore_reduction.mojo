@@ -8,7 +8,7 @@
 from math import ceildiv, isclose
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu.host.device_context import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.semaphore import Semaphore
 from memory import UnsafePointer
 from testing import assert_almost_equal

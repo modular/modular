@@ -8,7 +8,7 @@
 from sys import bitwidthof
 
 from buffer import DimList, NDBuffer
-from gpu.host.device_context import DeviceContext
+from gpu.host import DeviceContext
 from linalg.bmm import _batched_matmul_gpu
 
 from utils.index import Index, IndexList
