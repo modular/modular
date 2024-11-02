@@ -4233,7 +4233,7 @@ struct ConcatFromList:
 # ===----------------------------------------------------------------------===#
 
 
-# TODO(GRA-1127): the shape function for split is special and there is special
+# The shape function for split is special and there is special
 # handling in the graph compiler to make things work.
 @compiler.register("mo.split")
 struct Split:
@@ -4261,6 +4261,60 @@ struct Split:
         split[type, rank](
             input_buf, int(normalize_neg_index(axis_val, rank)), output_bufs
         )
+
+
+# In practice this is how it's done. The graph compiler has additional logic
+# to properly dispatch this function.
+@compiler.register("split_ith_output_shape")
+struct SplitOutputShapeHelper:
+    @staticmethod
+    fn execute() raises:
+        raise Error("Should not be called directly.")
+
+    @staticmethod
+    @always_inline
+    fn shape[
+        output_idx: Int,
+        rank: Int,
+        input_type: DType,
+        split_size_type: DType,
+        axis_type: DType,
+        synchronous: Bool,
+    ](
+        input_buf: ManagedTensorSlice[input_type, rank],
+        split_sizes_buf: ManagedTensorSlice[split_size_type, 1],
+        split_axis_buf: ManagedTensorSlice[axis_type, 1],
+    ) raises -> IndexList[rank]:
+        # extract relevant hyper parameters
+        if output_idx < 0 or split_sizes_buf.size() <= output_idx:
+            raise Error(
+                "[split] output index must be within range [0,"
+                " len(split_sizes))"
+            )
+        var output_split_size = int(split_sizes_buf[output_idx])
+
+        var split_axis = int(split_axis_buf[0])
+        if split_axis < 0:
+            split_axis += rank
+        if split_axis < 0 or rank <= split_axis:
+            raise Error(
+                "[split] normalized axis must be within range [0, rank)"
+            )
+
+        var split_sizes_sum = 0
+
+        for i in range(split_sizes_buf.dim_size(0)):
+            split_sizes_sum += int(split_sizes_buf[i])
+        if split_sizes_sum != input_buf.dim_size(split_axis):
+            raise Error(
+                "[split] sum of split sizes must match input dimension at split"
+                " axis"
+            )
+
+        # compute and return the output shape
+        var output_shape = input_buf.get_static_spec().shape
+        output_shape[split_axis] = output_split_size
+        return output_shape
 
 
 # ===----------------------------------------------------------------------===#
