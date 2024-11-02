@@ -36,5 +36,5 @@ from .device import Device, cpu_device
 from .device_memory import DeviceMemory, DeviceTensor
 from .tensor import Tensor
 from .tensor_slice import TensorSlice
-from max.tensor import StaticTensorSpec
+from max.tensor import RuntimeTensorSpec
 from max._tensor_utils import ManagedTensorSlice

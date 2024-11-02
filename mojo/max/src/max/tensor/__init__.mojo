@@ -5,4 +5,4 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the MAX tensor package."""
 
-from tensor import Tensor, TensorShape, TensorSpec, StaticTensorSpec
+from tensor import Tensor, TensorShape, TensorSpec, RuntimeTensorSpec

@@ -19,7 +19,7 @@ def main():
 
 """
 from .tensor import Tensor
-from max.tensor import StaticTensorSpec, TensorSpec
+from max.tensor import RuntimeTensorSpec, TensorSpec
 from max._tensor_utils import TensorLike
 from collections import InlineArray
 from math import ceil
@@ -55,13 +55,13 @@ struct TensorSlice[
             ManagedTensorSlice[type, rank](tensor._ptr, slices, tensor._spec),
         )
 
-    fn static_spec(self) -> StaticTensorSpec[type, rank]:
+    fn runtime_spec(self) -> RuntimeTensorSpec[type, rank]:
         """Gets the static spec of the slice.
 
         Returns:
             Static tensor spec of slice.
         """
-        return self._unsafe_slice.get_static_spec()
+        return self._unsafe_slice.get_runtime_spec()
 
     fn spec(self) -> TensorSpec:
         """Gets the spec of the slice.

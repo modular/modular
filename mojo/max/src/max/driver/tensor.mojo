@@ -39,7 +39,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     """An owned, indexible buffer type."""
 
     var _ptr: UnsafePointer[Scalar[type]]
-    var _spec: StaticTensorSpec[type, rank]
+    var _spec: RuntimeTensorSpec[type, rank]
     var _strides: IndexList[rank]
     var _device: Device
     var name: Optional[String]
@@ -55,7 +55,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         constructed tensor is undefined behavior.
         """
         self._ptr = UnsafePointer[Scalar[type]]()
-        self._spec = StaticTensorSpec[type, rank](IndexList[rank]())
+        self._spec = RuntimeTensorSpec[type, rank](IndexList[rank]())
         self._strides = IndexList[rank]()
         self._device = Device()
         self.name = None
