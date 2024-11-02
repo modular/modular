@@ -6,7 +6,7 @@
 
 from collections import InlineArray
 
-from tensor_internal import StaticTensorSpec
+from tensor_internal import RuntimeTensorSpec
 
 from utils import IndexList
 
@@ -40,7 +40,7 @@ fn _slice_to_tuple[
 @always_inline
 fn _row_major_strides[
     type: DType, rank: Int
-](spec: StaticTensorSpec[type, rank]) -> IndexList[rank]:
+](spec: RuntimeTensorSpec[type, rank]) -> IndexList[rank]:
     var offset = 1
     var strides = IndexList[rank]()
 

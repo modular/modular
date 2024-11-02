@@ -10,11 +10,11 @@ from sys import simdwidthof
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
-from compiler_internal.directives import StaticTensorSpec as CompilerTensorSpec
+from compiler_internal.directives import StaticTensorSpec
 from compiler_internal.directives import __mogg_intrinsic_attr, specsof
 from memory import UnsafePointer
 from runtime.asyncrt import MojoCallContextPtr
-from tensor_internal import StaticTensorSpec, TensorSpec
+from tensor_internal import RuntimeTensorSpec, TensorSpec
 
 from buffer import NDBuffer
 from utils import IndexList
@@ -42,7 +42,7 @@ struct ManagedTensorSlice[
     """
 
     var _ptr: UnsafePointer[Scalar[type]]
-    var _spec: StaticTensorSpec[type, rank]
+    var _spec: RuntimeTensorSpec[type, rank]
     var _start_offset: Int
     var _strides: IndexList[rank]
 
@@ -50,7 +50,7 @@ struct ManagedTensorSlice[
         inout self,
         ptr: UnsafePointer[Scalar[type]],
         slices: InlineArray[Slice, rank],
-        slicer_spec: StaticTensorSpec[type, rank],
+        slicer_spec: RuntimeTensorSpec[type, rank],
     ):
         @parameter
         fn start_fn(slice: Slice) -> Int:
@@ -71,7 +71,7 @@ struct ManagedTensorSlice[
         var adjusted_shape = IndexList[rank]()
         for i in range(rank):
             adjusted_shape[i] = int(ceil((stop[i] - start[i]) / step[i]))
-        var slice_spec = StaticTensorSpec[type](adjusted_shape)
+        var slice_spec = RuntimeTensorSpec[type](adjusted_shape)
 
         var slicer_strides = _row_major_strides(slicer_spec)
         var start_offset = _dot_prod(start, slicer_strides)
@@ -90,7 +90,7 @@ struct ManagedTensorSlice[
         shape: IndexList[rank],
     ):
         self._ptr = ptr
-        self._spec = StaticTensorSpec[type, rank](shape)
+        self._spec = RuntimeTensorSpec[type, rank](shape)
         self._strides = _row_major_strides(self._spec)
         self._start_offset = 0
 
@@ -102,7 +102,7 @@ struct ManagedTensorSlice[
     ):
         self = Self(
             ptr,
-            StaticTensorSpec[type, rank](shape),
+            RuntimeTensorSpec[type, rank](shape),
             0,
             strides,
         )
@@ -114,7 +114,7 @@ struct ManagedTensorSlice[
         """
         self = Self(ndbuffer.data, ndbuffer.get_shape())
 
-    fn get_static_spec(self) -> StaticTensorSpec[type, rank]:
+    fn get_runtime_spec(self) -> RuntimeTensorSpec[type, rank]:
         """Gets the static spec of the slice.
 
         Returns:
@@ -217,7 +217,7 @@ struct ManagedTensorSlice[
         _rank: Int,
     ](self, index: IndexList[_rank]) -> SIMD[type, width]:
         # Nop function to preserve symbols from DCE.
-        self._input_fusion_hook[CompilerTensorSpec[type, rank]()]()
+        self._input_fusion_hook[StaticTensorSpec[type, rank]()]()
 
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
@@ -294,7 +294,7 @@ struct ManagedTensorSlice[
         _rank: Int,
     ](self, index: IndexList[_rank], val: SIMD[type, width]):
         # Nop function to preserve symbols from DCE.
-        self._output_fusion_hook[CompilerTensorSpec[type, rank]()]()
+        self._output_fusion_hook[StaticTensorSpec[type, rank]()]()
 
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
@@ -340,20 +340,20 @@ struct ManagedTensorSlice[
 
     # Helper function used in SliceMOGGDPSFunc to generate a new TensorSpec with the lambda.
     @no_inline
-    fn _extract_new_spec[T: CompilerTensorSpec[type, rank]](self):
+    fn _extract_new_spec[T: StaticTensorSpec[type, rank]](self):
         pass
 
     # Helper function used in SliceMOGGDPSFunc to generate the body of the input lambda
     @__mogg_intrinsic_attr("mogg.dps_input_fusion_hook")
     @no_inline
-    fn _input_fusion_hook[spec: CompilerTensorSpec[type, rank]](self):
+    fn _input_fusion_hook[spec: StaticTensorSpec[type, rank]](self):
         @always_inline
         @parameter
         fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
             return rebind[SIMD[type, _w]](self._simd_load_internal[_w](i))
 
         self._extract_new_spec[
-            CompilerTensorSpec[type, rank](
+            StaticTensorSpec[type, rank](
                 spec.shape, spec.strides, _input_lambda, None
             )
         ]()
@@ -361,14 +361,14 @@ struct ManagedTensorSlice[
     # Helper function used in SliceMOGGDPSFunc to generate the body of the output lambda
     @__mogg_intrinsic_attr("mogg.dps_output_fusion_hook")
     @no_inline
-    fn _output_fusion_hook[spec: CompilerTensorSpec[type, rank]](self):
+    fn _output_fusion_hook[spec: StaticTensorSpec[type, rank]](self):
         @always_inline
         @parameter
         fn _output_lambda[_w: Int](i: IndexList[rank], v: SIMD[type, _w]):
             self._simd_store_internal(i, rebind[SIMD[type, _w]](v))
 
         self._extract_new_spec[
-            CompilerTensorSpec[type, rank](
+            StaticTensorSpec[type, rank](
                 spec.shape,
                 spec.strides,
                 None,
@@ -402,7 +402,7 @@ fn foreach[
         simd_width,
         use_blocking_impl=synchronous,
         target=target,
-    ](tensor.get_static_spec().shape)
+    ](tensor.get_runtime_spec().shape)
 
 
 @__mogg_intrinsic_attr("mogg.for_each")
@@ -428,4 +428,4 @@ fn foreach[
         simd_width,
         use_blocking_impl=synchronous,
         target=target,
-    ](tensor.get_static_spec().shape, ctx)
+    ](tensor.get_runtime_spec().shape, ctx)

@@ -226,7 +226,7 @@ struct TensorSpec(
 
 @value
 @register_passable("trivial")
-struct StaticTensorSpec[type: DType, rank: Int]:
+struct RuntimeTensorSpec[type: DType, rank: Int]:
     var shape: IndexList[rank]
 
     fn __init__(inout self, spec: TensorSpec):
