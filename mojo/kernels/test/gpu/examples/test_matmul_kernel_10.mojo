@@ -42,8 +42,8 @@ fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
     @parameter
     if type in (DType.float32, DType.bfloat16, DType.float16):
         return bitcast[type, 4](
-            llvm_intrinsic["llvm.nvvm.ldg.global.f", SIMD[DType.float32, 4]](
-                x.bitcast[DType.float32](), alignment
+            llvm_intrinsic["llvm.nvvm.ldg.global.f", SIMD[type, 4]](
+                x, alignment
             )
         )
     else:
