@@ -172,11 +172,11 @@ fn max[
 
 
 @always_inline
-fn max(x: LayoutTensor, y: __type_of(x)) -> __type_of(x) as res:
+fn max(x: LayoutTensor, y: __type_of(x)) -> __type_of(x):
     constrained[
         x.layout.all_dims_known(), "max expects tensor of statically know shape"
     ]()
-    var res_tensor = __type_of(res).stack_allocation()
+    var res_tensor = __type_of(x).stack_allocation()
 
     @parameter
     for i in range(res_tensor.layout.size()):

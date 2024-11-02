@@ -86,6 +86,19 @@ fn reduce[
 
 @always_inline
 fn flatten(t: IntTuple) -> IntTuple:
+    """Flattens a nested IntTuple into a single-level IntTuple.
+
+    This function recursively flattens a nested IntTuple structure by appending
+    all values  into a single IntTuple in depth-first order. Values are
+    preserved but nesting structure is removed.
+
+    Args:
+        t: The IntTuple to flatten, which may contain nested IntTuples.
+
+    Returns:
+        A new IntTuple containing all values from the input in a single level.
+    """
+
     @always_inline
     @parameter
     fn reducer(owned a: IntTuple, b: IntTuple) -> IntTuple:

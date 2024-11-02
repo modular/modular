@@ -3073,7 +3073,6 @@ struct LayoutTensorIter[
         """
         var next_idx = 0
         var next_offset = self.offset + int(rhs) * self.stride
-        var new_shape = self.runtime_layout.shape
 
         @parameter
         if axis:
@@ -3107,6 +3106,22 @@ struct LayoutTensorIter[
         circular=circular,
         layout_bitwidth=layout_bitwidth,
     ] as result:
+        """Reshape the iterator to a new layout.
+
+        This method creates a new iterator with a different layout while preserving the
+        underlying data. The new layout must have the same total size as the original.
+
+        Parameters:
+            dst_layout: The target layout to reshape to.
+
+        Returns:
+            A new iterator with the specified layout.
+
+        Constraints:
+            - The destination layout must have the same total size as the original.
+            - Both layouts must be contiguous.
+            - Both layouts must have compile-time known dimensions.
+        """
         constrained[
             dst_layout.size() == layout.size(),
             "Destination layout doesn't match the original.",
@@ -3147,6 +3162,22 @@ struct LayoutTensorIter[
         circular = Self.circular,
         layout_bitwidth=layout_bitwidth,
     ] as result:
+        """Reinterpret the iterator's underlying pointer as a different data type.
+
+        This method performs a bitcast operation, allowing you to view the same
+        memory location as a different data type without copying or converting
+        the data.
+
+        Parameters:
+            new_type: The target data type to cast to.
+            address_space: The memory address space for the new
+              iterator (defaults to current).
+            alignment: Memory alignment requirement for the new
+              iterator (defaults to current).
+
+        Returns:
+            A new LayoutTensorIter with the same layout but different data type.
+        """
         return __type_of(result)(
             self.ptr.bitcast[
                 new_type, address_space=address_space, alignment=alignment
