@@ -1712,9 +1712,129 @@ fn view_copy_impl[
     foreach[func, synchronous, target](z, ctx)
 
 
+@compiler.register("mo.broadcast_to")
+struct BroadcastTo:
+    # The `execute` method should never be used in the graph compiler.
+    # We expect `mo.broadcast_to` to always simplify to `mo.static.broadcast_to`
+    #
+    # Sometimes with a call to the below shape function.
+    @staticmethod
+    fn execute() raises:
+        raise Error("Should never be called!")
+
+    @staticmethod
+    fn shape_impl[
+        input_rank: Int, output_rank: Int
+    ](
+        input: ManagedTensorSlice[rank=input_rank],
+        shape: ManagedTensorSlice[rank=1],
+    ) raises -> IndexList[output_rank]:
+        if output_rank != shape.dim_size(0):
+            raise Error(
+                "[broadcast_to] requires (len(target_shape) == output_rank)"
+            )
+        if input_rank > output_rank:
+            raise Error("[broadcast_to] requires (input_rank <= output_rank)")
+
+        # move the output shape from buffer into a static int tuple
+        var output_shape = IndexList[output_rank]()
+
+        for axis in range(output_rank):
+            output_shape[axis] = int(shape[axis])
+
+        # Validate the compatibility between input and output shapes
+        # NOTE we don't need to check the padded dims
+        for i in range(input_rank):
+            var input_axis = input_rank - i - 1
+            var output_axis = output_rank - i - 1
+            var input_dim = input.dim_size(input_axis)
+            var output_dim = output_shape[output_axis]
+            if input_dim != 1 and input_dim != output_dim:
+                raise Error(
+                    "[broadcast_to] input dim must be either 1 or equal to"
+                    " corresponding output dim starting from the rightmost dim"
+                )
+        return output_shape
+
+    @staticmethod
+    fn shape[
+        input_rank: Int, output_rank: Int
+    ](
+        input: ManagedTensorSlice[rank=input_rank],
+        shape: ManagedTensorSlice[rank=1],
+    ) raises -> IndexList[output_rank]:
+        return BroadcastTo.shape_impl[output_rank=output_rank](input, shape)
+
+
+@compiler.register("mo.broadcast_shape")
+struct BroadcastShape:
+    @always_inline
+    @staticmethod
+    fn broadcast_shape_impl(
+        out_buf: ManagedTensorSlice[rank=1],
+        lhs_buf: ManagedTensorSlice[rank=1],
+        rhs_buf: ManagedTensorSlice[rank=1],
+    ):
+        # Ensure lhs is always the smaller shape
+        var lhs_rank = lhs_buf.size()
+        var rhs_rank = rhs_buf.size()
+        debug_assert(lhs_rank <= rhs_rank, "lhs shape must be the smaller one")
+
+        # lhs_buf =      [l0, l1, ...]
+        # rhs_buf = [..., r0, r1, ...]
+        # out_buf = [..., o0, o1, ...]
+        var size_diff = rhs_rank - lhs_rank
+        for i in range(size_diff):
+            out_buf[i] = rhs_buf[i].cast[out_buf.type]()
+
+        for lhs_idx in range(lhs_rank):
+            var rhs_idx = lhs_idx + size_diff
+            var lhs_dim = int(lhs_buf[lhs_idx])
+            var rhs_dim = int(rhs_buf[rhs_idx])
+            if lhs_dim == rhs_dim:
+                out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_buf.type]()
+
+            elif lhs_dim != 1 and rhs_dim != 1:
+                debug_assert(
+                    rhs_dim == 1, "one of the differing dimensions must be 1"
+                )
+
+            elif lhs_dim != 1:
+                out_buf[rhs_idx] = lhs_buf[lhs_idx].cast[out_buf.type]()
+
+            elif rhs_dim != 1:
+                out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_buf.type]()
+
+    # The `execute` method should never be used in the graph compiler.
+    # We expect `mo.broadcast_to` to always simplify to `mo.static.broadcast_to`
+    #
+    # Sometimes with a call to the below shape function.
+    @staticmethod
+    fn execute(
+        out_buf: ManagedTensorSlice[rank=1],
+        lhs_buf: ManagedTensorSlice[rank=1],
+        rhs_buf: ManagedTensorSlice[rank=1],
+    ):
+        var lhs_size = lhs_buf.size()
+        var rhs_size = rhs_buf.size()
+        if lhs_size > rhs_size:
+            return BroadcastShape.broadcast_shape_impl(
+                out_buf, rhs_buf, lhs_buf
+            )
+        return BroadcastShape.broadcast_shape_impl(out_buf, lhs_buf, rhs_buf)
+
+    @staticmethod
+    fn shape(
+        lhs_buf: ManagedTensorSlice[rank=1], rhs_buf: ManagedTensorSlice[rank=1]
+    ) raises -> IndexList[1]:
+        var lhs_dim = lhs_buf.dim_size(0)
+        var rhs_dim = rhs_buf.dim_size(0)
+        return IndexList[1](max(lhs_dim, rhs_dim))
+
+
 @compiler.register("mo.static.broadcast_to")
 @compiler.view_kernel
-struct BroadcastTo:
+struct StaticBroadcastTo:
     @staticmethod
     fn build_view[
         type: DType,
@@ -1786,9 +1906,12 @@ struct StaticReshape:
 @compiler.register("mo.reshape")
 struct Reshape:
     # The `execute` method should never be used in the graph compiler.
+    # We expect `mo.reshape` to always simplify to `mo.static.reshape`
+    #
+    # Sometimes with a call to the below shape function.
     @staticmethod
-    fn execute():
-        pass
+    fn execute() raises:
+        raise Error("Should never be called!")
 
     @staticmethod
     fn shape[

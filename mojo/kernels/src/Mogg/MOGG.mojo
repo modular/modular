@@ -852,7 +852,7 @@ fn broadcast_shape_impl[
             out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
 
 
-@mogg_register("broadcast_shape_shape")
+@mogg_register_shape_func("mo.broadcast_shape")
 @always_inline
 fn broadcast_shape_shape[
     lhs_type: DType,
@@ -1028,7 +1028,7 @@ fn insert_index[
     return out
 
 
-@mogg_register("broadcast_to_shape")
+@mogg_register_shape_func("mo.broadcast_to")
 @always_inline
 fn broadcast_to_shape[
     input_rank: Int,
