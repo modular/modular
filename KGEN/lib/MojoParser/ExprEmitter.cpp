@@ -1084,18 +1084,9 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
   // Get the AnyStructType or the TraitType of the value that we're checking for
   // conversion to the trait type.
-  ASTType metaType = typeValue.getRValueType();
-
-  // Cannot bind parametric types to traits.
-  if (auto anyStruct = dyn_cast<AnyStructType>(metaType)) {
-    if (!anyStruct.getSignature().getParamTypes().empty()) {
-      emitError(value.expr->getLoc(), "parametric type ")
-          << anyStruct.getStructType()
-          << " cannot bind to trait with missing parameters"
-          << value.expr->getRange();
-      return {};
-    }
-  }
+  ASTType metaType = emitType({typeValue, value.expr}, /*allowUnbound*/ false);
+  if (!metaType)
+    return {};
 
   // Check that the struct or super trait implements the trait.
   ASTDecl *metaTypeDecl = metaType.getDecl(shared);
@@ -1915,13 +1906,19 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
     return getBuiltinTupleInstantiation(expr->getLoc(), {});
 
   auto value = emitExprPValue(expr, EC_Type);
-  if (!value)
+  return emitType({value, expr}, allowUnbound);
+}
+
+/// This emits the specified PValue as a type, binding defaulted parameters
+/// etc if needed.
+ASTType ExprEmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
+  if (!value.ir)
     return {};
 
-  ASTType type = value.getIfTypeValue();
+  ASTType type = value.ir.getIfTypeValue();
   if (!type) {
-    emitError(expr->getLoc(), "expected a type, not a value")
-        << expr->getRange();
+    emitError(value.expr->getLoc(), "expected a type, not a value")
+        << value.expr->getRange();
     return {};
   }
 
@@ -1934,9 +1931,9 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   if (auto sig = dyn_cast<LITSignatureType>(type)) {
     // For a fully bound type, require that the origin set is concrete.
     if (isa<UnboundAttr>(sig.getCaptureOrigins())) {
-      emitError(expr->getLoc(),
+      emitError(value.expr->getLoc(),
                 "function type missing required origin set parameter")
-          << expr->getRange();
+          << value.expr->getRange();
       return {};
     }
   }
@@ -1956,12 +1953,13 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   // unbound values.
   ParamBindings paramBindings(getScopeInfo());
   for (TypedAttr binding : type.getParamBindings())
-    paramBindings.addPrechecked(expr, binding);
+    paramBindings.addPrechecked(value.expr, binding);
 
   // Check the existing bindings against the full signature of the type and make
   // sure it is fully bound.
-  ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
-      structDecl, structDecl.getSignature(), expr->getLoc(), /*partial=*/false);
+  ParameterExprArrayAttr bindingValuesAttr =
+      paramBindings.verifyBindings(structDecl, structDecl.getSignature(),
+                                   value.expr->getLoc(), /*partial=*/false);
   if (!bindingValuesAttr)
     return {};
 
