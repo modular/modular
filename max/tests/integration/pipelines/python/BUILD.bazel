@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
 modular_py_binary(
     name = "evaluate_batch_scenarios",
@@ -54,5 +54,37 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         requirement("click"),
+    ],
+)
+
+modular_py_test(
+    name = "test_pipelines_cli",
+    size = "enormous",
+    srcs = ["test_pipelines_cli.py"],
+    data = [
+        "//KGEN:CompilerRT",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "BAZEL": "true",
+        "HF_ESCAPES_SANDBOX": "1",
+    },
+    requires_gpu = False,
+    tags = [
+        "huggingface",
+        "manual",
+        "no-remote-exec",
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//SDK/public/max-repo/pipelines/python:pipelines",
+        requirement("transformers"),
+        requirement("gguf"),
     ],
 )
