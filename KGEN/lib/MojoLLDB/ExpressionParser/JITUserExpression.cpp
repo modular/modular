@@ -7,7 +7,6 @@
 #include "JITUserExpression.h"
 #include "JITExecutionUnit.h"
 #include "lldb/Core/Module.h"
-#include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Expression/DiagnosticManager.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Expression/IRInterpreter.h"
@@ -30,6 +29,7 @@
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 #include "lldb/Utility/StreamString.h"
+#include "lldb/ValueObject/ValueObjectConstResult.h"
 
 using namespace M::KGEN::Mojo;
 using namespace lldb_private;

@@ -7,7 +7,8 @@
 
 @always_inline
 fn callee_regular(a: Int):
-    print(a)  # breakpoint
+    b = a * 2  # ensure callsite breakpoint cannot fuse with callee breakpoint
+    print(b)  # breakpoint
 
 
 @always_inline("nodebug")
