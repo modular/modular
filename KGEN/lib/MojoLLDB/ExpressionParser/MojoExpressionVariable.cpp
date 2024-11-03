@@ -7,8 +7,8 @@
 #include "MojoExpressionVariable.h"
 #include "JITExecutionUnit.h"
 #include "KGEN/LITDialect/LITTypes.h"
-#include "lldb/Core/ValueObjectConstResult.h"
 #include "lldb/Utility/LLDBLog.h"
+#include "lldb/ValueObject/ValueObjectConstResult.h"
 #include "mlir/IR/Types.h"
 
 using namespace M;
