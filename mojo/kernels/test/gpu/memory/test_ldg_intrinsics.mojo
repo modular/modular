@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: disabled
+# TODO(KERN-1147): Re-enable test (removed llvm.nvvm.ldg.global intrinsic)
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code_asm, _get_nvptx_target

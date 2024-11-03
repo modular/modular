@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: disabled
+# TODO(KERN-1147): Re-enable test (removed llvm.nvvm.ldg.global intrinsic)
 # TODO (#33518): -t flag is required right now because the kernel assumes C is zeroed
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 
