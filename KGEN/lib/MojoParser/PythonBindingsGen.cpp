@@ -103,7 +103,6 @@ static ASTType makeTupleTypedPythonObj(SharedState &shared, ASTDecl &moduleDecl,
 
   PValue tupleNameStrPValue =
       PValue(StringAttr::get("Tuple", StringType::get(context)));
-  ArrayRef<PValue> inputParams = {tupleNameStrPValue};
 
   ASTDecl *typedPyObjTypeDecl = ASTType(typedPyObjType).getDecl(shared);
   auto structOp = dyn_cast_or_null<StructDeclOp>(typedPyObjTypeDecl);
@@ -116,9 +115,7 @@ static ASTType makeTupleTypedPythonObj(SharedState &shared, ASTDecl &moduleDecl,
 
   SyntheticNode synth(moduleLoc);
   ParamBindings bindings(TypeCheckScopeInfo{*typedPyObjTypeDecl, shared});
-  for (PValue inputParam : inputParams) {
-    bindings.add(&synth, inputParam);
-  }
+  bindings.add(&synth, tupleNameStrPValue);
 
   // Check the bindings.
   auto metaType = cast<AnyStructType>(typedPyObjType.getMetaType());
