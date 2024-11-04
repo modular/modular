@@ -144,7 +144,7 @@ class SupportedTestModels:
             )
 
 
-ALL_SUPPORTED_MODELS = ["all", "tinyllama", "llama3", "llama3.1"]
+ALL_SUPPORTED_MODELS = ["all", "tinyllama", "llama3", "llama3_1"]
 
 ALL_SUPPORTED_ENCODINGS = {"all"}
 for encoding in SupportedEncoding:
