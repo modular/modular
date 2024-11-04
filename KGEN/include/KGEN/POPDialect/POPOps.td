@@ -721,7 +721,9 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     Loads the data at the given pointer. Returns a scalar of the element type.
     An optional `alignment` attribute can be provided to specify the alignment of
     the load. An optional `volatile` attribute can be provided to make the load
-    volatile.
+    volatile. An optional `invariant` attribute can be provided to make the the
+    memory location referenced by the load contain the same value at all points
+    in the program where the memory location is dereferenceable
 
     Example:
 
@@ -729,16 +731,17 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
     %0 = pop.load %ptr0 : !kgen.pointer<scalar<f32>>
     %1 = pop.load %ptr1 : !kgen.pointer<simd<4, type>>
     %2 = pop.load %ptr0 align<8> : !kgen.pointer<scalar<f32>>
-    %2 = pop.load volatile %ptr0 align<8> : !kgen.pointer<scalar<f32>>
+    %3 = pop.load volatile %ptr0 align<8> : !kgen.pointer<scalar<f32>>
+    %4 = pop.load volatile invariant %ptr0 align<8> : !kgen.pointer<scalar<f32>>
     ```
   }];
 
   let arguments = (ins Arg<PointerType, "", [MemRead]>:$ptr,
                        OptionalAttr<AttrOfType<Index>>:$alignment,
-                       UnitAttr:$isVolatile);
+                       UnitAttr:$isVolatile, UnitAttr:$isInvariant);
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
-    (`volatile` $isVolatile^)? $ptr
+    (`volatile` $isVolatile^)? (`invariant` $isInvariant^)? $ptr
     (`align` `<` custom<IndexParamValue>($alignment)^ `>`)? attr-dict `:`
     qualified(type($ptr))
   }];
@@ -746,7 +749,8 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
   let builders = [
     OpBuilder<(ins "Value":$ptr,
                    CArg<"std::optional<unsigned>", "{}">:$alignment,
-                   CArg<"bool", "false">:$isVolatile)>,
+                   CArg<"bool", "false">:$isVolatile,
+                   CArg<"bool", "false">:$isInvariant)>,
   ];
 
   let hasFolder = 1;

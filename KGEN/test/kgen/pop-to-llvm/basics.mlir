@@ -251,6 +251,15 @@ kgen.func @load_with_volatile(%p: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f32
   kgen.return %0 : !pop.scalar<f32>
 }
 
+// CHECK-LABEL: @load_with_invariant
+// CHECK-SAME: %[[ARG0:[a-z0-9]*]]:
+kgen.func @load_with_invariant(%p: !kgen.pointer<scalar<f32>>) -> !pop.scalar<f32> {
+  // CHECK: %[[PTR:.*]] = builtin.unrealized_conversion_cast %[[ARG0]]
+  // CHECK: llvm.load %[[PTR]] invariant {alignment = 128 : i64}
+  %0 = pop.load invariant %p align<128> : !kgen.pointer<scalar<f32>>
+  kgen.return %0 : !pop.scalar<f32>
+}
+
 
 // CHECK-LABEL: @store
 kgen.func @store(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<si32>) {
