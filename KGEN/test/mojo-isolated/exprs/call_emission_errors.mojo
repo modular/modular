@@ -308,3 +308,26 @@ fn rp_exclusivity2(inout x: MyRPStruct2):
     # expected-error @below {{argument of 'take_and_mutate_rp' call allows writing a memory location previously readable through another aliased argument}}
     # expected-note @below {{'x' value is passed through aliasing 'inout' argument}}
     take_and_mutate_rp(x.b, x)
+
+
+
+# MOCO-1242 - [QoI] Improve error message on trait failure for variadics (e.g. print with Formattable)
+
+# expected-note @below {{function declared here}}
+fn my_print_variadic[*Ts: MyWritable](x: Int, *args: *Ts): pass
+# expected-note @below {{function declared here}}
+fn my_print_single[T: MyWritable](value: T): pass
+
+fn test_print_errors(s: MyStruct):
+  # expected-error @below {{invalid call to 'my_print_variadic': could not deduce parameter 'Ts' of callee 'my_print_variadic'}}
+  # expected-note @below {{failed to infer parameter 'Ts', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
+  my_print_variadic(1, s)
+
+  # expected-error @below {{invalid call to 'my_print_single': could not deduce parameter 'T' of callee 'my_print_single'}}
+  # expected-note @below {{failed to infer parameter 'T', argument type 'MyStruct' does not conform to trait 'MyWritable'}}
+  my_print_single(s)
+
+trait MyWritable:
+  fn method(self):
+     pass
+

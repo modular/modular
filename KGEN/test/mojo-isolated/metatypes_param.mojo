@@ -123,12 +123,16 @@ struct ParamVarArg[F: int, *I: int]:
     # CHECK-SAME: #ParamVarArg <F, :variadic<index> I>
     @staticmethod
     fn self_type() -> Self:
-        # CHECK: Unbound{{.*}}: {{.*}}ParamVarArg <?, :variadic<index> ?>, <"F": index, "I": variadic<index> var>>
+        # CHECK: lit.alias.decl {{.*}}Unbound{{.*}}: {{.*}}ParamVarArg <?, :variadic<index> ?>, <"F": index, "I": variadic<index> var>>
         alias Unbound = ParamVarArg
-        # CHECK: BoundSome{{.*}}: {{.*}}ParamVarArg <1, :variadic<index> []>
-        # CHECK: BoundMore{{.*}}: {{.*}}ParamVarArg <1, :variadic<index> [2, 1]>
+        # CHECK: lit.alias.decl {{.*}}BoundSome{{.*}}: {{.*}}ParamVarArg <1, :variadic<index> ?>
         alias BoundSome = Unbound[`1`]
+        # CHECK: lit.alias.decl {{.*}}BoundFinal{{.*}}: {{.*}}ParamVarArg <1, :variadic<index> [3, 4]>
+        alias BoundFinal = BoundSome[`3`, `4`]
+
+        # CHECK: BoundMore{{.*}}: {{.*}}ParamVarArg <1, :variadic<index> [2, 1]>
         alias BoundMore = Unbound[`1`, `2`, `1`]
+
 
 
 @register_passable
