@@ -28,6 +28,10 @@ from prometheus_client import Counter, Histogram
 TTFT = Histogram("time_to_first_token_seconds", "Time to first token")
 INPUT_TOKENS = Counter("num_input_tokens", "Count of input tokens")
 OUTPUT_TOKENS = Counter("num_output_tokens", "Count of generated tokens")
+INPUT_TIME = Histogram("input_processing_time_seconds", "Input processing time")
+OUTPUT_TIME = Histogram(
+    "output_processing_time_seconds", "Output processing time"
+)
 
 
 @dataclass(frozen=True)
@@ -268,6 +272,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                         timers.context_encoding.elapsed_ms,
                         timers.total.elapsed_ms,
                     )
+            INPUT_TIME.observe(timers.total.elapsed_s)
             with timers.token_generation:
                 async for encoded_token in self.token_gen_queue.stream(
                     request.id, context
@@ -285,6 +290,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                     timers.token_generation.elapsed_ms,
                     timers.total.elapsed_ms,
                 )
+            OUTPUT_TIME.observe(timers.token_generation.elapsed_s)
         finally:
             self._complete_request(request)
             if self.debug_logging:
