@@ -45,21 +45,43 @@ SMLoc SourceRange::getEnd() const { return SMLoc::getFromPointer(end); }
 /// SourceMgrDiagnosticHandlerImpl; upstream this.
 class Diags::SourceMgrLocationMapper {
 public:
+  SourceMgrLocationMapper(MLIRContext *context, StringRef stripFilenamePrefix)
+      : unknownBufferNameIdentifier(StringAttr::get(
+            context, Diags::SourceMgrLocationMapper::kUnnamedFileSigil)),
+        context(context), stripFilenamePrefix(stripFilenamePrefix) {}
+
   /// Constant string that we can use to signify an un-named file (usually means
   /// reading from stdin or something).
   static constexpr StringLiteral kUnnamedFileSigil = "<unknown>";
+  /// StringAttr version of `kUnnamedFileSigil`.
+  StringAttr unknownBufferNameIdentifier;
 
   /// Return the SrcManager buffer id for the specified file, or zero if none
   /// can be found.
   unsigned getBufferIDForFile(SourceMgr &sourceMgr, StringAttr filename);
+  /// Get the name of the buffer so we can rapidly build Location objects on
+  /// demand.
+  StringAttr getFilenameFromBufferId(const SourceMgr &sourceMgr,
+                                     unsigned bufferID);
 
   /// Convert a location to SMLoc.
   SMLoc convertLocToSMLoc(SourceMgr &sourceMgr, FileLineColLoc loc);
   SMLoc convertLocToSMLoc(SourceMgr &sourceMgr, Location loc);
 
+  /// Convert a SMLoc to location.
+  FileLineColLoc convertSMLocToLoc(SourceMgr &sourceMgr, SMLoc loc);
+
+  /// Canonicalize a filename by stripping `stripFilenamePrefix` prefix from it
+  /// if applicable.
+  std::string getCanonicalFilename(StringRef filename) const;
+
 private:
-  /// Mapping between file name and buffer ID's.
+  MLIRContext *context;
+  std::string stripFilenamePrefix;
+  /// Maps known StringAttr filenames to buffer IDs.
   llvm::DenseMap<StringAttr, unsigned> filenameToBufId;
+  /// Maps buffer IDs to their canonical filenames.
+  llvm::DenseMap<unsigned, StringAttr> bufIdToCanonicalFilename;
 };
 
 unsigned
@@ -82,6 +104,31 @@ Diags::SourceMgrLocationMapper::getBufferIDForFile(llvm::SourceMgr &sourceMgr,
   unsigned id = sourceMgr.AddIncludeFile(filename.str(), SMLoc(), ignored);
   filenameToBufId[filename] = id;
   return id;
+}
+
+StringAttr Diags::SourceMgrLocationMapper::getFilenameFromBufferId(
+    const SourceMgr &sourceMgr, unsigned bufferID) {
+  // Lookup the cache first.
+  auto bufferIt = bufIdToCanonicalFilename.find(bufferID);
+  if (bufferIt != bufIdToCanonicalFilename.end())
+    return bufferIt->second;
+
+  if (sourceMgr.getNumBuffers() == 0)
+    return unknownBufferNameIdentifier;
+
+  auto mainBuffer = sourceMgr.getMemoryBuffer(bufferID);
+  StringRef bufferName = mainBuffer->getBufferIdentifier();
+  StringAttr filename;
+  if (bufferName.empty()) {
+    filename = unknownBufferNameIdentifier;
+  } else {
+    std::string relFilename = getCanonicalFilename(bufferName);
+    filename = StringAttr::get(context, relFilename);
+  }
+
+  bufIdToCanonicalFilename[bufferID] = filename;
+  filenameToBufId[filename] = bufferID;
+  return filename;
 }
 
 /// Get a memory buffer for the given file, or the main file of the source
@@ -115,44 +162,39 @@ SMLoc Diags::SourceMgrLocationMapper::convertLocToSMLoc(SourceMgr &sourceMgr,
   return SMLoc();
 }
 
+FileLineColLoc
+Diags::SourceMgrLocationMapper::convertSMLocToLoc(SourceMgr &sourceMgr,
+                                                  SMLoc loc) {
+  unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
+  if (!bufferID)
+    return FileLineColLoc::get(unknownBufferNameIdentifier, 0, 0);
+  auto lineAndColumn = sourceMgr.getLineAndColumn(loc, bufferID);
+
+  StringAttr bufferName = getFilenameFromBufferId(sourceMgr, bufferID);
+  return FileLineColLoc::get(bufferName, lineAndColumn.first,
+                             lineAndColumn.second);
+}
+
+std::string Diags::SourceMgrLocationMapper::getCanonicalFilename(
+    StringRef filenameRef) const {
+  if (!stripFilenamePrefix.empty() &&
+      filenameRef.starts_with(stripFilenamePrefix))
+    return filenameRef.drop_front(stripFilenamePrefix.size()).str();
+  return std::string(filenameRef);
+}
+
 //===----------------------------------------------------------------------===//
 // Diags implementation
 //===----------------------------------------------------------------------===//
 
-/// Get the name of the main buffer so we can rapidly build Location objects
-/// on demand.
-static StringAttr makeBufferNameIdentifier(const SourceMgr &sourceMgr,
-                                           size_t bufferID,
-                                           MLIRContext *context) {
-  auto mainBuffer = sourceMgr.getMemoryBuffer(bufferID);
-  StringRef bufferName = mainBuffer->getBufferIdentifier();
-  if (bufferName.empty())
-    bufferName = Diags::SourceMgrLocationMapper::kUnnamedFileSigil;
-  return StringAttr::get(context, bufferName);
-}
-
-/// This sets up the buffer name identifier for the main buffer.
-static const void *makeMainBufferNameIdentifier(const SourceMgr &sourceMgr,
-                                                MLIRContext *context) {
-  if (!sourceMgr.getNumBuffers()) {
-    StringRef name = Diags::SourceMgrLocationMapper::kUnnamedFileSigil;
-    return StringAttr::get(context, name).getAsOpaquePointer();
-  }
-
-  return makeBufferNameIdentifier(sourceMgr, sourceMgr.getMainFileID(), context)
-      .getAsOpaquePointer();
-}
-
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
-             bool useMLIRDiagnostics, int maxNotesPerDiagnostic)
+             bool useMLIRDiagnostics, int maxNotesPerDiagnostic,
+             StringRef stripFilenamePrefix)
     : sourceMgr(sourceMgr), context(context),
-      sourceMgrMapper(std::make_unique<SourceMgrLocationMapper>()),
+      sourceMgrMapper(std::make_unique<SourceMgrLocationMapper>(
+          context, stripFilenamePrefix)),
       useMLIRDiagnostics(useMLIRDiagnostics),
-      maxNotesPerDiagnostic(maxNotesPerDiagnostic),
-      unknownBufferNameIdentifier(
-          StringAttr::get(context,
-                          Diags::SourceMgrLocationMapper::kUnnamedFileSigil)
-              .getAsOpaquePointer()) {}
+      maxNotesPerDiagnostic(maxNotesPerDiagnostic) {}
 
 Diags::~Diags() {}
 
@@ -160,8 +202,11 @@ Diags::~Diags() {}
 StringAttr Diags::getBufferNameIdentifier() const {
   if (!bufferNameIdentifier) {
     if (sourceMgr.getNumBuffers() == 0)
-      return StringAttr::getFromOpaquePointer(unknownBufferNameIdentifier);
-    bufferNameIdentifier = makeMainBufferNameIdentifier(sourceMgr, context);
+      return sourceMgrMapper->unknownBufferNameIdentifier;
+    bufferNameIdentifier =
+        sourceMgrMapper
+            ->getFilenameFromBufferId(sourceMgr, sourceMgr.getMainFileID())
+            .getAsOpaquePointer();
   }
 
   return StringAttr::getFromOpaquePointer(*bufferNameIdentifier);
@@ -188,23 +233,12 @@ InflightDiag Diags::emitWarning(llvm::SMLoc loc, const Twine &message) {
 /// Encode the specified source location information into a Location object
 /// for attachment to the IR or error reporting.  This always returns a
 /// FileLineColLoc.
-Location Diags::translateLocation(SMLoc loc) const {
-  // TODO: Implement a cache here to speed up location translation.
-  unsigned bufferID = sourceMgr.FindBufferContainingLoc(loc);
-  if (!bufferID) {
-    return FileLineColLoc::get(
-        StringAttr::getFromOpaquePointer(unknownBufferNameIdentifier), 0, 0);
-  }
-  auto lineAndColumn = sourceMgr.getLineAndColumn(loc, bufferID);
+FileLineColLoc Diags::translateLocation(SMLoc loc) const {
+  return sourceMgrMapper->convertSMLocToLoc(sourceMgr, loc);
+}
 
-  StringAttr bufferName;
-  if (bufferID == sourceMgr.getMainFileID())
-    bufferName = getBufferNameIdentifier();
-  else
-    bufferName = makeBufferNameIdentifier(sourceMgr, bufferID, context);
-
-  return FileLineColLoc::get(bufferName, lineAndColumn.first,
-                             lineAndColumn.second);
+std::string Diags::getCanonicalFilename(StringRef filenameRef) const {
+  return sourceMgrMapper->getCanonicalFilename(filenameRef);
 }
 
 SMLoc Diags::convertLocToSMLoc(LocationAttr loc) const {

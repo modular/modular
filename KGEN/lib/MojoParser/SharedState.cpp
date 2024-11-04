@@ -48,6 +48,8 @@
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
@@ -326,9 +328,22 @@ struct SharedState::Impl {
   ParserInterpreterCache interpreterCache;
 };
 
+/// Ensure `stripFilePrefix` is an absolute path ending in a separator.
+static std::string canonicalizeFileCompilationDir(StringRef stripFilePrefix) {
+  if (stripFilePrefix.empty())
+    return {};
+
+  SmallString<256> workingFileCompilationDir = stripFilePrefix;
+  llvm::sys::fs::make_absolute(workingFileCompilationDir);
+  if (!llvm::sys::path::is_separator(workingFileCompilationDir.back()))
+    workingFileCompilationDir.append(llvm::sys::path::get_separator());
+  return workingFileCompilationDir.str().str();
+}
+
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics,
-            config.maxNotesPerDiagnostic),
+            config.maxNotesPerDiagnostic,
+            canonicalizeFileCompilationDir(config.stripFilePrefix)),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
       parserListener(config.parserListener),
@@ -465,6 +480,12 @@ InflightDiag SharedState::emitWarning(llvm::SMLoc loc, const Twine &message) {
 Location SharedState::translateLocation(llvm::SMLoc loc) const {
   auto fileLoc = diags.translateLocation(loc);
   return diBuilder ? diBuilder->createScopedLoc(fileLoc) : fileLoc;
+}
+
+FileLineColLoc SharedState::createLocation(StringRef filename, unsigned line,
+                                           unsigned column) {
+  return FileLineColLoc::get(getContext(), diags.getCanonicalFilename(filename),
+                             line, column);
 }
 
 ASTType SharedState::getTypeCheckErrorType() const {
@@ -801,7 +822,7 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
       if (exists(source = entry.path() / "__init__.mojo", ec) &&
           exists(emoji = entry.path() / "__init__.🔥", ec))
         emitConflictError();
-      return weakly_canonical(entry.path(), ec);
+      return std::filesystem::absolute(entry.path());
     }
 
     path ext = entry.path().filename().extension();
@@ -810,13 +831,13 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
                  ec) &&
           exists(emoji = path(entry.path()).replace_extension("📦"), ec))
         emitConflictError();
-      return weakly_canonical(entry.path(), ec);
+      return std::filesystem::absolute(entry.path());
     }
     if (ext == ".mojo" || ext == ".🔥") {
       if (exists(source = path(entry.path()).replace_extension("mojo"), ec) &&
           exists(emoji = path(entry.path()).replace_extension("🔥"), ec))
         emitConflictError();
-      return weakly_canonical(entry.path(), ec);
+      return std::filesystem::absolute(entry.path());
     }
   }
 
@@ -936,12 +957,11 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
     return createErrorModuleState(identifierLoc, declName, *parentState->decl,
                                   "unable to locate module '" + name + "'");
   }
-  auto moduleBuilder = impl->topLevelDecl->getDeclEndBuilder();
 
   // If the path was a directory, we're importing a source package.
   if (std::filesystem::is_directory(*modulePath)) {
-    auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
-        getPackageInitPath(*modulePath), /*line=*/1, /*column=*/1);
+    auto fileLoc = createLocation(getPackageInitPath(*modulePath), /*line=*/1,
+                                  /*column=*/1);
     return createPackageState(declName, *modulePath, *parentState, fileLoc);
   }
 
@@ -963,8 +983,8 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
   // do so.
   const llvm::MemoryBuffer *moduleBuffer =
       getSourceMgr().getMemoryBuffer(fileID);
-  auto fileLoc = moduleBuilder.getAttr<FileLineColLoc>(
-      moduleBuffer->getBufferIdentifier(), /*line=*/1, /*column=*/1);
+  auto fileLoc = createLocation(moduleBuffer->getBufferIdentifier(), /*line=*/1,
+                                /*column=*/1);
   return createModuleState(declName, moduleBuffer, *parentState, fileLoc);
 }
 
@@ -1205,9 +1225,8 @@ ASTDecl &SharedState::createModule(StringRef moduleName,
 }
 
 ASTDecl &SharedState::createPackage(StringRef path, StringRef name) {
-  auto fileLoc =
-      FileLineColLoc::get(getContext(), getPackageInitPath(path.str()),
-                          /*line=*/1, /*column=*/1);
+  auto fileLoc = createLocation(getPackageInitPath(path.str()),
+                                /*line=*/1, /*column=*/1);
   ModuleState &state =
       createPackageState(StringAttr::get(getContext(), name), path,
                          *impl->topLevelModuleState, fileLoc);

@@ -16,7 +16,7 @@ config.parser_stubs_source = os.path.abspath(os.path.join(
 ))
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".mojo", ".🔥"]
+config.suffixes = [".mojo", ".🔥", ".test"]
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
@@ -27,6 +27,7 @@ config.test_exec_root = os.path.join(
 )
 
 config.excludes = [
+    "debuginfo/inputs",
     "test_package",
     "test_package.foo",
     "test_bad_package",

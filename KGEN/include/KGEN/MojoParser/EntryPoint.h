@@ -57,6 +57,10 @@ struct ParserConfig {
   /// The compilation options to use when parsing the file.
   const CompilationOptions &options;
 
+  /// When non-empty, this prefix is stripped from filenames used for
+  /// diagnostics & debugging.
+  std::string stripFilePrefix;
+
   /// When true, this prints diagnostics through MLIR (so MLIR features like
   /// -verify-diagnostics may be used). When false, this prints them through
   /// SourceMgr to get ranges and fixit hints.

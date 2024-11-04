@@ -106,6 +106,7 @@ int main(int argc, char *argv[]) {
         CompilationOptions options = clOptions.getCompilationOptions();
         options.searchPaths = parserSearchPaths.getValue();
         LIT::ParserConfig config(context, options);
+        config.stripFilePrefix = clOptions.stripFilePrefix;
         config.useMLIRDiagnostics = useMLIRDiagnostics;
         config.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;

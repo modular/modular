@@ -143,6 +143,8 @@ public:
   /// Inflate a lightweight SMLoc into an MLIR Location object for addition
   /// into the IR.
   Location translateLocation(llvm::SMLoc loc) const;
+  FileLineColLoc createLocation(StringRef filename, unsigned line,
+                                unsigned column);
 
   /// Allocate an expression node into the persistent bump pointer allocator.
   template <typename T, typename... Args>

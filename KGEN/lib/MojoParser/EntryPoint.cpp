@@ -237,9 +237,8 @@ static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *> importMojoImpl(
     SharedState &sharedState, mlir::TimingScope &ts,
     SmallVectorImpl<std::string> *includedFiles, bool genPythonBindings,
     function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
-  MLIRContext *context = sharedState.getContext();
   auto fileLoc =
-      FileLineColLoc::get(context, moduleIdentifier, /*line=*/1, /*column=*/1);
+      sharedState.createLocation(moduleIdentifier, /*line=*/1, /*column=*/1);
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
       {"filename", fileLoc.getFilename().str()}};
   [[maybe_unused]] auto timeScope =
@@ -319,7 +318,8 @@ importMojoFileImpl(AsyncRT::Runtime &runtime, SourceMgr &sourceMgr,
 
         // If we are emitting debug info, create a file entry for this file.
         if (sharedState.diBuilder)
-          fileGuard = sharedState.diBuilder->pushFile(bufName, "/");
+          fileGuard = sharedState.diBuilder->pushFile(
+              sharedState.diags.getCanonicalFilename(bufName), "/");
 
         // Grab a module name for the current input, choosing a dummy name if we
         // don't have one that's valid.

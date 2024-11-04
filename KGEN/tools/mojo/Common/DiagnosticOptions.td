@@ -38,4 +38,9 @@ defm max_notes : CommandOption<["--", "-"], "max-notes-per-diagnostic",
            "threshold on the number of notes that can be printed with a "
            "diagnostic. If not specified, the default maximum is 10.">>;
 
+defm strip_file_prefix : CommandOptionHidden<["-"], "strip-file-prefix",
+  DiagnosticOptionGroup, Index<4>, MetaVarName<"PATH">,
+  HelpText<
+    "Strip this prefix from filenames used for diagnostics & debugging.">>;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICOPTIONS_TD
