@@ -12,7 +12,16 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
 from max.dtype import DType
-from max.graph import Dim, Graph, TensorType, TensorValue, graph, ops
+from max.graph import (
+    Dim,
+    Graph,
+    Device,
+    DeviceType,
+    TensorType,
+    TensorValue,
+    graph,
+    ops,
+)
 
 empty_graphs = st.builds(
     Graph, st.text(), input_types=st.lists(st.from_type(TensorType))
@@ -44,6 +53,56 @@ def test_elementwise_add_graph() -> None:
         ],
     ) as graph:
         graph.output(graph.inputs[0] + 1)
+
+
+def test_elementwise_add_graph_with_device_prop() -> None:
+    """Builds a simple graph with explicit device on inputs and checks for output device propagation in the IR.
+    """
+    with Graph(
+        "elementwise_add",
+        input_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=["batch", "channels"],
+                device=Device(DeviceType.CUDA, 0),
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=["batch", "channels"],
+                device=Device(DeviceType.CUDA, 0),
+            ),
+        ],
+    ) as graph:
+        graph.output(graph.inputs[0] + graph.inputs[1])
+        # Ensure input tensor has cuda
+        for input in graph.inputs:
+            assert "cuda" in str(input)
+        # Ensure output tensor has cuda propagated
+        assert " -> !mo.tensor<[batch, channels], f32, cuda:0>" in str(
+            graph._mlir_op
+        )
+
+
+def test_elementwise_add_graph_with_device_prop_error() -> None:
+    """Builds a simple graph with explicit device on inputs and checks for error conditions on output device propagation in the IR.
+    """
+    with Graph(
+        "elementwise_add",
+        input_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=["batch", "channels"],
+                device=Device(DeviceType.CUDA, 0),
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=["batch", "channels"],
+                device=Device(DeviceType.CUDA, 1),
+            ),
+        ],
+    ) as graph:
+        with pytest.raises(ValueError, match="Differing input devices"):
+            graph.output(graph.inputs[0] + graph.inputs[1])
 
 
 @pytest.mark.skipif(sys.version_info.minor > 10, reason="MSDK-636")
