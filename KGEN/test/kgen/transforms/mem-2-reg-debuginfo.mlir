@@ -72,6 +72,18 @@ kgen.func @mem2reg_valueop_with_initial_undef(%arg0: index, %arg1: index) -> ind
   kgen.return %1 : index loc(#loc0)
 } loc(#loc0)
 
+// CHECK-LABEL: @mem2reg_valueop_with_initial_value
+kgen.func @mem2reg_valueop_with_initial_value(%arg0: index, %arg1: index) {
+  // CHECK-NOT: kgen.param.constant = <*?>
+  // CHECK: debuginfo.value #[[VAR]] #[[REFOF_EXPR]] = %arg0 : index loc(#[[LOC1:.*]])
+  // CHECK: debuginfo.value #[[VAR]] #[[REFOF_EXPR]] = %arg1 : index loc(#[[LOC2:.*]])
+  %0 = pop.stack_allocation 1 x index loc(#loc0)
+  pop.store %arg0, %0 : !kgen.pointer<index> loc(#loc0)
+  debuginfo.value #local_variable = %0 : !kgen.pointer<index> loc(#loc1)
+  pop.store %arg1, %0 : !kgen.pointer<index> loc(#loc2)
+  kgen.return loc(#loc0)
+} loc(#loc0)
+
 // CHECK-LABEL: @mem2reg_inlined_aliases
 kgen.func @mem2reg_inlined_aliases(%arg0: index, %arg1: index, %arg2: index, %arg3: index) {
   // CHECK: debuginfo.value #[[VAR_STRUCT]] #[[AGG_REGOF_EXPR]] = %arg0 : index loc(#[[LOC1]])
