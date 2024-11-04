@@ -116,6 +116,22 @@ struct PromotedStackAlloc {
       return Error(
           "location of debug value does not contain a subprogram scope");
     debugValues[scope] = {value.getValueInfo(), newConversionExpr.get()};
+
+    // Immediately create a ValueOp if currently not undef.
+    if (currValue) {
+      bool isUndef = false;
+      if (auto cst = llvm::dyn_cast_if_present<ParamConstantOp>(
+              currValue.getDefiningOp()))
+        isUndef = isa<UnknownAttr>(cst.getValue());
+
+      if (!isUndef) {
+        OpBuilder b(alloc->getContext());
+        b.setInsertionPointAfter(value);
+        b.create<DebugInfo::ValueOp>(value->getLoc(), currValue,
+                                     value.getValueInfo(),
+                                     newConversionExpr.get());
+      }
+    }
     return success();
   }
 
