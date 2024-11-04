@@ -59,6 +59,7 @@ from nn.kv_cache import (
     generic_get_contiguous_cache,
     generic_get_continuous_cache,
 )
+from nn.index_tensor import index_tensor
 
 # ===----------------------------------------------------------------------===#
 # General imports
@@ -328,6 +329,35 @@ fn get_int_from_shape[
     param_index: Int, rank: Int
 ](shape: IndexList[rank]) -> Int:
     return shape[param_index]
+
+
+# Note: this is not a "real" index_tensor op that covers all cases, but rather
+# a stopgap measure for some important models (DLRM, CLIP-ViT, LLaMa2)
+@mogg_register_override("index_tensor", 1)
+@always_inline
+fn index_tensor_primitive[
+    type: DType,
+    indices_type: DType,
+    data_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    batch_dims: Int,
+    target: StringLiteral = "cpu",
+](
+    data: NDBuffer[type, data_rank],
+    indices: NDBuffer[indices_type, indices_rank],
+    output: NDBuffer[type, output_rank],
+    ctx: MojoCallContextPtr,
+):
+    index_tensor[
+        type,
+        indices_type,
+        data_rank,
+        indices_rank,
+        output_rank,
+        batch_dims,
+        target=target,
+    ](data, indices, output, ctx)
 
 
 # ===----------------------------------------------------------------------===#
