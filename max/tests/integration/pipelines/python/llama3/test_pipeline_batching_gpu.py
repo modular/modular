@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pytest
+from dataprocessing import TextContext
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import Llama3
 from llama3.llama3_token_gen import Llama3Tokenizer
-from nn.context import TextContext
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
