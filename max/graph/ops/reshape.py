@@ -43,9 +43,6 @@ def reshape(x: TensorValueLike, shape: ShapeLike) -> TensorValue:
     x = TensorValue(x)
     shape = Shape(shape)
 
-    def is_static(dims):
-        return all(isinstance(dim, StaticDim) and dim.dim >= 0 for dim in dims)
-
     return Graph.current._add_op(
         rmo.reshape, TensorValue(x), new_shape=Shape(shape).to_mlir()
     )[0].tensor
