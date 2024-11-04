@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA GPUs id operations."""
 
+from gpu import WARP_SIZE
 from sys import llvm_intrinsic, triple_is_nvidia_cuda
 from os import abort
 
@@ -279,13 +280,21 @@ fn lane_id() -> UInt:
     Returns:
         The lane ID of the the current thread.
     """
-    return UInt(
-        int(
-            llvm_intrinsic[
-                "llvm.nvvm.read.ptx.sreg.laneid", Int32, has_side_effect=False
-            ]().cast[DType.uint32]()
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.laneid",
+                    Int32,
+                    has_side_effect=False,
+                ]().cast[DType.uint32]()
+            )
         )
-    )
+
+    else:
+        return UInt(ThreadIdx.x() & (WARP_SIZE - 1))
 
 
 # ===----------------------------------------------------------------------===#
