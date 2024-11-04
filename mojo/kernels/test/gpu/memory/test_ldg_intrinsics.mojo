@@ -3,11 +3,10 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: disabled
-# TODO(KERN-1147): Re-enable test (removed llvm.nvvm.ldg.global intrinsic)
 # RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code_asm, _get_nvptx_target
+from gpu import ThreadIdx
 from gpu.intrinsics import ldg
 from memory import UnsafePointer
 from testing import *
@@ -27,17 +26,17 @@ fn register_intrinsics(
 ):
     # Note we perform the store purely to avoid the compiler from optimizing
     # away the statements.
-
-    i8.store(ldg(i8))
-    ui8.store(ldg(ui8))
-    i16.store(ldg(i16))
-    ui16.store(ldg(ui16))
-    i32.store(ldg(i32))
-    ui32.store(ldg(ui32))
-    i64.store(ldg(i64))
-    ui64.store(ldg(ui64))
-    f32.store(ldg(f32))
-    f64.store(ldg(f64))
+    var tid = ThreadIdx.x()
+    i8.store(tid, ldg(i8))
+    ui8.store(tid, ldg(ui8))
+    i16.store(tid, ldg(i16))
+    ui16.store(tid, ldg(ui16))
+    i32.store(tid, ldg(i32))
+    ui32.store(tid, ldg(ui32))
+    i64.store(tid, ldg(i64))
+    ui64.store(tid, ldg(ui64))
+    f32.store(tid, ldg(f32))
+    f64.store(tid, ldg(f64))
 
 
 @always_inline

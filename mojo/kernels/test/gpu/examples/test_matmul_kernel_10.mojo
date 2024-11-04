@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: disabled
-# TODO(KERN-1147): Re-enable test (removed llvm.nvvm.ldg.global intrinsic)
 # TODO (#33518): -t flag is required right now because the kernel assumes C is zeroed
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 
@@ -18,6 +16,7 @@ from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu.intrinsics import ldg
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from linalg.utils import elementwise_epilogue_type
@@ -33,24 +32,6 @@ alias BLOCK_DIM = 8
 alias MMA_M = 16
 alias MMA_N = 8
 alias MMA_K = 8
-
-
-@always_inline
-fn __nvvm_ldg_f4[type: DType](x: UnsafePointer[Scalar[type]]) -> SIMD[type, 4]:
-    # Load a register variable from global state space via non-coherent cache.
-
-    alias alignment = Int32(alignof[SIMD[type, 4]]())
-
-    @parameter
-    if type in (DType.float32, DType.bfloat16, DType.float16):
-        return bitcast[type, 4](
-            llvm_intrinsic["llvm.nvvm.ldg.global.f", SIMD[type, 4]](
-                x, alignment
-            )
-        )
-    else:
-        constrained[False, "Unhandled DType"]()
-        return 0
 
 
 # BM: The threadblock size for M dimension SMEM caching.
@@ -167,7 +148,7 @@ fn sgemm_warp_tiling_kernel[
     for _ in range(0, K, BK):
         for offset in range(0, int(BM - row_stride_a + 1), int(row_stride_a)):
             # Load 4 elements at a time and store to shared memory.
-            var tmp = __nvvm_ldg_f4[a_type](
+            var tmp = ldg[width=4](
                 aa_ptr.offset(int((inner_row_a + offset) * K + inner_col_a * 4))
             )
 
@@ -181,7 +162,7 @@ fn sgemm_warp_tiling_kernel[
 
         for offset in range(0, int(BK - row_stride_b + 1), int(row_stride_b)):
             # Load 4 elements at a time and store to shared memory.
-            var tmp = __nvvm_ldg_f4[b_type](
+            var tmp = ldg[width=4](
                 bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
             )
             b_sram.store[alignment=16](
