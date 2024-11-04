@@ -20,7 +20,7 @@ from .backend import *
 # Library Load
 # ===----------------------------------------------------------------------===#
 
-alias CUDA_CUDNN_LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu/libcudnn_infer.so"
+alias CUDA_CUDNN_LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu/libcudnn.so.8"
 
 
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
