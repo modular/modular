@@ -226,7 +226,7 @@ fn test_variadic_and_kw_only_params_indirect[x: int]():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = takes_variadic_and_kw_only_params
 
-    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, [], x, 0)]()
+    # CHECK: lit.call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, ?, x, 0), [])]()
     callee[x, x, c=x]()
 
     # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, [x, x], x, 0)]()

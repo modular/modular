@@ -143,7 +143,7 @@ ParamBindings::verifyBindingsImpl(
   assert(parameterInferenceHook && "expected a parameter inference hook");
   Fitness fitness{0, false};
 
-  // Check to see if we have *_ or **_ and filter them from the operand list.
+  // Check to see if we have *_ or **_ and filter them from the parameter list.
   bool unpackedPos = false;
   bool unpackedKw = false;
   CallOperands operands;
@@ -268,11 +268,10 @@ ParamBindings::verifyBindingsImpl(
     // decl. If this isn't actually a variadic type, then we simply reached
     // the end of the parameter list.
     size_t idx = newBindings.size();
-    if (paramListAttr.isVariadic(idx))
-      if (auto varType = dyn_cast<VariadicType>(requestedType))
-        return VariadicAttr::get({}, varType);
 
     // If available, we use a default parameter value.
+    // FIXME: Shouldn't this go into inference itself like empty variadic
+    // binding is?
     if (TypedAttr defaultOr = defaultHandler.getDefault(idx)) {
       // Default parameter values may reference other parameter values, so we
       // need to evaluate these.
@@ -549,7 +548,7 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
                                       evaluator, inferenceDiags,
                                       /*allowImplicitConversions=*/true);
 
-    inference.infer(paramTypes, paramList);
+    inference.infer(paramTypes, paramList, /*hasArguments*/ partial);
     return PValue(inference.getInferredValue(bindingsSoFar.size()));
   };
   auto [bindings, _] = verifyBindingsImpl(parameters, paramTypes, paramList,
@@ -706,7 +705,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                                       /*allowImplicitConversions=*/true);
 
     // Infer information from the current parameter list.
-    inference.infer(expectedParamTypes, paramListAttr);
+    inference.infer(expectedParamTypes, paramListAttr, partial);
 
     // See if we inferred information about the next value.
     if (auto result = inference.getInferredValue(bindingsSoFar.size()))

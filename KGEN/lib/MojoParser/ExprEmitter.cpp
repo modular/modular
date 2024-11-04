@@ -1083,10 +1083,13 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   }
 
   // Get the AnyStructType or the TraitType of the value that we're checking for
-  // conversion to the trait type.
+  // conversion to the trait type.  This can also bind empty variadic parameter
+  // lists and default parameters.
   ASTType metaType = emitType({typeValue, value.expr}, /*allowUnbound*/ false);
   if (!metaType)
     return {};
+  // Make sure to update typeValue if the type was rebound.
+  typeValue = PValue(metaType);
 
   // Check that the struct or super trait implements the trait.
   ASTDecl *metaTypeDecl = metaType.getDecl(shared);

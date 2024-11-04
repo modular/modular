@@ -96,8 +96,11 @@ public:
 
   /// Given an incomplete parameter binding set for a parameter list, try to
   /// infer the value of the next parameter. We only do this if there are any
-  /// inferred parameters present.
-  void infer(ArrayRef<Type> paramTypes, PogListAttr paramListAttr);
+  /// inferred parameters present.  The 'hasArguments' field specifies whether
+  /// there are arguments that can be used to infer parameters from (which are
+  /// not handled by this call).
+  void infer(ArrayRef<Type> paramTypes, PogListAttr paramListAttr,
+             bool hasArguments);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
   /// the specified signature, try to infer the value of the next 'decl'

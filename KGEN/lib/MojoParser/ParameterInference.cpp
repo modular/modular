@@ -328,7 +328,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 
   // If the expected value is the parameter declaration remember the binding!
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
-    if (ire.getDepth() == paramIndexRefDepth && !ire.getIsResult() &&
+    if (ire.getDepth() == paramIndexRefDepth &&
         // We need to infer in lexical order because we may have dependent types
         // between parameters.  The evaluator implicitly keeps track of how many
         // we have inferred.
@@ -914,11 +914,14 @@ void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
 /// infer the value of the next parameter. We only do this if there are any
 /// inferred parameters present.
 void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
-                                    PogListAttr paramListAttr) {
+                                    PogListAttr paramListAttr,
+                                    bool hasArguments) {
+
   // If the parameter list has any inferred parameters, then we have to infer
   // against the provided binding list, since we might infer parameters from
   // other parameters. Otherwise, just exit early.
-  if (!paramListAttr.hasInferredParams())
+  if (paramTypes.empty() || (!paramListAttr.hasInferredParams() &&
+                             !paramListAttr.isVariadic(paramTypes.size() - 1)))
     return;
 
   auto types = TypeArrayAttr::get(paramListAttr.getContext(), paramTypes);
@@ -979,6 +982,21 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
     // Otherwise, this is a missing parameter. Just skip it.
     // TODO: Seems like we should reject??
   }
+
+  // If we had a variadic parameter that is unspecified, and no arguments to
+  // infer it from, it must be because of an empty variadic list.
+  if (!hasArguments) {
+    size_t nextParamNo = evaluator.getNumInputParams();
+    if (nextParamNo < types.size() && paramListAttr.isVariadic(nextParamNo)) {
+      // If we didn't already have a slot for this, make space.
+      if (inferredParams.size() <= nextParamNo)
+        inferredParams.resize(nextParamNo + 1);
+      auto type = types[evaluator.getNumInputParams()];
+      auto empty = VariadicAttr::get({}, cast<VariadicType>(type));
+      inferredParams[nextParamNo] = empty;
+      evaluator.addInputValue(empty);
+    }
+  }
 }
 
 LogicalResult
@@ -986,7 +1004,8 @@ ParameterInferenceState::infer(LITSignatureType signature,
                                const CallOperands &operands,
                                const OperandValueList &variadicKwOperands) {
   // First try to infer parameters from parameters.
-  infer(signature.getParamTypes(), signature.getParamListAttrs());
+  infer(signature.getParamTypes(), signature.getParamListAttrs(),
+        /*hasArguments*/ true);
 
   size_t numOperands = operands.size();
 
@@ -1061,6 +1080,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
         const auto &operand = operands[posOperandIdx++];
         if (operand.keyword) // Ignore keyword operands.
           continue;
+        curArgExpr = operand.expr;
 
         ASTType toPush = operand.ir.getRValueTypeIfResolvable();
         if (!toPush) {
@@ -1078,8 +1098,19 @@ ParameterInferenceState::infer(LITSignatureType signature,
             toPush, metatype ? metatype : TypeType::get(shared.getContext()));
         SyntheticNode node(shared.getTopLevelDecl().getLoc());
         if (!ExprEmitter::canImplicitlyConvertToType(
-                {actualAttr, node}, elementType, emitter.getScopeInfo()))
+                {actualAttr, node}, elementType, emitter.getScopeInfo())) {
+
+          // If that didn't work, then we fail due to the type mismatch.  If the
+          // variadic type is due to a parameter mismatch, record it.
+          if (auto ire = dyn_cast<ParamIndexRefAttr>(packType.getVariadic());
+              ire && ire.getDepth() == paramIndexRefDepth) {
+            // Otherwise, we failed to infer the parameter. Record this failure.
+            addFailure(ire.getIndex(), InferenceFailure::TypeConflictFailure{
+                                           elementType, actualAttr.getType()});
+          }
           return failure();
+        }
+
         // Perform a conversion (e.g. from a concrete to trait type) as needed.
         PValue result = emitter.emitPValue({actualAttr, node},
                                            EC_TypeParamValue, elementType);
@@ -1133,6 +1164,21 @@ ParameterInferenceState::infer(LITSignatureType signature,
   if (posOperandIdx != numOperands && !signature.hasParamVarArgs())
     return failure();
 
+  // If we had a variadic parameter that is unspecified, it must be because of
+  // an empty variadic list.
+  size_t nextParamNo = evaluator.getNumInputParams();
+  if (nextParamNo < signature.getParamTypes().size() &&
+      signature.getParamListAttrs().isVariadic(nextParamNo)) {
+    // If we didn't already have a slot for this, make space.
+    if (inferredParams.size() <= nextParamNo)
+      inferredParams.resize(nextParamNo + 1);
+    auto type = signature.getParamTypes()[evaluator.getNumInputParams()];
+    auto empty = VariadicAttr::get({}, cast<VariadicType>(type));
+    inferredParams[nextParamNo] = empty;
+    evaluator.addInputValue(empty);
+  }
+
+  // Make sure to rebind any initSelfParams.
   for (unsigned idx : initSelfParams) {
     TypedAttr &param = inferredParams[idx];
     param = cast<TypedAttr>(evaluator.getReboundAttribute(param));
