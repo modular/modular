@@ -375,10 +375,7 @@ AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Convert this to an instance of Bool. Bool must be in scope since it is
   // auto-imported.
-  ASTType type = emitter.shared.getBuiltinBoolType(emitter.declScope, getLoc());
-  return emitter.emitConstructorCall(type,
-                                     CallOperands({{AnyValue(boolAttr), this}}),
-                                     this, CallSyntax::kImplicitConvert, dest);
+  return emitter.emitBool({boolAttr, this}, dest);
 }
 
 AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,

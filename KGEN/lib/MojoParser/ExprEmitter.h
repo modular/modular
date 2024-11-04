@@ -539,6 +539,9 @@ public:
   /// it to an index value and then invoking its `__mlir_index__` method.
   CValue emitMLIRIndex(const ExprNode *expr, ExprContext context);
 
+  /// Emit a `Bool`-typed value from a `BoolAttr`.
+  CValue emitBool(ASTExprAnd<PValue> value, ValueDest &dest);
+
   //===--------------------------------------------------------------------===//
   // Return emission helpers.
 
