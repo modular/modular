@@ -22,44 +22,29 @@ from .memory import _int_to_str, AddressSpace
 
 
 @always_inline
-fn _bitwidthof_str[type: DType]() -> StringLiteral:
-    alias bitwidth = bitwidthof[type]()
-
-    @parameter
-    if bitwidth == 8:
-        return "8"
-    elif bitwidth == 16:
-        return "16"
-    elif bitwidth == 32:
-        return "32"
-    elif bitwidth == 64:
-        return "64"
-    constrained[False, "invalid dtype"]()
-    return "invalid"
-
-
-@always_inline
-fn ldg[type: DType](x: UnsafePointer[Scalar[type]]) -> Scalar[type]:
+fn ldg[
+    type: DType, //,
+    width: Int = 1,
+    *,
+    alignment: Int = alignof[SIMD[type, width]](),
+](x: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
     """Load a register variable from global state space via non-coherent cache.
+
+    This function is used to load a register variable from the global state
+    space through a non-coherent cache. The type of the data to be loaded must
+    be numeric.
+
+    Parameters:
+        type: The type of the data to be loaded.
+        width: The width of the SIMD vector to load.
+        alignment: The alignment of the data in bytes. Defaults to the
+            alignment of the type.
+
+    Returns:
+        Scalar[type]: The loaded register variable.
     """
     constrained[type.is_numeric(), "the type must be numeric"]()
-
-    alias prefix = "llvm.nvvm.ldg.global."
-    alias suffix = _bitwidthof_str[type]()
-
-    alias alignment = Int32(alignof[type]())
-
-    @parameter
-    if type.is_integral():
-        alias integral_type = _int_type_of_width[bitwidthof[type]()]()
-        return bitcast[type, 1](
-            llvm_intrinsic[prefix + "i.i" + suffix, Scalar[integral_type]](
-                x.bitcast[integral_type](), alignment
-            )
-        )
-
-    constrained[type.is_floating_point(), "the type must be floating point"]()
-    return llvm_intrinsic[prefix + "f.f" + suffix, Scalar[type]](x, alignment)
+    return x.load[width=width, alignment=alignment, invariant=True]()
 
 
 # ===----------------------------------------------------------------------===#
