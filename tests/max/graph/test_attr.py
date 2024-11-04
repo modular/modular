@@ -86,3 +86,16 @@ def test_device_attr(mlir_context: mlir.Context) -> None:
     assert '<"cuda", 0>' in str(device0)
     assert '<"cpu", 0>' in str(device1)
     assert '<"cuda", 1>' in str(device2)
+
+
+def test_device_attr_accessors(mlir_context: mlir.Context) -> None:
+    """Tests device attribute accessors."""
+    device0 = _graph.device_attr(mlir_context, "cuda", 0)
+    device1 = _graph.device_attr(mlir_context, "cpu", 0)
+    device2 = _graph.device_attr(mlir_context, "cuda", 1)
+    assert "cuda" in str(_graph.device_attr_get_label(device0))
+    assert "cpu" in str(_graph.device_attr_get_label(device1))
+    assert "cuda" in str(_graph.device_attr_get_label(device2))
+    assert "0" in str(_graph.device_attr_get_id(device0))
+    assert "0" in str(_graph.device_attr_get_id(device1))
+    assert "1" in str(_graph.device_attr_get_id(device2))

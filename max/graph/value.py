@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import inspect
 import sys
-from typing import Any, Iterable, Union
+from typing import Any, Iterable, Union, Optional
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -22,6 +22,7 @@ from max.dtype import DType
 from . import graph, ops
 from .type import (
     BufferType,
+    Device,
     Dim,
     DimLike,
     Shape,
@@ -246,7 +247,8 @@ class TensorValue(Value):
     def __repr__(self):
         dtype = self.dtype
         shape = self.shape
-        return f"{type(self).__name__}({dtype=}, {shape=})"
+        device = self.device
+        return f"{type(self).__name__}({dtype=}, {shape=}, {device=})"
 
     @property
     def type(self) -> TensorType:
@@ -257,6 +259,11 @@ class TensorValue(Value):
     def shape(self) -> Shape:
         """Returns the shape of the TensorValue."""
         return self.type.shape
+
+    @property
+    def device(self) -> Optional[Device]:
+        """Returns the device of the TensorValue."""
+        return self.type.device
 
     # dtype and rank are special.
     # They use _graph directly to avoid loading the shape dimension if they aren't needed.

@@ -497,10 +497,27 @@ class Device:
         self.device_type = device_type
         self.id = id
 
+    def __str__(self) -> str:
+        return str(self.device_type) + ":" + str(self.id)
+
+    def __repr__(self):
+        return str(self)
+
     def to_mlir(self) -> mlir.Attribute:
         return _graph.device_attr(
             mlir.Context.current, str(self.device_type), self.id
         )
+
+    @staticmethod
+    def from_mlir(device_attr: mlir.Attribute) -> Optional[Device]:
+        if device_attr:
+            return Device(
+                device_type=DeviceType(
+                    _graph.device_attr_get_label(device_attr)
+                ),
+                id=_graph.device_attr_get_id(device_attr),
+            )
+        return None
 
 
 StaticShape = list[StaticDim]
@@ -624,7 +641,7 @@ class TensorType(Type):
         shape = [
             Dim.from_mlir(_graph.tensor_type_get_dim(t, i)) for i in range(rank)
         ]
-        device = _graph.tensor_type_get_device(t)
+        device = Device.from_mlir(_graph.tensor_type_get_device(t))
         return TensorType(DType(dtype), shape, device)
 
     # ===------------------------------------------------------------------=== #
