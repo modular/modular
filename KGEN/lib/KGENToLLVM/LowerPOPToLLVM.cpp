@@ -810,7 +810,8 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
     rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
         op, elementType, adaptor.getPtr(), /*alignment=*/alignment,
-        /*isVolatile=*/adaptor.getIsVolatile());
+        /*isVolatile=*/adaptor.getIsVolatile(), /*nontemporal=*/false,
+        /*invariant=*/adaptor.getIsInvariant());
     return success();
   }
 };
