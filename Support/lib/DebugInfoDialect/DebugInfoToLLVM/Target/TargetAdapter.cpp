@@ -404,7 +404,11 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
       // to a stack allocation.  In the useDbgValue case, we need a separate
       // alloca for each value that is not already in memory.
       LLVM::AllocaOp allocaOp;
-      llvm::MapVector<LLVM::DbgValueOp, LLVM::AllocaOp> allocaMap;
+      llvm::DenseMap<LLVM::DbgValueOp, LLVM::AllocaOp> allocaMap;
+      // Maps from distinct DIExprs to the AllocaOp created for that DIExpr.
+      // This allows different ValueOps to share the same Alloca if they have
+      // identical DIExprs.
+      llvm::DenseMap<LLVM::DIExpressionAttr, LLVM::AllocaOp> allocaExprMap;
 
       // Get the allocaOp for this value. If one has not already been created,
       // create one and save it for the next invocation.
@@ -416,6 +420,13 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
           return allocaMap.lookup(valueOp);
         if (!create)
           return {};
+
+        // Reuse the same slot for the same location expr.
+        if (auto it = allocaExprMap.find(valueOp.getLocationExpr());
+            it != allocaExprMap.end()) {
+          allocaMap.insert({valueOp, it->second});
+          return it->second;
+        }
 
         // Build a new allocation to store the intermediate value.
         OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
@@ -448,10 +459,12 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
         LLVM::AllocaOp newAlloc = allocBuilder.create<LLVM::AllocaOp>(
             erasedLoc, pointerType, allocType, allocSize,
             /*alignment=*/alignment);
-        if (!useDbgValueMode)
+        if (!useDbgValueMode) {
           allocaOp = newAlloc;
-        else
+        } else {
           allocaMap.insert({valueOp, newAlloc});
+          allocaExprMap.insert({valueOp.getLocationExpr(), newAlloc});
+        }
         return newAlloc;
       };
 
@@ -497,9 +510,11 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
             // simply the whole variable.
             locationOps = SmallVector<LLVM::DIExpressionElemAttr>();
           }
-          OpBuilder(valueOp).create<LLVM::DbgDeclareOp>(
-              valueOp.getLoc(), declareOpArg, valueOp.getVarInfo(),
-              LLVM::DIExpressionAttr::get(valueOp->getContext(), locationOps));
+          OpBuilder(valueOp->getNextNode())
+              .create<LLVM::DbgDeclareOp>(
+                  valueOp.getLoc(), declareOpArg, valueOp.getVarInfo(),
+                  LLVM::DIExpressionAttr::get(valueOp->getContext(),
+                                              locationOps));
           eraseValueOps = true;
         }
       }
@@ -547,9 +562,9 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
                                              /*isVolatile=*/true);
         };
 
-        // Store into the alloca at the place where the value was defined.
+        // Store into the alloca at the place where the value was tracked.
         if (auto *definingOp = oldValue.getDefiningOp()) {
-          makeStore(OpBuilder(definingOp->getNextNode()), oldValue.getLoc());
+          makeStore(OpBuilder(valueOp), oldValue.getLoc());
         } else {
           // If the value is a block argument, we need to search for an
           // insertion point after the start of the block.
