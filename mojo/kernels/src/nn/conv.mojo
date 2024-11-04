@@ -49,6 +49,32 @@ from .conv_utils import (
     reorder_padding,
 )
 from .shapes import get_sliding_window_out_dim
+from gpu.host import DeviceContext
+from gpu.cudnn.infer import (
+    cudnnContext,
+    cudnnStatus_t,
+    cudnnCreate,
+    cudnnCreateTensorDescriptor,
+    cudnnSetTensor4dDescriptor,
+    cudnnTensorFormat_t,
+    cudnnDataType_t,
+    cudnnFilterStruct,
+    cudnnCreateFilterDescriptor,
+    cudnnSetFilter4dDescriptor,
+    cudnnTensorStruct,
+    cudnnConvolutionFwdAlgo_t,
+    cudnnDestroyTensorDescriptor,
+    cudnnDestroy,
+)
+from gpu.cudnn.cnn_infer import (
+    cudnnConvolutionStruct,
+    cudnnCreateConvolutionDescriptor,
+    cudnnSetConvolution2dDescriptor,
+    cudnnConvolutionForward,
+    cudnnDestroyConvolutionDescriptor,
+    cudnnDestroyFilterDescriptor,
+    cudnnConvolutionMode_t,
+)
 
 
 @value
@@ -2946,3 +2972,164 @@ fn conv_nhwc_direct[
             filter,
             conv_shape,
         )
+
+
+# ===----------------------------------------------------------------------=== #
+# GPU Convolution using cuDNN                                                  #
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn check_cudnn_error(stat: cudnnStatus_t):
+    if stat != cudnnStatus_t.CUDNN_STATUS_SUCCESS:
+        print(stat)
+
+
+fn conv_cudnn[
+    input_dim: DimList,
+    filter_dim: DimList,
+    output_dim: DimList,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: UnsafePointer[Scalar[input_type]],
+    filter: UnsafePointer[Scalar[filter_type]],
+    output: UnsafePointer[Scalar[output_type]],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    padding: IndexList[2],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    var cudnn_handle = UnsafePointer[cudnnContext]()
+    check_cudnn_error(cudnnCreate(UnsafePointer.address_of(cudnn_handle)))
+
+    var input_desc = UnsafePointer[cudnnTensorStruct]()
+    check_cudnn_error(
+        cudnnCreateTensorDescriptor(UnsafePointer.address_of(input_desc))
+    )
+    check_cudnn_error(
+        cudnnSetTensor4dDescriptor(
+            input_desc,
+            cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
+            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            input_dim.get[0](),
+            input_dim.get[3](),
+            input_dim.get[1](),
+            input_dim.get[2](),
+        )
+    )
+
+    var filter_desc = UnsafePointer[cudnnFilterStruct]()
+    check_cudnn_error(
+        cudnnCreateFilterDescriptor(UnsafePointer.address_of(filter_desc))
+    )
+    check_cudnn_error(
+        cudnnSetFilter4dDescriptor(
+            filter_desc,
+            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            cudnnTensorFormat_t.CUDNN_TENSOR_NCHW,
+            filter_dim.get[0](),
+            filter_dim.get[1](),
+            filter_dim.get[2](),
+            filter_dim.get[3](),
+        )
+    )
+
+    var conv_desc = UnsafePointer[cudnnConvolutionStruct]()
+    check_cudnn_error(
+        cudnnCreateConvolutionDescriptor(UnsafePointer.address_of(conv_desc))
+    )
+    check_cudnn_error(
+        cudnnSetConvolution2dDescriptor(
+            conv_desc,
+            padding[0],
+            padding[1],
+            stride[0],
+            stride[1],
+            dilation[0],
+            dilation[1],
+            cudnnConvolutionMode_t.CUDNN_CONVOLUTION,
+            cudnnDataType_t.CUDNN_DATA_FLOAT,
+        )
+    )
+
+    var output_desc = UnsafePointer[cudnnTensorStruct]()
+    check_cudnn_error(
+        cudnnCreateTensorDescriptor(UnsafePointer.address_of(output_desc))
+    )
+    check_cudnn_error(
+        cudnnSetTensor4dDescriptor(
+            output_desc,
+            cudnnTensorFormat_t.CUDNN_TENSOR_NHWC,
+            cudnnDataType_t.CUDNN_DATA_FLOAT,
+            output_dim.get[0](),
+            output_dim.get[3](),
+            output_dim.get[1](),
+            output_dim.get[2](),
+        )
+    )
+
+    var alpha = Scalar[DType.float32](1.0)
+    var beta = Scalar[DType.float32](0.0)
+
+    check_cudnn_error(
+        cudnnConvolutionForward(
+            cudnn_handle,
+            UnsafePointer.address_of(alpha).bitcast[NoneType](),
+            input_desc,
+            input.bitcast[NoneType](),
+            filter_desc,
+            filter.bitcast[NoneType](),
+            conv_desc,
+            cudnnConvolutionFwdAlgo_t.CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_GEMM,
+            UnsafePointer[Scalar[input_type]]().bitcast[NoneType](),
+            0,
+            UnsafePointer.address_of(beta).bitcast[NoneType](),
+            output_desc,
+            output.bitcast[NoneType](),
+        )
+    )
+
+    check_cudnn_error(cudnnDestroyTensorDescriptor(output_desc))
+    check_cudnn_error(cudnnDestroyConvolutionDescriptor(conv_desc))
+    check_cudnn_error(cudnnDestroyFilterDescriptor(filter_desc))
+    check_cudnn_error(cudnnDestroyTensorDescriptor(input_desc))
+    check_cudnn_error(cudnnDestroy(cudnn_handle))
+
+
+fn conv_gpu[
+    input_dim: DimList,
+    filter_dim: DimList,
+    output_dim: DimList,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+](
+    input: UnsafePointer[Scalar[input_type]],
+    filter: UnsafePointer[Scalar[filter_type]],
+    output: UnsafePointer[Scalar[output_type]],
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    pading: IndexList[2],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    conv_cudnn[
+        input_dim,
+        filter_dim,
+        output_dim,
+        input_type,
+        filter_type,
+        output_type,
+    ](
+        input,
+        filter,
+        output,
+        stride,
+        dilation,
+        pading,
+        num_groups,
+        ctx,
+    )
