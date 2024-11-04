@@ -12,9 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Literal
 
-from llama3.config import SupportedEncodings
-
-# TODO(kathywu): replace SupportedEncodings to standardized vesion in #50043
+from max.pipelines import SupportedEncoding
 
 
 def find_runtime_path(
@@ -66,7 +64,7 @@ def _find_local_path(fname: str, dir: Path | None):
 
 def golden_data_fname(
     model: str,
-    encoding: SupportedEncodings,
+    encoding: SupportedEncoding,
     *,
     framework: Literal["max", "torch"] = "max",
 ):

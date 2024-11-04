@@ -20,13 +20,13 @@ from test_common.evaluate import run_model, PROMPTS
 import click
 from huggingface_hub import hf_hub_download
 from llama3 import (
-    InferenceConfig,
     Llama3,
     Llama3Tokenizer,
-    SupportedEncodings,
-    SupportedVersions,
 )
+from llama3.config import get_llama_huggingface_file
 from max.driver import DeviceSpec
+from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines.kv_cache import KVCacheStrategy
 
 
 @dataclass(frozen=True)
@@ -48,20 +48,20 @@ class SupportedTestModels:
     model: str
     """Model Type. Can be `llama3`, `llama3_1`, or `tinyllama`"""
 
-    encoding: SupportedEncodings
+    encoding: SupportedEncoding
     """The supported dtype."""
 
     @classmethod
     def get(cls, model, encoding):
         """Initialize with type cast."""
-        return cls(model, SupportedEncodings[encoding])
+        return cls(model, SupportedEncoding[encoding])
 
     def _tiny_llama_weights(self, testdata_directory: Optional[Path]) -> Path:
         if not testdata_directory:
             raise ValueError("Please pass `testdata_directory`")
-        if self.encoding == SupportedEncodings.float32:
+        if self.encoding == SupportedEncoding.float32:
             return testdata_directory / "tiny_llama.gguf"
-        elif self.encoding == SupportedEncodings.bfloat16:
+        elif self.encoding == SupportedEncoding.bfloat16:
             return testdata_directory / "tiny_llama_bf16.gguf"
         else:
             raise ValueError(
@@ -69,11 +69,11 @@ class SupportedTestModels:
             )
 
     @property
-    def version(self) -> SupportedVersions:
-        if self.model == "tinyllama":
-            return SupportedVersions.llama3_1
+    def version(self) -> str:
+        if self.model == "tinyllama" or "3_1" in self.model:
+            return "3.1"
         else:
-            return SupportedVersions[self.model]
+            return "3"
 
     @property
     def hf_repo_id(self) -> str:
@@ -87,29 +87,35 @@ class SupportedTestModels:
         self,
         testdata_directory: Optional[Path] = None,
         **kwargs,
-    ) -> InferenceConfig:
+    ) -> PipelineConfig:
         if "max_new_tokens" not in kwargs and "max_tokens" not in kwargs:
             kwargs["max_new_tokens"] = 10
+
         if "weight_path" not in kwargs:
             if self.model == "tinyllama":
                 kwargs["weight_path"] = self._tiny_llama_weights(
                     testdata_directory
                 )
             else:
-                version = SupportedVersions[self.model]
-                repo_id = f"modularai/llama-{version}"
-                kwargs["weight_path"] = hf_hub_download(
-                    repo_id=repo_id,
-                    filename=self.encoding.hf_model_name(version),
+                hf_file = get_llama_huggingface_file(
+                    self.version, self.encoding
                 )
+                kwargs["weight_path"] = hf_file.download()
+                kwargs["huggingface_repo_id"] = hf_file.repo_id
+
         if "device_spec" not in kwargs:
             kwargs[
                 "device_spec"
             ] = DeviceSpec.cuda() if self.use_gpu else DeviceSpec.cpu()
-        if "max_new_tokens" not in kwargs and "max_tokens" not in kwargs:
-            kwargs["max_new_tokens"] = 10
 
-        return InferenceConfig(
+        if "cache_strategy" not in kwargs:
+            kwargs["cache_strategy"] = (
+                KVCacheStrategy.CONTINUOUS if self.encoding
+                in ["bfloat16", "float32"] else KVCacheStrategy.NAIVE
+            )
+
+        return PipelineConfig(
+            architecture="llama",
             version=self.version,
             quantization_encoding=self.encoding,
             **kwargs,
@@ -124,9 +130,9 @@ class SupportedTestModels:
                 raise ValueError(
                     "Need testdata_directory for tiny llama config path."
                 )
-            if self.encoding == SupportedEncodings.float32:
+            if self.encoding == SupportedEncoding.float32:
                 return testdata_directory / "tiny_llama_config.json"
-            elif self.encoding == SupportedEncodings.bfloat16:
+            elif self.encoding == SupportedEncoding.bfloat16:
                 return testdata_directory / "tiny_llama_bf16_config.json"
             else:
                 raise ValueError(
@@ -138,12 +144,10 @@ class SupportedTestModels:
             )
 
 
-ALL_SUPPORTED_MODELS = {"all", "tinyllama"}
-for version in SupportedVersions:
-    ALL_SUPPORTED_MODELS.add(version.name)
+ALL_SUPPORTED_MODELS = ["all", "tinyllama", "llama3", "llama3.1"]
 
 ALL_SUPPORTED_ENCODINGS = {"all"}
-for encoding in SupportedEncodings:
+for encoding in SupportedEncoding:
     ALL_SUPPORTED_ENCODINGS.add(encoding.name)
 
 

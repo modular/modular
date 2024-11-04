@@ -10,10 +10,10 @@ from typing import Literal
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3 import Llama3
 from llama3.llama3_token_gen import Llama3Tokenizer
 from nn.context import TextContext
+from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, next_token_with_logits
@@ -22,11 +22,11 @@ from test_common.evaluate import PROMPTS, next_token_with_logits
 @dataclass(frozen=True)
 class PipelineModelParams:
     name: Literal["tinyllama", "llama3_1"]
-    encoding: SupportedEncodings
+    encoding: SupportedEncoding
     max_length: int
     max_new_tokens: int = -1
     max_batch_size: int = 1
-    version: SupportedVersions = SupportedVersions.llama3_1
+    version: str = "3.1"
 
     """Whether to include a print hook. This is generally for debugging
     purposes, but it's also helping to avoid a segfault in the heterogeneous
@@ -37,14 +37,14 @@ class PipelineModelParams:
 
 
 @pytest.fixture(scope="session")
-def pipeline_config(testdata_directory, request) -> InferenceConfig:
+def pipeline_config(testdata_directory, request) -> PipelineConfig:
     print(request)
     model_params: PipelineModelParams = request.param
     print(f"\nPipelineModel: {model_params}")
     encoding = model_params.encoding
     test_model = SupportedTestModels.get(model_params.name, encoding)
 
-    if encoding in [SupportedEncodings.float32, SupportedEncodings.bfloat16]:
+    if encoding in [SupportedEncoding.float32, SupportedEncoding.bfloat16]:
         cache_strategy = KVCacheStrategy.CONTINUOUS
     else:
         cache_strategy = KVCacheStrategy.NAIVE
@@ -60,12 +60,12 @@ def pipeline_config(testdata_directory, request) -> InferenceConfig:
 
 
 @pytest.fixture(scope="session")
-def pipeline_tokenizer(pipeline_config: InferenceConfig) -> Llama3Tokenizer:
+def pipeline_tokenizer(pipeline_config: PipelineConfig) -> Llama3Tokenizer:
     return Llama3Tokenizer(pipeline_config)
 
 
 @pytest.fixture(scope="session")
-def pipeline_model(pipeline_config: InferenceConfig) -> Llama3:
+def pipeline_model(pipeline_config: PipelineConfig) -> Llama3:
     return Llama3(pipeline_config)
 
 
@@ -75,7 +75,7 @@ def pipeline_model(pipeline_config: InferenceConfig) -> Llama3:
     [
         PipelineModelParams(
             "tinyllama",
-            SupportedEncodings.bfloat16,
+            SupportedEncoding.bfloat16,
             512,
             10,
             4,

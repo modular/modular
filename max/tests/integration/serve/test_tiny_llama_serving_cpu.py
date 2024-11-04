@@ -11,10 +11,11 @@ import json
 import pytest
 from async_asgi_testclient import TestClient
 from evaluate_llama import SupportedTestModels
-from llama3 import Llama3Tokenizer, SupportedEncodings
+from llama3 import Llama3Tokenizer
 from max.driver import DeviceSpec
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import CreateChatCompletionResponse
+from max.pipelines import SupportedEncoding
 from test_common.evaluate import PROMPTS
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
@@ -35,7 +36,7 @@ MAX_READ_SIZE = 10 * 1024
             max_length=512,
             max_new_tokens=10,
             device_spec=DeviceSpec.cpu(),
-            encoding=SupportedEncodings.float32,
+            encoding=SupportedEncoding.float32,
         )
     ],
     indirect=True,
@@ -63,7 +64,7 @@ async def test_tinyllama_serve_cpu(app):
             max_length=512,
             max_new_tokens=10,
             device_spec=DeviceSpec.cpu(),
-            encoding=SupportedEncodings.float32,
+            encoding=SupportedEncoding.float32,
         ),
     ],
     indirect=True,

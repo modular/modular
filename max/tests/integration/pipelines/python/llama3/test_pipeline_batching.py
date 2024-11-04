@@ -10,8 +10,8 @@ from typing import Literal
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.config import InferenceConfig, SupportedEncodings, SupportedVersions
 from llama3.llama3_token_gen import Llama3Tokenizer, Llama3TokenGenerator
+from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, next_token_with_logits
@@ -20,11 +20,10 @@ from test_common.evaluate import PROMPTS, next_token_with_logits
 @dataclass(frozen=True)
 class PipelineModelParams:
     name: Literal["tinyllama", "llama3_1"]
-    encoding: SupportedEncodings
+    encoding: SupportedEncoding
     max_length: int
     max_new_tokens: int = -1
     max_batch_size: int = 1
-    version: SupportedVersions = SupportedVersions.llama3_1
 
     """Whether to include a print hook. This is generally for debugging
     purposes, but it's also helping to avoid a segfault in the heterogeneous
@@ -41,7 +40,7 @@ def pipeline_config(testdata_directory, request):
     encoding = model_params.encoding
     test_model = SupportedTestModels.get(model_params.name, encoding)
 
-    if encoding in [SupportedEncodings.float32, SupportedEncodings.bfloat16]:
+    if encoding in [SupportedEncoding.float32, SupportedEncoding.bfloat16]:
         print("using continuous batching caching strategy")
         cache_strategy = KVCacheStrategy.CONTINUOUS
     else:
@@ -64,7 +63,7 @@ def pipeline_tokenizer(pipeline_config):
 
 @pytest.fixture(scope="session")
 def pipeline_model(
-    pipeline_config: InferenceConfig, pipeline_tokenizer: Llama3Tokenizer
+    pipeline_config: PipelineConfig, pipeline_tokenizer: Llama3Tokenizer
 ):
     return Llama3TokenGenerator(
         pipeline_config,
@@ -77,8 +76,8 @@ def pipeline_model(
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 10, -1, 2),
-        PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 10, -1, 4),
+        PipelineModelParams("llama3_1", SupportedEncoding.q4_k, 10, -1, 2),
+        PipelineModelParams("llama3_1", SupportedEncoding.q4_k, 10, -1, 4),
     ],
     ids=PipelineModelParams.__str__,
     indirect=True,
@@ -135,12 +134,8 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 @pytest.mark.parametrize(
     "pipeline_config",
     [
-        PipelineModelParams(
-            "tinyllama", SupportedEncodings.float32, 128, -1, 2
-        ),
-        PipelineModelParams(
-            "tinyllama", SupportedEncodings.float32, 128, -1, 4
-        ),
+        PipelineModelParams("tinyllama", SupportedEncoding.float32, 128, -1, 2),
+        PipelineModelParams("tinyllama", SupportedEncoding.float32, 128, -1, 4),
     ],
     ids=PipelineModelParams.__str__,
     indirect=True,
@@ -222,11 +217,11 @@ def batch_sizes(request):
     "pipeline_config, batch_sizes",
     [
         (
-            PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 12, -1, 4),
+            PipelineModelParams("llama3_1", SupportedEncoding.q4_k, 12, -1, 4),
             [3, 1, 2, 4],
         ),
         (
-            PipelineModelParams("llama3_1", SupportedEncodings.q4_k, 12, -1, 8),
+            PipelineModelParams("llama3_1", SupportedEncoding.q4_k, 12, -1, 8),
             [4, 7, 1, 8],
         ),
     ],
@@ -303,7 +298,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
     [
         PipelineModelParams(
             "tinyllama",
-            SupportedEncodings.float32,
+            SupportedEncoding.float32,
             512,
             10,
             4,

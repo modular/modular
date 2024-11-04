@@ -13,9 +13,9 @@ from uuid import uuid4
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.config import InferenceConfig
 from llama3.llama3 import Llama3
 from llama3.llama3_token_gen import Llama3Tokenizer, Llama3TokenGenerator
+from max.pipelines import PipelineConfig
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, run_model
@@ -29,7 +29,7 @@ class TestParams:
 
 
 @pytest.fixture(scope="session")
-def pipeline_config(testdata_directory, request) -> InferenceConfig:
+def pipeline_config(testdata_directory, request) -> PipelineConfig:
     """Note: when using this fixture in a test, you must pytest.mark.parametrize
     with the max_length and max_new_tokens pairs (see usage examples below)!
     This is because only one instance of a fixture is cached at a time.
@@ -51,13 +51,13 @@ def pipeline_config(testdata_directory, request) -> InferenceConfig:
 
 
 @pytest.fixture(scope="session")
-def pipeline_tokenizer(pipeline_config: InferenceConfig) -> Llama3Tokenizer:
+def pipeline_tokenizer(pipeline_config: PipelineConfig) -> Llama3Tokenizer:
     return Llama3Tokenizer(pipeline_config)
 
 
 @pytest.fixture(scope="session")
 def tinyllama_model(
-    pipeline_config: InferenceConfig, pipeline_tokenizer: Llama3Tokenizer
+    pipeline_config: PipelineConfig, pipeline_tokenizer: Llama3Tokenizer
 ):
     return Llama3TokenGenerator(
         pipeline_config,

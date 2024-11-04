@@ -12,10 +12,8 @@ from typing import Coroutine
 
 import pytest
 from llama3 import (
-    InferenceConfig,
     Llama3,
     Llama3Tokenizer,
-    SupportedVersions,
 )
 from max.pipelines import PreTrainedTokenGeneratorTokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
@@ -26,6 +24,7 @@ from max.serve.pipelines.deps import (
     BatchedTokenGeneratorState,
     all_pipeline_states,
 )
+from max.pipelines import PipelineConfig
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
@@ -91,9 +90,9 @@ def tinyllama_model(testdata_directory, request):
     invoking it with.
     https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
     """
-    config = InferenceConfig(
+    config = PipelineConfig(
         weight_path=testdata_directory / request.param.weight_path,
-        version=SupportedVersions.llama3_1,
+        version="3.1",
         max_length=request.param.max_length,
         max_new_tokens=request.param.max_new_tokens,
         quantization_encoding=request.param.encoding,

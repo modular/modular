@@ -14,9 +14,10 @@ from typing import Any, List, Optional, TextIO
 
 import click
 from huggingface_hub import hf_hub_download
-from llama3 import InferenceConfig, Llama3, Llama3Tokenizer, SupportedEncodings
+from llama3 import Llama3, Llama3Tokenizer
+from llama3.config import get_llama_huggingface_file
 from max.driver import CPU, CUDA
-from max.pipelines import TokenGenerator
+from max.pipelines import TokenGenerator, SupportedEncoding, PipelineConfig
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 
 from utils import DevicesOptionType, config_to_flag
@@ -343,7 +344,7 @@ async def run_batch_scenario(
 
 
 @click.command
-@config_to_flag(InferenceConfig)
+@config_to_flag(PipelineConfig)
 @click.option(
     "--prompt",
     type=str,
@@ -418,33 +419,18 @@ def main(
         config_kwargs.update(
             {
                 "device": CUDA(id=use_gpu[0]),
-                "quantization_encoding": SupportedEncodings.bfloat16,
+                "quantization_encoding": SupportedEncoding.bfloat16,
             }
         )
     else:
         config_kwargs.update({"device": CPU()})
-    config = InferenceConfig(**config_kwargs)
+    config = PipelineConfig(**config_kwargs)
     # By default, use the Modular HF repository as a reference for tokenizer
     # configuration, etc. when no repository is specified.
-    repo_id = f"modularai/llama-{config.version}"
-    if config.weight_path is None:
-        if config.huggingface_weights is not None:
-            components = config.huggingface_weights.split("/")
-            assert len(components) == 3, (
-                "invalid Hugging Face weight location:"
-                f" {config.huggingface_weights}, "
-            )
-            repo_id = f"{components[0]}/{components[1]}"
-            weight_filename = components[2]
-        else:
-            weight_filename = config.quantization_encoding.hf_model_name(
-                config.version
-            )
-
-        config.weight_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=weight_filename,
-        )
+    hf_file = get_llama_huggingface_file(
+        config.version, config.quantization_encoding
+    )
+    config.weight_path = hf_file.download()
 
     batch_max_size = 4
     if model_name == "rev-echo":
