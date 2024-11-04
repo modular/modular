@@ -77,7 +77,7 @@ def kl_divergence_verifier(
 )
 def test_llama(model, encoding, testdata_directory):
     test_model = SupportedTestModels.get(model, encoding)
-    config = test_model.build_config()
+    config = test_model.build_config(max_length=512)
     tokenizer = Llama3Tokenizer(config)
     actual = run_model(Llama3(config), tokenizer, prompts=PROMPTS[:1])
 
