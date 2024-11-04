@@ -5,8 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for slice_tensor."""
 
+from __future__ import annotations
+
 import sys
-from typing import TYPE_CHECKING, Union, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -23,10 +25,19 @@ from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import Dim, DimLike, Shape, StaticDim, TensorType
+from ..type import (
+    AlgebraicDim,
+    Dim,
+    DimLike,
+    Shape,
+    StaticDim,
+    SymbolicDim,
+    TensorType,
+)
 from ..value import BufferValue, TensorValue
 from .constant import constant
 from .select import select
+from .shape_to_tensor import shape_to_tensor
 from .stack import stack_scalars
 
 # Currently slicing does not have any shape inference in RMO. Instead, it is
@@ -178,7 +189,7 @@ def _has_no_ellipsis(indices: SliceIndices) -> TypeGuard[list[SliceIndex]]:
 
 
 def _slice_and_output_tensors(
-    x: Union[BufferValue, TensorValue], indices: SliceIndices
+    x: BufferValue | TensorValue, indices: SliceIndices
 ):
     if not x.shape:
         raise ValueError("Slicing does not support scalar inputs")
@@ -230,7 +241,138 @@ def _slice_and_output_tensors(
     return starts, stops, steps, unsqueezed_shape, squeezed_shape
 
 
+def _slice_symbolic_tensor(
+    x: TensorValue, indices: SliceIndices
+) -> TensorValue:
+    """Slices a tensor with shape composed of symbolic dims.
+
+    Raises:
+        TypeError: if any of the indices is not a slice.
+        ValueError: if the indices vector's length exceed's the input's rank.
+    """
+    num_regular_indices = len(
+        [i for i in indices if i is not None and i is not Ellipsis]
+    )
+    if num_regular_indices > x.rank:
+        msg = (
+            f"expected slice indices length {len(indices)} to be less than or "
+            f"equal to input rank {x.rank}"
+        )
+        raise ValueError(msg)
+
+    if indices.count(Ellipsis) > 1:
+        msg = f"more than one Ellipsis in slice indices {indices}"
+        raise ValueError(msg)
+
+    # Handle Ellipsis by expanding remaining indices with slice(None).
+    ellipsis_index = indices.index(Ellipsis) if Ellipsis in indices else len(
+        indices
+    )
+    remaining = x.rank - num_regular_indices
+    indices = (
+        list(indices[:ellipsis_index])
+        + (remaining * [slice(None)])
+        + list(indices[ellipsis_index + 1 :])
+    )
+
+    # Expand the None indices after computing starts, stops, and steps.
+    not_none_indices = [i for i in indices if i is not None]
+
+    starts: list[int | Dim] = []
+    stops: list[int | Dim] = []
+    steps: list[int] = []
+    squeeze_indices: set[int] = set()
+    for i, subslice in enumerate(not_none_indices):
+        if not isinstance(subslice, (slice, int)):
+            msg = (
+                f"slice of tensor with symbolic shape {x.shape} unsupported "
+                f"with indices {indices}. Currently, only slices and integers "
+                "are supported"
+            )
+            raise TypeError(msg)
+
+        if isinstance(subslice, int):
+            # Create a single-element slice that will be squeezed later.
+            # Set stop to input dim when index is -1 since x[-1:0] is wrong.
+            stop = x.shape[i] if subslice == -1 else subslice + 1
+            subslice = slice(subslice, stop)
+            squeeze_indices.add(i)
+
+        step = subslice.step if subslice.step is not None else 1
+        if not isinstance(step, int) or step <= 0:
+            # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
+            msg = f"expected positive integer step but got {step}"
+            raise ValueError(msg)
+
+        # Handle setting default start and stop depending on sign of step.
+        if step < 0:
+            start = subslice.start if subslice.start is not None else -1
+            stop = (
+                subslice.stop if subslice.stop is not None else -x.shape[i] - 1
+            )
+        elif step > 0:
+            start = subslice.start if subslice.start is not None else 0
+            stop = subslice.stop if subslice.stop is not None else x.shape[i]
+
+        starts.append(start)
+        assert isinstance(stop, (int, Dim))
+        stops.append(stop)
+        steps.append(step)
+
+    sliced_tensor = Graph.current._add_op(
+        rmo.slice,
+        x,
+        Shape(starts).to_mlir(),
+        Shape(stops).to_mlir(),
+        Shape(steps).to_mlir(),
+    )[0].tensor
+
+    # Account for None entries in the slice indices by unsqueezing those dims.
+    expanded_shape = []
+    shape_iter = iter(sliced_tensor.shape)
+    for slice_idx in indices:
+        if slice_idx is None:
+            # Replace None indices with 1.
+            expanded_shape.append(1)
+        elif isinstance(slice_idx, int):
+            # Squeeze integer indices.
+            next(shape_iter)
+        else:
+            # Otherwise, append the incoming dim.
+            expanded_shape.append(next(shape_iter))
+
+    if expanded_shape != sliced_tensor.shape:
+        # Only reshape when necessary due to None dims or int slices.
+        return sliced_tensor.reshape(expanded_shape)
+
+    return sliced_tensor
+
+
 def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
+    """Slices out a subtensor view of the input tensor based on `indices`.
+
+    The semantics of `slice_tensor` follow NumPy slicing semantics with the
+    following restrictions:
+    - Slice indices must not index out of [-dim - 1, dim - 1] for negative step,
+      or [-dim, dim] for positive step.
+
+    Examples:
+    # Reverse a tensor.
+    >>> x[::-1]
+    # Unsqueeze the second last dimension of a tensor.
+    >>> x[..., None, :]
+
+    Returns:
+        The sliced subtensor of `x`.
+    """
+    if any(not isinstance(d, StaticDim) for d in x.shape) and not any(
+        isinstance(subslice, (TensorValue, tuple)) for subslice in indices
+    ):
+        # For symbolic tensors, take a special path that emits rmo.slice.
+        # This path doesn't support tuples or SSA values, so send those down
+        # the other path.
+        return _slice_symbolic_tensor(x, indices)
+
     starts, stops, steps, unsqueezed_shape, squeezed_shape = (
         _slice_and_output_tensors(x, indices)
     )

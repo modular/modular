@@ -5,11 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-import random
-from functools import reduce
-from typing import Optional
+from __future__ import annotations
 
-from conftest import broadcast_shapes, broadcastable_tensor_types, tensor_types
+import operator
+import random
+from typing import TYPE_CHECKING, Any
+
+import pytest
+from conftest import tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -115,10 +118,10 @@ def test_slice_valid_ints(tensor_type: TensorType, index):
         graph.output(out)
 
 
-def gen_slice(n, rand: random.Random):
-    start: Optional[int] = None
-    stop: Optional[int] = None
-    step: Optional[int] = None
+def gen_slice(n, rand: random.Random) -> slice:
+    start: int | None = None
+    stop: int | None = None
+    step: int | None = None
 
     if rand.randint(0, 1):
         start = rand.randint(-1 * n, n - 1)
@@ -146,3 +149,191 @@ def test_slice_static_dims(tensor_type: TensorType, rand: random.Random):
         out = ops.slice_tensor(graph.inputs[0], index)
         assert out.shape == expected_slice_shape(tensor_type.shape, index)
         graph.output(out)
+
+
+@pytest.mark.parametrize(
+    ("tensor_type", "indices"),
+    [
+        # x[1:]
+        (TensorType(DType.float32, shape=["dim0"]), (slice(1, None),)),
+        (TensorType(DType.float32, shape=["dim0", "dim1"]), (slice(1, None),)),
+        # x[:-1]
+        (TensorType(DType.float32, shape=["dim0"]), (slice(None, -1),)),
+        # x[::2]
+        (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, 2),)),
+        # x[::-1]
+        # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
+        # (TensorType(DType.float32, shape=["dim0"]), (slice(None, None, -1),)),
+        # x[:, None, :]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            (slice(None), None, slice(None)),
+        ),
+        # x[None, ...]
+        (TensorType(DType.float32, shape=["dim0", "dim1"]), (None, Ellipsis)),
+        # x[..., None]
+        (TensorType(DType.float32, shape=["dim0", "dim1"]), (Ellipsis, None)),
+        # x[..., 1]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (Ellipsis, 1),
+        ),
+        # x[Ellipsis, 1:]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            (Ellipsis, slice(1, None)),
+        ),
+        # x[1, ..., ::-1]
+        # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
+        # (
+        #     TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+        #     (1, Ellipsis, slice(None, None, -1)),
+        # ),
+    ],
+)
+def test_slice_symbolic_tensor(
+    tensor_type: TensorType, indices: list[slice]
+) -> None:
+    """Tests slicing vectors of symbolic dims by another symbolic dim vector."""
+    # NOTE: the `Graph` constructor verifies the staged graph op.
+    Graph(
+        "slice",
+        forward=operator.itemgetter(indices),
+        input_types=[tensor_type],
+    )
+
+
+@pytest.mark.parametrize(
+    ("tensor_type", "indices", "expected_length", "expected_none_indices"),
+    [
+        # x[:, None, :]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            (slice(None), None, slice(None)),
+            3,
+            (1,),
+        ),
+        # x[None, ..., None]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            (None, Ellipsis, None),
+            4,
+            (0, 3),
+        ),
+        # x[..., None]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1"]),
+            (Ellipsis, None),
+            3,
+            (2,),
+        ),
+    ],
+)
+def test_slice_none_dims(
+    tensor_type: TensorType,
+    indices: list[slice],
+    expected_length: int,
+    expected_none_indices: tuple[int, ...],
+) -> None:
+    """Tests slicing vectors of symbolic dims by another symbolic dim vector."""
+    # NOTE: the `Graph` constructor verifies the staged graph op.
+    graph = Graph(
+        "slice",
+        forward=operator.itemgetter(indices),
+        input_types=[tensor_type],
+    )
+
+    ops = graph._mlir_op.regions[0].blocks[0].operations
+    output_op = ops[len(ops) - 1]
+    result_type = TensorType.from_mlir(output_op.operands[0].type)
+    # Check that the output rank is correctly expanded by the None indices.
+    assert result_type.rank == expected_length
+
+    # Check that all the expanded dims are 1.
+    assert all(result_type.shape[i] == 1 for i in expected_none_indices)
+
+
+@pytest.mark.parametrize(
+    ("tensor_type", "indices", "expected_shape"),
+    [
+        # x[1]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (1,),
+            ["dim1", "dim2"],
+        ),
+        # x[:, 1]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (slice(None), 1),
+            ["dim0", "dim2"],
+        ),
+        # x[:, :, 1]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (slice(None), slice(None), 1),
+            ["dim0", "dim1"],
+        ),
+        # x[1, 1]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (1, 1),
+            ["dim2"],
+        ),
+        # x[1, :, 1]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (1, slice(None), 1),
+            ["dim1"],
+        ),
+        # x[1, 1, 1]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (1, 1, 1),
+            [],
+        ),
+        # x[..., 1]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (Ellipsis, 1),
+            ["dim0", "dim1"],
+        ),
+        # x[1, ...]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (1, Ellipsis),
+            ["dim1", "dim2"],
+        ),
+        # x[:, -1]
+        (
+            TensorType(DType.float32, shape=["dim0", "dim1", "dim2"]),
+            (slice(None), -1),
+            ["dim0", "dim2"],
+        ),
+    ],
+)
+def test_slice_int_dims(
+    tensor_type: TensorType,
+    indices: tuple[Any, ...],
+    expected_shape: list[str | int],
+) -> None:
+    """Tests slicing vectors of symbolic dims by another symbolic dim vector."""
+    # NOTE: the `Graph` constructor verifies the staged graph op.
+    graph = Graph(
+        "slice",
+        forward=operator.itemgetter(indices),
+        input_types=[tensor_type],
+    )
+
+    ops = graph._mlir_op.regions[0].blocks[0].operations
+    output_op = ops[len(ops) - 1]
+    result_type = TensorType.from_mlir(output_op.operands[0].type)
+    # Check that the output rank is correctly expanded by the None indices.
+    assert result_type.rank == len(expected_shape)
+    assert all(
+        dim == expected_dim
+        for i, (dim, expected_dim) in enumerate(
+            zip(result_type.shape, expected_shape)
+        )
+        if isinstance(expected_dim, int)
+    )
