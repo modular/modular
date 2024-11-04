@@ -160,6 +160,8 @@ export class MojoLSPProxy {
       }' and exit code '${status.code}'.`,
     );
 
+    this.client.sendNotification('mojo/lspRestart');
+
     const timeSinceInitInMillis = Date.now() - this.initTime;
     const timeSinceInitInMins = Math.floor(timeSinceInitInMillis / 60000);
     // We only allow one restart per minute to prevent VSCode from disabling the

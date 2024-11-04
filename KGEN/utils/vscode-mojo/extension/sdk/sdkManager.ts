@@ -261,7 +261,7 @@ export class MojoSDKManager extends DisposableContext {
     if (!sdkConfig) {
       return `Unable to determine the MAX SDK version.`;
     }
-    return new MojoSDK(sdkConfig, this.logger);
+    return new MojoSDK(sdkConfig, spec.kind, this.logger);
   }
 
   private async selectSDK(): Promise<Optional<MojoSDKSpec>> {

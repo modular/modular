@@ -16,6 +16,7 @@ import { DisposableContext } from '../utils/disposableContext';
 import { Subject } from 'rxjs';
 import { Logger } from '../logging';
 import { MojoSDKManager } from '../sdk/sdkManager';
+import TelemetryReporter from '@vscode/extension-telemetry';
 
 /**
  *  This class manages the LSP clients.
@@ -26,16 +27,19 @@ export class MojoLSPManager extends DisposableContext {
   public lspClient: Optional<vscodelc.LanguageClient>;
   public lspClientChanges = new Subject<Optional<vscodelc.LanguageClient>>();
   private logger: Logger;
+  private reporter: TelemetryReporter;
 
   constructor(
     sdkManager: MojoSDKManager,
     extensionContext: vscode.ExtensionContext,
+    reporter: TelemetryReporter,
   ) {
     super();
 
     this.sdkManager = sdkManager;
     this.extensionContext = extensionContext;
     this.logger = sdkManager.logger;
+    this.reporter = reporter;
   }
 
   async activate() {
@@ -164,6 +168,19 @@ export class MojoLSPManager extends DisposableContext {
       serverOptions,
       clientOptions,
     );
+
+    // The proxy sends us a mojo/lspRestart notification when it restarts the
+    // underlying language server. It's our job to pass that to the telemetry
+    // backend.
+    this.pushSubscription(
+      languageClient.onNotification('mojo/lspRestart', () => {
+        this.reporter.sendTelemetryEvent('lspRestart', {
+          mojoSDKVersion: sdk.config.version.toString(),
+          mojoSDKKind: sdk.kind,
+        });
+      }),
+    );
+
     this.logger.lsp.logInfo(
       `Launching Language Server '${
         initializationOptions.serverPath
