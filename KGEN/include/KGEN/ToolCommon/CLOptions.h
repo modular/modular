@@ -84,6 +84,8 @@ public:
   CompilationOptions::DebugInfoLanguage debugInfoLanguage{
       CompilationOptions::kLangMojo};
 
+  std::string stripFilePrefix;
+
   bool enableXRayInstrumentation{false};
 
   SmallVector<std::string> includePaths;
@@ -196,6 +198,13 @@ private:
           clEnumValN(CompilationOptions::kLangC, "C", "C language."),
           clEnumValN(CompilationOptions::kLangMojo, "Mojo", "Mojo language")),
       llvm::cl::location(options.debugInfoLanguage),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<std::string, true> stripFilePrefix{
+      "strip-file-prefix",
+      llvm::cl::desc(
+          "Strip this prefix from filenames used for diagnostics & debugging."),
+      llvm::cl::location(options.stripFilePrefix),
       llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MOpt<bool, true> enableXRayInstrumentation{

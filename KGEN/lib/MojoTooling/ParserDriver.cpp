@@ -192,13 +192,12 @@ static ASTDecl *buildPackageDecl(const std::filesystem::path &filepath,
 
 /// Create an ASTDecl for the given module or package.
 static ASTDecl *buildModuleOrPackageDecl(const std::filesystem::path &path,
-
                                          SharedState &sharedState) {
   // Handle the case of a file.
   if (path.extension() == ".mojo" || path.extension() == ".🔥") {
     SourceMgr &sourceMgr = sharedState.getSourceMgr();
     std::string fullPath;
-    int fileId = sourceMgr.AddIncludeFile(path.string(), SMLoc(), fullPath);
+    int fileId = sourceMgr.AddIncludeFile(path, SMLoc(), fullPath);
     if (!fileId)
       return nullptr;
     return buildModuleDecl(path, sourceMgr.getMemoryBuffer(fileId),

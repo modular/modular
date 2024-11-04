@@ -75,6 +75,7 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     AsyncRT::Runtime &runtime, llvm::opt::OptSpecifier docDiagnoseMissingId,
     llvm::opt::OptSpecifier docErrorOnInvalidDocId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
+    llvm::opt::OptSpecifier stripFilePrefixId,
     function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
                                        mlir::TimingScope &)>
         parseFn);

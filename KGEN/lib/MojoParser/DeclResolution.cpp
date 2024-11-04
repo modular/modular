@@ -1314,13 +1314,10 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
   // Push a scope for the file of this module.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
   if (shared.diBuilder) {
-    auto &sourceMgr = shared.getSourceMgr();
-    int fileId = sourceMgr.FindBufferContainingLoc(lexer.getToken().getLoc());
-    if (fileId) {
-      StringRef filename =
-          sourceMgr.getMemoryBuffer(fileId)->getBufferIdentifier();
-      fileGuard = shared.diBuilder->pushFile(filename, "/");
-    }
+    FileLineColLoc loc =
+        shared.diags.translateLocation(lexer.getToken().getLoc());
+    if (loc)
+      fileGuard = shared.diBuilder->pushFile(loc.getFilename().getValue(), "/");
   }
 
   return ParserBase(shared, lexer).parseSuite(decl);

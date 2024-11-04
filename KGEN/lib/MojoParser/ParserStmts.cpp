@@ -273,14 +273,10 @@ private:
 
 void StmtParser::pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard) {
   SMLoc curLoc = getToken().getLoc();
-  auto &sourceMgr = getSourceMgr();
-  unsigned bufferID = sourceMgr.FindBufferContainingLoc(curLoc);
-  auto [line, column] = sourceMgr.getLineAndColumn(curLoc, bufferID);
-
+  FileLineColLoc loc = shared.diags.translateLocation(curLoc);
   scopeGuard = shared.diBuilder->pushNestedLexicalBlock(
-      shared.diBuilder->createFile(
-          sourceMgr.getMemoryBuffer(bufferID)->getBufferIdentifier(), "/"),
-      line, column);
+      shared.diBuilder->createFile(loc.getFilename(), "/"), loc.getLine(),
+      loc.getColumn());
 }
 
 /// Parse a suite, which is either a series of comma separated simple_stmt's on

@@ -382,7 +382,7 @@ static int package(const State &subcommandState) {
       state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
       options::OPT_diagnose_missing_doc_strings,
       options::OPT_validate_doc_strings, options::OPT_max_notes,
-      /*definesId=*/llvm::opt::OptSpecifier(),
+      /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(

@@ -360,30 +360,7 @@ public:
     rawDocStr = decl.getDocString().getString();
 
     // Otherwise, try to resolve a file location for the doc string.
-    FileLineColLoc docLocAttr = docStr->getLoc();
-    llvm::SourceMgr &sourceMgr = sharedState.getSourceMgr();
-
-    // Check for an already opened file.
-    int docBufferId = 0;
-    for (int i = 0, e = sourceMgr.getNumBuffers(); i < e; ++i) {
-      int bufferId = sourceMgr.getMainFileID() + i;
-      auto *buffer = sourceMgr.getMemoryBuffer(bufferId);
-      if (buffer->getBufferIdentifier() == docLocAttr.getFilename()) {
-        docBufferId = bufferId;
-        break;
-      }
-    }
-
-    // Otherwise, try to pull in the file.
-    if (!docBufferId) {
-      std::string unused;
-      docBufferId = sourceMgr.AddIncludeFile(docLocAttr.getFilename().str(),
-                                             SMLoc(), unused);
-      if (!docBufferId)
-        return;
-    }
-    docStartLoc = sourceMgr.FindLocForLineAndColumn(
-        docBufferId, docLocAttr.getLine(), docLocAttr.getColumn());
+    docStartLoc = sharedState.diags.convertLocToSMLoc(docStr->getLoc());
   }
 
   void validate(ASTDecl &decl) {

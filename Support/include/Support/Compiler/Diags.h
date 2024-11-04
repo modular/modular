@@ -35,7 +35,7 @@ class FixIt;
 class Diags {
 public:
   Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics,
-        int maxNotesPerDiagnostic);
+        int maxNotesPerDiagnostic, StringRef stripFilenamePrefix);
   ~Diags();
 
   llvm::SourceMgr &sourceMgr;
@@ -62,7 +62,11 @@ public:
   /// Encode the specified source location information into a Location object
   /// for attachment to the IR or error reporting.  This always returns a
   /// FileLineColLoc.
-  Location translateLocation(llvm::SMLoc loc) const;
+  FileLineColLoc translateLocation(llvm::SMLoc loc) const;
+
+  /// Canonicalize a filename by stripping `stripFilenamePrefix` prefix from it
+  /// if applicable.
+  std::string getCanonicalFilename(StringRef filenameRef) const;
 
   /// Decode the specific MLIR location information into an SMLoc for use with
   /// the SourceMgr. This returns an invalid SMLoc if the location is not
@@ -109,10 +113,6 @@ private:
 
   /// Configuration for how many notes to print for a diagnostic.
   int maxNotesPerDiagnostic;
-
-  /// This is a StringAttr for an unknown buffer name. It is type erased to
-  /// void* to reduce header polution.
-  const void *unknownBufferNameIdentifier;
 };
 
 /// This class represents a diagnostic that is built up by the parser and

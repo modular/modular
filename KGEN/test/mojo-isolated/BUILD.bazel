@@ -1,6 +1,7 @@
 load("//bazel:api.bzl", "lit_tests")
 
 _DATA = [
+    "**/inputs/**/*.mojo",
     "**/debuginfo_module.mojo",
     "**/docs_package/**/*.mojo",
     "**/imported_cached_module.mojo",
@@ -14,7 +15,10 @@ _DATA = [
 lit_tests(
     name = "mojo-isolated",
     srcs = glob(
-        ["**/*.mojo"],
+        [
+            "**/*.mojo",
+            "**/*.test",
+        ],
         exclude = _DATA,
     ),
     data = [
