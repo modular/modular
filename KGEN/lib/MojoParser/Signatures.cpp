@@ -876,8 +876,12 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   auto packStruct = dyn_cast_if_present<StructDeclOp>(
       variadicPackType.getDecl(emitter.shared));
+
+  auto builtinBoolMlirType =
+      emitter.shared.getBuiltinBoolType(emitter.declScope, arg.loc).mlirType;
+
   if (!packStruct || packStruct.getParams().size() != 4 ||
-      !packStruct.getParams()[0].getType().isInteger(1) ||
+      packStruct.getParams()[0].getType() != builtinBoolMlirType ||
       !isa<OriginType>(packStruct.getParams()[1].getType()) ||
       !isa<AnyTraitType>(packStruct.getParams()[2].getType()) ||
       !isa<VariadicType>(packStruct.getParams()[3].getType())) {
@@ -897,10 +901,18 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     elementTrait =
         ParamOperatorAttr::get(POC::Rebind, elementTrait, elementTraitParamTy);
 
+  ValueDest dest(EC_Type);
+  CValue isMutableCValue =
+      emitter.emitBool({refType.isMutable(), arg.typeExpr}, dest);
+
+  PValue isMutablePValue = isMutableCValue.getIfPValue();
+  assert(isMutablePValue &&
+         "constructing a bool from a parameter should create a parameter");
+
   // Bind the VariadicPack[isMutable, origin, element_trait, element_types]
   // parameters.
   return packStruct.bindReference(
-      {refType.isMutable(), refType.getOrigin(), elementTrait, param.get()});
+      {isMutablePValue.get(), refType.getOrigin(), elementTrait, param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default

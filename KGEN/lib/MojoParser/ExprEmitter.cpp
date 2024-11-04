@@ -2042,6 +2042,12 @@ CValue ExprEmitter::emitMLIRIndex(const ExprNode *expr, ExprContext context) {
   return emitMLIRIndex({emitExprCValue(expr, context), expr}, context);
 }
 
+CValue ExprEmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {
+  ASTType boolType = shared.getBuiltinBoolType(declScope, value.expr->getLoc());
+  return emitConstructorCall(boolType, CallOperands({value}), value.expr,
+                             CallSyntax::kImplicitConvert, dest);
+}
+
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
 ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,

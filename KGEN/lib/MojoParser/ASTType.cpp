@@ -328,7 +328,8 @@ ASTType ASTType::getVariadicElementType() const {
 RefPackType ASTType::getVariadicPackInfo() const {
   assert(!isa<RefType>(mlirType) && "looking at a RefType not a VariadicPack");
   auto bindings = getParamBindings();
-  assert(bindings.size() == 4 && bindings[0].getType().isInteger(1) &&
+  // NOTE: `bindings[0]` is expected to be the Mojo `Bool` type.
+  assert(bindings.size() == 4 && isa<LIT::StructType>(bindings[0].getType()) &&
          isa<OriginType>(bindings[1].getType()) &&
          isa<AnyTraitType>(bindings[2].getType()) &&
          isa<VariadicType>(bindings[3].getType()) &&
