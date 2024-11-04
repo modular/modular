@@ -18,6 +18,7 @@ import { MojoDebugManager } from './debug/debug';
 import { MojoDecoratorManager } from './decorations';
 import { RpcServer } from './server/RpcServer';
 import { Mutex } from 'async-mutex';
+import TelemetryReporter from '@vscode/extension-telemetry';
 
 /**
  * Returns if the given extension context is a nightly build.
@@ -36,6 +37,11 @@ export class MojoExtension extends DisposableContext {
   public lspManager?: MojoLSPManager;
   public readonly isNightly: boolean;
   private activateMutex = new Mutex();
+  // NOTE: This connection string comes from the Azure Application Insights
+  // dashboard. It isn't sensitive, so we can hard-code it.
+  private reporter = new TelemetryReporter(
+    'InstrumentationKey=9c380139-66e8-4cbb-a16e-d2c848ff61d4;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=3546f7bc-88b0-407b-bda7-9b410227417c',
+  );
 
   constructor(
     context: vscode.ExtensionContext,
@@ -46,6 +52,7 @@ export class MojoExtension extends DisposableContext {
     this.extensionContext = context;
     this.logger = logger;
     this.isNightly = isNightly;
+    this.pushSubscription(this.reporter);
   }
 
   async activate(reloading: boolean): Promise<MojoExtension> {
@@ -107,7 +114,11 @@ Activating the Mojo Extension
       this.pushSubscription(new MojoDecoratorManager());
 
       // Initialize the LSPs
-      this.lspManager = new MojoLSPManager(sdkManager, this.extensionContext);
+      this.lspManager = new MojoLSPManager(
+        sdkManager,
+        this.extensionContext,
+        this.reporter,
+      );
       await this.lspManager.activate();
       this.pushSubscription(this.lspManager);
 

@@ -8,6 +8,7 @@ import { Logger } from '../logging';
 import { MojoSDKConfig } from './sdkConfig';
 import { Memoize } from 'typescript-memoize';
 import * as util from 'util';
+import { MojoSDKKind } from './types';
 const execFile = util.promisify(require('child_process').execFile);
 
 /**
@@ -15,10 +16,12 @@ const execFile = util.promisify(require('child_process').execFile);
  */
 export class MojoSDK {
   public readonly config: MojoSDKConfig;
+  public readonly kind: MojoSDKKind;
   private logger: Logger;
 
-  constructor(config: MojoSDKConfig, logger: Logger) {
+  constructor(config: MojoSDKConfig, kind: MojoSDKKind, logger: Logger) {
     this.config = config;
+    this.kind = kind;
     this.logger = logger;
   }
 
