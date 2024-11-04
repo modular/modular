@@ -44,7 +44,7 @@ def rebind(x: TensorValueLike, shape: ShapeLike, message: str) -> TensorValue:
     message_attr = mlir.StringAttr.get(message)
     return Graph.current._add_op(
         rmo.rebind_tensor_shape,
-        TensorType(v.dtype, shape).to_mlir(),
+        TensorType(v.dtype, shape, device=v.device).to_mlir(),
         v,
         message=message_attr,
     )[0].tensor

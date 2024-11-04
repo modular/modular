@@ -377,7 +377,7 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
         _slice_and_output_tensors(x, indices)
     )
 
-    unsqueezed_type = TensorType(x.dtype, unsqueezed_shape)
+    unsqueezed_type = TensorType(x.dtype, unsqueezed_shape, x.device)
     return Graph.current._add_op(
         rmo.mo_slice, unsqueezed_type.to_mlir(), x, starts, stops, steps
     )[0].tensor.reshape(squeezed_shape)

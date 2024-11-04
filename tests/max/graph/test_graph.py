@@ -105,6 +105,26 @@ def test_elementwise_add_graph_with_device_prop_error() -> None:
             graph.output(graph.inputs[0] + graph.inputs[1])
 
 
+def test_transpose_graph_with_device_prop() -> None:
+    """Builds a simple graph with an transpose and checks the IR."""
+    with Graph(
+        "elementwise_add",
+        input_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=["batch", "channels"],
+                device=Device(DeviceType.CUDA, 0),
+            )
+        ],
+    ) as graph:
+        graph.output(ops.transpose(graph.inputs[0], -1, -2))
+        for input in graph.inputs:
+            assert "cuda" in str(input)
+        assert " -> !mo.tensor<[channels, batch], f32, cuda:0>" in str(
+            graph._mlir_op
+        )
+
+
 @pytest.mark.skipif(sys.version_info.minor > 10, reason="MSDK-636")
 def test_location() -> None:
     def bar():

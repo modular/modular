@@ -37,7 +37,7 @@ def gather(
     output_shape = [*shape[:axis], *indices.shape, *shape[axis + 1 :]]
     return Graph.current._add_op(
         rmo.mo_gather,
-        TensorType(input.dtype, output_shape).to_mlir(),
+        TensorType(input.dtype, output_shape, input.device).to_mlir(),
         input,
         indices,
         constant(axis, DType.int64),
@@ -128,7 +128,7 @@ def gather_nd(
 
     return Graph.current._add_op(
         rmo.mo_gather_nd,
-        TensorType(input.dtype, output_shape).to_mlir(),
+        TensorType(input.dtype, output_shape, input.device).to_mlir(),
         input,
         indices,
         mlir.IntegerAttr.get(mlir.IndexType.get(), batch_dims),

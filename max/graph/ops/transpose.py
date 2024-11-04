@@ -46,7 +46,7 @@ def transpose(x: TensorValueLike, dim_1: int, dim_2: int) -> TensorValue:
 
     return Graph.current._add_op(
         rmo.mo_transpose,
-        TensorType(dtype=v.dtype, shape=new_shape).to_mlir(),
+        TensorType(dtype=v.dtype, shape=new_shape, device=v.device).to_mlir(),
         v,
         constant(indices, DType.int64),
     )[0].tensor

@@ -47,7 +47,7 @@ def range(
 
     return Graph.current._add_op(
         rmo.mo_range,
-        TensorType(start.dtype, shape=[out_dim]).to_mlir(),
+        TensorType(start.dtype, shape=[out_dim], device=start.device).to_mlir(),
         start,
         stop,
         step,

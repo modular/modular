@@ -53,7 +53,7 @@ def permute(x: TensorValueLike, dims: list[int]) -> TensorValue:
 
     return Graph.current._add_op(
         rmo.mo_transpose,
-        TensorType(dtype=x.dtype, shape=new_shape).to_mlir(),
+        TensorType(dtype=x.dtype, shape=new_shape, device=x.device).to_mlir(),
         x,
         constant(np.array(dims), DType.int64),
     )[0].tensor

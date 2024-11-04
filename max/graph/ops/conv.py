@@ -150,7 +150,7 @@ def conv2d(
 
     return Graph.current._add_op(
         rmo.mo_conv,
-        TensorType(x.dtype, output_shape).to_mlir(),
+        TensorType(x.dtype, output_shape, x.device).to_mlir(),
         x,
         filter,
         stride_constant,

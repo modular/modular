@@ -49,7 +49,7 @@ def broadcast_to(
 
         return Graph.current._add_op(
             rmo.mo_broadcast_to,
-            TensorType(x.dtype, shape=out_dims).to_mlir(),
+            TensorType(x.dtype, shape=out_dims, device=x.device).to_mlir(),
             x,
             shape._mlir_value,
         )[0].tensor
