@@ -6,6 +6,7 @@
 
 import numpy as np
 import pytest
+import torch.nn.functional as F
 from hypothesis import example
 from max.dtype import DType
 from max.graph import Graph, TensorType
@@ -14,17 +15,7 @@ from nn import LPLayerNorm
 
 
 def torch_layer_norm(x, weight):
-    mean = x.mean(dim=-1, keepdim=True)
-    std = x.std(dim=-1, keepdim=True)
-
-    # Apply layer normalization.
-    normalized_tensor = (x - mean) / (
-        std + 1e-6
-    )  # Adding epsilon for numerical stability.
-
-    after_weights = normalized_tensor * weight
-
-    return after_weights
+    return F.layer_norm(x, weight.shape, weight=weight, eps=1e-6)
 
 
 @pytest.mark.xfail(True, reason="AIPIPE-153")
