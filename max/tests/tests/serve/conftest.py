@@ -1,0 +1,32 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+import os
+from pathlib import Path
+from typing import Union
+from transformers import (
+    AutoTokenizer,
+    PreTrainedTokenizerFast,
+    PreTrainedTokenizer,
+)
+
+import pytest
+
+
+@pytest.fixture(scope="session")
+def fixture_testdatadirectory() -> Path:
+    """Returns the path to the Modular .derived directory."""
+    path = os.getenv("MAX_SERVE_TESTDATA")
+    assert path is not None
+    return Path(path)
+
+
+@pytest.fixture(scope="session")
+def fixture_tokenizer(
+    fixture_testdatadirectory: Path,
+) -> Union[PreTrainedTokenizerFast, PreTrainedTokenizer]:
+    tokenizer = AutoTokenizer.from_pretrained(fixture_testdatadirectory)
+    return tokenizer

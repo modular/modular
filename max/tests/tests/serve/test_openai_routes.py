@@ -5,11 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import json
 import functools
 from threading import Thread
 
-import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
@@ -27,7 +25,6 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
-from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.performance_fake import (
     PerformanceFakingTokenGeneratorTokenizer,
     get_performance_fake,
@@ -36,7 +33,7 @@ from max.serve.schemas.openai import CreateChatCompletionResponse
 
 
 @pytest_asyncio.fixture(scope="function")
-async def app():
+def app(fixture_tokenizer):
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
     pipeline_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
@@ -50,7 +47,7 @@ async def app():
                 TokenGeneratorPipeline(
                     pipeline_config,
                     "tunable_app",
-                    PerformanceFakingTokenGeneratorTokenizer(None),
+                    PerformanceFakingTokenGeneratorTokenizer(fixture_tokenizer),
                 ),
                 functools.partial(get_performance_fake, "no-op"),
             ),
@@ -66,7 +63,6 @@ async def app():
     )
 
 
-@pytest.mark.skip("TODO(ylou): Restore!!")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
 async def test_openai_echo_chat_completion(app, model_name):

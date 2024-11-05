@@ -46,7 +46,7 @@ def stream_app(reset_sse_starlette_appstatus_event):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("num_tasks", [16])
 async def test_stream(stream_app, num_tasks):
-    async def main_stream(client, idx: int):
+    async def main_stream(client: TestClient, idx: int):
         msg = f"Who was the {idx} president?"
         response_text = ""
         r = await client.post(
