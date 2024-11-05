@@ -248,27 +248,27 @@ fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias MI300X = Info(
     name="MI300X",
-    arch_name="mi300x",
-    compute=0.0,
+    arch_name="gfx942",
+    compute=9.4,
     version="CDNA3",
-    # TODO: Fill the stuff bellow (the arch is gfx942).
-    sm_count=114,
-    threads_per_sm=-1,
-    threads_per_warp=32,
-    warps_per_multiprocessor=64,
+    sm_count=304,
+    threads_per_sm=2048,
+    threads_per_warp=64,
+    warps_per_multiprocessor=32,  # 2048 threads per sm / 64 threads per warp = 32 warps per sm
     threads_per_multiprocessor=2048,
-    thread_blocks_per_multiprocessor=32,
-    shared_memory_per_multiprocessor=167936,
+    thread_blocks_per_multiprocessor=2,
+    shared_memory_per_multiprocessor=65536,
     register_file_size=65536,
     register_allocation_unit_size=256,
     allocation_granularity="warp",
     max_registers_per_thread=255,
     max_registers_per_block=65536,
-    max_blocks_per_multiprocessor=32,
+    max_blocks_per_multiprocessor=2,
     shared_memory_allocation_unit_size=128,
     warp_allocation_granularity=4,
     max_thread_block_size=1024,
-    flops=Flops(fp16=1979, i8=3958, i4=7916),
+    # From https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-data-sheet.pdf
+    flops=Flops(tf32=653.7, fp16=1307.4, fp8=1307.4, i8=2614.9, i4=0),
 )
 
 # ===----------------------------------------------------------------------===#
