@@ -241,13 +241,129 @@ def _slice_and_output_tensors(
     return starts, stops, steps, unsqueezed_shape, squeezed_shape
 
 
+def expand_ellipsis(indices: SliceIndices, input_rank: int) -> SliceIndices:
+    """Expands a potential Ellipsis in indices with slice(None).
+
+    Returns:
+        Indices with Ellipsis expanded.
+        The length of the output indices is equal to the rank of the output of
+        the slice, including new (None) indices.
+
+    Raises:
+        ValueError: if there is more than one Ellipsis.
+    """
+    num_ellipsis = indices.count(Ellipsis)
+    if num_ellipsis > 1:
+        msg = f"more than one Ellipsis in slice indices {indices}"
+        raise ValueError(msg)
+
+    # Handle Ellipsis by expanding remaining indices with slice(None).
+    ellipsis_index = indices.index(Ellipsis) if Ellipsis in indices else len(
+        indices
+    )
+    num_regular_indices = len(indices) - num_ellipsis - indices.count(None)
+    remaining = input_rank - num_regular_indices
+    return (
+        list(indices[:ellipsis_index])
+        + (remaining * [slice(None)])
+        + list(indices[ellipsis_index + 1 :])
+    )
+
+
+def slice_arguments(
+    indices: SliceIndices, input_shape: Shape
+) -> tuple[list[int | Dim], list[int | Dim], list[int]]:
+    """Computes starts, stops, and steps args from indices and input shape.
+
+    Returns:
+        A tuple of (starts, stops, steps) where starts and stops can be symbolic
+        or algebraic expressions, but steps must be constant integers.
+
+    Raises:
+        TypeError: if any index is not a slice or integer.
+        ValueError: for non-positive step.
+    """
+    # Expand the None indices after computing starts, stops, and steps.
+    not_none_indices = [i for i in indices if i is not None]
+
+    starts: list[int | Dim] = []
+    stops: list[int | Dim] = []
+    steps: list[int] = []
+    for i, subslice in enumerate(not_none_indices):
+        if not isinstance(subslice, (slice, int)):
+            msg = (
+                f"slice of tensor with symbolic shape {input_shape} "
+                f"unsupported with indices {indices}. Currently, only slices "
+                "and integers are supported"
+            )
+            raise TypeError(msg)
+
+        if isinstance(subslice, int):
+            # Create a single-element slice that will be squeezed later.
+            # Set stop to input dim when index is -1 since x[-1:0] is wrong.
+            stop = input_shape[i] if subslice == -1 else subslice + 1
+            subslice = slice(subslice, stop)
+
+        step = subslice.step if subslice.step is not None else 1
+        if not isinstance(step, int) or step <= 0:
+            # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
+            msg = f"expected positive integer step but got {step}"
+            raise ValueError(msg)
+
+        # Handle setting default start and stop depending on sign of step.
+        if step < 0:
+            start = subslice.start if subslice.start is not None else -1
+            stop = (
+                subslice.stop if subslice.stop
+                is not None else -input_shape[i] - 1
+            )
+        elif step > 0:
+            start = subslice.start if subslice.start is not None else 0
+            stop = (
+                subslice.stop if subslice.stop is not None else input_shape[i]
+            )
+
+        starts.append(start)
+        assert isinstance(stop, (int, Dim))
+        stops.append(stop)
+        steps.append(step)
+
+    return starts, stops, steps
+
+
+def expand_none_indices(
+    indices: SliceIndices, sliced_shape: Shape
+) -> list[int | Dim]:
+    """Expands a sliced shape with new None indices.
+
+    Returns:
+        The expanded shape, accounting for all the new dims (None indices).
+    """
+    expanded_shape: list[int | Dim] = []
+    shape_iter = iter(sliced_shape)
+    for slice_idx in indices:
+        if slice_idx is None:
+            # Replace None indices with 1.
+            expanded_shape.append(1)
+        elif isinstance(slice_idx, int):
+            # Squeeze integer indices.
+            next(shape_iter)
+        else:
+            # Otherwise, append the incoming dim.
+            expanded_shape.append(next(shape_iter))
+
+    return expanded_shape
+
+
 def _slice_symbolic_tensor(
     x: TensorValue, indices: SliceIndices
 ) -> TensorValue:
-    """Slices a tensor with shape composed of symbolic dims.
+    """Slices a tensor by a set of shape-like indices.
+
+    Returns:
+        A tensor sliced according to the passed indices.
 
     Raises:
-        TypeError: if any of the indices is not a slice.
         ValueError: if the indices vector's length exceed's the input's rank.
     """
     num_regular_indices = len(
@@ -260,64 +376,9 @@ def _slice_symbolic_tensor(
         )
         raise ValueError(msg)
 
-    if indices.count(Ellipsis) > 1:
-        msg = f"more than one Ellipsis in slice indices {indices}"
-        raise ValueError(msg)
+    indices = expand_ellipsis(indices, x.rank)
 
-    # Handle Ellipsis by expanding remaining indices with slice(None).
-    ellipsis_index = indices.index(Ellipsis) if Ellipsis in indices else len(
-        indices
-    )
-    remaining = x.rank - num_regular_indices
-    indices = (
-        list(indices[:ellipsis_index])
-        + (remaining * [slice(None)])
-        + list(indices[ellipsis_index + 1 :])
-    )
-
-    # Expand the None indices after computing starts, stops, and steps.
-    not_none_indices = [i for i in indices if i is not None]
-
-    starts: list[int | Dim] = []
-    stops: list[int | Dim] = []
-    steps: list[int] = []
-    squeeze_indices: set[int] = set()
-    for i, subslice in enumerate(not_none_indices):
-        if not isinstance(subslice, (slice, int)):
-            msg = (
-                f"slice of tensor with symbolic shape {x.shape} unsupported "
-                f"with indices {indices}. Currently, only slices and integers "
-                "are supported"
-            )
-            raise TypeError(msg)
-
-        if isinstance(subslice, int):
-            # Create a single-element slice that will be squeezed later.
-            # Set stop to input dim when index is -1 since x[-1:0] is wrong.
-            stop = x.shape[i] if subslice == -1 else subslice + 1
-            subslice = slice(subslice, stop)
-            squeeze_indices.add(i)
-
-        step = subslice.step if subslice.step is not None else 1
-        if not isinstance(step, int) or step <= 0:
-            # TODO(AIPIPE-109): allow negative step after improving rmo.slice.
-            msg = f"expected positive integer step but got {step}"
-            raise ValueError(msg)
-
-        # Handle setting default start and stop depending on sign of step.
-        if step < 0:
-            start = subslice.start if subslice.start is not None else -1
-            stop = (
-                subslice.stop if subslice.stop is not None else -x.shape[i] - 1
-            )
-        elif step > 0:
-            start = subslice.start if subslice.start is not None else 0
-            stop = subslice.stop if subslice.stop is not None else x.shape[i]
-
-        starts.append(start)
-        assert isinstance(stop, (int, Dim))
-        stops.append(stop)
-        steps.append(step)
+    starts, stops, steps = slice_arguments(indices, x.shape)
 
     sliced_tensor = Graph.current._add_op(
         rmo.slice,
@@ -328,18 +389,7 @@ def _slice_symbolic_tensor(
     )[0].tensor
 
     # Account for None entries in the slice indices by unsqueezing those dims.
-    expanded_shape = []
-    shape_iter = iter(sliced_tensor.shape)
-    for slice_idx in indices:
-        if slice_idx is None:
-            # Replace None indices with 1.
-            expanded_shape.append(1)
-        elif isinstance(slice_idx, int):
-            # Squeeze integer indices.
-            next(shape_iter)
-        else:
-            # Otherwise, append the incoming dim.
-            expanded_shape.append(next(shape_iter))
+    expanded_shape = expand_none_indices(indices, sliced_tensor.shape)
 
     if expanded_shape != sliced_tensor.shape:
         # Only reshape when necessary due to None dims or int slices.
