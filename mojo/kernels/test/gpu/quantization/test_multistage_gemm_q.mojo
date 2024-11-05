@@ -24,7 +24,6 @@ from gpu.cublas.cublas import (
     cublasDestroy,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.event import time_function
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,

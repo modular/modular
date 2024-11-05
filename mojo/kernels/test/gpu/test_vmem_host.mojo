@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from gpu.host import DeviceContext
-from gpu.host.memory import (
+from gpu.host.memory_v1 import (
     MemAllocationGranularityFlags,
     MemAllocationProp,
     MemAllocationType,

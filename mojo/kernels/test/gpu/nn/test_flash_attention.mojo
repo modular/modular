@@ -12,8 +12,7 @@ from sys import argv
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.event import time_function
+from gpu.host import DeviceContext
 from memory import UnsafePointer
 from nn.mha import (
     _naive_attention_with_transpose,

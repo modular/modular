@@ -11,7 +11,6 @@ from sys import argv
 from buffer import DimList, NDBuffer
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
-from gpu.host.event import time_function
 from gpu.id import BlockIdx, ThreadIdx
 from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.sync import barrier

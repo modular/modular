@@ -7,7 +7,7 @@
 
 from gpu import ThreadIdx
 from gpu.host import DeviceContext
-from gpu.host.function import Attribute
+from gpu.host.function_v1 import Attribute
 from memory import UnsafePointer, stack_allocation
 from testing import *
 
