@@ -321,6 +321,16 @@ public:
   }
 };
 
+/// Provide a parser for the KGENCLOptions object.
+class KGENCLOptionsParser : public llvm::cl::parser<Command> {
+
+public:
+  using llvm::cl::parser<Command>::parser;
+
+  bool parse(llvm::cl::Option &o, StringRef argName, StringRef argValue,
+             Command &val);
+};
+
 class KGENCLOptions : public KGENCommonCLOptions, public CommonCLOptions {
 
 public:
@@ -332,26 +342,28 @@ public:
 
 private:
   llvm::cl::OptionCategory KGENCLOptionsCategory{"KGEN Command line options"};
-  M::cl::MOpt<Command, true> cmd{
+  M::cl::MOpt<Command, true, KGENCLOptionsParser> cmd{
       cl::desc("The command to execute"),
       cl::values(
           clEnumValN(Command::kGenLibraryFile, "gen-lib",
                      "Generate a distributable library file."),
           clEnumValN(Command::kElaborate, "elaborate", "Elaborate the input."),
           clEnumValN(Command::kEmitLLVM, "emit-llvm", "Emit funcs as LLVM IR."),
-          clEnumValN(Command::kEmitLLVMOpt, "emit-llvm-opt",
+          clEnumValN(Command::kEmitLLVMOpt, "emit-llvm=opt",
                      "Emit funcs as optimized LLVM IR."),
           clEnumValN(Command::kEmitAssembly, "emit-asm",
                      "Emit the funcs as assembly."),
           clEnumValN(
-              Command::kEmitAssemblyVerbose, "emit-asm-verbose",
+              Command::kEmitAssemblyVerbose, "emit-asm=verbose",
               "Emit the funcs as vevrbose assembly with preserved comments"),
           clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
           clEnumValN(Command::kEmitHeader, "emit-header",
                      "Emit a C header file with declarations of "
                      "exported functions."),
           clEnumValN(Command::kExecute, "execute", "Execute funcs.")),
-      llvm::cl::location(options.cmd), llvm::cl::Required,
+      llvm::cl::location(options.cmd),
+      llvm::cl::Required,
+      llvm::cl::ValueOptional,
       llvm::cl::cat(KGENCLOptionsCategory)};
 
   M::cl::MListOpt<CommandLineFunc, llvm::SmallVector<CommandLineFunc>,
