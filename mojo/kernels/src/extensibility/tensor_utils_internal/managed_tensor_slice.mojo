@@ -253,6 +253,8 @@ struct ManagedTensorSlice[
         var flat_index = self._compute_offset(index)
         var stride = self._strides[rank - 1]
 
+        alias alignment = specsof[type, rank]("self").alignment
+
         if stride == 0:
             return self._ptr.load(flat_index)
         elif stride == 1:
@@ -264,7 +266,9 @@ struct ManagedTensorSlice[
                 )
                 return v.cast[type]()
             else:
-                return self._ptr.load[width=width](flat_index)
+                return self._ptr.load[width=width, alignment=alignment](
+                    flat_index
+                )
         else:
 
             @parameter
@@ -314,6 +318,8 @@ struct ManagedTensorSlice[
     ](self, index: IndexList[rank], val: SIMD[type, width]):
         var flat_index = self._compute_offset(index)
 
+        alias alignment = specsof[type, rank]("self").alignment
+
         var stride = self._strides[rank - 1]
         if stride == 0:
             self._ptr[] = flat_index
@@ -324,7 +330,7 @@ struct ManagedTensorSlice[
                 var v = val.cast[DType.uint8]()
                 self._ptr.bitcast[DType.uint8]().store(flat_index, v)
             else:
-                self._ptr.store(flat_index, val)
+                self._ptr.store[alignment=alignment](flat_index, val)
         else:
 
             @parameter
