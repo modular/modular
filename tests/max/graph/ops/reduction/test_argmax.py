@@ -19,7 +19,7 @@ input_types = st.shared(tensor_types())
 def test_argmax(input_type: TensorType, axis: int):
     with Graph("argmax", input_types=[input_type]) as graph:
         out = ops.argmax(graph.inputs[0], axis=axis)
-        assert out.dtype == DType.uint64
+        assert out.dtype == DType.int64
         expected_shape = list(input_type.shape)
         expected_shape[axis] = 1
         assert out.shape == expected_shape

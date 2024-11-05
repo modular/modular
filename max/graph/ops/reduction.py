@@ -62,7 +62,7 @@ def argmax(x: TensorValueLike, axis=-1) -> TensorValue:
 
     shape = Shape(x.shape)
     shape[axis] = Dim(1)
-    type = TensorType(DType.uint64, shape, x.device)
+    type = TensorType(DType.int64, shape, x.device)
     return Graph.current._add_op(
         rmo.mo_arg_max, type.to_mlir(), x, constant(axis, DType.int64)
     )[0].tensor
