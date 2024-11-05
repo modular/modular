@@ -10,6 +10,7 @@ from math.math import align_up
 from pathlib import Path
 from sys import is_defined
 from sys.intrinsics import _mlirtype_is_eq
+from sys.info import _get_arch
 
 from builtin._location import __call_location
 from gpu.host import DeviceBuffer
@@ -316,6 +317,10 @@ fn _cleanup_asm(s: StringLiteral) -> StringLiteral:
     )
 
 
+fn _is_amd_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
+    return "sm_" not in _get_arch[target]()
+
+
 @value
 struct Function[
     func_type: AnyTrivialRegType, //,
@@ -325,12 +330,16 @@ struct Function[
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
+    alias emission_kind = "llvm" if _is_amd_gpu[target]() else "asm"
     var info: _CachedFunctionInfo
     var cuda_dll: CudaDLL
     var cuda_function_cache: UnsafePointer[FunctionCache]
 
     alias _impl = _compile_code[
-        func, is_failable=_is_failable, emission_kind="asm", target=target
+        func,
+        is_failable=_is_failable,
+        emission_kind = Self.emission_kind,
+        target=target,
     ]()
 
     @always_inline

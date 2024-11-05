@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from os import abort
 from pathlib import Path
-
+from sys.info import _get_arch
 from compile import Info, compile_info, get_linkage_name
 
 from .info import DEFAULT_GPU_ARCH, _get_info_from_target
@@ -74,15 +74,6 @@ fn _get_nvptx_fn_name[
     func_type: AnyTrivialRegType, //, func: func_type
 ]() -> StringLiteral:
     return get_linkage_name[_get_nvptx_target(), func]()
-
-
-fn _get_arch[target: __mlir_type.`!kgen.target`]() -> String:
-    return __mlir_attr[
-        `#kgen.param.expr<target_get_field,`,
-        target,
-        `, "arch" : !kgen.string`,
-        `> : !kgen.string`,
-    ]
 
 
 @no_inline
