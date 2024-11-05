@@ -14,7 +14,6 @@ from utils import StringRef
 from ._utils_v1 import _check_error, _human_memory
 from .cuda_instance_v1 import *
 from .dim import Dim
-from .info import _get_info_from_compute_capability
 
 # ===----------------------------------------------------------------------===#
 # Device Information
@@ -610,29 +609,16 @@ fn device_count() raises -> Int:
     return int(res)
 
 
-struct DeviceV1(StringableRaising):
-    var id: Int32
-    var cuda_dll: CudaDLL
+struct DeviceContextInfo(StringableRaising):
+    var _ctx: DeviceContext
 
-    fn __init__(inout self, id: Int = 0):
-        self.id = id
-        self.cuda_dll = CudaDLL()
-
-    fn __init__(inout self, cuda_instance: CudaInstance, id: Int = 0):
-        self.id = id
-        self.cuda_dll = cuda_instance.cuda_dll
-
-    fn __copyinit__(inout self, existing: Self):
-        self.id = existing.id
-        self.cuda_dll = existing.cuda_dll
+    fn __init__(inout self, ctx: DeviceContext):
+        self._ctx = ctx
 
     @no_inline
     fn __str__(self) raises -> String:
-        var cuda_ver = self.cuda_version()
         var res = "name: " + self._name() + "\n"
-        res += (
-            "cuda_version: " + str(cuda_ver[0]) + "." + str(cuda_ver[1]) + "\n"
-        )
+        res += "driver_version:" + str(self.driver_version()) + "\n"
         res += "memory: " + _human_memory(self._total_memory()) + "\n"
         res += (
             "compute_capability: "
@@ -681,11 +667,17 @@ struct DeviceV1(StringableRaising):
             )
             + "\n"
         )
-        res += (
-            "max_access_window_size: "
-            + str(self._query(DeviceAttribute.MAX_ACCESS_POLICY_WINDOW_SIZE))
-            + "\n"
-        )
+        # Attribute not supported on AMD
+        try:
+            res += (
+                "max_access_window_size: "
+                + str(
+                    self._query(DeviceAttribute.MAX_ACCESS_POLICY_WINDOW_SIZE)
+                )
+                + "\n"
+            )
+        except:
+            pass
         res += "SM count: " + str(self.multiprocessor_count()) + "\n"
         res += "Max threads per SM: " + str(self.max_threads_per_sm()) + "\n"
 
@@ -693,46 +685,19 @@ struct DeviceV1(StringableRaising):
 
     fn _name(self) raises -> String:
         """Get an identifier string for the device."""
+        return self._ctx.name()
 
-        alias buffer_size = 256
-        var buffer = stack_allocation[buffer_size, c_char.type]()
-
-        _check_error(
-            self.cuda_dll.cuDeviceGetName(buffer, Int32(buffer_size), self.id)
-        )
-
-        return StringRef(buffer)
-
-    fn cuda_version(self) raises -> (Int, Int):
-        var res: Int32 = 0
-        _check_error(
-            self.cuda_dll.cuDriverGetVersion(UnsafePointer.address_of(res))
-        )
-
-        var major = res // 1000
-        var minor = (res % 1000) // 10
-        return (int(major), int(minor))
+    fn driver_version(self) raises -> Int:
+        return self._ctx.get_driver_version()
 
     fn _total_memory(self) raises -> Int:
         """Returns the total amount of memory on the device."""
-
-        var res: Int = 0
-        _check_error(
-            self.cuda_dll.cuDeviceTotalMem(
-                UnsafePointer.address_of(res), self.id
-            )
-        )
-        return res
+        free, total = self._ctx.get_memory_info()
+        return total
 
     fn _query(self, attr: DeviceAttribute) raises -> Int:
         """Returns information about a particular device attribute."""
-        var res: Int32 = 0
-        _check_error(
-            self.cuda_dll.cuDeviceGetAttribute(
-                UnsafePointer.address_of(res), attr, self.id
-            )
-        )
-        return int(res)
+        return self._ctx.get_attribute(attr)
 
     fn multiprocessor_count(self) raises -> Int:
         """Returns the number of multiprocessors on this device."""
@@ -753,7 +718,45 @@ struct DeviceV1(StringableRaising):
             DeviceAttribute.COMPUTE_CAPABILITY_MAJOR
         ) * 10 + self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
 
-    fn arch_name(self) raises -> String:
-        """Returns the name of the device architecture."""
-        var compute_capability = self.compute_capability()
-        return _get_info_from_compute_capability(compute_capability).name
+
+struct DeviceV1:
+    var id: Int32
+    var cuda_dll: CudaDLL
+
+    fn __init__(inout self, id: Int = 0):
+        self.id = id
+        self.cuda_dll = CudaDLL()
+
+    fn __init__(inout self, cuda_instance: CudaInstance, id: Int = 0):
+        self.id = id
+        self.cuda_dll = cuda_instance.cuda_dll
+
+    fn __copyinit__(inout self, existing: Self):
+        self.id = existing.id
+        self.cuda_dll = existing.cuda_dll
+
+    fn cuda_version(self) raises -> (Int, Int):
+        var res: Int32 = 0
+        _check_error(
+            self.cuda_dll.cuDriverGetVersion(UnsafePointer.address_of(res))
+        )
+
+        var major = res // 1000
+        var minor = (res % 1000) // 10
+        return (int(major), int(minor))
+
+    fn _query(self, attr: DeviceAttribute) raises -> Int:
+        """Returns information about a particular device attribute."""
+        var res: Int32 = 0
+        _check_error(
+            self.cuda_dll.cuDeviceGetAttribute(
+                UnsafePointer.address_of(res), attr, self.id
+            )
+        )
+        return int(res)
+
+    fn compute_capability(self) raises -> Int:
+        """Returns the device compute capability version."""
+        return self._query(
+            DeviceAttribute.COMPUTE_CAPABILITY_MAJOR
+        ) * 10 + self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)

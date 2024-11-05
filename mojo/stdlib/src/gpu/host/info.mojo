@@ -568,7 +568,7 @@ struct Info:
 @always_inline
 fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
     constrained[
-        compute_capability in (80, 86, 89, 90), "invalid compute capability"
+        compute_capability in (80, 86, 89, 90, 94), "invalid compute capability"
     ]()
 
     @parameter
@@ -580,6 +580,8 @@ fn _get_info_from_compute_capability[compute_capability: Int]() -> Info:
         return L4
     elif compute_capability == 90:
         return H100
+    elif compute_capability == 94:
+        return MI300X
     return abort[Info]("invalid compute capability")
 
 
@@ -593,6 +595,8 @@ fn _get_info_from_compute_capability(compute_capability: Int) raises -> Info:
         return _get_info_from_compute_capability[89]()
     if compute_capability == 90:
         return _get_info_from_compute_capability[90]()
+    if compute_capability == 94:
+        return _get_info_from_compute_capability[94]()
 
     raise "invalid compute capability"
 
