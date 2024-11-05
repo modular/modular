@@ -294,10 +294,14 @@ struct PrintTensorSpecOp:
         alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
         alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
         alias x_alignment = compiler.specsof[x.type, x.rank]("x").alignment
+        alias x_address_space = compiler.specsof[x.type, x.rank](
+            "x"
+        ).address_space
 
         print("x.shape = ", x_shape)
         print("x.strides = ", x_strides)
         print("x.alignment = ", x_alignment)
+        print("x.address_space = ", x_address_space)
 
         @parameter
         @always_inline

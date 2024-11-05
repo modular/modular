@@ -125,7 +125,7 @@ from nn.topk import top_k, top_k_shape_impl
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from tensor_utils_internal import ManagedTensorSlice, foreach
-from memory import UnsafePointer
+from memory import AddressSpace, UnsafePointer
 from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
@@ -278,19 +278,19 @@ fn get_address_space() -> AddressSpace:
 # Build the StaticTensorSpec parameter for the DPS kernels
 @mogg_register_override("build_static_tensor_specs", 1)
 fn build_static_tensor_specs[
-    type: DType, rank: Int, alignment: Int
+    type: DType, rank: Int, alignment: Int, address_space: AddressSpace
 ](shape: DimList, strides: DimList) -> StaticTensorSpec[
-    type, rank, alignment=alignment
+    type, rank, alignment=alignment, address_space=address_space
 ]:
-    return StaticTensorSpec[type, rank, alignment=alignment](
+    alias SpecType = StaticTensorSpec[
+        type, rank, alignment=alignment, address_space=address_space
+    ]
+
+    return SpecType(
         shape,
         strides,
-        OptionalReg[
-            StaticTensorSpec[type, rank, alignment=alignment].in_lambda_t
-        ](None),
-        OptionalReg[
-            StaticTensorSpec[type, rank, alignment=alignment].out_lambda_t
-        ](None),
+        OptionalReg[SpecType.in_lambda_t](None),
+        OptionalReg[SpecType.out_lambda_t](None),
     )
 
 
