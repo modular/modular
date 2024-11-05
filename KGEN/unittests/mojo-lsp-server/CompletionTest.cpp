@@ -253,3 +253,23 @@ fn function(arg: Int):
 )");
   checkPartialCompoundStatement(doc, "value");
 }
+
+TEST(CompletionTest, testMoto767) {
+  Document doc("test:///moto-767.mojo",
+               R"(
+fn main() raises -> :
+  pass
+
+alias T = Tuple[StringLiteral, StringLiteral, StringLiteral]
+
+fn f[T: EqualityComparable](s: T):
+  pass
+)");
+
+  // This simply needs to not crash the LSP server
+  createTestClient()
+      .open(doc)
+      .completion(doc, *doc.findFirstPos("->"),
+                  [](const lsp::CompletionList &) {})
+      .execute();
+}
