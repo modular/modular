@@ -116,13 +116,15 @@ fn warpgroup_reg_dealloc[count: Int]():
 @always_inline("nodebug")
 fn clock() -> UInt:
     """Returns a 32-bit unsigned cycle counter."""
-    return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock", Int32]())
+    alias asm = "llvm.nvvm.read.ptx.sreg.clock" if triple_is_nvidia_cuda() else "llvm.amdgcn.s.memtime"
+    return int(llvm_intrinsic[asm, Int32]())
 
 
 @always_inline("nodebug")
 fn clock64() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
-    return int(llvm_intrinsic["llvm.nvvm.read.ptx.sreg.clock64", Int64]())
+    alias asm = "llvm.nvvm.read.ptx.sreg.clock64" if triple_is_nvidia_cuda() else "llvm.amdgcn.s.memtime"
+    return int(llvm_intrinsic[asm, Int64]())
 
 
 # ===----------------------------------------------------------------------===#
@@ -134,12 +136,17 @@ fn clock64() -> UInt:
 fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
     """Performs arbitrary logical operation on 3 inputs."""
 
-    return inlined_assembly[
-        "lop3.b32 $0, $1, $2, $3, $4;",
-        Int32,
-        constraints="=r,r,n,n,n",
-        has_side_effect=False,
-    ](a, b, c, Int32(lut))
+    @parameter
+    if triple_is_nvidia_cuda():
+        return inlined_assembly[
+            "lop3.b32 $0, $1, $2, $3, $4;",
+            Int32,
+            constraints="=r,r,n,n,n",
+            has_side_effect=False,
+        ](a, b, c, Int32(lut))
+    else:
+        constrained[False, "The lop function is not supported by AMD GPUs."]()
+        return abort[Int32]("function not available")
 
 
 # ===----------------------------------------------------------------------===#
@@ -150,51 +157,8 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
 @always_inline
 fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
     """Return selected bytes from two 32-bit unsigned integers."""
-
-    return llvm_intrinsic["llvm.nvvm.prmt", UInt32, has_side_effect=False](
-        a, b, c
-    )
-
-
-# ===----------------------------------------------------------------------===#
-# mul24
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn mul24(a: Int, b: Int) -> Int:
-    """Calculate the least significant 32 bits of the product of the least
-    significant 24 bits of two integers.
-    """
-    return int(mul24(Int32(a), Int32(b)))
-
-
-@always_inline
-fn mul24(a: UInt, b: UInt) -> UInt:
-    """Calculate the least significant 32 bits of the product of the least
-    significant 24 bits of two integers.
-    """
-    return int(mul24(UInt32(a), UInt32(b)))
-
-
-@always_inline
-fn mul24(a: UInt32, b: UInt32) -> UInt32:
-    """Calculate the least significant 32 bits of the product of the least
-    significant 24 bits of two integers.
-    """
-    return llvm_intrinsic["llvm.nvvm.mullo.ui", UInt32, has_side_effect=False](
-        a, b
-    )
-
-
-@always_inline
-fn mul24(a: Int32, b: Int32) -> Int32:
-    """Calculate the least significant 32 bits of the product of the least
-    significant 24 bits of two integers.
-    """
-    return llvm_intrinsic["llvm.nvvm.mullo.i", Int32, has_side_effect=False](
-        a, b
-    )
+    alias asm = "llvm.nvvm.prmt" if triple_is_nvidia_cuda() else "llvm.amdgcn.perm"
+    return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
 
 
 # ===----------------------------------------------------------------------===#
@@ -203,67 +167,66 @@ fn mul24(a: Int32, b: Int32) -> Int32:
 
 
 @always_inline
-fn mulhi(a: Int, b: Int) -> Int:
-    """Calculate the most significant 32 bits of the product of the two integers.
-    """
-    return int(mulhi(Int32(a), Int32(b)))
-
-
-@always_inline
-fn mulhi(a: UInt, b: UInt) -> UInt:
-    """Calculate the most significant 32 bits of the product of the two UInts.
-    """
-    return int(mulhi(UInt32(a), UInt32(b)))
-
-
-@always_inline
 fn mulhi(a: UInt16, b: UInt16) -> UInt32:
-    """Calculate the most significant 32 bits of the product of the two UInts.
+    """Calculate the most significant 32 bits of the product of the two UInt16s.
     """
-    return llvm_intrinsic["llvm.nvvm.mulhi.us", UInt32, has_side_effect=False](
-        a, b
-    )
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        return llvm_intrinsic[
+            "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
+        ](a, b)
+    else:
+        var au32 = a.cast[DType.uint32]()
+        var bu32 = b.cast[DType.uint32]()
+        return au32 * bu32
 
 
 @always_inline
 fn mulhi(a: Int16, b: Int16) -> Int32:
-    """Calculate the most significant 32 bits of the product of the two Ints."""
-    return llvm_intrinsic["llvm.nvvm.mulhi.s", Int32, has_side_effect=False](
-        a, b
-    )
+    """Calculate the most significant 32 bits of the product of the two Int16s.
+    """
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        return llvm_intrinsic[
+            "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
+        ](a, b)
+    else:
+        var ai32 = a.cast[DType.int32]()
+        var bi32 = b.cast[DType.int32]()
+        return ai32 * bi32
 
 
 @always_inline
 fn mulhi(a: UInt32, b: UInt32) -> UInt32:
     """Calculate the most significant 32 bits of the product of the two UInts.
     """
-    return llvm_intrinsic["llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False](
-        a, b
-    )
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        return llvm_intrinsic[
+            "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
+        ](a, b)
+    else:
+        var au64 = a.cast[DType.uint64]()
+        var bu64 = b.cast[DType.uint64]()
+        return ((au64 * bu64) >> 32).cast[DType.uint32]()
 
 
 @always_inline
 fn mulhi(a: Int32, b: Int32) -> Int32:
     """Calculate the most significant 32 bits of the product of the two Ints."""
-    return llvm_intrinsic["llvm.nvvm.mulhi.i", Int32, has_side_effect=False](
-        a, b
-    )
 
-
-@always_inline
-fn mulhi(a: UInt64, b: UInt64) -> UInt64:
-    """Calculate the most significant 32 bits of the product of the two Ints."""
-    return llvm_intrinsic["llvm.nvvm.mulhi.ull", UInt64, has_side_effect=False](
-        a, b
-    )
-
-
-@always_inline
-fn mulhi(a: Int64, b: Int64) -> Int64:
-    """Calculate the most significant 32 bits of the product of the two Ints."""
-    return llvm_intrinsic["llvm.nvvm.mulhi.ll", Int64, has_side_effect=False](
-        a, b
-    )
+    @parameter
+    if triple_is_nvidia_cuda():
+        return llvm_intrinsic[
+            "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
+        ](a, b)
+    else:
+        var ai64 = a.cast[DType.int64]()
+        var bi64 = b.cast[DType.int64]()
+        return ((ai64 * bi64) >> 32).cast[DType.int32]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -275,23 +238,37 @@ fn mulhi(a: Int64, b: Int64) -> Int64:
 fn mulwide(a: UInt32, b: UInt32) -> UInt64:
     """Calculate the most significant 32 bits of the product of the two UInts.
     """
-    return inlined_assembly[
-        "mul.wide.u32 $0, $1, $2;",
-        UInt64,
-        constraints="=l,r,r",
-        has_side_effect=False,
-    ](a, b)
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        return inlined_assembly[
+            "mul.wide.u32 $0, $1, $2;",
+            UInt64,
+            constraints="=l,r,r",
+            has_side_effect=False,
+        ](a, b)
+    else:
+        var au64 = a.cast[DType.uint64]()
+        var bu64 = b.cast[DType.uint64]()
+        return au64 * bu64
 
 
 @always_inline
 fn mulwide(a: Int32, b: Int32) -> Int64:
     """Calculate the most significant 32 bits of the product of the two Ints."""
-    return inlined_assembly[
-        "mul.wide.s32 $0, $1, $2;",
-        Int64,
-        constraints="=l,r,r",
-        has_side_effect=False,
-    ](a, b)
+
+    @parameter
+    if triple_is_nvidia_cuda():
+        return inlined_assembly[
+            "mul.wide.s32 $0, $1, $2;",
+            Int64,
+            constraints="=l,r,r",
+            has_side_effect=False,
+        ](a, b)
+    else:
+        var ai64 = a.cast[DType.int64]()
+        var bi64 = b.cast[DType.int64]()
+        return ai64 * bi64
 
 
 # ===----------------------------------------------------------------------===#
