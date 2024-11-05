@@ -165,6 +165,10 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
 void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
                                  const CompilationOptions &options,
                                  const LibraryOptConfig &lib) {
+  // Deduplicates functions coming out of the elaborator. Run before DCE as the
+  // pass could introduce more dead symbols.
+  pm.addPass(createEliminateDuplicateFunctions());
+
   // Run DCE first coming out of the elaborator.
   pm.addPass(createEliminateDeadSymbols());
 

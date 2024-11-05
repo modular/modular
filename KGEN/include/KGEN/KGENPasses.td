@@ -453,6 +453,44 @@ def EliminateDeadSymbols: Pass<"eliminate-dead-symbols", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// EliminateDuplicateFunctions
+//===----------------------------------------------------------------------===//
+
+def EliminateDuplicateFunctions : Pass<"eliminate-duplicate-functions",
+                                       "ModuleOp"> {
+  let summary = "deduplicate functions.";
+  let description = [{
+    This pass replaces functions with different names but the same underlying
+    implementation into calls to a single function name. This is needed because
+    quite often, elaboration leads to duplicated implementation.
+
+    Example:
+    ```mojo
+    fn foo[n: Int]():
+      @parameter
+      if n < 10:
+        ...
+      else:
+        ...
+
+    # The following elaborated functions lead to the same implementation.
+    foo[1]()
+    foo[2]()
+    ```
+  }];
+
+  let dependentDialects = [
+    "MDialect",
+    "KGENDialect",
+  ];
+
+  let statistics = [
+    Statistic<"numDeduped", "num-deduped",
+              "the number of deduplicated functions">,
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // EnsureNoParameters
 //===----------------------------------------------------------------------===//
 
