@@ -626,6 +626,17 @@ fn mgp_buffer_alloc[
     )
 
 
+@mogg_register("mgp.buffer.constant")
+@export
+fn mgp_buffer_constant[
+    bRawAlign: UInt64,
+    resource_bytecount: Int,
+](resource_ptr: UnsafePointer[NoneType]) -> NDBuffer[DType.int8, 1] as result:
+    # Should we keep the alignment? It seems that the static alignment is
+    # dropped in the kernels anyway.
+    return __type_of(result)(resource_ptr.bitcast[Int8](), resource_bytecount)
+
+
 @mogg_register("mgp.buffer.constant.external")
 fn mgp_buffer_constant_external[
     aRuntimeSlot: UInt64,
