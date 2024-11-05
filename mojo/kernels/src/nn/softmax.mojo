@@ -18,7 +18,7 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.uint import _temp_uint_from_int
 from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
-from gpu.host import Device, DeviceAttribute, DeviceContext
+from gpu.host import DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
 from gpu.shuffle import shuffle_up, shuffle_xor, warp_broadcast
 from layout.layout import Layout
@@ -795,7 +795,7 @@ fn _softmax_gpu[
     ]()
 
     var num_rows = shape.flattened_length() // shape[axis]
-    var sm_count = Device()._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
