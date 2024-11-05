@@ -17,6 +17,10 @@ from pathlib import Path
 
 extension_dir = Path(__file__).parent.parent
 
+# This value is sourced from the Application Insights page here:
+# https://portal.azure.com/#@modularadmin.onmicrosoft.com/resource/subscriptions/7979ff12-faf5-470e-9b5b-f220a0b87412/resourceGroups/all-resources/providers/microsoft.insights/components/extensions.vscode.modular.com/overview
+telemetry_connection_string = "InstrumentationKey=9c380139-66e8-4cbb-a16e-d2c848ff61d4;IngestionEndpoint=https://eastus-8.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus.livediagnostics.monitor.azure.com/;ApplicationId=3546f7bc-88b0-407b-bda7-9b410227417c"
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -70,6 +74,7 @@ def main():
             package["description"] = "Mojo language support (nightly)"
         package["sdkVersion"] = args.sdk_version
         package["version"] = args.version
+        package["telemetryConnectionString"] = telemetry_connection_string
 
         # Write the updated package.json file.
         with open(package_json, "w") as f:

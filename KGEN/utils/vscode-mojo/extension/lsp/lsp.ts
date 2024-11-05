@@ -16,7 +16,7 @@ import { DisposableContext } from '../utils/disposableContext';
 import { Subject } from 'rxjs';
 import { Logger } from '../logging';
 import { MojoSDKManager } from '../sdk/sdkManager';
-import TelemetryReporter from '@vscode/extension-telemetry';
+import { TelemetryReporter } from '../telemetry';
 
 /**
  *  This class manages the LSP clients.
