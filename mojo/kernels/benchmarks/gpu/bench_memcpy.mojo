@@ -6,10 +6,36 @@
 # RUN: %mojo-build-no-debug %s
 
 from sys import sizeof, env_get_int
+from math import floor
 from memory import UnsafePointer
 from gpu.host import DeviceContext
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host._utils import _human_memory
+
+
+fn _pretty_print_float(val: Float64) -> String:
+    """This converts the float value to a string, but omits the fractional part
+    if not needed (e.g. prints 2 instead of 2.0).
+    """
+    if Float64(floor(val)) == val:
+        return str(int(val))
+    return str(val)
+
+
+fn _human_memory(size: Int) -> String:
+    alias KB = 1024
+    alias MB = KB * KB
+    alias GB = MB * KB
+
+    if size >= GB:
+        return _pretty_print_float(Float64(size) / GB) + "GB"
+
+    if size >= MB:
+        return _pretty_print_float(Float64(size) / MB) + "MB"
+
+    if size >= KB:
+        return _pretty_print_float(Float64(size) / KB) + "KB"
+
+    return str(size) + "B"
 
 
 @value

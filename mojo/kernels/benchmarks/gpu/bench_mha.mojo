@@ -12,7 +12,6 @@ from sys import env_get_int, env_get_string, is_defined
 from buffer import NDBuffer
 from buffer.dimlist import DimList, Dim
 from gpu import *
-from gpu.host.event import time_function
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
