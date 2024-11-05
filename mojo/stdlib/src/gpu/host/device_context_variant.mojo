@@ -549,6 +549,14 @@ struct DeviceContextVariant:
         else:
             self.v1().synchronize()
 
+    fn get_attribute(self, attr: DeviceAttribute) raises -> Int:
+        @parameter
+        if _device_ctx_v2():
+            return self.v2().get_attribute(attr)
+        else:
+            # TODO: remove this, see RUNP-526
+            return 0
+
     fn is_compatible(self) raises:
         @parameter
         if _device_ctx_v2():

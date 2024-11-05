@@ -1074,6 +1074,24 @@ struct DeviceContextV2:
             )
         )
 
+    fn get_attribute(self, attr: DeviceAttribute) raises -> Int:
+        var value: Int32 = 0
+        # const char * AsyncRT_DeviceContext_getAttribute(int *result, const DeviceContext *ctx, int attr)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_getAttribute",
+                _CharPtr,
+                _IntPtr,
+                _DeviceContextPtr,
+                Int,
+            ](
+                UnsafePointer.address_of(value),
+                self._handle,
+                int(attr._value),
+            )
+        )
+        return int(value)
+
     fn is_compatible(self) raises:
         # const char * AsyncRT_DeviceContext_isCompatibleWithMAX(const DeviceContext *ctx)
         _checked(
