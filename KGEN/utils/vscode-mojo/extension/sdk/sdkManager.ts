@@ -314,6 +314,16 @@ export class MojoSDKManager extends DisposableContext {
   }
 
   private async findAllSDKs(): Promise<MojoSDKSpec[]> {
+    // If we're only going to use the release SDK specs, don't bother looking for others.
+    if (process.env['MOJO_EXTENSION_FORCE_MAGIC']) {
+      const releaseSDKSpecs = await this.findReleaseSDKSpecs();
+      this.logger.main.logDebug(
+        'MOJO_EXTENSION_FORCE_MAGIC is set; using release SDK spec(s)',
+        releaseSDKSpecs,
+      );
+      return releaseSDKSpecs;
+    }
+
     const [devSDKSpecs, releaseSDKSpecs, userProvidedSDKSpecs] =
       await Promise.all([
         this.findDevSDKSpecs(),
@@ -409,6 +419,10 @@ export class MojoSDKManager extends DisposableContext {
     if (!bazelContents.includes('workspace(name = "modular")')) {
       return undefined;
     }
+    // It is possible to clone the monorepo and run the extension without ever creating .derived.
+    if (!directoryExists(path.join(repoRoot, '.derived'))) {
+      return undefined;
+    }
     const modularHomePath = await realpath(path.join(repoRoot, '.derived'));
     const spec: MojoSDKSpec = {
       kind: 'dev',
@@ -426,10 +440,6 @@ export class MojoSDKManager extends DisposableContext {
   }
 
   private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {
-    // In tests, we don't want to download magic and its SDK.
-    if (this.extensionContext.extensionMode === vscode.ExtensionMode.Test) {
-      return [];
-    }
     const spec = await findMagicSDKSpec(
       /*withLock=*/ true,
       this.extensionContext,

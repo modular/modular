@@ -31,7 +31,8 @@
     "ci": "npm ci && cd ./lsp-proxy && npm ci",
     "format": "npx prettier . --write --ignore-path .gitignore",
     "publish": "vsce publish",
-    "test": "npm run vscode:prepublish && vscode-test"
+    "test": "npm run vscode:prepublish && vscode-test",
+    "ci-test": "npm run vscode:prepublish && vscode-test --label ci"
   },
   "devDependencies": {
     "@types/fs-extra": "11.0.4",

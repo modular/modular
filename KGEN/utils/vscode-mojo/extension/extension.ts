@@ -187,7 +187,7 @@ let logHook: (level: string, message: string) => void;
  * `activationEvents` in the package.json file for the current events that
  * activate this extension.
  */
-export function activate(
+export async function activate(
   context: vscode.ExtensionContext,
 ): Promise<MojoExtension> {
   const isNightly = isNightlyExtension(context);
