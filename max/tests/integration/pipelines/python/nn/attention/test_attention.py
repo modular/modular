@@ -39,13 +39,14 @@ BATCH_SIZE = 4
 
 def _attention_layer(
     dtype: DType,
+    mask_dtype: DType,
     device: Device,
     cache_strategy: KVCacheStrategy,
 ) -> tuple[Graph, KVCacheParams, ContinuousBatchingKVCacheManager]:
     # Initialize input types
     input_type = TensorType(dtype, ["batch_size", "seq_len", HIDDEN_DIM])
     attn_mask_type = TensorType(
-        dtype, ["batch_size", "n_kv_heads", "seq_len", "post_seq_len"]
+        mask_dtype, ["batch_size", "n_kv_heads", "seq_len", "post_seq_len"]
     )
 
     wq_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
@@ -134,12 +135,20 @@ def _attention_layer(
         return graph, kv_params, kv_manager
 
 
+def test_attention__wrong_mask_dtype():
+    # This is expected to fail when passing a mask dtype that does not match the activation dtype.
+    with pytest.raises(ValueError) as _:
+        graph, _, _ = _attention_layer(
+            DType.float32, DType.uint8, CPU(), KVCacheStrategy.CONTINUOUS
+        )
+
+
 def test_attention__wrong_strategy():
     # This is expected to fail when passing a naive kv cache strategy to the opaque attention kernel.
     # Get Graph.
     with pytest.raises(ValueError) as _:
         graph, _, _ = _attention_layer(
-            DType.float32, CPU(), KVCacheStrategy.NAIVE
+            DType.float32, DType.float32, CPU(), KVCacheStrategy.NAIVE
         )
 
 
@@ -155,7 +164,7 @@ def test_attention__valid_logits(session, start_pos, seq_len):
 
     # Get Graph
     graph, _, kv_manager = _attention_layer(
-        DType.float32, CPU(), KVCacheStrategy.CONTINUOUS
+        DType.float32, DType.float32, CPU(), KVCacheStrategy.CONTINUOUS
     )
 
     # Claim seq_ids in cache
