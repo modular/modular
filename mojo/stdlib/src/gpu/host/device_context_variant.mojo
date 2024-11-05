@@ -549,6 +549,13 @@ struct DeviceContextVariant:
         else:
             self.v1().synchronize()
 
+    fn get_driver_version(self) raises -> Int:
+        @parameter
+        if _device_ctx_v2():
+            return self.v2().get_driver_version()
+        else:
+            return int(self.v1().cuda_context.get_version() * 1000)
+
     fn get_attribute(self, attr: DeviceAttribute) raises -> Int:
         @parameter
         if _device_ctx_v2():

@@ -1083,6 +1083,22 @@ struct DeviceContextV2:
             )
         )
 
+    fn get_driver_version(self) raises -> Int:
+        var value: Int32 = 0
+        # const char * AsyncRT_DeviceContext_getDriverVersion(int *result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_getDriverVersion",
+                _CharPtr,
+                _IntPtr,
+                _DeviceContextPtr,
+            ](
+                UnsafePointer.address_of(value),
+                self._handle,
+            )
+        )
+        return int(value)
+
     fn get_attribute(self, attr: DeviceAttribute) raises -> Int:
         var value: Int32 = 0
         # const char * AsyncRT_DeviceContext_getAttribute(int *result, const DeviceContext *ctx, int attr)
