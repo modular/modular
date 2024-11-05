@@ -118,7 +118,12 @@ from nn.pool import avg_pool, max_pool, pool_shape, pool_shape_ceil
 from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_linear, resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
-from nn.slice import slice_as_view, slice_dim_as_view, slice_shape
+from nn.slice import (
+    slice_as_view,
+    copy_to_slice,
+    slice_dim_as_view,
+    slice_shape,
+)
 from nn.softmax import logsoftmax, softmax
 from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
@@ -2288,31 +2293,22 @@ struct MutableStoreSlice:
         rank: Int,
     ](
         to_buffer: ManagedTensorSlice[type=type, rank=rank],
-        from_slice: ManagedTensorSlice[type=type, rank=rank],
+        in_slice: ManagedTensorSlice[type=type, rank=rank],
         starts: ManagedTensorSlice[rank=1],
         stops: ManagedTensorSlice[rank=1],
         steps: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
-    ):
-        var to_buffer_ndb_view = slice_as_view(
+    ) raises:
+        copy_to_slice(
             managed_tensor_slice_to_ndbuffer(to_buffer),
+            managed_tensor_slice_to_ndbuffer(in_slice),
             managed_tensor_slice_to_ndbuffer(starts),
             managed_tensor_slice_to_ndbuffer(stops),
             managed_tensor_slice_to_ndbuffer(steps),
         )
-        var to_buffer_mts_view = ManagedTensorSlice[type, rank](
-            to_buffer_ndb_view.data,
-            to_buffer_ndb_view.get_shape(),
-            to_buffer_ndb_view.get_strides(),
-        )
-        view_copy_impl[synchronous, target](to_buffer_mts_view, from_slice, ctx)
 
-    # No shape function as it currently just routes to mo.slice's (done in
-    # legalize-rmo-operators) Can have a proper shape function once the whole
-    # GC stack has moved to the new kernel API
-    #
-    # TODO(GRA-1178): Generic support for in-place kernels where the shape is
-    # being enforced on one of the inputs (e.g. on from_slice for this kernel)
+    # No shape function as we just directly embed the logic to check the shape
+    # of the 'slice' operand of the MO op directly in the kernel.
 
 
 @compiler.register("mo.slice_dim")

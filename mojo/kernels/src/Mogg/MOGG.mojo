@@ -185,7 +185,12 @@ from nn.resize import CoordinateTransformationMode, RoundMode
 from nn.resize import resize_linear as resize_linear_kernel
 from nn.resize import resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
-from nn.slice import slice_as_view, slice_dim_as_view, slice_shape
+from nn.slice import (
+    slice_as_view,
+    copy_to_slice,
+    slice_dim_as_view,
+    slice_shape,
+)
 from nn.softmax import logsoftmax as _logsoftmax
 from nn.softmax import softmax as _softmax
 from nn.split import split as _split
@@ -1996,6 +2001,27 @@ fn slice[
     ctx: MojoCallContextPtr,  # remove (#24946)
 ) -> NDBuffer[type, rank]:
     return slice_as_view(tensor, starts, ends, steps)
+
+
+@mogg_register("mo.mutable.store.slice")
+@always_inline
+@export
+fn store_slice[
+    type: DType,
+    start_type: DType,
+    end_type: DType,
+    step_type: DType,
+    in_rank: Int,
+    single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
+](
+    buffer: NDBuffer[type, in_rank],
+    in_slice: NDBuffer[type, in_rank],
+    start: NDBuffer[start_type, 1],
+    end: NDBuffer[end_type, 1],
+    step: NDBuffer[step_type, 1],
+) raises:
+    copy_to_slice(buffer, in_slice, start, end, step)
 
 
 @mogg_register("mo.slice_dim")
