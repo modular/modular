@@ -208,20 +208,24 @@ from .layout import LayoutTrait
 # ===-----------------------------------------------------------------------===#
 
 
+@always_inline
 fn shiftr(a: Int, s: Int) -> Int:
-    return a >> s if s > 0 else shiftl(a, -s)
+    return a >> s if s > 0 else a << -s
 
 
+@always_inline
 fn shiftl(a: Int, s: Int) -> Int:
-    return a << s if s > 0 else shiftr(a, -s)
+    return a << s if s > 0 else a >> -s
 
 
+@always_inline
 fn shiftr(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
-    return a >> s if s > 0 else shiftl(a, -s)
+    return a >> s if s > 0 else a << -s
 
 
+@always_inline
 fn shiftl(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
-    return a << s if s > 0 else shiftr(a, -s)
+    return a << s if s > 0 else a >> -s
 
 
 # ===-----------------------------------------------------------------------===#
