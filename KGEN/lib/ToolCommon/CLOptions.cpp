@@ -132,3 +132,37 @@ bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
   val.name = argValue;
   return false;
 }
+
+bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
+                                StringRef argValue, Command &val) {
+  if (argName == "gen-lib") {
+    val = Command::kGenLibraryFile;
+    return false;
+  }
+  if (argName == "elaborate") {
+    val = Command::kElaborate;
+    return false;
+  }
+  if (argName == "emit-llvm") {
+    val = argValue == "opt" ? Command::kEmitLLVMOpt : Command::kEmitLLVM;
+    return false;
+  }
+  if (argName == "emit-asm") {
+    val = argValue == "verbose" ? Command::kEmitAssemblyVerbose
+                                : Command::kEmitAssembly;
+    return false;
+  }
+  if (argName == "emit") {
+    val = Command::kEmit;
+    return false;
+  }
+  if (argName == "emit-header") {
+    val = Command::kEmitHeader;
+    return false;
+  }
+  if (argName == "execute") {
+    val = Command::kExecute;
+    return false;
+  }
+  return o.error("unsupported option '" + argName + "'");
+}

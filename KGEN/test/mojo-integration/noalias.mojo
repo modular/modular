@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: kgen -emit-llvm-opt %s | FileCheck %s
+# RUN: kgen -emit-llvm=opt %s | FileCheck %s
 
 from memory import UnsafePointer
 

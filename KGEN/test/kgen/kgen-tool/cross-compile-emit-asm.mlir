@@ -1,5 +1,5 @@
 // RUN: kgen -emit-asm -march skylake-avx512 %s | FileCheck %s
-// RUN: kgen -emit-asm-verbose -march skylake-avx512 %s | FileCheck %s --check-prefix=CHECK-VERBOSE
+// RUN: kgen -emit-asm=verbose -march skylake-avx512 %s | FileCheck %s --check-prefix=CHECK-VERBOSE
 
 kgen.func export @return_zero() -> index {
   // CHECK: %eax

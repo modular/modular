@@ -1,5 +1,5 @@
 // RUN: kgen %s -emit-asm | FileCheck %s
-// RUN: kgen %s -emit-asm-verbose | FileCheck %s --check-prefix=CHECK-VERBOSE
+// RUN: kgen %s -emit-asm=verbose | FileCheck %s --check-prefix=CHECK-VERBOSE
 
 // Check that we generate some ASM properly.
 // CHECK: exp_f32
