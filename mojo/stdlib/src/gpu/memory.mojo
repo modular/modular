@@ -58,6 +58,7 @@ fn async_copy[
 ](
     src: UnsafePointer[type, AddressSpace.GLOBAL],
     dst: UnsafePointer[type, AddressSpace.SHARED],
+    src_size: Int32 = 0,
 ):
     """Asynchronously copy `size` amount of bytes from src global memory address
     to shared memory `dst` address.
@@ -73,11 +74,13 @@ fn async_copy[
     Args:
         src: Global memory pointer.
         dst: Shared memory pointer.
+        src_size: The size of data actually copied. When src_size < size, the
+            rest is set to zero by the instruction.
     """
     # TODO: Constrained on device capability.
     constrained[
         fill in (Fill.NONE, Fill.ZERO),
-        "currently only zero fill is supported",
+        "Only zero fill is supported for async copy on Ampere.",
     ]()
     constrained[size in (4, 8, 16)]()
     constrained[
@@ -89,87 +92,53 @@ fn async_copy[
         "the l2 prefetch size must be in bounds",
     ]()
 
+    # Cache always: cache data in L1 first, then copy to shared memory.
+    # Cache global: bypass L1 cache
+    # We always do the latter.
     alias cache_op = CacheOperation.GLOBAL.mnemonic() if (
         bypass_L1_16B and size == 16
     ) else CacheOperation.ALWAYS.mnemonic()
     alias access_size = _int_to_str[size]()
 
+    alias cache_hint = ".L2::cache_hint" if eviction_policy is not CacheEviction.EVICT_NORMAL else ""
+    alias cache_policy = _mark_eviction[eviction_policy]()
+
+    alias l2_prefetch_substr = ".L2::" + _int_to_str[
+        l2_prefetch.value()
+    ]() + "B" if l2_prefetch else ""
+
+    alias asm_base = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
+
+    # No fill
     @parameter
-    if l2_prefetch:
-        alias cache_hint = ".L2::cache_hint" if eviction_policy is not CacheEviction.EVICT_NORMAL else ""
-
-        alias asm = "cp.async." + cache_op + ".shared.global" + cache_hint + ".L2::" + _int_to_str[
-            l2_prefetch.value()
-        ]() + "B [$0], [$1], $2"
-
-        var cache_policy = _mark_eviction[eviction_policy]()
+    if fill == Fill.NONE:
+        alias args = " [$0], [$1], $2"
+        alias asm = asm_base + args
 
         @parameter
-        if fill is Fill.ZERO:
-
-            @parameter
-            if eviction_policy is CacheEviction.EVICT_NORMAL:
-                inlined_assembly[
-                    asm + ", $3;", NoneType, constraints="r,l,n,r"
-                ](Int32(int(dst)), src, Int32(size), Int32(size))
-            else:
-                inlined_assembly[
-                    asm + ", $3, $4;", NoneType, constraints="r,l,n,r,l"
-                ](Int32(int(dst)), src, Int32(size), Int32(size), cache_policy)
+        if eviction_policy is CacheEviction.EVICT_NORMAL:
+            inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
+                Int32(int(dst)), src, Int32(size)
+            )
         else:
+            inlined_assembly[asm + ", $3;", NoneType, constraints="r,l,n,l"](
+                Int32(int(dst)), src, Int32(size), cache_policy
+            )
 
-            @parameter
-            if eviction_policy is CacheEviction.EVICT_NORMAL:
-                inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
-                    Int32(int(dst)), src, Int32(size)
-                )
-            else:
-                inlined_assembly[
-                    asm + ", $3;", NoneType, constraints="r,l,n,l"
-                ](Int32(int(dst)), src, Int32(size), cache_policy)
+    # Fill the rest with zero for partial copy.
     else:
-        constrained[
-            fill is Fill.NONE, "fill is only implemented with l2_prefetch"
-        ]()
-        alias intrin = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size
-        llvm_intrinsic[intrin, NoneType](dst, src)
+        alias args_with_fill = " [$0], [$1], $2, $3"
+        alias asm = asm_base + args_with_fill
 
-
-@always_inline
-fn async_copy[
-    type: AnyType, //,
-    size: Int,
-    *,
-    bypass_L1_16B: Bool = True,
-](
-    src: UnsafePointer[type, AddressSpace.GLOBAL, *_],
-    dst: UnsafePointer[type, AddressSpace.SHARED, *_],
-    src_size: Int32,
-):
-    """Asynchronously copy `size` amount of bytes from src global memory address
-    to shared memory `dst` address.
-
-    Parameters:
-        type: The pointer type.
-        size: Number of bytes to copy.
-        bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
-
-    Args:
-        src: Global memory pointer.
-        dst: Shared memory pointer.
-        src_size: Size of data transferred from src. If `src_size` < `size`,
-            the remainder is filled with zero. It's undefined if `src_size`
-            is greater.
-    """
-    # TODO: Constrained on device capability.
-    constrained[size == 4 or size == 8 or size == 16]()
-
-    alias cache_op = CacheOperation.GLOBAL.mnemonic() if (
-        bypass_L1_16B and size == 16
-    ) else CacheOperation.ALWAYS.mnemonic()
-    alias access_size = _int_to_str[size]()
-    alias intrin = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size + ".s"
-    llvm_intrinsic[intrin, NoneType](dst, src, src_size)
+        @parameter
+        if eviction_policy is CacheEviction.EVICT_NORMAL:
+            inlined_assembly[asm + ";", NoneType, constraints="r,l,n,r"](
+                Int32(int(dst)), src, Int32(size), Int32(src_size)
+            )
+        else:
+            inlined_assembly[asm + ", $4;", NoneType, constraints="r,l,n,r,l"](
+                Int32(int(dst)), src, Int32(size), Int32(src_size), cache_policy
+            )
 
 
 @always_inline
