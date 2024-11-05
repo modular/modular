@@ -18,7 +18,7 @@ from gpu import (
     shuffle_down,
     warp_reduce,
 )
-from gpu.host import Device, DeviceAttribute, DeviceContext
+from gpu.host import DeviceAttribute, DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 
@@ -359,7 +359,7 @@ fn reduce_launch[
     ]()
 
     var num_rows = shape.flattened_length() // shape[axis] // packing_factor
-    var sm_count = Device()._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 

@@ -24,7 +24,7 @@ from sys import (
 from bit import is_power_of_two
 from buffer import NDBuffer
 from gpu import BlockIdx, GridDim, ThreadIdx, BlockDim
-from gpu.host import Device, DeviceContext
+from gpu.host import DeviceContext
 from gpu.host.info import Info
 from runtime import tracing
 from runtime.asyncrt import MojoCallContextPtr, TaskGroup, parallelism_level
