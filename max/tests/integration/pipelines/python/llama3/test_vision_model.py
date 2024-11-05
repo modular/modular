@@ -49,14 +49,24 @@ def generate_test_vision_model() -> VisionModel:
     #     params.scale * torch.randn(params.hidden_size)
     # )
 
-    gated_positional_embedding = PrecomputedPositionEmbedding(params)
+    # TODO: Reenable this.
+    gated_positional_embedding = None
+    # gated_positional_embedding = PrecomputedPositionEmbedding(
+    #     params=params,
+    #     gate=gate,
+    #     embedding=embedding,
+    #     tile_embedding=tile_embedding,
+    # )
 
-    pre_tile_positional_embedding = PrecomputedAspectRatioEmbedding(
-        params, is_gated=True
-    )
-    post_tile_positional_embedding = PrecomputedAspectRatioEmbedding(
-        params, is_gated=True
-    )
+    # TODO: Reenable this.
+    pre_tile_positional_embedding = None
+    # pre_tile_positional_embedding = PrecomputedAspectRatioEmbedding(
+    #     params, is_gated=True
+    # )
+    post_tile_positional_embedding = None
+    # post_tile_positional_embedding = PrecomputedAspectRatioEmbedding(
+    #     params, is_gated=True
+    # )
 
     # The reference implementation does not specify an eps (so falls back to
     # default). We do this anyway by specifying eps=1e-5.
