@@ -47,7 +47,13 @@ fn mutable(*names: StringLiteral):
 # Compile time Tensor informations
 @value
 @register_passable("trivial")
-struct StaticTensorSpec[type: DType, rank: Int, *, alignment: Int = 1]:
+struct StaticTensorSpec[
+    type: DType,
+    rank: Int,
+    *,
+    alignment: Int = 1,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]:
     # Represents the DimList type (not accessible from KGEN tests).
     alias in_lambda_t = fn[simd_width: Int] (IndexList[rank]) capturing -> SIMD[
         type, simd_width
