@@ -980,26 +980,10 @@ fn _online_softmax_iter_for_mma_output[
     num_rowwise_warps: Int,
     mma_shape: IndexList[3],
     type: DType,
-    # not used but to work around weird parameter deduction
-    _layout0: Layout,
-    _layout1: Layout,
-    _layout2: Layout,
 ](
-    output_reg_tile: LayoutTensor[
-        type,
-        _layout0,
-        address_space = AddressSpace.LOCAL,
-    ],
-    p_reg_tile: LayoutTensor[
-        type,
-        _layout1,
-        address_space = AddressSpace.LOCAL,
-    ],
-    warp_scratch: LayoutTensor[
-        type,
-        _layout2,
-        address_space = AddressSpace.SHARED,
-    ],
+    output_reg_tile: LayoutTensor[type, *_, **_],
+    p_reg_tile: LayoutTensor[type, *_, **_],
+    warp_scratch: LayoutTensor[type, *_, **_],
     rowmax: UnsafePointer[Scalar[type], *_, **_],
     rowsum: UnsafePointer[Scalar[type], *_, **_],
 ):
