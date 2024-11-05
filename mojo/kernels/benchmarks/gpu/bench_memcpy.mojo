@@ -6,10 +6,14 @@
 # RUN: %mojo-build-no-debug %s
 
 from sys import sizeof, env_get_int
-from math import floor
+from os import abort
+from math import iota, floor
+from algorithm.functional import parallelize_over_rows
 from memory import UnsafePointer
-from gpu.host import DeviceContext
+from gpu.host import DeviceContext, device_count
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
+from testing import assert_almost_equal
+from utils import IndexList
 
 
 fn _pretty_print_float(val: Float64) -> String:
@@ -113,6 +117,80 @@ fn bench_memcpy[
     _ = mem2_device
 
 
+@no_inline
+fn bench_p2p(
+    inout b: Bench, *, length: Int, ctx1: DeviceContext, ctx2: DeviceContext
+) raises:
+    alias dtype = DType.float32
+
+    # Create host buffers for verification
+    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(length)
+
+    # Initialize source data with known pattern
+    iota(host_ptr, length)
+
+    # Create and initialize device buffers
+    var src_buf = ctx1.create_buffer[dtype](length)
+    var dst_buf = ctx2.create_buffer[dtype](length)
+
+    # Copy initial data to source buffer
+    ctx1.enqueue_copy_to_device(src_buf, host_ptr)
+    ctx1.synchronize()
+
+    @parameter
+    @always_inline
+    fn bench_func(inout b: Bencher):
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            ctx2.enqueue_copy_device_to_device(dst_buf, src_buf)
+
+        b.iter_custom[kernel_launch](ctx1)
+
+    # Calculate bytes transferred
+    var bytes_transferred = length * sizeof[dtype]()
+
+    # Create list of throughput measures
+    var measures = List[ThroughputMeasure](
+        # Raw bandwidth (considering only one transfer)
+        ThroughputMeasure(BenchMetric.bytes, bytes_transferred),
+    )
+
+    b.bench_function[bench_func](
+        BenchId(
+            "memcpy_p2p",
+            input_id="length=" + _human_memory(bytes_transferred),
+        ),
+        measures=measures,
+    )
+
+    # Copy back for verification
+    ctx2.enqueue_copy_from_device(host_ptr, dst_buf)
+    ctx2.synchronize()
+
+    # Parallel verification
+    @parameter
+    fn verify_chunk(start: Int, end: Int):
+        for i in range(start, end):
+            try:
+                assert_almost_equal(host_ptr[i], i)
+            except e:
+                print("Verification failed at index", i)
+                print("Expected:", i, "Got:", host_ptr[i])
+                abort(e)
+
+    # Parallelize verification using sync_parallelize
+    var shape = IndexList[1](
+        length,
+    )
+    parallelize_over_rows[verify_chunk](shape, 0, 256)
+
+    # Cleanup
+    host_ptr.free()
+    _ = src_buf
+    _ = dst_buf
+
+
 def main():
     alias log2_length = env_get_int["log2_length", 20]()
     constrained[log2_length > 0]()
@@ -128,4 +206,17 @@ def main():
             m, length=length, context=ctx
         )
         bench_memcpy[Config.DEVICE_TO_DEVICE](m, length=length, context=ctx)
+
+    var num_devices = device_count()
+    if num_devices > 1:
+        # Create contexts for both same-device and peer device transfers
+        var ctx1 = DeviceContext(gpu_id=0)
+        var ctx2 = DeviceContext(gpu_id=1)
+
+        var length = 1 << log2_length
+        # Benchmark peer context D2D
+        bench_p2p(m, length=length, ctx1=ctx1, ctx2=ctx2)
+    else:
+        print("Only one device found, skipping peer-to-peer benchmarks")
+
     m.dump_report()

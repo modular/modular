@@ -8,4 +8,4 @@ name: bench_memcpy
 file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_memcpy.mojo
 
 params:
-- log2_length: [28,29,30,31]
+- log2_length: [20, 28, 30, 32]
