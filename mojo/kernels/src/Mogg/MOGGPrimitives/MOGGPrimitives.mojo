@@ -603,12 +603,10 @@ fn mgp_tensor_extract_buffer[
 @mogg_register("mgp.buffer.alloc")
 @always_inline
 fn mgp_buffer_alloc[
-    aRuntimeSlot: UInt64,
     bRawAlign: UInt64,
     cDevice: StringLiteral,
 ](
     dummy_chain: Int,
-    ctx: StateContext,
     byte_size: Int,
     dev_context: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
@@ -633,14 +631,12 @@ fn mgp_buffer_constant[
 
 @mogg_register("mgp.buffer.constant.external")
 fn mgp_buffer_constant_external[
-    aRuntimeSlot: UInt64,
     bName: StringLiteral,
     cSize: UInt64,
     dAlign: UInt64,
     eDevice: StringLiteral,
 ](
     dummy_chain: Int,
-    ctx: StateContext,
     weights: UnsafePointer[WeightsRegistry],
     call_ctx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
@@ -677,10 +673,8 @@ fn fill_buffer[
 @mogg_register("mgp.buffer.set_with_index")
 @always_inline
 fn mgp_buffer_set_with_index[
-    aRuntimeSlot: UInt64, bDevice: StringLiteral
-](
-    ctx: StateContext, buffer: NDBuffer[DType.uint8, 1], *vals: Int
-) raises -> Int:
+    bDevice: StringLiteral
+](buffer: NDBuffer[DType.uint8, 1], *vals: Int) raises -> Int:
     debug_assert(
         bDevice == "cpu", "set_with_index can only work on cpu buffers"
     )
@@ -704,10 +698,8 @@ fn mgp_buffer_set_with_index[
 @mogg_register("mgp.buffer.to_bool")
 @always_inline
 fn mgp_buffer_to_bool[
-    aRuntimeSlot: UInt64, bDevice: StringLiteral
-](
-    dummy_chain: Int, ctx: StateContext, buffer: NDBuffer[DType.uint8, 1]
-) -> Bool:
+    bDevice: StringLiteral
+](dummy_chain: Int, buffer: NDBuffer[DType.uint8, 1]) -> Bool:
     debug_assert(bDevice == "cpu", "to_bool can only work on cpu buffers")
     var bufSize = buffer.num_elements()
     debug_assert(
@@ -744,10 +736,9 @@ fn mgp_buffer_slice(
 @mogg_register("mgp.buffer.concat")
 @always_inline
 fn mgp_buffer_concat[
-    aRuntimeSlot: UInt64, bDevice: StringLiteral
+    bDevice: StringLiteral
 ](
     dummy_chain: Int,
-    ctx: StateContext,
     output: NDBuffer[DType.uint8, 1],
     inputs: StaticTuple[NDBuffer[DType.uint8, 1], *_],
     call_ctx: MojoCallContextPtr,
@@ -767,13 +758,10 @@ fn mgp_buffer_concat[
 @mogg_register("mgp.buffer.device_to_host")
 @always_inline
 fn mgp_buffer_device_to_host[
-    aOtherRuntimeSlot: UInt64,
-    bHostRuntimeSlot: UInt64,
     cOtherDevice: StringLiteral,
     dHostDevice: StringLiteral,
 ](
     in_chain: Int,
-    ctx: StateContext,
     dev_buf: NDBuffer[DType.uint8, 1],
     host_buf: NDBuffer[DType.uint8, 1],
     dev_ctx: UnsafePointer[DeviceContext],
@@ -800,13 +788,10 @@ fn mgp_buffer_device_to_host[
 @mogg_register("mgp.buffer.device_to_device")
 @always_inline
 fn mgp_buffer_device_to_device[
-    aSrcRuntimeSlot: UInt64,
-    bDstRuntimeSlot: UInt64,
     cSrcDevice: StringLiteral,
     dDstDevice: StringLiteral,
 ](
     in_chain: Int,
-    ctx: StateContext,
     src_buf: NDBuffer[DType.uint8, 1],
     dst_buf: NDBuffer[DType.uint8, 1],
     src_dev_ctx: UnsafePointer[DeviceContext],
@@ -842,13 +827,10 @@ fn mgp_buffer_device_to_device[
 @mogg_register("mgp.buffer.host_to_device")
 @always_inline
 fn mgp_buffer_host_to_device[
-    aHostRuntimeSlot: UInt64,
-    bOtherRuntimeSlot: UInt64,
     cHostDevice: StringLiteral,
     dOtherDevice: StringLiteral,
 ](
     in_chain: Int,
-    ctx: StateContext,
     host_buf: NDBuffer[DType.uint8, 1],
     dev_buf: NDBuffer[DType.uint8, 1],
     dev_ctx: UnsafePointer[DeviceContext],
@@ -875,7 +857,6 @@ fn mgp_buffer_host_to_device[
 @mogg_register("mgp.buffer.get_cached")
 @always_inline
 fn mgp_buffer_get_cached[
-    aRuntimeSlot: UInt64,
     bBufferSlot: UInt64,
 ](
     dummy_chain: Int,
