@@ -12,7 +12,7 @@ from sys.ffi import c_size_t
 from gpu.host._compile import _get_nvptx_target
 from gpu.host.context import Context
 from gpu.host.cuda_instance import CudaInstance, LaunchAttribute
-from gpu.host.device import Device
+from gpu.host.device import DeviceV1
 from gpu.host.event import Event
 from gpu.host.function import Function
 from gpu.host.stream import Stream
@@ -213,7 +213,7 @@ struct DeviceContextV1:
         inout self, kind: StringLiteral = "cuda", gpu_id: Int = 0
     ) raises:
         self.cuda_instance = CudaInstance()
-        self.cuda_context = Context(Device(self.cuda_instance, gpu_id))
+        self.cuda_context = Context(DeviceV1(self.cuda_instance, gpu_id))
         self.cuda_stream = Stream(self.cuda_context)
 
     fn __enter__(owned self) -> Self:

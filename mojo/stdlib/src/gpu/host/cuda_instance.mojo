@@ -17,7 +17,6 @@ from ._utils import (
     _ModuleHandle,
     _StreamHandle,
 )
-from .device import Device
 from .event import Flag
 from .function import CacheConfig, _FunctionHandle
 

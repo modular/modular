@@ -610,7 +610,7 @@ fn device_count() raises -> Int:
     return int(res)
 
 
-struct Device(StringableRaising):
+struct DeviceV1(StringableRaising):
     var id: Int32
     var cuda_dll: CudaDLL
 

@@ -14,7 +14,7 @@ from memory import UnsafePointer, bitcast
 
 from ._utils import _check_error, _ContextHandle, _StreamHandle
 from .cuda_instance import *
-from .device import Device
+from .device import DeviceV1
 
 # ===----------------------------------------------------------------------===#
 # Context
@@ -22,7 +22,7 @@ from .device import Device
 
 
 struct Context:
-    var device: Device
+    var device: DeviceV1
     var ctx: _ContextHandle
     var cuda_dll: CudaDLL
     var cuda_function_cache: UnsafePointer[FunctionCache]
@@ -31,9 +31,9 @@ struct Context:
     alias USE_CTX_RETAIN = False
 
     fn __init__(inout self) raises:
-        self.__init__(Device())
+        self.__init__(DeviceV1())
 
-    fn __init__(inout self, device: Device, flags: Int = 0) raises:
+    fn __init__(inout self, device: DeviceV1, flags: Int = 0) raises:
         self.device = device
         self.cuda_dll = device.cuda_dll
         self.cuda_function_cache = UnsafePointer[FunctionCache]().alloc(1)
