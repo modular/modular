@@ -59,7 +59,9 @@ struct FastDiv[type: DType]:
     fn __rtruediv__(
         self, other: Scalar[Self.uint_type]
     ) -> Scalar[Self.uint_type]:
-        var t = _mulhi(self._mprime, other).cast[Self.uint_type]()
+        var t = mulhi(
+            self._mprime.cast[DType.uint32](), other.cast[DType.uint32]()
+        ).cast[Self.uint_type]()
         return (
             t + ((other - t) >> self._sh1.cast[Self.uint_type]())
         ) >> self._sh2.cast[Self.uint_type]()
@@ -75,15 +77,3 @@ struct FastDiv[type: DType]:
     ) -> (Scalar[Self.uint_type], Scalar[Self.uint_type]):
         var q = other / self
         return q, (other - (q * self._div))
-
-
-@always_inline
-fn _mulhi(x: Scalar, y: __type_of(x)) -> __type_of(x):
-    var xu64 = x.cast[DType.uint64]()
-    var yu64 = y.cast[DType.uint64]()
-
-    @parameter
-    if triple_is_nvidia_cuda():
-        return mulhi(xu64, yu64).cast[x.type]()
-    else:
-        return ((xu64 * yu64) >> 32).cast[x.type]()
