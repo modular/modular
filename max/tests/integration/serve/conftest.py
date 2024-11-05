@@ -8,23 +8,18 @@
 import functools
 import os
 from pathlib import Path
-from typing import Coroutine
 
 import pytest
 from llama3 import (
     Llama3,
     Llama3Tokenizer,
 )
-from max.pipelines import PreTrainedTokenGeneratorTokenizer
+from max.pipelines import PipelineConfig, PreTrainedTokenGeneratorTokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
-from max.serve.pipelines.deps import (
-    BatchedTokenGeneratorState,
-    all_pipeline_states,
-)
-from max.pipelines import PipelineConfig
+from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
