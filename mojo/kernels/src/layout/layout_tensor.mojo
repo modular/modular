@@ -136,6 +136,21 @@ fn _not_in_tuple[n: Int, size: Int, tuple: IndexList[size]]() -> Bool:
     return True
 
 
+# Returns whether the resulting tiled layout with the specified tile sizes
+# requires masked access or not.
+#
+fn _tile_is_masked[layout: Layout, *tile_sizes: Int]() -> Bool:
+    if not layout.all_dims_known():
+        return True
+
+    @parameter
+    for axis in range(layout.rank()):
+        alias dim = to_int(layout.shape[axis])
+        if dim % tile_sizes[axis] != 0:
+            return True
+    return False
+
+
 @register_passable("trivial")
 struct LayoutTensor[
     dtype: DType,
@@ -146,6 +161,7 @@ struct LayoutTensor[
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
     layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
+    masked: Bool = False,
 ](CollectionElement, CollectionElementNew, Stringable, Writable):
     """This is a Tensor type that has a specified memory layout and rank. The
     following example demonstrate a LayoutTensor of float32 with a row major
@@ -161,6 +177,7 @@ struct LayoutTensor[
         address_space: The address space of the underlying pointer.
         element_layout: The memory layout of each element in the Tensor.
         layout_bitwidth: The bitwidth of each dimension of runtime layout.
+        masked: If true the tensor is masked and runtime layouts determine the shape.
     """
 
     alias index_type: DType = _get_index_type(layout, address_space)
@@ -1043,6 +1060,7 @@ struct LayoutTensor[
         dtype,
         Self._compute_tile_layout[*tile_sizes]()[0],
         address_space=address_space,
+        masked = masked or _tile_is_masked[layout, *tile_sizes](),
     ] as result:
         """Tiles the layout and returns a tensor tile with the specified
         tile_sizes at specific tile coordinates.
@@ -1099,10 +1117,19 @@ struct LayoutTensor[
                 alias stride = to_int(__tiled_layout[1].stride[i])
                 offset += tile_coords[i] * stride
 
-            return __type_of(result)(
-                self.ptr.offset(offset),
-                RuntimeLayout(runtime_shape, runtime_stride),
-            )
+            var runtime_layout = RuntimeLayout(runtime_shape, runtime_stride)
+
+            # Adjust runtime layout, so the shape is clipped to the unmasked sizes.
+            @parameter
+            if result.masked:
+
+                @parameter
+                for i in range(result.layout.rank()):
+                    cur_dim = self.dim(i) - (tile_coords[i] * tile_sizes[i])
+                    shape_i = max(0, min(tile_sizes[i], cur_dim))
+                    runtime_layout.shape.value[i] = shape_i
+
+            return __type_of(result)(self.ptr.offset(offset), runtime_layout)
 
         else:
             # Dynamic layout, use strides
@@ -1124,23 +1151,16 @@ struct LayoutTensor[
                 dynamic_stride.value[i] = self.runtime_layout.stride.value[i]
                 offset += tile_coords[i] * stride
 
-            return __type_of(result)(
-                self.ptr.offset(offset),
-                RuntimeLayout(dynamic_shape, dynamic_stride),
-            )
+            var runtime_layout = RuntimeLayout(dynamic_shape, dynamic_stride)
 
-    @always_inline
-    fn _clamp_tile[
-        *tile_sizes: Int
-    ](self, tile_coords: IndexList[rank]) -> IndexList[rank]:
-        var tile_shape = IndexList[rank]()
+            # Adjusts the runtime layout so that the shape is clipped to the unmasked sizes.
+            @parameter
+            for i in range(result.layout.rank()):
+                cur_dim = self.dim(i) - (tile_coords[i] * tile_sizes[i])
+                shape_i = max(0, min(tile_sizes[i], cur_dim))
+                runtime_layout.shape.value[i] = shape_i
 
-        @parameter
-        for i in range(__get_len[*tile_sizes]()):
-            var cur_dim = self.dim(i) - (tile_coords[i] * tile_sizes[i])
-            tile_shape[i] = min(tile_sizes[i], cur_dim)
-
-        return tile_shape
+            return __type_of(result)(self.ptr.offset(offset), runtime_layout)
 
     @always_inline
     fn tiled_iterator[
@@ -2300,6 +2320,9 @@ struct LayoutTensor[
     fn write_to[W: Writer](self, inout writer: W):
         """Format 2D tensor in 2D, otherwise print all values in column major
         coordinate order."""
+
+        if self.runtime_layout.size() == 0:
+            return
 
         @always_inline
         fn is_2d_print(layout: Layout) -> Bool:

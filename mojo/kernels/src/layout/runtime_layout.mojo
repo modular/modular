@@ -59,6 +59,15 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         return product(self.shape)
 
     @always_inline
+    fn bound_check_required(self) -> Bool:
+        @parameter
+        for i in range(layout.rank()):
+            alias dim_i = to_int(layout.shape[i])
+            if self.shape.value[i] != dim_i:
+                return True
+        return False
+
+    @always_inline
     fn cast[
         type: DType
     ](self) -> RuntimeLayout[layout, bitwidth = bitwidthof[type]()] as result:

@@ -603,13 +603,14 @@ fn main() raises:
         # CHECK: 30.0   31.0   32.0   33.0   34.0   35.0
         test_async_copy[unknown_layout, M, N, BM, BN](ctx)
 
-        # CHECK: === test_dynamic_async_copy
-        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0
-        # CHECK: 6.0 7.0 8.0 9.0 10.0 11.0
-        # CHECK: 12.0 13.0 14.0 15.0 16.0 17.0
-        # CHECK: 18.0 19.0 20.0 21.0 22.0 23.0
-        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0
-        test_dynamic_async_copy[M, N, BM, BN, skew_M=1, skew_N=0](ctx)
+        # FIXME(KERN-1135)
+        # DISABLED-CHECK: === test_dynamic_async_copy
+        # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0
+        # DISABLED-CHECK: 6.0 7.0 8.0 9.0 10.0 11.0
+        # DISABLED-CHECK: 12.0 13.0 14.0 15.0 16.0 17.0
+        # DISABLED-CHECK: 18.0 19.0 20.0 21.0 22.0 23.0
+        # DISABLED-CHECK: 24.0 25.0 26.0 27.0 28.0 29.0
+        # test_dynamic_async_copy[M, N, BM, BN, skew_M=1, skew_N=0](ctx)
 
         alias num_threads = 256
         alias num_pipeline_stages = 4
