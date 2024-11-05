@@ -119,6 +119,52 @@ fn slice_as_view[
 
 
 # ===----------------------------------------------------------------------===#
+# copy_to_slice
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn copy_to_slice[
+    type: DType,
+    start_type: DType,
+    end_type: DType,
+    step_type: DType,
+    in_rank: Int,
+](
+    buffer: NDBuffer[type, in_rank],
+    in_slice: NDBuffer[type, in_rank],
+    start: NDBuffer[start_type, 1],
+    end: NDBuffer[end_type, 1],
+    step: NDBuffer[step_type, 1],
+) raises:
+    var expected_shape = slice_shape[single_thread_blocking_override=True](
+        buffer, start, end, step
+    )
+
+    if expected_shape != in_slice.get_shape():
+        raise Error(
+            "Shape mismatch for mo.mutable.store.slice: expected 'slice'"
+            " operand to have shape: "
+            + str(expected_shape)
+            + " but got: "
+            + str(in_slice.get_shape())
+        )
+
+    var buffer_slice_view = slice_as_view(buffer, start, end, step)
+
+    @always_inline
+    @__copy_capture(in_slice)
+    @parameter
+    fn copy[simd_width: Int, rank: Int](idx: IndexList[rank]):
+        var index = rebind[IndexList[in_rank]](idx)
+        buffer_slice_view.store[width=simd_width](
+            index, in_slice.load[width=simd_width](index)
+        )
+
+    elementwise[copy, 1](buffer_slice_view.get_shape())
+
+
+# ===----------------------------------------------------------------------===#
 # slice_as_copy
 # ===----------------------------------------------------------------------===#
 
