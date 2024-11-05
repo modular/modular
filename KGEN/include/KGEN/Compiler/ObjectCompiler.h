@@ -47,7 +47,8 @@ public:
          PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
   /// Emit the module to a object archive.
-  ErrorOr<BufferRef> emitArchive(OwningOpRef<ModuleOp> module);
+  ErrorOr<BufferRef> emitArchive(OwningOpRef<ModuleOp> module,
+                                 bool emitAssembly = false);
 
   /// Emit the module to a object archive as an ElementsAttr that can be used as
   /// an attribute on another operation.
@@ -64,8 +65,8 @@ public:
 
   /// Slices the call graph for all exported symbols to produce a standalone
   /// assembly file. The assembly output is written to the provided stream.
-  ErrorOrSuccess emitAssembly(ModuleOp module, llvm::raw_pwrite_stream &os,
-                              bool verboseOutput = false);
+  ErrorOrSuccess emitAssembly(OwningOpRef<ModuleOp> module,
+                              llvm::raw_pwrite_stream &os);
 
   /// Writes C++ function declarations for all exported symbols.
   LogicalResult emitCXXHeader(ModuleOp module, StringRef filename,
@@ -103,7 +104,8 @@ private:
   ErrorOr<WriteableBufferRef> emitArchiveMCLinking(
       MutableArrayRef<AnyAsyncValueRef> values, StringRef moduleName,
       bool emitAssembly,
-      llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
+      llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
+      const llvm::StringMap<unsigned> &originalFnOrdering);
 
   /// Generate saveTempsPrefix files.
   ErrorOrSuccess emitArchiveSaveTemps(ModuleOp module, StringRef moduleName);

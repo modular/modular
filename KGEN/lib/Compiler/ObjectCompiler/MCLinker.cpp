@@ -27,10 +27,12 @@ void SymbolAndMCInfo::clear() {
 MCLinker::MCLinker(
     SmallVectorImpl<SymbolAndMCInfo *> &symbolAndMCInfos,
     llvm::TargetMachine &targetMachine, CompilationOptions options,
-    llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes)
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes,
+    llvm::StringMap<unsigned> originalFnOrdering)
     : symbolAndMCInfos(symbolAndMCInfos), targetMachine(targetMachine),
       options(std::move(options)),
-      symbolLinkageTypes(std::move(symbolLinkageTypes)) {
+      symbolLinkageTypes(std::move(symbolLinkageTypes)),
+      originalFnOrdering(std::move(originalFnOrdering)) {
 
   llvm::LLVMTargetMachine &llvmTargetMachine =
       static_cast<llvm::LLVMTargetMachine &>(targetMachine);
@@ -71,6 +73,7 @@ ErrorOrSuccess MCLinker::linkLLVMModules(StringRef moduleName) {
       std::unique_ptr<llvm::Module> module = std::move(moduleOr.get());
       if (linker.linkInModule(std::move(module)))
         return Error("failed to link post-llc modules");
+      mcInfo->mcContext->setUseNamesOnTempLabels(true);
     }
   }
 
@@ -189,8 +192,39 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
   llvm::LLVMTargetMachine &llvmTargetMachine =
       static_cast<llvm::LLVMTargetMachine &>(targetMachine);
 
+  llvmTargetMachine.Options.MCOptions.AsmVerbose = options.verboseOutput;
+  llvmTargetMachine.Options.MCOptions.PreserveAsmComments =
+      options.verboseOutput;
+
   // Add AsmPrint pass and run the pass manager.
   passMgr.add(new llvm::TargetLibraryInfoWrapperPass(targetLibInfo));
+
+  // Function ordering may be changed in the linkedModule due to Linker,
+  // but the original order matters for NVPTX backend to generate function
+  // declaration properly to avoid use before def/decl illegal instructions.
+  // Sort the linkedModule's functions back to to its original order
+  // (only definition matter, declaration doesn't).
+  if (llvm::Triple(options.targetTriple).isNVPTX()) {
+    linkedModule->getFunctionList().sort([&](const auto &lhs, const auto &rhs) {
+      if (lhs.isDeclaration() && rhs.isDeclaration())
+        return true;
+
+      if (lhs.isDeclaration())
+        return false;
+
+      if (rhs.isDeclaration())
+        return true;
+
+      auto iter1 = originalFnOrdering.find(lhs.getName());
+      if (iter1 == originalFnOrdering.end())
+        return true;
+      auto iter2 = originalFnOrdering.find(rhs.getName());
+      if (iter2 == originalFnOrdering.end())
+        return true;
+
+      return iter1->second < iter2->second;
+    });
+  }
 
   if (KGEN::addPassesToAsmPrint(options, llvmTargetMachine, passMgr, *linkedObj,
                                 emitAssembly

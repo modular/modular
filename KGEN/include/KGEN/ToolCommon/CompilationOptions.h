@@ -97,6 +97,8 @@ public:
   std::string saveTempsPrefix = "";
   std::string searchPaths = "";
 
+  bool verboseOutput = false;
+
   // HACK: to disable llvm splitting for some cases.
   // - mojo REPL (#35345)
   // - graph compiler's compilation path where heuristics is needed for
