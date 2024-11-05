@@ -14,7 +14,7 @@ from memory import memset_zero, stack_allocation
 
 from utils import StringRef, StringSlice
 
-from ._utils import _check_error, _FunctionHandle, _ModuleHandle
+from ._utils_v1 import _check_error, _FunctionHandle, _ModuleHandle
 
 # ===----------------------------------------------------------------------===#
 # JitOptions

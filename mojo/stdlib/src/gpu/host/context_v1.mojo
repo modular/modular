@@ -9,12 +9,12 @@ from os import abort
 from sys import bitwidthof, sizeof
 from sys.ffi import c_size_t
 
-from gpu.host.function import FunctionCache
+from gpu.host.function_v1 import FunctionCache
 from memory import UnsafePointer, bitcast
 
-from ._utils import _check_error, _ContextHandle, _StreamHandle
-from .cuda_instance import *
-from .device import DeviceV1
+from ._utils_v1 import _check_error, _ContextHandle, _StreamHandle
+from .cuda_instance_v1 import *
+from .device_v1 import DeviceV1
 
 # ===----------------------------------------------------------------------===#
 # Context

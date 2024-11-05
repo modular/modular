@@ -27,18 +27,18 @@ from ._compile import (
     _ptxas_compile,
     _to_sass,
 )
-from ._utils import (
+from ._utils_v1 import (
     CudaHandle,
     _check_error,
     _FunctionHandle,
     _ModuleHandle,
     _StreamHandle,
 )
-from .context import Context
-from .cuda_instance import LaunchConfig
+from .context_v1 import Context
+from .cuda_instance_v1 import LaunchConfig
 from .dim import Dim
-from .module import Module
-from .stream import Stream
+from .module_v1 import Module
+from .stream_v1 import Stream
 
 # ===----------------------------------------------------------------------===#
 # Attribute

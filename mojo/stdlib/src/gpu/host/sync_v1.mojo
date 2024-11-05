@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA sync operations."""
 
-from ._utils import _check_error
-from .cuda_instance import *
+from ._utils_v1 import _check_error
+from .cuda_instance_v1 import *
 
 # ===----------------------------------------------------------------------===#
 # Synchronize

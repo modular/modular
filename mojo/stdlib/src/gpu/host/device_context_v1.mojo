@@ -9,16 +9,14 @@ from os import abort
 from sys import external_call, sizeof
 from sys.ffi import c_size_t
 
-from gpu.host._compile import _get_nvptx_target
-from gpu.host.context import Context
-from gpu.host.cuda_instance import CudaInstance, LaunchAttribute
-from gpu.host.device import DeviceV1
-from gpu.host.event import Event
-from gpu.host.function import Function
-from gpu.host.stream import Stream
-
-from ._compile import _get_nvptx_fn_name
-from ._utils import _check_error, _StreamHandle
+from gpu.host._compile import _get_nvptx_target, _get_nvptx_fn_name
+from gpu.host._utils_v1 import _check_error, _StreamHandle
+from gpu.host.context_v1 import Context
+from gpu.host.cuda_instance_v1 import CudaInstance, LaunchAttribute
+from gpu.host.device_v1 import DeviceV1
+from gpu.host.event_v1 import Event
+from gpu.host.function_v1 import Function
+from gpu.host.stream_v1 import Stream
 
 # In device_context.mojo we define Device{Context,Buffer,Function}V1, the old
 # Mojo versions. The C++ versions Device{Context,Buffer,Function}V2 are in

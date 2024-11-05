@@ -8,9 +8,9 @@
 from os import abort
 from time import perf_counter_ns
 
-from ._utils import _check_error, _EventHandle, _StreamHandle
-from .context import Context
-from .stream import Stream
+from ._utils_v1 import _check_error, _EventHandle, _StreamHandle
+from .context_v1 import Context
+from .stream_v1 import Stream
 
 # ===----------------------------------------------------------------------===#
 # Flag

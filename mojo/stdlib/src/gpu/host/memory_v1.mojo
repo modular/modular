@@ -12,8 +12,8 @@ from memory.unsafe import bitcast
 
 from utils import StaticTuple
 
-from ._utils import _check_error, _get_dylib_function
-from .stream import Stream, _StreamHandle
+from ._utils_v1 import _check_error, _get_dylib_function
+from .stream_v1 import Stream, _StreamHandle
 
 # ===----------------------------------------------------------------------===#
 # Memory

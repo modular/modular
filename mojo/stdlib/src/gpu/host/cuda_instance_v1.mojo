@@ -8,17 +8,16 @@ from sys.ffi import c_char, c_size_t
 
 from utils.static_tuple import StaticTuple
 
-from ._utils import (
+from ._utils_v1 import (
     _check_error,
     _ContextHandle,
     _EventHandle,
     _get_dylib_function,
-    _human_memory,
     _ModuleHandle,
     _StreamHandle,
 )
-from .event import Flag
-from .function import CacheConfig, _FunctionHandle
+from .event_v1 import Flag
+from .function_v1 import CacheConfig, _FunctionHandle
 
 
 @register_passable("trivial")

@@ -11,8 +11,8 @@ from memory import UnsafePointer
 
 from utils import StringRef
 
-from ._utils import _check_error, _human_memory
-from .cuda_instance import *
+from ._utils_v1 import _check_error, _human_memory
+from .cuda_instance_v1 import *
 from .dim import Dim
 from .info import _get_info_from_compute_capability
 
