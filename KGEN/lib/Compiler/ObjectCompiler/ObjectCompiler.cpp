@@ -484,63 +484,6 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
 }
 
 //===----------------------------------------------------------------------===//
-// compileLLVMToAssembly
-//===----------------------------------------------------------------------===//
-
-LogicalResult KGEN::compileLLVMToAssembly(LLVMModuleAndContext module,
-                                          llvm::TargetMachine &targetMachine,
-                                          llvm::raw_pwrite_stream &objStream,
-                                          CompilationOptions &options,
-                                          AsyncRT::Runtime &runtime) {
-  CompilerTimeTraceScope traceScope("compileLLVMToAssembly", module->getName());
-  module->setDataLayout(targetMachine.createDataLayout());
-
-  if (failed(writeTempModule("pre-opt", options.saveTempsPrefix, *module)))
-    return failure();
-
-  if (failed(runLLVMOptPasses(*module, targetMachine, options, runtime)))
-    return failure();
-
-  if (failed(writeTempModule("post-opt", options.saveTempsPrefix, *module)))
-    return failure();
-
-  std::unique_ptr<llvm::MachineModuleInfo> unusedMachineModuleInfo;
-  std::unique_ptr<llvm::MCContext> unusedMCContext;
-
-  if (failed(runLlcPasses(
-          *module, options, targetMachine, objStream, unusedMachineModuleInfo,
-          unusedMCContext, llvm::CodeGenFileType::AssemblyFile,
-          /*stopBeforeAsmPrint=*/false,
-          /*numFunctionsBase=*/0,
-          runtime.context->get<M::Telemetry::TelemetryContext>())))
-    return failure();
-
-  if (!options.saveTempsPrefix.empty()) {
-    // use `.asm` here so that this won't overwritten by those dump
-    // in emitArchive which is `.s`.
-    // This not a perfect solution for overwriting because calling this
-    // function multiple times will still overwrite.
-    std::string postfix = ".asm";
-    if (llvm::Triple(options.targetTriple).isNVPTX())
-      postfix = ".ptx";
-
-    std::string outPath = options.saveTempsPrefix + postfix;
-    auto outFile = mlir::openOutputFile(outPath);
-    if (!outFile)
-      return failure();
-
-    if (failed(runLlcPasses(*module, options, targetMachine, outFile->os(),
-                            unusedMachineModuleInfo, unusedMCContext,
-                            llvm::CodeGenFileType::AssemblyFile,
-                            /*stopBeforeAsmPrint=*/false)))
-      return failure();
-    outFile->keep();
-  }
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // createTargetMachine
 //===----------------------------------------------------------------------===//
 
