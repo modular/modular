@@ -303,11 +303,18 @@ async function doInstallMagicAndMAXSDK(
     force: true,
   });
 
+  const downloadOverride = process.env['MOJO_VSCODE_MAGIC_SOURCE'];
+  const downloadSource =
+    downloadOverride ??
+    'https://conda.modular.com/max' + (isNightly ? '-nightly' : '');
+
+  logger.main.logDebug(`Downloading MAX from ${downloadOverride}.`);
+
   const args = [
     'global',
     'install',
     '-c',
-    'https://conda.modular.com/max' + (isNightly ? '-nightly' : ''),
+    downloadSource,
     '-c',
     'conda-forge',
     `max==${downloadSpec.version}`,
@@ -316,6 +323,7 @@ async function doInstallMagicAndMAXSDK(
   logger.main.logInfo(`Installing the MAX SDK.`);
 
   if (token.isCancellationRequested) {
+    logger.main.logInfo('SDK installation was cancelled.');
     throw new Error(SDK_INSTALLATION_CANCELLATION_MSG);
   }
 
