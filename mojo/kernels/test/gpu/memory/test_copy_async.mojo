@@ -112,6 +112,7 @@ fn _verify_async_copy(asm: String) raises -> None:
 
 
 def test_async_copy_sm80():
+    print("test_async_copy_sm80")
     alias asm = _compile_code_asm[
         test_async_copy, target = _get_nvptx_target()
     ]()
@@ -119,6 +120,7 @@ def test_async_copy_sm80():
 
 
 def test_async_copy_sm90():
+    print("test_async_copy_sm90")
     alias asm = _compile_code_asm[
         test_async_copy, target = _get_nvptx_target["sm_90"]()
     ]()
@@ -141,13 +143,15 @@ fn _verify_async_copy_l2_prefetch(asm: String) raises -> None:
 
 
 def test_async_copy_l2_prefetch_sm80():
+    print("test_async_l2_prefetch_sm80")
     alias asm = _compile_code_asm[
         test_async_copy_l2_prefetch, target = _get_nvptx_target()
     ]()
     _verify_async_copy_l2_prefetch(asm)
 
 
-def test_async_copy_l2_prefetch__sm90():
+def test_async_copy_l2_prefetch_sm90():
+    print("test_async_l2_prefetch_sm90")
     alias asm = _compile_code_asm[
         test_async_copy_l2_prefetch, target = _get_nvptx_target["sm_90"]()
     ]()
@@ -173,11 +177,12 @@ fn _verify_test_async_copy_with_zero_fill(asm: String) raises -> None:
         "cp.async.ca.shared.global.L2::128B [%r1], [%rd1], 4, %r2;" in asm
     )
     assert_true(
-        "cp.async.ca.shared.global.L2::64B [%r1], [%rd1], 16, %r4;" in asm
+        "cp.async.ca.shared.global.L2::64B [%r1], [%rd1], 16, %r2;" in asm
     )
 
 
 def test_async_copy_with_zero_fill():
+    print("test_async_copy_zero_fill")
     alias asm = _compile_code_asm[
         test_async_copy_with_zero_fill_kernel, target = _get_nvptx_target()
     ]()
@@ -187,6 +192,7 @@ def test_async_copy_with_zero_fill():
 fn test_async_copy_with_eviction(
     src: UnsafePointer[Float32, AddressSpace.GLOBAL]
 ):
+    print("test_async_copy_with_eviction")
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
@@ -205,6 +211,7 @@ fn _verify_async_copy_with_eviction(asm: String) raises -> None:
 
 
 def test_async_copy_with_eviction_sm80():
+    print("test_async_copy_with_eviction_sm80")
     alias asm = _compile_code_asm[
         test_async_copy_l2_prefetch, target = _get_nvptx_target()
     ]()
@@ -212,6 +219,7 @@ def test_async_copy_with_eviction_sm80():
 
 
 def test_async_copy_with_eviction_sm90():
+    print("test_async_copy_with_eviction_sm90")
     alias asm = _compile_code_asm[
         test_async_copy_l2_prefetch, target = _get_nvptx_target["sm_90"]()
     ]()
@@ -228,7 +236,7 @@ def main():
     test_async_copy_sm80()
     test_async_copy_sm90()
     test_async_copy_l2_prefetch_sm80()
-    test_async_copy_l2_prefetch__sm90()
+    test_async_copy_l2_prefetch_sm90()
     test_async_copy_with_zero_fill()
     test_async_copy_with_eviction_sm80()
     test_async_copy_with_eviction_sm90()

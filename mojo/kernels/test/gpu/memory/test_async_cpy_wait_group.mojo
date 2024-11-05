@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo-no-debug %s
 
 from sys import sizeof
 
@@ -12,6 +12,7 @@ from gpu import ThreadIdx
 from gpu.host import DeviceContext
 from gpu.memory import (
     AddressSpace,
+    Fill,
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,
@@ -73,24 +74,8 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
 
     ctx.synchronize()
 
-    # CHECK: 1.0
-    # CHECK: 2.0
-    # CHECK: 3.0
-    # CHECK: 4.0
-    # CHECK: 5.0
-    # CHECK: 6.0
-    # CHECK: 7.0
-    # CHECK: 8.0
-    # CHECK: 9.0
-    # CHECK: 10.0
-    # CHECK: 11.0
-    # CHECK: 12.0
-    # CHECK: 13.0
-    # CHECK: 14.0
-    # CHECK: 15.0
-    # CHECK: 16.0
     for i in range(16):
-        print(out_data[i])
+        assert_equal(out_data[i], Float32(i + 1))
 
     _ = in_data_device
     _ = out_data_device
@@ -112,12 +97,12 @@ fn copy_with_src_size(
         smem[i] = -1.0
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
-    async_copy[16](src, smem, src_size)
+    async_copy[16, fill = Fill.ZERO](src, smem, src_size)
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
     # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
     # is no OOB access.
-    async_copy[16](src + 4, smem + 4, 0)
+    async_copy[16, fill = Fill.ZERO](src + 4, smem + 4, 0)
     async_copy_wait_all()
 
     for i in range(8):
