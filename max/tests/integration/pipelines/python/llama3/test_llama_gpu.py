@@ -8,6 +8,7 @@ golden values.
 """
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -16,9 +17,18 @@ import torch.nn.functional as F
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import Llama3
 from llama3.llama3_token_gen import Llama3Tokenizer
-from test_common.evaluate import PROMPTS, compare_values, run_model
+from max.pipelines.interfaces import TokenGeneratorRequest
+from test_common.evaluate import (
+    PROMPTS,
+    compare_values,
+    next_token_with_logits,
+    run_model,
+)
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
+
+if TYPE_CHECKING:
+    from nn.context import TextContext
 
 
 def kl_divergence_verifier(
@@ -75,7 +85,7 @@ def kl_divergence_verifier(
         ("llama3_1", "bfloat16"),
     ],
 )
-def test_llama(model, encoding, testdata_directory):
+def test_llama(model: str, encoding: str, testdata_directory: Path) -> None:
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config(max_length=512)
     tokenizer = Llama3Tokenizer(config)
@@ -91,4 +101,40 @@ def test_llama(model, encoding, testdata_directory):
         actual,
         expected_results,
         compare_fn=kl_divergence_verifier,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "model,encoding",
+    [
+        ("llama3_1", "bfloat16"),
+    ],
+)
+async def test_llama_ragged(model: str, encoding: str) -> None:
+    prompt_a = PROMPTS[0]
+    prompt_b = PROMPTS[1]
+
+    stored_logits: dict[str, list[TextContext]] = {"A": [], "B": [], "C": []}
+
+    test_model = SupportedTestModels.get(model, encoding)
+    config = test_model.build_config()
+    tokenizer = Llama3Tokenizer(config)
+    llama = Llama3(config)
+
+    def request(prompt: str, idx: int) -> TokenGeneratorRequest:
+        return TokenGeneratorRequest(
+            id=str(idx), index=idx, prompt=prompt, model_name=model
+        )
+
+    # Send in A and B for context encoding.
+    context_a = await tokenizer.new_context(request(prompt_a, idx=0))
+    context_b = await tokenizer.new_context(request(prompt_b, idx=1))
+    next_token_with_logits(
+        llama, {"A": context_a, "B": context_b}, stored_logits
+    )
+
+    # Send in both B and C for token generation.
+    next_token_with_logits(
+        llama, {"A": context_a, "B": context_b}, stored_logits
     )

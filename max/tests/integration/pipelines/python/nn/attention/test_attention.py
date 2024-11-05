@@ -12,10 +12,6 @@ import pytest
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
-from modular_graph_test import modular_graph_test
-from nn import Linear
-from nn.attention import Attention
-from nn.kernels import flash_attention_ragged_with_causal_mask
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
@@ -23,6 +19,11 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
+from modular_graph_test import modular_graph_test
+
+from nn import Linear
+from nn.attention import Attention
+from nn.kernels import flash_attention_ragged_with_causal_mask
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
@@ -124,7 +125,7 @@ def _attention_layer(
         attn_out, _ = attn_fn(
             x,
             kv_collection,
-            cache_lengths,
+            valid_lengths=cache_lengths,
             attention_mask=attn_mask,
         )
 
@@ -232,9 +233,14 @@ def test_kv_cache_ragged_attention(session):
             is_cache_empty_type,
         ],
     ) as g:
-        input, input_row_offset, blocks, cache_lengths, lookup_table, is_cache_empty = (
-            g.inputs
-        )
+        (
+            input,
+            input_row_offset,
+            blocks,
+            cache_lengths,
+            lookup_table,
+            is_cache_empty,
+        ) = g.inputs
         layer_idx = ops.constant(
             0,
             DType.uint32,

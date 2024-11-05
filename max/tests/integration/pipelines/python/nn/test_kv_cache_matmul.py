@@ -10,14 +10,15 @@ import numpy as np
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
-from modular_graph_test import modular_graph_test
-from nn.kernels import fused_qkv_ragged_matmul
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
 )
+from modular_graph_test import modular_graph_test
+
+from nn.kernels import fused_qkv_ragged_matmul
 
 
 def test_fused_qkv_ragged_matmul(session):
@@ -90,7 +91,13 @@ def test_fused_qkv_ragged_matmul(session):
             blocks, cache_lengths, lookup_table, is_cache_empty
         )
         result = fused_qkv_ragged_matmul(
-            kv_params, input, input_row_offset, wqkv, kv_collection, layer_idx
+            kv_params,
+            input,
+            input_row_offset,
+            wqkv,
+            kv_collection,
+            layer_idx,
+            n_heads=num_q_heads,
         )
         g.output(result)
 
