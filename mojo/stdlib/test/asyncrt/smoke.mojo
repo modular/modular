@@ -10,7 +10,7 @@
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
 
-from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host import DeviceBuffer, DeviceContext, DeviceAttribute
 
 
 fn _ownership_helper(
@@ -73,6 +73,11 @@ fn _run_compute_capability(ctx: DeviceContext) raises:
     print("Compute capability: " + str(ctx.compute_capability()))
 
 
+fn _run_get_attribute(ctx: DeviceContext) raises:
+    print("clock_rate: " + str(ctx.get_attribute(DeviceAttribute.CLOCK_RATE)))
+    print("warp_size: " + str(ctx.get_attribute(DeviceAttribute.WARP_SIZE)))
+
+
 fn main() raises:
     var ctx = create_test_device_context()
     print("-------")
@@ -81,5 +86,6 @@ fn main() raises:
     _run_ownership_transfer(ctx)
     _run_device_info(ctx)
     _run_compute_capability(ctx)
+    _run_get_attribute(ctx)
 
     print("Done.")
