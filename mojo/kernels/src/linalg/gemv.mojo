@@ -19,7 +19,6 @@ from gpu.host import (
     DeviceContext,
     FuncAttribute,
     LaunchAttribute,
-    Device,
     DeviceAttribute,
 )
 from gpu.host._compile import _get_nvptx_target
@@ -522,12 +521,13 @@ fn gemv_gpu_dispatch[
         )
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
-        # TODO: Should use Device.query
-        alias MAX_ACCESS_POLICY_WINDOW_SIZE = 134213632
+        var max_access_policy_window_size = ctx.get_attribute(
+            DeviceAttribute.MAX_ACCESS_POLICY_WINDOW_SIZE
+        )
         var launch_attributes = List[LaunchAttribute](
             AccessPolicyWindow(
                 base_ptr=a.data,
-                count=min(a.size(), MAX_ACCESS_POLICY_WINDOW_SIZE),
+                count=min(a.size(), max_access_policy_window_size),
                 hit_ratio=1,
                 hit_prop=AccessProperty.PERSISTING,
                 miss_prop=AccessProperty.STREAMING,
@@ -724,7 +724,7 @@ fn gemv_gpu[
         @parameter
         if a.type == DType.bfloat16:
             if k % simd_width == 0:
-                if ceildiv(n, 2) <= Device()._query(
+                if ceildiv(n, 2) <= ctx.get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
                 ):
                     kernel_func = GEMVAlgorithm.GEMV_SPLIT_K
