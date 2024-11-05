@@ -19,14 +19,18 @@ from max.graph import Graph, TensorType, Weight, ops
 from nn.conv import Conv2D
 from nn.linear import Linear
 from nn.norm import RMSNorm
-from pixtral.model.attention import Attention
-from pixtral.model.attention_utils import causal_attention_mask_2d
-from pixtral.model.rotary_embedding_2d import (
+from pixtral.vision_encoder.attention import Attention
+from pixtral.vision_encoder.attention_utils import causal_attention_mask_2d
+from pixtral.vision_encoder.rotary_embedding_2d import (
     RotaryEmbedding2D,
     patch_position_ids,
 )
-from pixtral.model.transformer import MLP, Transformer, TransformerBlock
-from pixtral.model.vision_encoder import VisionEncoder
+from pixtral.vision_encoder.transformer import (
+    MLP,
+    Transformer,
+    TransformerBlock,
+)
+from pixtral.vision_encoder.vision_encoder import VisionEncoder
 from torch import Tensor, nn
 from transformers import PixtralVisionConfig, PixtralVisionModel
 
@@ -966,6 +970,11 @@ def test_vision_encoder(imgs, img_sizes, pytorch_pixtral_vision_encoder):
             )
 
             graph_encoder_output = graph_encoder(graph_inputs)
+            print(
+                "encoder output shape",
+                encoder_output.shape,
+                graph_encoder_output.shape,
+            )
 
             graph.output(graph_encoder_output)
             compiled = session.load(graph, weights_registry=weights_registry)
