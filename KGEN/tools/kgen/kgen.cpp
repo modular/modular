@@ -209,6 +209,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   CompilationOptions options = clOptions.getCompilationOptions();
   if (clOptions.saveTemps)
     options.saveTempsPrefix = clOptions.tempsDir;
+  options.verboseOutput = (clOptions.cmd == Command::kEmitAssemblyVerbose);
 
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename);
@@ -400,9 +401,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     if (!outFile)
       return failure(clOptions.reportError("could not open .s output file"));
 
-    bool verboseOutput = clOptions.cmd == Command::kEmitAssemblyVerbose;
     ErrorOrSuccess standaloneOr =
-        objCompiler.emitAssembly(*theModule, outFile->os(), verboseOutput);
+        objCompiler.emitAssembly(std::move(theModule), outFile->os());
     if (failed(standaloneOr))
       return failure(
           clOptions.reportError("could not produce standalone asm: " +

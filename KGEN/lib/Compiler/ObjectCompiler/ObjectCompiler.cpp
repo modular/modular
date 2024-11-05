@@ -343,6 +343,12 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
           AsyncRT::getMLIRDiagnostic("failed to create TargetMachine", loc));
     }
 
+    llvm::LLVMTargetMachine &llvmTargetMachine =
+        static_cast<llvm::LLVMTargetMachine &>(**machineOr);
+    llvmTargetMachine.Options.MCOptions.AsmVerbose = options.verboseOutput;
+    llvmTargetMachine.Options.MCOptions.PreserveAsmComments =
+        options.verboseOutput;
+
     std::string saveTempsPrefix = options.saveTempsPrefix;
     if (!options.saveTempsPrefix.empty()) {
       if (moduleIdx)
@@ -500,6 +506,7 @@ LogicalResult KGEN::compileLLVMToAssembly(LLVMModuleAndContext module,
 
   std::unique_ptr<llvm::MachineModuleInfo> unusedMachineModuleInfo;
   std::unique_ptr<llvm::MCContext> unusedMCContext;
+
   if (failed(runLlcPasses(
           *module, options, targetMachine, objStream, unusedMachineModuleInfo,
           unusedMCContext, llvm::CodeGenFileType::AssemblyFile,
@@ -513,10 +520,15 @@ LogicalResult KGEN::compileLLVMToAssembly(LLVMModuleAndContext module,
     // in emitArchive which is `.s`.
     // This not a perfect solution for overwriting because calling this
     // function multiple times will still overwrite.
-    std::string outPath = options.saveTempsPrefix + ".asm";
+    std::string postfix = ".asm";
+    if (llvm::Triple(options.targetTriple).isNVPTX())
+      postfix = ".ptx";
+
+    std::string outPath = options.saveTempsPrefix + postfix;
     auto outFile = mlir::openOutputFile(outPath);
     if (!outFile)
       return failure();
+
     if (failed(runLlcPasses(*module, options, targetMachine, outFile->os(),
                             unusedMachineModuleInfo, unusedMCContext,
                             llvm::CodeGenFileType::AssemblyFile,
@@ -687,15 +699,21 @@ ObjectCompiler::emitArchiveParallelCompilation(
   std::string moduleName = llvmModule->getName().str();
 
   bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2;
+
+  // Disable parLLC for NVPTX because NVPTX codegen is inter-procedural for
+  // arguments' alignment when calling a function.
+  // TODO: MOCO-1407 investigate how to workaround NVPTX backend for
+  // per function codegen.
   bool parLLC = runtime.getWorkQueue()->getParallelismLevel() >= 2 &&
-                options.enableParallelLLC;
+                options.enableParallelLLC &&
+                !llvm::Triple(options.targetTriple).isNVPTX();
 
   SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
 
   if (noSplitting) {
-    cacheResults.push_back(
-        lowerLLVMModuleToObjects(forwardModule(std::move(llvmModule)), opLoc,
-                                 parLLC, std::nullopt, /*numFunctionsBase=*/0));
+    cacheResults.push_back(lowerLLVMModuleToObjects(
+        forwardModule(std::move(llvmModule)), opLoc, parLLC, std::nullopt,
+        /*numFunctionsBase=*/0));
   } else {
     (void)writeTempModule("pre-split", options.saveTempsPrefix, *llvmModule);
 
@@ -718,7 +736,8 @@ ObjectCompiler::emitArchiveParallelCompilation(
 ErrorOr<WriteableBufferRef> ObjectCompiler::emitArchiveMCLinking(
     MutableArrayRef<AnyAsyncValueRef> values, StringRef moduleName,
     bool emitAssembly,
-    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes) {
+    llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes,
+    const llvm::StringMap<unsigned> &originalFnOrdering) {
   // If any of the cache results failed, propagate the error.
   for (auto &result : values) {
     if (result.isError())
@@ -740,7 +759,8 @@ ErrorOr<WriteableBufferRef> ObjectCompiler::emitArchiveMCLinking(
     symbolAndMCInfos.emplace_back(&symbolAndMCInfo);
   }
 
-  MCLinker mcLinker(symbolAndMCInfos, **machineOr, options, symbolLinkageTypes);
+  MCLinker mcLinker(symbolAndMCInfos, **machineOr, options, symbolLinkageTypes,
+                    originalFnOrdering);
   ErrorOr<WriteableBufferRef> mcLinkResult =
       mcLinker.linkAndPrint(moduleName, emitAssembly);
   if (mcLinkResult.isError()) {
@@ -785,8 +805,9 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
             return std::move(output).setToError(result.takeDiagnostic());
         }
 
-        ErrorOr<WriteableBufferRef> mcLinkResult = emitArchiveMCLinking(
-            values, moduleName, /*emitAssembly=*/true, symbolLinkageTypes);
+        ErrorOr<WriteableBufferRef> mcLinkResult =
+            emitArchiveMCLinking(values, moduleName, /*emitAssembly=*/true,
+                                 symbolLinkageTypes, /*originalFnOrdering=*/{});
 
         if (mcLinkResult.isError()) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
@@ -807,11 +828,25 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
   return {};
 }
 
+// Compute the original order of Function in an llvm::Module.
+// This is needed to help sort the linkedModule's functions list
+// for correct codegen with NVPTX backend.
+static void computeFnOrdering(llvm::Module &module,
+                              llvm::StringMap<unsigned> &result) {
+  unsigned idx = 0;
+  for (auto &func : module.functions()) {
+    if (func.isDeclaration())
+      continue;
+    result.insert({func.getName(), idx++});
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // emitArchive
 //===----------------------------------------------------------------------===//
 
-ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
+ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
+                                               bool emitAssembly) {
   CompilerTimeTraceScope traceScope("produce-archive");
 
   // Perform a cache aware transformation to translate the module to an archive
@@ -824,8 +859,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
         loadContext(op->getContext()))
         .recordCacheMiss("ObjectCompiler::emitArchive");
 #endif
-    chain.andThenSync([this, op, output = output.copy(),
-                       buf = buf.copy()]() mutable {
+    chain.andThenSync([this, op, output = output.copy(), buf = buf.copy(),
+                       emitAssembly]() mutable {
 
 #ifdef MODULAR_ENABLE_TELEMETRY
       [[maybe_unused]] auto timeScope =
@@ -852,18 +887,29 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
             moduleLoc));
       }
 
+      // Split the module into multiple slices and compile each in parallel.
+      emitAssembly = emitAssembly || isGPUBackend(options);
+
       // Release mlir::ModuleOp before codegen happens to reduce memory
       // pressure.
-      if (options.saveTempsPrefix.empty())
+      if (options.saveTempsPrefix.empty() || emitAssembly)
         op->erase();
 
       CompilerTimeTraceScope traceScope("split-input-module");
 
       std::string moduleName = llvmModule->getName().str();
 
-      // Split the module into multiple slices and compile each in parallel.
-      bool emitAssembly = isGPUBackend(options);
+      llvm::StringMap<unsigned> originalFnOrdering;
 
+      // MCLinker changes function ordering in the linkedModule,
+      // but the original order matters for NVPTX backend to generate function
+      // declaration properly to avoid use before def/decl illegal instructions.
+      // Keep record of the ordering here so that we can sort the linkedModule
+      // to its original order.
+      if (llvm::Triple(options.targetTriple).isNVPTX())
+        computeFnOrdering(*llvmModule, originalFnOrdering);
+
+      // Split the module into multiple slices and compile each in parallel.
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
       SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
           emitArchiveParallelCompilation(std::move(llvmModule), moduleLoc,
@@ -873,7 +919,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
           cachedResults,
           [this, moduleName = std::move(moduleName), op, moduleLoc, moduleCtx,
            buf = buf.copy(), output = output.copy(), emitAssembly,
-           options = options, symbolLinkageTypes](
+           options = options, symbolLinkageTypes,
+           originalFnOrdering = std::move(originalFnOrdering)](
               MutableArrayRef<AnyAsyncValueRef> values) mutable {
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -885,8 +932,9 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
                         {{"pipeline", "ObjectCompiler::emitArchive"}});
 #endif
 
-            ErrorOr<WriteableBufferRef> mcLinkResult = emitArchiveMCLinking(
-                values, moduleName, emitAssembly, symbolLinkageTypes);
+            ErrorOr<WriteableBufferRef> mcLinkResult =
+                emitArchiveMCLinking(values, moduleName, emitAssembly,
+                                     symbolLinkageTypes, originalFnOrdering);
             if (mcLinkResult.isError()) {
 
               return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
@@ -895,7 +943,11 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
 
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
-              if (failed(writeBufToTemp(options.saveTempsPrefix, ".s",
+              std::string postfix = ".s";
+              if (llvm::Triple(options.targetTriple).isNVPTX())
+                postfix = ".ptx";
+
+              if (failed(writeBufToTemp(options.saveTempsPrefix, postfix,
                                         linkedObj))) {
                 return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                     "failed to save asm to saveTempsPrefix", moduleLoc));
@@ -937,7 +989,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module) {
   options.print(*produceArchiveKey << "emitArchive(");
   *produceArchiveKey << ", isJIT=" << isJIT
                      << ", enableLLVMPerFunctionSplitting="
-                     << options.enableLLVMPerFunctionSplitting << ')';
+                     << options.enableLLVMPerFunctionSplitting
+                     << ", verboseOutput=" << options.verboseOutput << ')';
 
   auto output = cachedTransform(
       module.release(), transformCache.copy(),
@@ -1085,34 +1138,13 @@ ErrorOrSuccess ObjectCompiler::emitLLVMIR(ModuleOp module,
 // emitAssembly
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess ObjectCompiler::emitAssembly(ModuleOp module,
-                                            llvm::raw_pwrite_stream &os,
-                                            bool verboseOutput) {
+ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
+                                            llvm::raw_pwrite_stream &os) {
   CompilerTimeTraceScope traceScope("emitAssembly");
-
-  LLVMModuleAndContext llvmModule;
-  if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
-        return lowerAllFuncsToLLVM(ctx, module);
-      }))
-    return err.takeError();
-
-  auto machineOr = createTargetMachine(options, /*isJIT=*/false);
-  if (failed(machineOr))
-    return machineOr.takeError();
-
-  llvm::LLVMTargetMachine &llvmTargetMachine =
-      static_cast<llvm::LLVMTargetMachine &>((**machineOr));
-
-  llvmTargetMachine.Options.MCOptions.AsmVerbose = verboseOutput;
-  llvmTargetMachine.Options.MCOptions.PreserveAsmComments = verboseOutput;
-
-  // Set the data layout on the module.
-  llvmModule->setDataLayout((*machineOr)->createDataLayout());
-
-  // Emit the assembly.
-  if (failed(KGEN::compileLLVMToAssembly(std::move(llvmModule), **machineOr, os,
-                                         options, runtime)))
+  ErrorOr<BufferRef> buf =
+      ObjectCompiler::emitArchive(std::move(module), /*emitAssembly=*/true);
+  if (buf.isError())
     return Error("failed to lower LLVM IR to assembly");
-
+  os << buf->getPointer()->getBuffer();
   return success();
 }

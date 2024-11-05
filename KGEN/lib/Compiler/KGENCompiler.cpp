@@ -384,7 +384,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     break;
 
   case EmitAs::ASM:
-    if (ErrorOrSuccess err = compiler->emitAssembly(*module, os))
+    if (ErrorOrSuccess err = compiler->emitAssembly(std::move(module), os))
       return err.takeError();
     break;
   }

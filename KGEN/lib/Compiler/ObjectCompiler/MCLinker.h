@@ -100,7 +100,8 @@ class MCLinker {
 public:
   MCLinker(SmallVectorImpl<SymbolAndMCInfo *> &symbolAndMCInfos,
            llvm::TargetMachine &targetMachine, CompilationOptions options,
-           llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes);
+           llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes,
+           llvm::StringMap<unsigned> originalFnOrdering);
 
   /// Link multiple MC results and AsmPrint into one .o file.
   ErrorOr<WriteableBufferRef> linkAndPrint(StringRef moduleName,
@@ -114,6 +115,7 @@ private:
   LLVMModuleAndContext linkedModule;
 
   llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
+  llvm::StringMap<unsigned> originalFnOrdering;
   llvm::MachineModuleInfoWrapperPass *machineModInfoPass = nullptr;
 
   /// Link llvm::Modules from each split.
