@@ -8,6 +8,7 @@
 # WIP, just stubs for now
 
 from memory import stack_allocation
+from sys.info import _get_arch
 
 from ._compile import (
     _compile_code,
@@ -267,6 +268,10 @@ struct DeviceBufferV2[type: DType](Sized):
         return UnsafePointer[Scalar[type]]()
 
 
+fn _is_amd_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
+    return "sm_" not in _get_arch[target]()
+
+
 struct DeviceFunctionV2[
     func_type: AnyTrivialRegType, //,
     func: func_type,
@@ -275,9 +280,13 @@ struct DeviceFunctionV2[
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
+    alias emission_kind = "llvm" if _is_amd_gpu[target]() else "asm"
     var _handle: _DeviceFunctionPtr
     alias _func_impl = _compile_code[
-        func, is_failable=_is_failable, emission_kind="asm", target=target
+        func,
+        is_failable=_is_failable,
+        emission_kind = Self.emission_kind,
+        target=target,
     ]()
 
     fn __copyinit__(inout self, existing: Self):
@@ -336,7 +345,7 @@ struct DeviceFunctionV2[
                     "DeviceFunctionV2.__init__: func_attribute"
                 ]()
 
-        # const char *AsyncRT_DeviceContext_compileFunction(
+        # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
         #     const char *function_name, const void *data,
         #     int32_t max_registers, int32_t threads_per_block,
@@ -345,7 +354,7 @@ struct DeviceFunctionV2[
         var result = _DeviceFunctionPtr()
         _checked(
             external_call[
-                "AsyncRT_DeviceContext_compileFunction",
+                "AsyncRT_DeviceContext_loadFunction",
                 _CharPtr,
                 UnsafePointer[_DeviceFunctionPtr],
                 _DeviceContextPtr,
