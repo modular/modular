@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from functools import partial
 import logging
 import os
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Any, Mapping, Optional
+from typing import Mapping, Optional
 
 from max.serve.telemetry.logger import configureLogging
 
@@ -41,7 +42,7 @@ from max.serve.config import APIType, Settings, api_prefix
 from max.serve.debug import DebugSettings, register_debug
 from max.serve.pipelines.deps import (
     BatchedTokenGeneratorState,
-    all_pipeline_states,
+    echo_generator_pipeline,
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.request import register_request
@@ -65,12 +66,12 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(
-    app: FastAPI,
+    app: FastAPI, pipelines: Mapping[str, BatchedTokenGeneratorState]
 ):
     async with AsyncExitStack() as stack:
         contexts = []
         model_factories = {}
-        for name, state in all_pipeline_states().items():
+        for name, state in pipelines.items():
             model_factories[name] = state.model_factory
             if isinstance(state, BatchedTokenGeneratorState):
                 contexts.append(state.batched_generator)
@@ -83,26 +84,30 @@ async def lifespan(
 def fastapi_app(
     settings: Settings,
     debug_settings: DebugSettings,
-    pipeline_states_override: Mapping[str, Any] = {},
+    pipelines: Mapping[str, BatchedTokenGeneratorState] = {},
 ) -> FastAPI:
-    pipeline_states = all_pipeline_states()
-    if pipeline_states_override:
-        pipeline_states.clear()
-        pipeline_states.update(pipeline_states_override)
+    if not pipelines:
+        # TODO@gaz: The name look up is awkward here.
+        default_echo_pipeline = echo_generator_pipeline()
+        pipelines = {
+            default_echo_pipeline.batched_generator.model_name: default_echo_pipeline
+        }
 
-    app = FastAPI(lifespan=lifespan)
-    for api_type in settings.api_types:
-        app.include_router(
-            ROUTES[api_type].router, prefix=api_prefix(settings, api_type)
-        )
-
-    app.mount("/metrics", make_metrics_app())
+    app = FastAPI(lifespan=partial(lifespan, pipelines=pipelines))
+    app.state.pipelines = pipelines
 
     request_limiter: Optional[asyncio.BoundedSemaphore] = None
     if settings.request_limit > 0:
         request_limiter = asyncio.BoundedSemaphore(settings.request_limit)
         logger.info("Configured request limiter to %d", settings.request_limit)
     app.state.request_limiter = request_limiter
+
+    app.mount("/metrics", make_metrics_app())
+
+    for api_type in settings.api_types:
+        app.include_router(
+            ROUTES[api_type].router, prefix=api_prefix(settings, api_type)
+        )
 
     app.state.settings = settings
     register_request(app)

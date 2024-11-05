@@ -8,20 +8,20 @@
 import asyncio
 import json
 import logging
-import traceback
 from abc import ABC, abstractmethod
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from typing import AsyncGenerator, List, Literal, Optional, cast
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.applications import State
 from fastapi.responses import JSONResponse, Response
 from max.pipelines import PreTrainedTokenGeneratorTokenizer
-from max.serve.pipelines.deps import token_pipeline_state
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
 )
+from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.schemas.openai import (
     ChatCompletionRequestMessage,
     ChatCompletionRequestMessageContentPartText,
@@ -75,6 +75,18 @@ class OpenAIResponseGenerator(ABC):
     @abstractmethod
     async def complete(self, request: TokenGeneratorRequest) -> str:
         pass
+
+
+def get_pipeline(request: Request, model_name: str):
+    app_state: State = request.app.state
+    try:
+        pipeline_state: BatchedTokenGeneratorState = app_state.pipelines[
+            model_name
+        ]
+        pipeline = pipeline_state.batched_generator
+        return pipeline
+    except KeyError:
+        raise ValueError(f"Unknown pipeline model {model_name}")
 
 
 class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
@@ -248,8 +260,7 @@ async def openai_create_chat_completion(request: Request) -> Response:
         completion_request = CreateChatCompletionRequest.model_validate(
             request_json
         )
-        pipeline_state = token_pipeline_state(completion_request.model)
-        pipeline = pipeline_state.batched_generator
+        pipeline = get_pipeline(request, completion_request.model)
         request_prompt = build_prompt(pipeline, completion_request)
 
         logger.info(
@@ -408,8 +419,7 @@ async def openai_create_completion(request: Request) -> Response:
         completion_request = CreateCompletionRequest.model_validate(
             request_json
         )
-        pipeline_state = token_pipeline_state(completion_request.model)
-        pipeline = pipeline_state.batched_generator
+        pipeline = get_pipeline(request, completion_request.model)
         logger.info(
             "Processing path, %s, req-id,%s%s, for model, %s.",
             request.url.path,

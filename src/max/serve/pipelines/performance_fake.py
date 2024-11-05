@@ -8,11 +8,13 @@ import logging
 import threading
 from dataclasses import dataclass
 from time import sleep, time
-from typing import Any, Literal
+from typing import Any, Literal, Union
 
 import numpy as np
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
+
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
-from max.pipelines import PreTrainedTokenGeneratorTokenizer
+from max.pipelines.tokenizer import PreTrainedTokenGeneratorTokenizer
 
 
 @dataclass
@@ -31,26 +33,19 @@ class PerformanceFakingContext:
 class PerformanceFakingTokenGeneratorTokenizer(
     PreTrainedTokenGeneratorTokenizer[PerformanceFakingContext]
 ):
-    def __init__(self, delegate):
+    def __init__(
+        self, delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
+    ):
         super().__init__(delegate)
+        self.logger = logging.getLogger(self.__class__.__name__)
         # amount of time spent in the tokenizer
-        self.tokenizer_secs = 0
-
-        # timestamp of the end of the last GPU wait
-        self.last_wait_end = None
+        self.tokenizer_secs = 0.0
 
     async def new_context(
         self, request: TokenGeneratorRequest
     ) -> PerformanceFakingContext:
-        if self.last_wait_end is None:
-            self.last_wait_end = time()
-
-        if self.delegate:
-            encoded_prompt = self._tokenize(request.prompt)
-            prompt_length = len(encoded_prompt)
-        else:
-            encoded_prompt = request.prompt
-            prompt_length = len(request.prompt)
+        encoded_prompt = await self.encode(request.prompt)
+        prompt_length = len(encoded_prompt)
         num_tokens = request.max_new_tokens or prompt_length
         return PerformanceFakingContext(
             prompt_length,
@@ -61,6 +56,12 @@ class PerformanceFakingTokenGeneratorTokenizer(
             np.array(encoded_prompt),
         )
 
+    async def encode(self, prompt: str) -> np.ndarray:
+        start = time()
+        encoded = await super().encode(prompt)
+        self.tokenizer_secs += time() - start
+        return encoded
+
     async def decode(
         self,
         context: PerformanceFakingContext,
@@ -69,14 +70,11 @@ class PerformanceFakingTokenGeneratorTokenizer(
         # Not actually an np.ndarray!
         return logits  # type: ignore
 
-    def _tokenize(self, prompt):
-        if self.delegate is None:
-            return prompt
-        else:
-            start = time()
-            encoded = self.delegate.encode(prompt)
-            self.tokenizer_secs += time() - start
-            return encoded
+    def __del__(self):
+        self.logger.info(
+            "PerformanceFake: tokenized for"
+            f" {self.tokenizer_secs:.4f} sec total"
+        )
 
 
 @dataclass
@@ -101,7 +99,6 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
     # the model execute call in our pipelines does release the GIL
     busy_wait: bool = False
 
-    # TODO@gaz: We can't use __class__ here because this is currently setup as a dataclass
     logger: logging.Logger = logging.getLogger(__name__)
 
     # lock to prevent concurrent usage of the fake GPU
@@ -110,8 +107,6 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
     wait_secs = 0
     # number of times waited in the fake GPU
     wait_count = 0
-    # amount of time spent in the tokenizer
-    tokenizer_secs = 0
     # timestamp of the end of the last GPU wait
     last_wait_end = None
     # amount of time spent in between waiting
@@ -199,10 +194,6 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         self.logger.info(
             f"PerformanceFake: waited {self.wait_count} times for"
             f" {self.wait_secs:.4f} sec total"
-        )
-        self.logger.info(
-            "PerformanceFake: tokenized for"
-            f" {self.tokenizer_secs:.4f} sec total"
         )
         self.logger.info(
             "PerformanceFake: not waiting for"

@@ -7,11 +7,12 @@
 from __future__ import annotations
 
 import asyncio
+from functools import partial
 import logging
 import os
 import signal
 from dataclasses import dataclass, field
-from typing import AsyncGenerator, Generic, Mapping, Optional, TypeVar
+from typing import AsyncGenerator, Callable, Generic, Mapping, Optional, TypeVar
 
 from max.pipelines.interfaces import (
     TokenGeneratorRequest,
@@ -160,6 +161,8 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         tg_yield_to_ce: bool = True,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.info("%s: Constructed", model_name)
+
         self.model_name = model_name
         self.tokenizer = tokenizer
         self.config = config
@@ -308,7 +311,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         return [token async for token in self.next_token(request)]
 
     async def __aenter__(self):
-        self.logger.info("Starting workers")
+        self.logger.info("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
 
         for queue in self.queues:
@@ -317,38 +320,49 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                 queue.config.strategy == BatchingStrategy.DYNAMIC
                 or queue.config.strategy == BatchingStrategy.DYNAMIC_IMMUTABLE
             ):
-                queue_task = asyncio.create_task(
-                    queue.dynamic_batching_worker()
-                )
+                self.create_background_task(queue.dynamic_batching_worker)
             elif queue.config.strategy == BatchingStrategy.CONTINUOUS:
-                queue_task = asyncio.create_task(
-                    queue.continuous_batching_worker()
-                )
-
-            self.add_background_task(queue_task)
+                self.create_background_task(queue.continuous_batching_worker)
 
         # Add global fanout worker.
-        self.add_background_task(
-            asyncio.create_task(queue.response_fanout_worker())
-        )
+        self.create_background_task(queue.response_fanout_worker)
 
-        self.logger.info("Started workers")
+        self.logger.info(
+            "%s: Started workers: %d tasks",
+            self.model_name,
+            len(self._background_tasks),
+        )
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        self.logger.info("Stopping workers")
+        self.logger.info("%s: Stopping workers", self.model_name)
         for task in self._background_tasks:
             task.cancel()
+        # await asyncio.sleep(0.1)
         # TODO: also cancel any `queue.get()` tasks
 
-    def add_background_task(self, task: asyncio.Task):
-        task.add_done_callback(self.log_task_done)
+    def create_background_task(self, fn: Callable):
+        task_name = fn.__name__
+        task = asyncio.create_task(fn())
+        task.add_done_callback(partial(self.log_task_done, task_name=task_name))
         self._background_tasks.add(task)
+        self.logger.info(
+            "%s: Task Added: %s, %s, %d total",
+            self.model_name,
+            task_name,
+            type(fn),
+            len(self._background_tasks),
+        )
 
-    def log_task_done(self, task: asyncio.Task):
+    def log_task_done(self, task: asyncio.Task, task_name: str):
         # TODO - should gracefully shut down here.
-        self.logger.info("Task completed: %s", task.get_name())
         self._background_tasks.remove(task)
+        self.logger.info(
+            "%s: Task completed: %s, %d remaining",
+            self.model_name,
+            task_name,
+            len(self._background_tasks),
+        )
         # Cancel remaining tasks.
         for t in self._background_tasks:
             if not t.done():
