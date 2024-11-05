@@ -1039,6 +1039,60 @@ fn insert_index[
     return out
 
 
+@mogg_register("translate_gather_indices")
+@always_inline
+fn translate_gather_indices[
+    indices_dtype: DType,
+    indices_rank: Int,
+    input_rank: Int,
+](
+    indices_buffer: NDBuffer[indices_dtype, indices_rank],
+    axis: Scalar,
+    out_coords: IndexList[input_rank + indices_rank - 1],
+    input_shape: IndexList[input_rank],
+) -> IndexList[input_rank]:
+    # From a `output_indices` computed from a gather operation using
+    # `indices_buffer` and `axis`, find the correponding input indices.
+
+    var normalized_axis = int(normalize_neg_index(axis, input_rank))
+    # out_coords consists of 3 chunks:
+    #   out_coords[0:axis] = input coords[0:axis]
+    #   out_coords[axis:axis+indices_rank] = indices_coords
+    #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
+    # and input_coords[axis] = indices[indices_coords]
+    # Get the gather indices.
+    var indices_index = IndexList[indices_rank]()
+
+    # Get the indices of the index.
+    @parameter
+    for i in range(indices_rank):
+        indices_index[i] = out_coords[i + normalized_axis]
+
+    # The index we are gathering.
+    var data_index = indices_buffer.load(indices_index)
+
+    # Update the indices with the new data index.
+    var data_indices = IndexList[input_rank]()
+
+    alias skip_factor = indices_rank - 1
+
+    # Build the indices for the input. We have replaced in index in 'axis'
+    # with an index from the indices tensor.
+    @parameter
+    for i in range(input_rank):
+        if i == normalized_axis:
+            data_indices[i] = int(
+                normalize_neg_index(data_index, input_shape[normalized_axis])
+            )
+        elif i > normalized_axis:
+            # Skip over any extra indices dimensions. These are essentially new dimensions.
+            data_indices[i] = out_coords[i + skip_factor]
+        else:
+            data_indices[i] = out_coords[i]
+
+    return data_indices
+
+
 @mogg_register_shape_func("mo.broadcast_to")
 @always_inline
 fn broadcast_to_shape[
