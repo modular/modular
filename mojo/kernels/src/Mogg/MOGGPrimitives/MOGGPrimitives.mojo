@@ -15,7 +15,6 @@ from buffer.dimlist import Dim, DimList
 from gpu.host import Context as CudaContext
 from gpu.host import (
     CudaInstance,
-    Device,
     DeviceBuffer,
     DeviceContext,
     Event,
