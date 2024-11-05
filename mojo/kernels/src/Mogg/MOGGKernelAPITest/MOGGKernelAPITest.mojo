@@ -284,8 +284,8 @@ struct ImposterMatmul:
         return rebind[IndexList[2]](shape)
 
 
-@compiler.register("print_shape_strides")
-struct PrintShapeStridesOp:
+@compiler.register("print_tensor_spec")
+struct PrintTensorSpecOp:
     @staticmethod
     fn execute[
         synchronous: Bool,
@@ -293,9 +293,11 @@ struct PrintShapeStridesOp:
     ](out: ManagedTensorSlice, x: ManagedTensorSlice):
         alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
         alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
+        alias x_alignment = compiler.specsof[x.type, x.rank]("x").alignment
 
         print("x.shape = ", x_shape)
         print("x.strides = ", x_strides)
+        print("x.alignment = ", x_alignment)
 
         @parameter
         @always_inline
