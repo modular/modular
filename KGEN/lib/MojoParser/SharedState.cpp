@@ -1814,6 +1814,11 @@ static void resolveDeclForListenerLookup(DeclResolver &declResolver,
     // iterators here. We also don't fail, because the listener should be
     // tolerant to errors.
     auto &[name, children] = *std::next(decls.begin(), i);
+
+    // This case sometimes occurs in invalid code in the LSP.
+    if (children.empty())
+      continue;
+
     (void)declResolver.resolveFully(*children.front(), loc);
   }
   // Resolve any pending wildcards in the decl. We don't care about failure
