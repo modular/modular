@@ -5,6 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Test the Python weight loading interface."""
 
+
+import platform
+import pytest
 import numpy as np
 import torch
 from max.dtype import DType
@@ -61,6 +64,10 @@ def _test_data():
     }
 
 
+@pytest.mark.skipif(
+    platform.machine() in ["arm64", "aarch64"],
+    reason="BF16 is not supported on ARM CPU architecture",
+)
 def test_load_pytorch(session, graph_testdata) -> None:
     """Tests adding an external weight to a graph."""
     expected_dict = _test_data()
@@ -84,6 +91,10 @@ def test_load_pytorch(session, graph_testdata) -> None:
                 np.testing.assert_array_equal(expected, output[n].to_numpy())
 
 
+@pytest.mark.skipif(
+    platform.machine() in ["arm64", "aarch64"],
+    reason="BF16 is not supported on ARM CPU architecture",
+)
 def test_load_gguf(session, graph_testdata) -> None:
     """Tests adding an external weight to a graph."""
     expected_dict = _test_data()
@@ -111,6 +122,10 @@ def test_load_gguf(session, graph_testdata) -> None:
                 np.testing.assert_array_equal(expected, output[n].to_numpy())
 
 
+@pytest.mark.skipif(
+    platform.machine() in ["arm64", "aarch64"],
+    reason="BF16 is not supported on ARM CPU architecture",
+)
 def test_load_safetensors(session, graph_testdata) -> None:
     """Tests adding an external weight to a graph."""
     expected_base_dict = _test_data()

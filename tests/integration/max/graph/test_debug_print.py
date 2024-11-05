@@ -6,6 +6,8 @@
 """Test value printing and debug print options."""
 
 
+import platform
+import pytest
 import numpy as np
 import pytest
 from max.driver import Tensor
@@ -142,6 +144,10 @@ def test_debug_print_binary_max(compiled_model, session, capfd, tmp_path):
     assert (input == from_file).all()
 
 
+@pytest.mark.skipif(
+    platform.machine() in ["arm64", "aarch64"],
+    reason="BF16 is not supported on ARM CPU architecture",
+)
 def test_debug_print_binary_max_bf16(session, capfd, tmp_path):
     def print_input(x):
         x.print("test_x_value")
