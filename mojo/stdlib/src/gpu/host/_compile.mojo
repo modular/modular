@@ -28,6 +28,12 @@ fn _get_nvptx_target[
     return info.target()
 
 
+fn _get_nvptx_fn_name[
+    func_type: AnyTrivialRegType, //, func: func_type
+]() -> StringLiteral:
+    return get_linkage_name[_get_nvptx_target(), func]()
+
+
 # ===----------------------------------------------------------------------===#
 # Compilation
 # ===----------------------------------------------------------------------===#
@@ -70,10 +76,9 @@ fn _compile_code_asm[
     return asm
 
 
-fn _get_nvptx_fn_name[
-    func_type: AnyTrivialRegType, //, func: func_type
-]() -> StringLiteral:
-    return get_linkage_name[_get_nvptx_target(), func]()
+# ===----------------------------------------------------------------------===#
+# _to_sass
+# ===----------------------------------------------------------------------===#
 
 
 @no_inline
@@ -95,6 +100,11 @@ fn _to_sass[
             str(nvdisasm_path) + " -c " + nvdisasm_opts + " " + str(elf_file)
         )
     return ""
+
+
+# ===----------------------------------------------------------------------===#
+# _ptxas_compile
+# ===----------------------------------------------------------------------===#
 
 
 @no_inline
