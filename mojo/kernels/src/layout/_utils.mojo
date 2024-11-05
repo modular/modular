@@ -8,7 +8,7 @@
 from os import abort
 from sys import bitwidthof
 
-from gpu.host.memory import _free, _malloc_managed
+from gpu.host.memory_v1 import _free, _malloc_managed
 from layout import *
 from layout.layout_tensor import _get_index_type
 from memory import UnsafePointer
