@@ -34,12 +34,10 @@ struct Dim(Stringable):
 
 trait TiledOp:
     @staticmethod
-    fn op[
-        layout_m_n: Layout, layout_m_k: Layout, layout_n_k: Layout, dtype: DType
-    ](
-        inout dst: LayoutTensor[dtype, layout_m_n],
-        lhs: LayoutTensor[dtype, layout_m_k],
-        rhs: LayoutTensor[dtype, layout_n_k],
+    fn op(
+        inout dst: LayoutTensor,
+        lhs: LayoutTensor,
+        rhs: LayoutTensor,
     ):
         pass
 
@@ -47,16 +45,13 @@ trait TiledOp:
 # matrix multiply and accumlate
 struct MMA(TiledOp):
     @staticmethod
-    fn op[
-        layout_m_n: Layout,
-        layout_m_k: Layout,
-        layout_n_k: Layout,
-        dtype: DType,
-    ](
-        inout dst: LayoutTensor[dtype, layout_m_n],
-        lhs: LayoutTensor[dtype, layout_m_k],
-        rhs: LayoutTensor[dtype, layout_n_k],
+    fn op(
+        inout dst: LayoutTensor,
+        lhs: LayoutTensor,
+        rhs: LayoutTensor,
     ):
+        alias dtype = dst.dtype
+
         alias M = dst.shape[0]()
         alias N = dst.shape[1]()
         alias K = lhs.shape[1]()
@@ -64,27 +59,24 @@ struct MMA(TiledOp):
         for m in range(M):
             for n in range(N):
                 for k in range(K):
-                    dst[m, n] += lhs[m, k] * rhs[n, k]
+                    dst[m, n] += rebind[dst.element_type](
+                        lhs[m, k].cast[dtype]()
+                    ) * rebind[dst.element_type](rhs[n, k].cast[dtype]())
 
 
 # matrix multiply and accumlate, vectorized and parallelized
 struct MMA_Vec(TiledOp):
     @staticmethod
-    fn op[
-        layout_m_n: Layout,
-        layout_m_k: Layout,
-        layout_n_k: Layout,
-        dtype: DType,
-    ](
-        inout dst: LayoutTensor[dtype, layout_m_n],
-        lhs: LayoutTensor[dtype, layout_m_k],
-        rhs: LayoutTensor[dtype, layout_n_k],
+    fn op(
+        inout dst: LayoutTensor,
+        lhs: LayoutTensor,
+        rhs: LayoutTensor,
     ):
         alias M = dst.shape[0]()
         alias N = dst.shape[1]()
         alias K = lhs.shape[1]()
 
-        alias width = simdwidthof[dtype]() * 2
+        alias width = simdwidthof[dst.dtype]() * 2
 
         for m in range(M):
             for n in range(N):
@@ -94,27 +86,19 @@ struct MMA_Vec(TiledOp):
                     dst.store[width](
                         m,
                         n,
-                        dst.load[width](m, n)
-                        + rebind[Scalar[dtype]](lhs[m, k])
-                        * rhs.load[width](n, k),
+                        rebind[SIMD[dst.dtype, width]](dst.load[width](m, n))
+                        + rebind[SIMD[dst.dtype, width]](
+                            lhs[m, k].cast[dst.dtype]()
+                        )
+                        * rhs.load[width](n, k).cast[dst.dtype](),
                     )
 
                 vectorize[dot, width, size=K]()
 
 
 fn gemm_l2_cache[
-    mma: TiledOp,
-    L1: Dim,
-    L2: Dim,
-    layout_m_n: Layout,
-    layout_m_k: Layout,
-    layout_k_n: Layout,
-    dtype: DType,
-](
-    dst: LayoutTensor[dtype, layout_m_n],
-    lhs: LayoutTensor[dtype, layout_m_k],
-    rhs: LayoutTensor[dtype, layout_k_n],
-):
+    mma: TiledOp, L1: Dim, L2: Dim
+](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor):
     alias M = dst.shape[0]()
     alias N = dst.shape[1]()
     alias K = lhs.shape[1]()
@@ -128,7 +112,7 @@ fn gemm_l2_cache[
 
     # Cache matrix to materialize L2 transposed tiles
     var l2_rhs_cache = ManagedLayoutTensor[
-        dtype, Layout(IntTuple(L2.n, L2.k))
+        dst.dtype, Layout(IntTuple(L2.n, L2.k))
     ]()
 
     # First level of tiling (grid_blocks, L1 cache ..etc).
@@ -166,18 +150,8 @@ fn gemm_l2_cache[
 
 
 fn gemm_l1_cache[
-    mma: TiledOp,
-    L1: Dim,
-    L2: Dim,
-    layout_m_n: Layout,
-    layout_m_k: Layout,
-    layout_k_n: Layout,
-    dtype: DType,
-](
-    dst: LayoutTensor[dtype, layout_m_n],
-    lhs: LayoutTensor[dtype, layout_m_k],
-    rhs: LayoutTensor[dtype, layout_k_n],
-):
+    mma: TiledOp, L1: Dim, L2: Dim
+](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor):
     alias M = dst.shape[0]()
     alias N = dst.shape[1]()
     alias K = lhs.shape[1]()
@@ -206,10 +180,10 @@ fn gemm_l1_cache[
     fn process_raw(m_1: Int):
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
         var l1_lhs_cache = LayoutTensor[
-            dtype, Layout(IntTuple(L1.m, L1.k))
+            dst.dtype, Layout(IntTuple(L1.m, L1.k))
         ].stack_allocation()
         var l1_rhs_cache = LayoutTensor[
-            dtype, Layout(IntTuple(L1.n, L1.k))
+            dst.dtype, Layout(IntTuple(L1.n, L1.k))
         ].stack_allocation()
 
         for k_1 in range(l1_size.k):
