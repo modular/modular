@@ -180,7 +180,7 @@ fn multistage_mma[
         *,
         masked: Bool = False,
         fill: Fill = Fill.NONE,
-        eviction_policy: CacheEviction = CacheEviction.EVICT_LAST,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         b_tile: LayoutTensor[
             b_type,
