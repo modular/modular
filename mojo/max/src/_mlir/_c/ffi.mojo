@@ -9,7 +9,6 @@ from pathlib import Path
 from sys.ffi import RTLD, DLHandle, _get_dylib_function, external_call
 from sys.param_env import env_get_string, is_defined
 
-from builtin.builtin_list import _LITRefPackHelper
 from memory import UnsafePointer
 
 from utils import StringRef
@@ -46,7 +45,7 @@ fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
 fn MLIR_func[
     name: StringLiteral, T: AnyTrivialRegType, *Args: AnyType
 ](*args: *Args) -> T:
-    var loaded_args_pack = _LITRefPackHelper(args._value).get_loaded_kgen_pack()
+    var loaded_args_pack = args.get_loaded_kgen_pack()
 
     @parameter
     if not is_defined["MLIRCAPI_LINKED"]():
