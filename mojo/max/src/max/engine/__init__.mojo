@@ -24,7 +24,7 @@ def main():
     # Process the outputs here.
 ```
 
-For details, see how to [run inference with Mojo](/max/mojo/get-started).
+For details, see how to [run inference with Mojo](/max/tutorials/run-inference-with-mojo).
 """
 
 from .info import get_version
