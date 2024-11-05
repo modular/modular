@@ -12,15 +12,10 @@ from sys import alignof, external_call, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu.host import Context as CudaContext
 from gpu.host import (
-    CudaInstance,
     DeviceBuffer,
     DeviceContext,
-    Event,
 )
-from gpu.host._utils import _check_error
-from gpu.host.cuda_instance import *
 from memory import UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
@@ -29,7 +24,7 @@ from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from weights_registry import WeightsRegistry
 
-from utils import Index, IndexList
+from utils import Index, IndexList, StaticTuple
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures
