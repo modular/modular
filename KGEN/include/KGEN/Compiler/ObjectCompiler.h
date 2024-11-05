@@ -142,17 +142,6 @@ private:
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(const CompilationOptions &options, bool isJIT);
 
-//===----------------------------------------------------------------------===//
-// compileLLVMToAssembly
-//===----------------------------------------------------------------------===//
-
-/// Compile the given LLVM module to an object file and write it to objStream.
-LogicalResult compileLLVMToAssembly(LLVMModuleAndContext module,
-                                    llvm::TargetMachine &targetMachine,
-                                    llvm::raw_pwrite_stream &objStream,
-                                    CompilationOptions &options,
-                                    AsyncRT::Runtime &runtime);
-
 } // namespace M::KGEN
 
 #endif // KGEN_COMPILER_OBJECTCOMPILER_H
