@@ -2096,7 +2096,7 @@ struct LayoutTensor[
                     @parameter
                     if masked:
                         var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                        async_copy[element_size_bytes](
+                        async_copy[element_size_bytes, fill = Fill.ZERO](
                             src_ptr.bitcast[dtype]() + src_idx,
                             dst_ptr + dst_idx,
                             src_copy_size,
@@ -2104,7 +2104,6 @@ struct LayoutTensor[
                     else:
                         async_copy[
                             element_size_bytes,
-                            fill=fill,
                             eviction_policy=eviction_policy,
                         ](
                             src_ptr.bitcast[dtype]() + src_idx,
@@ -2131,7 +2130,8 @@ struct LayoutTensor[
                     src_idx = make_runtime_layout(
                         src.runtime_element_layout, src.runtime_layout
                     )(i)
-                async_copy[4, fill=fill, eviction_policy=eviction_policy](
+
+                async_copy[4, eviction_policy=eviction_policy](
                     src_ptr.bitcast[dtype]() + src_idx, dst_ptr + dst_idx
                 )
 
@@ -2249,9 +2249,11 @@ struct LayoutTensor[
                     if offset + src_idx < rows * cols:
                         async_copy[
                             element_size_bytes,
-                            fill=fill,
                             eviction_policy=eviction_policy,
-                        ](src_ptr + src_idx, dst_ptr + dst_idx)
+                        ](
+                            src_ptr + src_idx,
+                            dst_ptr + dst_idx,
+                        )
         else:
 
             @parameter
@@ -2272,7 +2274,7 @@ struct LayoutTensor[
                     )(i)
 
                 if offset + src_idx < rows * cols:
-                    async_copy[4, fill=fill, eviction_policy=eviction_policy](
+                    async_copy[4, eviction_policy=eviction_policy](
                         src_ptr + src_idx, dst_ptr + dst_idx
                     )
 
@@ -2446,7 +2448,7 @@ fn copy_dram_to_sram_async[
     @parameter
     if not masked:
         dst_fragments.copy_from_async[
-            swizzle=swizzle_option, fill=fill, eviction_policy=eviction_policy
+            swizzle=swizzle_option, eviction_policy=eviction_policy
         ](src_fragments, base_offset=dst_frag_offset)
     else:
         constrained[
@@ -2460,7 +2462,6 @@ fn copy_dram_to_sram_async[
         dst_fragments.copy_from_async[
             masked=True,
             swizzle=swizzle_option,
-            fill=fill,
             eviction_policy=eviction_policy,
         ](
             src_fragments,
@@ -2484,7 +2485,6 @@ fn copy_dram_to_sram_async[
         dst_thread_layout=thread_layout,
         swizzle=swizzle,
         masked=masked,
-        fill=fill,
         eviction_policy=eviction_policy,
     ](dst, src, num_rows)
 
