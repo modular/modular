@@ -17,6 +17,18 @@ from .layout import to_int
 
 @always_inline
 fn __get_offset[i: Int](runtime_layout: RuntimeLayout) -> Int:
+    """Returns the offset for a single index into the runtime layout.
+
+    Parameters:
+        i: The index to get the offset for.
+
+    Args:
+        runtime_layout: The runtime layout to get the offset from.
+
+    Returns:
+        The offset value for the given index.
+    """
+
     @parameter
     if runtime_layout.layout.all_dims_known():
         alias offset = runtime_layout.layout(i)
@@ -27,6 +39,19 @@ fn __get_offset[i: Int](runtime_layout: RuntimeLayout) -> Int:
 
 @always_inline
 fn __get_offset[i: Int, j: Int](runtime_layout: RuntimeLayout) -> Int:
+    """Returns the offset for a 2D index into the runtime layout.
+
+    Parameters:
+        i: The first index to get the offset for.
+        j: The second index to get the offset for.
+
+    Args:
+        runtime_layout: The runtime layout to get the offset from.
+
+    Returns:
+        The offset value for the given indices.
+    """
+
     @parameter
     if runtime_layout.layout.all_dims_known():
         alias offset = runtime_layout.layout(IntTuple(i, j))

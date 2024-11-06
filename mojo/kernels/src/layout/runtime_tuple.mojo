@@ -47,6 +47,11 @@ struct RuntimeTuple[
 
     @always_inline
     fn __init__(inout self):
+        """Initialize a RuntimeTuple with default values.
+
+        For dimensions with known compile-time values in S, uses those values.
+        For unknown dimensions, initializes them to UNKNOWN_VALUE.
+        """
         self.value = __type_of(self.value)()
 
         alias f = flatten(S)
@@ -63,10 +68,20 @@ struct RuntimeTuple[
 
     @always_inline
     fn __init__(inout self, *values: Int):
+        """Initialize a RuntimeTuple with the provided values.
+
+        Args:
+            values: Variadic number of integer values to initialize the tuple with.
+        """
         self.value = values
 
     @always_inline
     fn __init__[l: Int](inout self, values: IndexList[l, **_]):
+        """Initialize a RuntimeTuple from an IndexList.
+
+        Args:
+            values: IndexList to initialize from. Must have same length as the RuntimeTuple.
+        """
         constrained[Self.scalar_length == l, "Must use same tuple length"]()
         self.value = rebind[__type_of(self.value)](
             values.cast[
