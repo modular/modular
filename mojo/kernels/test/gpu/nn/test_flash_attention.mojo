@@ -20,6 +20,7 @@ from nn.mha import (
     mha_gpu_naive,
 )
 from nn.mha_mask import NullMask
+from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils.index import Index
@@ -191,6 +192,7 @@ fn test[
                 v_device,
                 mask3d,
                 NullMask(),
+                IdentityScoreMod(),
                 scale,
                 ctx,
             )
@@ -202,6 +204,7 @@ fn test[
                 v_device,
                 mask4d,
                 NullMask(),
+                IdentityScoreMod(),
                 scale,
                 ctx,
             )

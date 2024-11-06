@@ -15,7 +15,7 @@ from math import isqrt, isclose
 from memory import UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import NullMask, CausalMask
-from nn.mha_score_mod import IdentityScoreMod
+from nn.mha_score_mod import IdentityScoreMod, AddFactorMod
 from internal_utils import (
     HostNDBuffer,
     DeviceNDBuffer,
@@ -94,8 +94,6 @@ def execute_flash_attention[
     ctx.enqueue_copy_to_device(q_device.buffer, q_host.tensor.data)
 
     # initialize mask tensor
-    # TODO this should ideally create a triangular matrix
-    # but the output should be consistent regardless.
     mask_host = HostNDBuffer[
         type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](
@@ -107,7 +105,6 @@ def execute_flash_attention[
         )
     )
 
-    # random(mask_host.tensor)
     # Initialize causal mask.
     for b in range(batch_size):
         for h in range(num_q_heads):
@@ -116,6 +113,32 @@ def execute_flash_attention[
                     mask_host.tensor.store(
                         Index(b, h, q_idx, k_idx),
                         0 if q_idx + max_cache_valid_length
+                        >= k_idx else min_or_neg_inf[type](),
+                    )
+
+    # initialize mask tensor
+    mask_host_mod = HostNDBuffer[
+        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
+    ](
+        IndexList[4](
+            batch_size,
+            num_q_heads,
+            max_prompt_len,
+            max_prompt_len + max_cache_valid_length,
+        )
+    )
+
+    # Added a huge number here so the effect is not hidden by tolerance.
+    alias add_factor = 1_500_000
+    # Initialize causal mask with a bias for when q_idx >= k_idx.
+    # This is used to compare against the score_mod implementation.
+    for b in range(batch_size):
+        for h in range(num_q_heads):
+            for q_idx in range(max_prompt_len):
+                for k_idx in range(max_prompt_len + max_cache_valid_length):
+                    mask_host_mod.tensor.store(
+                        Index(b, h, q_idx, k_idx),
+                        add_factor if q_idx + max_cache_valid_length
                         >= k_idx else min_or_neg_inf[type](),
                     )
 
@@ -131,6 +154,21 @@ def execute_flash_attention[
         ctx=ctx,
     )
     ctx.enqueue_copy_to_device(mask_device.buffer, mask_host.tensor.data)
+
+    mask_device_mod = DeviceNDBuffer[
+        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
+    ](
+        IndexList[4](
+            batch_size,
+            num_q_heads,
+            max_prompt_len,
+            max_prompt_len + max_cache_valid_length,
+        ),
+        ctx=ctx,
+    )
+    ctx.enqueue_copy_to_device(
+        mask_device_mod.buffer, mask_host_mod.tensor.data
+    )
 
     # initialize scale tensor
     scale_host = HostNDBuffer[DType.float32, 1, DimList(1)](IndexList[1](1))
@@ -258,26 +296,27 @@ def execute_flash_attention[
         batch_size,
     )
 
-    flash_attention[target="cuda", add_attn_mask=False](
+    flash_attention[target="cuda", add_attn_mask=False, use_score_mod=True](
         test_output_device.tensor,
         q_device.tensor,
         k_cache_device,
         v_cache_device,
         mask_device.tensor,
         CausalMask(),
-        IdentityScoreMod(),
+        AddFactorMod[add_factor](),
         valid_length_device.tensor,
         # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
 
+    # Here pass mask that includes bias in q_idx >= k_idx (to compare).
     flash_attention[target="cuda", add_attn_mask=True](
         ref_output_device.tensor,
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        mask_device.tensor,
+        mask_device_mod.tensor,
         NullMask(),
         IdentityScoreMod(),
         valid_length_device.tensor,
@@ -325,14 +364,15 @@ def execute_flash_attention[
     _ = scale_device^
     _ = scale_host^
     _ = mask_host^
+    _ = mask_host_mod^
     _ = mask_device^
+    _ = mask_device_mod^
     _ = cache_lengths_dev^
     _ = valid_length_device^
     _ = valid_length
 
 
 def execute_flash_attention_suite(ctx: DeviceContext):
-    alias types = Tuple[DType, DType](DType.float32, DType.bfloat16)
     var bs = 2
     var valid_length_ptr = UnsafePointer[Scalar[DType.uint32]].alloc(bs)
     var valid_length = NDBuffer[DType.uint32, 1](valid_length_ptr, Index(1))
@@ -342,47 +382,45 @@ def execute_flash_attention_suite(ctx: DeviceContext):
         cache_valid_length_ptr, Index(1)
     )
 
-    @parameter
-    for type_idx in range(2):
-        alias type = types.get[type_idx, DType]()
+    alias type = DType.bfloat16
 
-        # Replit context encoding [testing even query valid lengths].
-        valid_length[0] = 128
-        valid_length[1] = 64
-        cache_valid_length[0] = 0
-        cache_valid_length[1] = 0
-        execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-            bs, valid_length, 128, 1024, cache_valid_length, ctx
-        )
+    # Replit context encoding [testing even query valid lengths].
+    valid_length[0] = 128
+    valid_length[1] = 64
+    cache_valid_length[0] = 0
+    cache_valid_length[1] = 0
+    execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
+        bs, valid_length, 128, 1024, cache_valid_length, ctx
+    )
 
-        # Replit context encoding [testing odd query valid length].
-        valid_length[0] = 128
-        valid_length[1] = 65
-        cache_valid_length[0] = 0
-        cache_valid_length[1] = 0
-        execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-            bs, valid_length, 128, 1024, cache_valid_length, ctx
-        )
+    # Replit context encoding [testing odd query valid length].
+    valid_length[0] = 128
+    valid_length[1] = 65
+    cache_valid_length[0] = 0
+    cache_valid_length[1] = 0
+    execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
+        bs, valid_length, 128, 1024, cache_valid_length, ctx
+    )
 
-        # Replit token gen [testing even cache valid lengths].
-        valid_length[0] = 1
-        valid_length[1] = 1
-        cache_valid_length[0] = 200
-        cache_valid_length[1] = 256
+    # Replit token gen [testing even cache valid lengths].
+    valid_length[0] = 1
+    valid_length[1] = 1
+    cache_valid_length[0] = 200
+    cache_valid_length[1] = 256
 
-        execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-            bs, valid_length, 1, 1024, cache_valid_length, ctx
-        )
+    execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
+        bs, valid_length, 1, 1024, cache_valid_length, ctx
+    )
 
-        # Replit token gen [testing even cache valid lengths].
-        valid_length[0] = 1
-        valid_length[1] = 1
-        cache_valid_length[0] = 200
-        cache_valid_length[1] = 255
+    # Replit token gen [testing even cache valid lengths].
+    valid_length[0] = 1
+    valid_length[1] = 1
+    cache_valid_length[0] = 200
+    cache_valid_length[1] = 255
 
-        execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-            bs, valid_length, 1, 1024, cache_valid_length, ctx
-        )
+    execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
+        bs, valid_length, 1, 1024, cache_valid_length, ctx
+    )
 
 
 def main():

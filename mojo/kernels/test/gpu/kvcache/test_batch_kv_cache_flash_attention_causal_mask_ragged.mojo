@@ -14,6 +14,7 @@ from math import isqrt, isclose
 from memory import UnsafePointer
 from nn.mha import mha_gpu_naive, flash_attention
 from nn.mha_mask import NullMask, CausalMask
+from nn.mha_score_mod import IdentityScoreMod
 from internal_utils import (
     HostNDBuffer,
     DeviceNDBuffer,
@@ -230,6 +231,7 @@ def execute_ragged_flash_attention[
         v_cache_device,
         dummy_mask,
         CausalMask(),
+        IdentityScoreMod(),
         input_row_offset_device.tensor,
         # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
@@ -243,6 +245,7 @@ def execute_ragged_flash_attention[
         v_cache_device,
         dummy_mask,
         CausalMask(),
+        IdentityScoreMod(),
         valid_lengths_device.tensor,
         # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),

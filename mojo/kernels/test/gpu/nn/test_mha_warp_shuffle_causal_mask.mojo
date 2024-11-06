@@ -15,7 +15,8 @@ from gpu import *
 from gpu.host import DeviceContext
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
-from nn.mha_mask import CausalMask, NullMask
+from nn.mha_mask import CausalMask
+from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils.index import Index
@@ -94,6 +95,7 @@ fn test[
             scale,
             num_keys,
             CausalMask(),
+            IdentityScoreMod(),
             batch_size,
         )
 
