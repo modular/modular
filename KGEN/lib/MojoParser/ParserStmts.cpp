@@ -1218,16 +1218,16 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   builder = OpBuilder::atBlockEnd(condBlock);
 
   ValueDest lengthDest(EC_ForIterator);
-  CValue hasMoreBool = getEmitter().emitNamedMethodCall(
-      "__hasmore__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
+  CValue hasNextBool = getEmitter().emitNamedMethodCall(
+      "__has_next__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
       CallSyntax::kImplicitConvert, seqExpr);
-  if (!hasMoreBool)
+  if (!hasNextBool)
     return {};
-  CValue hasMore = getEmitter().emitI1({hasMoreBool, seqExpr}, EC_ForIterator);
-  if (!hasMore)
+  CValue hasNext = getEmitter().emitI1({hasNextBool, seqExpr}, EC_ForIterator);
+  if (!hasNext)
     return {};
   SRValue shouldContinue =
-      getEmitter().emitSRValue({hasMore, seqExpr}, EC_ForIterator);
+      getEmitter().emitSRValue({hasNext, seqExpr}, EC_ForIterator);
   if (!shouldContinue)
     return {};
   builder.create<LIT::LoopConditionOp>(forLoc, shouldContinue);
