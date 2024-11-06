@@ -294,7 +294,18 @@ fn lane_id() -> UInt:
         )
 
     else:
-        return UInt(ThreadIdx.x() & (WARP_SIZE - 1))
+        alias none = Scalar[DType.int32](-1)
+        alias zero = Scalar[DType.int32](0)
+        var t = llvm_intrinsic[
+            "llvm.amdgcn.mbcnt.lo", Int32, has_side_effect=False
+        ](none, zero)
+        return UInt(
+            int(
+                llvm_intrinsic[
+                    "llvm.amdgcn.mbcnt.hi", Int32, has_side_effect=False
+                ](none, t).cast[DType.uint32]()
+            )
+        )
 
 
 # ===----------------------------------------------------------------------===#
