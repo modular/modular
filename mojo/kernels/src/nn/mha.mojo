@@ -37,7 +37,7 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
-from layout.swizzle import make_ldmatrix_swizzle
+from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
@@ -1697,16 +1697,22 @@ fn mha_single_batch[
     # Write to global memory.
     @parameter
     if output_type.is_half_float():
+        alias swizzle = make_swizzle[
+            num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+        ]()
         # Reuse a_smem for c tile in smem
         var accum_smem_tile = LayoutTensor[
-            accum_type,
+            output_type,
             Layout.row_major(BM, depth),
             address_space = AddressSpace.SHARED,
-        ](q_smem.bitcast[Scalar[accum_type]]())
+        ](q_smem.bitcast[Scalar[output_type]]())
+
         var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
             int(warp_y), int(warp_x)
         )
-        copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+        copy_local_to_sram[
+            thread_layout = Layout.row_major(8, 4), swizzle=swizzle
+        ](
             accum_smem_warp_tile.vectorize[1, 2](),
             output_reg_tile.vectorize[1, 2]().transpose(),
         )
@@ -1720,7 +1726,8 @@ fn mha_single_batch[
         copy_sram_to_dram[
             thread_layout = Layout.row_major(
                 num_threads * simd_size // depth, depth // simd_size
-            )
+            ),
+            swizzle=swizzle,
         ](
             output_gmem_tile.vectorize[1, simd_size](),
             accum_smem_tile.vectorize[1, simd_size](),
