@@ -6,10 +6,9 @@
 
 """Unit tests for serve/pipelines/llm.py."""
 
-import functools
 import json
 from dataclasses import dataclass
-from typing import Optional
+import logging
 
 import pytest
 import pytest_asyncio
@@ -17,7 +16,6 @@ from async_asgi_testclient import TestClient
 from max.pipelines import IdentityTokenGeneratorTokenizer
 from max.pipelines.interfaces import (
     TokenGenerator,
-    TokenGeneratorFactory,
     TokenGeneratorRequest,
 )
 from max.serve.api_server import fastapi_app
@@ -30,14 +28,17 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
-from max.serve.pipelines.model_worker import start_model_worker
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class MockValueErrorGenerator(TokenGenerator[str]):
+class MockValueErrorTokenGenerator(TokenGenerator[str]):
     """A mock generator that throws a value error when used."""
 
-    def next_token(self, batch: dict[str, str]) -> dict[str, str]:
+    def next_token(
+        self, batch: dict[str, str], num_steps: int = 1
+    ) -> dict[str, str]:
         raise ValueError()
 
     def release(self, context: str):
@@ -45,14 +46,16 @@ class MockValueErrorGenerator(TokenGenerator[str]):
 
 
 @dataclass(frozen=True)
-class DummyTokenizer(IdentityTokenGeneratorTokenizer[str]):
+class MockTokenizer(IdentityTokenGeneratorTokenizer[str]):
     async def new_context(self, request: TokenGeneratorRequest) -> str:
         return ""
 
 
 @dataclass(frozen=True)
-class DummyTokenGenerator(TokenGenerator[str]):
-    def next_token(self, batch: dict[str, str]) -> dict[str, str]:
+class MockTokenGenerator(TokenGenerator[str]):
+    def next_token(
+        self, batch: dict[str, str], num_steps: int = 1
+    ) -> dict[str, str]:
         return batch
 
     def release(self, context: str):
@@ -60,39 +63,40 @@ class DummyTokenGenerator(TokenGenerator[str]):
 
 
 @pytest.fixture
-def generator(request):
-    """Fixture for a pipeline's generator."""
-    generator_class = request.param
-    return generator_class()
-
-
-@pytest.fixture
-def pipeline():
+def token_generator_pipeline():
     """Fixture for a token generator pipeline."""
     # NOTE(matt): The config here _shouldn't_ impact anything.
     config = TokenGeneratorPipelineConfig.dynamic_homogenous(batch_size=1)
-    pipeline = TokenGeneratorPipeline(config, "test", DummyTokenizer())
+    pipeline = TokenGeneratorPipeline(config, "test", MockTokenizer())
     return pipeline
 
 
-def identity(x):
-    return x
-
-
 @pytest.fixture
-def factory(generator):
-    return functools.partial(identity, generator)
+def token_generator(request):
+    """Fixture for a pipeline's generator
+    This is bound indirectly - hence the request.param pattern.
+    See https://docs.pytest.org/en/7.1.x/example/parametrize.html
+    """
+    token_generator_params = request.param
+    return token_generator_params
 
 
-@pytest.fixture
-def app(factory, pipeline):
+@pytest.fixture(scope="function")
+def app(token_generator_pipeline, token_generator):
     """Fixture for a FastAPI app using a given pipeline."""
+    token_generator_model_name, token_generator_model_factory = token_generator
+    pipelines = {
+        token_generator_model_name: BatchedTokenGeneratorState(
+            batched_generator=token_generator_pipeline,
+            model_factory=token_generator_model_factory,
+        )
+    }
     app = fastapi_app(
         Settings(api_types=[APIType.OPENAI]),
         DebugSettings(),
-        {"test": BatchedTokenGeneratorState(pipeline, factory)},
+        pipelines,
     )
-    return app
+    yield app
 
 
 @pytest.fixture
@@ -109,44 +113,57 @@ def reset_sse_starlette_appstatus_event():
 
 
 @pytest_asyncio.fixture
-async def client(app, factory, reset_sse_starlette_appstatus_event):
+async def test_client(app):
     """Fixture for a asgi TestClient using a given FastAPI app."""
-
-    async def _batch_execute(contexts):
-        return {}
-
     async with TestClient(app) as client:
-        start_model_worker({"test": factory})
         yield client
 
 
-@pytest.mark.skip("TODO(ylou): Restore!!")
-@pytest.mark.parametrize("generator", [EchoTokenGenerator], indirect=True)
-@pytest.mark.parametrize("url", ["/v1/chat/completions", "/v1/completions"])
-@pytest.mark.parametrize("json", [None, "{{}"])
+@pytest.mark.parametrize(
+    "token_generator", [("test", EchoTokenGenerator)], indirect=True
+)
+@pytest.mark.parametrize(
+    "request_url", ["/v1/chat/completions", "/v1/completions"]
+)
+@pytest.mark.parametrize("request_json", [None, "{{}"])
 @pytest.mark.asyncio
-async def test_llm_json_missing(client, url, json):
+async def test_llm_json_missing(test_client, request_url, request_json):
     """Test the server's response to malformed JSON."""
-    response = await client.post(url, json=json)
+    logger.info("Test: Running Client: %s", request_url)
+    response = await test_client.post(request_url, json=request_json)
     assert response.status_code == 400
 
 
 @pytest.mark.skip("TODO(ylou): Restore!!")
-@pytest.mark.parametrize("generator", [MockValueErrorGenerator], indirect=True)
-@pytest.mark.parametrize("url", ["/v1/chat/completions", "/v1/completions"])
+@pytest.mark.parametrize(
+    "token_generator", [("test", MockValueErrorTokenGenerator)], indirect=True
+)
+@pytest.mark.parametrize(
+    "request_url", ["/v1/chat/completions", "/v1/completions"]
+)
 @pytest.mark.asyncio
-async def test_llm_new_context_value_error(client, url):
+async def test_llm_new_context_value_error(test_client, request_url):
     """Test the server's response to a value error when calling new context."""
-    json = simple_openai_request(model_name="test", content="test")
-    response = await client.post(url, json=json)
+    request_json = {
+        "model": "test",
+        "prompt": "test",
+        "temperature": 0.7,
+        "stream": True,
+    }
+    # request_json = simple_openai_request(model_name="test", content="test")
+    response = await test_client.post(request_url, json=request_json)
     assert response.status_code == 400
 
 
 @pytest.mark.skip("TODO(ylou): Restore!!")
-@pytest.mark.parametrize("generator", [MockValueErrorGenerator], indirect=True)
-@pytest.mark.parametrize("url", ["/v1/chat/completions", "/v1/completions"])
+@pytest.mark.parametrize(
+    "token_generator", ["test", MockValueErrorTokenGenerator], indirect=True
+)
+@pytest.mark.parametrize(
+    "request_url", ["/v1/chat/completions", "/v1/completions"]
+)
 @pytest.mark.asyncio
-async def test_llm_new_context_value_error_stream(client, url):
+async def test_llm_new_context_value_error_stream(test_client, request_url):
     """Test the server's response to a value error when calling new context while streaming.
     """
     MAX_CHUNK_TO_READ_BYTES = 10 * 1024
@@ -155,7 +172,7 @@ async def test_llm_new_context_value_error_stream(client, url):
     payload["stream"] = True
     # Prompt is required for completions endpoint.
     payload["prompt"] = "test prompt"
-    response = await client.post(url, json=payload, stream=True)
+    response = await test_client.post(request_url, json=payload, stream=True)
     assert response.status_code == 200
 
     async for chunk in response.iter_content(MAX_CHUNK_TO_READ_BYTES):
@@ -163,12 +180,3 @@ async def test_llm_new_context_value_error_stream(client, url):
         chunk = json.loads(chunk)
         assert chunk["result"] == "error"
         break
-
-
-@pytest.mark.parametrize("generator", [EchoTokenGenerator], indirect=True)
-@pytest.mark.asyncio
-async def test_exception_propagation(factory: TokenGeneratorFactory) -> None:
-    """Tests raising in the model worker context manager."""
-    with pytest.raises(AssertionError):
-        async with start_model_worker({"test": factory}):
-            raise AssertionError

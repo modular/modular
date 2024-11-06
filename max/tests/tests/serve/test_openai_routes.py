@@ -6,6 +6,7 @@
 
 
 import functools
+import logging
 from threading import Thread
 
 import pytest
@@ -30,6 +31,8 @@ from max.serve.pipelines.performance_fake import (
     get_performance_fake,
 )
 from max.serve.schemas.openai import CreateChatCompletionResponse
+
+logger = logging.getLogger(__name__)
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -65,47 +68,63 @@ def app(fixture_tokenizer):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
-async def test_openai_echo_chat_completion(app, model_name):
+async def test_openai_chat_completion(app, model_name):
     async with TestClient(app) as client:
-        raw_response = await client.post(
+        request_content = "test data"
+        response_json = await client.post(
             "/v1/chat/completions",
             json=simple_openai_request(
-                model_name=model_name, content="test data"
+                model_name=model_name, content=request_content
             ),
         )
         # This is not a streamed completion - There is no [DONE] at the end.
         response = CreateChatCompletionResponse.model_validate_json(
-            raw_response.json()
+            response_json.json()
         )
         assert len(response.choices) == 1
-        assert response.choices[0].finish_reason == "stop"
+        choice = response.choices[0]
+        if model_name == "echo_app":
+            # The echo app actually reverses the input..
+            assert choice.message.content == request_content[::-1]
+        assert choice.finish_reason == "stop"
 
 
-@pytest.mark.skip("TODO(ylou): Restore!!")
 @pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
-def test_openai_echo_chat_completion_multi(app, model_name):
+def test_openai_chat_completion_concurrent(app, model_name):
+    request_contents: dict[int, str] = {}
+    responses: dict[int, CreateChatCompletionResponse] = {}
+
+    def execute_request(client: SyncTestClient, idx: int):
+        request_content = ",".join(f"_{i}_" for i in range(idx))
+        request_contents[idx] = request_content
+        response_json = client.post(
+            "/v1/chat/completions",
+            json=simple_openai_request(
+                model_name=model_name, content=request_content
+            ),
+        )
+        response = CreateChatCompletionResponse.model_validate_json(
+            response_json.json()
+        )
+        responses[idx] = response
+
+    num_threads = 10
     with SyncTestClient(app) as client:
-
-        def run_single_test(client, prompt_len):
-            text = ",".join(f"_{i}_" for i in range(prompt_len))
-            raw_response = client.post(
-                "/v1/chat/completions",
-                json=simple_openai_request(model_name=model_name, content=text),
-            )
-            response = CreateChatCompletionResponse.model_validate_json(
-                raw_response.json()
-            )
-            assert len(response.choices) == 1
-            assert response.choices[0].message.content == text[::-1]
-            assert response.choices[0].finish_reason == "stop"
-
         threads = []
-        num_threads = 10
         for i in range(0, num_threads):
-            threads.append(Thread(target=run_single_test, args=(client, i)))
+            threads.append(Thread(target=execute_request, args=(client, i)))
             threads[i].start()
         for t in threads:
             t.join()
+
+    assert len(responses) == num_threads
+    for id, response in responses.items():
+        assert len(response.choices) == 1
+        assert response.choices[0].finish_reason == "stop"
+        if model_name == "echo_app":
+            received_response = response.choices[0].message.content
+            expected_response = request_contents[id][::-1]
+            assert received_response == expected_response
 
 
 def test_vllm_response_deserialization():
