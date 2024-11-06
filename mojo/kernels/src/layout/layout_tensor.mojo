@@ -2536,11 +2536,12 @@ fn copy_sram_to_dram[
 
     # TODO: copy_from only allows static layout
     @parameter
-    if src.dtype == dst.dtype:
+    if src.dtype == dst.dtype and not swizzle:
         dst_fragments.copy_from(src_fragments)
     else:
         constrained[
-            src.dtype == DType.float32 and dst.dtype.is_half_float(),
+            src.dtype == dst.dtype
+            or (src.dtype == DType.float32 and dst.dtype.is_half_float()),
             "Only support FP32 -> half precision downcast during copy.",
         ]()
 
@@ -2611,11 +2612,12 @@ fn copy_sram_to_dram[
     var thread_offset = offset + dst_fragments.distance(dst.ptr)
 
     @parameter
-    if src.dtype == dst.dtype:
+    if src.dtype == dst.dtype and not swizzle:
         dst_fragments.copy_from(src_fragments)
     else:
         constrained[
-            src.dtype == DType.float32 and dst.dtype.is_half_float(),
+            src.dtype == dst.dtype
+            or (src.dtype == DType.float32 and dst.dtype.is_half_float()),
             "Only support FP32 -> half precision downcast during copy.",
         ]()
 
@@ -2767,47 +2769,44 @@ fn copy_local_to_sram[
 
     var dst_frag = dst.distribute[thread_layout](ThreadIdx.x())
 
+    constrained[
+        src.dtype == dst.dtype
+        or (src.dtype == DType.float32 and dst.dtype.is_half_float()),
+        "Only support FP32 -> half precision downcast during copy.",
+    ]()
+    constrained[
+        src.element_size == dst.element_size,
+        "src and dst element size mismatch.",
+    ]()
+
     @parameter
-    if src.dtype == dst.dtype:
+    if swizzle:
+        alias swizzle_fn = swizzle.value()
+        alias num_vecs = src.layout.size()
+        alias align_src = alignof[SIMD[src.dtype, src.element_size]]()
+        alias align_dst = alignof[SIMD[dst.dtype, dst.element_size]]()
+        var dst_frag_offset = dst_frag.distance(dst.ptr)
 
         @parameter
-        if swizzle:
-            alias swizzle_fn = swizzle.value()
-            alias num_vecs = src.layout.size()
-            alias align = alignof[SIMD[src.dtype, src.element_size]]()
+        for i in range(num_vecs):
+            alias src_idx = src.layout(i)
+            alias dst_idx = dst_frag.layout(i)
+            alias dst_idx_base = dst_idx % swizzle_fn.size()
+            alias dst_idx_diff = dst_idx - dst_idx_base
+            var swizzled_idx = swizzle_fn(
+                dst_frag_offset + dst_idx_base
+            ) + dst_idx_diff
+            var src_vec = src.ptr.load[
+                width = src.element_size, alignment=align_src
+            ](src_idx).cast[dst.dtype]()
+            dst.ptr.store[alignment=align_dst](
+                swizzled_idx, src_vec.cast[dst.dtype]()
+            )
 
-            var dst_frag_offset = dst_frag.distance(dst.ptr)
+    elif src.dtype == dst.dtype:
+        dst_frag.copy_from(src)
 
-            @parameter
-            for i in range(num_vecs):
-                alias src_idx = src.layout(i)
-                alias dst_idx = dst_frag.layout(i)
-                alias dst_idx_base = dst_idx % swizzle_fn.size()
-                alias dst_idx_diff = dst_idx - dst_idx_base
-                var swizzled_idx = swizzle_fn(
-                    dst_frag_offset + dst_idx_base
-                ) + dst_idx_diff
-
-                var src_vec = src.ptr.load[
-                    width = src.element_size, alignment=align
-                ](src_idx)
-                dst.ptr.store[alignment=align](
-                    swizzled_idx, src_vec.cast[dst.dtype]()
-                )
-
-        else:
-            dst_frag.copy_from(src)
     else:
-        constrained[
-            src.dtype == DType.float32 and dst.dtype.is_half_float(),
-            "Only support FP32 -> half precision downcast during copy.",
-        ]()
-
-        constrained[
-            src.element_size == dst.element_size,
-            "src and dst element size mismatch.",
-        ]()
-
         alias num_stores_per_thread = dst_frag.layout.size()
         alias elem_size = src.element_size
 
