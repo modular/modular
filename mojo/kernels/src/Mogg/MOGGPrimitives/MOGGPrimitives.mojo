@@ -856,18 +856,17 @@ fn mgp_buffer_host_to_device[
 
 @mogg_register("mgp.buffer.get_cached")
 @always_inline
-fn mgp_buffer_get_cached[
-    bBufferSlot: UInt64,
-](
+fn mgp_buffer_get_cached(
     dummy_chain: Int,
     ctx: StateContext,
     storage_ref_addr: UnsafePointer[UnsafePointer[NoneType]],
+    buffer_slot: UInt64,
 ) raises -> NDBuffer[DType.uint8, 1]:
     var buffer_size: UInt64 = 0
     var buffer_data: UnsafePointer[NoneType] = external_call[
         "KGEN_CompilerRT_GetCachedBuffer", UnsafePointer[NoneType]
     ](
-        int(bBufferSlot),
+        int(buffer_slot),
         ctx.ctx_ptr,
         UnsafePointer.address_of(buffer_size),
         storage_ref_addr,
