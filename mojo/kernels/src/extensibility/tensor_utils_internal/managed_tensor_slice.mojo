@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from bit import is_power_of_two
 from collections import InlineArray, OptionalReg
 from math import ceil, fma
-from sys import simdwidthof
+from sys import alignof, simdwidthof
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
@@ -208,7 +209,8 @@ struct ManagedTensorSlice[
     ](self, index: IndexList[_rank]) -> SIMD[type, width]:
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
-        return self._simd_load_internal[width](ridx)
+        alias alignment = specsof[type, rank]("self").alignment
+        return self._simd_load_internal[width, alignment=alignment](ridx)
 
     @always_inline
     fn _fused_load[
@@ -223,13 +225,14 @@ struct ManagedTensorSlice[
         var ridx = rebind[IndexList[rank]](index)
 
         alias in_lambda = specsof[type, rank]("self").in_lambda
+        alias alignment = specsof[type, rank]("self").alignment
 
         @parameter
         if in_lambda:
             alias in_fn = in_lambda.value()
             return in_fn[width](ridx)
         else:
-            return self._simd_load_internal[width](ridx)
+            return self._simd_load_internal[width, alignment](ridx)
 
     @always_inline
     fn _compute_offset(self: Self, index: IndexList[rank]) -> Int:
@@ -249,11 +252,13 @@ struct ManagedTensorSlice[
     @always_inline
     fn _simd_load_internal[
         width: Int,
+        alignment: Int = 1,
     ](self, index: IndexList[rank]) -> SIMD[type, width]:
         var flat_index = self._compute_offset(index)
         var stride = self._strides[rank - 1]
 
-        alias alignment = specsof[type, rank]("self").alignment
+        # Load alignment cannot exceed the data type's alignment.
+        alias max_alignment = gcd_pow2[alignment, alignof[type]()]()
 
         if stride == 0:
             return self._ptr.load(flat_index)
@@ -266,7 +271,7 @@ struct ManagedTensorSlice[
                 )
                 return v.cast[type]()
             else:
-                return self._ptr.load[width=width, alignment=alignment](
+                return self._ptr.load[width=width, alignment=max_alignment](
                     flat_index
                 )
         else:
@@ -289,7 +294,9 @@ struct ManagedTensorSlice[
     ](self, index: IndexList[_rank], val: SIMD[type, width]):
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
-        self._simd_store_internal[width](ridx, val)
+
+        alias alignment = specsof[type, rank]("self").alignment
+        self._simd_store_internal[width, alignment=alignment](ridx, val)
 
     @always_inline
     fn _fused_store[
@@ -304,21 +311,24 @@ struct ManagedTensorSlice[
         var ridx = rebind[IndexList[rank]](index)
 
         alias out_lambda = specsof[type, rank]("self").out_lambda
+        alias alignment = specsof[type, rank]("self").alignment
 
         @parameter
         if out_lambda:
             alias out_fn = out_lambda.value()
             out_fn[width](ridx, val)
         else:
-            self._simd_store_internal[width](ridx, val)
+            self._simd_store_internal[width, alignment=alignment](ridx, val)
 
     @always_inline
     fn _simd_store_internal[
         width: Int,
+        alignment: Int = 1,
     ](self, index: IndexList[rank], val: SIMD[type, width]):
         var flat_index = self._compute_offset(index)
 
-        alias alignment = specsof[type, rank]("self").alignment
+        # Store alignment cannot exceed the data type's alignment.
+        alias max_alignment = gcd_pow2[alignment, alignof[type]()]()
 
         var stride = self._strides[rank - 1]
         if stride == 0:
@@ -330,7 +340,7 @@ struct ManagedTensorSlice[
                 var v = val.cast[DType.uint8]()
                 self._ptr.bitcast[DType.uint8]().store(flat_index, v)
             else:
-                self._ptr.store[alignment=alignment](flat_index, val)
+                self._ptr.store[alignment=max_alignment](flat_index, val)
         else:
 
             @parameter
@@ -360,7 +370,13 @@ struct ManagedTensorSlice[
 
         self._extract_new_spec[
             StaticTensorSpec[type, rank](
-                spec.shape, spec.strides, _input_lambda, None
+                spec.shape,
+                spec.strides,
+                spec.alignment,
+                spec.address_space,
+                spec.exclusive,
+                _input_lambda,
+                None,
             )
         ]()
 
@@ -377,10 +393,23 @@ struct ManagedTensorSlice[
             StaticTensorSpec[type, rank](
                 spec.shape,
                 spec.strides,
+                spec.alignment,
+                spec.address_space,
+                spec.exclusive,
                 None,
                 _output_lambda,
             )
         ]()
+
+
+@parameter
+fn gcd_pow2[a: Int, b: Int]() -> Int:
+    # alignments should always be powers of 2
+    constrained[
+        is_power_of_two(a) and is_power_of_two(b),
+        "a and b must be powers of 2",
+    ]()
+    return min(a, b)
 
 
 # This version of the function supports CPU only. For GPU, use the one with the

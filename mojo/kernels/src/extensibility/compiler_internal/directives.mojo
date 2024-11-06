@@ -50,9 +50,6 @@ fn mutable(*names: StringLiteral):
 struct StaticTensorSpec[
     type: DType,
     rank: Int,
-    *,
-    alignment: Int = 1,
-    address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
     # Represents the DimList type (not accessible from KGEN tests).
     alias in_lambda_t = fn[simd_width: Int] (IndexList[rank]) capturing -> SIMD[
@@ -64,6 +61,11 @@ struct StaticTensorSpec[
 
     var shape: DimList
     var strides: DimList
+
+    var alignment: Int
+    var address_space: AddressSpace
+    var exclusive: Bool
+
     var in_lambda: OptionalReg[Self.in_lambda_t]
     var out_lambda: OptionalReg[Self.out_lambda_t]
 
@@ -71,11 +73,17 @@ struct StaticTensorSpec[
         inout self,
         shape: DimList,
         strides: DimList,
+        alignment: Int,
+        address_space: AddressSpace,
+        exclusive: Bool,
         in_lambda: OptionalReg[Self.in_lambda_t],
         out_lambda: OptionalReg[Self.out_lambda_t],
     ):
         self.shape = shape
         self.strides = strides
+        self.alignment = alignment
+        self.address_space = address_space
+        self.exclusive = exclusive
         self.in_lambda = in_lambda
         self.out_lambda = out_lambda
 
@@ -83,6 +91,9 @@ struct StaticTensorSpec[
         self = Self(
             DimList(),
             DimList(),
+            1,
+            AddressSpace.GENERIC,
+            True,
             OptionalReg[Self.in_lambda_t](None),
             OptionalReg[Self.out_lambda_t](None),
         )
