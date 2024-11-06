@@ -19,6 +19,7 @@ from buffer import NDBuffer
 from math import isqrt
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask
+from nn.mha_score_mod import IdentityScoreMod
 
 
 fn _get_run_name[
@@ -219,6 +220,7 @@ def execute_kv_cache_ragged_flash_attention[
                 v_cache_device,
                 dummy_mask,
                 CausalMask(),
+                IdentityScoreMod(),
                 input_row_offset_device.tensor,
                 isqrt(Float32(head_dim)),
                 ctx,
