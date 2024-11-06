@@ -387,9 +387,9 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
           argNameToSpecParam[cast<StringAttr>(argNames[argIdx]).strref()];
       ASSERT_STREAM(paramInfos.first != nullptr, << "parameter undefined");
       params.push_back(paramInfos.first);
-      tensorSpecParamNames.push_back(paramInfos.first.getName());
+      tensorSpecParamNames.push_back(paramInfos.first);
     } else {
-      tensorSpecParamNames.push_back(StringAttr::get(gen->getContext()));
+      tensorSpecParamNames.push_back(mlir::UnitAttr::get(gen->getContext()));
     }
   }
   LLVM_DEBUG(llvm::dbgs() << "Final parameters count: " << params.size()
