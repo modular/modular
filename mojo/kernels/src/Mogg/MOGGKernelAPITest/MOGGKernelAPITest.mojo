@@ -297,11 +297,47 @@ struct PrintTensorSpecOp:
         alias x_address_space = compiler.specsof[x.type, x.rank](
             "x"
         ).address_space
+        alias x_exclusive = compiler.specsof[x.type, x.rank]("x").exclusive
 
-        print("x.shape = ", x_shape)
-        print("x.strides = ", x_strides)
-        print("x.alignment = ", x_alignment)
-        print("x.address_space = ", x_address_space)
+        print("x.shape =", x_shape)
+        print("x.strides =", x_strides)
+        print("x.alignment =", x_alignment)
+        print("x.address_space =", x_address_space)
+        print("x.exclusive =", x_exclusive)
+
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[out.rank]) -> SIMD[out.type, width]:
+            return rebind[SIMD[out.type, width]](x.load[width](idx))
+
+        foreach[func](out)
+
+    @staticmethod
+    fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
+        return x.get_runtime_spec().shape
+
+
+@compiler.register("print_tensor_spec_view")
+@compiler.view_kernel
+struct PrintTensorSpecViewOp:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](out: ManagedTensorSlice, x: ManagedTensorSlice):
+        alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
+        alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
+        alias x_alignment = compiler.specsof[x.type, x.rank]("x").alignment
+        alias x_address_space = compiler.specsof[x.type, x.rank](
+            "x"
+        ).address_space
+        alias x_exclusive = compiler.specsof[x.type, x.rank]("x").exclusive
+
+        print("x.shape =", x_shape)
+        print("x.strides =", x_strides)
+        print("x.alignment =", x_alignment)
+        print("x.address_space =", x_address_space)
+        print("x.exclusive =", x_exclusive)
 
         @parameter
         @always_inline

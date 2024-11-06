@@ -283,17 +283,23 @@ fn get_address_space() -> AddressSpace:
 # Build the StaticTensorSpec parameter for the DPS kernels
 @mogg_register_override("build_static_tensor_specs", 1)
 fn build_static_tensor_specs[
-    type: DType, rank: Int, alignment: Int, address_space: AddressSpace
-](shape: DimList, strides: DimList) -> StaticTensorSpec[
-    type, rank, alignment=alignment, address_space=address_space
-]:
-    alias SpecType = StaticTensorSpec[
-        type, rank, alignment=alignment, address_space=address_space
-    ]
+    type: DType,
+    rank: Int,
+](
+    shape: DimList,
+    strides: DimList,
+    alignment: Int,
+    address_space: AddressSpace,
+    exclusive: Bool,
+) -> StaticTensorSpec[type, rank]:
+    alias SpecType = StaticTensorSpec[type, rank]
 
     return SpecType(
         shape,
         strides,
+        alignment,
+        address_space,
+        exclusive,
         OptionalReg[SpecType.in_lambda_t](None),
         OptionalReg[SpecType.out_lambda_t](None),
     )
@@ -383,8 +389,9 @@ alias ScalarTensor = ManagedTensorSlice[rank=1]
 @mogg_register_override("managed_tensor_slice_to_ndbuffer", 1)
 @always_inline
 fn managed_tensor_slice_to_ndbuffer_primitive[
-    type: DType, rank: Int
-](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank]:
+    type: DType,
+    rank: Int,
+](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank,]:
     return managed_tensor_slice_to_ndbuffer(tensor)
 
 
@@ -393,10 +400,16 @@ fn managed_tensor_slice_to_ndbuffer[
     type: DType,
     rank: Int,
     static_shape: DimList = DimList.create_unknown[rank](),
-](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank, static_shape]:
-    return NDBuffer[type, rank, static_shape](
-        tensor._ptr, tensor.get_runtime_spec().shape, tensor._strides
-    )
+](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[
+    type,
+    rank,
+    static_shape,
+]:
+    return NDBuffer[
+        type,
+        rank,
+        static_shape,
+    ](tensor._ptr, tensor.get_runtime_spec().shape, tensor._strides)
 
 
 @always_inline("nodebug")

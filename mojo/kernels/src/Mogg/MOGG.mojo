@@ -673,17 +673,23 @@ fn get_address_space() -> AddressSpace:
 # Build the StaticTensorSpec parameter for the DPS kernels
 @mogg_register("build_static_tensor_specs")
 fn build_static_tensor_specs[
-    type: DType, rank: Int, alignment: Int, address_space: AddressSpace
-](shape: DimList, strides: DimList) -> StaticTensorSpec[
-    type, rank, alignment=alignment, address_space=address_space
-]:
-    alias SpecType = StaticTensorSpec[
-        type, rank, alignment=alignment, address_space=address_space
-    ]
+    type: DType,
+    rank: Int,
+](
+    shape: DimList,
+    strides: DimList,
+    alignment: Int,
+    address_space: AddressSpace,
+    exclusive: Bool,
+) -> StaticTensorSpec[type, rank]:
+    alias SpecType = StaticTensorSpec[type, rank]
 
     return SpecType(
         shape,
         strides,
+        alignment,
+        address_space,
+        exclusive,
         OptionalReg[SpecType.in_lambda_t](None),
         OptionalReg[SpecType.out_lambda_t](None),
     )
