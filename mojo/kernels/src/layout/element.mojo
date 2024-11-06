@@ -435,3 +435,47 @@ struct Element[
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
         writer.write(self.element_data)
+
+
+# Represents a element in memory, organized according
+# to a specific layout structure.
+#
+struct MemoryElement[
+    dtype: DType,
+    layout: Layout,
+    address_space: AddressSpace,
+    alignment: Int,
+    /,
+    *,
+    bitwidth: Int = bitwidthof[Int](),
+]:
+    var ptr: UnsafePointer[
+        Scalar[dtype], address_space=address_space, alignment=alignment
+    ]
+
+    var runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth]
+
+    fn __init__(
+        inout self,
+        ptr: UnsafePointer[
+            Scalar[dtype], address_space=address_space, alignment=alignment
+        ],
+        runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth],
+    ):
+        self.ptr = ptr
+        self.runtime_layout = runtime_layout
+
+    fn load(self) -> Element[dtype, layout, bitwidth=bitwidth]:
+        return Element.load(self.ptr, self.runtime_layout)
+
+    fn store(self, src: Element[dtype, layout, bitwidth=bitwidth]):
+        return src.store(self.ptr)
+
+    fn transfer(self, src: MemoryElement):
+        constrained[
+            dtype == src.dtype,
+            "Element transfer requires element to have the same dtype",
+        ]()
+        self.store(
+            rebind[Element[dtype, layout, bitwidth=bitwidth]](src.load())
+        )

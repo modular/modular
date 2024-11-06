@@ -21,7 +21,7 @@ from algorithm import vectorize
 from builtin.int import int as _int
 from gpu.id import ThreadIdx
 from gpu.memory import Fill, CacheEviction, async_copy, async_copy
-from layout.element import Element
+from layout.element import Element, MemoryElement
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace
 
@@ -1920,31 +1920,19 @@ struct LayoutTensor[
         ]()
 
         @parameter
-        @always_inline
-        fn __load_element[i: Int]() -> Element[dtype, other.element_layout]:
-            var src_idx = other.__get_element_idx[i]()
-            return Element[dtype, other.element_layout].load(
-                rebind[UnsafePointer[Scalar[dtype], other.address_space]](
-                    other.ptr
-                ).offset(src_idx),
-                other.runtime_element_layout,
+        for i in range(dst_size):
+            src_idx = other.__get_element_idx[i]()
+            dst_idx = self.__get_element_idx[i]()
+
+            src_element = MemoryElement(
+                other.ptr.offset(src_idx), other.runtime_element_layout
             )
 
-        @parameter
-        @always_inline
-        fn __store_element[
-            i: Int
-        ](src_element: Element[dtype, other.element_layout]):
-            var dst_idx = self.__get_element_idx[i]()
-            Element[dtype, self.element_layout](
-                rebind[Element[dtype, self.element_layout].element_data_type](
-                    src_element.element_data
-                )
-            ).store(self.ptr.offset(dst_idx))
+            dst_element = MemoryElement(
+                self.ptr.offset(dst_idx), self.runtime_element_layout
+            )
 
-        @parameter
-        for i in range(dst_size):
-            __store_element[i](__load_element[i]())
+            dst_element.transfer(src_element)
 
     @always_inline
     fn copy_from(
