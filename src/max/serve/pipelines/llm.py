@@ -190,7 +190,10 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         self._background_tasks: set[asyncio.Task] = set()
 
     async def create_request(self, id: str, **kwargs) -> TokenGeneratorRequest:
+        METRICS.reqsQueued(1)
         await self.request_semaphore.acquire()
+        METRICS.reqsQueued(-1)
+        METRICS.reqsRunning(1)
         index = self.request_indices.pop()
         request = TokenGeneratorRequest(id=id, index=index, **kwargs)
         self._timers[id] = TokenGeneratorTimers()
@@ -199,6 +202,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     def _complete_request(self, request: TokenGeneratorRequest):
         del self._timers[request.id]
         self.request_indices.add(request.index)
+        METRICS.reqsRunning(-1)
         self.request_semaphore.release()
 
     async def next_token(

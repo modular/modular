@@ -64,6 +64,14 @@ class _Metrics:
             "maxserve.num_output_tokens",
             description="Count of generated tokens",
         )
+        self._reqs_queued = _meter.create_up_down_counter(
+            "maxserve.num_requests_queued",
+            description="Count of requests waiting to be processed",
+        )
+        self._reqs_running = _meter.create_up_down_counter(
+            "maxserve.num_requests_running",
+            description="Count of requests currently being processed",
+        )
 
     def requestCount(self, responseCode: int, urlPath: str):
         self._req_count.add(1, {"code": responseCode, "path": urlPath})  # type: ignore
@@ -85,6 +93,12 @@ class _Metrics:
 
     def outputTokens(self, value: int):
         self._output_tokens.add(value)  # type: ignore
+
+    def reqsQueued(self, value: int):
+        self._reqs_queued.add(value)  # type: ignore
+
+    def reqsRunning(self, value: int):
+        self._reqs_running.add(value)  # type: ignore
 
 
 METRICS = _Metrics()
