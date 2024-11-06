@@ -28,12 +28,12 @@ class EchoTokenGeneratorTokenizer(
         self, request: TokenGeneratorRequest
     ) -> EchoTokenGeneratorContext:
         return EchoTokenGeneratorContext(
-            request.prompt,
-            0,
-            request.max_new_tokens if request.max_new_tokens else len(
+            prompt=request.prompt,
+            index=0,
+            max_tokens=request.max_new_tokens if request.max_new_tokens else len(
                 request.prompt
             ),
-            len(request.prompt),
+            seq_len=len(request.prompt),
         )
 
 
@@ -45,6 +45,7 @@ class EchoTokenGenerator(TokenGenerator[EchoTokenGeneratorContext]):
         return [self.step(batch) for _ in range(num_steps)]
 
     def step(self, batch: dict[str, EchoTokenGeneratorContext]):
+        # NB: The EchoGenerator currently returns reversed rather than echo'ed input.
         for _, ctx in batch.items():
             ctx.index += 1
             if ctx.index <= len(ctx.prompt) and ctx.index <= ctx.max_tokens:

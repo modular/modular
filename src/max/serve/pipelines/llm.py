@@ -237,8 +237,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                 timers.context_creation.elapsed_ms,
                 timers.total.elapsed_ms,
             )
+        # TODO(MAXCORE-137): TokenGeneratorContext currently does not enforce
+        # a seq_len property.
+        if hasattr(context, "seq_len"):
+            METRICS.inputTokens(context.seq_len)
 
-        METRICS.inputTokens(context.seq_len)
         tokenIdx = 0
         try:
             # Use a different queue for context encoding if specified.
