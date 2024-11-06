@@ -8,7 +8,7 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import ThreadIdx, BlockDim, GridDim, barrier
+from gpu import ThreadIdx, BlockDim, GridDim, barrier, lane_id
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from memory import UnsafePointer
@@ -18,6 +18,10 @@ alias MI300X_TARGET = _get_nvptx_target["mi300x"]()
 
 fn kernel(x: UnsafePointer[Int]):
     x[0] = ThreadIdx.x()
+
+
+fn kernel_laneid(x: UnsafePointer[Int]):
+    x[0] = lane_id()
 
 
 fn parametric[f: fn (UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
@@ -30,6 +34,19 @@ fn load_store(
 ):
     var tid = ThreadIdx.x() + BlockDim.x() * GridDim.x()
     output[tid] = input[tid]
+
+
+# CHECK-LABEL: test_laneid_compile
+def test_laneid_compile():
+    print("== test_laneid_compile")
+
+    # CHECK: tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %2)
+    print(
+        _compile_code_asm[
+            kernel_laneid, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
 
 
 # CHECK-LABEL: test_barrier_compile
@@ -80,5 +97,6 @@ def test_threadid_compile():
 
 
 def main():
+    test_laneid_compile()
     test_barrier_compile()
     test_threadid_compile()
