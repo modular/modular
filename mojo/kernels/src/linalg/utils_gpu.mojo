@@ -184,7 +184,7 @@ fn _shared_memory_usage[
     var a_usage = block_mnk[0] * block_mnk[2] * num_pipeline_stages * sizeof[a_type]()
     var b_usage = block_mnk[1] * block_mnk[2] * num_pipeline_stages * sizeof[b_type]()
     var c_usage = block_mnk[0] * block_mnk[1] * \
-                  sizeof[get_accum_type[a_type]()]() if c_type.is_half_float() else 0
+                  sizeof[c_type]() if c_type.is_half_float() else 0
     # fmt: on
     return max(a_usage + b_usage, c_usage)
 

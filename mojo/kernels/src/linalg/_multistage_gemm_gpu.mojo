@@ -711,9 +711,9 @@ fn multistage_gemm_kernel[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = tb[accum_type]().row_major[
+        var accum_smem_warp_tile = tb[c_type]().row_major[
             WM, WN
-        ]().shared().view(a_smem.bitcast[accum_type]() + warp_id * WM * WN)
+        ]().shared().view(a_smem.bitcast[c_type]() + warp_id * WM * WN)
 
         copy_local_to_sram[
             thread_layout = Layout.row_major(8, 4),
@@ -743,10 +743,6 @@ fn multistage_gemm_kernel[
             ]().distribute[warp_layout](ThreadIdx.x())
             var thread_offset = c_gmem_frag.distance(c.ptr)
             alias num_stores_per_thread = c_gmem_frag.layout.size()
-            alias src_align = alignof[
-                SIMD[accum_type, simdwidthof[accum_type]()]
-            ]()
-            alias dst_align = alignof[SIMD[c_type, simd_size]]()
 
             var c_smem_frag_offset = c_smem_frag.distance(
                 accum_smem_warp_tile.ptr
