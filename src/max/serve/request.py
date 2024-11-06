@@ -10,20 +10,18 @@ import uuid
 from time import perf_counter_ns
 from typing import Callable
 
+from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.stopwatch import StopWatch
+
 from fastapi import FastAPI, HTTPException, Request, Response
-from prometheus_async.aio import time
-from prometheus_client import Counter, Histogram
 
 logger = logging.getLogger(__name__)
-
-REQ_TIME = Histogram("req_time_seconds", "Time spent in requests", ["path"])
-REQ_COUNTER = Counter("req_count", "Http request count", ["code", "path"])
 
 
 def register_request(app: FastAPI):
     @app.middleware("http")
     async def request_session(request: Request, call_next: Callable):
-        with REQ_TIME.labels(request.url.path).time():
+        with StopWatch() as requestTimer:
             request_id = str(uuid.uuid4())
             request.state.request_id = request_id
             request.state.recv_time_ns = perf_counter_ns()
@@ -43,6 +41,7 @@ def register_request(app: FastAPI):
                     headers={"X-Request-ID": request_id},
                 ) from e
             finally:
-                REQ_COUNTER.labels(status_code, request.url.path).inc()
-            response.headers["X-Request-ID"] = request_id
-            return response
+                METRICS.requestCount(status_code, request.url.path)
+                METRICS.requestTime(requestTimer.elapsed_ms, request.url.path)
+        response.headers["X-Request-ID"] = request_id
+        return response

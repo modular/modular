@@ -45,12 +45,8 @@ from max.serve.pipelines.deps import (
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
-from prometheus_client import (
-    CollectorRegistry,
-    make_asgi_app,
-    multiprocess,
-    disable_created_metrics,
-)
+from max.serve.telemetry.metrics import METRICS
+from prometheus_client import make_asgi_app, disable_created_metrics
 from pydantic_settings import CliSettingsSource
 from uvicorn import Config, Server
 
@@ -133,14 +129,9 @@ def parse_debug_settings(parser: argparse.ArgumentParser) -> DebugSettings:
 
 
 def make_metrics_app():
+    METRICS.configure(otlp_level)
     disable_created_metrics()
-    # if PROMETHEUS_MULTIPROC_DIR is set we use multiprocess setup
-    if os.getenv("PROMETHEUS_MULTIPROC_DIR") is not None:
-        registry = CollectorRegistry()
-        multiprocess.MultiProcessCollector(registry)
-        return make_asgi_app(registry=registry)
-    else:
-        return make_asgi_app()
+    return make_asgi_app()
 
 
 async def main() -> None:

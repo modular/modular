@@ -24,15 +24,7 @@ from max.serve.scheduler.queues import (
     BatchQueueConfig,
 )
 from max.serve.telemetry.stopwatch import StopWatch
-from prometheus_client import Counter, Histogram
-
-TTFT = Histogram("time_to_first_token_seconds", "Time to first token")
-INPUT_TOKENS = Counter("num_input_tokens", "Count of input tokens")
-OUTPUT_TOKENS = Counter("num_output_tokens", "Count of generated tokens")
-INPUT_TIME = Histogram("input_processing_time_seconds", "Input processing time")
-OUTPUT_TIME = Histogram(
-    "output_processing_time_seconds", "Output processing time"
-)
+from max.serve.telemetry.metrics import METRICS
 
 
 @dataclass(frozen=True)
@@ -242,7 +234,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                 timers.total.elapsed_ms,
             )
 
-        INPUT_TOKENS.inc(context.seq_len)
+        METRICS.inputTokens(context.seq_len)
         tokenIdx = 0
         try:
             # Use a different queue for context encoding if specified.
@@ -257,7 +249,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                     )
                     if valid:
                         # TODO: Put this off the main thread.
-                        TTFT.observe(timers.ttft.elapsed_s)
+                        METRICS.ttft(timers.ttft.elapsed_ms)
                         tokenIdx += 1
                         yield await self.tokenizer.decode(
                             context, encoded_token
@@ -275,14 +267,14 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                         timers.context_encoding.elapsed_ms,
                         timers.total.elapsed_ms,
                     )
-            INPUT_TIME.observe(timers.total.elapsed_s)
+            METRICS.inputTime(timers.total.elapsed_s)
             with timers.token_generation:
                 async for encoded_token in self.token_gen_queue.stream(
                     request.id, context
                 ):
                     # TODO: Put this off the main thread.
                     if tokenIdx == 0:
-                        TTFT.observe(timers.ttft.elapsed_s)
+                        METRICS.ttft(timers.ttft.elapsed_ms)
                     tokenIdx += 1
                     yield await self.tokenizer.decode(context, encoded_token)
             if self.debug_logging:
@@ -293,7 +285,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                     timers.token_generation.elapsed_ms,
                     timers.total.elapsed_ms,
                 )
-            OUTPUT_TIME.observe(timers.token_generation.elapsed_s)
+            METRICS.outputTime(timers.token_generation.elapsed_ms)
         finally:
             self._complete_request(request)
             if self.debug_logging:
@@ -304,7 +296,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                     timers.total.elapsed_ms,
                 )
 
-            OUTPUT_TOKENS.inc(tokenIdx)
+            METRICS.outputTokens(tokenIdx)
 
     async def all_tokens(self, request: TokenGeneratorRequest) -> list[str]:
         """Generates all tokens for the provided request."""
