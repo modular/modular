@@ -16,6 +16,7 @@ from max.dtype import DType
 from ..quantization import QuantizationEncoding
 from ..type import ShapeLike
 from ..weight import Weight
+from .safetensor_gguf_map import GGUF_TENSOR_MAPPING
 
 try:
     from safetensors import safe_open
@@ -54,6 +55,7 @@ class SafetensorWeights:
         tensors_to_file_idx: Mapping[str, int] | None = None,
         prefix: str = "",
         allocated=None,
+        gguf_name_map: Mapping[str, str] | None = None,
     ):
         if safe_open is None:
             raise ImportError(
@@ -80,6 +82,45 @@ class SafetensorWeights:
                     self._tensors_to_file_idx |= {k: idx for k in f.keys()}
         self._prefix = prefix
         self._allocated = {} if allocated is None else allocated
+        self._gguf_name_map = gguf_name_map
+
+    @classmethod
+    def load_with_gguf_names(
+        cls,
+        filepaths: Sequence[PathLike],
+        architecture: str,
+    ) -> SafetensorWeights:
+        """Loads Safetensor weights with GGUF names.
+
+        Some models may have both GGUF and Safetensor weights, but the weight
+        names will not be exactly the same between them. For example, the
+        GGUF weight "blk.{i}.attn_q.weight" is instead saved as
+        "model.layers.{i}.self_attn.q_proj.weight" in Safetensor.
+
+        When implementing the model, there should be a single implementation
+        that works with both Safetensor and GGUF. This method is a workaround
+        solution until we have a better way of defining model weights.
+
+        Safetensors loaded with this method use the GGUF naming scheme
+        to allocate weights in the graph.
+
+        Args:
+            architecture: Name of the model architecture. Can be "llama",
+                "mistral", etc. This is used to get the GGUF->Safetensor name
+                mapping.
+
+        Returns:
+            SafetensorWeights that uses GGUF names.
+        """
+        if architecture not in GGUF_TENSOR_MAPPING:
+            available = ",".join(GGUF_TENSOR_MAPPING.keys())
+            raise ValueError(
+                f"Model architecture {architecture} does not have GGUF to "
+                f"Safetensor name mappings. Available options: {available}"
+            )
+        return SafetensorWeights(
+            filepaths, gguf_name_map=GGUF_TENSOR_MAPPING[architecture]
+        )
 
     @property
     def name(self) -> str:
@@ -96,9 +137,12 @@ class SafetensorWeights:
                     tensors_to_file_idx=self._tensors_to_file_idx,
                     prefix=name,
                     allocated=self._allocated,
+                    gguf_name_map=self._gguf_name_map,
                 )
 
     def __getattr__(self, attr) -> SafetensorWeights:
+        if self._gguf_name_map:
+            attr = self._gguf_name_map.get(attr, attr)
         if self._prefix:
             full_path = f"{self._prefix}.{attr}"
         else:
@@ -111,6 +155,7 @@ class SafetensorWeights:
             tensors_to_file_idx=self._tensors_to_file_idx,
             prefix=full_path,
             allocated=self._allocated,
+            gguf_name_map=self._gguf_name_map,
         )
 
     def __getitem__(self, idx: int | str) -> SafetensorWeights:

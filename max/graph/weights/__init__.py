@@ -8,3 +8,4 @@
 from .load_gguf import GGUFWeights
 from .load_pytorch import PytorchWeights
 from .load_safetensors import SafetensorWeights
+from .weights import Weights
