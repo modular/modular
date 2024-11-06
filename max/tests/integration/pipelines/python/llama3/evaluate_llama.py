@@ -14,19 +14,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional
 
-from test_common.numpy_encoder import NumpyEncoder
-from test_common.path import golden_data_fname
-from test_common.evaluate import run_model, PROMPTS
 import click
 from huggingface_hub import hf_hub_download
-from llama3 import (
-    Llama3,
-    Llama3Tokenizer,
-)
+from llama3 import Llama3, Llama3Tokenizer
 from llama3.config import get_llama_huggingface_file
+from llama3.llama3 import load_llama3_and_kv_manager
 from max.driver import DeviceSpec
+from max.engine import InferenceSession
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.kv_cache import KVCacheStrategy
+from test_common.evaluate import PROMPTS, run_model
+from test_common.numpy_encoder import NumpyEncoder
+from test_common.path import golden_data_fname
 
 
 @dataclass(frozen=True)
@@ -197,7 +196,9 @@ def main(model, encoding, verbose):
         try:
             config = model_encoding.build_config(testdata_directory)
             tokenizer = Llama3Tokenizer(config)
-            llama3 = Llama3(config)
+
+            session = InferenceSession(device=config.device)
+            llama3, _ = load_llama3_and_kv_manager(config, session)
             results = run_model(llama3, tokenizer, PROMPTS)
 
             output_full_path = os.path.join(
