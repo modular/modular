@@ -400,16 +400,27 @@ fn managed_tensor_slice_to_ndbuffer[
     type: DType,
     rank: Int,
     static_shape: DimList = DimList.create_unknown[rank](),
+    *,
+    alignment: Int = 1,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+    exclusive: Bool = True,
 ](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[
     type,
     rank,
     static_shape,
+    alignment=alignment,
+    address_space=address_space,
+    exclusive=exclusive,
 ]:
+    var ptr = tensor._ptr.bitcast[address_space=address_space]()
     return NDBuffer[
         type,
         rank,
         static_shape,
-    ](tensor._ptr, tensor.get_runtime_spec().shape, tensor._strides)
+        alignment=alignment,
+        address_space=address_space,
+        exclusive=exclusive,
+    ](ptr, tensor.get_runtime_spec().shape, tensor._strides)
 
 
 @always_inline("nodebug")
