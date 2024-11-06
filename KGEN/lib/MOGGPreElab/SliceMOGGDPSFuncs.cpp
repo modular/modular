@@ -135,17 +135,13 @@ private:
 
       if (idx >= tensorSpecParams.size())
         continue;
-      StringAttr argTensorSpecParam = cast<StringAttr>(tensorSpecParams[idx]);
-      if (argTensorSpecParam.empty())
+      auto argTensorSpecParam =
+          dyn_cast<KGEN::ParamDeclAttr>(tensorSpecParams[idx]);
+      if (!argTensorSpecParam)
         continue;
 
-      ParamDeclRefAttr tensorSpecRef = nullptr;
-      for (auto paramDecl : gen.getInputParams()) {
-        if (paramDecl.getName() == argTensorSpecParam) {
-          tensorSpecRef =
-              ParamDeclRefAttr::get(paramDecl.getName(), paramDecl.getType());
-        }
-      }
+      ParamDeclRefAttr tensorSpecRef =
+          ParamDeclRefAttr::get(argTensorSpecParam);
 
       bool isInput = idx > 0;
       ASSERT_STREAM(inLambdaTemplate.templateOp && outLambdaTemplate.templateOp,
