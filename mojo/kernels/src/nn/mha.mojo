@@ -1567,15 +1567,17 @@ fn mha_single_batch[
                                     * scale.cast[accum_type]()
                                 )
 
-                            p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](int(score_row), int(score_col)),
-                                IndexList[
-                                    2, element_bitwidth=32, unsigned=True
-                                ](seq_len, seq_len),
-                                p_reg_vec2[mma_id, i],
-                            )
+                            @parameter
+                            if not not_last_iter:
+                                p_reg_vec2[mma_id, i] = _kernel_mask(
+                                    IndexList[
+                                        2, element_bitwidth=32, unsigned=True
+                                    ](int(score_row), int(score_col)),
+                                    IndexList[
+                                        2, element_bitwidth=32, unsigned=True
+                                    ](seq_len, seq_len),
+                                    p_reg_vec2[mma_id, i],
+                                )
 
             unswitch[_apply_mask](
                 mask.status(
