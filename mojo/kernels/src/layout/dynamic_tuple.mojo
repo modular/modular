@@ -160,7 +160,7 @@ struct _DynamicTupleIter[
         return self.src[self.idx - 1]
 
     @always_inline
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
@@ -354,7 +354,7 @@ struct _ZipIter2[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
         )
 
     @always_inline
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
@@ -395,7 +395,7 @@ struct _ZipIter3[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
         )
 
     @always_inline
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
@@ -458,7 +458,7 @@ struct _ProductIter2[
         return res^
 
     @always_inline
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
@@ -517,7 +517,7 @@ struct _ProductIter3[
         )
 
     @always_inline
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
@@ -601,7 +601,7 @@ struct _ProductIterN[
         return res
 
     @always_inline
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
