@@ -35,6 +35,15 @@ alias AddressSpace = _GPUAddressSpace
 fn _mark_eviction[
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL
 ]() -> UInt64:
+    """Returns the eviction policy value for GPU cache operations.
+
+    Parameters:
+        eviction_policy: The cache eviction policy to use.
+
+    Returns:
+        Handle to the eviction policy.
+    """
+
     @parameter
     if eviction_policy is CacheEviction.EVICT_NORMAL:
         return 0
