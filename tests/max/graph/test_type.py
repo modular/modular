@@ -15,7 +15,6 @@ from max.dtype import DType
 from max.graph import (
     BufferType,
     Device,
-    DeviceType,
     Dim,
     StaticDim,
     SymbolicDim,
@@ -158,7 +157,7 @@ def test_tensor_type(mlir_context) -> None:
 
 def test_tensor_type_with_device(mlir_context: mlir.Context) -> None:
     """Tests tensor type creation."""
-    device_type = Device(DeviceType.CUDA, 2)
+    device_type = Device.CUDA(id=2)
     mlir_device_type = device_type.to_mlir()
     print(str(mlir_device_type))
     tensor_type = TensorType(DType.float32, shape=[3], device=device_type)

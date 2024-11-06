@@ -493,6 +493,16 @@ class Device:
     device_type: DeviceType
     id: int
 
+    @staticmethod
+    def CPU(id: int = 0) -> Device:
+        """Static Method for creating a CPU device."""
+        return Device(DeviceType.CPU, id)
+
+    @staticmethod
+    def CUDA(id: int = 0) -> Device:
+        """Static Method for creating a CUDA device."""
+        return Device(DeviceType.CUDA, id)
+
     def __init__(self, device_type: DeviceType, id: int = 0):
         self.device_type = device_type
         self.id = id
@@ -503,21 +513,23 @@ class Device:
     def __repr__(self):
         return str(self)
 
+    def __eq__(self, other: Any) -> bool:
+        """Returns true if devices are equal."""
+        return self.device_type == other.device_type and self.id == other.id
+
     def to_mlir(self) -> mlir.Attribute:
+        """Returns a mlir attribute representing device."""
         return _graph.device_attr(
             mlir.Context.current, str(self.device_type), self.id
         )
 
     @staticmethod
-    def from_mlir(device_attr: mlir.Attribute) -> Optional[Device]:
-        if device_attr:
-            return Device(
-                device_type=DeviceType(
-                    _graph.device_attr_get_label(device_attr)
-                ),
-                id=_graph.device_attr_get_id(device_attr),
-            )
-        return None
+    def from_mlir(device_attr: mlir.Attribute) -> Device:
+        """Returns a device from mlir attribute"""
+        return Device(
+            device_type=DeviceType(_graph.device_attr_get_label(device_attr)),
+            id=_graph.device_attr_get_id(device_attr),
+        )
 
 
 StaticShape = list[StaticDim]
@@ -641,7 +653,10 @@ class TensorType(Type):
         shape = [
             Dim.from_mlir(_graph.tensor_type_get_dim(t, i)) for i in range(rank)
         ]
-        device = Device.from_mlir(_graph.tensor_type_get_device(t))
+        device = None
+        mlir_device = _graph.tensor_type_get_device(t)
+        if mlir_device:
+            device = Device.from_mlir(_graph.tensor_type_get_device(t))
         return TensorType(DType(dtype), shape, device)
 
     # ===------------------------------------------------------------------=== #

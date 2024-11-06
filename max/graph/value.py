@@ -310,6 +310,9 @@ class TensorValue(Value):
     def transpose(self, dim_1: int, dim_2: int) -> TensorValue:
         return ops.transpose(self, dim_1, dim_2)
 
+    def to(self, device: Device) -> TensorValue:
+        return ops.transfer_to(self, device)
+
     @property
     def T(self) -> TensorValue:
         return self.transpose(-1, -2)

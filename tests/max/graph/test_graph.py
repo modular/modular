@@ -64,12 +64,12 @@ def test_elementwise_add_graph_with_device_prop() -> None:
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device(DeviceType.CUDA, 0),
+                device=Device.CUDA(0),
             ),
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device(DeviceType.CUDA, 0),
+                device=Device.CUDA(0),
             ),
         ],
     ) as graph:
@@ -92,12 +92,12 @@ def test_elementwise_add_graph_with_device_prop_error() -> None:
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device(DeviceType.CUDA, 0),
+                device=Device.CUDA(0),
             ),
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device(DeviceType.CUDA, 1),
+                device=Device.CUDA(1),
             ),
         ],
     ) as graph:
@@ -113,7 +113,7 @@ def test_transpose_graph_with_device_prop() -> None:
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device(DeviceType.CUDA, 0),
+                device=Device.CUDA(0),
             )
         ],
     ) as graph:
