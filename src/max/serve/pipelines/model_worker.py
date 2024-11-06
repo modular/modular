@@ -178,16 +178,7 @@ def model_worker_run(factories: Mapping[str, TokenGeneratorFactory]):
                 if not batch:
                     continue
 
-                if decode_only:
-                    batch_responses_list = model.next_token(
-                        batch, entry.num_steps
-                    )
-                else:
-                    assert entry.num_steps == 1
-                    res = {}
-                    for k, v in batch.items():
-                        res.update(model.next_token({k: v}, 1)[0])
-                    batch_responses_list = [res]
+                batch_responses_list = model.next_token(batch, entry.num_steps)
 
                 out_q.queue.put_nowait((entry.batch_key, batch_responses_list))
 
