@@ -16,10 +16,11 @@ import torch
 import torch.nn.functional as F
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import load_llama3_and_kv_manager
-from llama3.llama3_token_gen import Llama3Tokenizer
 from max.driver import CUDA
 from max.engine import InferenceSession
+from llama3.llama3 import Llama3
 from max.pipelines.interfaces import TokenGeneratorRequest
+from nn.tokenizer import TextTokenizer
 from test_common.evaluate import (
     PROMPTS,
     compare_values,
@@ -90,7 +91,7 @@ def kl_divergence_verifier(
 def test_llama(model: str, encoding: str, testdata_directory: Path) -> None:
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config(max_length=512)
-    tokenizer = Llama3Tokenizer(config)
+    tokenizer = TextTokenizer(config)
     session = InferenceSession(device=config.device)
     model, _ = load_llama3_and_kv_manager(config, session)
     actual = run_model(
@@ -127,7 +128,7 @@ async def test_llama_ragged(model: str, encoding: str) -> None:
 
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config()
-    tokenizer = Llama3Tokenizer(config)
+    tokenizer = TextTokenizer(config)
     session = InferenceSession(device=config.device)
     llama, _ = load_llama3_and_kv_manager(config, session)
 

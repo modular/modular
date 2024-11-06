@@ -16,7 +16,6 @@ from typing import Literal, Optional
 
 import click
 from huggingface_hub import hf_hub_download
-from llama3 import Llama3, Llama3Tokenizer
 from llama3.config import get_llama_huggingface_file
 from llama3.llama3 import load_llama3_and_kv_manager
 from max.driver import DeviceSpec
@@ -26,6 +25,7 @@ from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, run_model
 from test_common.numpy_encoder import NumpyEncoder
 from test_common.path import golden_data_fname
+from nn.tokenizer import TextTokenizer
 
 
 @dataclass(frozen=True)
@@ -195,7 +195,7 @@ def main(model, encoding, verbose):
     ):
         try:
             config = model_encoding.build_config(testdata_directory)
-            tokenizer = Llama3Tokenizer(config)
+            tokenizer = TextTokenizer(config)
 
             session = InferenceSession(device=config.device)
             llama3, _ = load_llama3_and_kv_manager(config, session)

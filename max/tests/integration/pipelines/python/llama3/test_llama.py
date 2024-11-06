@@ -7,12 +7,11 @@
 golden values.
 """
 
-
 import pytest
 from max.engine import InferenceSession
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import load_llama3_and_kv_manager
-from llama3.llama3_token_gen import Llama3Tokenizer
+from nn.tokenizer import TextTokenizer
 from test_common.evaluate import PROMPTS, compare_values, run_model
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
@@ -28,7 +27,7 @@ def test_llama(model, encoding, testdata_directory):
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config()
 
-    tokenizer = Llama3Tokenizer(config)
+    tokenizer = TextTokenizer(config)
     session = InferenceSession(device=config.device)
     model, _ = load_llama3_and_kv_manager(config, session)
     actual = run_model(

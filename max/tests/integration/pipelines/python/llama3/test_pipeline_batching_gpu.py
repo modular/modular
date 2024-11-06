@@ -18,12 +18,11 @@ import pytest
 from dataprocessing import TextContext
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import Llama3, load_llama3_and_kv_manager
-from llama3.llama3_token_gen import Llama3Tokenizer, _read_hyperparameters
-from max.driver import CUDA
 from max.engine import InferenceSession
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
+from nn.tokenizer import TextTokenizer
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
 
@@ -68,8 +67,8 @@ def pipeline_config(testdata_directory, request) -> PipelineConfig:
 
 
 @pytest.fixture(scope="session")
-def pipeline_tokenizer(pipeline_config: PipelineConfig) -> Llama3Tokenizer:
-    return Llama3Tokenizer(pipeline_config)
+def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
+    return TextTokenizer(pipeline_config)
 
 
 @pytest.fixture(scope="session")
@@ -100,7 +99,7 @@ def pipeline_model(
 )
 async def test_pipeline_heterogeneous_batch_logits(
     pipeline_model: Llama3,
-    pipeline_tokenizer: Llama3Tokenizer,
+    pipeline_tokenizer: TextTokenizer,
 ) -> None:
     """Executes batch of prompts with different lengths and validates logits.
 

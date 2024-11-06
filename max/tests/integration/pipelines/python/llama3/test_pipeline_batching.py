@@ -10,13 +10,11 @@ from typing import Literal
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.llama3_token_gen import (
-    Llama3Tokenizer,
-    Llama3TokenGenerator,
-)
+from llama3.llama3_token_gen import Llama3TokenGenerator
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
+from nn.tokenizer import TextTokenizer
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
 
@@ -61,12 +59,12 @@ def pipeline_config(testdata_directory, request):
 
 @pytest.fixture(scope="session")
 def pipeline_tokenizer(pipeline_config):
-    return Llama3Tokenizer(pipeline_config)
+    return TextTokenizer(pipeline_config)
 
 
 @pytest.fixture(scope="session")
 def pipeline_model(
-    pipeline_config: PipelineConfig, pipeline_tokenizer: Llama3Tokenizer
+    pipeline_config: PipelineConfig, pipeline_tokenizer: TextTokenizer
 ):
     return Llama3TokenGenerator(
         pipeline_config,

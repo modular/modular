@@ -23,6 +23,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
+from nn.tokenizer import TextTokenizer
 from transformers import AutoTokenizer
 
 

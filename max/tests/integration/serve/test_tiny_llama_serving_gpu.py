@@ -11,12 +11,12 @@ import json
 import pytest
 from async_asgi_testclient import TestClient
 from evaluate_llama import SupportedTestModels
-from llama3 import Llama3Tokenizer
 from max.driver import DeviceSpec
 
 from max.pipelines import SupportedEncoding
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import CreateChatCompletionResponse
+from nn.tokenizer import TextTokenizer
 from test_common.evaluate import PROMPTS
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
@@ -107,7 +107,7 @@ async def test_tinyllama_serve_gpu_stream(
         tokens.append(t)
 
     inference_config = model_encoding.build_config(testdata_directory)
-    tokenizer = Llama3Tokenizer(inference_config)
+    tokenizer = TextTokenizer(inference_config)
     expected_response = [
         await tokenizer.decode(tinyllama_model, x) for x in tokens
     ]

@@ -14,10 +14,11 @@ from uuid import uuid4
 import pytest
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import Llama3
-from llama3.llama3_token_gen import Llama3Tokenizer, Llama3TokenGenerator
+from llama3.llama3_token_gen import Llama3TokenGenerator
 from max.pipelines import PipelineConfig
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
+from nn.tokenizer import TextTokenizer
 from test_common.evaluate import PROMPTS, run_model
 
 
@@ -51,13 +52,13 @@ def pipeline_config(testdata_directory, request) -> PipelineConfig:
 
 
 @pytest.fixture(scope="session")
-def pipeline_tokenizer(pipeline_config: PipelineConfig) -> Llama3Tokenizer:
-    return Llama3Tokenizer(pipeline_config)
+def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
+    return TextTokenizer(pipeline_config)
 
 
 @pytest.fixture(scope="session")
 def tinyllama_model(
-    pipeline_config: PipelineConfig, pipeline_tokenizer: Llama3Tokenizer
+    pipeline_config: PipelineConfig, pipeline_tokenizer: TextTokenizer
 ):
     return Llama3TokenGenerator(
         pipeline_config,
@@ -240,7 +241,7 @@ async def test_tinyllama_multistep_execution(
     tinyllama_model: Llama3,
     prompt_fixture: str,
     max_new_tokens_fixture: int,
-    pipeline_tokenizer: Llama3Tokenizer,
+    pipeline_tokenizer: TextTokenizer,
 ):
     num_steps = 10
     multistep_context = await pipeline_tokenizer.new_context(
