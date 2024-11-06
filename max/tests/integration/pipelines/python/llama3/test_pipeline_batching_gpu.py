@@ -4,6 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
 
 from dataclasses import dataclass
 from typing import Literal
@@ -11,8 +17,10 @@ from typing import Literal
 import pytest
 from dataprocessing import TextContext
 from evaluate_llama import SupportedTestModels
-from llama3.llama3 import Llama3
-from llama3.llama3_token_gen import Llama3Tokenizer
+from llama3.llama3 import Llama3, load_llama3_and_kv_manager
+from llama3.llama3_token_gen import Llama3Tokenizer, _read_hyperparameters
+from max.driver import CUDA
+from max.engine import InferenceSession
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
@@ -65,8 +73,14 @@ def pipeline_tokenizer(pipeline_config: PipelineConfig) -> Llama3Tokenizer:
 
 
 @pytest.fixture(scope="session")
-def pipeline_model(pipeline_config: PipelineConfig) -> Llama3:
-    return Llama3(pipeline_config)
+def pipeline_model(
+    pipeline_config: PipelineConfig,
+) -> Llama3:
+    model, _ = load_llama3_and_kv_manager(
+        pipeline_config,
+        InferenceSession(device=pipeline_config.device),
+    )
+    return model
 
 
 @pytest.mark.asyncio
@@ -85,7 +99,8 @@ def pipeline_model(pipeline_config: PipelineConfig) -> Llama3:
     indirect=True,
 )
 async def test_pipeline_heterogeneous_batch_logits(
-    pipeline_model: Llama3, pipeline_tokenizer: Llama3Tokenizer
+    pipeline_model: Llama3,
+    pipeline_tokenizer: Llama3Tokenizer,
 ) -> None:
     """Executes batch of prompts with different lengths and validates logits.
 
@@ -116,7 +131,9 @@ async def test_pipeline_heterogeneous_batch_logits(
 
     # Send in both A and B for token generation
     next_token_with_logits(
-        pipeline_model, {"A": context_a, "B": context_b}, stored_logits
+        pipeline_model,
+        {"A": context_a, "B": context_b},
+        stored_logits,
     )
 
     # Send in C for context encoding
@@ -129,9 +146,11 @@ async def test_pipeline_heterogeneous_batch_logits(
 
     # Send in both B and C for token generation
     next_token_with_logits(
-        pipeline_model, {"B": context_b, "C": context_c}, stored_logits
+        pipeline_model,
+        {"B": context_b, "C": context_c},
+        stored_logits,
     )
 
-    pipeline_model.release(context_a)
-    pipeline_model.release(context_b)
-    pipeline_model.release(context_c)
+    pipeline_model._kv_manager.release(context_a.cache_seq_id)
+    pipeline_model._kv_manager.release(context_b.cache_seq_id)
+    pipeline_model._kv_manager.release(context_c.cache_seq_id)

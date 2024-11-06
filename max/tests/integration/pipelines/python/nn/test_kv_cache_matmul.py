@@ -55,6 +55,7 @@ def test_fused_qkv_ragged_matmul(session):
         max_seq_len=100,
         num_layers=1,
         device=CPU(),
+        session=session,
     )
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
@@ -97,7 +98,7 @@ def test_fused_qkv_ragged_matmul(session):
             wqkv,
             kv_collection,
             layer_idx,
-            n_heads=num_q_heads,
+            num_q_heads,
         )
         g.output(result)
 

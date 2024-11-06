@@ -10,7 +10,10 @@ from typing import Literal
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.llama3_token_gen import Llama3Tokenizer, Llama3TokenGenerator
+from llama3.llama3_token_gen import (
+    Llama3Tokenizer,
+    Llama3TokenGenerator,
+)
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
@@ -318,6 +321,7 @@ async def test_pipeline_heterogeneous_batch_logits(
     """
 
     llama3 = pipeline_model.model
+    kv_manager = pipeline_model._kv_manager
     prompt_a = PROMPTS[0]
     prompt_b = PROMPTS[1]
     prompt_c = PROMPTS[2]

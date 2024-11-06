@@ -188,6 +188,7 @@ def test_kv_cache_ragged_rope(session):
         max_seq_len=100,
         num_layers=1,
         device=CPU(),
+        session=session,
     )
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (

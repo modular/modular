@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from max.driver import CPU, Device, Tensor
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
@@ -20,7 +21,6 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from modular_graph_test import modular_graph_test
-
 from nn import Linear
 from nn.attention import Attention
 from nn.kernels import flash_attention_ragged_with_causal_mask
@@ -42,6 +42,7 @@ def _attention_layer(
     mask_dtype: DType,
     device: Device,
     cache_strategy: KVCacheStrategy,
+    session: InferenceSession,
 ) -> tuple[Graph, KVCacheParams, ContinuousBatchingKVCacheManager]:
     # Initialize input types
     input_type = TensorType(dtype, ["batch_size", "seq_len", HIDDEN_DIM])
@@ -68,6 +69,7 @@ def _attention_layer(
         max_seq_len=MAX_SEQ_LEN,
         num_layers=NUM_LAYERS,
         device=device,
+        session=session,
     )
 
     # Fetch
@@ -139,7 +141,11 @@ def test_attention__wrong_mask_dtype():
     # This is expected to fail when passing a mask dtype that does not match the activation dtype.
     with pytest.raises(ValueError) as _:
         graph, _, _ = _attention_layer(
-            DType.float32, DType.uint8, CPU(), KVCacheStrategy.CONTINUOUS
+            DType.float32,
+            DType.uint8,
+            CPU(),
+            KVCacheStrategy.CONTINUOUS,
+            InferenceSession(device=CPU()),
         )
 
 
@@ -148,7 +154,11 @@ def test_attention__wrong_strategy():
     # Get Graph.
     with pytest.raises(ValueError) as _:
         graph, _, _ = _attention_layer(
-            DType.float32, DType.float32, CPU(), KVCacheStrategy.NAIVE
+            DType.float32,
+            DType.float32,
+            CPU(),
+            KVCacheStrategy.NAIVE,
+            InferenceSession(device=CPU()),
         )
 
 
@@ -164,7 +174,11 @@ def test_attention__valid_logits(session, start_pos, seq_len):
 
     # Get Graph
     graph, _, kv_manager = _attention_layer(
-        DType.float32, DType.float32, CPU(), KVCacheStrategy.CONTINUOUS
+        DType.float32,
+        DType.float32,
+        CPU(),
+        KVCacheStrategy.CONTINUOUS,
+        InferenceSession(device=CPU()),
     )
 
     # Claim seq_ids in cache
@@ -225,6 +239,7 @@ def test_kv_cache_ragged_attention(session):
         max_seq_len=100,
         num_layers=1,
         device=CPU(),
+        session=session,
     )
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (

@@ -33,6 +33,7 @@ async def test_kv_collection_constructor_continuous() -> None:
         max_seq_len=512,
         num_layers=32,
         device=CPU(),
+        session=session,
     )
 
     # Reserve a slot in the KV cache manager.

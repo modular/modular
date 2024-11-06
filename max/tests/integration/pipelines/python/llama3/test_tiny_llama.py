@@ -75,7 +75,9 @@ def test_tiny_llama(tinyllama_model, pipeline_tokenizer):
     weights were randomly initialized.
     """
     _ = run_model(
-        tinyllama_model.model, pipeline_tokenizer, prompts=PROMPTS[:1]
+        tinyllama_model.model,
+        pipeline_tokenizer,
+        prompts=PROMPTS[:1],
     )
 
 
@@ -94,7 +96,9 @@ def test_tiny_llama_naive_kv_cache(
     assert tinyllama_model.config.cache_strategy == KVCacheStrategy.NAIVE
 
     _ = run_model(
-        tinyllama_model.model, pipeline_tokenizer, prompts=PROMPTS[:1]
+        tinyllama_model.model,
+        pipeline_tokenizer,
+        prompts=PROMPTS[:1],
     )
 
 
@@ -226,3 +230,58 @@ async def test_tinyllama_max_new_tokens(
     generated_token_count = len(tokens)
 
     assert generated_token_count == configured_max_new_tokens
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pipeline_config", [TestParams(512, -1)], indirect=True
+)
+async def test_tinyllama_multistep_execution(
+    tinyllama_model: Llama3,
+    prompt_fixture: str,
+    max_new_tokens_fixture: int,
+    pipeline_tokenizer: Llama3Tokenizer,
+):
+    num_steps = 10
+    multistep_context = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="multistep",
+            index=0,
+            prompt=prompt_fixture,
+            model_name="llama3",
+            max_new_tokens=max_new_tokens_fixture,
+        )
+    )
+    single_step_context = await pipeline_tokenizer.new_context(
+        TokenGeneratorRequest(
+            id="single_step",
+            index=1,
+            prompt=prompt_fixture,
+            model_name="llama3",
+            max_new_tokens=max_new_tokens_fixture,
+        )
+    )
+
+    # Run the model with singlestep
+    single_step_tokens = []
+    single_step_request_id = str(uuid4())
+    for i in range(num_steps):
+        response = tinyllama_model.next_token(
+            {single_step_request_id: single_step_context}
+        )[0]
+        assert single_step_request_id in response
+        token = response[single_step_request_id]
+        single_step_tokens.append(token)
+
+    tinyllama_model.release(single_step_context)
+
+    multistep_request_id = str(uuid4())
+    response = tinyllama_model.next_token(
+        {multistep_request_id: multistep_context}, num_steps=num_steps
+    )
+    tinyllama_model.release(multistep_context)
+
+    assert len(response) == num_steps
+
+    multistep_tokens = [d[multistep_request_id] for d in response]
+    assert multistep_tokens == single_step_tokens

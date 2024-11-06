@@ -10,9 +10,8 @@ import os
 from pathlib import Path
 
 import pytest
-from llama3 import (
-    Llama3,
-    Llama3Tokenizer,
+from llama3.llama3 import (
+    load_llama3_and_kv_manager,
 )
 from max.pipelines import PipelineConfig, PreTrainedTokenGeneratorTokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
@@ -77,7 +76,7 @@ def app(tinyllama_model):
 
 
 @pytest.fixture(scope="session")
-def tinyllama_model(testdata_directory, request):
+def tinyllama_model(testdata_directory, request, session):
     """The tiny Llama 3 model that is being served.
 
     Note: Only one instance of a fixture is cached at a time.
@@ -94,8 +93,5 @@ def tinyllama_model(testdata_directory, request):
         device_spec=request.param.device_spec,
     )
 
-    tokenizer = Llama3Tokenizer(config)
-    model = Llama3(
-        config, tokenizer.delegate.eos_token_id, tokenizer.delegate.vocab_size
-    )
+    model, _ = load_llama3_and_kv_manager(config, session)
     return model

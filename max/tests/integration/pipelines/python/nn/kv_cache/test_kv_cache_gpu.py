@@ -13,6 +13,7 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
+from max.engine import InferenceSession
 
 
 def test_kv_cache_gpu():
@@ -33,6 +34,7 @@ async def _test_kv_cache_gpu():
         max_seq_len=512,
         num_layers=32,
         device=device,
+        session=InferenceSession(device=device),
     )
     seq_id = kv_manager.claim(n=1)
     seq_id = seq_id[0]

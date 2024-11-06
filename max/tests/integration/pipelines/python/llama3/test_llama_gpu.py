@@ -15,8 +15,10 @@ import pytest
 import torch
 import torch.nn.functional as F
 from evaluate_llama import SupportedTestModels
-from llama3.llama3 import Llama3
+from llama3.llama3 import load_llama3_and_kv_manager
 from llama3.llama3_token_gen import Llama3Tokenizer
+from max.driver import CUDA
+from max.engine import InferenceSession
 from max.pipelines.interfaces import TokenGeneratorRequest
 from test_common.evaluate import (
     PROMPTS,
@@ -28,7 +30,7 @@ from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
 
 if TYPE_CHECKING:
-    from nn.context import TextContext
+    from dataprocessing import TextContext
 
 
 def kl_divergence_verifier(
@@ -89,7 +91,13 @@ def test_llama(model: str, encoding: str, testdata_directory: Path) -> None:
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config(max_length=512)
     tokenizer = Llama3Tokenizer(config)
-    actual = run_model(Llama3(config), tokenizer, prompts=PROMPTS[:1])
+    session = InferenceSession(device=config.device)
+    model, _ = load_llama3_and_kv_manager(config, session)
+    actual = run_model(
+        model,
+        tokenizer,
+        prompts=PROMPTS[:1],
+    )
 
     golden_data_path = find_runtime_path(
         "torch_llama3_1_bfloat16_golden.json",
@@ -120,7 +128,8 @@ async def test_llama_ragged(model: str, encoding: str) -> None:
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config()
     tokenizer = Llama3Tokenizer(config)
-    llama = Llama3(config)
+    session = InferenceSession(device=config.device)
+    llama, _ = load_llama3_and_kv_manager(config, session)
 
     def request(prompt: str, idx: int) -> TokenGeneratorRequest:
         return TokenGeneratorRequest(
