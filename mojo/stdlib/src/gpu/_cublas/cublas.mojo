@@ -61,7 +61,7 @@ fn _get_dylib_function[
 @always_inline
 fn check_cublas_error(stat: Result):
     if stat != Result.SUCCESS:
-        print(stat)
+        print("CUBLAS ERROR:", stat)
 
 
 @always_inline

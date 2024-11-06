@@ -961,7 +961,7 @@ fn cublasLtGetProperty(
 
 
 fn cublasLtGetVersion() raises -> Int:
-    return _get_dylib_function["cublasLtGetVersion", fn () raises -> Int]()()
+    return _get_dylib_function["cublasLtGetVersion", fn () -> Int]()()
 
 
 fn cublasLtMatrixLayoutGetAttribute(
@@ -2048,14 +2048,12 @@ struct LayoutAttribute:
 
 fn cublasLtDestroy(light_handle: UnsafePointer[Context]) raises -> Result:
     return _get_dylib_function[
-        "cublasLtDestroy", fn (UnsafePointer[Context]) raises -> Result
+        "cublasLtDestroy", fn (UnsafePointer[Context]) -> Result
     ]()(light_handle)
 
 
 fn cublasLtGetCudartVersion() raises -> Int:
-    return _get_dylib_function[
-        "cublasLtGetCudartVersion", fn () raises -> Int
-    ]()()
+    return _get_dylib_function["cublasLtGetCudartVersion", fn () -> Int]()()
 
 
 fn cublasLtMatmulAlgoConfigGetAttribute(
@@ -2097,7 +2095,7 @@ fn cublasLtLoggerForceDisable() raises -> Result:
     \retval     CUBLAS_STATUS_SUCCESS        if disabled logging
     ."""
     return _get_dylib_function[
-        "cublasLtLoggerForceDisable", fn () raises -> Result
+        "cublasLtLoggerForceDisable", fn () -> Result
     ]()()
 
 
@@ -2106,7 +2104,7 @@ fn cublasLtHeuristicsCacheGetCapacity(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLtHeuristicsCacheGetCapacity",
-        fn (UnsafePointer[Int]) raises -> Result,
+        fn (UnsafePointer[Int]) -> Result,
     ]()(capacity)
 
 
