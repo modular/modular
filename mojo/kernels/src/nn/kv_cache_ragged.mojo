@@ -26,6 +26,7 @@ from register import mogg_register
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask
+from nn.mha_score_mod import IdentityScoreMod
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
@@ -1017,6 +1018,7 @@ fn _flash_attention_kv_cache_ragged_gpu[
         v,
         dummy_mask,
         CausalMask(),
+        IdentityScoreMod(),
         input_row_offset,
         scale,
         context,

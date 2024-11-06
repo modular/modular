@@ -44,6 +44,7 @@ from gpu import (
 )
 from layout.tensor_core import get_accum_type
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
+from nn.mha_score_mod import ScoreModTrait, AlibiScoreMod, IdentityScoreMod
 
 
 fn mha_decoding_cpu_seq[
@@ -235,11 +236,13 @@ fn mha_decoding_single_batch_warp_shuffle[
     v_type: DType,
     output_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     head_size: Int,
     num_heads: Int,
     group: Int,
     num_threads: Int,
     block_size: Int,  # number of rows of keys one warp processes, 32 means one row per thread
+    use_score_mod: Bool = False,
 ](
     # S = 1 because it is a decoding kernel
     # B = 1 because the offsets are calculated when this function is called
@@ -256,6 +259,7 @@ fn mha_decoding_single_batch_warp_shuffle[
     scale: Float32,
     num_keys: Int,
     mask: mask_t,
+    score_mod: score_mod_t,
 ):
     alias accum_type = get_accum_type[q_type]()
     alias k_simdwidth = simdwidthof[k_type]()
@@ -384,6 +388,18 @@ fn mha_decoding_single_batch_warp_shuffle[
                 ),
                 qk,
             )
+
+            @parameter
+            if use_score_mod:
+                qk = score_mod.score_mod(
+                    Index(
+                        int(BlockIdx.z()),
+                        int(BlockIdx.y()),
+                        num_keys - 1,
+                        int(key_idx),
+                    ),
+                    qk,
+                )
 
             # 0th thread of the thread group writes to the shared memory and also
             # update qk_max
@@ -569,11 +585,13 @@ fn mha_decoding_warp_shuffle[
     v_type: DType,
     output_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     head_size: Int,
     num_heads: Int,
     group: Int,
     num_threads: Int,
     block_size: Int,  # number of rows of keys one warp processes, 32 means one row per thread
+    use_score_mod: Bool = False,
 ](
     # S = 1 because it is a decoding kernel
     # B = 1 because the offsets are calculated when this kernel is called
@@ -590,6 +608,7 @@ fn mha_decoding_warp_shuffle[
     scale: Float32,
     num_keys: Int,
     mask: mask_t,
+    score_mod: score_mod_t,
 ):
     var batch_idx = BlockIdx.z()
     var q_batch_offset = head_size * num_heads * batch_idx
@@ -602,6 +621,7 @@ fn mha_decoding_warp_shuffle[
         group=group,
         num_threads=num_threads,
         block_size=block_size,
+        use_score_mod=use_score_mod,
     ](
         q_ptr.offset(q_batch_offset),
         k_ptr.offset(kv_batch_offset),
@@ -610,6 +630,7 @@ fn mha_decoding_warp_shuffle[
         scale,
         num_keys,
         mask,
+        score_mod,
     )
 
 
@@ -619,10 +640,12 @@ fn run_mha_decoding_warp_shuffle[
     v_type: DType,
     output_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     *,
     head_size: Int,
     num_heads: Int,
     group: Int,
+    use_score_mod: Bool = False,
 ](
     ctx: DeviceContext,
     # [B, S, H, D]
@@ -636,6 +659,7 @@ fn run_mha_decoding_warp_shuffle[
     scale: Float32,
     num_keys: Int,
     mask: mask_t,
+    score_mod: score_mod_t,
     batch_size: Int,
 ) raises:
     alias num_threads = 128
@@ -647,11 +671,13 @@ fn run_mha_decoding_warp_shuffle[
             v_type,
             output_type,
             mask_t,
+            score_mod_t,
             head_size,
             num_heads,
             group,
             num_threads,
             block_size,
+            use_score_mod,
         ],
     ]()
 
@@ -673,6 +699,7 @@ fn run_mha_decoding_warp_shuffle[
         scale,
         num_keys,
         mask,
+        score_mod,
         grid_dim=(1, num_heads // group, batch_size),
         block_dim=num_threads,
         shared_mem_bytes=shared_mem_bytes,

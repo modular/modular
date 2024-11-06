@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from math import exp2
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
+from math import iota, exp2
+from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, AddFactorMod
 from testing import assert_equal
 from utils.index import Index
 
@@ -33,14 +33,20 @@ def test_alibi_score_mod():
 
     var alibi_mod = AlibiScoreMod(num_heads)
 
-    var reference = generate_alibi_bias[type, width, num_heads](
-        SIMD[DType.index, width](0),
-        SIMD[DType.index, width](1),
-        SIMD[DType.index, width](2),
+    var head_idx = SIMD[DType.index, width](0)
+    var q_idx = SIMD[DType.index, width](2)
+    var k_idx = SIMD[DType.index, width](1)
+
+    var score_vec = SIMD[type, width](0, 1, 2, 3)
+
+    var reference = (q_idx >= (k_idx + iota[DType.index, width]())).select(
+        score_vec
+        + generate_alibi_bias[type, width, num_heads](head_idx, q_idx, k_idx),
+        score_vec,
     )
-    reference = reference + SIMD[type, width](0, 1, 2, 3)
+
     var result = alibi_mod.score_mod(
-        Index(0, 0, 1, 2), SIMD[type, width](0, 1, 2, 3)
+        Index(0, 0, 2, 1), SIMD[type, width](0, 1, 2, 3)
     )
 
     assert_equal(reference, result)
@@ -60,6 +66,30 @@ def test_identity_score_mod():
     assert_equal(reference, result)
 
 
+def test_add_factor_mod():
+    print("test_add_factor_mod")
+    alias type = DType.float32
+    alias width = 4
+    alias add_factor = 1500000
+
+    var add_factor_mod = AddFactorMod[add_factor]()
+    var q_idx = SIMD[DType.index, width](2)
+    var k_idx = SIMD[DType.index, width](1)
+
+    var score_vec = SIMD[type, width](0, 1, 2, 3)
+
+    var reference = (q_idx >= (k_idx + iota[DType.index, width]())).select(
+        score_vec + add_factor,
+        score_vec,
+    )
+    var result = add_factor_mod.score_mod(
+        Index(0, 0, 2, 1), SIMD[type, width](0, 1, 2, 3)
+    )
+
+    assert_equal(reference, result)
+
+
 def main():
     test_alibi_score_mod()
     test_identity_score_mod()
+    test_add_factor_mod()

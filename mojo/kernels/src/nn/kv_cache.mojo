@@ -31,6 +31,7 @@ from nn.flash_attention import (
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import NullMask, CausalMask
+from nn.mha_score_mod import IdentityScoreMod
 from register import mogg_register
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -1783,6 +1784,7 @@ fn _flash_attention_kv_cache_causal_mask_gpu[
         v,
         mask_nd,
         CausalMask(),
+        IdentityScoreMod(),
         valid_lengths,
         scale,
         context,
@@ -1844,6 +1846,7 @@ fn _flash_attention_kv_cache_gpu[
         v,
         mask_nd,
         NullMask(),
+        IdentityScoreMod(),
         valid_lengths,
         scale,
         context,

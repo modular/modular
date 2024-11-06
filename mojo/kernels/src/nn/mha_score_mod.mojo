@@ -94,11 +94,11 @@ struct AlibiScoreMod(ScoreModTrait):
         # coords[2] >= coords[3] ensures the current tokens is only affected by
         # itself and previous tokens.
         score_mod_vec = (q_idx >= (k_idx + iota[coords_dtype, width]())).select(
-            score_vec,
             score_vec
             + self._generate_alibi_bias[coords_dtype, type, width](
                 head_idx, q_idx, k_idx
             ),
+            score_vec,
         )
 
         return score_mod_vec
@@ -124,3 +124,42 @@ struct IdentityScoreMod(ScoreModTrait):
         score_vec: SIMD[type, width],
     ) -> SIMD[type, width]:
         return score_vec
+
+
+@value
+@register_passable("trivial")  # No effect MOCO-1205
+struct AddFactorMod[factor: Float32](ScoreModTrait):
+    """AddFactorMod adds a constant bias to attention score for q_idx >= k_idx.
+    """
+
+    @always_inline
+    fn score_mod[
+        type: DType,
+        width: Int, //,
+        *,
+        element_bitwidth: Int = bitwidthof[Int](),
+        unsigned: Bool = True,
+    ](
+        self,
+        coord: IndexList[
+            4, element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+        score_vec: SIMD[type, width],
+    ) -> SIMD[type, width]:
+        var score_mod_vec = score_vec
+
+        # coord[1] is the head index.
+        # coord[2] and coord[3] are the token index in query and key respectively.
+
+        alias coords_dtype = coord.element_type
+        var q_idx = SIMD[coords_dtype, width](coord[2])
+        var k_idx = SIMD[coords_dtype, width](coord[3])
+
+        # coords[2] >= coords[3] ensures the current tokens is only affected by
+        # itself and previous tokens.
+        score_mod_vec = (q_idx >= (k_idx + iota[coords_dtype, width]())).select(
+            score_vec + factor.cast[type](),
+            score_vec,
+        )
+
+        return score_mod_vec

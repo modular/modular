@@ -47,6 +47,7 @@ from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
+from nn.mha_score_mod import ScoreModTrait, AlibiScoreMod, IdentityScoreMod
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
 from sys import sizeof
@@ -327,6 +328,7 @@ fn flash_attention[
     q_shape: DimList, //,
     target: StringLiteral,
     add_attn_mask: Bool = True,
+    use_score_mod: Bool = False,
     use_tensor_core: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
@@ -356,6 +358,7 @@ fn flash_attention[
     ):
         return flash_attention[
             add_attn_mask=add_attn_mask,
+            use_score_mod=use_score_mod,
             target=target,
             use_tensor_core=use_tensor_core,
             config=config,
@@ -366,6 +369,7 @@ fn flash_attention[
             v,
             mask,
             NullMask(),
+            IdentityScoreMod(),
             scale,
             context.get_device_context(),
         )
@@ -377,10 +381,12 @@ fn flash_attention[
     rank: Int,
     cache_t: KVCacheT,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     type: DType,
     q_shape: DimList, //,
     target: StringLiteral,
     add_attn_mask: Bool = True,
+    use_score_mod: Bool = False,
     use_tensor_core: Bool = True,
     config: MHAConfig = MHAConfig(
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
@@ -393,6 +399,7 @@ fn flash_attention[
     v: cache_t,
     mask: NDBuffer,
     mask_functor: mask_t,
+    score_mod_functor: score_mod_t,
     valid_length: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     ctx: DeviceContext,
@@ -530,9 +537,11 @@ fn flash_attention[
                         mask.type,
                         output.type,
                         mask_t,
+                        score_mod_t,
                         config,
                         group=group,
                         use_mask_tensor=add_attn_mask,
+                        use_score_mod=use_score_mod,
                         ragged=ragged,
                     ]
                 ](
@@ -552,6 +561,7 @@ fn flash_attention[
                     max_prompt_len,
                     valid_length,
                     mask_functor,
+                    score_mod_functor,
                     grid_dim=(
                         Int(ceildiv(max_prompt_len, config.block_m())),
                         Int(config.num_heads),
@@ -605,6 +615,7 @@ fn flash_attention[
                         mask.type,
                         output.type,
                         mask_t,
+                        score_mod_t,
                         BM=BM,
                         BN=BN,
                         BK=BK,
@@ -616,6 +627,7 @@ fn flash_attention[
                         num_pipeline_stages=4,
                         group=group,
                         use_mask_tensor=add_attn_mask,
+                        use_score_mod=use_score_mod,
                         use_tensor_core=use_tensor_core,
                         ragged=ragged,
                         block_size_warp_shuffle=block_size_warp_shuffle,
@@ -645,6 +657,7 @@ fn flash_attention[
                     max_cache_valid_length,
                     valid_length,
                     mask_functor,
+                    score_mod_functor,
                     grid_dim=(1, Int(num_blocks_y), Int(batch_size)),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
@@ -699,10 +712,12 @@ fn flash_attention[
 fn flash_attention[
     rank: Int,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     type: DType,
     q_shape: DimList, //,
     target: StringLiteral,
     add_attn_mask: Bool = True,
+    use_score_mod: Bool = False,
     use_tensor_core: Bool = True,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
@@ -712,6 +727,7 @@ fn flash_attention[
     v: NDBuffer[_, rank, *_],
     mask: NDBuffer,
     mask_functor: mask_t,
+    score_mod_functor: score_mod_t,
     scale: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -796,9 +812,11 @@ fn flash_attention[
                         mask.type,
                         output.type,
                         mask_t,
+                        score_mod_t,
                         config=config,
                         group=group,
                         use_mask_tensor=add_attn_mask,
+                        use_score_mod=use_score_mod,
                     ]
                 ](
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -817,6 +835,7 @@ fn flash_attention[
                     batch_size,
                     seq_len,
                     mask_functor,
+                    score_mod_functor,
                     grid_dim=(
                         Int(ceildiv(seq_len, config.block_m())),
                         Int(num_heads),
@@ -866,6 +885,7 @@ fn flash_attention[
                         mask.type,
                         output.type,
                         mask_t,
+                        score_mod_t,
                         BM=BM,
                         BN=BN,
                         BK=BK,
@@ -877,6 +897,7 @@ fn flash_attention[
                         num_pipeline_stages=4,
                         group=group,
                         use_mask_tensor=add_attn_mask,
+                        use_score_mod=use_score_mod,
                         use_tensor_core=use_tensor_core,
                         block_size_warp_shuffle=block_size_warp_shuffle,
                     ]
@@ -903,6 +924,7 @@ fn flash_attention[
                     batch_size,
                     num_keys,
                     mask_functor,
+                    score_mod_functor,
                     grid_dim=(1, num_blocks_y, batch_size),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
@@ -1051,9 +1073,11 @@ fn mha[
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     config: MHAConfig,
     group: Int = 1,
     use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
     ragged: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
@@ -1066,6 +1090,7 @@ fn mha[
     max_seq_len: Int,  # max query length (i.e., padded query)
     valid_length: NDBuffer[DType.uint32, 1],  # valid length per batch
     mask: mask_t,
+    score_mod: score_mod_t,
 ):
     var batch_idx = BlockIdx.z()
     var seq_len: Int
@@ -1107,6 +1132,7 @@ fn mha[
         config=config,
         group=group,
         use_mask_tensor=use_mask_tensor,
+        use_score_mod=use_score_mod,
     ](
         q_ptr.offset(q_batch_offset),
         k_ptr,
@@ -1117,6 +1143,7 @@ fn mha[
         key_length,
         max_seq_len,
         mask,
+        score_mod,
     )
 
 
@@ -1129,10 +1156,12 @@ fn mha[
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     *,
     config: MHAConfig,
     group: Int = 1,
     use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_ptr: UnsafePointer[Scalar[k_type]],
@@ -1143,6 +1172,7 @@ fn mha[
     batch_size: Int,
     seq_len: Int,
     mask: mask_t,
+    score_mod: score_mod_t,
 ):
     alias depth = config.depth
     alias num_heads = config.num_heads
@@ -1158,6 +1188,7 @@ fn mha[
         config=config,
         group=group,
         use_mask_tensor=use_mask_tensor,
+        use_score_mod=use_score_mod,
     ](
         q_ptr.offset(q_batch_offset),
         k_ptr.offset(kv_batch_offset),
@@ -1168,6 +1199,7 @@ fn mha[
         seq_len,
         seq_len,
         mask,
+        score_mod,
     )
 
 
@@ -1180,10 +1212,12 @@ fn mha_single_batch[
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     *,
     config: MHAConfig,
     group: Int = 1,
     use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_ptr: UnsafePointer[Scalar[k_type]],
@@ -1194,6 +1228,7 @@ fn mha_single_batch[
     seq_len: Int,  # valid sequence length i.e. w/o padding.
     max_seq_len: Int,  # sequence length after padding.
     mask: mask_t,
+    score_mod: score_mod_t,
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -1568,6 +1603,19 @@ fn mha_single_batch[
                                 )
 
                             @parameter
+                            if use_score_mod:
+                                p_reg_vec2[mma_id, i] = score_mod.score_mod(
+                                    IndexList[
+                                        4, element_bitwidth=32, unsigned=True
+                                    ](
+                                        int(BlockIdx.z()),
+                                        int(BlockIdx.y()),
+                                        int(score_row),
+                                        int(score_col),
+                                    ),
+                                    p_reg_vec2[mma_id, i],
+                                )
+
                             if not not_last_iter:
                                 p_reg_vec2[mma_id, i] = _kernel_mask(
                                     IndexList[
@@ -1781,6 +1829,7 @@ fn mha_decoding[
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
     BK: UInt,  # tile size in depth dimension
@@ -1792,6 +1841,7 @@ fn mha_decoding[
     num_pipeline_stages: UInt,
     group: UInt = 1,
     use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
     use_tensor_core: Bool = True,
     ragged: Bool = False,
     block_size_warp_shuffle: Int = 16,
@@ -1806,6 +1856,7 @@ fn mha_decoding[
     max_cache_valid_length: Int,  # longest KV cache entry
     valid_length: NDBuffer[DType.uint32, 1],  # valid length per batch
     mask: mask_t,
+    score_mod: score_mod_t,
 ):
     var batch_idx = BlockIdx.z()
     var seq_len: Int
@@ -1858,6 +1909,7 @@ fn mha_decoding[
             num_pipeline_stages=num_pipeline_stages,
             group=group,
             use_mask_tensor=use_mask_tensor,
+            use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
             k_ptr,
@@ -1868,6 +1920,7 @@ fn mha_decoding[
             num_keys,
             max_cache_valid_length,
             mask,
+            score_mod,
         )
     else:
         mha_decoding_single_batch_warp_shuffle[
@@ -1877,6 +1930,7 @@ fn mha_decoding[
             num_threads=num_threads,
             # TODO: select block_size based on num_keys, 32 is better for large num_keys ~ 512
             block_size=block_size_warp_shuffle,
+            use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
             k_ptr,
@@ -1885,6 +1939,7 @@ fn mha_decoding[
             scale,
             num_keys,
             mask,
+            score_mod,
         )
 
 
@@ -1897,6 +1952,7 @@ fn mha_decoding[
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
     BK: UInt,  # tile size in depth dimension
@@ -1908,6 +1964,7 @@ fn mha_decoding[
     num_pipeline_stages: UInt,
     group: UInt = 1,
     use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
     use_tensor_core: Bool = True,
     block_size_warp_shuffle: Int = 16,
 ](
@@ -1920,6 +1977,7 @@ fn mha_decoding[
     batch_size: Int,
     num_keys: Int,
     mask: mask_t,
+    score_mod: score_mod_t,
 ):
     var batch_idx = BlockIdx.z()
     var q_batch_offset = depth * num_heads * batch_idx
@@ -1943,6 +2001,7 @@ fn mha_decoding[
             num_pipeline_stages=num_pipeline_stages,
             group=group,
             use_mask_tensor=use_mask_tensor,
+            use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
             k_ptr.offset(kv_batch_offset),
@@ -1953,6 +2012,7 @@ fn mha_decoding[
             num_keys,
             num_keys,
             mask,
+            score_mod,
         )
     else:
         mha_decoding_single_batch_warp_shuffle[
@@ -1962,6 +2022,7 @@ fn mha_decoding[
             num_threads=num_threads,
             # TODO: select block_size based on num_keys, 32 is better for large num_keys ~ 512
             block_size=block_size_warp_shuffle,
+            use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
             k_ptr.offset(kv_batch_offset),
@@ -1970,6 +2031,7 @@ fn mha_decoding[
             scale,
             num_keys,
             mask,
+            score_mod,
         )
 
 
@@ -1979,11 +2041,13 @@ fn scale_and_mask_helper[
     p_layout: Layout,
     mask_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     num_n_mmas: Int,
     WN: Int,
     MMA_N: Int,
     simd_width: Int,
     use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
 ](
     p_reg_tile: LayoutTensor[
         p_type, p_layout, address_space = AddressSpace.LOCAL
@@ -1995,6 +2059,7 @@ fn scale_and_mask_helper[
     lane: UInt,
     warp: UInt,
     mask: mask_t,
+    score_mod: score_mod_t,
     kv_tile_start_row: Int,
 ):
     # Apply mask and scale to mma result. Only the first row (lane 0-3) has
@@ -2038,6 +2103,7 @@ fn scale_and_mask_helper[
             for i in range(simd_width):
                 var score_row = batch_cache_valid_length
                 var score_col = kv_tile_start_row + key_offset + frag_lane_col + i
+
                 p_reg_tile[n_mma, i] = mask.mask(
                     Index(
                         int(BlockIdx.z()),
@@ -2047,6 +2113,19 @@ fn scale_and_mask_helper[
                     ),
                     p_reg_tile[n_mma, i] * scale.cast[p_type](),
                 )
+
+                @parameter
+                if use_score_mod:
+                    p_reg_tile[n_mma, i] = score_mod.score_mod(
+                        Index(
+                            int(BlockIdx.z()),
+                            int(BlockIdx.y()),
+                            int(score_row),
+                            int(score_col),
+                        ),
+                        p_reg_tile[n_mma, i],
+                    )
+
                 p_reg_tile[n_mma, i] = _kernel_mask(
                     Index(score_row, score_col),
                     Index(
@@ -2065,6 +2144,7 @@ fn mha_decoding_single_batch[
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
     *,
     BM: UInt,  # number of queries per block
     BN: UInt,  # number of keys per block
@@ -2077,6 +2157,7 @@ fn mha_decoding_single_batch[
     num_pipeline_stages: UInt,
     group: UInt = 1,
     use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_ptr: UnsafePointer[Scalar[k_type]],
@@ -2087,6 +2168,7 @@ fn mha_decoding_single_batch[
     num_keys: UInt,
     max_cache_valid_length: UInt,  # longest KV cache entry
     mask: mask_t,
+    score_mod: score_mod_t,
 ):
     """Flash attention v2 algorithm."""
     constrained[q_type == k_type and k_type == v_type]()
@@ -2288,6 +2370,7 @@ fn mha_decoding_single_batch[
             MMA_N=MMA_N,
             simd_width=p_frag_simdwidth,
             use_mask_tensor=use_mask_tensor,
+            use_score_mod=use_score_mod,
         ](
             p_reg_tile,
             mask_warp_ptr,
@@ -2297,6 +2380,7 @@ fn mha_decoding_single_batch[
             lane,
             warp_id,
             mask,
+            score_mod,
             kv_tile_start_row,
         )
         # Increment mask to next BM x BN block.
