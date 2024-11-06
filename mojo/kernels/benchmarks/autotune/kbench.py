@@ -273,6 +273,10 @@ class GridSearchStrategy:
         return self
 
     def __next__(self):
+        # Stop condition
+        if self.offset == len(self.instances):
+            raise StopIteration
+
         res = self.instances[self.offset]
         self.offset += 1
         return res
@@ -484,6 +488,7 @@ class Spec:
         # Count the number of valid filters in each instance.
         # If the count==num_filters then add the instance to the result.
         valid_cnt = np.zeros(len(self.mesh), dtype=np.int32)
+
         for k_filter, v_filter in filters.items():
             for i, s in enumerate(self.mesh):
                 for p in s.params:
