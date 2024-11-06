@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
-from gpu.host._compile import _compile_code_asm
+from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from testing import assert_true
 
 
@@ -53,6 +53,51 @@ def test_mul[dtype: DType]():
         assert_true("fma.rn.f16x2 " in _compile_code_asm[mul[width=8]]())
 
 
+def test_mul_sm90[dtype: DType]():
+    fn mul[width: Int](x: SIMD[dtype, width], y: __type_of(x)) -> __type_of(x):
+        return x * y
+
+    @parameter
+    if dtype is DType.bfloat16:
+        assert_true(
+            "mul.rn.bf16 "
+            in _compile_code_asm[
+                mul[width=1], target = _get_nvptx_target["sm_90"]()
+            ]()
+        )
+        assert_true(
+            "mul.rn.bf16x2 "
+            in _compile_code_asm[
+                mul[width=2], target = _get_nvptx_target["sm_90"]()
+            ]()
+        )
+        assert_true(
+            "mul.rn.bf16x2 "
+            in _compile_code_asm[
+                mul[width=8], target = _get_nvptx_target["sm_90"]()
+            ]()
+        )
+    else:
+        assert_true(
+            "mul.rn.f16 "
+            in _compile_code_asm[
+                mul[width=1], target = _get_nvptx_target["sm_90"]()
+            ]()
+        )
+        assert_true(
+            "mul.rn.f16x2 "
+            in _compile_code_asm[
+                mul[width=2], target = _get_nvptx_target["sm_90"]()
+            ]()
+        )
+        assert_true(
+            "mul.rn.f16x2 "
+            in _compile_code_asm[
+                mul[width=8], target = _get_nvptx_target["sm_90"]()
+            ]()
+        )
+
+
 def test_fma[dtype: DType]():
     fn fma[
         width: Int
@@ -79,6 +124,9 @@ def main():
 
     test_mul[DType.bfloat16]()
     test_mul[DType.float16]()
+
+    test_mul_sm90[DType.bfloat16]()
+    test_mul_sm90[DType.float16]()
 
     test_fma[DType.bfloat16]()
     test_fma[DType.float16]()
