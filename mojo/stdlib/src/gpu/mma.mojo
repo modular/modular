@@ -7,6 +7,7 @@
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
 from sys import _RegisterPackType, llvm_intrinsic, sizeof
+from sys._assembly import inlined_assembly
 
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, bitcast
@@ -228,6 +229,65 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c0[3],
         )
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+
+    # ===------------------------------------------------------------------===#
+    # F32 = FP8 * FP8 + F32
+    # ===------------------------------------------------------------------===#
+    elif (
+        d.type is DType.float32
+        and d.size == 4
+        and a.type is DType.float8e4m3
+        and b.type is DType.float8e4m3
+        and c.type is DType.float32
+    ):
+        var r = inlined_assembly[
+            (
+                "mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32 {$0, $1,"
+                " $2, $3}, {$4, $5, $6, $7}, {$8, $9}, {$10, $11, $12, $13};"
+            ),
+            _RegisterPackType[Float32, Float32, Float32, Float32],
+            constraints="=f,=f,=f,=f,r,r,r,r,r,r,r,r,r,r",
+        ](
+            a[0],
+            a[1],
+            a[2],
+            a[3],
+            b[0],
+            b[1],
+            c[0],
+            c[1],
+            c[2],
+            c[3],
+        )
+        d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+    elif (
+        d.type is DType.float32
+        and d.size == 4
+        and a.type is DType.float8e5m2
+        and b.type is DType.float8e5m2
+        and c.type is DType.float32
+    ):
+        var r = inlined_assembly[
+            (
+                "mma.sync.aligned.m16n8k32.row.col.f32.e5m2.e5m2.f32 {$0, $1,"
+                " $2, $3}, {$4, $5, $6, $7}, {$8, $9}, {$10, $11, $12, $13};"
+            ),
+            _RegisterPackType[Float32, Float32, Float32, Float32],
+            constraints="=f,=f,=f,=f,r,r,r,r,r,r,r,r,r,r",
+        ](
+            a[0],
+            a[1],
+            a[2],
+            a[3],
+            b[0],
+            b[1],
+            c[0],
+            c[1],
+            c[2],
+            c[3],
+        )
+        d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
+
     else:
         constrained[False, "no valid implementation of mma"]()
 
