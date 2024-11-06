@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys import alignof
+from sys import alignof, bitwidthof
 
 from memory import AddressSpace, UnsafePointer
 
@@ -16,24 +16,20 @@ from .layout import to_int
 
 
 @always_inline
-fn __get_offset[
-    i: Int, layout: Layout
-](runtime_layout: RuntimeLayout[layout]) -> Int:
+fn __get_offset[i: Int](runtime_layout: RuntimeLayout) -> Int:
     @parameter
-    if layout.all_dims_known():
-        alias offset = layout(i)
+    if runtime_layout.layout.all_dims_known():
+        alias offset = runtime_layout.layout(i)
         return offset
     else:
         return runtime_layout(i)
 
 
 @always_inline
-fn __get_offset[
-    i: Int, j: Int, layout: Layout
-](runtime_layout: RuntimeLayout[layout]) -> Int:
+fn __get_offset[i: Int, j: Int](runtime_layout: RuntimeLayout) -> Int:
     @parameter
-    if layout.all_dims_known():
-        alias offset = layout(IntTuple(i, j))
+    if runtime_layout.layout.all_dims_known():
+        alias offset = runtime_layout.layout(IntTuple(i, j))
         return offset
     else:
         return runtime_layout(
@@ -44,21 +40,23 @@ fn __get_offset[
 # Element is a wrapper around SIMD type, it extends the SIMD type to define
 # a vectorized load / store that is driven by the layout of the element.
 #
-struct Element[dtype: DType, layout: Layout](Stringable, Writable):
+struct Element[
+    dtype: DType, layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()
+](Stringable, Writable):
     alias element_data_type = SIMD[dtype, size = layout.size()]
 
     var element_data: Self.element_data_type
 
-    var runtime_layout: RuntimeLayout[layout]
+    var runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth]
 
     fn __init__(inout self, element_data: Self.element_data_type):
         self.element_data = element_data
-        self.runtime_layout = RuntimeLayout[layout]()
+        self.runtime_layout = RuntimeLayout[layout, bitwidth=bitwidth]()
 
     fn __init__(
         inout self,
         element_data: Self.element_data_type,
-        runtime_layout: RuntimeLayout[layout],
+        runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth],
     ):
         self.element_data = element_data
         self.runtime_layout = runtime_layout
@@ -66,7 +64,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
     @staticmethod
     fn load(
         ptr: UnsafePointer[Scalar[dtype], *_, **_],
-        runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
+        runtime_layout: RuntimeLayout[
+            layout, bitwidth=bitwidth
+        ] = RuntimeLayout[layout, bitwidth=bitwidth](),
     ) -> Self:
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
@@ -133,7 +133,9 @@ struct Element[dtype: DType, layout: Layout](Stringable, Writable):
     @staticmethod
     fn masked_load(
         ptr: UnsafePointer[Scalar[dtype], *_, **_],
-        runtime_layout: RuntimeLayout[layout] = RuntimeLayout[layout](),
+        runtime_layout: RuntimeLayout[
+            layout, bitwidth=bitwidth
+        ] = RuntimeLayout[layout, bitwidth=bitwidth](),
     ) -> Self:
         # TODO: Use partial_simd_load after closing KERN-729.
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
