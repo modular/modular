@@ -10,8 +10,7 @@ import os
 import queue
 import uuid
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import Awaitable, Callable, Mapping, Sequence
 
 from max.pipelines.interfaces import (
     TokenGeneratorFactory,
@@ -53,6 +52,7 @@ async def run_model_worker(
 async def start_model_worker(
     factories: TokenGeneratorFactoryMap,
     name: str = "MODEL_" + str(uuid.uuid4()),
+    timeout_secs: float = 5 * 60.0,
 ):
     """Starts a model worker and associated process.
 
@@ -67,7 +67,6 @@ async def start_model_worker(
         Iterator[AsyncIterator[Worker]]: _description_
     """
     queues = all_queues()
-    loop = asyncio.get_running_loop()
     worker = ProcessPoolWorker(
         name,
         max_workers=1,
@@ -79,18 +78,39 @@ async def start_model_worker(
     )
     assert worker.executor
     running = running_workers()
+    logger.info("Stopping existing workers: %s", running)
     if name in running:
         existing = running[name]
         existing.shutdown()
 
+    logger.info("Starting worker: %s", name)
     loop = asyncio.get_running_loop()
     worker.task = loop.create_task(
         run_model_worker(worker, factories),
         name="model_worker",
     )
-
     running[name] = worker
-    await worker.started()
+
+    # Wait for one of the following tasks to complete.
+    # 1. The worker signals started()
+    # 2. The worker task completes - likely a failure
+    worker_started = loop.create_task(worker.started())
+    completed_tasks, pending_tasks = await asyncio.wait(
+        [worker.task, worker_started],
+        timeout=timeout_secs,
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    # Handle timeout
+    if not completed_tasks:
+        worker.shutdown_event.set()
+        for p in pending_tasks:
+            p.cancel()
+        raise TimeoutError(f"Startup timed out for model worker {name}.")
+
+    # Observe completed task result.
+    for t in completed_tasks:
+        await t
 
     try:
         yield worker
@@ -108,12 +128,6 @@ def model_worker_run(factories: Mapping[str, TokenGeneratorFactory]):
         pid = os.getpid()
         logger.info("Starting model worker on process %d!", pid)
 
-        # Initialize all token generators.
-        token_generators = {
-            name: factory() for name, factory in factories.items()
-        }
-        logger.info("Token generators loaded!")
-
         # Global multiprocessing resources.
         events = all_events()
         started = events["STARTED"]
@@ -125,8 +139,14 @@ def model_worker_run(factories: Mapping[str, TokenGeneratorFactory]):
         out_q = queues["OUT"]
         cancel_q = queues["CANCEL"]
 
-        logger.info("Started model worker!")
+        # Initialize all token generators.
+        token_generators = {
+            name: factory() for name, factory in factories.items()
+        }
+        logger.info("Token generators loaded!")
+
         started.set()
+        logger.info("Started model worker!")
 
         # An important optimization here is the one-time copy of API worker
         # created contexts to the saved model worker storage below. Such contexts
