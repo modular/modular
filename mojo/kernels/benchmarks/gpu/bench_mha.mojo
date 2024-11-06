@@ -50,7 +50,7 @@ fn run_mha[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var v_size = k_size
     var o_size = q_size
-    var mask_size = num_heads * seq_len * num_keys
+    var mask_size = batch_size * num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
@@ -259,7 +259,6 @@ fn main() raises:
         num_keys=num_keys,
     )
 
-    # print(cfg)
     var m = Bench()
     try:
         with DeviceContext() as ctx:
@@ -271,17 +270,6 @@ fn main() raises:
                 cfg.group,
                 batch_size,
             ](m, cfg.seq_len, cfg.num_keys, ctx)
-
-            bench_compile_time[
-                run_mha[
-                    cfg.qkv_type,
-                    cfg.mask_type,
-                    cfg.depth,
-                    cfg.num_heads,
-                    cfg.group,
-                    batch_size,
-                ]
-            ](m, "mha" + str(cfg))
 
     except e:
         print("CUDA_ERROR:", e)
