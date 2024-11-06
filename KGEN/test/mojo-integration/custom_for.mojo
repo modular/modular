@@ -30,7 +30,7 @@ struct my_iter:
         return self.list[result]
 
     @always_inline
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     fn __len__(self: my_iter) -> Int:

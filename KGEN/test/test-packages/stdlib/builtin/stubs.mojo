@@ -381,7 +381,7 @@ struct _VariadicListMemIter[
         while True:
             pass
 
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return False
 
 
@@ -617,7 +617,7 @@ struct _StridedRangeIterator:
     var step: Int
 
     @always_inline
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return self.__len__() > 0
 
     @always_inline
@@ -647,7 +647,7 @@ trait _IntNext(Copyable):
 
 
 trait _IntIter(_IntNext):
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         ...
 
 
@@ -692,7 +692,7 @@ fn parameter_for_generator[
 fn _generator[
     IteratorT: _IntIter
 ](it: IteratorT) -> _ParamForIterator[IteratorT]:
-    if it.__hasmore__():
+    if it.__has_next__():
         var next_it = it
         var value = next_it.__next__()
         return _ParamForIterator(next_it, value, False)

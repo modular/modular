@@ -424,7 +424,7 @@ fn test_simple(a: Bool):
 struct ValueIter:
     fn __init__(inout self): pass
     fn __next__(inout self) -> Int: return 0
-    fn __hasmore__(self) -> Bool: return False
+    fn __has_next__(self) -> Bool: return False
 
 struct ListValueIter:
     fn __init__(inout self): pass
@@ -443,7 +443,7 @@ fn for_range_loop():
     for item in value_iter_list:
         # CHECK: lit.loop cond {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
-        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__hasmore__{{.*}}([[IMMREF]])
+        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
         # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
         # CHECK:   lit.loop.condition [[COND]]
         # CHECK: } body {
@@ -460,7 +460,7 @@ struct RefIter[list_mutability: Bool, //,
                list_origin: Origin[list_mutability].type]:
     fn __init__(inout self): pass
     fn __next__(inout self) -> ref [list_origin] Int: pass
-    fn __hasmore__(self) -> Bool: return False
+    fn __has_next__(self) -> Bool: return False
 
 struct ListWithRefIter:
     fn __init__(inout self): pass
@@ -477,7 +477,7 @@ fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
     for item in mut_list_ref_iter:
         # CHECK: lit.loop cond {
         # CHECK:   [[IMMREF:%.*]] = lit.ref.immut %$RANGE
-        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__hasmore__{{.*}}([[IMMREF]])
+        # CHECK:   [[LENGTH:%.*]] = lit.call {{.*}}__has_next__{{.*}}([[IMMREF]])
         # CHECK:   [[COND:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[LENGTH]])
         # CHECK:   lit.loop.condition [[COND]]
         # CHECK: } body {
@@ -509,7 +509,7 @@ struct IterRange:
     fn __iter__(self) -> Self:
         return self
 
-    fn __hasmore__(self) -> Bool:
+    fn __has_next__(self) -> Bool:
         return self.value > 0
 
     fn __next__(inout self) -> Int:

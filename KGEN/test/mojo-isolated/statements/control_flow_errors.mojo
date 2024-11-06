@@ -63,7 +63,7 @@ struct MyList_range_no_len:
 
 struct my_iter_no_next:
     fn __init__(inout self): pass
-    fn __hasmore__(self) -> Bool: return False
+    fn __has_next__(self) -> Bool: return False
 
 
 struct MyList_range_no_next:
@@ -81,7 +81,7 @@ struct MyFloat:
 struct my_iter_wrong_int:
     fn __init__(inout self): pass
     fn __next__(inout self) -> Int: return 0
-    fn __hasmore__(self: my_iter_wrong_int) -> MyFloat: return MyFloat()
+    fn __has_next__(self: my_iter_wrong_int) -> MyFloat: return MyFloat()
 
 
 struct MyList_invalid_boxed_type:
@@ -95,7 +95,7 @@ fn test():
     var my_list_no_iter = MyList_no_iter()
     var my_list_invalid_int = MyList_invalid_boxed_type()
 
-    # expected-error @+1 {{'my_iter_no_len' does not implement the '__hasmore__' method}}
+    # expected-error @+1 {{'my_iter_no_len' does not implement the '__has_next__' method}}
     for item in my_list_no_len:
         pass
 
