@@ -465,7 +465,7 @@ fn _copy_nd_buffer_to_layout_tensor[
     buff_element_layout_shape: IndexList[src_rank],
     *,
     is_async: Bool = False,
-    fill: Fill = Fill.NONE,
+    fill: OptionalReg[Scalar[dtype]] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[
@@ -608,7 +608,7 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
     mask_element_stride: IndexList[mask_rank],
     *,
     is_async: Bool = False,
-    fill: Fill = Fill.NONE,
+    fill: OptionalReg[Scalar[dtype]] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
     dst: LayoutTensor[

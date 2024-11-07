@@ -1994,7 +1994,7 @@ struct LayoutTensor[
     fn copy_from_async[
         masked: Bool = False,
         swizzle: OptionalReg[Swizzle] = None,
-        fill: Fill = Fill.NONE,
+        fill: OptionalReg[Scalar[dtype]] = None,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
@@ -2104,7 +2104,7 @@ struct LayoutTensor[
                     @parameter
                     if masked:
                         var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                        async_copy[element_size_bytes, fill = Fill.ZERO](
+                        async_copy[element_size_bytes, fill = Scalar[dtype](0)](
                             src_ptr.bitcast[dtype]() + src_idx,
                             dst_ptr + dst_idx,
                             src_copy_size,
@@ -2149,7 +2149,7 @@ struct LayoutTensor[
         src_addr_space: AddressSpace,
         src_element_layout: Layout,
         *,
-        fill: Fill = Fill.NONE,
+        fill: OptionalReg[Scalar[dtype]] = None,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
         swizzle: OptionalReg[Swizzle] = None,
     ](
@@ -2410,13 +2410,18 @@ fn copy_dram_to_sram[
 #
 @always_inline
 fn copy_dram_to_sram_async[
+    type: DType, //,
     src_thread_layout: Layout,
     dst_thread_layout: Layout,
     swizzle: Bool = False,
     masked: Bool = False,
-    fill: Fill = Fill.NONE,
+    fill: OptionalReg[Scalar[type]] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](dst: LayoutTensor, src: LayoutTensor, num_rows: Int = UNKNOWN_VALUE):
+](
+    dst: LayoutTensor[type, *_, **_],
+    src: LayoutTensor,
+    num_rows: Int = UNKNOWN_VALUE,
+):
     constrained[
         src.address_space == _GPUAddressSpace.GENERIC,
         "src address space must be GENERIC.",
@@ -2485,17 +2490,23 @@ fn copy_dram_to_sram_async[
 #
 @always_inline
 fn copy_dram_to_sram_async[
+    type: DType, //,
     thread_layout: Layout,
     swizzle: Bool = False,
     masked: Bool = False,
-    fill: Fill = Fill.NONE,
+    fill: OptionalReg[Scalar[type]] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](dst: LayoutTensor, src: LayoutTensor, num_rows: Int = UNKNOWN_VALUE):
+](
+    dst: LayoutTensor[type, *_, **_],
+    src: LayoutTensor,
+    num_rows: Int = UNKNOWN_VALUE,
+):
     copy_dram_to_sram_async[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
         swizzle=swizzle,
         masked=masked,
+        fill=fill,
         eviction_policy=eviction_policy,
     ](dst, src, num_rows)
 
