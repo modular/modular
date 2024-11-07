@@ -422,9 +422,9 @@ struct DeviceFunctionV2[
     @no_inline
     @staticmethod
     fn dump_rep[
-        dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
     ]() raises:
         @parameter
         if _ptxas_info_verbose:
@@ -432,33 +432,33 @@ struct DeviceFunctionV2[
             print(_ptxas_compile[target](ptx, options="-v"))
 
         @parameter
-        if Self._dump_q[dump_ptx]():
+        if Self._dump_q[dump_asm]():
             alias ptx = Self._cleanup_asm(Self._func_impl.asm)
 
             @parameter
-            if dump_ptx.isa[fn () capturing -> Path]():
-                alias dump_ptx_fn = dump_ptx.unsafe_get[
+            if dump_asm.isa[fn () capturing -> Path]():
+                alias dump_asm_fn = dump_asm.unsafe_get[
                     fn () capturing -> Path
                 ]()
-                dump_ptx_fn().write_text(ptx)
-            elif dump_ptx.isa[Path]():
-                dump_ptx.unsafe_get[Path]().write_text(ptx)
+                dump_asm_fn().write_text(ptx)
+            elif dump_asm.isa[Path]():
+                dump_asm.unsafe_get[Path]().write_text(ptx)
             else:
                 print(ptx)
 
         @parameter
-        if Self._dump_q[dump_sass]():
+        if Self._dump_q[_dump_sass]():
             alias ptx = Self._cleanup_asm(Self._func_impl.asm)
             var sass = _to_sass[target](ptx)
 
             @parameter
-            if dump_sass.isa[fn () capturing -> Path]():
-                alias dump_sass_fn = dump_sass.unsafe_get[
+            if _dump_sass.isa[fn () capturing -> Path]():
+                alias _dump_sass_fn = _dump_sass.unsafe_get[
                     fn () capturing -> Path
                 ]()
-                dump_sass_fn().write_text(sass)
-            elif dump_sass.isa[Path]():
-                dump_sass.unsafe_get[Path]().write_text(sass)
+                _dump_sass_fn().write_text(sass)
+            elif _dump_sass.isa[Path]():
+                _dump_sass.unsafe_get[Path]().write_text(sass)
             else:
                 print(sass)
 
@@ -717,9 +717,9 @@ struct DeviceContextV2:
         func_type: AnyTrivialRegType, //,
         func: func_type,
         *,
-        dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
         target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
         _is_failable: Bool = False,
         _ptxas_info_verbose: Bool = False,
@@ -739,7 +739,7 @@ struct DeviceContextV2:
     ] as result:
         alias result_type = __type_of(result)
         result_type.dump_rep[
-            dump_ptx=dump_ptx, dump_llvm=dump_llvm, dump_sass=dump_sass
+            dump_asm=dump_asm, dump_llvm=dump_llvm, _dump_sass=_dump_sass
         ]()
         result = result_type(
             self,

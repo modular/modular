@@ -265,9 +265,9 @@ struct DeviceContextVariant:
         func_type: AnyTrivialRegType, //,
         func: func_type,
         *,
-        dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
         target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
         _is_failable: Bool = False,
         _ptxas_info_verbose: Bool = False,
@@ -289,9 +289,9 @@ struct DeviceContextVariant:
         if _device_ctx_v2():
             return self.v2().compile_function[
                 func,
-                dump_ptx=dump_ptx,
+                dump_asm=dump_asm,
                 dump_llvm=dump_llvm,
-                dump_sass=dump_sass,
+                _dump_sass=_dump_sass,
                 target=target,
                 _is_failable=_is_failable,
                 _ptxas_info_verbose=_ptxas_info_verbose,
@@ -305,9 +305,9 @@ struct DeviceContextVariant:
         else:
             return self.v1().compile_function[
                 func,
-                dump_ptx=dump_ptx,
+                dump_asm=dump_asm,
                 dump_llvm=dump_llvm,
-                dump_sass=dump_sass,
+                _dump_sass=_dump_sass,
                 target=target,
                 _is_failable=_is_failable,
                 _ptxas_info_verbose=_ptxas_info_verbose,

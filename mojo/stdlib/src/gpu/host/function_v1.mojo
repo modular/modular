@@ -434,9 +434,9 @@ struct Function[
     @no_inline
     @staticmethod
     fn dump_rep[
-        dump_ptx: Variant[Bool, Path, fn () capturing -> Path] = False,
+        dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
-        dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
+        _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
     ]() raises:
         @parameter
         if _ptxas_info_verbose:
@@ -444,33 +444,33 @@ struct Function[
             print(_ptxas_compile[target](ptx, options="-v"))
 
         @parameter
-        if _dump_q[dump_ptx]():
+        if _dump_q[dump_asm]():
             alias ptx = _cleanup_asm(Self._impl.asm)
 
             @parameter
-            if dump_ptx.isa[fn () capturing -> Path]():
-                alias dump_ptx_fn = dump_ptx.unsafe_get[
+            if dump_asm.isa[fn () capturing -> Path]():
+                alias dump_asm_fn = dump_asm.unsafe_get[
                     fn () capturing -> Path
                 ]()
-                dump_ptx_fn().write_text(ptx)
-            elif dump_ptx.isa[Path]():
-                dump_ptx.unsafe_get[Path]().write_text(ptx)
+                dump_asm_fn().write_text(ptx)
+            elif dump_asm.isa[Path]():
+                dump_asm.unsafe_get[Path]().write_text(ptx)
             else:
                 print(ptx)
 
         @parameter
-        if _dump_q[dump_sass]():
+        if _dump_q[_dump_sass]():
             alias ptx = _cleanup_asm(Self._impl.asm)
             var sass = _to_sass[target](ptx)
 
             @parameter
-            if dump_sass.isa[fn () capturing -> Path]():
-                alias dump_sass_fn = dump_sass.unsafe_get[
+            if _dump_sass.isa[fn () capturing -> Path]():
+                alias _dump_sass_fn = _dump_sass.unsafe_get[
                     fn () capturing -> Path
                 ]()
-                dump_sass_fn().write_text(sass)
-            elif dump_sass.isa[Path]():
-                dump_sass.unsafe_get[Path]().write_text(sass)
+                _dump_sass_fn().write_text(sass)
+            elif _dump_sass.isa[Path]():
+                _dump_sass.unsafe_get[Path]().write_text(sass)
             else:
                 print(sass)
 
