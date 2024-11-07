@@ -70,12 +70,32 @@ fn _run_device_info(ctx: DeviceContext) raises:
 
 
 fn _run_compute_capability(ctx: DeviceContext) raises:
+    print("-")
+    print("_run_compute_capability()")
+
     print("Compute capability: " + str(ctx.compute_capability()))
 
 
 fn _run_get_attribute(ctx: DeviceContext) raises:
+    print("-")
+    print("_run_get_attribute()")
+
     print("clock_rate: " + str(ctx.get_attribute(DeviceAttribute.CLOCK_RATE)))
     print("warp_size: " + str(ctx.get_attribute(DeviceAttribute.WARP_SIZE)))
+
+
+fn _run_access_peer(ctx: DeviceContext, peer: DeviceContext) raises:
+    print("-")
+    print("_run_access_peer()")
+
+    print(
+        "can access "
+        + ctx.name()
+        + "->"
+        + peer.name()
+        + ": "
+        + str(ctx.can_access(peer))
+    )
 
 
 fn main() raises:
@@ -87,5 +107,7 @@ fn main() raises:
     _run_device_info(ctx)
     _run_compute_capability(ctx)
     _run_get_attribute(ctx)
+
+    _run_access_peer(ctx, create_test_device_context())
 
     print("Done.")
