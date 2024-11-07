@@ -11,10 +11,9 @@ from time import sleep, time
 from typing import Any, Literal, Union
 
 import numpy as np
-from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
-
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.pipelines.tokenizer import PreTrainedTokenGeneratorTokenizer
+from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 
 @dataclass
@@ -50,7 +49,7 @@ class PerformanceFakingTokenGeneratorTokenizer(
         return PerformanceFakingContext(
             prompt_length,
             0,
-            0,
+            prompt_length,
             num_tokens,
             request.prompt,
             np.array(encoded_prompt),
@@ -127,6 +126,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             wait_time = self._ce_time_ms([x.prompt_len for x in batch.values()])
             for _, ctx in batch.items():
                 ctx.context_len += ctx.prompt_len
+                ctx.seq_len = 1
         else:
             # token generation mode
             self.logger.debug(

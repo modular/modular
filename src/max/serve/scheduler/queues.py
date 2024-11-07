@@ -71,6 +71,9 @@ class BatchQueueConfig:
     max_forward_steps: int = 1
     """Maximum number of forwards steps to schedule at a time."""
 
+    target_sum_seq_len: Optional[int] = None
+    """Target sum of the sequence lengths in the batch."""
+
 
 YieldPredicate = Callable[[], bool]
 
@@ -178,16 +181,29 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
         max_batch_size: int,
         timeout_s: float = 0.0,
     ):
+        # track the sum of the sequence lengths if it is batch break condition
+        # fall back to 0 if the opaque context doesn't have a seq_len field
+        if self.config.target_sum_seq_len is not None:
+            sum_seq_len = sum(getattr(v, "seq_len", 0) for v in batch.values())
+
         if timeout_s == 0.0:
             # Fast path for timeout_s == 0
             while len(batch) < max_batch_size:
                 try:
                     req_id, data = self.in_queue.get_nowait()
                     batch[req_id] = data
+                    if self.config.target_sum_seq_len is not None:
+                        sum_seq_len += getattr(data, "seq_len", 0)
                 except asyncio.QueueEmpty:
                     # check if we should wait longer for an upstream condition
                     if (self.should_yield is None) or (not self.should_yield()):
                         return
+                # if the batch has hit the target sum sequence length, break early
+                if (
+                    self.config.target_sum_seq_len is not None
+                    and sum_seq_len > self.config.target_sum_seq_len
+                ):
+                    return
                 await asyncio.sleep(0)
         else:
             end = monotonic() + timeout_s
@@ -198,7 +214,16 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                         self.in_queue.get(), timeout=remaining
                     )
                     batch[req_id] = item
+                    if self.config.target_sum_seq_len is not None:
+                        sum_seq_len += getattr(item, "seq_len")
                 except asyncio.TimeoutError:
+                    return
+
+                # if the batch has hit the target sum sequence length, break early
+                if (
+                    self.config.target_sum_seq_len is not None
+                    and sum_seq_len > self.config.target_sum_seq_len
+                ):
                     return
 
     async def respond(self, batch_responses: BatchOutputsMapping):
@@ -240,7 +265,9 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
             while True:
                 batch: BatchInputs = {}
                 await self.fill_batch(
-                    batch, self.config.size, self.config.timeout
+                    batch,
+                    self.config.size,
+                    self.config.timeout,
                 )
                 if batch:
                     if self.debug_logging:

@@ -33,6 +33,7 @@ from max.serve.scheduler.queues import (
 
 logger = logging.getLogger(__name__)
 
+
 register_mp_queue("MODEL_IN")
 register_mp_queue("MODEL_OUT")
 register_mp_queue("MODEL_CANCEL")
@@ -166,20 +167,17 @@ def model_worker_run(factories: Mapping[str, TokenGeneratorFactory]):
             for entry in batches:
                 model = token_generators[entry.model_name]
                 batch = {}
-                decode_only = True
                 for req_id, context in entry.batch.items():
                     if req_id in saved_contexts:
                         # Seen this context before. Use model side instance.
                         batch[req_id] = saved_contexts[req_id]
                     elif context is not None:
-                        decode_only = False
                         batch[req_id] = saved_contexts[req_id] = context
 
                 if not batch:
                     continue
 
                 batch_responses_list = model.next_token(batch, entry.num_steps)
-
                 out_q.queue.put_nowait((entry.batch_key, batch_responses_list))
 
                 already_completed = set()

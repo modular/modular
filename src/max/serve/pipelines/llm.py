@@ -7,11 +7,11 @@
 from __future__ import annotations
 
 import asyncio
-from functools import partial
 import logging
 import os
 import signal
 from dataclasses import dataclass, field
+from functools import partial
 from typing import AsyncGenerator, Callable, Generic, Mapping, Optional, TypeVar
 
 from max.pipelines.interfaces import (
@@ -23,8 +23,8 @@ from max.serve.scheduler.queues import (
     BatchMultiplexQueue,
     BatchQueueConfig,
 )
-from max.serve.telemetry.stopwatch import StopWatch
 from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.stopwatch import StopWatch
 
 
 @dataclass(frozen=True)
@@ -85,6 +85,7 @@ class TokenGeneratorPipelineConfig:
         ce_batch_size: int,
         ce_batch_timeout=0.1,
         max_forward_steps=1,
+        target_ce_batch_tokens=4096,
     ) -> TokenGeneratorPipelineConfig:
         """The continuous-hetrogenous config creates 2 queues.
         Context-encoding is done via dynamic batching.
@@ -100,6 +101,7 @@ class TokenGeneratorPipelineConfig:
             strategy=BatchingStrategy.DYNAMIC,
             size=ce_batch_size,
             timeout=ce_batch_timeout,
+            target_sum_seq_len=target_ce_batch_tokens,
         )
         config = cls(
             context_encoding=context_encoding_config,
