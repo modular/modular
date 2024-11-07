@@ -97,12 +97,12 @@ fn copy_with_src_size(
         smem[i] = -1.0
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
-    async_copy[16, fill = Float32(0)](src, smem, src_size)
+    async_copy[16, fill = Fill.ZERO](src, smem, src_size)
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
     # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
     # is no OOB access.
-    async_copy[16, fill = Float32(0)](src + 4, smem + 4, 0)
+    async_copy[16, fill = Fill.ZERO](src + 4, smem + 4, 0)
     async_copy_wait_all()
 
     for i in range(8):

@@ -164,10 +164,10 @@ fn test_async_copy_with_zero_fill_kernel(
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
-    async_copy[4, bypass_L1_16B=False, l2_prefetch=128, fill = Float32(0)](
+    async_copy[4, bypass_L1_16B=False, l2_prefetch=128, fill = Fill.ZERO](
         src, shared_mem
     )
-    async_copy[16, bypass_L1_16B=False, l2_prefetch=64, fill = Float32(0)](
+    async_copy[16, bypass_L1_16B=False, l2_prefetch=64, fill = Fill.ZERO](
         src, shared_mem
     )
 
