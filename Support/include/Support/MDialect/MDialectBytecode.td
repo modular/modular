@@ -98,6 +98,7 @@ def TargetInfoAttr : DialectAttribute<(attr
   LLVMRelocModel:$relocation_model,
   SignedVarInt:$simd_bit_width,
   OptionalInt64:$index_bit_width,
+  OptionalInt64:$warp_size,
   String:$tune_cpu
 )>;
 
