@@ -7,9 +7,10 @@
 
 from math import ceildiv
 from random import random_si64
-
-from gpu import WARP_SIZE, BlockIdx
+from sys import warpsize
+from gpu import BlockIdx
 from gpu.host import DeviceContext
+from gpu.host.info import DEFAULT_GPU_TARGET
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from linalg.matmul_gpu import matmul_kernel_naive
@@ -275,7 +276,7 @@ fn run_mma_fp32_tf32(
             N,
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * warpsize[DEFAULT_GPU_TARGET](),
         )
 
     var nstime = 0.0
@@ -427,7 +428,7 @@ fn run_mma_fp32_bf16(
             N,
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * warpsize[DEFAULT_GPU_TARGET](),
         )
 
     var nstime = 0.0
@@ -577,7 +578,7 @@ fn run_mma_fp32_bf16_2(
             N,
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * warpsize[DEFAULT_GPU_TARGET](),
         )
 
     var nstime = 0.0
@@ -727,7 +728,7 @@ fn run_mma_fp32_fp16(
             N,
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * warpsize[DEFAULT_GPU_TARGET](),
         )
 
     var nstime = 0.0
@@ -878,7 +879,7 @@ fn run_mma_fp16_fp16(
             N,
             K,
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * warpsize[DEFAULT_GPU_TARGET](),
         )
 
     var nstime = 0.0
