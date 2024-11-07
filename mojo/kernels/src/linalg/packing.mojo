@@ -12,7 +12,7 @@ from algorithm import unswitch
 from buffer.buffer import Buffer, NDBuffer, partial_simd_load
 from buffer.dimlist import DimList
 from memory import UnsafePointer, memcpy, stack_allocation
-from register import mogg_register
+from register import register_internal
 
 from utils.index import Index, IndexList
 from utils.loop import unroll
@@ -572,7 +572,7 @@ fn _pack_matmul_b_shape_func_impl[
     return output
 
 
-@mogg_register("pack_matmul_b_shape_func")
+@register_internal("pack_matmul_b_shape_func")
 @always_inline
 fn pack_matmul_b_shape_func[
     a_type: DType,
@@ -795,7 +795,7 @@ fn _pack_b_ndbuffer_impl[
         dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
-@mogg_register("layout_transform_KN_to_KNkni")
+@register_internal("layout_transform_KN_to_KNkni")
 fn pack_b_ndbuffer[
     a_type: DType,
     a_shape: DimList,
@@ -824,7 +824,7 @@ fn pack_b_ndbuffer[
     ](b_input, output_buffer, kernel_type_m)
 
 
-@mogg_register("layout_transform_NK_to_KNkni")
+@register_internal("layout_transform_NK_to_KNkni")
 fn pack_transposed_b_ndbuffer[
     a_type: DType,
     a_shape: DimList,

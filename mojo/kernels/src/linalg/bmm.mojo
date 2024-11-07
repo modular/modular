@@ -21,7 +21,7 @@ from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import DeviceContext
 from memory import UnsafePointer, memset_zero
-from register import mogg_register, mogg_register_shape_func
+from register import register_internal, register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -611,7 +611,7 @@ fn batched_matmul[
         ](c_buf, a_buf, b_buf, context.get_device_context())
 
 
-@mogg_register_shape_func("mo.batch_matmul")
+@register_internal_shape_func("mo.batch_matmul")
 @always_inline
 fn batched_matmul_shape[
     rank: Int,

@@ -8,14 +8,14 @@
 from algorithm.functional import elementwise, unswitch
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from register import mogg_register
+from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, IndexList
 
 
-@mogg_register("mo.linalg.band_part")
+@register_internal("mo.linalg.band_part")
 @always_inline
 fn matrix_band_part[
     type: DType,
