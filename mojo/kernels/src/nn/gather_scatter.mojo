@@ -1482,6 +1482,20 @@ fn _gather_nd_impl[
         for i in range(0, num_tail_elems):
             data_idx[src_start + i] = output_idx[output_start + i]
 
+        @parameter
+        for i in range(data_rank):
+            debug_assert(
+                data_idx[i] >= 0 and data_idx[i] < data.dim[i](),
+                "data index out of bounds",
+            )
+
+        @parameter
+        for i in range(output_rank):
+            debug_assert(
+                output_idx[i] >= 0 and output_idx[i] < output.dim[i](),
+                "output index out of bounds",
+            )
+
         output.store[width=simd_width](
             output_idx, data.load[width=simd_width](data_idx)
         )
