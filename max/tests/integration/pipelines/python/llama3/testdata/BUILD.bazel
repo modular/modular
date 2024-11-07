@@ -25,17 +25,21 @@ modular_py_binary(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        requirement("accelerate"),  # Required transformers integration.
         requirement("sentencepiece"),
         requirement("numpy"),
         requirement("click"),
         requirement("tokenizers"),
         requirement("transformers"),
-        requirement("torch"),
+        "//SDK/integration-test/pipelines/python:accelerate",  # Required transformers integration.
+        "//SDK/integration-test/pipelines/python:torch",
         "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
     ],
 )
 
+# Deprecated.  Instead, use run_torch_llama with
+# --//SDK/integration-test/pipelines/python:use_gpu_torch=true on the Bazel
+# command line.
+# TODO(akirchhoff): Remove run_torch_llama_gpu.
 modular_py_binary(
     name = "run_torch_llama_gpu",
     srcs = ["run_torch_llama.py"],

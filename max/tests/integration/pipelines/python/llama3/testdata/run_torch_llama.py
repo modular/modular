@@ -66,8 +66,8 @@ def run_torch_llama3(
 
     def store_logits(input_ids: torch.LongTensor, scores: torch.FloatTensor):
         _ = input_ids  # Unused.
-        scores = scores[0]  # Currently always passing in one batch at a time.
-        scores_np = scores.cpu().detach().numpy()
+        # Currently always passing in one batch at a time.
+        scores_np = scores[0].cpu().detach().numpy()
         next_token = scores_np.argmax(axis=-1)
         saved_logits.append(
             {

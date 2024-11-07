@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
 modular_py_binary(
@@ -31,18 +32,18 @@ modular_py_binary(
     name = "verify_pipelines",
     srcs = ["verify_pipelines.py"],
     data = [
+        ":generate_llm_logits",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
-        "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
         "//SDK/integration-test/pipelines/python/llama3:verify",
-        "//SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama",
         "@llvm-project//compiler-rt:orc_rt",
         "@rules_python//python/runfiles",
         "@torch_llama_golden",
+        "@torch_mistral_golden",
+        "@torch_replit_golden",
     ],
     env = {
-        "LLAMA3_MODULAR_BIN": "$(execpath //SDK/integration-test/pipelines/python/llama3:evaluate_llama)",
-        "LLAMA3_TORCH_BIN": "$(execpath //SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama)",
+        "GENERATE_LLM_LOGITS_BIN": "$(execpath :generate_llm_logits)",
         "LLAMA3_VERIFY_BIN": "$(execpath //SDK/integration-test/pipelines/python/llama3:verify)",
         # MODULAR_CUDA_QUERY_PATH is required by the Llama3 scripts.
         "MODULAR_CUDA_QUERY_PATH": "$(execpath //Kernels/tools/gpu-query)",
@@ -86,5 +87,69 @@ modular_py_test(
         "//SDK/public/max-repo/pipelines/python:pipelines",
         requirement("transformers"),
         requirement("gguf"),
+    ],
+)
+
+bool_flag(
+    name = "use_gpu_torch",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "using_gpu_torch",
+    flag_values = {":use_gpu_torch": "true"},
+)
+
+alias(
+    name = "torch",
+    actual = select({
+        ":using_gpu_torch": "@vllm//:torch",
+        "//conditions:default": requirement("torch"),
+    }),
+    visibility = [":__subpackages__"],
+)
+
+alias(
+    name = "accelerate",
+    actual = select({
+        ":using_gpu_torch": "@vllm//:accelerate",
+        "//conditions:default": requirement("accelerate"),
+    }),
+    visibility = [":__subpackages__"],
+)
+
+modular_py_binary(
+    name = "generate_llm_logits",
+    srcs = [
+        "generate_llm_logits.py",
+        "replit_compat.py",
+    ],
+    data = [
+        "//KGEN:CompilerRT",
+        "//Kernels/tools/gpu-query",
+        "//SDK/integration-test/pipelines/python/llama3/testdata",
+        "//Support/tools/system-info",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
+        "PIPELINES_TESTDATA": (
+            "SDK/integration-test/pipelines/python/llama3/testdata"
+        ),
+    },
+    imports = ["."],
+    main = "generate_llm_logits.py",
+    tags = ["no-mypy"],  # TODO(SDLC-1401): Currently spuriously fails (picks up llama3 directory in here instead of pipelines llama3) -- remove once SDLC-1401 is fixed.
+    visibility = ["//visibility:public"],
+    deps = [
+        ":torch",
+        "//SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama",
+        "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/public/max-repo/pipelines/python/llama3",
+        "//SDK/public/max-repo/pipelines/python/mistral",
+        "//SDK/public/max-repo/pipelines/python/replit",
+        requirement("click"),
+        requirement("einops"),  # Req'd by replit
+        requirement("transformers"),
     ],
 )

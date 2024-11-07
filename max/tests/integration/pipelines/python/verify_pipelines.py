@@ -20,6 +20,11 @@ import click
 DUMMY_PIPELINE = "dummy"
 
 
+class DeviceType(enum.Enum):
+    CPU = "cpu"
+    GPU = "gpu"
+
+
 class VerificationVerdict(enum.Enum):
     OK = "ok"
     INVALID = "invalid"
@@ -41,7 +46,10 @@ def resolve_rlocation(rloc: str) -> Path:
     from python.runfiles import runfiles
 
     r = runfiles.Create()
-    return Path(r.Rlocation(rloc))
+    resolved = r.Rlocation(rloc)
+    if resolved is None:
+        raise FileNotFoundError(f"Rlocation {rloc!r} could not be resolved")
+    return Path(resolved)
 
 
 def dump_results(
@@ -51,10 +59,38 @@ def dump_results(
         print(f"  {verdict.emoji} {pipeline}", file=to)
 
 
-def run_llama_verification(
+def generate_llm_logits(
     *,
-    model: str,
+    framework: str,
+    device: DeviceType,
+    pipeline: str,
+    version: str,
     encoding: str,
+    output_path: Path,
+) -> None:
+    """Run :generate_llm_logits to generate logits for a model."""
+    subprocess.run(
+        [
+            os.environ["GENERATE_LLM_LOGITS_BIN"],
+            f"--framework={framework}",
+            f"--device={device.value}",
+            f"--pipeline={pipeline}",
+            f"--version={version}",
+            f"--encoding={encoding}",
+            f"--output={output_path}",
+        ],
+        check=True,
+    )
+    pass
+
+
+def run_llm_verification(
+    *,
+    device_type: DeviceType,
+    pipeline: str,
+    version: str,
+    encoding: str,
+    pregenerated_torch_goldens_rlocation: Optional[str] = None,
     kl_div_threshold: float,
     cos_dist_threshold: float,
     absolute_tolerance: float,
@@ -69,47 +105,42 @@ def run_llama_verification(
     SDK/integration-test/pipelines/python/llama3/verify.py -- check that script
     for details on acceptable flags.
     """
-    subprocess.run(
-        [
-            os.environ["LLAMA3_MODULAR_BIN"],
-            "--model",
-            model,
-            "--encoding",
-            encoding,
-        ],
-        check=True,
+    max_golden_path = Path(
+        f"/tmp/goldens_max_{device_type.value}_{pipeline}_{version}_{encoding}.json"
     )
-    modular_golden_file = next(
-        iter(Path("/tmp").glob(f"{model}_{encoding}_*_golden.json"))
+    generate_llm_logits(
+        framework="max",
+        device=device_type,
+        pipeline=pipeline,
+        version=version,
+        encoding=encoding,
+        output_path=max_golden_path,
     )
-    if encoding == "bfloat16":
+    if pregenerated_torch_goldens_rlocation is not None:
         # This workflow runs on an A10.  The Torch reference runs out of memory
         # on an A10, so it was run manually on an A100 and the result goldens
         # uploaded.  Use these pre-generated goldens in this case.
-        torch_golden_file = resolve_rlocation(
-            f"torch_llama_golden/torch_{model}_{encoding}_golden.json"
+        torch_golden_path = resolve_rlocation(
+            pregenerated_torch_goldens_rlocation
         )
-        # Note: If there were no memory issue and we were to run with GPU, the
-        # invocation would still need to differ in that 'run_torch_llama_gpu'
-        # must be used instead of 'run_torch_llama'.
     else:
-        subprocess.run(
-            [
-                os.environ["LLAMA3_TORCH_BIN"],
-                "--model",
-                model,
-                "--encoding",
-                encoding,
-            ],
-            check=True,
+        torch_golden_path = Path(
+            f"/tmp/goldens_torch_{device_type.value}_{pipeline}_{version}_{encoding}.json"
         )
-        torch_golden_file = Path(f"/tmp/torch_{model}_{encoding}_golden.json")
+        generate_llm_logits(
+            framework="torch",
+            device=device_type,
+            pipeline=pipeline,
+            version=version,
+            encoding=encoding,
+            output_path=torch_golden_path,
+        )
     try:
         subprocess.run(
             [
                 os.environ["LLAMA3_VERIFY_BIN"],
-                str(modular_golden_file),
-                str(torch_golden_file),
+                str(max_golden_path),
+                str(torch_golden_path),
                 "--eval-metric=tol,cos,kl",
                 f"--kl-div-threshold={kl_div_threshold}",
                 f"--cos-dist-threshold={cos_dist_threshold}",
@@ -123,11 +154,6 @@ def run_llama_verification(
     return VerificationVerdict.OK
 
 
-class DeviceType(enum.Enum):
-    CPU = "cpu"
-    GPU = "gpu"
-
-
 @dataclass
 class PipelineDef:
     """Definition of the requirements and method of running a pipeline.
@@ -139,11 +165,11 @@ class PipelineDef:
     """
 
     compatible_with: Sequence[DeviceType]
-    run: Callable[[], VerificationVerdict]
+    run: Callable[[DeviceType], VerificationVerdict]
 
-    def run_protected(self) -> VerificationVerdict:
+    def run_protected(self, device_type: DeviceType) -> VerificationVerdict:
         try:
-            return self.run()
+            return self.run(device_type)
         except Exception:
             traceback.print_exc()
             return VerificationVerdict.ERROR
@@ -152,8 +178,10 @@ class PipelineDef:
 PIPELINES = {
     "llama3_1-q4_k": PipelineDef(
         compatible_with=[DeviceType.CPU],
-        run=lambda: run_llama_verification(
-            model="llama3_1",
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="llama",
+            version="llama3_1",
             encoding="q4_k",
             # TODO(AIPIPE-135): Something is wildly wrong about our Q4_K
             # pipeline.  We only pass with these sky-high tolerances --
@@ -167,8 +195,10 @@ PIPELINES = {
     ),
     "llama3_1-float32": PipelineDef(
         compatible_with=[DeviceType.CPU],
-        run=lambda: run_llama_verification(
-            model="llama3_1",
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="llama",
+            version="llama3_1",
             encoding="float32",
             kl_div_threshold=0.005,
             cos_dist_threshold=0.002,
@@ -180,9 +210,14 @@ PIPELINES = {
     ),
     "llama3_1-bfloat16": PipelineDef(
         compatible_with=[DeviceType.GPU],
-        run=lambda: run_llama_verification(
-            model="llama3_1",
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="llama",
+            version="llama3_1",
             encoding="bfloat16",
+            pregenerated_torch_goldens_rlocation=(
+                "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
+            ),
             kl_div_threshold=0.005,
             cos_dist_threshold=0.002,
             # TODO(AIPIPE-134): The absolute and relative differences here seem
@@ -191,6 +226,58 @@ PIPELINES = {
             relative_tolerance=2.1,
         ),
     ),
+    "replit-code-v1_5-3b-float32": PipelineDef(
+        compatible_with=[DeviceType.CPU],
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="replit",
+            version="replit-code-v1_5-3b",
+            encoding="float32",
+            kl_div_threshold=1e-3,
+            cos_dist_threshold=1e-3,
+            absolute_tolerance=1e-4,
+            relative_tolerance=1e-3,
+        ),
+    ),
+    "replit-code-v1_5-3b-bfloat16": PipelineDef(
+        compatible_with=[DeviceType.GPU],
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="replit",
+            version="replit-code-v1_5-3b",
+            encoding="bfloat16",
+            pregenerated_torch_goldens_rlocation="torch_replit_golden/torch_replit-code-v1_5-3b_bfloat16_golden.json",
+            # TODO(AIPIPE-166): Replit on GPU currently has very large
+            # deviation between MAX and Torch, almost certainly a bug
+            # somewhere, so these thresholds are extremely high.  Once the
+            # deviation has been fixed, these thresholds should be adjusted
+            # down to be more reasonable.
+            kl_div_threshold=float("inf"),
+            cos_dist_threshold=1.5,
+            absolute_tolerance=100,
+            relative_tolerance=2.5,
+        ),
+    ),
+    # TODO(AIPIPE-165): Mistral is currently broken in main, so this won't work
+    # right now.  Re-enable (after dinding appropriate thresholds) once Mistral
+    # is fixed.
+    # "mistral-nemo-instruct-2407-bfloat16": PipelineDef(
+    #     compatible_with=[DeviceType.GPU],
+    #     run=lambda device_type: run_llm_verification(
+    #         device_type=device_type,
+    #         pipeline="mistral",
+    #         version="nemo-instruct-2407",
+    #         encoding="bfloat16",
+    #         pregenerated_torch_goldens_rlocation=(
+    #             "torch_mistral_golden/torch_nemo-instruct-2407_bfloat16_golden.json"
+    #         ),
+    #         # TODO(akirchhoff): Find appropriate thresholds
+    #         kl_div_threshold=0,
+    #         cos_dist_threshold=0,
+    #         absolute_tolerance=0,
+    #         relative_tolerance=0,
+    #     ),
+    # ),
 }
 
 
@@ -224,7 +311,7 @@ def main(
             if device_type not in pipeline_def.compatible_with:
                 continue
             print(f"Running {pipeline_name}...", flush=True)
-            verdicts[pipeline_name] = pipeline_def.run_protected()
+            verdicts[pipeline_name] = pipeline_def.run_protected(device_type)
     else:
         if pipeline not in PIPELINES:
             raise click.ClickException(f"Unknown pipeline {pipeline!r}")
@@ -233,7 +320,7 @@ def main(
             raise click.ClickException(
                 f"Pipeline {pipeline!r} not compatible with {device_type!r}"
             )
-        verdicts[pipeline] = pipeline_def.run_protected()
+        verdicts[pipeline] = pipeline_def.run_protected(device_type)
 
     if report:
         dump_results(verdicts, to=report)

@@ -79,24 +79,32 @@ def next_token_with_logits(
         update_values: Dictionary of request ids to lists of next_token &
             logits. These lists are updated in this method.
     """
-    # Flatten our batch for consistent indexing
-    context_batch = list(req_to_context_dict.values())
-    kv_manager = model._kv_manager
+    # Llama3's _execute method has a different signature and set of calling
+    # expectations than Replit and Mistral do.  Use the Llama3 logic only if it
+    # also has the _prepare_initial_token_inputs method required by Llama.
+    if hasattr(model, "_prepare_initial_token_inputs"):
+        # Flatten our batch for consistent indexing
+        context_batch = list(req_to_context_dict.values())
+        kv_manager = model._kv_manager
 
-    # Claim cache rows for our batch
-    for context in context_batch:
-        if context.cache_seq_id in kv_manager.slots_remaining:
-            kv_manager.external_claim([context.cache_seq_id])
+        # Claim cache rows for our batch
+        for context in context_batch:
+            if context.cache_seq_id in kv_manager.slots_remaining:
+                kv_manager.external_claim([context.cache_seq_id])
 
-    cache_seq_ids = [ctx.cache_seq_id for ctx in context_batch]
-    token_input = model._prepare_initial_token_inputs(context_batch)
-    kv_cache_inputs = kv_manager.fetch(cache_seq_ids)
+        cache_seq_ids = [ctx.cache_seq_id for ctx in context_batch]
+        token_input = model._prepare_initial_token_inputs(context_batch)
+        kv_cache_inputs = kv_manager.fetch(cache_seq_ids)
 
-    logits = model._execute(*token_input, *kv_cache_inputs).to(CPU())
+        logits = model._execute(*token_input, *kv_cache_inputs).to(CPU())
 
-    kv_manager.step(
-        valid_lengths={ctx.cache_seq_id: ctx.seq_len for ctx in context_batch}
-    )
+        kv_manager.step(
+            valid_lengths={
+                ctx.cache_seq_id: ctx.seq_len for ctx in context_batch
+            }
+        )
+    else:
+        logits = model._execute(req_to_context_dict).to(CPU())
 
     for req_id, logits in zip(req_to_context_dict, logits.to_numpy()):
         next_token = logits.argmax(axis=-1)
