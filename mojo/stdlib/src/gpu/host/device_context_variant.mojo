@@ -16,6 +16,7 @@ from gpu.host._compile import _get_nvptx_target
 alias DeviceFunction = DeviceFunctionVariant
 alias DeviceBuffer = DeviceBufferVariant
 alias DeviceContext = DeviceContextVariant
+alias DeviceStream = DeviceStreamV2
 
 
 # Runtime switch to select Device context V1 (mojo) or V2 (C++)
@@ -541,6 +542,13 @@ struct DeviceContextVariant:
             self.v2().enqueue_memset[type](dst.v2(), val)
         else:
             self.v1().enqueue_memset[type](dst.v1(), val)
+
+    fn stream(self) raises -> DeviceStream:
+        @parameter
+        if _device_ctx_v2():
+            return self.v2().stream()
+        else:
+            raise Error("Unimplemented in v1")
 
     fn synchronize(self) raises:
         @parameter

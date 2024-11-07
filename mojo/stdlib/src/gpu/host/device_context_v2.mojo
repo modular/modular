@@ -33,6 +33,10 @@ struct _DeviceFunctionCpp:
     pass
 
 
+struct _DeviceStreamCpp:
+    pass
+
+
 struct _DeviceTimerCpp:
     pass
 
@@ -40,6 +44,7 @@ struct _DeviceTimerCpp:
 alias _DeviceContextPtr = UnsafePointer[_DeviceContextCpp]
 alias _DeviceBufferPtr = UnsafePointer[_DeviceBufferCpp]
 alias _DeviceFunctionPtr = UnsafePointer[_DeviceFunctionCpp]
+alias _DeviceStreamPtr = UnsafePointer[_DeviceStreamCpp]
 alias _DeviceTimerPtr = UnsafePointer[_DeviceTimerCpp]
 alias _CharPtr = UnsafePointer[UInt8]
 alias _IntPtr = UnsafePointer[Int32]
@@ -266,6 +271,54 @@ struct DeviceBufferV2[type: DType](Sized):
 
         abort("Unsupported attr for DeviceBufferV2: " + name)
         return UnsafePointer[Scalar[type]]()
+
+
+struct DeviceStreamV2:
+    var _handle: _DeviceStreamPtr
+
+    fn __init__(inout self, ctx: DeviceContextV2) raises:
+        var result = _DeviceStreamPtr()
+        # const char *AsyncRT_DeviceContext_stream(const DeviceStream **result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_stream",
+                _CharPtr,
+                UnsafePointer[_DeviceStreamPtr],
+                _DeviceContextPtr,
+            ](UnsafePointer.address_of(result), ctx._handle)
+        )
+        self._handle = result
+
+    fn __copyinit__(inout self, existing: Self):
+        # void AsyncRT_DeviceStream_retain(const DeviceStream *stream)
+        external_call[
+            "AsyncRT_DeviceStream_retain",
+            NoneType,
+            _DeviceStreamPtr,
+        ](existing._handle)
+        self._handle = existing._handle
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self._handle = existing._handle
+
+    @always_inline
+    fn __del__(owned self):
+        # void AsyncRT_DeviceStream_release(const DeviceStream *stream)
+        external_call[
+            "AsyncRT_DeviceStream_release", NoneType, _DeviceStreamPtr
+        ](
+            self._handle,
+        )
+
+    fn synchronize(self) raises:
+        # const char *AsyncRT_DeviceStream_synchronize(const DeviceStream *stream)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_synchronize",
+                _CharPtr,
+                _DeviceStreamPtr,
+            ](self._handle)
+        )
 
 
 fn _is_amd_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
@@ -1070,6 +1123,9 @@ struct DeviceContextV2:
         type: DType
     ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
         self.enqueue_memset[type](dst, val)
+
+    fn stream(self) raises -> DeviceStreamV2:
+        return DeviceStreamV2(self)
 
     fn synchronize(self) raises:
         # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
