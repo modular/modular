@@ -467,7 +467,7 @@ def test_load_operands_ldmatrix[
         dst_dtype, dtype, lhs.layout, rhs.layout, shape, transpose_b
     ]
     var func = ctx.compile_function[
-        mma_load_and_print_kernel_fn, dump_ptx=False
+        mma_load_and_print_kernel_fn, dump_asm=False
     ]()
     ctx.enqueue_function(
         func, lhs.tensor, rhs.tensor, grid_dim=(1, 1), block_dim=(32)

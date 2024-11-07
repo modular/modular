@@ -20,7 +20,7 @@ def test_function_attributes():
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        var func = ctx.compile_function[kernel, dump_ptx=True]()
+        var func = ctx.compile_function[kernel, dump_asm=True]()
         assert_equal(
             func.test_only_get_attribute(Attribute.CONST_SIZE_BYTES), 0
         )

@@ -633,7 +633,7 @@ fn test[
     var func = ctx.compile_function[
         gemm,
         # dump_llvm=Path("./pipeline-gemm.ir"),
-        # dump_ptx=Path("./pipeline-gemm.ptx"),
+        # dump_asm=Path("./pipeline-gemm.ptx"),
     ](
         threads_per_block=int(config.num_threads()),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(

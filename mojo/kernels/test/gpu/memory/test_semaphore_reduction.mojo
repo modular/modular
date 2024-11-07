@@ -62,7 +62,7 @@ fn run_block_reduction[
 
     var func_red = ctx.compile_function[
         semaphore_block_reduce[type,],
-        dump_ptx=False,
+        dump_asm=False,
     ]()
 
     @always_inline

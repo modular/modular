@@ -47,7 +47,7 @@ def test_compile_function():
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel, dump_ptx=True]()
+        _ = ctx.compile_function[kernel, dump_asm=True]()
 
 
 fn kernel_inlined_assembly():
@@ -64,7 +64,7 @@ def test_compile_function_with_assembly():
     # CHECK-NOT: begin assembly
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel_inlined_assembly, dump_ptx=True]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=True]()
 
 
 # CHECK-LABEL: test_compile_function_with_path
@@ -76,7 +76,7 @@ def test_compile_function_with_path():
 
     with DeviceContext() as ctx:
         alias out_file = Path("/tmp/my_file.ptx")
-        _ = ctx.compile_function[kernel_inlined_assembly, dump_ptx=out_file]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=out_file]()
         print(out_file.read_text())
 
 
@@ -95,7 +95,7 @@ def test_compile_function_with_path_func():
         fn dummy_fn() capturing -> Path:
             return out_dir / out_file_name
 
-        _ = ctx.compile_function[kernel_inlined_assembly, dump_ptx=dummy_fn]()
+        _ = ctx.compile_function[kernel_inlined_assembly, dump_asm=dummy_fn]()
 
         var out_file = out_dir / out_file_name
         print(out_file.read_text())

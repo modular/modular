@@ -32,7 +32,7 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
     # CHECK: (
     # CHECK: param0
     # CHECK: );
-    var kernel = ctx.compile_function[kernel_with_list, dump_ptx=True]()
+    var kernel = ctx.compile_function[kernel_with_list, dump_asm=True]()
     ctx.enqueue_function(kernel, res_device, block_dim=(1), grid_dim=(1))
     ctx.enqueue_copy_from_device(res_host, res_device)
     ctx.synchronize()
