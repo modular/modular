@@ -299,10 +299,8 @@ class TensorValue(Value):
     def cast(self, dtype: DType) -> TensorValue:
         return ops.cast(self, dtype)
 
-    def rebind(self, shape: ShapeLike) -> TensorValue:
-        # For rebind, we create a runtime stack location as the message.
-        frame = inspect.currentframe()
-        return ops.rebind(self, shape, graph._frame_str(frame))
+    def rebind(self, shape: ShapeLike, message: str = "") -> TensorValue:
+        return ops.rebind(self, shape, message)
 
     def permute(self, dims: list[int]) -> TensorValue:
         return ops.permute(self, dims)

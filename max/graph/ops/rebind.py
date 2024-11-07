@@ -13,7 +13,9 @@ from ..type import Shape, ShapeLike
 from ..value import TensorType, TensorValue, TensorValueLike
 
 
-def rebind(x: TensorValueLike, shape: ShapeLike, message: str) -> TensorValue:
+def rebind(
+    x: TensorValueLike, shape: ShapeLike, message: str = ""
+) -> TensorValue:
     """Rebinds a symbolic tensor to a specified set of dimensions.
 
     This does not mutate the symbolic tensor passed in, but instead adds a
