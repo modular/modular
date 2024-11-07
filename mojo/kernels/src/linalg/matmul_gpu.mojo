@@ -945,7 +945,7 @@ fn multistage_gemm[
 
         var gemm_kernel = ctx.compile_function[
             gemm_kernel_type,
-            # dump_ptx = Path("./pipeline-gemm.ptx"),
+            # dump_asm = Path("./pipeline-gemm.ptx"),
         ](
             threads_per_block=int(config.num_threads()),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
