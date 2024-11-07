@@ -57,17 +57,18 @@ fn _mark_eviction[
 
 @always_inline
 fn async_copy[
-    type: AnyType, //,
+    type: DType, //,
     size: Int,
     *,
-    fill: Fill = Fill.NONE,
+    fill: OptionalReg[Scalar[type]] = None,
     bypass_L1_16B: Bool = True,
     l2_prefetch: OptionalReg[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src: UnsafePointer[type, AddressSpace.GLOBAL],
-    dst: UnsafePointer[type, AddressSpace.SHARED],
+    src: UnsafePointer[Scalar[type], AddressSpace.GLOBAL],
+    dst: UnsafePointer[Scalar[type], AddressSpace.SHARED],
     src_size: Int32 = 0,
+    predicate: Bool = False,
 ):
     """Asynchronously copy `size` amount of bytes from src global memory address
     to shared memory `dst` address.
@@ -85,11 +86,11 @@ fn async_copy[
         dst: Shared memory pointer.
         src_size: The size of data actually copied. When src_size < size, the
             rest is set to zero by the instruction.
+        predicate: Specifies the predicate used for async_copy.
     """
-    # TODO: Constrained on device capability.
     constrained[
-        fill in (Fill.NONE, Fill.ZERO),
-        "Only zero fill is supported for async copy on Ampere.",
+        not fill or sizeof[type]() <= sizeof[Int32](),
+        "if the fill value is specified, then the type must be 32bit or less",
     ]()
     constrained[size in (4, 8, 16)]()
     constrained[
@@ -116,28 +117,19 @@ fn async_copy[
         l2_prefetch.value()
     ]() + "B" if l2_prefetch else ""
 
-    alias asm_base = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
+    alias header_asm = "{\n  .reg .pred p;\n  setp.ne.b32 p, %0, 0;\n"
+    alias footer_asm = "  @!p st.shared.v4.u32 [%1], {%4, %5, %6, %7};\n}\n"
+    alias cp_async_asm = "cp.async." + cache_op + ".shared.global" + cache_hint + l2_prefetch_substr
 
-    # No fill
+    debug_assert(
+        not predicate and not fill,
+        "predicate async copy are not supported without a specified fill value",
+    )
+
     @parameter
-    if fill == Fill.NONE:
-        alias args = " [$0], [$1], $2"
-        alias asm = asm_base + args
-
-        @parameter
-        if eviction_policy is CacheEviction.EVICT_NORMAL:
-            inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
-                Int32(int(dst)), src, Int32(size)
-            )
-        else:
-            inlined_assembly[asm + ", $3;", NoneType, constraints="r,l,n,l"](
-                Int32(int(dst)), src, Int32(size), cache_policy
-            )
-
-    # Fill the rest with zero for partial copy.
-    else:
+    if bool(fill) and bool(fill.value() == 0):
         alias args_with_fill = " [$0], [$1], $2, $3"
-        alias asm = asm_base + args_with_fill
+        alias asm = cp_async_asm + args_with_fill
 
         @parameter
         if eviction_policy is CacheEviction.EVICT_NORMAL:
@@ -147,6 +139,78 @@ fn async_copy[
         else:
             inlined_assembly[asm + ", $4;", NoneType, constraints="r,l,n,r,l"](
                 Int32(int(dst)), src, Int32(size), Int32(src_size), cache_policy
+            )
+    elif fill:
+
+        @always_inline
+        fn _i32_repr[type: DType, //](fill: Scalar[type]) -> Int32:
+            @parameter
+            if sizeof[type]() == 8:
+                return bitcast[DType.int32, 1](
+                    SIMD[type, 4](fill, fill, fill, fill)
+                )
+            elif sizeof[type]() == 16:
+                return bitcast[DType.int32, 1](SIMD[type, 2](fill, fill))
+            elif sizeof[type]() == 32:
+                return bitcast[DType.int32](fill)
+
+            return 0
+
+        var fill_val = _i32_repr(fill.value())
+
+        alias args_with_fill = " [$0], [$1], $2, $3"
+
+        @parameter
+        if eviction_policy is CacheEviction.EVICT_NORMAL:
+            inlined_assembly[
+                header_asm + cp_async_asm + args_with_fill + ";\n" + footer_asm,
+                NoneType,
+                constraints="r,r,l,n,r,r,r,r",
+            ](
+                Int32(int(predicate)),
+                Int32(int(dst)),
+                src,
+                Int32(size),
+                Int32(src_size),
+                fill_val,
+                fill_val,
+                fill_val,
+                fill_val,
+            )
+        else:
+            inlined_assembly[
+                header_asm
+                + cp_async_asm
+                + args_with_fill
+                + ", $4;\n"
+                + footer_asm,
+                NoneType,
+                constraints="r,r,l,n,r,r,r,r,l",
+            ](
+                Int32(int(predicate)),
+                Int32(int(dst)),
+                src,
+                Int32(size),
+                Int32(src_size),
+                fill_val,
+                fill_val,
+                fill_val,
+                fill_val,
+                cache_policy,
+            )
+
+    else:
+        alias args = " [$0], [$1], $2"
+        alias asm = cp_async_asm + args
+
+        @parameter
+        if eviction_policy is CacheEviction.EVICT_NORMAL:
+            inlined_assembly[asm + ";", NoneType, constraints="r,l,n"](
+                Int32(int(dst)), src, Int32(size)
+            )
+        else:
+            inlined_assembly[asm + ", $3;", NoneType, constraints="r,l,n,l"](
+                Int32(int(dst)), src, Int32(size), cache_policy
             )
 
 
