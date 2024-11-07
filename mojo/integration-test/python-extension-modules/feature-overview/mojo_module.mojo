@@ -16,6 +16,7 @@ from os import abort
 from python import Python, PythonObject, TypedPythonObject
 from python._bindings import (
     py_c_function_wrapper,
+    python_type_object,
     PyMojoObject,
 )
 from builtin._pybind import (
@@ -194,9 +195,7 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
     # ----------------------------------
 
     try:
-        var type_obj = PyMojoObject[Person].python_type_object["Person"](
-            methods
-        )
+        var type_obj = python_type_object[Person, "Person"](methods)
 
         Python.add_object(module, "Person", type_obj)
     except e:
@@ -214,7 +213,7 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
 
 fn add_int_type(inout module: TypedPythonObject["Module"]):
     try:
-        var type_obj = PyMojoObject[Int].python_type_object["Int"](
+        var type_obj = python_type_object[Int, "Int"](
             methods=List[PyMethodDef]()
         )
 
