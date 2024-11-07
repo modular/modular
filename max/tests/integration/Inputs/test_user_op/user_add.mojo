@@ -8,7 +8,7 @@
 from register import *
 
 
-@mogg_register_override("mo.add", 1)
+@register_internal_override("mo.add", 1)
 @mogg_elementwise
 fn my_add[
     type: DType, simd_width: Int

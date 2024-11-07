@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from register import mogg_register
+from register import register_internal
 
 
-@mogg_register("mutable_test_op")
+@register_internal("mutable_test_op")
 fn mutable_test_op[
     type: DType,
     rank: Int,

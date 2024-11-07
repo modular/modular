@@ -9,7 +9,7 @@ from register import *
 from utils.index import IndexList
 
 
-@mogg_register("test_indices_deduction")
+@register_internal("test_indices_deduction")
 fn _test_indices_deduction[num_indices: Int](indices: IndexList[num_indices]):
     """
     Used as a test to make sure we correctly deduce the size of indices.
@@ -20,7 +20,7 @@ fn _test_indices_deduction[num_indices: Int](indices: IndexList[num_indices]):
     print(indices)
 
 
-@mogg_register("test_make_indices")
+@register_internal("test_make_indices")
 fn _test_make_indices[num_indices: Int]() -> IndexList[num_indices]:
     """
     Used to return indices which we can use as a target for tests.

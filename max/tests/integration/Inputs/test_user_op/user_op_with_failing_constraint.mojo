@@ -8,7 +8,7 @@
 from register import *
 
 
-@mogg_register_override("mo.isqrt", 1)
+@register_internal_override("mo.isqrt", 1)
 @mogg_elementwise
 fn my_isqrt_failing_constraint[
     type: DType, simd_width: Int

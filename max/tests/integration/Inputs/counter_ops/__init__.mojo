@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
-from register import mogg_register
+from register import register_internal
 from utils.index import IndexList
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -41,33 +41,33 @@ struct Counter(Movable):
         print("bumped", self.a, self.b)
 
 
-@mogg_register("make_counter_from_tensor")
+@register_internal("make_counter_from_tensor")
 fn make_counter(init: NDBuffer[DType.int32, 1]) -> Counter:
     print("making. init:", init[0], init[1])
     return Counter(int(init[0]), int(init[1]))
 
 
-@mogg_register("make_counter")
+@register_internal("make_counter")
 fn make_counter() -> Counter:
     print("making")
     return Counter()
 
 
 # TODO(MSDK-950): Avoid DCE in the graph compiler and remove return value.
-@mogg_register("bump_counter")
+@register_internal("bump_counter")
 fn bump_counter(inout c: Counter, output: NDBuffer[DType.bool, 1, DimList(1)]):
     print("bumping")
     c.bump()
     output[0] = True
 
 
-@mogg_register("read_counter")
+@register_internal("read_counter")
 fn read_counter(c: Counter, output: NDBuffer[DType.int32, 1, DimList(2)]):
     output[0] = c.a
     output[1] = c.b
 
 
-@mogg_register("bump_python_counter")
+@register_internal("bump_python_counter")
 fn bump_python_counter(
     counter: PythonObject,
 ) -> PythonObject:
