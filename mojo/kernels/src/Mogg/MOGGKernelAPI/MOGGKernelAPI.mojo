@@ -53,9 +53,9 @@ from nn.kv_cache import (
     generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch,
     generic_fused_qk_rope_bshd_contiguous_cache,
     generic_fused_qk_rope_bshd_continuous_batch,
-    generic_flash_attention_kv_cache_bhsd_contiguous_cache,
-    generic_flash_attention_kv_cache_bhsd_continuous_batch,
-    generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch,
+    generic_flash_attention_kv_cache_contiguous_cache,
+    generic_flash_attention_kv_cache_continuous_batch,
+    generic_flash_attention_kv_cache_causal_mask_continuous_batch,
     generic_get_contiguous_cache,
     generic_get_continuous_cache,
 )
@@ -6271,7 +6271,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch:
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_bhsd_contiguous_cache_kernel_api[
+fn generic_flash_attention_kv_cache_contiguous_cache_kernel_api[
     target: StringLiteral, type: DType
 ](
     output: ManagedTensorSlice[type, 4],
@@ -6288,7 +6288,7 @@ fn generic_flash_attention_kv_cache_bhsd_contiguous_cache_kernel_api[
     ).shape
     alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
     alias mask_shape = compiler.specsof[mask.type, mask.rank]("mask").shape
-    generic_flash_attention_kv_cache_bhsd_contiguous_cache[target](
+    generic_flash_attention_kv_cache_contiguous_cache[target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
         kv_collection,
         layer_idx[0],
@@ -6320,9 +6320,7 @@ struct Struct_flash_attention_kv_cache_h6_d48_bshd:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_contiguous_cache_kernel_api[
-            target
-        ](
+        generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
             output,
             q,
             kv_collection,
@@ -6354,9 +6352,7 @@ struct Struct_flash_attention_kv_cache_h8_d128_bshd:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_contiguous_cache_kernel_api[
-            target
-        ](
+        generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
             output,
             q,
             kv_collection,
@@ -6388,9 +6384,7 @@ struct Struct_flash_attention_kv_cache_h1_d16_bshd:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_contiguous_cache_kernel_api[
-            target
-        ](
+        generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
             output,
             q,
             kv_collection,
@@ -6422,9 +6416,7 @@ struct Struct_flash_attention_kv_cache_h8_d32_bshd:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_contiguous_cache_kernel_api[
-            target
-        ](
+        generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
             output,
             q,
             kv_collection,
@@ -6456,9 +6448,7 @@ struct Struct_flash_attention_kv_cache_h8_d64_bshd:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_contiguous_cache_kernel_api[
-            target
-        ](
+        generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
             output,
             q,
             kv_collection,
@@ -6476,7 +6466,7 @@ struct Struct_flash_attention_kv_cache_h8_d64_bshd:
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_bhsd_continuous_batch_kernel_api[
+fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     target: StringLiteral, type: DType
 ](
     output: ManagedTensorSlice[type, 4],
@@ -6494,7 +6484,7 @@ fn generic_flash_attention_kv_cache_bhsd_continuous_batch_kernel_api[
     alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
     alias mask_shape = compiler.specsof[mask.type, mask.rank]("mask").shape
 
-    generic_flash_attention_kv_cache_bhsd_continuous_batch[target](
+    generic_flash_attention_kv_cache_continuous_batch[target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
         kv_collection,
         layer_idx[0],
@@ -6526,9 +6516,7 @@ struct Struct_flash_attention_kv_cache_h8_d128_bshd_continuous_batch:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_continuous_batch_kernel_api[
-            target
-        ](
+        generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
             output,
             q,
             kv_collection,
@@ -6560,9 +6548,7 @@ struct Struct_flash_attention_kv_cache_h1_d16_bshd_continuous_batch:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_continuous_batch_kernel_api[
-            target
-        ](
+        generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
             output,
             q,
             kv_collection,
@@ -6594,9 +6580,7 @@ struct Struct_flash_attention_kv_cache_h8_d32_bshd_continuous_batch:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_continuous_batch_kernel_api[
-            target
-        ](
+        generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
             output,
             q,
             kv_collection,
@@ -6628,9 +6612,7 @@ struct Struct_flash_attention_kv_cache_h8_d64_bshd_continuous_batch:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_continuous_batch_kernel_api[
-            target
-        ](
+        generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
             output,
             q,
             kv_collection,
@@ -6648,7 +6630,7 @@ struct Struct_flash_attention_kv_cache_h8_d64_bshd_continuous_batch:
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch_kernel_api[
+fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     target: StringLiteral, type: DType
 ](
     output: ManagedTensorSlice[type, 4],
@@ -6663,7 +6645,7 @@ fn generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch_kernel_api
         "output"
     ).shape
     alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
-    generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch[target](
+    generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
         kv_collection,
         layer_idx[0],
@@ -6695,7 +6677,7 @@ struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch_kernel_api[
+        generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
             target
         ](
             output, q, kv_collection, layer_idx, valid_lengths, scale, context
@@ -6723,7 +6705,7 @@ struct Struct_flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch_kernel_api[
+        generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
             target
         ](
             output, q, kv_collection, layer_idx, valid_lengths, scale, context
@@ -6751,7 +6733,7 @@ struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch_kernel_api[
+        generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
             target
         ](
             output, q, kv_collection, layer_idx, valid_lengths, scale, context
@@ -6779,7 +6761,7 @@ struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch:
         scale: ScalarTensor[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch_kernel_api[
+        generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
             target
         ](
             output, q, kv_collection, layer_idx, valid_lengths, scale, context
