@@ -35,3 +35,29 @@ def test_config_weights_format__correct_weights_format():
 
     config.weight_path = "model_b.safetensors"
     assert config.weights_format == WeightsFormat.safetensors
+
+
+def test_validate_huggingface_repo_id__model_id_provided():
+    config = PipelineConfig(
+        architecture="test",
+        huggingface_repo_id="bert-base-uncased",
+    )
+
+    assert config.huggingface_repo_id == "bert-base-uncased"
+
+
+def test_validate_huggingface_repo_id__correct_repo_id_provided():
+    config = PipelineConfig(
+        architecture="test",
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    assert config.huggingface_repo_id == "modularai/llama-3.1"
+
+
+def test_validate_huggingface_repo_id__bad_repo_provided():
+    with pytest.raises(Exception):
+        _ = PipelineConfig(
+            architecture="test",
+            huggingface_repo_id="bert-base-asdfasdf",
+        )

@@ -35,6 +35,9 @@ modular_py_test(
         "//Kernels/mojo/runtime",
         "//open-source/mojo/stdlib/stdlib",
     ],
+    tags = [
+        "requires-network",
+    ],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs
         "//:asan": ["@platforms//:incompatible"],
