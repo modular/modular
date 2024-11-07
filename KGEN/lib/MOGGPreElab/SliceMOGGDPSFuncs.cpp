@@ -126,7 +126,7 @@ private:
       return;
 
     ArrayAttr argsParams =
-        dyn_cast_or_null<ArrayAttr>(gen->getAttr(MOGG_ARG_PARAMS));
+        dyn_cast_or_null<ArrayAttr>(gen->getAttr(MOGG_TENSOR_ARG_PARAMS));
     if (!argsParams)
       return;
 

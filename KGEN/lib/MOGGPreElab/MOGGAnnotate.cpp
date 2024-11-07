@@ -197,6 +197,15 @@ getUnboundParametersForTensor(LIT::StructType &structType, OpBuilder &builder) {
   return tensorSpecNamedAttrs;
 }
 
+// Returns an array of attributes containing all parameters for the tensor type.
+static ArrayAttr getTensorParametersForTensor(LIT::StructType &structType,
+                                              OpBuilder &builder) {
+  SmallVector<Attribute> attrs;
+  for (TypedAttr attr : structType.getParamValues())
+    attrs.push_back(attr);
+  return builder.getArrayAttr(attrs);
+}
+
 /// Return a set of named attributes mapping all unbound parameters in the tuple
 /// of tensor struct
 static SmallVector<NamedAttribute>
@@ -229,6 +238,19 @@ getUnboundParametersForTensorTuple(LIT::StructType &structType,
 
   tupleNamedAttrs.append(elementTypeParams);
   return tupleNamedAttrs;
+}
+
+// Returns an array of attributes containing all parameters for the tensor type.
+static ArrayAttr getTensorParametersForTensorTuple(LIT::StructType &structType,
+                                                   OpBuilder &builder) {
+  assert(structType.getParamValues().size() >= 1);
+  auto elementTypeAttr =
+      cast<KGEN::TypeConstantAttr>(structType.getParamValues()[0]);
+  auto elementTypeStruct =
+      cast<LIT::StructType>(elementTypeAttr.getTypeValue());
+  assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&
+         "Expect managed tensor slice element type");
+  return getTensorParametersForTensor(elementTypeStruct, builder);
 }
 
 /// Return a set of named attributes mapping all unbound parameters in the list
@@ -275,6 +297,7 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
   };
 
   SmallVector<Attribute> tensorSpecs;
+  SmallVector<Attribute> tensorArgsParams;
   Attribute emptyAttr = builder.getUnitAttr();
 
   for (auto [i, litType] : llvm::enumerate(funcOp.getArgumentTypes())) {
@@ -282,6 +305,7 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
 
     if (!asStructType) {
       tensorSpecs.push_back(emptyAttr);
+      tensorArgsParams.push_back(emptyAttr);
       continue;
     }
 
@@ -290,23 +314,31 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
           getUnboundParametersForTensor(asStructType, builder);
       tensorSpecs.push_back(
           DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
+      tensorArgsParams.push_back(
+          getTensorParametersForTensor(asStructType, builder));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxStaticTuple)) {
       SmallVector<NamedAttribute> tensorSpecNamedAttrs =
           getUnboundParametersForTensorTuple(asStructType, builder);
       tensorSpecs.push_back(
           DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
+      tensorArgsParams.push_back(
+          getTensorParametersForTensorTuple(asStructType, builder));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxList)) {
       SmallVector<NamedAttribute> tensorSpecNamedAttrs =
           getUnboundParametersForTensorList(asStructType, builder);
       tensorSpecs.push_back(
           DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
+      tensorArgsParams.push_back(emptyAttr);
     } else {
       // Unsupported type, can ignore
       tensorSpecs.push_back(emptyAttr);
+      tensorArgsParams.push_back(emptyAttr);
     }
   }
   funcOp->setDiscardableAttr(kKernelValueParameterAttrName,
                              builder.getArrayAttr(tensorSpecs));
+  funcOp->setDiscardableAttr(MOGG_TENSOR_ARG_PARAMS,
+                             builder.getArrayAttr(tensorArgsParams));
 }
 
 namespace {
