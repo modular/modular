@@ -213,11 +213,11 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
       "mogg_enable_fusion",
       "mogg_input_fusion_hook",
       "mogg_output_fusion_hook",
-      "mogg_register",
-      "mogg_register_override",
-      "mogg_register_custom",
-      "mogg_register_custom_shape",
-      "mogg_register_shape_func",
+      "register_internal",
+      "register_internal_override",
+      "register_internal_custom",
+      "register_internal_custom_shape",
+      "register_internal_shape_func",
       "uses_opaque",
 
       "register",
@@ -610,7 +610,8 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
   if (spelling.empty())
     return;
 
-  if (!llvm::is_contained({REGISTER_KERNEL, REGISTER_OVERRIDE,
+  if (!llvm::is_contained({REGISTER_INTERNAL_FUNCTION,
+                           REGISTER_INTERNAL_FUNCTION_OVERRIDE,
                            REGISTER_PUBLIC_OVERRIDE, USES_OPAQUE},
                           spelling))
     return;
