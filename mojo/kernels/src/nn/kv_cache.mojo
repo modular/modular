@@ -1166,7 +1166,7 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch[
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_bhsd_contiguous_cache[
+fn generic_flash_attention_kv_cache_contiguous_cache[
     target: StringLiteral, type: DType
 ](
     q: NDBuffer[type, 4, *_],
@@ -1230,7 +1230,7 @@ fn flash_attention_kv_cache_h6_d48_bshd[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_contiguous_cache[target](
+    generic_flash_attention_kv_cache_contiguous_cache[target](
         q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
     )
 
@@ -1252,7 +1252,7 @@ fn flash_attention_kv_cache_h8_d128_bshd[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_contiguous_cache[target](
+    generic_flash_attention_kv_cache_contiguous_cache[target](
         q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
     )
 
@@ -1274,7 +1274,7 @@ fn flash_attention_kv_cache_h1_d16_bshd[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_contiguous_cache[target](
+    generic_flash_attention_kv_cache_contiguous_cache[target](
         q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
     )
 
@@ -1296,7 +1296,7 @@ fn flash_attention_kv_cache_h8_d32_bshd[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_contiguous_cache[target](
+    generic_flash_attention_kv_cache_contiguous_cache[target](
         q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
     )
 
@@ -1318,13 +1318,13 @@ fn flash_attention_kv_cache_h8_d64_bshd[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_contiguous_cache[target](
+    generic_flash_attention_kv_cache_contiguous_cache[target](
         q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
     )
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_bhsd_continuous_batch[
+fn generic_flash_attention_kv_cache_continuous_batch[
     target: StringLiteral, type: DType
 ](
     q: NDBuffer[type, 4, *_],
@@ -1388,7 +1388,7 @@ fn flash_attention_kv_cache_h8_d128_bshd_continuous_batch[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_continuous_batch[target](
+    generic_flash_attention_kv_cache_continuous_batch[target](
         q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
     )
 
@@ -1410,7 +1410,7 @@ fn flash_attention_kv_cache_h1_d16_bshd_continuous_batch[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_continuous_batch[target](
+    generic_flash_attention_kv_cache_continuous_batch[target](
         q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
     )
 
@@ -1432,7 +1432,7 @@ fn flash_attention_kv_cache_h8_d32_bshd_continuous_batch[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_continuous_batch[target](
+    generic_flash_attention_kv_cache_continuous_batch[target](
         q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
     )
 
@@ -1454,7 +1454,7 @@ fn flash_attention_kv_cache_h8_d64_bshd_continuous_batch[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_continuous_batch[target](
+    generic_flash_attention_kv_cache_continuous_batch[target](
         q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
     )
 
@@ -1550,7 +1550,7 @@ fn _flash_attention_kv_cache_impl[
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch[
+fn generic_flash_attention_kv_cache_causal_mask_continuous_batch[
     target: StringLiteral, type: DType
 ](
     q: NDBuffer[type, 4, *_],
@@ -1602,7 +1602,7 @@ fn flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch[target](
+    generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
         q, kv_collection, layer_idx, valid_lengths, scale, output, context
     )
 
@@ -1623,7 +1623,7 @@ fn flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch[target](
+    generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
         q, kv_collection, layer_idx, valid_lengths, scale, output, context
     )
 
@@ -1644,7 +1644,7 @@ fn flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch[target](
+    generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
         q, kv_collection, layer_idx, valid_lengths, scale, output, context
     )
 
@@ -1665,7 +1665,7 @@ fn flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch[
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_bhsd_causal_mask_continuous_batch[target](
+    generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
         q, kv_collection, layer_idx, valid_lengths, scale, output, context
     )
 
