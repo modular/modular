@@ -537,7 +537,7 @@ fn _topk_gpu[
 
     # Compile the kernels
     var gpu_fn_stage1 = ctx.compile_function[
-        topk_stage1[type, out_idx_type, largest], dump_ptx=False
+        topk_stage1[type, out_idx_type, largest], dump_asm=False
     ]()
     # Define grid and block dimensions for stage 1
     var griddim_stage1 = Dim(num_blocks_per_input_ * batch_size)
@@ -580,7 +580,7 @@ fn _topk_gpu[
     )  # align to warp size
 
     var gpu_fn_stage2 = ctx.compile_function[
-        topk_stage2[type, out_idx_type, sampling, largest], dump_ptx=False
+        topk_stage2[type, out_idx_type, sampling, largest], dump_asm=False
     ]()
 
     # Define grid and block dimensions for stage 2
