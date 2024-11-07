@@ -70,3 +70,19 @@ def test_hf_config_retrieval():
     )
 
     assert config.huggingface_config is not None
+
+
+def test_hf_architecture():
+    config = PipelineConfig(
+        architecture=None,
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    assert config.architecture == "LlamaForCausalLM"
+
+    config = PipelineConfig(
+        architecture=None,
+        huggingface_repo_id="replit/replit-code-v1_5-3b",
+    )
+
+    assert config.architecture == "MPTForCausalLM"
