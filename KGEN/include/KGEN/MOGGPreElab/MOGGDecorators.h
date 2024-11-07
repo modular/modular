@@ -92,15 +92,16 @@ namespace Decorators {
 
 // The decorators we will look for on the generator to identify it as a MO
 // kernel.
-constexpr StringLiteral REGISTER_KERNEL = "mogg_register";
-constexpr StringLiteral REGISTER_OVERRIDE = "mogg_register_override";
+constexpr StringLiteral REGISTER_INTERNAL_FUNCTION = "register_internal";
+constexpr StringLiteral REGISTER_INTERNAL_FUNCTION_OVERRIDE =
+    "register_internal_override";
 constexpr StringLiteral REGISTER_PUBLIC_OVERRIDE = "op";
 
 // Decorator to indicate opaque use and we should generate conformances
 // TODO(GRA-1145): Remove the need for this.
 constexpr StringLiteral USES_OPAQUE = "uses_opaque";
 
-constexpr StringLiteral REGISTER_SHAPE_FUNC = "mogg_register_shape_func";
+constexpr StringLiteral REGISTER_SHAPE_FUNC = "register_internal_shape_func";
 
 // Allow new attrs to be added without needing explicit decorator.
 constexpr StringLiteral REGISTER_MOGG_INTRINSIC = "__mogg_intrinsic_attr";

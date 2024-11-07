@@ -143,7 +143,8 @@ bool stripDecorators(LIT::FuncOp func) {
 
     // Kernel identifiers are slightly different as the include the name and
     // priority of the kernel.
-    if (decoratorName.starts_with(Decorators::REGISTER_OVERRIDE) ||
+    if (decoratorName.starts_with(
+            Decorators::REGISTER_INTERNAL_FUNCTION_OVERRIDE) ||
         decoratorName.starts_with(Decorators::REGISTER_PUBLIC_OVERRIDE)) {
       // Register kernels with explicit override.
       kernelRegistrations.push_back(apply.getOperand(1));
@@ -155,7 +156,8 @@ bool stripDecorators(LIT::FuncOp func) {
       shapeFunctionReg.push_back(apply.getOperand(1));
       decoratorsToCopy.pop_back();
       areAnyKernels = true;
-    } else if (decoratorName.starts_with(Decorators::REGISTER_KERNEL)) {
+    } else if (decoratorName.starts_with(
+                   Decorators::REGISTER_INTERNAL_FUNCTION)) {
       // Register kernels without explict override parameter.
       kernelRegistrations.push_back(apply.getOperand(1));
       kernelRegistrations.push_back(builder.getI64IntegerAttr(-1));
