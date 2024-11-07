@@ -10,6 +10,7 @@ from os import abort
 from sys import env_get_string
 
 alias DEFAULT_GPU_ARCH = env_get_string["DEFAULT_GPU_ARCH", "sm_80"]()
+alias DEFAULT_GPU_TARGET = _get_info_from_target[DEFAULT_GPU_ARCH]()
 
 # ===----------------------------------------------------------------------===#
 # A100
