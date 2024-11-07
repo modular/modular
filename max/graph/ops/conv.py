@@ -11,6 +11,7 @@ import numpy as np
 from max.dtype import DType
 from max.mlir.dialects import rmo
 
+from .. import dtype_promotion
 from ..graph import Graph
 from ..type import Dim, Shape, StaticDim
 from ..value import TensorType, TensorValue, TensorValueLike
@@ -110,8 +111,12 @@ def conv2d(
     Returns:
         A symbolic tensor value with the convolution applied.
     """
-    x = TensorValue(x)
-    filter = TensorValue(filter)
+    x, filter = dtype_promotion._promote_weak_dtypes(x, filter)
+    if x.dtype != filter.dtype:
+        raise ValueError(
+            "input and filter must resolve to the same strong dtype. input is"
+            f" {x.dtype}. filter is {filter.dtype}."
+        )
     if x.rank != 4:
         raise ValueError(
             "input to a 2-D convolution must be rank 4 with shape (batch_size,"

@@ -6,6 +6,9 @@
 """ops.conv2d tests."""
 from math import sqrt
 
+import pytest
+import numpy as np
+
 from conftest import (
     MAX_INT32,
     static_dims,
@@ -14,7 +17,7 @@ from conftest import (
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Graph, TensorType, ops
+from max.graph import Graph, TensorType, Weight, ops
 
 shared_dtypes = st.shared(st.from_type(DType))
 static_tensor_type = tensor_types(
@@ -74,3 +77,55 @@ def test_conv_valid(
             filter_type.shape[3],
         ]
         graph.output(out)
+
+
+def test_conv_dtype_promote_np():
+    x_type = TensorType(DType.bfloat16, [1, 128, 128, 4])
+    filter_shape = [3, 3, 4, 5]
+    filter = np.ones(filter_shape, dtype=np.float32)
+    with Graph("conv", input_types=[x_type]) as graph:
+        out = ops.conv2d(
+            graph.inputs[0],
+            filter,
+        )
+        # The numpy filter has a weak dtype. This all resolves happily.
+        assert out.dtype == DType.bfloat16
+        graph.output(out)
+
+
+def test_conv_dtype_promote_weight():
+    x_type = TensorType(DType.bfloat16, [1, 128, 128, 4])
+    filter_shape = [3, 3, 4, 5]
+    filter = Weight(
+        "filter",
+        dtype=DType.bfloat16,
+        shape=filter_shape,
+    )
+    with Graph("conv", input_types=[x_type]) as graph:
+        out = ops.conv2d(
+            graph.inputs[0],
+            filter,
+        )
+        # Both input and filter dtype exactly match.
+        assert out.dtype == DType.bfloat16
+        graph.output(out)
+
+
+def test_conv_dtype_promote_weight_failed():
+    x_type = TensorType(DType.bfloat16, [1, 128, 128, 4])
+    filter_shape = [3, 3, 4, 5]
+    filter = Weight(
+        "filter",
+        dtype=DType.float32,
+        shape=filter_shape,
+    )
+    with Graph("conv", input_types=[x_type]) as graph:
+        # Both the input and weight have strong dtypes. Conv requires them to match.
+        with pytest.raises(
+            ValueError,
+            match="input and filter must resolve to the same strong dtype",
+        ):
+            out = ops.conv2d(
+                graph.inputs[0],
+                filter,
+            )

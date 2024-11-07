@@ -79,48 +79,57 @@ def _promote_weak_dtypes(
 
     if _is_strong(x):
         max_value = TensorValue(x)
-        return (max_value, _promote_to(y, max_value.dtype))
+        return (max_value, _promote_to_strong(y, max_value.dtype))
     else:
         max_value = TensorValue(y)
-        return (_promote_to(x, max_value.dtype), max_value)
+        return (_promote_to_strong(x, max_value.dtype), max_value)
 
 
-def _promote_to(value: TensorValueLike, out_dtype: DType) -> TensorValue:
-    if isinstance(value, (int, np.integer)):
-        min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[out_dtype]
+def _promote_to_strong(
+    value: TensorValueLike, strong_dtype: DType
+) -> TensorValue:
+    """Promotes weak dtypes to the specified strong dtype.
+
+    If the the input value is already strong, its dtype will not be changed.
+    Instead, strong dtype promotion will be handled by the individual ops in RMO.
+    """
+    if _is_strong(value):
+        return TensorValue(value)
+    elif isinstance(value, (int, np.integer)):
+        min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[strong_dtype]
         if min <= value <= max:
-            return ops.constant(value, out_dtype)
+            return ops.constant(value, strong_dtype)
 
         raise ValueError(
             f"Unsafe cast: Can't promote python int with value ({value}) to"
-            f" dtype({out_dtype}). It would lose precision."
+            f" dtype({strong_dtype}). It would lose precision."
         )
 
     elif isinstance(value, (float, np.floating)):
-        if out_dtype.is_float():
-            return ops.constant(value, out_dtype)
+        if strong_dtype.is_float():
+            return ops.constant(value, strong_dtype)
 
         raise ValueError(
-            f"Unsafe cast: Can't promote python float to dtype({out_dtype})."
+            f"Unsafe cast: Can't promote python float to dtype({strong_dtype})."
         )
 
     elif isinstance(value, (np.ndarray)):
         if DType.from_numpy(value.dtype).is_float():
-            if out_dtype.is_float():
-                return ops.constant(value, out_dtype)
+            if strong_dtype.is_float():
+                return ops.constant(value, strong_dtype)
             else:
                 raise ValueError(
                     "Unsafe cast: Can't promote numpy float array to"
-                    f" dtype({out_dtype})."
+                    f" dtype({strong_dtype})."
                 )
 
-        min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[out_dtype]
+        min, max = _DTYPE_MIN_AND_MAX_FULL_PRECISION[strong_dtype]
         if np.all(min <= value) and np.all(value <= max):
-            return ops.constant(value, out_dtype)
+            return ops.constant(value, strong_dtype)
 
         raise ValueError(
             "Unsafe cast: Can't promote numpy integer array with value"
-            f" ({value}) to dtype({out_dtype}). It would lose precision."
+            f" ({value}) to dtype({strong_dtype}). It would lose precision."
         )
 
     else:
