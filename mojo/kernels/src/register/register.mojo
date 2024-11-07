@@ -5,14 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn mogg_register(name: StringLiteral):
+fn register_internal(name: StringLiteral):
     """
     This decorator registers a given mojo function as being an implementation
     of a mo op or a `mo.custom` op.
 
     For instance:
 
-    @mogg_register("mo.add")
+    @register_internal("mo.add")
     fn my_op[...](...):
 
     registers `my_op` as an implementation of `mo.add`.
@@ -23,12 +23,12 @@ fn mogg_register(name: StringLiteral):
     return
 
 
-fn mogg_register_override(name: StringLiteral, priority: Int):
+fn register_internal_override(name: StringLiteral, priority: Int):
     """
     This decorator registers a given mojo function as being an implementation
     of a mo op or a `mo.custom` op with an override priority.
 
-    @mogg_register("mo.add", 1)
+    @register_internal("mo.add", 1)
     fn my_op[...](...):
 
     Args:
@@ -38,16 +38,16 @@ fn mogg_register_override(name: StringLiteral, priority: Int):
     return
 
 
-fn mogg_register_shape_func(name: StringLiteral):
+fn register_internal_shape_func(name: StringLiteral):
     """
     This decorator registers a given mojo function as being an implementation
     of a shape function for a mo op or a `mo.custom` op.
 
-    @mogg_register_custom("tf.Something")
+    @register_internal_custom("tf.Something")
     fn something_impl[...](...):
         pass
 
-    @mogg_register_custom_shape("tf.Something")
+    @register_internal_custom_shape("tf.Something")
     fn something_shape_impl[...](...):
         pass
 
