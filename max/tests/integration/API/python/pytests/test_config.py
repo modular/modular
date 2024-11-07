@@ -61,3 +61,12 @@ def test_validate_huggingface_repo_id__bad_repo_provided():
             architecture="test",
             huggingface_repo_id="bert-base-asdfasdf",
         )
+
+
+def test_hf_config_retrieval():
+    config = PipelineConfig(
+        architecture="test",
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    assert config.huggingface_config is not None
