@@ -53,7 +53,7 @@ from layout.tensor_core import (
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 
-from utils.index import Index
+from utils.index import Index, IndexList
 
 from .matmul_gpu import matmul_kernel_naive
 from .utils import apply_epilogue, elementwise_epilogue_type
@@ -873,8 +873,9 @@ fn multistage_gemm_split_k_kernel[
     var b_part = b.split[axis= 1 if transpose_b else 0, alignment=BK](
         num_partitions, BlockIdx.z()
     )
-    var work_space_part = tb[work_space_type]().row_major(M, N).view(
-        work_space.data + BlockIdx.z() * M * N
+    var work_space_part = LayoutTensor[work_space_type, c_layout](
+        work_space.data + BlockIdx.z() * M * N,
+        RuntimeLayout[c_layout].row_major(IndexList[2](M, N)),
     )
 
     alias k_partition_config = MatmulConfig[
