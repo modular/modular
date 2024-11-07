@@ -22,7 +22,7 @@ from utils import unroll, StaticTuple
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register_override("mo.concat", 1)
+@register_internal_override("mo.concat", 1)
 @always_inline
 fn test_concat_dim_0_inputs_lambda_tuple[
     type: DType,
@@ -74,7 +74,7 @@ fn test_concat_dim_0_inputs_lambda_tuple[
         offset = offset + input_shape[0]
 
 
-@mogg_register("test_many_ranks_and_types")
+@register_internal("test_many_ranks_and_types")
 fn test_many_ranks_and_types[
     type1: DType,
     rank1: Int,
@@ -100,7 +100,7 @@ fn test_many_ranks_and_types[
     return tensor1
 
 
-@mogg_register("test_one_rank_many_tensor")
+@register_internal("test_one_rank_many_tensor")
 fn test_one_rank_many_tensor[
     type: DType, rank: Int
 ](
@@ -117,7 +117,7 @@ fn test_one_rank_many_tensor[
     return tensor1
 
 
-@mogg_register("mutable_test_op")
+@register_internal("mutable_test_op")
 fn mutable_test_op[
     type: DType,
     rank: Int,
@@ -128,7 +128,7 @@ fn mutable_test_op[
     output.data.store(0, 0)
 
 
-@mogg_register("test_3D_in_out_lambda")
+@register_internal("test_3D_in_out_lambda")
 fn test_3D_in_out_lambda[
     type: DType,
     simd_width: Int,
@@ -158,7 +158,7 @@ fn test_3D_in_out_lambda[
     return output
 
 
-@mogg_register_override("mo.sqrt", 1)
+@register_internal_override("mo.sqrt", 1)
 @mogg_elementwise
 fn sqrt_wrapped[
     type: DType, simd_width: Int
@@ -167,7 +167,7 @@ fn sqrt_wrapped[
     return value
 
 
-@mogg_register("test_static_shape_deduction")
+@register_internal("test_static_shape_deduction")
 fn test_static_shape_deduction[
     type: DType, rank: Int, input_0_static_shape: DimList
 ](tensor: NDBuffer[type, rank, input_0_static_shape],):
@@ -187,7 +187,7 @@ fn test_static_shape_deduction[
     unroll[body, rank]()
 
 
-@mogg_register("test_static_stride_deduction")
+@register_internal("test_static_stride_deduction")
 fn test_static_stride_deduction[
     type: DType,
     rank: Int,
@@ -210,18 +210,18 @@ fn test_static_stride_deduction[
     unroll[body, rank]()
 
 
-@mogg_register("test_address_space_deduction")
+@register_internal("test_address_space_deduction")
 fn test_address_space_deduction(tensor: NDBuffer):
     print("Printing address space: ")
     print("Address Space: " + str(tensor.address_space._value))
 
 
-@mogg_register("test_ndbuffer_exclusive_deduction")
+@register_internal("test_ndbuffer_exclusive_deduction")
 fn test_ndbuffer_exclusive_deduction(tensor: NDBuffer):
     print("Printing exclusive flag: " + str(tensor.exclusive))
 
 
-@mogg_register("test_static_shape_output")
+@register_internal("test_static_shape_output")
 fn test_static_shape_output[
     type: DType, rank: Int, output_0_static_shape: DimList
 ]() -> NDBuffer[type, rank, output_0_static_shape]:
@@ -244,7 +244,7 @@ fn test_static_shape_output[
     )
 
 
-@mogg_register("test_int_list_param")
+@register_internal("test_int_list_param")
 fn test_int_list_param[length: Int, int_list: DimList]():
     print("Printing parameter: ")
 
@@ -260,7 +260,7 @@ fn test_int_list_param[length: Int, int_list: DimList]():
     unroll[body, length]()
 
 
-@mogg_register("test_custom_op")
+@register_internal("test_custom_op")
 @always_inline
 fn test_unary_kernel[
     type: DType,
@@ -278,7 +278,7 @@ fn test_unary_kernel[
     print("World!")
 
 
-@mogg_register_shape_func("test_custom_op")
+@register_internal_shape_func("test_custom_op")
 @always_inline
 fn test_unary_kernel_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
@@ -288,7 +288,7 @@ fn test_unary_kernel_shape_func[
     return data.get_shape()
 
 
-@mogg_register("test_custom_op_params")
+@register_internal("test_custom_op_params")
 @always_inline
 fn test_unary_kernel_params[
     type: DType,
@@ -301,9 +301,9 @@ fn test_unary_kernel_params[
     print(extra_param2)
 
 
-@mogg_register("tf.Identity")
-@mogg_register("torch.aten.abs")
-@mogg_register("monnx.abs_v13")
+@register_internal("tf.Identity")
+@register_internal("torch.aten.abs")
+@register_internal("monnx.abs_v13")
 @always_inline
 fn test_custom_identity[
     type: DType,
@@ -335,9 +335,9 @@ fn test_custom_identity[
     )
 
 
-@mogg_register_shape_func("tf.Identity")
-@mogg_register_shape_func("torch.aten.abs")
-@mogg_register_shape_func("monnx.abs_v13")
+@register_internal_shape_func("tf.Identity")
+@register_internal_shape_func("torch.aten.abs")
+@register_internal_shape_func("monnx.abs_v13")
 @always_inline
 fn test_custom_identity_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
@@ -345,7 +345,7 @@ fn test_custom_identity_shape_func[
     return data.get_shape()
 
 
-@mogg_register("test_variadic")
+@register_internal("test_variadic")
 @always_inline
 fn concat(
     ctx: MojoCallContextPtr,
@@ -354,7 +354,7 @@ fn concat(
     pass
 
 
-@mogg_register_shape_func("test_custom_op_inline")
+@register_internal_shape_func("test_custom_op_inline")
 fn reduce_shape_no_explicit_inline[
     input_rank: Int,
     input_type: DType,
@@ -375,7 +375,7 @@ fn reduce_shape_no_explicit_inline[
     return output_shape
 
 
-@mogg_register("custom_op_that_raises")
+@register_internal("custom_op_that_raises")
 fn custom_op_that_raises[
     type: DType,
     rank: Int,
@@ -407,7 +407,7 @@ fn custom_op_that_raises[
     )
 
 
-@mogg_register_shape_func("custom_op_that_raises")
+@register_internal_shape_func("custom_op_that_raises")
 @always_inline
 fn custom_shape_func_that_raises[
     type: DType, rank: Int, single_thread_blocking_override: Bool
@@ -422,7 +422,7 @@ fn custom_shape_func_that_raises[
     return out_shape
 
 
-@mogg_register("relative_rank_deduction")
+@register_internal("relative_rank_deduction")
 @always_inline
 fn relative_rank_deduction[
     type: DType,
@@ -431,29 +431,29 @@ fn relative_rank_deduction[
     pass
 
 
-@mogg_register("get_index")
+@register_internal("get_index")
 fn get_index() -> Int:
     return 1
 
 
-@mogg_register("print_index")
+@register_internal("print_index")
 fn print_index(i: Int):
     print("index = ", i)
 
 
-@mogg_register("print_indices")
+@register_internal("print_indices")
 fn print_indices[rank: Int](i: IndexList[rank]):
     print(i)
 
 
-@mogg_register("test_type_parameter_deduction")
+@register_internal("test_type_parameter_deduction")
 fn test_type_parameter_deduction[
     A: AnyTrivialRegType, B: AnyTrivialRegType
 ](arg0: A, arg1: B) -> A:
     return arg0
 
 
-@mogg_register("print_tensor_test")
+@register_internal("print_tensor_test")
 fn print_tensor_test[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
     print("Rank:", rank)
     print("Shape:", buffer.get_shape())
@@ -461,7 +461,7 @@ fn print_tensor_test[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
         print(buffer.data.load(i))
 
 
-@mogg_register("print_tensor_shape")
+@register_internal("print_tensor_shape")
 fn print_tensor_shape[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
     print("Rank:", rank)
     print("Shape:", buffer.get_shape())
@@ -478,13 +478,13 @@ struct MyCustomInt(Movable):
         self.val = other.val
 
 
-@mogg_register("test_make_custom_int")
+@register_internal("test_make_custom_int")
 @no_inline
 fn test_make_custom_int() -> MyCustomInt:
     return MyCustomInt(42)
 
 
-@mogg_register("basic_target")
+@register_internal("basic_target")
 fn basic_target[
     type: DType, rank: Int, target: StringLiteral = "cpu"
 ](x: NDBuffer[type, rank], out: NDBuffer[type, rank]):
@@ -502,7 +502,7 @@ struct MyCustomSIMD[type: DType, len: Int](Movable):
 
 
 # For testing support for Scalar[...] in Mojo
-@mogg_register("supports_scalar_kernel")
+@register_internal("supports_scalar_kernel")
 fn supports_scalar_kernel[
     type: DType, target: StringLiteral
 ](x: NDBuffer[type, 1], y: Scalar[type], out: NDBuffer[type, 1]):
@@ -525,7 +525,7 @@ struct MyCustomScalar[type: DType](Movable):
         print("MyCustomScalar.__del__", self.val)
 
 
-@mogg_register("tensor_to_my_custom_scalar_ndbuff")
+@register_internal("tensor_to_my_custom_scalar_ndbuff")
 fn tensor_to_my_custom_scalar_ndbuff[
     type: DType
 ](x: NDBuffer[type, 1]) -> MyCustomScalar[type]:
@@ -533,7 +533,7 @@ fn tensor_to_my_custom_scalar_ndbuff[
     return MyCustomScalar(val)
 
 
-@mogg_register("scale_with_my_custom_scalar_ndbuff")
+@register_internal("scale_with_my_custom_scalar_ndbuff")
 fn scale_with_my_custom_scalar_ndbuff[
     type: DType, rank: Int
 ](
@@ -554,7 +554,7 @@ fn scale_with_my_custom_scalar_ndbuff[
     )
 
 
-@mogg_register_shape_func("scale_with_my_custom_scalar_ndbuff")
+@register_internal_shape_func("scale_with_my_custom_scalar_ndbuff")
 fn scale_with_my_custom_scalar_ndbuff_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
 ](x: NDBuffer[type, rank], scale: MyCustomScalar[type],) -> IndexList[rank]:
@@ -562,7 +562,7 @@ fn scale_with_my_custom_scalar_ndbuff_shape_func[
 
 
 # Invalid kernel: owned custom types not supported
-@mogg_register("invalid_kernel_owned_arg")
+@register_internal("invalid_kernel_owned_arg")
 fn invalid_kernel_owned_arg(
     owned x: MyCustomScalar[DType.int64],
 ) -> MyCustomScalar[DType.int64]:
@@ -582,21 +582,21 @@ struct MyCustomScalarReg[type: DType]:
         print("MyCustomScalarReg.__del__", self.val)
 
 
-@mogg_register("buff_to_my_custom_scalar_reg")
+@register_internal("buff_to_my_custom_scalar_reg")
 fn buff_to_my_custom_scalar_reg[
     type: DType
 ](x: NDBuffer[type, 1]) -> MyCustomScalarReg[type]:
     return MyCustomScalarReg(x.data[0])
 
 
-@mogg_register("my_custom_scalar_reg_to_buff")
+@register_internal("my_custom_scalar_reg_to_buff")
 fn my_custom_scalar_reg_to_buff[
     type: DType
 ](x: MyCustomScalar[type], out: NDBuffer[type, 1]):
     out.data[0] = x.val
 
 
-@mogg_register("kernel_with_no_target")
+@register_internal("kernel_with_no_target")
 fn kernel_with_no_target[
     type: DType, rank: Int
 ](x: NDBuffer[type, rank], out: NDBuffer[type, rank]):
@@ -609,11 +609,11 @@ struct TwoIndices:
     var second: Int
 
 
-@mogg_register("create_two_indices")
+@register_internal("create_two_indices")
 fn create_two_indices[]() -> TwoIndices:
     return TwoIndices(1, 2)
 
 
-@mogg_register("create_two_indices_raises")
+@register_internal("create_two_indices_raises")
 fn create_two_indices_raises[]() raises -> TwoIndices:
     return TwoIndices(1, 2)

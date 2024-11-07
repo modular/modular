@@ -143,7 +143,7 @@ fn byte_buffer_alloc[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("builtin.create_errror_async_values_and_destruct_error")
+@register_internal("builtin.create_errror_async_values_and_destruct_error")
 @always_inline
 fn create_errror_async_values_and_destruct_error[
     len: Int
@@ -161,7 +161,7 @@ fn create_errror_async_values_and_destruct_error[
     )
 
 
-@mogg_register("builtin.create_index_async")
+@register_internal("builtin.create_index_async")
 @always_inline
 fn create_index_async(
     value: Int,
@@ -173,7 +173,7 @@ fn create_index_async(
     )
 
 
-@mogg_register("builtin.create_si64_async")
+@register_internal("builtin.create_si64_async")
 @always_inline
 @export
 fn create_si64_async(
@@ -186,7 +186,7 @@ fn create_si64_async(
     )
 
 
-@mogg_register("builtin.create_chain_async")
+@register_internal("builtin.create_chain_async")
 @always_inline
 fn create_chain_async(
     async_ptr: UnsafePointer[NoneType],
@@ -197,8 +197,8 @@ fn create_chain_async(
     )
 
 
-@mogg_register("builtin.create_bool_async")
-@mogg_register("builtin.create_i1_async")
+@register_internal("builtin.create_bool_async")
+@register_internal("builtin.create_i1_async")
 @always_inline
 fn create_i1_async(
     value: Bool,
@@ -222,7 +222,7 @@ fn _destroy_device_buffer(ptr: UnsafePointer[NoneType]):
     _ = DeviceBuffer(ctx, data, 0, owning=True)
 
 
-@mogg_register("builtin.create_buffer_ref_async")
+@register_internal("builtin.create_buffer_ref_async")
 @always_inline
 fn create_buffer_ref_async[
     target: StringLiteral
@@ -270,7 +270,7 @@ fn create_buffer_ref_async[
     )
 
 
-@mogg_register("builtin.create_non_tracked_buffer_ref_async")
+@register_internal("builtin.create_non_tracked_buffer_ref_async")
 @always_inline
 fn create_non_tracked_buffer_ref_async[
     target: StringLiteral
@@ -285,7 +285,7 @@ fn create_non_tracked_buffer_ref_async[
     )
 
 
-@mogg_register("builtin.create_buffer_ref_with_borrow_async")
+@register_internal("builtin.create_buffer_ref_with_borrow_async")
 @always_inline
 fn create_buffer_ref_with_borrow_async[
     borrowee_type: Int, target: StringLiteral
@@ -305,7 +305,7 @@ fn create_buffer_ref_with_borrow_async[
     )
 
 
-@mogg_register("builtin.create_tensor_spec_async")
+@register_internal("builtin.create_tensor_spec_async")
 @always_inline
 fn create_tensor_spec_async[
     spec_rank: Int
@@ -326,7 +326,7 @@ fn create_tensor_spec_async[
     shape_ptr.free()
 
 
-@mogg_register("builtin.create_tensor_with_borrow_async")
+@register_internal("builtin.create_tensor_with_borrow_async")
 @always_inline
 fn create_tensor_async[
     tensor_rank: Int,
@@ -365,7 +365,7 @@ fn empty_destructor(ptr: UnsafePointer[UInt8]):
     pass
 
 
-@mogg_register("builtin.create_mojo_value_async")
+@register_internal("builtin.create_mojo_value_async")
 @always_inline
 fn create_mojo_value_async(
     val_ptr: UnsafePointer[UInt8],
@@ -398,7 +398,7 @@ fn create_mojo_value_async(
     )
 
 
-@mogg_register("builtin.create_python_mojo_value_async")
+@register_internal("builtin.create_python_mojo_value_async")
 @always_inline
 fn create_python_mojo_value_async(
     val_ptr: UnsafePointer[UInt8],
@@ -422,7 +422,7 @@ fn create_python_mojo_value_async(
     )
 
 
-@mogg_register("builtin.unpack_async")
+@register_internal("builtin.unpack_async")
 @always_inline
 fn unpack_async(
     async_ptr: UnsafePointer[NoneType],
@@ -433,7 +433,7 @@ fn unpack_async(
     ](async_ptr)
 
 
-@mogg_register("builtin.unpack_buffer_ref")
+@register_internal("builtin.unpack_buffer_ref")
 @always_inline
 fn unpack_buffer_ref[
     target: StringLiteral
@@ -447,7 +447,7 @@ fn unpack_buffer_ref[
     return NDBuffer[DType.uint8, 1](data_ptr.bitcast[UInt8](), shape)
 
 
-@mogg_register("builtin.unpack_tensor")
+@register_internal("builtin.unpack_tensor")
 @always_inline
 fn unpack_tensor[
     buffer_rank: Int,
@@ -476,7 +476,7 @@ fn unpack_tensor[
     return NDBuffer[type, buffer_rank](buffer_ptr.bitcast[type](), shapes)
 
 
-@mogg_register("builtin.unpack_tensor_spec")
+@register_internal("builtin.unpack_tensor_spec")
 @always_inline
 fn unpack_tensor_spec[
     spec_rank: Int
@@ -493,7 +493,7 @@ fn unpack_tensor_spec[
     return StaticTensorSpec[spec_rank](shape, DType._from_ui8(raw_dtype.value))
 
 
-@mogg_register("builtin.unpack_context")
+@register_internal("builtin.unpack_context")
 @always_inline
 fn unpack_context(
     async_ptr: UnsafePointer[NoneType],
@@ -507,7 +507,7 @@ fn unpack_context(
     return StateContext(int(num_slots), ctx_ptr)
 
 
-@mogg_register("builtin.get_buffer_data")
+@register_internal("builtin.get_buffer_data")
 @always_inline
 fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
     return buffer.data
@@ -518,7 +518,7 @@ fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mgp.assert")
+@register_internal("mgp.assert")
 @always_inline
 fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
     if not cond:
@@ -531,7 +531,7 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mgp.tensor.create")
+@register_internal("mgp.tensor.create")
 @always_inline
 fn mgp_tensor_create[
     spec_rank: Int,
@@ -560,7 +560,7 @@ fn mgp_tensor_create[
         )
 
 
-@mogg_register("mgp.tensor.extract.tensor_spec")
+@register_internal("mgp.tensor.extract.tensor_spec")
 @always_inline
 fn mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
@@ -582,7 +582,7 @@ fn mgp_tensor_extract_tensor_spec[
         )
 
 
-@mogg_register("mgp.tensor.extract.buffer")
+@register_internal("mgp.tensor.extract.buffer")
 @always_inline
 fn mgp_tensor_extract_buffer[
     tensor_rank: Int,
@@ -600,7 +600,7 @@ fn mgp_tensor_extract_buffer[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mgp.buffer.alloc")
+@register_internal("mgp.buffer.alloc")
 @always_inline
 fn mgp_buffer_alloc[
     bRawAlign: UInt64,
@@ -618,7 +618,7 @@ fn mgp_buffer_alloc[
     )
 
 
-@mogg_register("mgp.buffer.constant")
+@register_internal("mgp.buffer.constant")
 @export
 fn mgp_buffer_constant[
     bRawAlign: UInt64,
@@ -629,7 +629,7 @@ fn mgp_buffer_constant[
     return __type_of(result)(resource_ptr.bitcast[Int8](), resource_bytecount)
 
 
-@mogg_register("mgp.buffer.constant.external")
+@register_internal("mgp.buffer.constant.external")
 fn mgp_buffer_constant_external[
     bName: StringLiteral,
     cSize: UInt64,
@@ -670,7 +670,7 @@ fn fill_buffer[
         offset += 1
 
 
-@mogg_register("mgp.buffer.set_with_index")
+@register_internal("mgp.buffer.set_with_index")
 @always_inline
 fn mgp_buffer_set_with_index[
     bDevice: StringLiteral
@@ -695,7 +695,7 @@ fn mgp_buffer_set_with_index[
     return 1  # Dummy int for output chain on DeviceOp.td
 
 
-@mogg_register("mgp.buffer.to_bool")
+@register_internal("mgp.buffer.to_bool")
 @always_inline
 fn mgp_buffer_to_bool[
     bDevice: StringLiteral
@@ -709,7 +709,7 @@ fn mgp_buffer_to_bool[
     return buffer[0] != 0
 
 
-@mogg_register("mgp.buffer.to_index")
+@register_internal("mgp.buffer.to_index")
 @always_inline
 fn mgp_buffer_to_index(
     dummy_chain: Int, buffer: NDBuffer[DType.uint8, 1]
@@ -725,7 +725,7 @@ fn mgp_buffer_to_index(
     )
 
 
-@mogg_register("mgp.buffer.slice")
+@register_internal("mgp.buffer.slice")
 @always_inline
 fn mgp_buffer_slice(
     buffer: NDBuffer[DType.uint8, 1], offset: Int, size: Int
@@ -733,7 +733,7 @@ fn mgp_buffer_slice(
     return NDBuffer[DType.uint8, 1](buffer.data.offset(offset), Index(size))
 
 
-@mogg_register("mgp.buffer.concat")
+@register_internal("mgp.buffer.concat")
 @always_inline
 fn mgp_buffer_concat[
     bDevice: StringLiteral
@@ -755,7 +755,7 @@ fn mgp_buffer_concat[
     return 0
 
 
-@mogg_register("mgp.buffer.device_to_host")
+@register_internal("mgp.buffer.device_to_host")
 @always_inline
 fn mgp_buffer_device_to_host[
     cOtherDevice: StringLiteral,
@@ -785,7 +785,7 @@ fn mgp_buffer_device_to_host[
     return 0
 
 
-@mogg_register("mgp.buffer.device_to_device")
+@register_internal("mgp.buffer.device_to_device")
 @always_inline
 fn mgp_buffer_device_to_device[
     cSrcDevice: StringLiteral,
@@ -824,7 +824,7 @@ fn mgp_buffer_device_to_device[
     return 0
 
 
-@mogg_register("mgp.buffer.host_to_device")
+@register_internal("mgp.buffer.host_to_device")
 @always_inline
 fn mgp_buffer_host_to_device[
     cHostDevice: StringLiteral,
@@ -854,7 +854,7 @@ fn mgp_buffer_host_to_device[
     return 0
 
 
-@mogg_register("mgp.buffer.get_cached")
+@register_internal("mgp.buffer.get_cached")
 @always_inline
 fn mgp_buffer_get_cached(
     dummy_chain: Int,
@@ -880,7 +880,7 @@ fn mgp_buffer_get_cached(
     )
 
 
-@mogg_register("destruct_async_refs")
+@register_internal("destruct_async_refs")
 @always_inline
 fn destruct_async_refs[
     size: Int
@@ -895,7 +895,7 @@ fn destruct_async_refs[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mgp.tensor_spec.create")
+@register_internal("mgp.tensor_spec.create")
 @always_inline
 fn mgp_tensor_spec_create[
     bRawDType: UInt8,
@@ -916,7 +916,7 @@ fn mgp_tensor_spec_create[
     return StaticTensorSpec[aRawDimsRank](shape, type)
 
 
-@mogg_register("mgp.tensor_spec.size")
+@register_internal("mgp.tensor_spec.size")
 @always_inline
 fn mgp_tensor_spec_size[
     spec_rank: Int
@@ -924,7 +924,7 @@ fn mgp_tensor_spec_size[
     return spec.bytecount()
 
 
-@mogg_register("mgp.tensor_spec.equal.static")
+@register_internal("mgp.tensor_spec.equal.static")
 @always_inline
 fn mgp_tensor_spec_equal_static[
     spec_rank: Int, *rawDims: Dim
@@ -942,7 +942,7 @@ fn mgp_tensor_spec_equal_static[
     return True
 
 
-@mogg_register("mgp.tensor_spec.get_dim")
+@register_internal("mgp.tensor_spec.get_dim")
 @always_inline
 fn mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
@@ -964,7 +964,7 @@ fn mgp_device_context_destroy(dev_ctx: UnsafePointer[DeviceContext]):
     _ = dev_ctx.destroy_pointee()
 
 
-@mogg_register("mgp.device.context.profile.start")
+@register_internal("mgp.device.context.profile.start")
 @always_inline
 fn mgp_device_context_profile_start[
     aDeviceRuntimeSlot: UInt64,
@@ -981,7 +981,7 @@ fn mgp_device_context_profile_start[
     return 1
 
 
-@mogg_register("mgp.device.context.profile.end")
+@register_internal("mgp.device.context.profile.end")
 @always_inline
 fn mgp_device_context_profile_end[
     aDeviceRuntimeSlot: UInt64,
@@ -998,7 +998,7 @@ fn mgp_device_context_profile_end[
     return 1
 
 
-@mogg_register("mgp.sync")
+@register_internal("mgp.sync")
 @always_inline
 fn mgp_sync[
     aRuntimeSlot: UInt64,
@@ -1013,7 +1013,7 @@ fn mgp_sync[
     return 0
 
 
-@mogg_register("mgp.debug.print")
+@register_internal("mgp.debug.print")
 @always_inline
 fn mg_debug_print[
     aDebugString: StringLiteral,
@@ -1045,19 +1045,19 @@ struct MyInt(Movable):
         print("MyInt.__del__", self.val)
 
 
-@mogg_register("testfuse.my_int.from_index")
+@register_internal("testfuse.my_int.from_index")
 @always_inline
 fn test_my_int_from_index(x: Int) -> MyInt:
     return MyInt(x)
 
 
-@mogg_register("testfuse.my_int.square")
+@register_internal("testfuse.my_int.square")
 @always_inline
 fn test_my_int_square(x: MyInt) -> MyInt:
     return MyInt(x.val * x.val)
 
 
-@mogg_register("testfuse.my_int.to_index")
+@register_internal("testfuse.my_int.to_index")
 @always_inline
 fn test_my_int_to_index(x: MyInt) -> Int:
     return x.val
@@ -1072,7 +1072,7 @@ struct MyIntReg:
         self.val = val
 
 
-@mogg_register("testfuse.my_int_reg.square")
+@register_internal("testfuse.my_int_reg.square")
 @always_inline
 fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
     return MyIntReg(x.val * x.val)
@@ -1090,19 +1090,19 @@ struct MyIntReg2:
         print("MyIntReg2.__del__", self.val)
 
 
-@mogg_register("testfuse.my_int_reg2.from_index")
+@register_internal("testfuse.my_int_reg2.from_index")
 @always_inline
 fn test_my_int_reg2_from_index(x: Int) -> MyIntReg2:
     return MyIntReg2(x)
 
 
-@mogg_register("testfuse.my_int_reg2.square")
+@register_internal("testfuse.my_int_reg2.square")
 @always_inline
 fn test_my_int_reg2_square(x: MyIntReg2) -> MyIntReg2:
     return MyIntReg2(x.val * x.val)
 
 
-@mogg_register("testfuse.my_int_reg2.to_index")
+@register_internal("testfuse.my_int_reg2.to_index")
 @always_inline
 fn test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
     return x.val

@@ -6,7 +6,7 @@
 from register import *
 
 
-@mogg_register_override("mo.min", 10)
+@register_internal_override("mo.min", 10)
 @mogg_elementwise
 @always_inline
 @export
@@ -18,7 +18,7 @@ fn mogg_min[
     return min(x, y)
 
 
-@mogg_register("test_override_extra_op")
+@register_internal("test_override_extra_op")
 @mogg_elementwise
 @always_inline
 @export

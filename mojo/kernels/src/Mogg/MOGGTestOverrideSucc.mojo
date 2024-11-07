@@ -7,7 +7,7 @@
 from register import *
 
 
-@mogg_register_override("mo.max", 1)
+@register_internal_override("mo.max", 1)
 @mogg_elementwise
 @always_inline
 @export
@@ -19,7 +19,7 @@ fn mogg_max[
     return max(x, y)
 
 
-@mogg_register_override("mo.min", 1)
+@register_internal_override("mo.min", 1)
 @mogg_elementwise
 @always_inline
 @export
@@ -31,7 +31,7 @@ fn mogg_min[
     return mogg_max(x, y)
 
 
-@mogg_register("test_override_dummy_op")
+@register_internal("test_override_dummy_op")
 @mogg_elementwise
 @always_inline
 @export

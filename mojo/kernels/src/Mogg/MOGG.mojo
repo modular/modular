@@ -373,94 +373,94 @@ struct ABI_List:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("bfloat16")
+@register_internal("bfloat16")
 fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.bfloat16.value
 
 
-@mogg_register("float16")
+@register_internal("float16")
 fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.float16.value
 
 
-@mogg_register("float32")
+@register_internal("float32")
 fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
     return DType.float32.value
 
 
-@mogg_register("float64")
+@register_internal("float64")
 fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
     return DType.float64.value
 
 
-@mogg_register("int8")
+@register_internal("int8")
 fn DTypeInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.int8.value
 
 
-@mogg_register("int16")
+@register_internal("int16")
 fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.int16.value
 
 
-@mogg_register("int32")
+@register_internal("int32")
 fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.int32.value
 
 
-@mogg_register("uint32")
+@register_internal("uint32")
 fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.uint32.value
 
 
-@mogg_register("uint64")
+@register_internal("uint64")
 fn DTypeUInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.uint64.value
 
 
-@mogg_register("int64")
+@register_internal("int64")
 fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.int64.value
 
 
-@mogg_register("uint8")
+@register_internal("uint8")
 fn DTypeUInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.uint8.value
 
 
-@mogg_register("uint16")
+@register_internal("uint16")
 fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.uint16.value
 
 
-@mogg_register("bool")
+@register_internal("bool")
 fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
     return DType.bool.value
 
 
-@mogg_register("index")
+@register_internal("index")
 fn IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
-@mogg_register("mojoCallContext")
+@register_internal("mojoCallContext")
 fn MojoCallContextDef(ty: MojoCallContextPtr):
     pass
 
 
-@mogg_register("simd")
+@register_internal("simd")
 fn SimdTypeDef[
     type: DType, width: Int
 ](ty: SIMD[type, width]) -> SIMD[type, width]:
     return ty
 
 
-@mogg_register("indices")
+@register_internal("indices")
 fn TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
     return ty
 
 
-@mogg_register("dim_type")
+@register_internal("dim_type")
 fn DimTypeDef(ty: Dim) -> Dim:
     return ty
 
@@ -470,12 +470,12 @@ fn DimTypeDef(ty: Dim) -> Dim:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("create_unknown_dim")
+@register_internal("create_unknown_dim")
 fn create_unknown_dim() -> Dim:
     return Dim()
 
 
-@mogg_register("create_known_dim")
+@register_internal("create_known_dim")
 fn create_known_dim[known_val: Int]() -> Dim:
     return Dim(known_val)
 
@@ -488,7 +488,7 @@ fn create_known_dim[known_val: Int]() -> Dim:
 # This function is used in some MLIR tests, so we need to define it here to
 # register it as a kernel. However the _real_ implementation is in MOGGKernelAPI.mojo,
 # we forward to that definition here.
-@mogg_register("managed_tensor_slice_to_ndbuffer")
+@register_internal("managed_tensor_slice_to_ndbuffer")
 @always_inline
 fn managed_tensor_slice_to_ndbuffer[
     type: DType, rank: Int
@@ -496,7 +496,7 @@ fn managed_tensor_slice_to_ndbuffer[
     return managed_tensor_slice_to_ndbuffer_impl(tensor)
 
 
-@mogg_register("to_buffer")
+@register_internal("to_buffer")
 @always_inline
 fn to_buffer[
     type: DType, rank: Int
@@ -522,7 +522,7 @@ fn to_buffer[
     return NDBuffer[type, rank](data, shape_tuple, stride_tuple)
 
 
-@mogg_register("to_shape")
+@register_internal("to_shape")
 @always_inline
 fn to_shape[rank: Int](shape: UnsafePointer[Int]) -> IndexList[rank]:
     var shape_ptr = shape
@@ -536,7 +536,7 @@ fn to_shape[rank: Int](shape: UnsafePointer[Int]) -> IndexList[rank]:
 
 
 # Convert a tensor into a shape.
-@mogg_register("tensor_to_shape")
+@register_internal("tensor_to_shape")
 @always_inline
 fn tensor_to_shape[
     type: DType,
@@ -552,7 +552,7 @@ fn tensor_to_shape[
 
 
 # Extract a value from a shape.
-@mogg_register("get_scalar_from_ndbuffer")
+@register_internal("get_scalar_from_ndbuffer")
 @always_inline
 fn get_scalar_from_ndbuffer[
     dtype: DType
@@ -562,7 +562,7 @@ fn get_scalar_from_ndbuffer[
 
 
 # Extract a value from a shape.
-@mogg_register("get_int_from_shape")
+@register_internal("get_int_from_shape")
 @always_inline
 fn get_int_from_shape[
     param_index: Int, rank: Int
@@ -570,7 +570,7 @@ fn get_int_from_shape[
     return shape[param_index]
 
 
-@mogg_register("shape_to_ndbuffer")
+@register_internal("shape_to_ndbuffer")
 @always_inline
 fn shape_to_ndbuffer[
     shape_rank: Int, buf_rank: Int, type: DType
@@ -580,7 +580,7 @@ fn shape_to_ndbuffer[
         buf[i] = shape[i]
 
 
-@mogg_register("shape_to_managed_tensor_slice")
+@register_internal("shape_to_managed_tensor_slice")
 @always_inline
 fn shape_to_managed_tensor_slice[
     shape_rank: Int, buf_rank: Int, type: DType
@@ -593,7 +593,7 @@ fn shape_to_managed_tensor_slice[
         tensor.store[width=1](IndexList[1](i), shape[i])
 
 
-@mogg_register("to_buffer_list")
+@register_internal("to_buffer_list")
 @always_inline
 fn to_buffer_list[
     type: DType, rank: Int
@@ -623,7 +623,7 @@ fn to_buffer_list[
     return InlinedFixedVector(out_list)
 
 
-@mogg_register("destruct_buffer_list")
+@register_internal("destruct_buffer_list")
 @always_inline
 fn destruct_buffer_list[
     type: DType, rank: Int
@@ -633,8 +633,8 @@ fn destruct_buffer_list[
 
 
 # TODO(#27757): All calls with concrete body functions are as if annotated with
-#               @mogg_register("mo.original_op")
-@mogg_register("elementwise")
+#               @register_internal("mo.original_op")
+@register_internal("elementwise")
 @always_inline
 fn elementwise_wrapper[
     trace_description: StringLiteral,
@@ -665,13 +665,13 @@ fn elementwise_wrapper[
     )
 
 
-@mogg_register("get_address_space")
+@register_internal("get_address_space")
 fn get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
 
 
 # Build the StaticTensorSpec parameter for the DPS kernels
-@mogg_register("build_static_tensor_specs")
+@register_internal("build_static_tensor_specs")
 fn build_static_tensor_specs[
     type: DType,
     rank: Int,
@@ -700,7 +700,7 @@ fn build_static_tensor_specs[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("to_managed_tensor_slice")
+@register_internal("to_managed_tensor_slice")
 @always_inline
 fn to_managed_tensor_slice[
     type: DType, rank: Int
@@ -720,7 +720,7 @@ fn to_managed_tensor_slice[
     )
 
 
-@mogg_register("shape_from_kgen")
+@register_internal("shape_from_kgen")
 @always_inline
 fn get_static_shape(shape: IntList) -> IndexList[shape._safe_len]:
     return shape.stack_alloc_data
@@ -742,7 +742,7 @@ fn _simd_load_internal[
     return buffer.data.load[width=simd_width](index)
 
 
-@mogg_register("simd_load")
+@register_internal("simd_load")
 @always_inline
 fn simd_load[
     simd_width: Int
@@ -770,7 +770,7 @@ fn simd_load[
     return strided_load[simd_width](buffer.data.offset(flat_index), stride)
 
 
-@mogg_register("simd_store")
+@register_internal("simd_store")
 @always_inline
 fn simd_store[
     simd_width: Int, element_alignment: Int
@@ -809,7 +809,7 @@ fn simd_store[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.broadcast_shape")
+@register_internal("mo.broadcast_shape")
 @always_inline
 fn broadcast_shape[
     lhs_type: DType,
@@ -869,7 +869,7 @@ fn broadcast_shape_impl[
             out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
 
 
-@mogg_register_shape_func("mo.broadcast_shape")
+@register_internal_shape_func("mo.broadcast_shape")
 @always_inline
 fn broadcast_shape_shape[
     lhs_type: DType,
@@ -885,7 +885,7 @@ fn broadcast_shape_shape[
     return IndexList[1](max(lhs_dim, rhs_dim))
 
 
-@mogg_register("mo.static.broadcast_to")
+@register_internal("mo.static.broadcast_to")
 @mogg_view_op
 @always_inline
 fn broadcast_to_tensor[
@@ -972,7 +972,7 @@ fn broadcast_to_tensor[
     return out
 
 
-@mogg_register("reshape_contiguous_buffer")
+@register_internal("reshape_contiguous_buffer")
 @always_inline
 fn reshape_contiguous_buffer[
     type: DType, old_rank: Int, new_rank: Int
@@ -992,7 +992,7 @@ fn reshape_contiguous_buffer[
     return NDBuffer[type, new_rank](buffer.data, shape, stride_tuple)
 
 
-@mogg_register("split_dim_indices")
+@register_internal("split_dim_indices")
 @mogg_view_op
 @always_inline
 fn split_dim_indices[
@@ -1022,7 +1022,7 @@ fn split_dim_indices[
     return out
 
 
-@mogg_register("insert_index")
+@register_internal("insert_index")
 @mogg_view_op
 @always_inline
 fn insert_index[
@@ -1045,7 +1045,7 @@ fn insert_index[
     return out
 
 
-@mogg_register("translate_gather_indices")
+@register_internal("translate_gather_indices")
 @always_inline
 fn translate_gather_indices[
     indices_dtype: DType,
@@ -1099,7 +1099,7 @@ fn translate_gather_indices[
     return data_indices
 
 
-@mogg_register_shape_func("mo.broadcast_to")
+@register_internal_shape_func("mo.broadcast_to")
 @always_inline
 fn broadcast_to_shape[
     input_rank: Int,
@@ -1142,17 +1142,17 @@ fn broadcast_to_shape[
 # When we have many SIMD types in one kernel we need to use the `min` of them.
 # This involves applying parameter expressions to this result which must be
 # `mlir.index` typed so we need to return as `mlir.index` and then cast to int.
-@mogg_register("simd_target_cpu")
+@register_internal("simd_target_cpu")
 fn get_target_simd[type: DType]() -> __mlir_type.index:
     return int(simdwidthof[type]()).value
 
 
-@mogg_register("simd_target_cuda")
+@register_internal("simd_target_cuda")
 fn get_target_simd_cuda[type: DType]() -> __mlir_type.index:
     return int(simdwidthof[Scalar[type], target = _get_nvptx_target()]()).value
 
 
-@mogg_register("simd_target_to_int")
+@register_internal("simd_target_to_int")
 fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
     return Int(simd_width)
 
@@ -1163,7 +1163,7 @@ fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
 
 
 # Call abs, needed as it has multiple overloads which can't be aliased
-@mogg_register("mo.abs")
+@register_internal("mo.abs")
 @mogg_elementwise
 @always_inline
 fn abs_wrapped[
@@ -1178,7 +1178,7 @@ fn abs_wrapped[
 
 
 # Call argmax, needed as it has multiple overloads which can't be aliased
-@mogg_register("mo.arg_max")
+@register_internal("mo.arg_max")
 @always_inline
 fn argmax_wrapped[
     type: DType,
@@ -1220,7 +1220,7 @@ fn argmax_wrapped[
 
 
 # Call argmin, needed as it has multiple overloads which can't be aliased
-@mogg_register("mo.arg_min")
+@register_internal("mo.arg_min")
 @always_inline
 fn argmin_wrapped[
     type: DType,
@@ -1262,7 +1262,7 @@ fn argmin_wrapped[
 
 
 # Cast a SIMD value to a new SIMD value of different type.
-@mogg_register("mo.cast")
+@register_internal("mo.cast")
 @mogg_elementwise
 @always_inline
 fn cast[
@@ -1280,7 +1280,7 @@ from nn.concat import (
 )
 
 
-@mogg_register("mo.concat_from_list")
+@register_internal("mo.concat_from_list")
 @always_inline
 fn concat_from_list[
     input_type: DType,
@@ -1300,7 +1300,7 @@ fn concat_from_list[
     )
 
 
-@mogg_register("mo.concat")
+@register_internal("mo.concat")
 @always_inline
 fn concat[
     type: DType,
@@ -1345,7 +1345,7 @@ fn concat[
     ](normalized_axis, input_shapes, output, ctx)
 
 
-@mogg_register_shape_func("mo.concat")
+@register_internal_shape_func("mo.concat")
 @always_inline
 fn concat_shape[
     input_type: DType,
@@ -1401,7 +1401,7 @@ fn concat_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.avg_pool")
+@register_internal("mo.avg_pool")
 @always_inline
 fn avg_pool[
     type: DType,
@@ -1435,7 +1435,7 @@ fn avg_pool[
 
 # This handles avg_pool in the case where ceilMode = True. The default
 # (ceilMode = False) case is handled by avg_pool above.
-@mogg_register("mo.avg_pool_ceil_mode_true")
+@register_internal("mo.avg_pool_ceil_mode_true")
 @always_inline
 fn avg_pool_ceil_mode_true[
     type: DType,
@@ -1479,7 +1479,7 @@ fn avg_pool_ceil_mode_true[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.max_pool")
+@register_internal("mo.max_pool")
 @always_inline
 fn max_pool[
     type: DType,
@@ -1510,7 +1510,7 @@ fn max_pool[
 
 # This handles max_pool in the case where ceilMode = True. The default
 # (ceilMode = False) case is handled by max_pool above.
-@mogg_register("mo.max_pool_ceil_mode_true")
+@register_internal("mo.max_pool_ceil_mode_true")
 @always_inline
 fn max_pool_ceil_mode_true[
     type: DType,
@@ -1551,7 +1551,7 @@ fn max_pool_ceil_mode_true[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.cumsum")
+@register_internal("mo.cumsum")
 @always_inline
 fn cumsum[
     type: DType,
@@ -1575,7 +1575,7 @@ fn cumsum[
 
 
 # Not targeted yet because MOGG assumes single output
-@mogg_register("mo.split")
+@register_internal("mo.split")
 @always_inline
 fn split[
     type: DType,
@@ -1601,7 +1601,7 @@ fn split[
 
 
 # Call pow, needed as it has multiple overloads which can't be aliased
-@mogg_register("mo.pow")
+@register_internal("mo.pow")
 @mogg_elementwise
 @always_inline
 fn pow_wrapped[
@@ -1618,7 +1618,7 @@ fn pow_wrapped[
 
 
 # Call sqrt, needed as it has multiple overloads which can't be aliased
-@mogg_register("mo.sqrt")
+@register_internal("mo.sqrt")
 @mogg_elementwise
 @always_inline
 fn sqrt_wrapped[
@@ -1634,7 +1634,7 @@ fn sqrt_wrapped[
 # These need wrappers as we can't take an alias of the ambiguous overload.
 
 
-@mogg_register("mo.max")
+@register_internal("mo.max")
 @mogg_elementwise
 @always_inline
 fn mogg_max[
@@ -1645,7 +1645,7 @@ fn mogg_max[
     return max(x, y)
 
 
-@mogg_register("mo.min")
+@register_internal("mo.min")
 @mogg_elementwise
 @always_inline
 fn mogg_min[
@@ -1661,7 +1661,7 @@ fn mogg_min[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.mean")
+@register_internal("mo.mean")
 @always_inline
 fn mean[
     type: DType,
@@ -1695,7 +1695,7 @@ fn mean[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.negative")
+@register_internal("mo.negative")
 @always_inline("nodebug")
 fn negative[
     type: DType, simd_width: Int
@@ -1719,7 +1719,7 @@ fn negative[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.pad.constant")
+@register_internal("mo.pad.constant")
 @always_inline
 fn pad_constant[
     rank: Int,
@@ -1740,7 +1740,7 @@ fn pad_constant[
     _pad_constant(output_buf, input_buf, paddings_ptr, constant_simd)
 
 
-@mogg_register("mo.pad.reflect")
+@register_internal("mo.pad.reflect")
 @always_inline
 fn pad_reflect[
     rank: Int,
@@ -1758,7 +1758,7 @@ fn pad_reflect[
     _pad_reflect(output_buf, input_buf, paddings_ptr)
 
 
-@mogg_register("mo.pad.repeat")
+@register_internal("mo.pad.repeat")
 @always_inline
 fn pad_repeat[
     rank: Int,
@@ -1781,13 +1781,13 @@ fn pad_repeat[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register_shape_func("mo.arg_max")
-@mogg_register_shape_func("mo.arg_min")
-@mogg_register_shape_func("mo.mean")
-@mogg_register_shape_func("mo.reduce.add")
-@mogg_register_shape_func("mo.reduce.max")
-@mogg_register_shape_func("mo.reduce.min")
-@mogg_register_shape_func("mo.reduce.mul")
+@register_internal_shape_func("mo.arg_max")
+@register_internal_shape_func("mo.arg_min")
+@register_internal_shape_func("mo.mean")
+@register_internal_shape_func("mo.reduce.add")
+@register_internal_shape_func("mo.reduce.max")
+@register_internal_shape_func("mo.reduce.min")
+@register_internal_shape_func("mo.reduce.mul")
 @always_inline("nodebug")
 fn reduce_shape[
     input_rank: Int,
@@ -1828,7 +1828,7 @@ fn reduce_shape[
     return output_shape
 
 
-@mogg_register("mo.reduce.add")
+@register_internal("mo.reduce.add")
 @always_inline
 fn reduce_add[
     type: DType,
@@ -1880,7 +1880,7 @@ fn reduce_add[
         ](input_shape, Scalar[type](0), int(axis), context=ctx)
 
 
-@mogg_register("mo.reduce.max")
+@register_internal("mo.reduce.max")
 @always_inline
 fn reduce_max[
     type: DType,
@@ -1932,7 +1932,7 @@ fn reduce_max[
         ](input_shape, Scalar[type].MIN, int(axis), context=ctx)
 
 
-@mogg_register("mo.reduce.min")
+@register_internal("mo.reduce.min")
 @always_inline
 fn reduce_min[
     type: DType,
@@ -1984,7 +1984,7 @@ fn reduce_min[
         ](input_shape, Scalar[type].MAX, int(axis), context=ctx)
 
 
-@mogg_register("mo.reduce.mul")
+@register_internal("mo.reduce.mul")
 @always_inline
 fn reduce_mul[
     type: DType,
@@ -2042,7 +2042,7 @@ fn reduce_mul[
 
 
 # Wrapper for slice here to include the `single_thread_blocking_override`.
-@mogg_register("mo.slice")
+@register_internal("mo.slice")
 @mogg_view_op
 @always_inline
 fn slice[
@@ -2063,7 +2063,7 @@ fn slice[
     return slice_as_view(tensor, starts, ends, steps)
 
 
-@mogg_register("mo.mutable.store.slice")
+@register_internal("mo.mutable.store.slice")
 @always_inline
 @export
 fn store_slice[
@@ -2084,7 +2084,7 @@ fn store_slice[
     copy_to_slice(buffer, in_slice, start, end, step)
 
 
-@mogg_register("mo.slice_dim")
+@register_internal("mo.slice_dim")
 @mogg_view_op
 @always_inline
 fn slice_dim[
@@ -2110,7 +2110,7 @@ fn slice_dim[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.squeeze_shape")
+@register_internal("mo.squeeze_shape")
 @always_inline
 fn calculate_squeeze_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
@@ -2156,7 +2156,7 @@ fn calculate_squeeze_shape[
         output_shape_index += 1
 
 
-@mogg_register_shape_func("mo.squeeze_shape")
+@register_internal_shape_func("mo.squeeze_shape")
 @always_inline
 fn squeeze_shape_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
@@ -2179,7 +2179,7 @@ fn squeeze_shape_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.unsqueeze_shape")
+@register_internal("mo.unsqueeze_shape")
 @always_inline
 fn calculate_unsqueeze_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
@@ -2233,7 +2233,7 @@ fn calculate_unsqueeze_shape[
         orig_shape_index += 1
 
 
-@mogg_register_shape_func("mo.unsqueeze_shape")
+@register_internal_shape_func("mo.unsqueeze_shape")
 @always_inline
 fn unsqueeze_shape_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
@@ -2250,7 +2250,7 @@ fn unsqueeze_shape_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.transpose")
+@register_internal("mo.transpose")
 @mogg_view_op
 @always_inline
 fn transpose[
@@ -2277,7 +2277,7 @@ fn transpose[
     return NDBuffer[type, rank](input.data, new_shape, new_stride)
 
 
-@mogg_register_shape_func("mo.transpose")
+@register_internal_shape_func("mo.transpose")
 @always_inline
 fn transpose_shape[
     rank: Int,
@@ -2310,7 +2310,7 @@ fn transpose_shape[
 
 
 # TODO(#20442): Remove with generic fusion.
-@mogg_register("mo.gather_sum")
+@register_internal("mo.gather_sum")
 @always_inline
 fn mogg_gather_sum[
     output_rank: Int,
@@ -2341,7 +2341,7 @@ fn mogg_gather_sum[
         )
 
 
-@mogg_register("mo.gather")
+@register_internal("mo.gather")
 @always_inline
 fn gather[
     type: DType,
@@ -2408,7 +2408,7 @@ from linalg.utils import (
 )
 
 
-@mogg_register("mo.matmul")
+@register_internal("mo.matmul")
 @always_inline
 fn matmul[
     a_type: DType,
@@ -2474,7 +2474,7 @@ fn matmul[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.batch_matmul")
+@register_internal("mo.batch_matmul")
 @always_inline
 fn batched_matmul[
     rank: Int,
@@ -2526,7 +2526,7 @@ fn batched_matmul[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.scatter")
+@register_internal("mo.scatter")
 @always_inline
 fn scatter[
     rank: Int,
@@ -2556,7 +2556,7 @@ fn scatter[
     )
 
 
-@mogg_register("mo.scatter.add")
+@register_internal("mo.scatter.add")
 @always_inline
 fn scatter_add[
     rank: Int,
@@ -2586,7 +2586,7 @@ fn scatter_add[
     )
 
 
-@mogg_register("mo.scatter.max")
+@register_internal("mo.scatter.max")
 @always_inline
 fn scatter_max[
     rank: Int,
@@ -2616,7 +2616,7 @@ fn scatter_max[
     )
 
 
-@mogg_register("mo.scatter.min")
+@register_internal("mo.scatter.min")
 @always_inline
 fn scatter_min[
     rank: Int,
@@ -2646,7 +2646,7 @@ fn scatter_min[
     )
 
 
-@mogg_register("mo.scatter.mul")
+@register_internal("mo.scatter.mul")
 @always_inline
 fn scatter_mul[
     rank: Int,
@@ -2681,7 +2681,7 @@ fn scatter_mul[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.scatter_nd")
+@register_internal("mo.scatter_nd")
 @always_inline
 fn scatter_nd[
     output_rank: Int,
@@ -2709,7 +2709,7 @@ fn scatter_nd[
     ](input, indices, updates, output, context=ctx)
 
 
-@mogg_register("mo.scatter_nd.add")
+@register_internal("mo.scatter_nd.add")
 @always_inline
 fn scatter_nd_add[
     output_type: DType,
@@ -2745,7 +2745,7 @@ fn scatter_nd_add[
     ](input, indices, updates, output, context=ctx)
 
 
-@mogg_register("mo.scatter_nd.max")
+@register_internal("mo.scatter_nd.max")
 @always_inline
 fn scatter_nd_max[
     output_type: DType,
@@ -2781,7 +2781,7 @@ fn scatter_nd_max[
     ](input, indices, updates, output, context=ctx)
 
 
-@mogg_register("mo.scatter_nd.min")
+@register_internal("mo.scatter_nd.min")
 @always_inline
 fn scatter_nd_min[
     output_type: DType,
@@ -2817,7 +2817,7 @@ fn scatter_nd_min[
     ](input, indices, updates, output, context=ctx)
 
 
-@mogg_register("mo.scatter_nd.mul")
+@register_internal("mo.scatter_nd.mul")
 @always_inline
 fn scatter_nd_mul[
     output_type: DType,
@@ -2854,7 +2854,7 @@ fn scatter_nd_mul[
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
-@mogg_register("mo.softmax")
+@register_internal("mo.softmax")
 @always_inline
 fn softmax[
     rank: Int,
@@ -2879,7 +2879,7 @@ fn softmax[
 
 
 # Define a wrapper in MOGG.mojo so that softmax kernel in stdlib takes static shapes
-@mogg_register("mo.logsoftmax")
+@register_internal("mo.logsoftmax")
 @always_inline
 fn logsoftmax[
     rank: Int,
@@ -2906,7 +2906,7 @@ fn logsoftmax[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.non_maximum_suppression")
+@register_internal("mo.non_maximum_suppression")
 @always_inline
 fn non_maximum_suppression[
     type: DType
@@ -2933,7 +2933,7 @@ fn non_maximum_suppression[
     )
 
 
-@mogg_register_shape_func("mo.non_maximum_suppression")
+@register_internal_shape_func("mo.non_maximum_suppression")
 @always_inline
 fn non_maximum_suppression_shape_func[
     type: DType, single_thread_blocking_override: Bool
@@ -2964,7 +2964,7 @@ fn non_maximum_suppression_shape_func[
 # TODO(31691): Correctly handle PRNG state with asynchronous runtime
 
 
-@mogg_register("mo.random.normal")
+@register_internal("mo.random.normal")
 fn random_normal[
     type: DType,
     shapeType: DType,
@@ -2991,7 +2991,7 @@ fn random_normal[
     )
 
 
-@mogg_register("mo.static.random.normal")
+@register_internal("mo.static.random.normal")
 fn static_random_normal[
     type: DType,
     meanVarType: DType,
@@ -3014,7 +3014,7 @@ fn static_random_normal[
     )
 
 
-@mogg_register_shape_func("mo.random.normal")
+@register_internal_shape_func("mo.random.normal")
 @always_inline
 fn random_shape[
     shapeType: DType,
@@ -3033,7 +3033,7 @@ fn random_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.resize.nearest")
+@register_internal("mo.resize.nearest")
 @always_inline
 fn resize_nearest[
     coordinate_transform_mode: Int,
@@ -3052,7 +3052,7 @@ fn resize_nearest[
     ](input, output)
 
 
-@mogg_register("mo.resize.linear")
+@register_internal("mo.resize.linear")
 @always_inline
 fn resize_linear[
     coordinate_transform_mode: Int,
@@ -3071,7 +3071,7 @@ fn resize_linear[
     )
 
 
-@mogg_register_shape_func("mo.resize.nearest")
+@register_internal_shape_func("mo.resize.nearest")
 @always_inline
 fn resize_nearest_shape[
     rank: Int,
@@ -3089,7 +3089,7 @@ fn resize_nearest_shape[
     return shape
 
 
-@mogg_register_shape_func("mo.resize.linear")
+@register_internal_shape_func("mo.resize.linear")
 @always_inline
 fn resize_linear_shape[
     rank: Int,
@@ -3112,7 +3112,7 @@ fn resize_linear_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.roi_align")
+@register_internal("mo.roi_align")
 fn roi_align[
     type: DType, aligned: Bool, mode: StringLiteral
 ](
@@ -3136,7 +3136,7 @@ fn roi_align[
     )
 
 
-@mogg_register_shape_func("mo.roi_align")
+@register_internal_shape_func("mo.roi_align")
 @always_inline
 fn roi_align_shape[
     inpTy: DType,
@@ -3166,7 +3166,7 @@ fn roi_align_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("split_ith_output_shape")
+@register_internal("split_ith_output_shape")
 @always_inline
 fn split_ith_output_shape[
     output_idx: Int,
@@ -3209,7 +3209,7 @@ fn split_ith_output_shape[
     return output_shape
 
 
-@mogg_register("mo.conv")
+@register_internal("mo.conv")
 fn conv[
     input_rank: Int,
     filter_rank: Int,
@@ -3337,7 +3337,7 @@ fn conv[
     )
 
 
-@mogg_register("mo.conv_transpose")
+@register_internal("mo.conv_transpose")
 @always_inline
 fn conv_transpose[
     input_rank: Int,
@@ -3448,7 +3448,7 @@ fn conv_transpose[
 
 
 # Helper function to query buffer shapes for tests.
-@mogg_register("print_shape_info")
+@register_internal("print_shape_info")
 fn print_buffer_info[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
     print("Rank:", rank)
     print("Shape:", buffer.get_shape())
@@ -3456,7 +3456,7 @@ fn print_buffer_info[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
 
 
 # Test helper to throw an error
-@mogg_register("mo.test.return_error")
+@register_internal("mo.test.return_error")
 @always_inline
 fn return_error[
     type: DType, rank: Int
@@ -3464,7 +3464,7 @@ fn return_error[
     raise Error("This is an error")
 
 
-@mogg_register("mo.test.failing_constraint")
+@register_internal("mo.test.failing_constraint")
 @always_inline
 fn kernel_with_failing_constraint[
     type: DType, rank: Int
@@ -3475,7 +3475,7 @@ fn kernel_with_failing_constraint[
     ]()
 
 
-@mogg_register("mo.test.abort")
+@register_internal("mo.test.abort")
 @always_inline
 fn test_abort[
     type: DType, rank: Int
@@ -3488,7 +3488,7 @@ fn test_abort[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.bottom_k")
+@register_internal("mo.bottom_k")
 @always_inline
 fn bottom_k[
     type: DType,
@@ -3550,7 +3550,7 @@ fn bottom_k[
             )
 
 
-@mogg_register("mo.top_k")
+@register_internal("mo.top_k")
 @always_inline
 fn top_k[
     type: DType,
@@ -3611,7 +3611,7 @@ fn top_k[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.gather_nd")
+@register_internal("mo.gather_nd")
 @always_inline
 fn gather_nd[
     type: DType,
@@ -3641,7 +3641,7 @@ fn gather_nd[
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
 # a stopgap measure for some important models (DLRM, CLIP-ViT, LLaMa2)
-@mogg_register("index_tensor")
+@register_internal("index_tensor")
 @always_inline
 fn index_tensor[
     type: DType,
@@ -3671,8 +3671,8 @@ fn index_tensor[
 # Wrappers that take `num_groups` as a parameter.
 # This is required unti `mo.layout.transform` passes `num_groups` as a runtime
 # value.
-@mogg_register("layout_transform_QRSCF_to_FQRSCf")
-@mogg_register("layout_transform_RSCF_to_FRSCf")
+@register_internal("layout_transform_QRSCF_to_FQRSCf")
+@register_internal("layout_transform_RSCF_to_FRSCf")
 @always_inline
 fn pack_conv_filter[
     filter_type: DType,
@@ -3687,8 +3687,8 @@ fn pack_conv_filter[
     _pack_conv_filter(filter, packed_filter, num_groups)
 
 
-@mogg_register("layout_transform_RSFC_to_FRSCf")
-@mogg_register("layout_transform_QRSFC_to_FQRSCf")
+@register_internal("layout_transform_RSFC_to_FRSCf")
+@register_internal("layout_transform_QRSFC_to_FQRSCf")
 @always_inline
 fn pack_conv_transpose_filter[
     filter_type: DType,
@@ -3703,7 +3703,7 @@ fn pack_conv_transpose_filter[
     _pack_conv_transpose_filter(filter, packed_filter, 1)
 
 
-@mogg_register("pack_conv_filter_shape")
+@register_internal("pack_conv_filter_shape")
 @always_inline
 fn pack_conv_filter_shape[
     rank: Int,
@@ -3753,7 +3753,7 @@ fn pack_conv_filter_shape[
     ](filter_buf)
 
 
-@mogg_register("pack_conv_transpose_filter_shape")
+@register_internal("pack_conv_transpose_filter_shape")
 @always_inline
 fn pack_conv_transpose_filter_shape[
     rank: Int,
@@ -3768,7 +3768,7 @@ fn pack_conv_transpose_filter_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.distributed.allreduce.sum")
+@register_internal("mo.distributed.allreduce.sum")
 @always_inline
 fn allreduce_sum[
     type: DType,
@@ -3787,14 +3787,14 @@ fn allreduce_sum[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.cos")
+@register_internal("mo.cos")
 fn wrapped_cos[
     type: DType, simd_width: Int
 ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return cos(arg)
 
 
-@mogg_register("mo.erf")
+@register_internal("mo.erf")
 @always_inline("nodebug")
 fn wrapped_erf[
     type: DType, simd_width: Int
@@ -3802,7 +3802,7 @@ fn wrapped_erf[
     return erf(x)
 
 
-@mogg_register("mo.exp")
+@register_internal("mo.exp")
 @always_inline("nodebug")
 fn wrapped_exp[
     type: DType, simd_width: Int
@@ -3810,7 +3810,7 @@ fn wrapped_exp[
     return exp(x)
 
 
-@mogg_register("mo.equal")
+@register_internal("mo.equal")
 @always_inline
 fn equal[
     type: DType, simd_width: Int
@@ -3820,7 +3820,7 @@ fn equal[
     return x == y
 
 
-@mogg_register("mo.greater")
+@register_internal("mo.greater")
 @always_inline("nodebug")
 fn greater[
     type: DType, simd_width: Int
@@ -3830,7 +3830,7 @@ fn greater[
     return x > y
 
 
-@mogg_register("mo.greater_equal")
+@register_internal("mo.greater_equal")
 @always_inline
 fn greater_equal[
     type: DType, simd_width: Int
@@ -3840,7 +3840,7 @@ fn greater_equal[
     return x >= y
 
 
-@mogg_register("mo.not_equal")
+@register_internal("mo.not_equal")
 @always_inline("nodebug")
 fn not_equal[
     type: DType, simd_width: Int
@@ -3850,7 +3850,7 @@ fn not_equal[
     return x != y
 
 
-@mogg_register("mo.round")
+@register_internal("mo.round")
 @always_inline("nodebug")
 fn wrapped_round[
     type: DType, simd_width: Int
@@ -3858,7 +3858,7 @@ fn wrapped_round[
     return round(x)
 
 
-@mogg_register("mo.roundeven")
+@register_internal("mo.roundeven")
 @always_inline("nodebug")
 fn roundeven[
     type: DType, simd_width: Int
@@ -3866,7 +3866,7 @@ fn roundeven[
     return x.roundeven()
 
 
-@mogg_register("mo.isqrt")
+@register_internal("mo.isqrt")
 @always_inline("nodebug")
 fn wrapped_isqrt[
     type: DType, simd_width: Int
@@ -3874,7 +3874,7 @@ fn wrapped_isqrt[
     return isqrt(x)
 
 
-@mogg_register("mo.select")
+@register_internal("mo.select")
 @always_inline("nodebug")
 fn select[
     type: DType, simd_width: Int
@@ -3886,14 +3886,14 @@ fn select[
     return cond.select(true_case, false_case)
 
 
-@mogg_register("mo.sin")
+@register_internal("mo.sin")
 fn wrapped_sin[
     type: DType, simd_width: Int
 ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return sin(arg)
 
 
-@mogg_register("mo.trunc")
+@register_internal("mo.trunc")
 @always_inline("nodebug")
 fn wrapped_trunc[
     type: DType, simd_width: Int
@@ -3901,7 +3901,7 @@ fn wrapped_trunc[
     return llvm_intrinsic["llvm.trunc", __type_of(x), has_side_effect=False](x)
 
 
-@mogg_register("mo.log")
+@register_internal("mo.log")
 @always_inline("nodebug")
 fn wrapped_log[
     type: DType, simd_width: Int
@@ -3909,7 +3909,7 @@ fn wrapped_log[
     return log(x)
 
 
-@mogg_register("mo.log1p")
+@register_internal("mo.log1p")
 @always_inline("nodebug")
 fn wrapped_log1p[
     type: DType, simd_width: Int
@@ -3917,7 +3917,7 @@ fn wrapped_log1p[
     return log1p(arg)
 
 
-@mogg_register("mo.is_nan")
+@register_internal("mo.is_nan")
 @always_inline("nodebug")
 fn wrapped_isnan[
     type: DType, simd_width: Int
@@ -3925,7 +3925,7 @@ fn wrapped_isnan[
     return isnan(val)
 
 
-@mogg_register("mo.is_inf")
+@register_internal("mo.is_inf")
 @always_inline("nodebug")
 fn wrapped_isinf[
     type: DType, simd_width: Int
@@ -3933,7 +3933,7 @@ fn wrapped_isinf[
     return isinf(val)
 
 
-@mogg_register("mo.and")
+@register_internal("mo.and")
 @always_inline
 fn logical_and[
     simd_width: Int
@@ -3943,7 +3943,7 @@ fn logical_and[
     return x & y
 
 
-@mogg_register("mo.or")
+@register_internal("mo.or")
 @always_inline
 fn logical_or[
     simd_width: Int
@@ -3953,7 +3953,7 @@ fn logical_or[
     return x | y
 
 
-@mogg_register("mo.not")
+@register_internal("mo.not")
 @always_inline
 fn logical_not[
     simd_width: Int
@@ -3961,7 +3961,7 @@ fn logical_not[
     return ~x
 
 
-@mogg_register("mo.xor")
+@register_internal("mo.xor")
 @always_inline
 fn logical_xor[
     simd_width: Int
@@ -3976,7 +3976,7 @@ fn logical_xor[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("top_p_sampling")
+@register_internal("top_p_sampling")
 @always_inline
 fn top_p_sampling[
     type: DType,
@@ -4008,7 +4008,7 @@ fn top_p_sampling[
             )
 
 
-@mogg_register("min_p_sampling")
+@register_internal("min_p_sampling")
 @always_inline
 fn min_p_sampling[
     type: DType,
@@ -4040,7 +4040,7 @@ fn min_p_sampling[
             )
 
 
-@mogg_register("topk_fused_sampling")
+@register_internal("topk_fused_sampling")
 @always_inline
 fn topk_fused_sampling[
     type: DType,
@@ -4070,7 +4070,7 @@ fn topk_fused_sampling[
             )
 
 
-@mogg_register("reduce_min_and_max")
+@register_internal("reduce_min_and_max")
 @always_inline
 fn reduce_min_and_max[
     type: DType,
@@ -4158,7 +4158,7 @@ fn reduce_min_and_max[
     _ = axis
 
 
-@mogg_register_shape_func("reduce_min_and_max")
+@register_internal_shape_func("reduce_min_and_max")
 @always_inline
 fn reduce_min_and_max_shape_func[
     type: DType,
@@ -4175,7 +4175,7 @@ fn reduce_min_and_max_shape_func[
 
 
 # MHA Kernels:
-@mogg_register("masked_flash_attention_gpu")
+@register_internal("masked_flash_attention_gpu")
 @always_inline
 fn masked_flash_attention_gpu[
     rank: Int,
@@ -4243,7 +4243,7 @@ fn masked_flash_attention_gpu[
     ](output, q, k, v, mask, scale[0], context=ctx)
 
 
-@mogg_register("no_mask_fused_attention_cpu")
+@register_internal("no_mask_fused_attention_cpu")
 @always_inline
 fn no_mask_fused_attention_cpu[
     rank: Int,
@@ -4309,7 +4309,7 @@ fn no_mask_fused_attention_cpu[
     ](output, q, k, v, mask, scale_f32, causal_mask)
 
 
-@mogg_register("with_mask_fused_attention_cpu")
+@register_internal("with_mask_fused_attention_cpu")
 @always_inline
 fn with_mask_fused_attention_cpu[
     rank: Int,
@@ -4375,7 +4375,7 @@ fn with_mask_fused_attention_cpu[
     ](output, q, k, v, attn_mask, scale_f32, causal_mask)
 
 
-@mogg_register("no_mask_flash_attention_cpu")
+@register_internal("no_mask_flash_attention_cpu")
 @always_inline
 fn no_mask_flash_attention_cpu[
     type: DType,
@@ -4416,7 +4416,7 @@ fn no_mask_flash_attention_cpu[
     )
 
 
-@mogg_register("with_mask_flash_attention_split_kv_cpu")
+@register_internal("with_mask_flash_attention_split_kv_cpu")
 @always_inline
 fn with_mask_flash_attention_split_kv_cache_cpu[
     type: DType,
@@ -4488,7 +4488,7 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
     )
 
 
-@mogg_register_shape_func("with_mask_flash_attention_split_kv_cpu")
+@register_internal_shape_func("with_mask_flash_attention_split_kv_cpu")
 @always_inline
 fn with_mask_flash_attention_split_kv_cpu_shape_func[
     type: DType, rank: Int, single_thread_blocking_override: Bool
@@ -4496,7 +4496,7 @@ fn with_mask_flash_attention_split_kv_cpu_shape_func[
     return q.get_shape()
 
 
-@mogg_register("with_mask_flash_attention_cpu")
+@register_internal("with_mask_flash_attention_cpu")
 @always_inline
 fn with_mask_flash_attention_cpu[
     type: DType,
@@ -4535,7 +4535,7 @@ fn with_mask_flash_attention_cpu[
     )
 
 
-@mogg_register("mo.linalg.solve")
+@register_internal("mo.linalg.solve")
 @always_inline
 fn mogg_matrix_solve[
     type: DType,
@@ -4554,7 +4554,7 @@ fn mogg_matrix_solve[
     )
 
 
-@mogg_register("pytorch_operator_custom_test")
+@register_internal("pytorch_operator_custom_test")
 fn pytorch_test_custom[
     type: DType,
     rank: Int,
@@ -4567,7 +4567,7 @@ fn pytorch_test_custom[
 ######
 
 
-@mogg_register_override("vroom_q4_0_matmul", 1)
+@register_internal_override("vroom_q4_0_matmul", 1)
 @always_inline
 fn vroom_q4_0_matmul(
     a: NDBuffer[DType.float32, 2],
@@ -4585,7 +4585,7 @@ fn vroom_q4_0_matmul(
         matmul_qint4[32](a, b, c)
 
 
-@mogg_register_shape_func("vroom_q4_0_matmul")
+@register_internal_shape_func("vroom_q4_0_matmul")
 @always_inline
 fn vroom_q4_0_matmul_shape_func[
     single_thread_blocking_override: Bool
@@ -4599,7 +4599,7 @@ fn vroom_q4_0_matmul_shape_func[
     return IndexList[2](a.dim[0](), b.dim[0]())
 
 
-@mogg_register_override("vroom_q4_0_repack_weights", 1)
+@register_internal_override("vroom_q4_0_repack_weights", 1)
 @always_inline
 fn vroom_q4_0_repack_weights(
     b: NDBuffer[DType.uint8, 2],
@@ -4609,7 +4609,7 @@ fn vroom_q4_0_repack_weights(
     matmul_qint4_pack_b[32](b, b_packed)
 
 
-@mogg_register_shape_func("vroom_q4_0_repack_weights")
+@register_internal_shape_func("vroom_q4_0_repack_weights")
 @always_inline
 fn vroom_q4_0_repack_weights_shape_func[
     single_thread_blocking_override: Bool
@@ -4617,7 +4617,7 @@ fn vroom_q4_0_repack_weights_shape_func[
     return b.get_shape()
 
 
-@mogg_register_override("ggml_q4_0_dequantize", 1)
+@register_internal_override("ggml_q4_0_dequantize", 1)
 @always_inline
 fn ggml_q4_0_dequantize(
     input: NDBuffer[DType.uint8, 2],
@@ -4630,7 +4630,7 @@ fn ggml_q4_0_dequantize(
         )
 
 
-@mogg_register_shape_func("ggml_q4_0_dequantize")
+@register_internal_shape_func("ggml_q4_0_dequantize")
 @always_inline
 fn ggml_q4_0_dequantize_shape_func[
     single_thread_blocking_override: Bool
@@ -4650,7 +4650,7 @@ fn ggml_q4_0_dequantize_shape_func[
 ######
 
 
-@mogg_register_override("vroom_q4_k_matmul", 1)
+@register_internal_override("vroom_q4_k_matmul", 1)
 @always_inline
 fn vroom_q4_k_matmul(
     a: NDBuffer[DType.float32, 2],
@@ -4662,7 +4662,7 @@ fn vroom_q4_k_matmul(
         matmul_Q4_K(a, b, c)
 
 
-@mogg_register_shape_func("vroom_q4_k_matmul")
+@register_internal_shape_func("vroom_q4_k_matmul")
 @always_inline
 fn vroom_q4_k_matmul_shape_func[
     single_thread_blocking_override: Bool
@@ -4670,7 +4670,7 @@ fn vroom_q4_k_matmul_shape_func[
     return IndexList[2](a.dim[0](), b.dim[0]())
 
 
-@mogg_register_override("vroom_q4_k_repack_weights", 1)
+@register_internal_override("vroom_q4_k_repack_weights", 1)
 @always_inline
 fn vroom_q4_k_repack_weights(
     b: NDBuffer[DType.uint8, 2],
@@ -4680,7 +4680,7 @@ fn vroom_q4_k_repack_weights(
     matmul_Q4_K_pack_b(b, b_packed)
 
 
-@mogg_register_shape_func("vroom_q4_k_repack_weights")
+@register_internal_shape_func("vroom_q4_k_repack_weights")
 @always_inline
 fn vroom_q4_k_repack_weights_shape_func[
     single_thread_blocking_override: Bool
@@ -4688,7 +4688,7 @@ fn vroom_q4_k_repack_weights_shape_func[
     return b.get_shape()
 
 
-@mogg_register_override("ggml_q4_k_dequantize", 1)
+@register_internal_override("ggml_q4_k_dequantize", 1)
 @always_inline
 fn ggml_q4_k_dequantize(
     input: NDBuffer[DType.uint8, 2],
@@ -4699,7 +4699,7 @@ fn ggml_q4_k_dequantize(
         q4_k_dequantize_impl(input, output)
 
 
-@mogg_register_shape_func("ggml_q4_k_dequantize")
+@register_internal_shape_func("ggml_q4_k_dequantize")
 @always_inline
 fn ggml_q4_k_dequantize_shape_func[
     single_thread_blocking_override: Bool
@@ -4719,7 +4719,7 @@ fn ggml_q4_k_dequantize_shape_func[
 ######
 
 
-@mogg_register_override("vroom_q6_k_matmul", 1)
+@register_internal_override("vroom_q6_k_matmul", 1)
 @always_inline
 fn vroom_q6_k_matmul(
     a: NDBuffer[DType.float32, 2],
@@ -4731,7 +4731,7 @@ fn vroom_q6_k_matmul(
         matmul_Q6_K(a, b, c)
 
 
-@mogg_register_shape_func("vroom_q6_k_matmul")
+@register_internal_shape_func("vroom_q6_k_matmul")
 @always_inline
 fn vroom_q6_k_matmul_shape_func[
     single_thread_blocking_override: Bool
@@ -4739,7 +4739,7 @@ fn vroom_q6_k_matmul_shape_func[
     return IndexList[2](a.dim[0](), b.dim[0]())
 
 
-@mogg_register_override("vroom_q6_k_repack_weights", 1)
+@register_internal_override("vroom_q6_k_repack_weights", 1)
 @always_inline
 fn vroom_q6_k_repack_weights(
     b: NDBuffer[DType.uint8, 2],
@@ -4749,7 +4749,7 @@ fn vroom_q6_k_repack_weights(
     matmul_Q6_K_pack_b(b, b_packed)
 
 
-@mogg_register_shape_func("vroom_q6_k_repack_weights")
+@register_internal_shape_func("vroom_q6_k_repack_weights")
 @always_inline
 fn vroom_q6_k_repack_weights_shape_func[
     single_thread_blocking_override: Bool
@@ -4757,7 +4757,7 @@ fn vroom_q6_k_repack_weights_shape_func[
     return b.get_shape()
 
 
-@mogg_register_override("ggml_q6_k_dequantize", 1)
+@register_internal_override("ggml_q6_k_dequantize", 1)
 @always_inline
 fn ggml_q6_k_dequantize(
     input: NDBuffer[DType.uint8, 2],
@@ -4768,7 +4768,7 @@ fn ggml_q6_k_dequantize(
         q6_k_dequantize_impl(input, output, output.get_shape())
 
 
-@mogg_register_shape_func("ggml_q6_k_dequantize")
+@register_internal_shape_func("ggml_q6_k_dequantize")
 @always_inline
 fn ggml_q6_k_dequantize_shape_func[
     single_thread_blocking_override: Bool
@@ -4788,7 +4788,7 @@ fn ggml_q6_k_dequantize_shape_func[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.mod")
+@register_internal("mo.mod")
 @always_inline
 fn mod[
     type: DType, simd_width: Int
@@ -4811,7 +4811,7 @@ fn mod[
     return x % y
 
 
-@mogg_register("mo.mul")
+@register_internal("mo.mul")
 @always_inline
 fn mul[
     type: DType, simd_width: Int
@@ -4834,7 +4834,7 @@ fn mul[
     return x * y
 
 
-@mogg_register("mo.sub")
+@register_internal("mo.sub")
 @always_inline
 fn sub[
     type: DType, simd_width: Int
@@ -4857,7 +4857,7 @@ fn sub[
     return x - y
 
 
-@mogg_register("mo.add")
+@register_internal("mo.add")
 @always_inline
 fn add[
     type: DType, simd_width: Int
@@ -4880,7 +4880,7 @@ fn add[
     return x + y
 
 
-@mogg_register("mo.div")
+@register_internal("mo.div")
 @always_inline
 fn div[
     type: DType, simd_width: Int
@@ -4908,7 +4908,7 @@ fn div[
 # ===----------------------------------------------------------------------=== #
 
 
-@mogg_register("mo.ceil")
+@register_internal("mo.ceil")
 @always_inline
 fn ceil[
     type: DType, simd_width: Int
@@ -4933,7 +4933,7 @@ fn ceil[
 # ===----------------------------------------------------------------------=== #
 
 
-@mogg_register("mo.floor")
+@register_internal("mo.floor")
 @always_inline
 fn floor[
     type: DType, simd_width: Int
@@ -4958,7 +4958,7 @@ fn floor[
 # ===----------------------------------------------------------------------=== #
 
 
-@mogg_register("mo.tanh")
+@register_internal("mo.tanh")
 @always_inline
 fn tanh[
     type: DType, simd_width: Int
@@ -4979,7 +4979,7 @@ fn tanh[
 
 
 # useful for testing --> identity op that simply copies input into output
-@mogg_register("copy")
+@register_internal("copy")
 @always_inline
 fn identity[
     rank: Int,
@@ -4992,7 +4992,7 @@ fn identity[
     memcpy(output.data, input.data, len(input))
 
 
-@mogg_register_shape_func("mo.avg_pool")
+@register_internal_shape_func("mo.avg_pool")
 @always_inline
 fn avg_pool_shape[
     input_rank: Int,
@@ -5020,7 +5020,7 @@ fn avg_pool_shape[
     ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
 
 
-@mogg_register_shape_func("mo.avg_pool_ceil_mode_true")
+@register_internal_shape_func("mo.avg_pool_ceil_mode_true")
 @always_inline
 fn avg_pool_ceil_mode_true_shape[
     input_rank: Int,
@@ -5048,7 +5048,7 @@ fn avg_pool_ceil_mode_true_shape[
     ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
 
 
-@mogg_register_shape_func("mo.max_pool")
+@register_internal_shape_func("mo.max_pool")
 @always_inline
 fn max_pool_shape[
     input_rank: Int,
@@ -5076,7 +5076,7 @@ fn max_pool_shape[
     ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
 
 
-@mogg_register_shape_func("mo.max_pool_ceil_mode_true")
+@register_internal_shape_func("mo.max_pool_ceil_mode_true")
 @always_inline
 fn max_pool_ceil_mode_true_shape[
     input_rank: Int,
@@ -5104,7 +5104,7 @@ fn max_pool_ceil_mode_true_shape[
     ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
 
 
-@mogg_register_shape_func("mo.pad.constant")
+@register_internal_shape_func("mo.pad.constant")
 @always_inline
 fn pad_constant_shape[
     input_rank: Int,
@@ -5120,7 +5120,7 @@ fn pad_constant_shape[
     ](input_buf, paddings_buf)
 
 
-@mogg_register_shape_func("mo.pad.repeat")
+@register_internal_shape_func("mo.pad.repeat")
 @always_inline
 fn pad_repeat_shape[
     input_rank: Int,
@@ -5136,7 +5136,7 @@ fn pad_repeat_shape[
     ](input_buf, paddings_buf)
 
 
-@mogg_register_shape_func("mo.pad.reflect")
+@register_internal_shape_func("mo.pad.reflect")
 @always_inline
 fn pad_reflect_shape[
     input_rank: Int,

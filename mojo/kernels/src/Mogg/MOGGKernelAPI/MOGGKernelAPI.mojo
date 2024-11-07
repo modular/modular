@@ -136,7 +136,7 @@ from utils.index import Index
 from utils.numerics import isinf, isnan
 from compiler_internal import StaticTensorSpec
 
-from register import mogg_register_override, uses_opaque
+from register import register_internal_override, uses_opaque
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 
@@ -163,94 +163,94 @@ from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register_override("bfloat16", 1)
+@register_internal_override("bfloat16", 1)
 fn DTypeBFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.bfloat16.value
 
 
-@mogg_register_override("float16", 1)
+@register_internal_override("float16", 1)
 fn DTypeFloat16TypeDef(ty: DType.type) -> DType.type:
     return DType.float16.value
 
 
-@mogg_register_override("float32", 1)
+@register_internal_override("float32", 1)
 fn DTypeFloat32TypeDef(ty: DType.type) -> DType.type:
     return DType.float32.value
 
 
-@mogg_register_override("float64", 1)
+@register_internal_override("float64", 1)
 fn DTypeFloat64TypeDef(ty: DType.type) -> DType.type:
     return DType.float64.value
 
 
-@mogg_register_override("int8", 1)
+@register_internal_override("int8", 1)
 fn DTypeInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.int8.value
 
 
-@mogg_register_override("int16", 1)
+@register_internal_override("int16", 1)
 fn DTypeInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.int16.value
 
 
-@mogg_register_override("int32", 1)
+@register_internal_override("int32", 1)
 fn DTypeInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.int32.value
 
 
-@mogg_register_override("uint32", 1)
+@register_internal_override("uint32", 1)
 fn DTypeUInt32TypeDef(ty: DType.type) -> DType.type:
     return DType.uint32.value
 
 
-@mogg_register_override("uint64", 1)
+@register_internal_override("uint64", 1)
 fn DTypeUInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.uint64.value
 
 
-@mogg_register_override("int64", 1)
+@register_internal_override("int64", 1)
 fn DTypeInt64TypeDef(ty: DType.type) -> DType.type:
     return DType.int64.value
 
 
-@mogg_register_override("uint8", 1)
+@register_internal_override("uint8", 1)
 fn DTypeUInt8TypeDef(ty: DType.type) -> DType.type:
     return DType.uint8.value
 
 
-@mogg_register_override("uint16", 1)
+@register_internal_override("uint16", 1)
 fn DTypeUInt16TypeDef(ty: DType.type) -> DType.type:
     return DType.uint16.value
 
 
-@mogg_register_override("bool", 1)
+@register_internal_override("bool", 1)
 fn DTypeBoolTypeDef(ty: DType.type) -> DType.type:
     return DType.bool.value
 
 
-@mogg_register_override("index", 1)
+@register_internal_override("index", 1)
 fn IndexTypeDef(ty: Int) -> Int:
     return ty
 
 
-@mogg_register_override("mojoCallContext", 1)
+@register_internal_override("mojoCallContext", 1)
 fn MojoCallContextDef(ty: MojoCallContextPtr):
     pass
 
 
-@mogg_register_override("simd", 1)
+@register_internal_override("simd", 1)
 fn SimdTypeDef[
     type: DType, width: Int
 ](ty: SIMD[type, width]) -> SIMD[type, width]:
     return ty
 
 
-@mogg_register_override("indices", 1)
+@register_internal_override("indices", 1)
 fn TensorIndicesTypeDef[rank: Int](ty: IndexList[rank]) -> IndexList[rank]:
     return ty
 
 
-@mogg_register_override("dim_type", 1)
+@register_internal_override("dim_type", 1)
 fn DimTypeDef(ty: Dim) -> Dim:
     return ty
 
@@ -260,12 +260,12 @@ fn DimTypeDef(ty: Dim) -> Dim:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register_override("create_unknown_dim", 1)
+@register_internal_override("create_unknown_dim", 1)
 fn create_unknown_dim() -> Dim:
     return Dim()
 
 
-@mogg_register_override("create_known_dim", 1)
+@register_internal_override("create_known_dim", 1)
 fn create_known_dim[known_val: Int]() -> Dim:
     return Dim(known_val)
 
@@ -275,13 +275,13 @@ fn create_known_dim[known_val: Int]() -> Dim:
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register_override("get_address_space", 1)
+@register_internal_override("get_address_space", 1)
 fn get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
 
 
 # Build the StaticTensorSpec parameter for the DPS kernels
-@mogg_register_override("build_static_tensor_specs", 1)
+@register_internal_override("build_static_tensor_specs", 1)
 fn build_static_tensor_specs[
     type: DType,
     rank: Int,
@@ -306,7 +306,7 @@ fn build_static_tensor_specs[
 
 
 # Used by the graph compiler to construct tensors from MGP repr. of tensor
-@mogg_register_override("to_managed_tensor_slice", 1)
+@register_internal_override("to_managed_tensor_slice", 1)
 @always_inline
 fn to_managed_tensor_slice[
     type: DType, rank: Int
@@ -331,7 +331,7 @@ fn to_managed_tensor_slice[
 
 
 # Extract a value from a shape.
-@mogg_register_override("get_scalar_from_ndbuffer", 1)
+@register_internal_override("get_scalar_from_ndbuffer", 1)
 @always_inline
 fn get_scalar_from_ndbuffer[
     dtype: DType
@@ -340,7 +340,7 @@ fn get_scalar_from_ndbuffer[
     return tensor[0]
 
 
-@mogg_register_override("get_int_from_shape", 1)
+@register_internal_override("get_int_from_shape", 1)
 @always_inline
 fn get_int_from_shape[
     param_index: Int, rank: Int
@@ -350,7 +350,7 @@ fn get_int_from_shape[
 
 # Note: this is not a "real" index_tensor op that covers all cases, but rather
 # a stopgap measure for some important models (DLRM, CLIP-ViT, LLaMa2)
-@mogg_register_override("index_tensor", 1)
+@register_internal_override("index_tensor", 1)
 @always_inline
 fn index_tensor_primitive[
     type: DType,
@@ -386,7 +386,7 @@ alias ScalarTensor = ManagedTensorSlice[rank=1]
 
 
 # Used by the graph compiler -- which right now does not support static shape
-@mogg_register_override("managed_tensor_slice_to_ndbuffer", 1)
+@register_internal_override("managed_tensor_slice_to_ndbuffer", 1)
 @always_inline
 fn managed_tensor_slice_to_ndbuffer_primitive[
     type: DType,
@@ -4160,7 +4160,7 @@ struct Concat:
 
 
 # Helper method used by compiler to reconcile MGP list with type Mojo expects.
-@mogg_register_override("to_managed_tensor_slice_list", 1)
+@register_internal_override("to_managed_tensor_slice_list", 1)
 @always_inline
 fn to_managed_tensor_slice_list[
     type: DType, rank: Int
