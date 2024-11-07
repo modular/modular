@@ -8,9 +8,13 @@
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cuda %s
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
+from asyncrt_test_utils import (
+    create_test_device_context,
+    expect_eq,
+    is_v2_context,
+)
 
-from gpu.host import DeviceBuffer, DeviceContext, DeviceAttribute
+from gpu.host import DeviceBuffer, DeviceContext, DeviceAttribute, DeviceStream
 
 
 fn _ownership_helper(
@@ -84,6 +88,20 @@ fn _run_get_attribute(ctx: DeviceContext) raises:
     print("warp_size: " + str(ctx.get_attribute(DeviceAttribute.WARP_SIZE)))
 
 
+fn _run_get_stream(ctx: DeviceContext) raises:
+    print("-")
+    print("_run_get_stream()")
+
+    if not is_v2_context():
+        print("Skipping test.")
+        return
+
+    print("Getting the stream.")
+    var stream = ctx.stream()
+    print("Synchronizing on `stream`.")
+    stream.synchronize()
+
+
 fn _run_access_peer(ctx: DeviceContext, peer: DeviceContext) raises:
     print("-")
     print("_run_access_peer()")
@@ -107,6 +125,8 @@ fn main() raises:
     _run_device_info(ctx)
     _run_compute_capability(ctx)
     _run_get_attribute(ctx)
+
+    _run_get_stream(ctx)
 
     _run_access_peer(ctx, create_test_device_context())
 

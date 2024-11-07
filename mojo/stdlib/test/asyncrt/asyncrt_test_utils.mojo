@@ -16,6 +16,10 @@ fn expect_eq[
         raise Error("expect_eq failed: " + msg)
 
 
+fn is_v2_context() -> Bool:
+    return is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+
+
 fn create_test_device_context() raises -> DeviceContext:
     # Create an instance of the DeviceContext
     var test_ctx: DeviceContext
