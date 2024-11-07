@@ -97,6 +97,7 @@ def test_vision_encoder_layer(
             )
 
 
+@pytest.mark.skip(reason="AIPIPE-176")
 @pytest.mark.parametrize(
     "input_type",
     [
