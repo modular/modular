@@ -7,10 +7,10 @@
 
 from math import isclose
 from random import rand, random_float64, seed
-
+from sys import warpsize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE
+from gpu.host.info import DEFAULT_GPU_TARGET
 from gpu.host import DeviceContext
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
@@ -199,7 +199,7 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     # seq_len. Limit to WM rows and arrange warps in N dim.
     alias shape = IndexList[rank](1, WM, seqlen)
     alias num_warps = seqlen // (2 * WN)
-    alias num_threads = num_warps * WARP_SIZE
+    alias num_threads = num_warps * warpsize[DEFAULT_GPU_TARGET]()
 
     var in_host_ptr = UnsafePointer[Scalar[type]].alloc(
         shape.flattened_length()
