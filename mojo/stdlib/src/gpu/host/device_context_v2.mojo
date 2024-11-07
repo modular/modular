@@ -1161,3 +1161,21 @@ struct DeviceContextV2:
         )
 
         return (free, total)
+
+    fn can_access(self, peer: DeviceContextV2) raises -> Bool:
+        var result: Bool = False
+        # const char* AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_canAccess",
+                _CharPtr,
+                UnsafePointer[Bool],
+                _DeviceContextPtr,
+                _DeviceContextPtr,
+            ](
+                UnsafePointer.address_of(result),
+                self._handle,
+                peer._handle,
+            )
+        )
+        return result

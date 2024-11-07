@@ -584,3 +584,10 @@ struct DeviceContextVariant:
             return self.v2().get_memory_info()
         else:
             return self.v1().get_memory_info()
+
+    fn can_access(self, peer: DeviceContextVariant) raises -> Bool:
+        @parameter
+        if _device_ctx_v2():
+            return self.v2().can_access(peer.v2())
+        else:
+            return False
