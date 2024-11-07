@@ -40,6 +40,7 @@ constexpr StringLiteral MOGG_ARG_PARAMS = "mogg.arg_params";
 constexpr StringLiteral MOGG_RESULT_PARAMS = "mogg.result_params";
 constexpr StringLiteral MOGG_ARG_TYPE_NAMES = "mogg.arg_type_names";
 constexpr StringLiteral MOGG_RESULT_TYPE_NAME = "mogg.result_type_name";
+constexpr StringLiteral MOGG_TENSOR_ARG_PARAMS = "mogg.tensor_arg_params";
 
 // The names as they appear in the lit source.
 constexpr StringLiteral MOGG_ARG_SRC_NAMES = "mogg.arg_src_names";
