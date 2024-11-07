@@ -13,7 +13,10 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
 from nn.linear import Linear
+
+# from pixtral.llava import LlavaConditionalGeneration
 from pixtral.llava_projector import LlavaMultiModalConnector
+from pixtral.vision_encoder.vision_encoder import VisionEncoder
 from transformers import LlavaConfig, MistralConfig, PixtralVisionConfig
 from transformers.models.llava.modeling_llava import LlavaMultiModalProjector
 
@@ -72,13 +75,9 @@ def img_features(size: Tuple, img_dtype: torch.dtype):
     return torch.randint(low=0, high=1, size=size).to(img_dtype)
 
 
-def test_projector(
-    img_features: torch.Tensor,
-    pytorch_connector: LlavaMultiModalProjector,
-    size: Tuple,
-):
+@pytest.fixture
+def graph_api_connector(pytorch_connector: LlavaMultiModalProjector):
     weights_registry: dict[str, DLPackArray] = {}
-
     weights_registry["linear_1"] = pytorch_connector.linear_1.weight.data
     weights_registry["linear_2"] = pytorch_connector.linear_2.weight.data
 
@@ -97,6 +96,33 @@ def test_projector(
         )
     )
     connector = LlavaMultiModalConnector(linear_1, linear_2)
+    return connector, weights_registry
+
+
+@pytest.fixture
+def graph_api_pixtral(
+    graph_api_connector: Tuple[LlavaMultiModalConnector, dict]
+):
+    # vision_encoder =
+    connector, weights_registry = graph_api_connector
+    # LlavaConditionalGeneration(vision_encoder: VisionEncoder
+    # multi_modal_projector=graph_api_connector,
+    # vocab_size: int
+    # language_model: Transformer
+    # pad_token_id= -1
+    # image_token_index= 10)
+    pass
+
+
+def test_connector(
+    img_features: torch.Tensor,
+    pytorch_connector: LlavaMultiModalProjector,
+    graph_api_connector: Tuple[LlavaMultiModalConnector, dict],
+    size: Tuple,
+):
+    weights_registry: dict[str, DLPackArray] = {}
+    connector = graph_api_connector[0]
+    weights_registry.update(graph_api_connector[1])
 
     session = InferenceSession()
     graph = Graph(
