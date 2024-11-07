@@ -150,7 +150,7 @@ fn multistage_mma[
         tile_layout: Layout, //,
         *,
         masked: Bool = False,
-        fill: Fill = Fill.NONE,
+        fill: OptionalReg[Scalar[a_type]] = None,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         a_tile: LayoutTensor[
@@ -179,7 +179,7 @@ fn multistage_mma[
         tile_layout: Layout, //,
         *,
         masked: Bool = False,
-        fill: Fill = Fill.NONE,
+        fill: OptionalReg[Scalar[b_type]] = None,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         b_tile: LayoutTensor[
