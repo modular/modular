@@ -125,21 +125,20 @@ def test_transpose_graph_with_device_prop() -> None:
         )
 
 
-@pytest.mark.skipif(sys.version_info.minor > 10, reason="MSDK-636")
 def test_location() -> None:
-    def bar():
-        return graph.location()
+    def elided():
+        return graph._location()
 
     def foo():
-        return bar()
+        return elided()
 
     with mlir.Context():
         loc = foo()
 
     # We can't really introspect locations except to get their `str`
-    assert f"{__name__}.test_location" in str(loc)
-    assert f"{__name__}.foo" in str(loc)
-    assert f"{__name__}.bar" in str(loc)
+    assert f"test_location" in str(loc)
+    assert f"foo" in str(loc)
+    assert f"elided" not in str(loc)
 
 
 def test_add_op() -> None:

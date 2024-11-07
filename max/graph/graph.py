@@ -32,66 +32,38 @@ from .weight import Weight
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 
 
-def _frame_function_qualname(frame):
-    """Gets the qualified name of a Python stack frame.
-
-    If not available (Python < 3.11), approximate it instead.
-    """
-    code = frame.f_code
-    try:
-        # Available in python >= 3.11
-        return code.co_qualname
-    except AttributeError:
-        module = inspect.getmodule(frame)
-        function = code.co_name
-        return f"{module.__name__ if module else '<unknown>'}.{function}"
-
-
-def _frame_location(frame):
+def _traceback_location(frame):
     """Creates an MLIR location corresponding to a single stack frame.
 
     An MLIR file location has a filename, a line, and a column.
-    - Stack frames and function definitions don't store column info,
-        so always set it to 0.
     - Encode the module, function name, and filename into the filename
         as "{qualname}:{filename}".
     """
-    qualname = _frame_function_qualname(frame)
-    code = frame.f_code
     if not mlir.Context.current:
         raise RuntimeError("Can't create location: No MLIR context active")
-    return mlir.Location.file(
-        f"{qualname}:{code.co_filename}", code.co_firstlineno, 0
+    # This should be cleaned up at some point and probably use an opaque location.
+    # For now, it is just storing the source context as the name.
+    # Would be good to add a bit more info to recreate the full python trace back.
+    code = frame.code_context[frame.index] if frame.code_context else ""
+    return mlir.Location.name(
+        code,
+        mlir.Location.file(
+            f"{frame.function}:{frame.filename}",
+            frame.lineno,
+            frame.positions.col_offset,
+        ),
     )
 
 
-def _frame_str(frame):
-    """Creates a str of the current Python call stack."""
-    assert frame is not None and frame.f_back is not None
-
-    stack = (
-        f"\t{_frame_function_qualname(frame)}:{frame.f_code.co_firstlineno} in"
-        f" {frame.f_code.co_filename}"
-    )
-    while frame := frame.f_back:
-        stack += (
-            f"\n\t{_frame_function_qualname(frame)}:{frame.f_code.co_firstlineno} in"
-            f" {frame.f_code.co_filename}"
-        )
-    return stack
-
-
-def location():
+def _location():
     """Creates an MLIR Location with the current Python call stack."""
-    frame = inspect.currentframe()
-    assert frame is not None and frame.f_back is not None
-    # don't use this function's frame
-    frame = frame.f_back
-    location = _frame_location(frame)
-    stack = []
-    while frame := frame.f_back:
-        stack.append(_frame_location(frame))
-    return mlir.Location.callsite(location, stack)
+    trace_back = inspect.stack()
+    # Remove the call to `inspect.stack()`, the call to `_location()`, and the
+    # call to `_add_op()` wrapping this.
+    trace_back = trace_back[3:]
+    frame = _traceback_location(trace_back[0])
+    stack = [_traceback_location(tb) for tb in trace_back[1:]]
+    return mlir.Location.callsite(frame, stack)
 
 
 # From https://stackoverflow.com/a/76301341
@@ -208,7 +180,7 @@ class Graph:
         self._context.append_dialect_registry(registry)
         self._context.load_all_available_dialects()
 
-        with self._context, location() as loc:
+        with self._context, _location() as loc:
             # Create the top level module op.
             self._module = mlir.Module.create()
 
@@ -310,7 +282,7 @@ class Graph:
         # Construct and insert an op in the body of the graph
         # Insertion point is where the op is to be created in the IR structure
         # location contains info about the source of the op (e.g. file, line)
-        with mlir.InsertionPoint(self._body), location():
+        with mlir.InsertionPoint(self._body), _location():
             try:
                 with self._capturing_mlir_diagnostics():
                     # Insert op at the end of self._body, location set up by
@@ -422,7 +394,7 @@ class Graph:
             self._context.append_dialect_registry(registry)
             self._context.load_all_available_dialects()
 
-            with self._context, location() as loc:
+            with self._context, _location() as loc:
                 # Create the top level module op.
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):
