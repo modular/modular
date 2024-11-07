@@ -115,6 +115,38 @@ def test_fma[dtype: DType]():
         assert_true("fma.rn.f16x2 " in _compile_code_asm[fma[width=8]]())
 
 
+def test_cast():
+    fn cast[
+        src_type: DType, dst_type: DType, width: Int
+    ](src: SIMD[src_type, width]) -> SIMD[dst_type, width]:
+        return src.cast[dst_type]()
+
+    assert_true(
+        "cvt.rn.f16x2.f32"
+        in _compile_code_asm[
+            cast[src_type = DType.float32, dst_type = DType.float16, width=4]
+        ]()
+    )
+    assert_true(
+        "cvt.rn.bf16x2.f32"
+        in _compile_code_asm[
+            cast[src_type = DType.float32, dst_type = DType.bfloat16, width=4]
+        ]()
+    )
+    assert_true(
+        "mov.b32 %f1, {0, %rs1};"
+        in _compile_code_asm[
+            cast[src_type = DType.bfloat16, dst_type = DType.float32, width=1]
+        ]()
+    )
+    assert_true(
+        "mov.b32 %f1, {0, %rs1};"
+        in _compile_code_asm[
+            cast[src_type = DType.bfloat16, dst_type = DType.float32, width=4]
+        ]()
+    )
+
+
 def main():
     test_add[DType.bfloat16]()
     test_add[DType.float16]()
@@ -130,3 +162,5 @@ def main():
 
     test_fma[DType.bfloat16]()
     test_fma[DType.float16]()
+
+    test_cast()
