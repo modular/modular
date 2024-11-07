@@ -30,7 +30,7 @@ from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.shuffle import _static_log2, shuffle_down, warp_broadcast, warp_sum
 from memory import stack_allocation
-from register import mogg_register, mogg_register_shape_func
+from register import register_internal, register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -601,7 +601,7 @@ fn layer_norm_cpu[
     sync_parallelize[task_func](num_workers)
 
 
-@mogg_register("mo.layer_norm")
+@register_internal("mo.layer_norm")
 fn layer_norm[
     type: DType,
     rank: Int,
@@ -658,7 +658,7 @@ fn layer_norm[
             constrained[False, "unsupported target " + target]()
 
 
-@mogg_register_shape_func("mo.layer_norm")
+@register_internal_shape_func("mo.layer_norm")
 @always_inline
 fn layer_norm_shape[
     type: DType,
@@ -948,7 +948,7 @@ fn rms_norm_cpu[
     sync_parallelize[task_func](num_workers)
 
 
-@mogg_register("rms_norm")
+@register_internal("rms_norm")
 @always_inline
 fn rms_norm[
     type: DType,
@@ -993,7 +993,7 @@ fn rms_norm[
             constrained[False, "unsupported target " + target]()
 
 
-@mogg_register_shape_func("rms_norm_shape")
+@register_internal_shape_func("rms_norm_shape")
 @always_inline
 fn rms_norm_shape[
     type: DType,

@@ -13,7 +13,7 @@ from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
 from builtin.sort import _quicksort
 from memory import UnsafePointer
-from register import mogg_register_shape_func
+from register import register_internal_shape_func
 from random import random_float64
 
 from utils import IndexList, Span
@@ -63,7 +63,7 @@ fn top_k_shape_impl[
     return shape
 
 
-@mogg_register_shape_func("mo.top_k")
+@register_internal_shape_func("mo.top_k")
 @always_inline
 fn top_k_shape[
     type: DType,
@@ -80,7 +80,7 @@ fn top_k_shape[
     ](input, k_buf, axis_buf)
 
 
-@mogg_register_shape_func("mo.bottom_k")
+@register_internal_shape_func("mo.bottom_k")
 @always_inline
 fn bottom_k_shape[
     type: DType,

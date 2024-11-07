@@ -18,7 +18,7 @@ from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
-from register import mogg_register, mogg_register_shape_func
+from register import register_internal, register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel
 from tensor_utils_internal import ManagedTensorSlice
@@ -945,11 +945,11 @@ fn scatter_nd[
     ](data, indices, updates, output, context)
 
 
-@mogg_register_shape_func("mo.scatter_nd")
-@mogg_register_shape_func("mo.scatter_nd.add")
-@mogg_register_shape_func("mo.scatter_nd.mul")
-@mogg_register_shape_func("mo.scatter_nd.min")
-@mogg_register_shape_func("mo.scatter_nd.max")
+@register_internal_shape_func("mo.scatter_nd")
+@register_internal_shape_func("mo.scatter_nd.add")
+@register_internal_shape_func("mo.scatter_nd.mul")
+@register_internal_shape_func("mo.scatter_nd.min")
+@register_internal_shape_func("mo.scatter_nd.max")
 @always_inline
 fn scatter_nd_shape[
     input_rank: Int,
@@ -1023,7 +1023,7 @@ fn scatter_nd_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register_shape_func("mo.gather")
+@register_internal_shape_func("mo.gather")
 @always_inline
 fn gather_shape[
     output_rank: Int,
@@ -1165,11 +1165,11 @@ fn scatter_elements[
     elementwise[update_func, 1](indices.get_runtime_spec().shape)
 
 
-@mogg_register_shape_func("mo.scatter.max")
-@mogg_register_shape_func("mo.scatter.min")
-@mogg_register_shape_func("mo.scatter.mul")
-@mogg_register_shape_func("mo.scatter.add")
-@mogg_register_shape_func("mo.scatter")
+@register_internal_shape_func("mo.scatter.max")
+@register_internal_shape_func("mo.scatter.min")
+@register_internal_shape_func("mo.scatter.mul")
+@register_internal_shape_func("mo.scatter.add")
+@register_internal_shape_func("mo.scatter")
 @always_inline
 fn scatter_elements_shape[
     rank: Int,
@@ -1291,7 +1291,7 @@ fn gather_elements[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register_shape_func("mo.gather_nd")
+@register_internal_shape_func("mo.gather_nd")
 @always_inline
 fn gather_nd_shape[
     input_rank: Int,

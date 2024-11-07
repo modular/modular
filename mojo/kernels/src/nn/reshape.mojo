@@ -6,7 +6,11 @@
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from register import mogg_register, mogg_register_shape_func, mogg_view_op
+from register import (
+    register_internal,
+    register_internal_shape_func,
+    mogg_view_op,
+)
 
 from utils.index import IndexList
 from utils.loop import unroll
@@ -14,7 +18,7 @@ from utils.loop import unroll
 
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
-@mogg_register("mo.static.reshape")
+@register_internal("mo.static.reshape")
 @mogg_view_op
 @always_inline
 fn reshape[
@@ -40,7 +44,7 @@ fn reshape[
     return NDBuffer[type, output_rank](input.data, new_shape, stride_tuple)
 
 
-@mogg_register("ndbuffer_reshape")
+@register_internal("ndbuffer_reshape")
 @mogg_view_op
 @always_inline
 fn ndbuffer_reshape[
@@ -60,7 +64,7 @@ fn ndbuffer_reshape[
     ](input, new_shape)
 
 
-@mogg_register_shape_func("mo.reshape")
+@register_internal_shape_func("mo.reshape")
 @always_inline
 fn reshape_shape[
     input_rank: Int,

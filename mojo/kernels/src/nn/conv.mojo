@@ -26,7 +26,7 @@ from buffer.dimlist import Dim, DimList
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from memory import UnsafePointer, stack_allocation
-from register import mogg_register_shape_func
+from register import register_internal_shape_func
 from runtime.asyncrt import parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -2757,7 +2757,7 @@ fn pack_filter[
                 packed_filter_ptr = packed_filter_ptr + simd_size
 
 
-@mogg_register_shape_func("mo.conv")
+@register_internal_shape_func("mo.conv")
 @always_inline
 fn conv_shape[
     input_rank: Int,

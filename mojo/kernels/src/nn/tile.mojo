@@ -6,7 +6,7 @@
 
 from buffer import NDBuffer
 from memory import memcpy
-from register import mogg_register, mogg_register_shape_func
+from register import register_internal, register_internal_shape_func
 
 from utils import IndexList
 
@@ -18,7 +18,7 @@ from utils import IndexList
 #       or less elements than the input's rank).
 
 
-@mogg_register("mo.tile")
+@register_internal("mo.tile")
 @always_inline
 fn tile[
     rank: Int, type: DType, rank_repeats: Int, type_repeats: DType
@@ -200,7 +200,7 @@ fn tile[
             memcpy(dst_ptr, src_ptr, count)
 
 
-@mogg_register_shape_func("mo.tile")
+@register_internal_shape_func("mo.tile")
 @always_inline
 fn tile_shape[
     input_rank: Int,

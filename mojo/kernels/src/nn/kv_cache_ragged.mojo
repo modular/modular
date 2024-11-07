@@ -22,7 +22,7 @@ from sys.intrinsics import _type_is_eq
 from utils.index import IndexList, Index
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
-from register import mogg_register
+from register import register_internal
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask
@@ -37,7 +37,7 @@ from nn._ragged_utils import get_batch_from_row_offsets
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
+@register_internal("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
 fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -84,7 +84,7 @@ fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
         )
 
 
-@mogg_register("fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged")
+@register_internal("fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged")
 fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -131,7 +131,7 @@ fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged[
         )
 
 
-@mogg_register("fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged")
+@register_internal("fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged")
 fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
@@ -413,7 +413,7 @@ fn _matmul_common[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("fused_qk_rope_h6_d48_bshd_ragged")
+@register_internal("fused_qk_rope_h6_d48_bshd_ragged")
 fn fused_qk_rope_h6_d48_bshd_ragged[
     type: DType, //,
     *,
@@ -459,7 +459,7 @@ fn fused_qk_rope_h6_d48_bshd_ragged[
         )
 
 
-@mogg_register("fused_qk_rope_h8_d128_bshd_ragged")
+@register_internal("fused_qk_rope_h8_d128_bshd_ragged")
 fn fused_qk_rope_h8_d128_bshd_ragged[
     type: DType, //,
     *,
@@ -505,7 +505,7 @@ fn fused_qk_rope_h8_d128_bshd_ragged[
         )
 
 
-@mogg_register("fused_qk_rope_h1_d16_bshd_ragged")
+@register_internal("fused_qk_rope_h1_d16_bshd_ragged")
 fn fused_qk_rope_h1_d16_bshd_ragged[
     type: DType, //,
     *,
@@ -551,7 +551,7 @@ fn fused_qk_rope_h1_d16_bshd_ragged[
         )
 
 
-@mogg_register("fused_qk_rope_h8_d32_bshd_ragged")
+@register_internal("fused_qk_rope_h8_d32_bshd_ragged")
 fn fused_qk_rope_h8_d32_bshd_ragged[
     type: DType, //,
     *,
@@ -597,7 +597,7 @@ fn fused_qk_rope_h8_d32_bshd_ragged[
         )
 
 
-@mogg_register("fused_qk_rope_h8_d64_bshd_ragged")
+@register_internal("fused_qk_rope_h8_d64_bshd_ragged")
 fn fused_qk_rope_h8_d64_bshd_ragged[
     type: DType, //,
     *,
@@ -643,7 +643,7 @@ fn fused_qk_rope_h8_d64_bshd_ragged[
         )
 
 
-@mogg_register("fused_qk_rope_h8_d128_bshd_continuous_batch_ragged")
+@register_internal("fused_qk_rope_h8_d128_bshd_continuous_batch_ragged")
 fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
     type: DType, //,
     *,
@@ -689,7 +689,7 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
         )
 
 
-@mogg_register("fused_qk_rope_h1_d16_bshd_continuous_batch_ragged")
+@register_internal("fused_qk_rope_h1_d16_bshd_continuous_batch_ragged")
 fn fused_qk_rope_h1_d16_bshd_continuous_batch_ragged[
     type: DType, //,
     *,
@@ -735,7 +735,7 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch_ragged[
         )
 
 
-@mogg_register("fused_qk_rope_h8_d32_bshd_continuous_batch_ragged")
+@register_internal("fused_qk_rope_h8_d32_bshd_continuous_batch_ragged")
 fn fused_qk_rope_h8_d32_bshd_continuous_batch_ragged[
     type: DType, //,
     *,
@@ -781,7 +781,7 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch_ragged[
         )
 
 
-@mogg_register("fused_qk_rope_h8_d64_bshd_continuous_batch_ragged")
+@register_internal("fused_qk_rope_h8_d64_bshd_continuous_batch_ragged")
 fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
     type: DType, //,
     *,
@@ -832,7 +832,7 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
+@register_internal("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
 fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
@@ -855,7 +855,7 @@ fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
         ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
 
 
-@mogg_register("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
+@register_internal("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
 fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
@@ -878,7 +878,7 @@ fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
         ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
 
 
-@mogg_register("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
+@register_internal("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
 fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,

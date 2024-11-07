@@ -8,7 +8,7 @@
 
 import math
 
-from register import mogg_register
+from register import register_internal
 
 
 @value
@@ -139,7 +139,7 @@ fn elu[
 # ===----------------------------------------------------------------------=== #
 
 
-@mogg_register("mo.relu")
+@register_internal("mo.relu")
 @always_inline
 fn relu[
     type: DType, simd_width: Int
@@ -188,7 +188,7 @@ fn relu_n1[
 # ===----------------------------------------------------------------------=== #
 
 
-@mogg_register("mo.gelu")
+@register_internal("mo.gelu")
 @always_inline
 fn gelu[
     type: DType, simd_width: Int

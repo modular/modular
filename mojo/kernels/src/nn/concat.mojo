@@ -21,10 +21,10 @@ from buffer import NDBuffer
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer, memcpy
-from register import mogg_register
+from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
-from register import mogg_register_shape_func
+from register import register_internal_shape_func
 
 from utils import IndexList, StaticTuple, product
 
@@ -518,7 +518,7 @@ fn _concat_cpu[
         _concat_parallel[epilogue_fn=epilogue_fn](output, axis, inputs)
 
 
-@mogg_register_shape_func("mo.concat_from_list")
+@register_internal_shape_func("mo.concat_from_list")
 @always_inline
 fn concat_shape[
     input_rank: Int,
