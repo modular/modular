@@ -38,7 +38,7 @@ from max.graph import (
 # A similar effect can be achieved locally be running with each test multible times `--runs_per_test=3`.
 # They all launch at the same time leading to exceptionally heavy cpu usage.
 # From local testing, a one second deadline seems to be enough to avoid flakes even under very high load.
-settings.register_profile("graph_tests", deadline=timedelta(seconds=2))
+settings.register_profile("graph_tests", deadline=None)
 settings.load_profile("graph_tests")
 
 MAX_INT32 = np.iinfo(np.int32).max
