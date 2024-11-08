@@ -8,18 +8,18 @@
 
 
 fn main():
-    print(Float64(1.1))  # CHECK: 1.10000{{.*}}
-    print(Float64(0.1))  # CHECK-NEXT: 0.10000{{.*}}
+    print(Float64(1.1))  # CHECK: 1.1
+    print(Float64(0.1))  # CHECK-NEXT: 0.1
     print(Float64(1.0))  # CHECK-NEXT: 1
     print(Float64(1e2))  # CHECK-NEXT: 100
     print(Float64(1.1e2))  # CHECK-NEXT: 110
     print(Float64(0.1e2))  # CHECK-NEXT: 10
     print(Float64(1.0e2))  # CHECK-NEXT: 100
     print(Float64(1e2))  # CHECK-NEXT: 100
-    print(Float64(1.1e-2))  # CHECK-NEXT: 0.01099{{.*}}
+    print(Float64(1.1e-2))  # CHECK-NEXT: 0.011
     print(Float64(0.1e2))  # CHECK-NEXT: 10
     print(Float64(1.0e-2))  # CHECK-NEXT: 0.01
-    print(Float64(0.1))  # CHECK-NEXT: 0.100000{{.*}}
+    print(Float64(0.1))  # CHECK-NEXT: 0.1
     print(Float64(0.0))  # CHECK-NEXT: 0.0
     print(Float64(0e2))  # CHECK-NEXT: 0.0
     print(Float64(0.1e2))  # CHECK-NEXT: 10
@@ -29,14 +29,14 @@ fn main():
     print(Float64(0.0e-2))  # CHECK-NEXT: 0.0
     print(Float64(12.31e11))  # CHECK-NEXT: 1231000000000.0
     print(Float64(12.31e-3))  # CHECK-NEXT: 0.01231
+    print(Float64(1.1234567e-305))  # CHECK-NEXT: 1.1234567e-305
+    print(Float64(1.1234567e-310))  # CHECK-NEXT: 1.1234567e-310
+    print(Float64(1.1234567e-315))  # CHECK-NEXT: 1.1234567e-315
     # Check gradual loss of precision for subnormal numbers when
     # converting from infinite precision literal to Float64.
-    print(Float64(1.1234567e-305))  # CHECK-NEXT: 1.1234567e-305
-    print(Float64(1.1234567e-310))  # CHECK-NEXT: 1.1234567000000234e-310
-    print(Float64(1.1234567e-315))  # CHECK-NEXT: 1.1234567021086955e-315
-    print(Float64(1.1234567e-320))  # CHECK-NEXT: 1.1235052786429946e-320
-    print(Float64(1.1234567e-322))  # CHECK-NEXT: 1.1363509854348671e-322
-    print(Float64(1.1234567e-323))  # CHECK-NEXT: 9.8813129168249309e-324
+    print(Float64(1.1234567e-320))  # CHECK-NEXT: 1.1235e-320
+    print(Float64(1.1234567e-322))  # CHECK-NEXT: 1.14e-322
+    print(Float64(1.1234567e-323))  # CHECK-NEXT: 1e-323
     print(Float64(1.1234567e-324))  # CHECK-NEXT: 0.0
     print(999e9000)  # CHECK-NEXT: inf
     print(-999e9000)  # CHECK-NEXT: -inf
