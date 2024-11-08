@@ -11,6 +11,8 @@ import platform
 import uuid
 from typing import Optional
 
+from max.serve.telemetry.common import otelBaseUrl, resource
+
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
@@ -82,24 +84,9 @@ def configureLogging(
 
     if otlp_level is not None:
         # Create an OTEL handler
-        logger_provider = LoggerProvider(
-            resource=Resource.create(
-                {
-                    "event.domain": "serve",
-                    "telemetry.session": uuid.uuid4().hex,
-                    "enduser.id": "",
-                    "os.type": platform.system(),
-                    "os.version": platform.release(),
-                    "cpu.description": platform.processor(),
-                    "cpu.arch": platform.architecture()[0],
-                    "system.cloud": _getCloudProvider(),
-                }
-            ),
-        )
+        logger_provider = LoggerProvider(resource)
         set_logger_provider(logger_provider)
-        exporter = OTLPLogExporter(
-            endpoint="https://telemetry-dev.modular.com:443/v1/logs"
-        )
+        exporter = OTLPLogExporter(endpoint=otelBaseUrl + "/v1/logs")
         logger_provider.add_log_record_processor(
             BatchLogRecordProcessor(exporter)
         )

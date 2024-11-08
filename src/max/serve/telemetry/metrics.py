@@ -5,16 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import os
 from typing import Optional
 
+from max.serve.telemetry.common import otelBaseUrl
 
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
 )
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.metrics import get_meter_provider, set_meter_provider
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.metrics import get_meter_provider, set_meter_provider
+from opentelemetry.sdk.resources import Resource
 
 
 class _Metrics:
@@ -35,12 +38,13 @@ class _Metrics:
         if otlp_level is not None:
             meterProviders.append(
                 PeriodicExportingMetricReader(  # type: ignore
-                    OTLPMetricExporter(
-                        endpoint="https://telemetry.modular.com:443/v1/metrics"
-                    )
+                    OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
                 )
             )
-        set_meter_provider(MeterProvider(meterProviders))
+        resource = Resource.create(
+            {"deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", "")}
+        )
+        set_meter_provider(MeterProvider(meterProviders, resource))
         _meter = get_meter_provider().get_meter("modular")
         self._req_count = _meter.create_counter(
             "maxserve.request_count", description="Http request count"
