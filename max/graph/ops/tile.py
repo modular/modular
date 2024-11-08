@@ -14,12 +14,12 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import Shape, StaticDim, SymbolicDim, TensorType
+from ..type import Dim, DimLike, Shape, StaticDim, SymbolicDim, TensorType
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
 
-def tile(x: TensorValueLike, repeats: Iterable[int]):
+def tile(x: TensorValueLike, repeats: Iterable[DimLike]):
     """
     Returns a new Tensor as the result of copying the input tensor N_i times
     on each dimension, where N_i = repeats[i].
@@ -30,34 +30,21 @@ def tile(x: TensorValueLike, repeats: Iterable[int]):
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     shape = x.shape
 
-    # TODO(MSDK-604): Move all of these checks and shape inference to RMO.
-    repeats = list(repeats)
+    repeats = list(Dim(d) for d in repeats)
     if len(shape) != len(repeats):
         raise ValueError(
             "Input rank and number of elements in repeats must match:"
             f" {shape=}, {repeats=}"
         )
 
-    if any(count <= 0 for count in repeats):
+    if any(count.dim <= 0 for count in repeats if isinstance(count, StaticDim)):
         raise ValueError(f"Repeats must all be positive: {repeats=}")
 
-    if not all(
-        isinstance(dim, StaticDim) or count == 1
-        for dim, count in zip(shape, repeats)
-    ):
-        raise ValueError(
-            f"Can't non-trivially tile non-static dimensions: {shape=},"
-            f" {repeats=}"
-        )
-
-    output_dims = [
-        int(dim) * count if isinstance(dim, StaticDim) else dim
-        for dim, count in zip(shape, repeats)
-    ]
+    output_dims = [dim * count for dim, count in zip(shape, repeats)]
 
     return Graph.current._add_op(
         rmo.mo_tile,
         TensorType(dtype=x.dtype, shape=output_dims, device=x.device).to_mlir(),  # type: ignore
         x,
-        constant(np.array(repeats), DType.int64),
+        TensorValue.from_shape(repeats),
     )[0].tensor
