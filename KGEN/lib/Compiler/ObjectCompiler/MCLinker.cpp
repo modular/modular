@@ -104,10 +104,8 @@ ErrorOrSuccess MCLinker::linkLLVMModules(StringRef moduleName) {
   return {};
 }
 
-void MCLinker::prepareMachineModuleInfo() {
-  llvm::LLVMTargetMachine &llvmTargetMachine =
-      static_cast<llvm::LLVMTargetMachine &>(targetMachine);
-
+void MCLinker::prepareMachineModuleInfo(
+    llvm::LLVMTargetMachine &llvmTargetMachine) {
   for (auto [i, smcInfos] : llvm::enumerate(symbolAndMCInfos)) {
     for (auto [j, mcInfo] : llvm::enumerate(smcInfos->mcInfos)) {
       // Move MachineFunctions from each split's codegen result
@@ -172,22 +170,39 @@ void MCLinker::prepareMachineModuleInfo() {
   }
 }
 
+llvm::Module *
+MCLinker::getModuleToPrintOneSplit(llvm::LLVMTargetMachine &llvmTargetMachine) {
+  auto &mcInfo = symbolAndMCInfos[0]->mcInfos[0];
+
+  llvm::DenseMap<const llvm::Function *, std::unique_ptr<llvm::MachineFunction>>
+      &machineFunctions =
+          getMachineFunctionsFromMachineModuleInfo(*mcInfo->machineModuleInfo);
+
+  mcInfo->machineModuleInfo->getContext().setObjectFileInfo(
+      llvmTargetMachine.getObjFileLowering());
+
+  for (auto &fn : mcInfo->moduleAndContext->functions()) {
+    if (fn.isDeclaration())
+      continue;
+
+    auto mfPtrIter = machineFunctions.find(&fn);
+    if (mfPtrIter == machineFunctions.end())
+      continue;
+
+    machineModInfoPass->getMMI().insertFunction(fn,
+                                                std::move(mfPtrIter->second));
+  }
+
+  mcInfo->mcContext->setUseNamesOnTempLabels(true);
+  // Release memory as soon as possible to reduce peak memory footprint.
+  mcInfo->machineModuleInfo.reset();
+  mcInfo->fnNameToFnPtr.clear();
+  mcInfo->moduleBuf.reset();
+  return &(*mcInfo->moduleAndContext);
+}
+
 ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
                                                    bool emitAssembly) {
-  // link at llvm::Module level.
-  ErrorOrSuccess lmResult = linkLLVMModules(moduleName);
-  if (lmResult.isError())
-    return Error(lmResult.getError());
-
-  prepareMachineModuleInfo();
-
-  WriteableBufferRef linkedObj = WriteableBuffer::get();
-
-  llvm::legacy::PassManager passMgr;
-  // Add an appropriate TargetLibraryInfo pass for the module's
-  // triple.
-  llvm::TargetLibraryInfoImpl targetLibInfo(
-      llvm::Triple(linkedModule->getTargetTriple()));
 
   llvm::LLVMTargetMachine &llvmTargetMachine =
       static_cast<llvm::LLVMTargetMachine &>(targetMachine);
@@ -196,36 +211,60 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
   llvmTargetMachine.Options.MCOptions.PreserveAsmComments =
       options.verboseOutput;
 
-  // Add AsmPrint pass and run the pass manager.
-  passMgr.add(new llvm::TargetLibraryInfoWrapperPass(targetLibInfo));
+  bool hasOneSplit =
+      symbolAndMCInfos.size() == 1 && symbolAndMCInfos[0]->mcInfos.size() == 1;
 
-  // Function ordering may be changed in the linkedModule due to Linker,
-  // but the original order matters for NVPTX backend to generate function
-  // declaration properly to avoid use before def/decl illegal instructions.
-  // Sort the linkedModule's functions back to to its original order
-  // (only definition matter, declaration doesn't).
-  if (llvm::Triple(options.targetTriple).isNVPTX()) {
-    linkedModule->getFunctionList().sort([&](const auto &lhs, const auto &rhs) {
-      if (lhs.isDeclaration() && rhs.isDeclaration())
-        return true;
+  llvm::Module *oneSplitModule = nullptr;
 
-      if (lhs.isDeclaration())
-        return false;
+  if (!hasOneSplit) {
+    // link at llvm::Module level.
+    ErrorOrSuccess lmResult = linkLLVMModules(moduleName);
+    if (lmResult.isError())
+      return Error(lmResult.getError());
 
-      if (rhs.isDeclaration())
-        return true;
+    prepareMachineModuleInfo(llvmTargetMachine);
 
-      auto iter1 = originalFnOrdering.find(lhs.getName());
-      if (iter1 == originalFnOrdering.end())
-        return true;
-      auto iter2 = originalFnOrdering.find(rhs.getName());
-      if (iter2 == originalFnOrdering.end())
-        return true;
+    // Function ordering may be changed in the linkedModule due to Linker,
+    // but the original order matters for NVPTX backend to generate function
+    // declaration properly to avoid use before def/decl illegal instructions.
+    // Sort the linkedModule's functions back to to its original order
+    // (only definition matter, declaration doesn't).
+    if (llvm::Triple(options.targetTriple).isNVPTX()) {
+      linkedModule->getFunctionList().sort(
+          [&](const auto &lhs, const auto &rhs) {
+            if (lhs.isDeclaration() && rhs.isDeclaration())
+              return true;
 
-      return iter1->second < iter2->second;
-    });
+            if (lhs.isDeclaration())
+              return false;
+
+            if (rhs.isDeclaration())
+              return true;
+
+            auto iter1 = originalFnOrdering.find(lhs.getName());
+            if (iter1 == originalFnOrdering.end())
+              return true;
+            auto iter2 = originalFnOrdering.find(rhs.getName());
+            if (iter2 == originalFnOrdering.end())
+              return true;
+
+            return iter1->second < iter2->second;
+          });
+    }
+  } else {
+    oneSplitModule = getModuleToPrintOneSplit(llvmTargetMachine);
+    oneSplitModule->setModuleIdentifier(moduleName);
   }
 
+  // Prepare AsmPrint pipeline.
+  WriteableBufferRef linkedObj = WriteableBuffer::get();
+
+  llvm::legacy::PassManager passMgr;
+  // Add an appropriate TargetLibraryInfo pass for the module's triple.
+  llvm::TargetLibraryInfoImpl targetLibInfo(llvm::Triple(options.targetTriple));
+
+  // Add AsmPrint pass and run the pass manager.
+  passMgr.add(new llvm::TargetLibraryInfoWrapperPass(targetLibInfo));
   if (KGEN::addPassesToAsmPrint(options, llvmTargetMachine, passMgr, *linkedObj,
                                 emitAssembly
                                     ? llvm::CodeGenFileType::AssemblyFile
@@ -245,7 +284,8 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
       llvmTargetMachine.getObjFileLowering())
       ->Initialize(machineModInfoPass->getMMI().getContext(), targetMachine);
 
-  passMgr.run(*linkedModule);
+  llvm::Module &moduleToRun = hasOneSplit ? *oneSplitModule : *linkedModule;
+  passMgr.run(moduleToRun);
 
   // Release some of the AsyncValue memory to avoid
   // wrong version of LLVMContext destructor being called due to

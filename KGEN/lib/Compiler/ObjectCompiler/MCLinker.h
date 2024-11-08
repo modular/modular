@@ -121,8 +121,13 @@ private:
   /// Link llvm::Modules from each split.
   ErrorOrSuccess linkLLVMModules(StringRef moduleName);
 
+  /// Get llvm::Module and prepare MachineModuleInfoWrapperPass to print if
+  /// there is only one split.
+  llvm::Module *
+  getModuleToPrintOneSplit(llvm::LLVMTargetMachine &llvmTargetMachine);
+
   /// Prepare MachineModuleInfo before AsmPrinting.
-  void prepareMachineModuleInfo();
+  void prepareMachineModuleInfo(llvm::LLVMTargetMachine &llvmTargetMachine);
 };
 
 } // namespace M::KGEN
