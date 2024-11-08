@@ -619,7 +619,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
 
 static LogicalResult writeBufToTemp(const std::string &saveTempsPrefix,
                                     const std::string &fileType,
-                                    const WriteableBufferRef &buf) {
+                                    const Buffer &buf) {
   if (saveTempsPrefix.empty())
     return success();
 
@@ -628,7 +628,7 @@ static LogicalResult writeBufToTemp(const std::string &saveTempsPrefix,
   auto outFile = mlir::openOutputFile(outPath);
   if (!outFile)
     return failure();
-  outFile->os() << buf->Buffer::getBuffer();
+  outFile->os() << buf.getBuffer();
   outFile->keep();
   return success();
 }
@@ -758,7 +758,7 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
         }
 
         WriteableBufferRef linkedObj = *mcLinkResult;
-        if (failed(writeBufToTemp(options.saveTempsPrefix, ".s", linkedObj))) {
+        if (failed(writeBufToTemp(options.saveTempsPrefix, ".s", *linkedObj))) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "failed to save asm to saveTempsPrefix", module->getLoc()));
         }
@@ -893,7 +893,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                 postfix = ".ptx";
 
               if (failed(writeBufToTemp(options.saveTempsPrefix, postfix,
-                                        linkedObj))) {
+                                        *linkedObj))) {
                 return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
                     "failed to save asm to saveTempsPrefix", moduleLoc));
               }
