@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 register_mp_queue("MODEL_IN")
 register_mp_queue("MODEL_OUT")
 register_mp_queue("MODEL_CANCEL")
+register_mp_queue("REQUEST")
+register_mp_queue("RESPONSE")
 
 
 async def run_model_worker(
