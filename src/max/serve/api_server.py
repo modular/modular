@@ -16,6 +16,8 @@ import os
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Mapping, Optional
 
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 from max.serve.telemetry.logger import configureLogging
 
 console_level: int = logging.INFO
@@ -108,6 +110,9 @@ def fastapi_app(
 
     app.state.debug_settings = debug_settings
     register_debug(app, debug_settings)
+
+    # Instrument application with traces
+    FastAPIInstrumentor.instrument_app(app, excluded_urls="metrics/.*")
     return app
 
 
