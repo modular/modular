@@ -191,9 +191,6 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
         layer_norm=graph_ln_pre,
         patch_positional_embedding=graph_rope,
         transformer=graph_transformer,
-        theta=rope_theta,
-        hidden_size=hidden_size,
-        num_channels=num_channels,
         patch_size=patch_size,
         max_image_size=image_size,
     )
