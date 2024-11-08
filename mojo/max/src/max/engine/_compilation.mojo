@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
-from memory import UnsafePointer
+from memory import UnsafePointer, OwnedPointer
 from sys.ffi import DLHandle, c_char
 from sys import external_call
 from collections import List
@@ -219,7 +219,7 @@ struct TorchInputSpec(Movable):
 struct CompileConfig:
     """Memory managed version of Engine's Compile Config."""
 
-    var ptr: UnsafePointer[CCompileConfig]
+    var _ptr: OwnedPointer[CCompileConfig]
     var lib: DLHandle
     var torch_lib: Optional[DLHandle]
     var input_specs: OwningVector[TorchInputSpec]
@@ -227,10 +227,9 @@ struct CompileConfig:
     alias NewCompileConfigFnName = "M_newCompileConfig"
 
     fn __init__(inout self, lib: DLHandle):
-        self.ptr = UnsafePointer[CCompileConfig].alloc(1)
-        __get_address_as_uninit_lvalue(self.ptr.address) = call_dylib_func[
-            CCompileConfig
-        ](lib, Self.NewCompileConfigFnName)
+        self._ptr = OwnedPointer(
+            call_dylib_func[CCompileConfig](lib, Self.NewCompileConfigFnName)
+        )
         self.lib = lib
         self.input_specs = OwningVector[TorchInputSpec]()
         self.torch_lib = Self._get_torch_lib()
@@ -256,24 +255,24 @@ struct CompileConfig:
         return DLHandle(torch_ext_lib_path)
 
     fn __moveinit__(inout self, owned existing: Self):
-        self.ptr = existing.ptr
+        self._ptr = existing._ptr^
         self.lib = existing.lib
         self.input_specs = existing.input_specs^
         self.torch_lib = existing.torch_lib
 
     fn set_model_source(self, model_source: ModelSource):
-        self.ptr[].set_model_source(model_source, self.lib)
+        self._ptr[].set_model_source(model_source, self.lib)
 
     fn set_pipeline_name(self, name: String):
-        self.ptr[].set_pipeline_name(name, self.lib)
+        self._ptr[].set_pipeline_name(name, self.lib)
 
     fn set_model_path(self, path: String):
         """Sets the path of model to compile."""
-        self.ptr[].set_model_path(path, self.lib)
+        self._ptr[].set_model_path(path, self.lib)
 
     fn set_replace_ops_path(self, path: String) raises:
         """Replace Modular kernels with user-defined kernels."""
-        self.ptr[].replace_ops(path, self.lib)
+        self._ptr[].replace_ops(path, self.lib)
 
     fn set_torch_input_specs(self) raises:
         if len(self.input_specs) == 0:
@@ -286,7 +285,7 @@ struct CompileConfig:
         for i in range(len(self.input_specs)):
             var spec_ptr = self.input_specs.get(i)
             inner_spec.append(spec_ptr[].ptr)
-        self.ptr[].set_torch_input_specs(self.torch_lib.value(), inner_spec)
+        self._ptr[].set_torch_input_specs(self.torch_lib.value(), inner_spec)
 
     fn add_input_spec(inout self, spec: TensorSpec) raises:
         self.input_specs.emplace_back(
@@ -313,21 +312,14 @@ struct CompileConfig:
         )
 
     fn borrow_ptr(self) -> UnsafePointer[CCompileConfig]:
-        return self.ptr
-
-    fn take_ptr(inout self) -> UnsafePointer[CCompileConfig]:
-        var ptr = self.ptr
-        self.ptr = UnsafePointer[CCompileConfig]()
-        return ptr
+        return self._ptr.unsafe_ptr()
 
     fn __del__(owned self):
         if self.torch_lib:
             var torch = self.torch_lib.value()
             torch.close()
 
-        self.ptr[].free(self.lib)
-        UnsafePointer(self.ptr).destroy_pointee()
-        self.ptr.free()
+        self._ptr[].free(self.lib)
 
 
 @value
