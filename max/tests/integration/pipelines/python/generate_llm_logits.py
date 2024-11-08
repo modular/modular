@@ -175,11 +175,13 @@ class LlamaPipelineOracle(PipelineOracle):
         assert self.is_supported(
             version=version, encoding=encoding, device_spec=device_spec
         )
+        internal_version = self._map_to_internal_version(version)
         config = pipelines.PipelineConfig(
             architecture="llama",
             version=self._map_to_internal_version(version),
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_new_tokens=10,
+            huggingface_repo_id=f"modularai/llama-{internal_version}",
             weight_path=self._weight_path_for(
                 version=version, encoding=encoding
             ),
@@ -190,9 +192,7 @@ class LlamaPipelineOracle(PipelineOracle):
             ),
         )
         tokenizer = nn.tokenizer.TextTokenizer(config)
-        generator = llama3.Llama3TokenGenerator(
-            config, tokenizer.eos, tokenizer.delegate.vocab_size
-        )
+        generator = llama3.Llama3TokenGenerator(config, tokenizer.eos)
         return MaxPipelineAndTokenizer(
             model=generator.model, generator=generator, tokenizer=tokenizer
         )
