@@ -473,7 +473,7 @@ fn b2b_gemm[
                 1, simd_size
             ]().distribute[warp_layout](ThreadIdx.x())
             var thread_offset = d_gmem_frag.distance(D.ptr)
-            alias num_stores_per_thread = d_gmem_frag.layout.size()
+            alias num_stores_per_thread = __type_of(d_gmem_frag).layout.size()
             alias src_align = alignof[
                 SIMD[accum_type, simdwidthof[accum_type]()]
             ]()
@@ -485,14 +485,14 @@ fn b2b_gemm[
 
             @parameter
             for i in range(num_stores_per_thread):
-                alias src_idx = d_smem_frag.layout(i)
+                alias src_idx = __type_of(d_smem_frag).layout(i)
                 alias src_idx_base = src_idx % swizzle.size()
                 alias src_idx_diff = src_idx - src_idx_base
                 var swizzled_idx = swizzle(
                     d_smem_frag_offset + src_idx_base
                 ) + src_idx_diff
 
-                alias dst_static_idx = d_gmem_frag.layout(i)
+                alias dst_static_idx = __type_of(d_gmem_frag).layout(i)
                 var dst_idx = 0
 
                 @parameter
@@ -548,9 +548,9 @@ fn b2b_gemm[
             var thread_offset = d_gmem_frag.distance(D.ptr)
 
             @parameter
-            for i in range(d_gmem_frag.layout.size()):
+            for i in range(__type_of(d_gmem_frag).layout.size()):
                 alias src_idx = d_reg_frag.layout(i)
-                alias dst_static_idx: UInt = d_gmem_frag.layout(i)
+                alias dst_static_idx: UInt = __type_of(d_gmem_frag).layout(i)
                 var dst_idx = 0
 
                 @parameter
