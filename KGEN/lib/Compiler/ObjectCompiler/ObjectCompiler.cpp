@@ -831,7 +831,9 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
       }
 
       // Split the module into multiple slices and compile each in parallel.
-      emitAssembly = emitAssembly || isGPUBackend(options);
+      bool isNVPTX = llvm::Triple(options.targetTriple).isNVPTX();
+      assert((!isNVPTX || (isNVPTX && emitAssembly)) &&
+             "should only emit assembly with NVPTX backend");
 
       // Release mlir::ModuleOp before codegen happens to reduce memory
       // pressure.
