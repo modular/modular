@@ -161,10 +161,12 @@ fn copy_local_to_sram[
 
     # copy frag to smem
     @parameter
-    for i in range(smem_frag.layout.size()):
+    for i in range(__type_of(smem_frag).layout.size()):
         var src_idx = getindex[src_frag.layout, src_frag.element_layout](i, 0)
         var smem_idx = getindex[
-            smem_frag.layout, smem_frag.element_layout, swizzle
+            __type_of(smem_frag).layout,
+            __type_of(smem_frag).element_layout,
+            swizzle,
         ](i, smem_frag_offset)
 
         var x = Element[type, src_frag.element_layout].load(
@@ -172,14 +174,16 @@ fn copy_local_to_sram[
                 src_frag.ptr.offset(src_idx)
             )
         )
-        Element[type, smem_frag.element_layout](
-            rebind[Element[type, smem_frag.element_layout].element_data_type](
-                x.element_data
-            )
+        Element[type, __type_of(smem_frag).element_layout](
+            rebind[
+                Element[
+                    type, __type_of(smem_frag).element_layout
+                ].element_data_type
+            ](x.element_data)
         ).store(
-            rebind[UnsafePointer[Scalar[type], smem_frag.address_space]](
-                smem.ptr
-            ).offset(smem_idx)
+            rebind[
+                UnsafePointer[Scalar[type], __type_of(smem_frag).address_space]
+            ](smem.ptr).offset(smem_idx)
         )
         smem_history[i, lane_idx] = smem_idx
         # if lane_idx == 30 and swizzle:
@@ -213,31 +217,37 @@ fn copy_sram_to_dram[
     var smem_frag_offset = smem_frag.distance(smem.ptr)
     var gmem_frag_offset = gmem_frag.distance(gmem.ptr)
 
-    constrained[size(smem_history.layout.shape[0]) == smem_frag.layout.size()]()
+    constrained[
+        size(smem_history.layout.shape[0]) == __type_of(smem_frag).layout.size()
+    ]()
 
     # copy frag to smem
     @parameter
-    for i in range(smem_frag.layout.size()):
+    for i in range(__type_of(smem_frag).layout.size()):
         var smem_idx = getindex[
-            smem_frag.layout, smem_frag.element_layout, swizzle
+            __type_of(smem_frag).layout,
+            __type_of(smem_frag).element_layout,
+            swizzle,
         ](i, smem_frag_offset)
-        var gmem_idx = getindex[gmem_frag.layout, gmem_frag.element_layout](
-            i, gmem_frag_offset
-        )
+        var gmem_idx = getindex[
+            __type_of(gmem_frag).layout, __type_of(gmem_frag).element_layout
+        ](i, gmem_frag_offset)
 
-        var x = Element[type, smem_frag.element_layout].load(
-            rebind[UnsafePointer[Scalar[type], smem_frag.address_space]](
-                smem.ptr.offset(smem_idx)
-            )
+        var x = Element[type, __type_of(smem_frag).element_layout].load(
+            rebind[
+                UnsafePointer[Scalar[type], __type_of(smem_frag).address_space]
+            ](smem.ptr.offset(smem_idx))
         )
-        Element[type, gmem_frag.element_layout](
-            rebind[Element[type, gmem_frag.element_layout].element_data_type](
-                x.element_data
-            )
+        Element[type, __type_of(gmem_frag).element_layout](
+            rebind[
+                Element[
+                    type, __type_of(gmem_frag).element_layout
+                ].element_data_type
+            ](x.element_data)
         ).store(
-            rebind[UnsafePointer[Scalar[type], gmem_frag.address_space]](
-                gmem.ptr
-            ).offset(gmem_idx)
+            rebind[
+                UnsafePointer[Scalar[type], __type_of(gmem_frag).address_space]
+            ](gmem.ptr).offset(gmem_idx)
         )
         smem_history[i, lane_idx] = smem_idx
 

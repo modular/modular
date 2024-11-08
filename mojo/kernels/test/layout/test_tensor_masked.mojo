@@ -7,6 +7,7 @@
 
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.fillers import arange
+from layout import Layout
 
 from memory import stack_allocation
 
@@ -86,6 +87,29 @@ fn test_tile_dynamic_with_bounds():
                 tensor_2x2_masked.runtime_layout.bound_check_required(),
             )
             print(tensor_2x2_masked)
+
+
+fn test_tile_and_distribute():
+    print("== test_tile_and_distribute")
+    ptr_5x3_f32 = stack_allocation[15, DType.float32]()
+    tensor_UxU = tb[DType.float32]().row_major(5, 3).view(ptr_5x3_f32)
+    arange(tensor_UxU)
+    for tile_i in range(3):
+        for tile_j in range(2):
+            print("--tile[", tile_i, ", ", tile_j, "]--")
+            tensor_2x2_masked = tensor_UxU.tile[2, 2](tile_i, tile_j)
+            print(
+                tensor_2x2_masked.runtime_layout,
+                tensor_2x2_masked.masked,
+                tensor_2x2_masked.runtime_layout.bound_check_required(),
+            )
+            print(tensor_2x2_masked)
+            for thread_id in range(4):
+                print("----thread[", thread_id, "]----")
+                var distributed_masked_tensor = tensor_2x2_masked.distribute[
+                    Layout.row_major(2, 2)
+                ](thread_id)
+                print(distributed_masked_tensor)
 
 
 fn main():
@@ -257,3 +281,70 @@ fn main():
     # CHECK: ((1, 1):(3, 1)) True True
     # CHECK: 14.0
     test_tile_dynamic_with_bounds()
+
+    # CHECK: == test_tile_and_distribute
+    # CHECK: --tile[ 0 ,  0 ]--
+    # CHECK: ((2, 2):(3, 1)) True False
+    # CHECK: 0.0 1.0
+    # CHECK: 3.0 4.0
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: 0.0
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: 1.0
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: 3.0
+    # CHECK: ----thread[ 3 ]----
+    # CHECK: 4.0
+    # CHECK: --tile[ 0 ,  1 ]--
+    # CHECK: ((2, 1):(3, 1)) True True
+    # CHECK: 2.0
+    # CHECK: 5.0
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: 2.0
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: 5.0
+    # CHECK: ----thread[ 3 ]----
+
+    # CHECK: --tile[ 1 ,  0 ]--
+    # CHECK: ((2, 2):(3, 1)) True False
+    # CHECK: 6.0 7.0
+    # CHECK: 9.0 10.0
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: 6.0
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: 7.0
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: 9.0
+    # CHECK: ----thread[ 3 ]----
+    # CHECK: 10.0
+    # CHECK: --tile[ 1 ,  1 ]--
+    # CHECK: ((2, 1):(3, 1)) True True
+    # CHECK: 8.0
+    # CHECK: 11.0
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: 8.0
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: 11.0
+    # CHECK: ----thread[ 3 ]----
+
+    # CHECK: --tile[ 2 ,  0 ]--
+    # CHECK: ((1, 2):(3, 1)) True True
+    # CHECK: 12.0 13.0
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: 12.0
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: 13.0
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: ----thread[ 3 ]----
+
+    # CHECK: --tile[ 2 ,  1 ]--
+    # CHECK: ((1, 1):(3, 1)) True True
+    # CHECK: 14.0
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: 14.0
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: ----thread[ 3 ]----
+    test_tile_and_distribute()

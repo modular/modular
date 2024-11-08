@@ -151,6 +151,34 @@ fn _tile_is_masked[layout: Layout, *tile_sizes: Int]() -> Bool:
     return False
 
 
+fn _distribute_is_masked[
+    layout: Layout, threads_layout: Layout, axis: OptionalReg[Int] = None
+]() -> Bool:
+    # TODO: relax this constrain
+    @parameter
+    if depth(threads_layout.shape) > 1:
+        return False
+
+    @parameter
+    if axis:
+        return False
+
+    @parameter
+    if not layout.all_dims_known():
+        return True
+
+    @parameter
+    for i in range(layout.rank()):
+        alias layout_dim = to_int(layout.shape[i])
+        alias thread_dim = to_int(threads_layout.shape[i])
+
+        @parameter
+        if layout_dim % thread_dim != 0:
+            return True
+
+    return False
+
+
 @register_passable("trivial")
 struct LayoutTensor[
     dtype: DType,
@@ -1374,7 +1402,7 @@ struct LayoutTensor[
 
     @always_inline
     fn _clamp_distribute_shape[
-        thread_layout: Layout
+        thread_layout: Layout,
     ](self, thread_id: UInt) -> IndexList[rank]:
         constrained[
             len(flatten(thread_layout.shape)) <= 2
@@ -1396,9 +1424,7 @@ struct LayoutTensor[
             var tile_idx = (thread_id // thread_stride_i) % thread_shape_i
             var tile_shape_i = ceildiv(self.dim(i), thread_shape_i)
             var bound_i = int((tile_shape_i - 1) * thread_shape_i + tile_idx)
-            tile_shape[i] = tile_shape_i if bound_i < self.dim(i) else (
-                self.dim(i) // thread_shape_i
-            )
+            tile_shape[i] = min(self.dim(i) - bound_i, tile_shape_i)
 
         return tile_shape
 
@@ -1417,6 +1443,8 @@ struct LayoutTensor[
         ]()[1],
         address_space=address_space,
         element_layout=element_layout,
+        masked = masked
+        or _distribute_is_masked[layout, threads_layout, axis](),
     ] as result:
         """Distribute tiled workload to threads.
 
@@ -1435,26 +1463,21 @@ struct LayoutTensor[
             axis,
         ]()
 
-        alias coalesce_thread_layout = coalesce(threads_layout, keep_rank=True)
-
-        alias res_rank = result.layout.rank()
-
-        var runtime_shape = RuntimeTuple[
-            result.layout.shape,
-            element_bitwidth = result.layout_bitwidth,
-            unsigned=True,
-        ]()
+        @parameter
+        if result.masked:
+            runtime_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = result.layout_bitwidth,
+                unsigned=True,
+            ](self._clamp_distribute_shape[threads_layout](thread_id))
+        else:
+            runtime_shape = RuntimeTuple[
+                result.layout.shape,
+                element_bitwidth = result.layout_bitwidth,
+                unsigned=True,
+            ]()
 
         var runtime_stride = RuntimeTuple[result.layout.stride, unsigned=True]()
-
-        @parameter
-        for i in range(res_rank):
-            alias stride_i: UInt = to_int(
-                flatten(coalesce_thread_layout.stride)[axis.value()]
-            ) if axis else to_int(flatten(coalesce_thread_layout.stride)[i])
-            alias shape_i: UInt = to_int(
-                flatten(coalesce_thread_layout.shape)[axis.value()]
-            ) if axis else to_int(flatten(coalesce_thread_layout.shape)[i])
 
         # Static layout tiling
         # TODO: Consider merge the two cases in away that won't slowdown the fully static layout.
@@ -1501,10 +1524,16 @@ struct LayoutTensor[
                     swizzle_fn(offset // self.element_size) * self.element_size
                 )
 
-            return __type_of(result)(
-                self.ptr.offset(int(swizzled_offset)),
-                RuntimeLayout(runtime_shape, runtime_stride),
-            )
+            @parameter
+            if result.masked:
+                return __type_of(result)(
+                    self.ptr.offset(int(swizzled_offset)),
+                    RuntimeLayout(runtime_shape, runtime_stride),
+                )
+            else:
+                return __type_of(result)(
+                    self.ptr.offset(int(swizzled_offset)),
+                )
 
         else:
             constrained[
@@ -2158,7 +2187,7 @@ struct LayoutTensor[
             dtype,
             src_layout,
             address_space=src_addr_space,
-            element_layout=src_element_layout,
+            element_layout=src_element_layout, **_,
         ],
         offset: Int,
         rows: Int,
@@ -2356,11 +2385,11 @@ fn stack_allocation_like[
     address_space: AddressSpace,
     target_address_space: AddressSpace = AddressSpace.GENERIC,
 ](
-    in_tensor: LayoutTensor[dtype, layout, address_space=address_space]
-) -> LayoutTensor[dtype, layout, address_space=target_address_space]:
-    return LayoutTensor[
-        dtype, layout, address_space=target_address_space
-    ].stack_allocation()
+    in_tensor: LayoutTensor[dtype, layout, address_space=address_space, **_]
+) -> LayoutTensor[
+    dtype, layout, address_space=target_address_space, masked = in_tensor.masked
+] as result:
+    return __type_of(result).stack_allocation()
 
 
 # Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
