@@ -20,18 +20,30 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 
 
+class _NoOpMetric:
+    """No op metric to support tests etc."""
+
+    def add(self, *args, **kwargs):
+        pass
+
+    def record(self, *args, **kwargs):
+        pass
+
+
 class _Metrics:
     """Centralizes metrics to encapsulate the OTEL dependency and avoid breaking schema changes.
     """
 
     def __init__(self):
-        self._req_count = None
-        self._req_time = None
-        self._input_time = None
-        self._output_time = None
-        self._ttft = None
-        self._input_tokens = None
-        self._output_tokens = None
+        self._req_count = _NoOpMetric()
+        self._req_time = _NoOpMetric()
+        self._input_time = _NoOpMetric()
+        self._output_time = _NoOpMetric()
+        self._ttft = _NoOpMetric()
+        self._input_tokens = _NoOpMetric()
+        self._output_tokens = _NoOpMetric()
+        self._reqs_queued = _NoOpMetric()
+        self._reqs_running = _NoOpMetric()
 
     def configure(self, otlp_level: Optional[int] = None):
         meterProviders = [PrometheusMetricReader("metrics")]  # type: ignore
