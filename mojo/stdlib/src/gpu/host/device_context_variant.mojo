@@ -599,3 +599,17 @@ struct DeviceContextVariant:
             return self.v2().can_access(peer.v2())
         else:
             return False
+
+    fn enable_peer_access(self, peer: DeviceContextVariant) raises:
+        @parameter
+        if _device_ctx_v2():
+            self.v2().enable_peer_access(peer.v2())
+        else:
+            raise Error("Peer access is not supported on DeviceContextV1")
+
+    fn disable_peer_access(self, peer: DeviceContextVariant) raises:
+        @parameter
+        if _device_ctx_v2():
+            self.v2().disable_peer_access(peer.v2())
+        else:
+            raise Error("Peer access is not supported on DeviceContextV1")

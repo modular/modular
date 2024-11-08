@@ -1235,3 +1235,31 @@ struct DeviceContextV2:
             )
         )
         return result
+
+    fn enable_peer_access(self, peer: DeviceContextV2) raises:
+        # const char * AsyncRT_DeviceContext_enablePeerAccess(const DeviceContext *ctx, const DeviceContext *peer)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_enablePeerAccess",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceContextPtr,
+            ](
+                self._handle,
+                peer._handle,
+            )
+        )
+
+    fn disable_peer_access(self, peer: DeviceContextV2) raises:
+        # const char * AsyncRT_DeviceContext_disablePeerAccess(const DeviceContext *ctx, const DeviceContext *peer)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_disablePeerAccess",
+                _CharPtr,
+                _DeviceContextPtr,
+                _DeviceContextPtr,
+            ](
+                self._handle,
+                peer._handle,
+            )
+        )
