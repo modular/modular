@@ -83,6 +83,13 @@ public:
   ///    Foo[1] != Foo[2]   but  Bar[?, 1] == Bar[7, 1]
   bool isEqualAllowingUnknownAttr(ASTType other, SharedState &shared) const;
 
+  /// Return true if the two types are the same if any expressions in the types
+  /// are ignored.  This is to tell when two types might be the same after
+  /// evaluation in the elaborator, in order to give better error messages when
+  /// people are confused that seemingly identical types don't match during
+  /// overload resolution.
+  bool isEqualModuloExpressions(ASTType other, SharedState &shared) const;
+
   /// Return true if this is a None type.
   bool isNoneType() const;
   /// Return true if this is a TypeCheckError type.

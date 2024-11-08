@@ -165,7 +165,7 @@ InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
 /// reporting an error passing `operand` to an argument of type `argType`.
 static void addTypeConversionDetail(InflightDiag &diag,
                                     ASTExprAnd<AnyValue> operand,
-                                    ASTType argType) {
+                                    ASTType argType, SharedState &shared) {
   auto loc = operand.expr->getLoc();
   ASTType operandType = operand.ir.getRValueTypeIfResolvable();
   if (!operandType) {
@@ -189,6 +189,15 @@ static void addTypeConversionDetail(InflightDiag &diag,
                          << (lhsByRef ? "payload" : "argument") << " returns "
                          << ASTType(lhsRetType) << " by reference";
     return;
+  }
+
+  if (argType.isEqualModuloExpressions(operandType, shared)) {
+    diag.attachNote(loc)
+        << "one of the types includes a parameter expression that can't "
+           "be evaluated at overload resolution time; a possible fix is to use "
+           "a new parameter in place of the parameter expression and use the "
+           "`constrained` function to enforce that the new parameter is "
+           "equivalent to the parameter expression";
   }
 }
 
@@ -301,7 +310,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     diag << (isConvertingTypeValue ? "an instance of " : "") << ty;
     if (isConvertingTypeValue)
       diag << "; did you mean to instantiate " << ty << "?";
-    addTypeConversionDetail(diag, operand, ty);
+    addTypeConversionDetail(diag, operand, ty, shared);
     return diag;
   }
   default:
