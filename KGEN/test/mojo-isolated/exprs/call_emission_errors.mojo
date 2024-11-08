@@ -142,16 +142,30 @@ struct MemExample:
 
 fn mutateMem(inout a: MemExample):
     pass
+fn mutateInt(inout a: Int):
+    pass
 
-
-fn initialize_in_addrspace(ptr: UnsafePointer[MemExample, AddressSpace(1)]):
+fn initialize_in_addrspace(memptr: UnsafePointer[MemExample, AddressSpace(1)],
+                           regptr: UnsafePointer[Int, AddressSpace(1)]):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied into a non-default address space}}
-    ptr[] = MemExample()
+    memptr[] = MemExample()
+    # ok
+    regptr[] = Int()
 
 
-fn mutate_in_addrspace(ptr: UnsafePointer[MemExample, AddressSpace(1)]):
-    # expected-error @+1 {{value cannot be passed from a non-default address space}}
-    mutateMem(ptr[])
+fn mutate_in_addrspace(memptr: UnsafePointer[MemExample, AddressSpace(1)],
+                       regptr: UnsafePointer[Int, AddressSpace(1)]):
+    # expected-error @+1 {{non-trivial value cannot be copied from a non-default address space}}
+    mutateMem(memptr[])
+    # ok
+    mutateInt(regptr[])
+
+fn variadic_addr_space(memptr: UnsafePointer[MemExample, AddressSpace(1)],
+                       regptr: UnsafePointer[Int, AddressSpace(1)]):
+    # expected-error @below {{non-trivial value cannot be copied from a non-default address space}}
+    pack_func(memptr[])
+    # Ok.
+    pack_func(regptr[])
 
 
 struct ParametricMutability:
