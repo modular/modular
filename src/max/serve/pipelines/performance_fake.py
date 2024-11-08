@@ -4,11 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import dataclasses
+import json
 import logging
 import threading
-from dataclasses import dataclass
+from os import environ
 from time import sleep, time
-from typing import Any, Literal, Union
+from typing import Any, Iterable, List, Literal, Optional, Union
 
 import numpy as np
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
@@ -16,7 +18,7 @@ from max.pipelines.tokenizer import PreTrainedTokenGeneratorTokenizer
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 
-@dataclass
+@dataclasses.dataclass
 class PerformanceFakingContext:
     # simulation attributes
     prompt_len: int
@@ -27,6 +29,20 @@ class PerformanceFakingContext:
     # correctness attributes
     prompt: str
     encoded_prompt: np.ndarray
+
+
+@dataclasses.dataclass
+class BatchInfo:
+    """Information about a batch of requests passed to the pipeline"""
+
+    past_seq_lens: List[int]
+    """Coordinated list of past sequence lengths (i.e. context lengths)"""
+
+    seq_lens: List[int]
+    """Coordinated list of sequence lengths, i.e. prompt_len or 1"""
+
+    num_steps: int
+    """Number of steps to do in the pipeline"""
 
 
 class PerformanceFakingTokenGeneratorTokenizer(
@@ -76,44 +92,65 @@ class PerformanceFakingTokenGeneratorTokenizer(
         )
 
 
-@dataclass
 class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
-    # ttft (ms) for prompt_length = batch_size = 1
-    ce_baseline: float = 6.85
-    # ttft (ms) / batch size / prompt size
-    ce_rate: float = 54043.08 / 1024 / 1024
-    # padding mode for context encoding
-    ce_padding: bool = False
+    def __init__(
+        self,
+        ce_baseline: float,
+        ce_rate: float,
+        ce_padding: bool,
+        tg_baseline: float,
+        tg_rate_no_context: float,
+        tg_rate_per_context_token: float,
+        tg_padding: bool,
+        busy_wait: bool,
+    ):
+        """Parameterize a performance fake
 
-    # 1st token TPOT (ms) for prompt_length = batch_size = 1
-    tg_baseline: float = 6.85
-    # 1st token TPOT (ms) / batch_size with prompt_length = 1
-    tg_rate_no_context: float = 12.67 / 256
-    # 1st token TPOT (ms) / batch_size with prompt_length = 512
-    tg_rate_per_context_token: float = (21.11 / 256 - 12.67 / 256) / 512
-    # padding mode for context encoding
-    tg_padding: bool = False
+        Args:
+            ce_baseline: The minimum amount of time context encoding can take
+            ce_rate: The context encoding time per prompt token
+            ce_padding: Whether or not prompts are padding to equal length
+            tg_baseline: The minimum amount of time token generation can take
+            tg_rate_no_context: The token generation time per request with no context
+            tg_rate_per_context_token: The additional token generation time per context token
+            tg_padding: Whether or not contexts are padded to the same length
+            busy_wait: Whether to wait on the fake GPU as a busy-loop, vs sleep
+        """
+        super().__init__()
+        self.ce_baseline = ce_baseline
+        self.ce_rate = ce_rate
+        self.ce_padding = ce_padding
+        self.tg_baseline = tg_baseline
+        self.tg_rate_no_context = tg_rate_no_context
+        self.tg_rate_per_context_token = tg_rate_per_context_token
+        self.tg_padding = tg_padding
+        self.busy_wait = busy_wait
 
-    # whether to busy wait or to sleep
-    # the model execute call in our pipelines does release the GIL
-    busy_wait: bool = False
+        self.batch_info_output_fname: Optional[str] = environ.get(
+            "MAX_BATCH_INFO_FILENAME"
+        )
 
-    logger: logging.Logger = logging.getLogger(__name__)
+        self.logger: logging.Logger = logging.getLogger(__name__)
 
-    # lock to prevent concurrent usage of the fake GPU
-    wait_lock = threading.Lock()
-    # amount of time waited in the fake GPU
-    wait_secs = 0
-    # number of times waited in the fake GPU
-    wait_count = 0
-    # timestamp of the end of the last GPU wait
-    last_wait_end = None
-    # amount of time spent in between waiting
-    non_wait_secs = 0
+        # lock to prevent concurrent usage of the fake GPU
+        self.wait_lock = threading.Lock()
+        # amount of time waited in the fake GPU
+        self.wait_secs = 0
+        # number of times waited in the fake GPU
+        self.wait_count = 0
+        # timestamp of the end of the last GPU wait
+        self.last_wait_end = None
+        # amount of time spent in between waiting
+        self.non_wait_secs = 0
+        # record of batches
+        self.batch_infos: List[BatchInfo] = []
 
     def next_token(
         self, batch: dict[str, PerformanceFakingContext], num_steps: int = 1
     ) -> list[dict[str, Any]]:
+        if self.batch_info_output_fname is not None:
+            self._record_batch_info(batch.values(), num_steps)
+
         return [self.step(batch) for _ in range(num_steps)]
 
     def step(self, batch: dict[str, PerformanceFakingContext]):
@@ -189,6 +226,17 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             + N * self.tg_rate_per_context_token
         )
 
+    def _record_batch_info(
+        self, contexts: Iterable[PerformanceFakingContext], num_steps: int
+    ):
+        self.batch_infos.append(
+            BatchInfo(
+                past_seq_lens=[x.context_len for x in contexts],
+                seq_lens=[x.seq_len for x in contexts],
+                num_steps=num_steps,
+            )
+        )
+
     def __del__(self):
         # print the total wait time for benchmarking/debugging purposes
         self.logger.info(
@@ -199,6 +247,12 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             "PerformanceFake: not waiting for"
             f" {self.non_wait_secs:.4f} sec total"
         )
+        if self.batch_info_output_fname is not None:
+            output = {
+                "batch_data": [dataclasses.asdict(x) for x in self.batch_infos]
+            }
+            with open(self.batch_info_output_fname, "w") as f:
+                json.dump(output, f, indent=2)
 
 
 def get_performance_fake(
@@ -207,11 +261,27 @@ def get_performance_fake(
     """Construct a performance fake for the given performance mode."""
     if mode == "no-op":
         return PerformanceFakingTokenGenerator(
-            0, 0, False, 0, 0, 0, False, False
+            ce_baseline=0,
+            ce_rate=0,
+            ce_padding=False,
+            tg_baseline=0,
+            tg_rate_no_context=0,
+            tg_rate_per_context_token=0,
+            tg_padding=False,
+            busy_wait=False,
         )
     elif mode == "speed-of-light":
         # current defaults are speed-of-light on A100-80GB
-        return PerformanceFakingTokenGenerator()
+        return PerformanceFakingTokenGenerator(
+            ce_baseline=6.85,
+            ce_rate=54043.08 / 1024 / 1024,
+            ce_padding=False,
+            tg_baseline=6.85,
+            tg_rate_no_context=12.67 / 256,
+            tg_rate_per_context_token=(21.11 / 256 - 12.67 / 256) / 512,
+            tg_padding=False,
+            busy_wait=False,
+        )
     elif mode == "vllm":
         # this is for A100-80GB
         return PerformanceFakingTokenGenerator(
@@ -222,6 +292,7 @@ def get_performance_fake(
             tg_rate_no_context=33.66 / 256,
             tg_rate_per_context_token=(59.79 - 33.66) / 256 / 1024,
             tg_padding=False,
+            busy_wait=False,
         )
     else:
         raise ValueError(f"Unexpected mode: {mode}")
