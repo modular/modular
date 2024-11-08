@@ -69,7 +69,6 @@ def pipeline_model(
     return Llama3TokenGenerator(
         pipeline_config,
         pipeline_tokenizer.delegate.eos_token_id,
-        pipeline_tokenizer.delegate.vocab_size,
     )
 
 

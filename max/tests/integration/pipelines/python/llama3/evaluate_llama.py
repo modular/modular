@@ -113,12 +113,28 @@ class SupportedTestModels:
                 in ["bfloat16", "float32"] else KVCacheStrategy.NAIVE
             )
 
-        return PipelineConfig(
+        if self.version == "3.1":
+            kwargs["huggingface_repo_id"] = "modularai/llama-3.1"
+        elif self.version == "3":
+            kwargs["huggingface_repo_id"] = "modularai/llama-3"
+        else:
+            raise ValueError(f"version {self.version} not supported.")
+
+        config = PipelineConfig(
             architecture="llama",
             version=self.version,
             quantization_encoding=self.encoding,
             **kwargs,
         )
+
+        if self.model == "tinyllama":
+            config.huggingface_config.intermediate_size = 500
+            config.huggingface_config.hidden_size = 16
+            config.huggingface_config.num_hidden_layers = 1
+            config.huggingface_config.num_key_value_heads = 1
+            config.huggingface_config.num_attention_heads = 1
+
+        return config
 
     def golden_data_fname(self, *, framework: Literal["max", "torch"] = "max"):
         return golden_data_fname(self.model, self.encoding, framework=framework)
