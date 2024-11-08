@@ -244,7 +244,7 @@ fn test_mean_variance() raises:
     # CHECK: 50.5
     print(mean(vector))
 
-    # CHECK: 841.666687
+    # CHECK: 841.6667
     print(variance(vector, 1))
 
 
