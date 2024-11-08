@@ -777,12 +777,52 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     Type declaredArgType, ArrayRef<Value> callArgsSoFar) {
   assert(emitter.builder && "Should only be called in dynamic context");
 
+  // This checks any returned MValue argument convention for validity.
+  auto checkMValueAddrSpace = [&](AnyValue someMValue) -> Value {
+    // Propagate errors.
+    if (!someMValue)
+      return {};
+    assert(someMValue.isMValue() && "Not an MValue");
+
+    // All argument conventions take things in the default address space, so any
+    // use of references in other address spaces need to do a copyinit.  Right
+    // now __copyinit__ requires the source to be borrowed (it doesn't allow a
+    // `ref [_]` existing so there is no way to define a
+    // non-@register_passable("trivial") type in another address space. Diagnose
+    // this error with a specific message, and copy RPTrivial types into address
+    // space 0 implicitly.
+    auto refType = someMValue.getMValueType();
+
+    if (!refType.isDefaultAddrSpace()) {
+      auto *expr = argValAndExpr.expr;
+      // Non-trivial types cannot be copied.
+      // TODO: If there is a reason to, we could generalize copyinit.
+      if (!ASTType(refType.getElementType())
+               .isTrivial(expr->getLoc(), emitter.shared)) {
+        emitter.emitError(expr->getLoc(),
+                          "non-trivial value cannot be copied from a "
+                          "non-default address space")
+            << expr->getRange();
+        return {};
+      }
+
+      // If this is a trivial value, then we can do a copy by doing a load.
+      auto srVal = emitter.emitSRValue({someMValue, expr}, EC_CallArgValue);
+      someMValue = emitter.emitMRValue({srVal, expr}, EC_CallArgValue);
+      if (!someMValue)
+        return {};
+    }
+    return someMValue.getMValueReference();
+  };
+
   switch (convention) {
   case ArgConvention::OwnedInReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::OwnedInMem:
     // Promote PValue's if needed.
-    return emitter.emitMRValue(argValAndExpr, EC_CallArgValue);
+    return checkMValueAddrSpace(
+        emitter.emitMRValue(argValAndExpr, EC_CallArgValue));
+    break;
   case ArgConvention::BorrowedInReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())
       return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
@@ -799,7 +839,9 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
   case ArgConvention::BorrowedInMem: {
     // Promote PValue's if needed.
-    Value result = emitter.emitMBValue(argValAndExpr, EC_CallArgValue);
+    Value result = checkMValueAddrSpace(
+        emitter.emitMBValue(argValAndExpr, EC_CallArgValue));
+
     // Drop mutability for a MBValue.
     if (result && !cast<RefType>(result.getType()).isMutableKnown(false))
       result = emitter.builder->create<RefImmutOp>(
@@ -810,10 +852,12 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   case ArgConvention::MutRef:
     assert(argValAndExpr.ir.isMValue() &&
            "Ref args are already emitted to boxes during overload resolution");
+    // These can be in any address space.
     return argValAndExpr.ir.getMValueReference();
 
   case ArgConvention::ByRefError: {
-    // If the callee throws and is not async, we pass the contextual error slot.
+    // If the callee throws and is not async, we pass the contextual error
+    // slot.
     MLValue errSlot = emitter.findNearestErrorSlot();
     if (!errSlot) {
       auto diag = emitter.emitError(callExpr->getLoc())
@@ -845,11 +889,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
       // user-defined var or other location with existing storage.  In these
       // cases, we really want to assign directly into the existing slot.
       //
-      // However, we cannot do that if the destination slot is also being passed
-      // into the call as an input value, as in: `x = foo(x)` or `x = x + 1`.
-      // In these cases we really do need a temporary+copy in the var slot.
-      // At this point we've got enough information about the arguments to make
-      // that assessment in a correct way.
+      // However, we cannot do that if the destination slot is also being
+      // passed into the call as an input value, as in: `x = foo(x)` or `x = x
+      // + 1`. In these cases we really do need a temporary+copy in the var
+      // slot. At this point we've got enough information about the arguments
+      // to make that assessment in a correct way.
       Value resultSlotVal;
       if (isSafeToUseValueDestForDirectResult(resultRValueType,
                                               callArgsSoFar)) {
@@ -885,7 +929,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // in the reference directly.
     if (auto ref = lv.getIfMLValue()) {
       if (lv.getMValueType().isDefaultAddrSpace())
-        return ref;
+        return checkMValueAddrSpace(ref);
     }
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
@@ -902,9 +946,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     }
     afterCallActions.lvalueWritebacks.push_back(
         {std::move(dlvBuffer), mlvBuffer});
-    return mlvBuffer;
+    return checkMValueAddrSpace(mlvBuffer);
   }
   }
+
   llvm_unreachable("unexpected argument convention");
 }
 
@@ -1567,19 +1612,6 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       if (auto refType = dyn_cast<RefType>(eltType))
         implicitOrigins.push_back(refType.getOrigin());
     }
-
-    // If the address space of a by-ref argument mismatches, then we need to
-    // throw an error.  This can happen when non-default address space lvalues
-    // are passed to borrowed or inout arguments.
-    if (auto refType = dyn_cast<RefType>(arg.getType()))
-      if (refType.getAddressSpace() !=
-          cast<RefType>(declaredArgType).getAddressSpace()) {
-        emitError(argValAndExpr.expr->getLoc(),
-                  "value cannot be passed from a non-default address space")
-            << argValAndExpr.expr->getRange();
-        dest.resetForError();
-        return {};
-      }
 
     // The argument looks good on its own, check to see if it is an exclusivity
     // violation with a previous argument.
