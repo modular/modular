@@ -15,11 +15,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 import pytest
-from dataprocessing import TextContext
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import Llama3, load_llama3_and_kv_manager
 from max.engine import InferenceSession
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig, SupportedEncoding, TextContext
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from nn.tokenizer import TextTokenizer

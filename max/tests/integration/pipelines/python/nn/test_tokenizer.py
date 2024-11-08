@@ -5,9 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from dataprocessing import TextContext
 from nn import TextTokenizer
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig, SupportedEncoding, TextContext
 
 
 @pytest.mark.asyncio
