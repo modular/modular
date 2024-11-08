@@ -14,7 +14,13 @@ from asyncrt_test_utils import (
     is_v2_context,
 )
 
-from gpu.host import DeviceBuffer, DeviceContext, DeviceAttribute, DeviceStream
+from gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceAttribute,
+    DeviceStream,
+    device_count,
+)
 
 
 fn _ownership_helper(
@@ -116,6 +122,25 @@ fn _run_access_peer(ctx: DeviceContext, peer: DeviceContext) raises:
     )
 
 
+fn _run_enable_disable_peer_access(ctx: DeviceContext) raises:
+    print("-")
+    print("_run_enable_disable_peer_access()")
+    var num_gpus = device_count()
+
+    if num_gpus < 2:
+        print("Only one GPU found, skipping test.")
+        return
+
+    var peer = create_test_device_context(gpu_id=1)
+
+    if not ctx.can_access(peer):
+        print("Devices can't access each other, skipping test.")
+        return
+
+    ctx.enable_peer_access(peer)
+    ctx.disable_peer_access(peer)
+
+
 fn main() raises:
     var ctx = create_test_device_context()
     print("-------")
@@ -129,5 +154,6 @@ fn main() raises:
     _run_get_stream(ctx)
 
     _run_access_peer(ctx, create_test_device_context())
+    _run_enable_disable_peer_access(ctx)
 
     print("Done.")

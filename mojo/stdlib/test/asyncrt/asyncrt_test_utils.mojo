@@ -20,7 +20,7 @@ fn is_v2_context() -> Bool:
     return is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
 
-fn create_test_device_context() raises -> DeviceContext:
+fn create_test_device_context(gpu_id: Int = 0) raises -> DeviceContext:
     # Create an instance of the DeviceContext
     var test_ctx: DeviceContext
 
@@ -28,9 +28,9 @@ fn create_test_device_context() raises -> DeviceContext:
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         var kind = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
         print("Using DeviceContext: V2 - " + str(kind))
-        test_ctx = DeviceContext(kind)
+        test_ctx = DeviceContext(kind, gpu_id=gpu_id)
     else:
         print("Using DeviceContext: default")
-        test_ctx = DeviceContext()
+        test_ctx = DeviceContext(gpu_id=gpu_id)
 
     return test_ctx
