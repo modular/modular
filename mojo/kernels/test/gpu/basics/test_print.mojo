@@ -64,7 +64,7 @@ fn test_gpu_print_formattable() raises:
         var simd = SIMD[DType.float64, 4](
             0.0, -1.0, Float64.MIN, Float64.MAX_FINITE
         )
-        # CHECK: [0, -1, -inf, 1.79769e+308]
+        # CHECK: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
         # CHECK: test_print.mojo:71:32
@@ -91,15 +91,15 @@ fn test_gpu_print_formattable() raises:
 
         # CHECK-LABEL: === value_a ===
         # CHECK:   original fp32: 0.502364
-        # CHECK:         => fp64: 0.502364
-        # CHECK:         => bf16: 0.503906
-        # CHECK: => bf16 => fp64: 0.503906
+        # CHECK:         => fp64: 0.5023639798164368
+        # CHECK:         => bf16: 0.50390625
+        # CHECK: => bf16 => fp64: 0.50390625
         print("=== value_a ===")
         print_casts(Float32(0.502364))
 
         # CHECK-LABEL: === value_b ===
         # CHECK:   original fp32: 0.501858
-        # CHECK:         => fp64: 0.501858
+        # CHECK:         => fp64: 0.5018579959869385
         # CHECK:         => bf16: 0.5
         # CHECK: => bf16 => fp64: 0.5
         print("=== value_b ===")

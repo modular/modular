@@ -312,8 +312,8 @@ fn test_shared_and_local() raises:
             # CHECK: runtime_layout:  ((2, 3):(1, 2))
             # CHECK: address_space:  3
             # CHECK: values:
-            # CHECK: 0 1 2
-            # CHECK: 3 4 5
+            # CHECK: 0.0 1.0 2.0
+            # CHECK: 3.0 4.0 5.0
             # CHECK: ---tensor-end---
 
             var t_shared = tb[DType.float32]().col_major(
@@ -325,8 +325,8 @@ fn test_shared_and_local() raises:
             # CHECK: runtime_layout:  ((2, 3):(1, 2))
             # CHECK: address_space:  5
             # CHECK: values:
-            # CHECK: 0 1 2
-            # CHECK: 3 4 5
+            # CHECK: 0.0 1.0 2.0
+            # CHECK: 3.0 4.0 5.0
             # CHECK: ---tensor-end---
 
             var t_local = tb[DType.float32]().col_major(
