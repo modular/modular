@@ -100,7 +100,7 @@ public:
   /// On failure, this returns a null OverloadSet and invokes errorHandler if
   /// the problem hasn't already been diagnosed and it is non-null. This does
   /// not emit an error on failure.
-  static OverloadSet lookup(const TypeCheckScopeInfo &scopeInfo, ASTType type,
+  static OverloadSet lookup(ASTDecl &declScope, ASTType type,
                             StringRef methodName, const ExprNode *callExpr,
                             CallSyntax syntax,
                             function_ref<void()> errorHandler = {});
@@ -140,7 +140,7 @@ public:
   /// lookup results when processing to find further errors.
   bool isErroneous() const { return erroneous; }
 
-  const TypeCheckScopeInfo &getScopeInfo() const { return paramBindings; }
+  ASTDecl &getDeclScope() const { return paramBindings.declScope; }
   SharedState &getShared() const { return paramBindings.shared; }
 
   /// Perform substitutions of the specified bindings into the symbol, returning
@@ -175,8 +175,7 @@ public:
   /// expected type if provided or using current bindings if an emitter is
   /// provided.  This emits errors if 'emitter' is non-null, but does not if it
   /// is null.
-  PValue getDirectSymbol(ASTType expectedType,
-                         const TypeCheckScopeInfo &scopeInfo) const;
+  PValue getDirectSymbol(ASTType expectedType, ASTDecl &declScope) const;
 
   /// Try to emit the overload set as a PValue.
   PValue getIfPValue() const;
@@ -198,11 +197,10 @@ public:
   /// Filter down and complete this overload set based on knowledge that we need
   /// to produce a function pointer with the specified type.  This returns a
   /// PValue for the callee if resolvable or null if not.
-  PValue filterOverloadSetForValueType(ASTType functionType,
-                                       const TypeCheckScopeInfo &scopeInfo,
+  PValue filterOverloadSetForValueType(ASTType functionType, ASTDecl &declScope,
                                        bool emitDiagnosticOnFailure) const;
   PValue filterOverloadSetForValueType(
-      ASTType functionType, const TypeCheckScopeInfo &scopeInfo,
+      ASTType functionType, ASTDecl &declScope,
       function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
 
   /// If the specified type can be constructed with the specified operands
@@ -215,15 +213,15 @@ public:
   /// any error reporting. This does not generate any IR.
   static FailureOr<PValue>
   canConstructType(ASTType requiredType, CallOperands &&operands,
-                   const ExprNode *expr, const TypeCheckScopeInfo &scopeInfo,
+                   const ExprNode *expr, ASTDecl &declScope,
                    bool allowImplicitConversions = true);
 
   LLVM_DUMP_METHOD void dump() const;
 
 private:
-  OverloadSet(const TypeCheckScopeInfo &scopeInfo, const ExprNode *expr,
-              CallSyntax syntax, bool erroneous)
-      : paramBindings(scopeInfo), expr(expr), syntax(syntax),
+  OverloadSet(ASTDecl &declScope, const ExprNode *expr, CallSyntax syntax,
+              bool erroneous)
+      : paramBindings(declScope), expr(expr), syntax(syntax),
         erroneous(erroneous) {}
 };
 

@@ -28,8 +28,7 @@ using namespace KGEN;
 using namespace LIT;
 
 bool LIT::canConvertFunctionTypes(LITSignatureType actual,
-                                  LITSignatureType expected,
-                                  const TypeCheckScopeInfo &scopeInfo) {
+                                  LITSignatureType expected) {
   // We should have already checked that the function types are not
   // trivially-convertible between each other.
 
@@ -175,7 +174,7 @@ static std::string generateThunkName(Type expected, Type actual) {
 }
 
 static LIT::FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
-  SharedState &shared = moduleDecl.getShared();
+  auto &shared = moduleDecl.getShared();
   // Don't generate any debuginfo for the thunk. Push a null scope.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)

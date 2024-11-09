@@ -42,12 +42,15 @@ class TypeSignatureType;
 /// will be bound as the TypedAttr value of param2.  We cannot type check the
 /// bindings until overload resolution has resolved which 'method' we are
 /// talking about and when inference is complete, so we keep a flag.
-class ParamBindings : public TypeCheckScopeInfo {
+class ParamBindings {
 public:
+  /// This is the declaration that we do name lookup against.
+  ASTDecl &declScope;
+  SharedState &shared;
+
   /// Initialize ParamBindings with a declscope to perform lookups against
   /// and a notion of shared context.
-  ParamBindings(const TypeCheckScopeInfo &scopeInfo)
-      : TypeCheckScopeInfo(scopeInfo) {}
+  ParamBindings(ASTDecl &declScope);
   ParamBindings(const ParamBindings &) = default;
 
   /// Replace our bindings with another set.
@@ -56,8 +59,8 @@ public:
   /// Create a (possibly partially unbound) set of bindings for the given type.
   /// This can be used to initialize the binding set for methods. If the given
   /// type is not a parametric user defined type, this returns empty bindings.
-  static ParamBindings getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
-                                          ASTType type, const ExprNode *expr);
+  static ParamBindings getForDeclaredType(ASTDecl &declScope, ASTType type,
+                                          const ExprNode *expr);
 
   /// Utility function to perform substitutions of the bindings into the symbol
   /// for the given function declaration. It returns the resultant

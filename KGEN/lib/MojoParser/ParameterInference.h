@@ -81,18 +81,17 @@ private:
 
 /// This class provides the implementation details that help to infer
 /// information about the specified parameter.
-class ParameterInferenceState : public TypeCheckScopeInfo {
+class ParameterInferenceState {
 public:
-  ParameterInferenceState(const TypeCheckScopeInfo &scopeInfo,
-                          const CallOperands &givenBindings,
+  /// This is the declaration that we do name lookup against.
+  ASTDecl &declScope;
+  SharedState &shared;
+
+  ParameterInferenceState(ASTDecl &declScope, const CallOperands &givenBindings,
                           ArrayRef<TypedAttr> bindingsSoFar,
                           const ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
-                          bool allowImplicitConversions)
-      : TypeCheckScopeInfo(scopeInfo), givenBindings(givenBindings),
-        evaluator(evaluator),
-        inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()),
-        diags(diags), allowImplicitConversions(allowImplicitConversions) {}
+                          bool allowImplicitConversions);
 
   /// Given an incomplete parameter binding set for a parameter list, try to
   /// infer the value of the next parameter. We only do this if there are any

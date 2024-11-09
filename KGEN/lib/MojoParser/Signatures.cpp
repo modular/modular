@@ -633,7 +633,7 @@ static ASTType addImplicitTypeParams(ASTType type,
 
 TypeCheckedParamList::TypeCheckedParamList(
     ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope)
-    : TypeCheckScopeInfo{declScope, declScope.getShared()} {
+    : declScope(declScope), shared(declScope.getShared()) {
   // Resolve each of the parameter declarations.
   ExprEmitter emitter(declScope, EC_Type);
   for (const ParsedArgument &arg : parsedParams) {

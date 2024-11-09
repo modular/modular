@@ -401,14 +401,15 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
 /// This ties into parameter inference, but is only called on the top level
 /// function operands being matched up, not anything in recursive functiontype
 /// positions.
-auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
-                                      size_t operandIdx,
-                                      ArgConvention expectedConvention,
-                                      ASTType expectedType,
-                                      bool allowImplicitConversions, SMLoc loc,
-                                      const TypeCheckScopeInfo &scopeInfo)
-    -> std::pair<ArgTypeMismatchKind, ASTType> {
-  SharedState &shared = scopeInfo.shared;
+std::pair<OverloadFitness::ArgTypeMismatchKind, ASTType>
+OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
+                                 size_t operandIdx,
+                                 ArgConvention expectedConvention,
+                                 ASTType expectedType,
+                                 bool allowImplicitConversions, SMLoc loc,
+                                 ASTDecl &declScope) {
+
+  SharedState &shared = declScope.getShared();
   switch (expectedConvention) {
   case ArgConvention::OwnedInReg:
     llvm_unreachable("not used by the mojo parser");
@@ -425,8 +426,7 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
 
         // This is valid if the types obviously match or if the arg type has
         // unbound parameters that are inferred.
-        if (argElementType.isEqualAllowingUnknownAttr(expElementType,
-                                                      scopeInfo.shared))
+        if (argElementType.isEqualAllowingUnknownAttr(expElementType, shared))
           return {kValidType, expectedType};
         return {kWrongType, argElementType};
       }
@@ -515,7 +515,7 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         // Initializer lists are good if we can construct the expected type.
         FailureOr<PValue> initFn = OverloadSet::canConstructType(
             expectedType, CallOperands(initValue.get()), operand.expr,
-            scopeInfo);
+            declScope);
         // If there were declaration errors, assume construction is possible to
         // avoid spurious errors.
         bool valid = (bool)failed(initFn) || initFn.value();
@@ -527,7 +527,7 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       assert(orValue && "Unknown UValue!");
 
       // Try to refine the OverloadSetUValue into a PValue.
-      argVal = orValue->getDirectSymbol(expectedType, scopeInfo);
+      argVal = orValue->getDirectSymbol(expectedType, declScope);
       if (!argVal)
         return {kWrongType, expectedType};
 
@@ -566,7 +566,7 @@ auto OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // with that conversion.
     if (allowImplicitConversions &&
         ExprEmitter::canImplicitlyConvertToType({argVal, operand.expr},
-                                                expectedType, scopeInfo)) {
+                                                expectedType, declScope)) {
       // If we had one, this bumps our # implicit conversions.
       payload.numImplicitConversions += 2;
       return {kValidType, expectedType};
@@ -882,9 +882,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
-    ParameterInferenceState inference(
-        callable.paramBindings, callable.paramBindings.getParameters(),
-        bindingsSoFar, evaluator, inferenceDiags, allowImplicitConversions);
+    ParameterInferenceState inference(callable.paramBindings.declScope,
+                                      callable.paramBindings.getParameters(),
+                                      bindingsSoFar, evaluator, inferenceDiags,
+                                      allowImplicitConversions);
 
     // Infer information from this signature holistically.
     if (failed(inference.infer(signature, operands, variadicKwOperands)))
@@ -991,7 +992,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
     return result.checkOneOperand(
         operand, ssize_t(operandIdx), expectedConvention, expectedType,
-        allowImplicitConversions, loc, callable.paramBindings);
+        allowImplicitConversions, loc, callable.paramBindings.declScope);
   };
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the

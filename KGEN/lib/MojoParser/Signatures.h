@@ -17,7 +17,6 @@
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/Lexer.h"
-#include "KGEN/MojoParser/TypeCheckScopeInfo.h"
 
 namespace mlir {
 class raw_indented_ostream;
@@ -30,7 +29,6 @@ class ExprEmitter;
 class ExprNode;
 class LITSignatureType;
 class ParserBase;
-class SharedState;
 
 //===----------------------------------------------------------------------===//
 // Argument and Parameter List Parsing
@@ -148,8 +146,12 @@ public:
 };
 
 /// This contains the result state from type checking a parameter signature.
-class TypeCheckedParamList : public TypeCheckScopeInfo {
+class TypeCheckedParamList {
 public:
+  /// This is the declaration that we do name lookup against.
+  ASTDecl &declScope;
+  SharedState &shared;
+
   /// Type check each of the parameters from 'parsedParams' into their
   /// decomposed representation.
   TypeCheckedParamList(ArrayRef<ParsedArgument> parsedParams,

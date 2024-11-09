@@ -115,7 +115,7 @@ static ASTType makeTupleTypedPythonObj(ASTDecl &moduleDecl,
   }
 
   SyntheticNode synth(moduleLoc);
-  ParamBindings bindings(TypeCheckScopeInfo{*typedPyObjTypeDecl, shared});
+  ParamBindings bindings(*typedPyObjTypeDecl);
   bindings.add(&synth, tupleNameStrPValue);
 
   // Check the bindings.
@@ -247,7 +247,7 @@ LogicalResult BindingGenerator::genPyInitHook() {
   Block *tryBlock = b.createBlock(&tryOp.getTryRegion());
   SyntheticNode node(loc);
   OverloadSet initOv(pyInitFunc.getDeclName(), pyInitDecl,
-                     ParamBindings({*pyInitHookDecl, shared}), &node,
+                     ParamBindings(*pyInitHookDecl), &node,
                      CallSyntax::kDirectCall);
   ValueDest moduleDest(moduleDecl, EC_PyBindGen);
   emitter.builder = b;
@@ -466,7 +466,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
 
     ArrayRef<ASTDecl *> checkAndGetArgFnDecls = shared.getBuiltinFunction(
         *pyBindDecl, "check_and_get_arg", (*wrapperDecl).getLoc());
-    ParamBindings bindings(TypeCheckScopeInfo{*wrapperDecl, shared});
+    ParamBindings bindings(*wrapperDecl);
     bindings.add(synth, PValue(rvType));
     OverloadSet checkAndGetArgOv("check_and_get_arg", checkAndGetArgFnDecls,
                                  std::move(bindings), &synth,
@@ -509,9 +509,8 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   // Finally, call the user's function with all those dereferenced args.
   //
 
-  OverloadSet funcOv(func.getDeclName(), {&funcDecl},
-                     ParamBindings({funcDecl, shared}), synth,
-                     CallSyntax::kDirectCall);
+  OverloadSet funcOv(func.getDeclName(), {&funcDecl}, ParamBindings(funcDecl),
+                     synth, CallSyntax::kDirectCall);
   ValueDest funcCallNoneDest(EC_PyBindGen);
   funcOv.emitCall(CallOperands(funcCallArgs), funcCallNoneDest, emitter);
 
@@ -615,7 +614,7 @@ OverloadSet BindingGenerator::lookupPyBindFunction(StringRef name,
                                                    const SyntheticNode &node) {
   ArrayRef<ASTDecl *> fnDecls =
       shared.getBuiltinFunction(*pyBindDecl, name, scope.getLoc());
-  ParamBindings bindings(TypeCheckScopeInfo{scope, shared});
+  ParamBindings bindings(scope);
   return OverloadSet(name, fnDecls, std::move(bindings), &node,
                      CallSyntax::kDirectCall);
 }

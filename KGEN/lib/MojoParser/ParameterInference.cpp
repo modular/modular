@@ -109,6 +109,15 @@ void ParameterInferenceDiagnostics::attach(PogListAttr params,
 // ParameterInferenceState
 //===----------------------------------------------------------------------===//
 
+ParameterInferenceState::ParameterInferenceState(
+    ASTDecl &declScope, const CallOperands &givenBindings,
+    ArrayRef<TypedAttr> bindingsSoFar, const ParserParamEvaluator &evaluator,
+    ParameterInferenceDiagnostics &diags, bool allowImplicitConversions)
+    : declScope(declScope), shared(declScope.getShared()),
+      givenBindings(givenBindings), evaluator(evaluator),
+      inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()), diags(diags),
+      allowImplicitConversions(allowImplicitConversions) {}
+
 LogicalResult ParameterInferenceState::matchTypes(Type actualType,
                                                   Type expectedType) {
   // If the types trivially match then there is no inference to do.
@@ -343,7 +352,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         ExprEmitter emitter(declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
         if (ExprEmitter::canImplicitlyConvertToType(
-                {actualAttr, node}, expectedType, emitter.getScopeInfo())) {
+                {actualAttr, node}, expectedType, emitter.getDeclScope())) {
           if (PValue result = emitter.emitPValue(
                   {actualAttr, node}, EC_TypeParamValue, expectedType))
             actualAttr = result;
@@ -647,7 +656,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     OverloadSetUValue orValue = value.getIfOverloadSet();
     assert(orValue && "Unknown UValue!");
     // Try to refine the OverloadSetUValue into a PValue.
-    CValue argVal = orValue->getDirectSymbol(expectedType, *this);
+    CValue argVal = orValue->getDirectSymbol(expectedType, declScope);
     if (!argVal)
       return {};
     // If we have a reference to an overloaded method like foo(a.method),
@@ -774,7 +783,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   if (auto initValue = operand.ir.getIfInitializer()) {
     FailureOr<PValue> initFn = OverloadSet::canConstructType(
         getPartiallySpecializedType().getWithoutParameters(shared),
-        CallOperands(initValue.get()), operand.expr, *this);
+        CallOperands(initValue.get()), operand.expr, declScope);
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous
     // declarations.
@@ -863,7 +872,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       knownExpectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
       nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
-      emitter.getScopeInfo(), /*allowImplicitConversions=*/false);
+      emitter.getDeclScope(), /*allowImplicitConversions=*/false);
   if (llvm::failed(pValue))
     return success(); // Issue already diagnosed.
 
@@ -1098,7 +1107,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
             toPush, metatype ? metatype : TypeType::get(shared.getContext()));
         SyntheticNode node(shared.getTopLevelDecl().getLoc());
         if (!ExprEmitter::canImplicitlyConvertToType(
-                {actualAttr, node}, elementType, emitter.getScopeInfo())) {
+                {actualAttr, node}, elementType, emitter.getDeclScope())) {
 
           // If that didn't work, then we fail due to the type mismatch.  If the
           // variadic type is due to a parameter mismatch, record it.
