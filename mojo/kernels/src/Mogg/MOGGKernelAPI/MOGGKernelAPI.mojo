@@ -291,6 +291,8 @@ fn build_static_tensor_specs[
     alignment: Int,
     address_space: AddressSpace,
     exclusive: Bool,
+    in_lambda: OptionalReg[StaticTensorSpec[type, rank].in_lambda_t],
+    out_lambda: OptionalReg[StaticTensorSpec[type, rank].out_lambda_t],
 ) -> StaticTensorSpec[type, rank]:
     alias SpecType = StaticTensorSpec[type, rank]
 
@@ -300,8 +302,8 @@ fn build_static_tensor_specs[
         alignment,
         address_space,
         exclusive,
-        OptionalReg[SpecType.in_lambda_t](None),
-        OptionalReg[SpecType.out_lambda_t](None),
+        in_lambda,
+        out_lambda,
     )
 
 

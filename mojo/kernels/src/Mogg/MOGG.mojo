@@ -670,31 +670,6 @@ fn get_address_space() -> AddressSpace:
     return AddressSpace.GENERIC
 
 
-# Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal("build_static_tensor_specs")
-fn build_static_tensor_specs[
-    type: DType,
-    rank: Int,
-](
-    shape: DimList,
-    strides: DimList,
-    alignment: Int,
-    address_space: AddressSpace,
-    exclusive: Bool,
-) -> StaticTensorSpec[type, rank]:
-    alias SpecType = StaticTensorSpec[type, rank]
-
-    return SpecType(
-        shape,
-        strides,
-        alignment,
-        address_space,
-        exclusive,
-        OptionalReg[SpecType.in_lambda_t](None),
-        OptionalReg[SpecType.out_lambda_t](None),
-    )
-
-
 # ===----------------------------------------------------------------------===#
 # Tensor API intrinsics
 # ===----------------------------------------------------------------------===#
