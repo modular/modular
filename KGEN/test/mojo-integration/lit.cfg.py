@@ -35,6 +35,7 @@ tools = [
     "kgen",
     "kgen-translate",
     "kgen-opt",
+    "llvm-objdump",
 ]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)

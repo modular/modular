@@ -1,0 +1,44 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# REQUIRES: system-linux
+# RUN: %mojo %s -o %t
+# RUN: llvm-objdump -t %t | FileCheck %s
+
+from compile import _internal_compile_code
+from sys import argv, sizeof
+
+
+fn get_type(dtype: DType) -> DType:
+    return dtype
+
+
+fn compiled_fn[dtype: DType](M: SIMD[get_type(dtype), 4]) -> Int:
+    alias b = sizeof[get_type(dtype)]()
+    return b + int(M[0])
+
+
+def main():
+    alias myCompiledFn = compiled_fn[DType.uint32]
+    # compile myCompileFn into a shared object binary
+    var myShared: String = _internal_compile_code[
+        myCompiledFn, emission_kind="shared-obj"
+    ]()
+
+    idx = 0
+    args = argv()
+    for arg in argv():
+        idx = idx + 1
+        if arg == "-o":
+            break
+
+    # write the shared object binary to a file for checking
+    f = FileHandle(args[idx], "w")
+    f.write(myShared)
+    f.close()
+
+
+# CHECK: dynamic
+# CHECK: compile_shared::compiled_fn[::DType]

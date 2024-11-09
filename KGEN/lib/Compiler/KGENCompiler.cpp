@@ -368,6 +368,11 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
   // Emit the module in the requested form.
   switch (emissionKind) {
+  case EmitAs::ASM:
+    if (ErrorOrSuccess err = compiler->emitAssembly(std::move(module), os))
+      return err.takeError();
+    break;
+
   case EmitAs::LLVM: {
     LLVMModuleAndContext llvmModule;
     if (auto err = llvmModule.create([&](llvm::LLVMContext &ctx) {
@@ -383,8 +388,8 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
       return err.takeError();
     break;
 
-  case EmitAs::ASM:
-    if (ErrorOrSuccess err = compiler->emitAssembly(std::move(module), os))
+  case EmitAs::SHARED_OBJ:
+    if (ErrorOrSuccess err = compiler->emitSharedObject(std::move(module), os))
       return err.takeError();
     break;
   }

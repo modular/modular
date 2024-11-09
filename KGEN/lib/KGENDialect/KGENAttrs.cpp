@@ -72,7 +72,8 @@ bool EmitAsAttr::classof(Attribute attr) {
     return false;
   return ::isa<IndexType>(intAttr.getType()) &&
          contains_if(
-             ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT},
+             ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT,
+                      EmitAs::SHARED_OBJ},
              [&](EmitAs kind) { return (int)kind == intAttr.getInt(); });
 }
 
@@ -1271,7 +1272,8 @@ LogicalResult ParamOperatorAttr::verify(
     if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(operands[1])) {
       if (!::isa<EmitAsAttr>(emissionIntAttr)) {
         return emitError() << "'compile_assembly' second operand should "
-                              "evaluate to either 'asm', 'llvm', or 'llvm-opt'";
+                              "evaluate to either 'asm', 'llvm', 'llvm-opt', "
+                              "or 'sharedobj'";
       }
     }
     if (!operands[3].getType().isInteger(1))

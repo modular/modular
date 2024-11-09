@@ -1114,7 +1114,7 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
 
   CompilerTimeTraceScope traceScope("emitSharedObj");
 
-  StringRef moduleName = "mojo-shared-obj";
+  StringRef moduleName = "mojo-sharedobj";
   if (auto moduleLoc = module->getLoc()->findInstanceOf<FileLineColLoc>())
     moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
 
