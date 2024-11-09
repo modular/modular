@@ -35,11 +35,16 @@ class FixIt;
 class Diags {
 public:
   Diags(SourceMgr &sourceMgr, MLIRContext *context, bool useMLIRDiagnostics,
-        int maxNotesPerDiagnostic, StringRef stripFilenamePrefix);
+        int maxNotesPerDiagnostic, StringRef stripFilenamePrefix,
+        void *extraContext = nullptr);
   ~Diags();
 
   llvm::SourceMgr &sourceMgr;
   MLIRContext *const context;
+
+  /// This is an optional client specific context token that can be used by
+  /// clients that need additional data to emit diagnostics.
+  void *const extraContext;
 
   /// Return the identifier for the main buffer in the SourceMgr.
   StringAttr getBufferNameIdentifier() const;
@@ -167,6 +172,9 @@ public:
   void addSourceRange(SourceRange range);
   void addFixIt(FixIt fixIt);
   void addDiag(InflightDiag &&otherDiag);
+
+  /// Return the diagnostic object if this is attached.
+  Diags *getDiags() const { return diags; }
 
 private:
   void emitMLIRDiagnostic();

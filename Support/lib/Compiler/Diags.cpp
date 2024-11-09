@@ -189,8 +189,8 @@ std::string Diags::SourceMgrLocationMapper::getCanonicalFilename(
 
 Diags::Diags(SourceMgr &sourceMgr, MLIRContext *context,
              bool useMLIRDiagnostics, int maxNotesPerDiagnostic,
-             StringRef stripFilenamePrefix)
-    : sourceMgr(sourceMgr), context(context),
+             StringRef stripFilenamePrefix, void *extraContext)
+    : sourceMgr(sourceMgr), context(context), extraContext(extraContext),
       sourceMgrMapper(std::make_unique<SourceMgrLocationMapper>(
           context, stripFilenamePrefix)),
       useMLIRDiagnostics(useMLIRDiagnostics),
