@@ -865,7 +865,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
       if (!kind) {
         return p.emitError(p.getCurrentLocation(),
                            "the immediate emission kind must be either "
-                           "'=llvm', '=asm', or '=llvm-opt'");
+                           "'=llvm', '=asm', '=llvm-opt', or '=sharedobj'");
       }
       operands.emplace_back(EmitAsAttr::get(p.getContext(), *kind));
     } else if (parseParamValue(p, operands.emplace_back(),

@@ -691,7 +691,7 @@ kgen.generator @kernel() {
 }
 
 kgen.generator export @top() {
-  // expected-error @below {{custom op 'kgen.param.constant' the immediate emission kind must be either '=llvm', '=asm', or '=llvm-opt'}}
+  // expected-error @below {{custom op 'kgen.param.constant' the immediate emission kind must be either '=llvm', '=asm', '=llvm-opt', or '=sharedobj'}}
   kgen.param.constant: string = <compile_assembly(current_target(), =something, 0, :() -> () @kernel)>
   kgen.return
 }
@@ -703,8 +703,8 @@ kgen.generator @kernel() {
 }
 
 kgen.generator export @top() {
-  // expected-error @below {{custom op 'kgen.param.constant' 'compile_assembly' second operand should evaluate to either 'asm', 'llvm', or 'llvm-opt'}}
-  kgen.param.constant: string = <compile_assembly(current_target(), 3, "", 0, :() -> () @kernel)>
+  // expected-error @below {{custom op 'kgen.param.constant' 'compile_assembly' second operand should evaluate to either 'asm', 'llvm', 'llvm-opt', or 'sharedobj'}}
+  kgen.param.constant: string = <compile_assembly(current_target(), 4, "", 0, :() -> () @kernel)>
   kgen.return
 }
 
