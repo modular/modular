@@ -711,7 +711,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
     if (!signature.getParamTypes().empty()) {
-      ParamBindings paramBindings(getScopeInfo());
+      ParamBindings paramBindings(getDeclScope());
       // Try to fully bind the signature, in case it can be made concrete with
       // default values, etc.
       ParameterExprArrayAttr bindingAttr =
@@ -1037,12 +1037,12 @@ PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
       }
       // We know the stub will provide exactly one overload for each allowed
       // trait requirement.
-      auto ovSet = OverloadSet::lookup(getScopeInfo(), boundWrapper, name,
+      auto ovSet = OverloadSet::lookup(getDeclScope(), boundWrapper, name,
                                        value.expr, CallSyntax::kMethodCall);
       // Manually bind the type into the parameter list so the vtable entries
       // are specialized on the MLIR type.
       ovSet.paramBindings = ParamBindings::getForDeclaredType(
-          getScopeInfo(), boundWrapper, value.expr);
+          getDeclScope(), boundWrapper, value.expr);
 
       PValue callee = ovSet.getIfPValue();
       if (!callee) {
@@ -1227,7 +1227,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
       // Form a set of bindings to plow into the impl signature.
       auto implBindings = ParamBindings::getForDeclaredType(
-          getScopeInfo(), ASTType(typeValue), value.expr);
+          getDeclScope(), ASTType(typeValue), value.expr);
 
       // Bind the implicit T parameter on trait members to something with the
       // right metatype to keep the remapper happy.  We already replaced all
@@ -1249,7 +1249,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       OverloadSet ov(name, implFuncs, std::move(implBindings), value.expr,
                      CallSyntax::kMethodCallSynthetic);
       auto result = ov.filterOverloadSetForValueType(
-          requirementSig, getScopeInfo(), /*emitDiagnosticOnFailure=*/false);
+          requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/false);
       if (!result) {
         // Don't error out if name is for the thunk functions that will be
         // synthesized when conformance check happens.
@@ -1259,7 +1259,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
         // The struct does not have the specified member and we cannot
         // synthesize it. Re-emit the error to get a diagnostic.
         (void)ov.filterOverloadSetForValueType(
-            requirementSig, getScopeInfo(), /*emitDiagnosticOnFailure=*/true);
+            requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/true);
         return {};
       }
       if (result.getType().mlirType != requirementSig)
@@ -1305,10 +1305,10 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
 /// any IR.
 ///
 /// CAUTION: This method must line up with `emitResult`!!!
-bool ExprEmitter::canImplicitlyConvertToType(
-    ASTExprAnd<CValue> value, ASTType requiredType,
-    const TypeCheckScopeInfo &scopeInfo) {
-  auto &shared = scopeInfo.shared;
+bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
+                                             ASTType requiredType,
+                                             ASTDecl &declScope) {
+  auto &shared = declScope.getShared();
   assert(value.ir && "Should only query valid values");
   ASTType rvType = value.ir.getRValueType();
 
@@ -1367,10 +1367,8 @@ bool ExprEmitter::canImplicitlyConvertToType(
 
   // Check for non-trivial function type conversions.
   if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType)) {
-    if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
-      return canConvertFunctionTypes(rvFunctionType, requiredFunction,
-                                     scopeInfo);
-    }
+    if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType))
+      return canConvertFunctionTypes(rvFunctionType, requiredFunction);
   }
 
   // We can implicitly convert to the specified type if we can construct it with
@@ -1379,7 +1377,7 @@ bool ExprEmitter::canImplicitlyConvertToType(
   // Disable implicit conversions though, to prevent converting T -> S -> U in
   // one step.
   FailureOr<PValue> result = OverloadSet::canConstructType(
-      requiredType, {{value}}, value.expr, scopeInfo,
+      requiredType, {{value}}, value.expr, declScope,
       /*allowImplicitConversions=*/false);
   return cacheAndReturnVal(succeeded(result) && result.value());
 }
@@ -1523,8 +1521,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
       if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType)) {
         if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
-          if (canConvertFunctionTypes(rvFunctionType, requiredFunction,
-                                      getScopeInfo())) {
+          if (canConvertFunctionTypes(rvFunctionType, requiredFunction)) {
             return convertFunctionValue(cValue, expr, requiredFunction, *this,
                                         dest);
           }
@@ -1966,7 +1963,7 @@ ASTType ExprEmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
 
   // Build up a ParamBindings set to validate and check the bindings. Skip
   // unbound values.
-  ParamBindings paramBindings(getScopeInfo());
+  ParamBindings paramBindings(getDeclScope());
   for (TypedAttr binding : type.getParamBindings())
     paramBindings.addPrechecked(value.expr, binding);
 
@@ -2075,7 +2072,7 @@ ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   }
 
   SyntheticNode tmpExpr(loc);
-  ParamBindings bindings(getScopeInfo());
+  ParamBindings bindings(getDeclScope());
   for (ASTType elt : elements)
     bindings.add(&tmpExpr, PValue(elt));
 

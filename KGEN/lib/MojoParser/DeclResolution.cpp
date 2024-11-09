@@ -1965,9 +1965,8 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
     StringRef methodName, ExprNode *decorator,
     function_ref<void()> callbackOnMissing) {
   // Get the possibly overloaded method.
-  TypeCheckScopeInfo scopeInfo{structDecl, shared};
   auto methods = OverloadSet::lookup(
-      scopeInfo, structDecl.getTypeDeclSelf(), methodName, decorator,
+      structDecl, structDecl.getTypeDeclSelf(), methodName, decorator,
       CallSyntax::kMethodCallSynthetic, callbackOnMissing);
 
   // Case where we did not find the `impl` method or an error occured.

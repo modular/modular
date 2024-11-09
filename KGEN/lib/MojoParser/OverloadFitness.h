@@ -20,7 +20,6 @@ namespace M::KGEN::LIT {
 class CallOperands;
 class LITSignatureType;
 class PogListAttr;
-struct TypeCheckScopeInfo;
 
 /// This struct indicates whether a signature can be successfully applied to a
 /// parameter binding and argument list. If so, it keeps track of several
@@ -133,8 +132,7 @@ private:
   std::pair<ArgTypeMismatchKind, ASTType>
   checkOneOperand(ASTExprAnd<AnyValue> operand, size_t operandIdx,
                   ArgConvention expectedConvention, ASTType expectedType,
-                  bool allowImplicitConversions, SMLoc loc,
-                  const TypeCheckScopeInfo &scopeInfo);
+                  bool allowImplicitConversions, SMLoc loc, ASTDecl &declScope);
 };
 
 } // namespace M::KGEN::LIT

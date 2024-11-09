@@ -38,7 +38,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   // Add trait's T replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, trait));
   ParserParamEvaluator evaluator(emitter.getDeclResolver(), params);
-  auto bindings = ParamBindings::getForDeclaredType(emitter.getScopeInfo(),
+  auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
                                                     structSelfType, expr);
   // Leave the rest alone.
   for (Type type : paramTypes.drop_front()) {
@@ -199,7 +199,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     OverloadSet ov(name, decls, std::move(bindings), node,
                    CallSyntax::kMethodCallSynthetic);
     PValue result = ov.filterOverloadSetForValueType(
-        traitSignature, emitter.getScopeInfo(),
+        traitSignature, emitter.getDeclScope(),
         emitError ? function_ref<InflightDiag &(SMLoc)>(
                         [&](SMLoc loc) -> InflightDiag & {
                           return diag->attachNote(traitFnDecl->getLoc());
@@ -249,7 +249,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     SyntheticNode synthNode(structAliasDecl->getLoc());
     if (!ExprEmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
                                                  traitAliasType,
-                                                 emitter.getScopeInfo())) {
+                                                 emitter.getDeclScope())) {
       diag->attachNote(traitAliasDecl->getLoc())
           << "alias '" + name.str() + "' type " << structAliasType
           << " doesn't conform to trait's alias '" << name.str() << "' type "

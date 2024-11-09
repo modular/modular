@@ -169,7 +169,7 @@ struct StmtParser : public ParserBase {
     }
   }
 
-  TypeCheckScopeInfo getScopeInfo() const { return {*curDeclScope, shared}; }
+  ASTDecl &getDeclScope() const { return *curDeclScope; }
 
   ASTDecl &getParentDecl() { return parentDecl; }
   OpBuilder &getBuilder() { return builder; }
@@ -874,7 +874,7 @@ static LogicalResult injectDebuggerRaiseHookCall(SharedState &shared,
   if (raiseHookFns.empty())
     return failure();
 
-  ParamBindings bindings(TypeCheckScopeInfo{declContext, shared});
+  ParamBindings bindings(declContext);
   OverloadSet call("__mojo_debugger_raise_hook", raiseHookFns,
                    std::move(bindings), node, CallSyntax::kDirectCall);
   ValueDest raseHookDest(EC_RaiseValue);
@@ -1105,11 +1105,11 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
 
   // Resolve the overload with the sequence's type. This succeeds if the
   // iterator type is currently supported.
-  ParamBindings bindings(TypeCheckScopeInfo{scope, shared});
+  ParamBindings bindings(scope);
   bindings.add(seqExpr, PValue(seqPValue.getType()));
   OverloadSet call("parameter_for_generator", paramForImpl, std::move(bindings),
                    seqExpr, CallSyntax::kDirectCall);
-  PValue iterate = call.getDirectSymbol(/*expectedType=*/{}, getScopeInfo());
+  PValue iterate = call.getDirectSymbol(/*expectedType=*/{}, getDeclScope());
   if (!iterate)
     return failure();
 

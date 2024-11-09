@@ -18,12 +18,11 @@ class FuncOp;
 class LITSignatureType;
 class ValueDest;
 class SharedState;
-struct TypeCheckScopeInfo;
 
 /// Determine whether the function type `actual` can be non-trivially converted
 /// to `expected`.
-bool canConvertFunctionTypes(LITSignatureType actual, LITSignatureType expected,
-                             const TypeCheckScopeInfo &scopeInfo);
+bool canConvertFunctionTypes(LITSignatureType actual,
+                             LITSignatureType expected);
 
 /// Emit a non-trivial conversion between two function types. This generates a
 /// thunk and passes it on as the converted value.

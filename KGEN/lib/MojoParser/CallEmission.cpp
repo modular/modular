@@ -233,7 +233,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
       selectBestCandidates(fnDecls, evaluations, newFnDecls);
   if (newFnDecls.size() == 1) {
     // On success, wrap things up into one callee.
-    ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
+    ParamBindings newBindings(paramBindings.declScope);
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(expr, bind);
     return getCallee(newFnDecls[0], baseName, newBindings, expr);
@@ -437,7 +437,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // Finally, wrap things up into one callee, resolving it to a PValue with
     // the parameters bound and substituted into its signature.
-    ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
+    ParamBindings newBindings(paramBindings.declScope);
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(expr, bind);
 
@@ -494,7 +494,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
            "emitted");
 
     // Update boundFunction to include the newly inferred parameters.
-    newBindings = ParamBindings((const TypeCheckScopeInfo &)paramBindings);
+    newBindings = ParamBindings(paramBindings.declScope);
     for (TypedAttr bind : newFitness.getParamBindings())
       newBindings.addPrechecked(expr, bind);
 
@@ -525,10 +525,10 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
 PValue
 OverloadSet::filterOverloadSetForValueType(ASTType functionType,
-                                           const TypeCheckScopeInfo &scopeInfo,
+                                           ASTDecl &declScope,
                                            bool emitDiagnosticOnFailure) const {
   if (!emitDiagnosticOnFailure) {
-    return filterOverloadSetForValueType(functionType, scopeInfo,
+    return filterOverloadSetForValueType(functionType, declScope,
                                          /*emitError=*/nullptr);
   }
 
@@ -536,11 +536,11 @@ OverloadSet::filterOverloadSetForValueType(ASTType functionType,
   auto emitError = [&](SMLoc loc) -> InflightDiag & {
     return diag.emplace(getShared().emitError(loc));
   };
-  return filterOverloadSetForValueType(functionType, scopeInfo, emitError);
+  return filterOverloadSetForValueType(functionType, declScope, emitError);
 }
 
 PValue OverloadSet::filterOverloadSetForValueType(
-    ASTType functionType, const TypeCheckScopeInfo &scopeInfo,
+    ASTType functionType, ASTDecl &declScope,
     function_ref<InflightDiag &(SMLoc)> emitError) const {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
@@ -583,7 +583,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     // This candidate is valid if it can be implicitly converted to the required
     // function type.
     if (ExprEmitter::canImplicitlyConvertToType(
-            {UnboundAttr::get(candidateType), expr}, functionType, scopeInfo))
+            {UnboundAttr::get(candidateType), expr}, functionType, declScope))
       return newBindings;
     return {};
   };
@@ -608,12 +608,12 @@ PValue OverloadSet::filterOverloadSetForValueType(
 
   // If we have exactly one viable candidate, then we succeed.
   if (validCandidates.size() == 1) {
-    ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
+    ParamBindings newBindings(paramBindings.declScope);
     for (TypedAttr bind : candidateBindings.front())
       newBindings.addPrechecked(expr, bind);
 
     // Use an emitter with invalid context, since errors aren't expected.
-    ExprEmitter emitter(scopeInfo.declScope, EC_InvalidContext);
+    ExprEmitter emitter(declScope, EC_InvalidContext);
     PValue callee =
         getCallee(validCandidates.front(), baseName, newBindings, expr);
     return emitter.emitPValue({callee, expr}, EC_InvalidContext, functionType);
@@ -679,13 +679,13 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
 /// On failure, this returns a null OverloadSet and invokes errorHandler if
 /// the problem hasn't already been diagnosed. This does not emit an error on
 /// failure.
-OverloadSet OverloadSet::lookup(const TypeCheckScopeInfo &scopeInfo,
-                                ASTType type, StringRef methodName,
-                                const ExprNode *expr, CallSyntax syntax,
+OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
+                                StringRef methodName, const ExprNode *expr,
+                                CallSyntax syntax,
                                 function_ref<void()> errorHandler) {
-  SharedState &shared = scopeInfo.shared;
+  SharedState &shared = declScope.getShared();
 
-  OverloadSet result(scopeInfo, expr, syntax, /*isErroneous=*/false);
+  OverloadSet result(declScope, expr, syntax, /*isErroneous=*/false);
   result.baseName = methodName;
 
   // If this is a previously-reported error, ignore and don't report an
@@ -762,7 +762,7 @@ PValue OverloadSet::lookupAndResolve(
     const ExprNode *callExpr, CallSyntax syntax,
     function_ref<void()> lookupFailureErrorHandler,
     bool shouldPrintOverloadErrors, ExprEmitter &emitter) {
-  auto ovSet = OverloadSet::lookup(emitter.getScopeInfo(), type, methodName,
+  auto ovSet = OverloadSet::lookup(emitter.getDeclScope(), type, methodName,
                                    callExpr, syntax, lookupFailureErrorHandler);
 
   // If the core lookup failed, don't filter.
@@ -783,7 +783,7 @@ PValue OverloadSet::lookupAndResolve(
 /// provided.  This emits errors if 'emitter' is non-null, but does not if it
 /// is null.
 PValue OverloadSet::getDirectSymbol(ASTType expectedType,
-                                    const TypeCheckScopeInfo &scopeInfo) const {
+                                    ASTDecl &declScope) const {
   // Handle the case of a single candidate.
   if (fnDecls.size() == 1) {
     // This is an unbound function. Just return a reference.
@@ -797,7 +797,7 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
   // With an emitter and an expected type, the overload set can definitely be
   // resolved to a single candidate or not.
   if (expectedType) {
-    return filterOverloadSetForValueType(expectedType, scopeInfo,
+    return filterOverloadSetForValueType(expectedType, declScope,
                                          /*emitDiagnosticOnFailure=*/true);
   }
 
@@ -839,7 +839,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // case where we are partially applying, that will force the unbound symbol
   // into a SRValue which will catch symbols that are not fully bound.
   PValue directSymbolAttr =
-      getDirectSymbol(expectedType, emitter.getScopeInfo());
+      getDirectSymbol(expectedType, emitter.getDeclScope());
   if (!directSymbolAttr)
     return {};
 
@@ -914,7 +914,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
   }
 
   // Check to see if we can apply these operands to the callee signature.
-  OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindings(getScopeInfo()),
+  OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindings(getDeclScope()),
                        callExpr, syntax};
   auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
                                            bindings, operands,
@@ -1018,7 +1018,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 
   // Check to see if we can invoke an __init__ method to convert it.
   auto callee =
-      OverloadSet::lookup(getScopeInfo(), type, "__init__", expr, syntax);
+      OverloadSet::lookup(getDeclScope(), type, "__init__", expr, syntax);
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
                               callOperands);
   if (callee.isErroneous())
@@ -1087,7 +1087,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // FIXME: Why do we need this?  We should be able to infer this from the
   // value passed for 'self'.
   callee.paramBindings =
-      ParamBindings::getForDeclaredType(getScopeInfo(), type, expr);
+      ParamBindings::getForDeclaredType(getDeclScope(), type, expr);
 
   // Provide a self value so parameter inference can infer parameters from
   // typeof(self).
@@ -1109,14 +1109,16 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 /// If there were erroneous declarations, an error has been raised about a
 /// constructor that likely would have applied, which should be considered in
 /// any error reporting. This does not generate any IR.
-FailureOr<PValue> OverloadSet::canConstructType(
-    ASTType requiredType, CallOperands &&operands, const ExprNode *expr,
-    const TypeCheckScopeInfo &scopeInfo, bool allowImplicitConversions) {
+FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
+                                                CallOperands &&operands,
+                                                const ExprNode *expr,
+                                                ASTDecl &declScope,
+                                                bool allowImplicitConversions) {
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
   OverloadSet callee = OverloadSet::lookup(
-      scopeInfo, requiredType, "__init__", expr, CallSyntax::kImplicitConvert,
+      declScope, requiredType, "__init__", expr, CallSyntax::kImplicitConvert,
       /*no error emission on failure */ {});
 
   // If there are no viable candidates for the implicit conversion, we fail.
@@ -1128,7 +1130,7 @@ FailureOr<PValue> OverloadSet::canConstructType(
   // would make the inference and overload resolution logic more consistent
   // because the selfexpr should really be an LValue.
   auto inferType =
-      requiredType.getWithUnknownParametersReplaced(scopeInfo.shared);
+      requiredType.getWithUnknownParametersReplaced(declScope.getShared());
   auto attr = UnknownAttr::get(RefType::getAnyOrigin(inferType, true));
   operands.addSelf({PValue(attr), expr});
 
@@ -1136,12 +1138,11 @@ FailureOr<PValue> OverloadSet::canConstructType(
   // always be inferred. This can happen if a constructor has more specific Self
   // type parameters or for the deprecated `-> Self` form of initializers.
   callee.paramBindings =
-      ParamBindings::getForDeclaredType(scopeInfo, requiredType, expr);
+      ParamBindings::getForDeclaredType(declScope, requiredType, expr);
 
   // Determine if we can emit this using an ExprEmitter in the parameter domain.
   // This ensures we don't emit any code converting parameters to MValues etc.
-  ExprEmitter paramEmitter(scopeInfo.declScope,
-                           ExprContext::EC_CallCalleeValue);
+  ExprEmitter paramEmitter(declScope, ExprContext::EC_CallCalleeValue);
 
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not

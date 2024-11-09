@@ -12,7 +12,6 @@
 #define KGEN_MOJOPARSER_OPERANDCONTAINER_H
 
 #include "KGEN/MojoParser/IRValues.h"
-#include "KGEN/MojoParser/TypeCheckScopeInfo.h"
 
 namespace M::KGEN::LIT {
 class PogListAttr;

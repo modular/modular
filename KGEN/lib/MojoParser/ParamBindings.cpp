@@ -29,6 +29,9 @@ using namespace M::KGEN::LIT;
 // ParamBindings
 //===----------------------------------------------------------------------===//
 
+ParamBindings::ParamBindings(ASTDecl &declScope)
+    : declScope(declScope), shared(declScope.getShared()) {}
+
 /// Replace our bindings with another set.  This can't be done with operator=
 /// because we have
 void ParamBindings::operator=(ParamBindings &&other) {
@@ -44,15 +47,15 @@ void ParamBindings::operator=(ParamBindings &&other) {
 /// Create a (possibly partially unbound) set of bindings for the given type.
 /// This can be used to initialize the binding set for methods. If the given
 /// type is not a parametric user defined type, this returns empty bindings.
-ParamBindings
-ParamBindings::getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
-                                  ASTType type, const ExprNode *expr) {
-  ParamBindings paramBindings(scopeInfo);
+ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
+                                                ASTType type,
+                                                const ExprNode *expr) {
+  ParamBindings paramBindings(declScope);
   // TODO: this will not work with arbitrary parametric ancestors.
   // Default params need to come from the original declaration, instead of
   // TypeSignatureType, as the latter won't contain the full defaults list if
   // any have been bound already (when `type` is partially specified).
-  Operation *decl = type.getDecl(scopeInfo.shared)->getIfOperation();
+  Operation *decl = type.getDecl(declScope.getShared())->getIfOperation();
   if (auto structDecl = dyn_cast<StructDeclOp>(decl)) {
     paramBindings.defaultPosTypeParams =
         structDecl.getSignature().getDefaultPosParams();
@@ -128,7 +131,7 @@ static PValue emitSingleParameterValue(ASTExprAnd<AnyValue> binding,
 
   // If the parameter can be implicitly converted, do so.
   if (ExprEmitter::canImplicitlyConvertToType(
-          {bindingVal, binding.expr}, expectedType, emitter.getScopeInfo())) {
+          {bindingVal, binding.expr}, expectedType, emitter.getDeclScope())) {
     numImplicitConversions += 2;
     return emitter.emitPValue(binding, EC_CallParamValue, expectedType);
   }
@@ -544,7 +547,7 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(ArrayRef<Type> paramTypes,
                                     const ParserParamEvaluator &evaluator) {
     // The inference diagnostics will be unused.
     ParameterInferenceDiagnostics inferenceDiags;
-    ParameterInferenceState inference(*this, getParameters(), bindingsSoFar,
+    ParameterInferenceState inference(declScope, getParameters(), bindingsSoFar,
                                       evaluator, inferenceDiags,
                                       /*allowImplicitConversions=*/true);
 
@@ -700,7 +703,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   SyntheticNode errorLoc(exprLoc);
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
-    ParameterInferenceState inference(*this, getParameters(), bindingsSoFar,
+    ParameterInferenceState inference(declScope, getParameters(), bindingsSoFar,
                                       evaluator, inferenceDiags,
                                       /*allowImplicitConversions=*/true);
 

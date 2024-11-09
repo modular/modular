@@ -11,7 +11,6 @@
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
-#include "KGEN/MojoParser/TypeCheckScopeInfo.h"
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/SMLoc.h"
@@ -285,9 +284,7 @@ public:
   std::optional<OpBuilder> varDeclCursor;
 
   /// Return information about the scope we're looking into.
-  TypeCheckScopeInfo getScopeInfo() const {
-    return TypeCheckScopeInfo{declScope, shared};
-  }
+  ASTDecl &getDeclScope() const { return declScope; }
 
   /// Emit an error about use of a dynamic value (the expression) in a context
   /// that only allows parameter expressions.  This always returns a null
@@ -426,7 +423,7 @@ public:
   /// any IR.
   static bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                          ASTType requiredType,
-                                         const TypeCheckScopeInfo &scopeInfo);
+                                         ASTDecl &declScope);
 
   /// Emit the specified expression into the specified destination.
   AnyValue emitExpr(const ExprNode *expr, ValueDest &dest);

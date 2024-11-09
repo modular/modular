@@ -1107,10 +1107,9 @@ TypedAttr CallEmitter::emitCallInParamContext(
 /// type, or `RaisingCoroutine` type in the case of a raising function. This
 /// function looks up the corresponding coroutine type and binds its result
 /// type.
-static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
-                                     const ExprNode *expr, SignatureType sig,
-                                     TypedAttr origin) {
-  auto [declScope, shared] = scopeInfo;
+static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
+                                     SignatureType sig, TypedAttr origin) {
+  auto &shared = declScope.getShared();
   SMLoc loc = expr->getLoc();
   ASTDecl *decl = sig.isThrows() ? shared.getBuiltinRaisingCoroutineType(loc)
                                  : shared.getBuiltinCoroutineType(loc);
@@ -1123,7 +1122,7 @@ static ASTType getBoundCoroutineType(const TypeCheckScopeInfo &scopeInfo,
   ASTType resultType = ASTType(sig).getSignatureUserResultType();
 
   // Bind the result type to the base coroutine type.
-  ParamBindings paramBinds(scopeInfo);
+  ParamBindings paramBinds(declScope);
   paramBinds.add(expr, PValue(resultType));
   paramBinds.add(expr, origin);
 
@@ -1656,7 +1655,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       auto call = builder->create<AsyncCallOp>(loc, target.get(),
                                                implicitOrigins, callArgs);
       ASTType coroType = getBoundCoroutineType(
-          getScopeInfo(), callExpr, calleeSig,
+          getDeclScope(), callExpr, calleeSig,
           computeArgumentsOrigin(call, shared.cachedOriginFinder));
 
       if (!coroType) {

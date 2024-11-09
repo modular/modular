@@ -582,7 +582,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (auto firstCandidate = dyn_cast<LIT::FuncOp>(decls[0])) {
     // Form an overload set value with all the candidates.
     auto result = OverloadSetUValue::create(
-        spelling, decls, ParamBindings(emitter.getScopeInfo()), this,
+        spelling, decls, ParamBindings(emitter.getDeclScope()), this,
         CallSyntax::kDirectCall);
     return emitter.emitResult(result, this, dest);
   }
@@ -952,7 +952,7 @@ static std::optional<ParamBindings> getBindingsForParameterOperands(
     PogListAttr paramList, ExprEmitter &emitter, ExprContext context) {
   InProgressBindings bindable(paramTypes, paramList);
   // Start with an empty binding set.
-  ParamBindings paramBindings(emitter.getScopeInfo());
+  ParamBindings paramBindings(emitter.getDeclScope());
   if (failed(bindParameterOperands(bindable, operands, paramBindings, emitter,
                                    context)))
     return std::nullopt;
@@ -1088,13 +1088,13 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // Look up the getter and setter candidate list on the self type.
   StringRef getterName = isSubscript ? "__getitem__" : "__getattr__";
-  OverloadSet getterSet = OverloadSet::lookup(emitter.getScopeInfo(), baseType,
+  OverloadSet getterSet = OverloadSet::lookup(emitter.getDeclScope(), baseType,
                                               getterName, node, syntax);
   if (getterSet.isErroneous())
     return {}; // Ignore already emitted errors.
 
   StringRef setterName = isSubscript ? "__setitem__" : "__setattr__";
-  OverloadSet setterSet = OverloadSet::lookup(emitter.getScopeInfo(), baseType,
+  OverloadSet setterSet = OverloadSet::lookup(emitter.getDeclScope(), baseType,
                                               setterName, node, syntax);
   if (setterSet.isErroneous())
     return {}; // Ignore already emitted errors.
@@ -1148,7 +1148,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // FIXME2: What about the other set?  This seems like it only handles
     // getitem.
     nonemptySet->paramBindings = ParamBindings::getForDeclaredType(
-        emitter.getScopeInfo(), baseType, node);
+        emitter.getDeclScope(), baseType, node);
     if (failed(
             bindParamValuesToDirectCall(*nonemptySet, exprOperands, emitter)))
       return {};
@@ -1218,7 +1218,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // Hard code the parameter bindings for 'self' since we aren't using type
     // inference properly.
     setterSet.paramBindings = ParamBindings::getForDeclaredType(
-        emitter.getScopeInfo(), baseType, node);
+        emitter.getDeclScope(), baseType, node);
     auto directSymbolAttr = setterSet.getBoundConstantAttr();
     if (!directSymbolAttr) {
       lookupError();
@@ -1427,7 +1427,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     auto result =
         OverloadSetUValue::create(spelling, memberDecls,
                                   ParamBindings::getForDeclaredType(
-                                      emitter.getScopeInfo(), baseRVType, this),
+                                      emitter.getDeclScope(), baseRVType, this),
                                   this, CallSyntax::kDirectCall);
 
     // If the callee is a static method, we can directly reference it
@@ -2393,9 +2393,9 @@ coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
     return success();
 
   bool lhsConvertibleToRHS = ExprEmitter::canImplicitlyConvertToType(
-      {lhs, lhsExpr}, rhsType, emitter.getScopeInfo());
+      {lhs, lhsExpr}, rhsType, emitter.getDeclScope());
   bool rhsConvertibleToLHS = ExprEmitter::canImplicitlyConvertToType(
-      {rhs, rhsExpr}, lhsType, emitter.getScopeInfo());
+      {rhs, rhsExpr}, lhsType, emitter.getDeclScope());
   if (lhsConvertibleToRHS && !rhsConvertibleToLHS) {
     lhs = convert({lhs, lhsExpr}, rhsType, /*isLHS*/ true);
     return failure(!lhs);
