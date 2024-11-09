@@ -80,16 +80,16 @@ static VariadicKind getVariadicKind(PogListAttr pogListAttr, size_t idx) {
 }
 
 /// Generate a user-readable representation of the given pvalue.
-static std::string generatePValueString(PValue value) {
+static std::string generatePValueString(SharedState &shared, PValue value) {
   std::string typeName;
   llvm::raw_string_ostream os(typeName);
-  value.printForDiag(os);
+  ASTType::printParam(os, value, /*forDiag=*/&shared, /*demangleParams=*/false);
   return os.str();
 }
 
 /// Unpack a origin into a printable name when it is uttered in a signature
 /// position.
-static std::string getSignatureLifetime(TypedAttr origin,
+static std::string getSignatureLifetime(SharedState &shared, TypedAttr origin,
                                         LITSignatureType signature) {
   // Check to see if the origin is a parameter on this signature.  If so, it
   // will have a depth of zero.
@@ -103,15 +103,15 @@ static std::string getSignatureLifetime(TypedAttr origin,
   }
 
   // Otherwise, just print as normal.
-  return generatePValueString(origin);
+  return generatePValueString(shared, origin);
 }
 
 /// Unpack a "ref" argument or result type into a string that can be shown to
 /// the user.
-static std::string getRefPrefixAsString(RefType refType,
+static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
                                         LITSignatureType signature) {
   std::string result =
-      "[" + getSignatureLifetime(refType.getOrigin(), signature);
+      "[" + getSignatureLifetime(shared, refType.getOrigin(), signature);
 
   // Include the address space if it is non-default.
   if (!refType.isDefaultAddrSpace()) {
@@ -124,7 +124,7 @@ static std::string getRefPrefixAsString(RefType refType,
         addrSpace = extractAttr2.getStructValue();
       }
     }
-    result += ", " + generatePValueString(addrSpace);
+    result += ", " + generatePValueString(shared, addrSpace);
   }
   result += "] ";
   return result;
@@ -133,7 +133,7 @@ static std::string getRefPrefixAsString(RefType refType,
 /// Generate a user-readable representation of the given type and variadic kind,
 /// with an optional value convention, and parent struct "Self" type.
 static std::string
-generateTypeString(Type type, VariadicKind varKind,
+generateTypeString(SharedState &shared, Type type, VariadicKind varKind,
                    std::optional<ASTType> selfType = std::nullopt,
                    std::optional<ArgConvention> convention = std::nullopt) {
   std::string typeName;
@@ -149,7 +149,7 @@ generateTypeString(Type type, VariadicKind varKind,
       astType = astType.getReferenceElementType();
 
     ASTType::printParam(os, astType.getVariadicPackInfo().getVariadic(),
-                        /*forDiag=*/true, /*demangleParams=*/true);
+                        /*forDiag=*/&shared, /*demangleParams=*/true);
     return os.str();
   }
 
@@ -170,7 +170,7 @@ generateTypeString(Type type, VariadicKind varKind,
   if (selfType && astType.isEqualCanon(*selfType))
     os << "Self";
   else
-    os << astType.getAsString(/*forDiag=*/true, /*demangleParams=*/true);
+    os << astType.getAsString(/*forDiag=*/&shared, /*demangleParams=*/true);
 
   return os.str();
 }
@@ -453,12 +453,13 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
                declRef.getName().value_or(StringRef{})),
       isGlobalVariable(false),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef())) {
+  auto &shared = *declRef.getShared();
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
       .Case([&](VarDeclOp op) {
-        type = declRef.getType().getReferenceElementType().getAsString();
+        type = declRef.getType().getReferenceElementType().getAsString(shared);
       })
       .Case([&](GlobalVarDeclOp op) {
-        type = declRef.getType().getAsString();
+        type = declRef.getType().getAsString(shared);
         isGlobalVariable = true;
       });
 }
@@ -588,9 +589,9 @@ AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
       deprecated(declRef.getDeprecationWarning().value_or(StringRef())) {
   auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
 
-  llvm::raw_string_ostream valueOS(value);
+  auto &shared = *declRef.getShared();
   if (auto maybeValue = aliasOp.getValue())
-    PValue(maybeValue.value()).printForDiag(valueOS);
+    value = generatePValueString(shared, maybeValue.value());
 
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
@@ -778,6 +779,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef,
 void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
                                          LITSignatureType signature,
                                          ArrayRef<Type> argTypes) {
+  auto &shared = *declRef.getShared();
   raisesFlag = signature.isThrows();
   isAsyncFlag = signature.isAsync();
 
@@ -813,7 +815,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
     ArgConvention convention = refineConventionForType(type, conventionX);
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultArgHandler.getDefault(argIdx))
-      defaultValue = generatePValueString(defaultAttr);
+      defaultValue = generatePValueString(shared, defaultAttr);
 
     std::string prefix;
     auto declConvention = ArgumentDeclView::Convention::kBorrowed;
@@ -823,7 +825,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
     else if (convention == ArgConvention::Ref ||
              convention == ArgConvention::MutRef) {
       declConvention = ArgumentDeclView::Convention::kRef;
-      prefix = getRefPrefixAsString(cast<RefType>(type), signature);
+      prefix = getRefPrefixAsString(shared, cast<RefType>(type), signature);
     } else if (convention == ArgConvention::OwnedInMem ||
                convention == ArgConvention::OwnedInReg)
       declConvention = ArgumentDeclView::Convention::kOwned;
@@ -831,7 +833,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
         getVariadicKind(signature.getArgListAttrs(), argIdx);
     args.push_back(ArgumentDeclView(
         pogAttr.getName(), std::move(prefix),
-        generateTypeString(type, variadicKind, selfType, convention),
+        generateTypeString(shared, type, variadicKind, selfType, convention),
         pogAttr.getPassingKind(), variadicKind, std::move(defaultValue),
         declConvention));
   }
@@ -846,12 +848,12 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
       continue;
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultParamHandler.getDefault(parIdx))
-      defaultValue = generatePValueString(defaultAttr);
+      defaultValue = generatePValueString(shared, defaultAttr);
     VariadicKind variadicKind =
         getVariadicKind(signature.getParamListAttrs(), parIdx);
     parameters.push_back(ParameterDeclView(
         signature.getParamName(parIdx),
-        generateTypeString(paramTypes[parIdx], variadicKind, selfType),
+        generateTypeString(shared, paramTypes[parIdx], variadicKind, selfType),
         passingKind, variadicKind, std::move(defaultValue)));
   }
 
@@ -867,9 +869,10 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
     // prefix to the specifier.
     if (signature.isRefResult()) {
       convention = ArgConvention::Ref;
-      str = "ref " + getRefPrefixAsString(cast<RefType>(resultType), signature);
+      str = "ref " +
+            getRefPrefixAsString(shared, cast<RefType>(resultType), signature);
     }
-    str += generateTypeString(resultType, VariadicKind::kNone, selfType,
+    str += generateTypeString(shared, resultType, VariadicKind::kNone, selfType,
                               convention);
     returnType = str;
   }
@@ -915,7 +918,7 @@ StructFieldDeclView::StructFieldDeclView(MojoASTDeclRef declRef)
   auto fieldOp = cast<StructFieldOp>(declRef.getIfOperation());
 
   llvm::raw_string_ostream typeOS(type);
-  ASTType(fieldOp.getType()).print(typeOS, /*forDiag=*/true);
+  ASTType(fieldOp.getType()).print(typeOS, /*forDiag=*/declRef.getShared());
 
   if (std::optional<DocString> docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
@@ -1103,20 +1106,22 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
   TypeSignatureType signature = structOp.getSignature();
 
+  auto &shared = *declRef.getShared();
+
   // Grab the types of the parameters to the struct.
   PogListAttr paramListAttr = signature.getParamListAttrs();
   DefaultValueHandler defaultParamHandler(paramListAttr);
   for (auto [idx, param] : llvm::enumerate(structOp.getInputParams())) {
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultParamHandler.getDefault(idx))
-      defaultValue = generatePValueString(defaultAttr);
+      defaultValue = generatePValueString(shared, defaultAttr);
     VariadicKind variadicKind =
         getVariadicKind(signature.getParamListAttrs(), idx);
-    parameters.push_back(
-        ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
-                          generateTypeString(param.getType(), variadicKind),
-                          paramListAttr.getPassingKind(idx), variadicKind,
-                          std::move(defaultValue)));
+    parameters.push_back(ParameterDeclView(
+        demangleIfNeeded(param).getName().getValue(),
+        generateTypeString(shared, param.getType(), variadicKind),
+        paramListAttr.getPassingKind(idx), variadicKind,
+        std::move(defaultValue)));
   }
 
   if (auto docStr = decl->getParsedDocString()) {

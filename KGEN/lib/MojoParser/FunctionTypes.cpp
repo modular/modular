@@ -156,9 +156,9 @@ static LITSignatureType getReducedFunctionType(LITSignatureType sig) {
 static std::string generateThunkName(Type expected, Type actual) {
   std::string name;
   llvm::raw_string_ostream os(name);
-  ASTType(expected).print(os, /*forDiag=*/false, /*demangleParams=*/true);
+  ASTType(expected).print(os, /*diags=*/nullptr, /*demangleParams=*/true);
   os << '|';
-  ASTType(actual).print(os, /*forDiag=*/false, /*demangleParams=*/true);
+  ASTType(actual).print(os, /*diags=*/nullptr, /*demangleParams=*/true);
 
   // Mix in the full signatures to disambiguate.
   std::string sigHash;

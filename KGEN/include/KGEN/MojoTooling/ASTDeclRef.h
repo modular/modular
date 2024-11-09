@@ -65,6 +65,9 @@ public:
   /// Get the parent MojoASTDeclRef of this decl.
   MojoASTDeclRef getParentDecl() const;
 
+  /// Get the SharedState for this decl if non-null.
+  KGEN::LIT::SharedState *getShared() const;
+
   /// Get a DeclView that can be used for more easily inspecting the metadata of
   /// this decl. It supports aliases, modules, functions, structs, arguments,
   /// struct fields and variables.
@@ -162,7 +165,7 @@ public:
   operator bool() const { return bool(type); }
 
   /// Returns a readable string representation of this type.
-  std::string getAsString() const;
+  std::string getAsString(KGEN::LIT::SharedState &shared) const;
 
   /// If the current type is a reference, return the type of the pointee. This
   /// aborts if the current type isn't a reference.

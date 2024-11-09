@@ -196,7 +196,8 @@ MojoTypeDataLayoutContext::Impl::calculate(MojoASTTypeRef type) {
   // too much memory, so we change the size to 0, because no data should be
   // read. We also need to report these cases at least with an error message.
   if (size == std::numeric_limits<uint64_t>::max()) {
-    llvm::errs() << "Error: MLIR type '" << type.getAsString()
+    llvm::errs() << "Error: MLIR type '"
+                 << type.getAsString(context.getSharedState())
                  << "' has an invalid size of " << size << " (-1).\n";
     size = 0;
     alignment = 1;

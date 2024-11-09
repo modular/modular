@@ -26,6 +26,11 @@ using namespace M::KGEN::LIT;
 // MojoASTDeclRef
 //===----------------------------------------------------------------------===//
 
+/// Get the SharedState for this decl if non-null.
+KGEN::LIT::SharedState *MojoASTDeclRef::getShared() const {
+  return decl ? &decl->getShared() : nullptr;
+}
+
 /// Return the signature type contained by this decl (e.g. if it's a function),
 /// or null otherwise.
 static LITSignatureType getSignatureFromDecl(ASTDecl *decl) {
@@ -362,12 +367,12 @@ MojoASTDeclRef::getChildren() const {
 // MojoASTTypeRef
 //===----------------------------------------------------------------------===//
 
-MojoASTDeclRef MojoASTTypeRef::getDecl(SharedState &sharedState) {
-  return MojoASTDeclRef(type.getDecl(sharedState));
+MojoASTDeclRef MojoASTTypeRef::getDecl(SharedState &shared) {
+  return MojoASTDeclRef(type.getDecl(shared));
 }
 
-std::string MojoASTTypeRef::getAsString() const {
-  return type.getAsString(/*forDiag=*/true);
+std::string MojoASTTypeRef::getAsString(SharedState &shared) const {
+  return type.getAsString(/*forDiag=*/&shared);
 }
 
 /// If the current type is a reference, return the type of the pointee. This

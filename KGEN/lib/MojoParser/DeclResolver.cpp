@@ -892,7 +892,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
             os << "*";
             type = type.getVariadicElementType();
           }
-          os << type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
+          os << type.getAsString(/*diags=*/nullptr, /*demangleParams=*/true);
         },
         ",");
     os << ']';
@@ -923,7 +923,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     } else if (ASTType variadicPack = fullSig.getIfVariadicPack(argNo)) {
       TypedAttr packVariadic = variadicPack.getVariadicPackInfo().getVariadic();
       mangledName += '*';
-      ASTType::printParam(os, packVariadic, /*forDiag=*/false,
+      ASTType::printParam(os, packVariadic, /*diags=*/nullptr,
                           /*demangleParams=*/true);
       continue;
     } else if (fullSig.isKwVarArg(argNo)) {
@@ -937,7 +937,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       argType = argType.getReferenceElementType();
 
     mangledName +=
-        argType.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
+        argType.getAsString(/*forDiag=*/nullptr, /*demangleParams=*/true);
 
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {
