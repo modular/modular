@@ -10,7 +10,7 @@ import os
 import queue
 import uuid
 from contextlib import asynccontextmanager
-from typing import Awaitable, Callable, Mapping, Sequence
+from typing import Awaitable, Callable, Mapping, Optional, Sequence
 
 from max.pipelines.interfaces import (
     TokenGeneratorFactory,
@@ -251,9 +251,11 @@ async def model_worker_run_v2(
         if config.context_encoding:
             max_batch_size_ce = config.context_encoding.size
             max_forward_steps_ce = config.context_encoding.max_forward_steps
+            target_sum_seq_len = config.context_encoding.target_sum_seq_len
         else:
             max_batch_size_ce = max_batch_size_tg
             max_forward_steps_ce = max_forward_steps_tg
+            target_sum_seq_len = None
         logger.info("Token generators loaded!")
 
         started.set()
@@ -276,6 +278,7 @@ async def model_worker_run_v2(
                         request_queue,
                         max_batch_size_to_execute,
                         cache_indices,
+                        target_sum_seq_len,
                     )
                 ):
                     logger.debug(
@@ -348,16 +351,27 @@ def create_batch(
     request_queue: MPQueue,
     max_batch_size: int,
     request_indices: set,
+    target_sum_seq_len: Optional[int],
 ) -> BatchInputs:
     batch: BatchInputs = {}
+    sum_seq_len = 0
     while len(batch) < max_batch_size:
         try:
-            max_messages_to_get = max_batch_size - len(batch)
+            max_messages_to_get = (
+                1 if target_sum_seq_len else max_batch_size - len(batch)
+            )
             for req_id, data in request_queue.queue.get_many_nowait(
                 max_messages_to_get=max_messages_to_get
             ):
                 data.cache_seq_id = request_indices.pop()
                 batch[req_id] = data
+                sum_seq_len += getattr(data, "seq_len", 0)
+                # if the batch has hit the target sum sequence length, break early
+                if (
+                    target_sum_seq_len is not None
+                    and sum_seq_len > target_sum_seq_len
+                ):
+                    break
         except queue.Empty:
             break
     return batch
