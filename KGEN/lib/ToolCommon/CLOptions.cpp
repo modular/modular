@@ -153,7 +153,7 @@ bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
     return false;
   }
   if (argName == "emit") {
-    val = Command::kEmit;
+    val = argValue == "shared" ? Command::kEmitSharedObject : Command::kEmit;
     return false;
   }
   if (argName == "emit-header") {

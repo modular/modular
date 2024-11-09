@@ -483,6 +483,21 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     }
   }
 
+  if (clOptions.cmd == Command::kEmitSharedObject) {
+    auto outFile = clOptions.getOutputFile(/*hasBinaryOutput=*/true, ".so");
+    if (!outFile)
+      return failure(clOptions.reportError("could not open .so output file"));
+
+    ErrorOrSuccess sharedObjOr =
+        objCompiler.emitSharedObject(std::move(theModule), outFile->os());
+    if (failed(sharedObjOr))
+      return failure(clOptions.reportError(
+          "could not produce standalone shared object binary: " +
+          Twine(sharedObjOr.getError())));
+    outFile->keep();
+    return mlir::success();
+  }
+
   // -emit and -execute both require compiled objects.
   ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(std::move(theModule));
   if (failed(archiveOr)) {

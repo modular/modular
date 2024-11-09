@@ -68,6 +68,11 @@ public:
   ErrorOrSuccess emitAssembly(OwningOpRef<ModuleOp> module,
                               llvm::raw_pwrite_stream &os);
 
+  /// Slices the call graph for all exported symbols to produce a standalone
+  /// shared object file. The output is written to the provided stream.
+  ErrorOrSuccess emitSharedObject(OwningOpRef<ModuleOp> module,
+                                  llvm::raw_pwrite_stream &os);
+
   /// Writes C++ function declarations for all exported symbols.
   LogicalResult emitCXXHeader(ModuleOp module, StringRef filename,
                               raw_ostream &os);

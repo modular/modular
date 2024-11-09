@@ -24,12 +24,13 @@ class ExecutionEngine;
 enum class Command {
   kGenLibraryFile,
   kElaborate,
-  kEmitLLVM,
-  kEmitLLVMOpt,
+  kEmit,
   kEmitAssembly,
   kEmitAssemblyVerbose,
   kEmitHeader,
-  kEmit,
+  kEmitLLVM,
+  kEmitLLVMOpt,
+  kEmitSharedObject,
   kExecute,
 };
 
@@ -356,10 +357,12 @@ private:
           clEnumValN(
               Command::kEmitAssemblyVerbose, "emit-asm=verbose",
               "Emit the funcs as vevrbose assembly with preserved comments"),
-          clEnumValN(Command::kEmit, "emit", "Emit funcs as object files."),
+          clEnumValN(Command::kEmit, "emit", "Emit funcs as an object file."),
           clEnumValN(Command::kEmitHeader, "emit-header",
                      "Emit a C header file with declarations of "
                      "exported functions."),
+          clEnumValN(Command::kEmitSharedObject, "emit=shared",
+                     "Emit funcs as a shared object (ELF only)."),
           clEnumValN(Command::kExecute, "execute", "Execute funcs.")),
       llvm::cl::location(options.cmd),
       llvm::cl::Required,

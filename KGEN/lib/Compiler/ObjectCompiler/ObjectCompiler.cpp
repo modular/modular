@@ -25,6 +25,7 @@
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Telemetry/Telemetry.h"
+#include "lld/Common/Driver.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
@@ -59,6 +60,7 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
+#include <llvm/Support/raw_ostream.h>
 
 using namespace M;
 using namespace KGEN;
@@ -1091,5 +1093,86 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
   if (buf.isError())
     return Error("failed to lower LLVM IR to assembly");
   os << buf->getPointer()->getBuffer();
+  return success();
+}
+
+namespace lld::elf {
+bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
+          llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput);
+} // namespace lld::elf
+
+//===----------------------------------------------------------------------===//
+// emitSharedObject
+//===----------------------------------------------------------------------===//
+ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
+                                                llvm::raw_pwrite_stream &os) {
+  // This function is added to support AMD GPU compilation to hsaco binary.
+  // Generalize to all platforms+formats when needed.
+  if (llvm::Triple(options.targetTriple).getObjectFormat() != llvm::Triple::ELF)
+    return Error(
+        "cannot create shared object binary from non-elf target triple");
+
+  CompilerTimeTraceScope traceScope("emitSharedObj");
+
+  StringRef moduleName = "mojo-shared-obj";
+  if (auto moduleLoc = module->getLoc()->findInstanceOf<FileLineColLoc>())
+    moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
+
+  // Generate .o in memory.
+  ErrorOr<BufferRef> bufOr =
+      ObjectCompiler::emitArchive(std::move(module), /*emitAssembly=*/false);
+
+  if (bufOr.isError())
+    return Error("failed to lower LLVM IR to object binary");
+
+  llvm::StringRef libInExt = ".o";
+  llvm::StringRef libOutExt = ".so";
+  std::string objName = moduleName.str() + "-%%%%%%%" + libInExt.str();
+  std::string sharedObjName = moduleName.str() + "-%%%%%%%" + libOutExt.str();
+
+  std::error_code ec;
+  std::filesystem::path sharedObjPath =
+      std::filesystem::temp_directory_path(ec);
+  sharedObjPath = sharedObjPath / sharedObjName;
+
+  // Write .o to a file.
+  auto objFileOr = writeTempFile(objName, (*bufOr)->getBuffer());
+
+  if (objFileOr.isError())
+    return Error("failed to write object binary into a file");
+
+  std::string objFilePath = objFileOr->getPath().string();
+
+  // Call lld to generate a dynamic library.
+  // For ELF:
+  //  ld.lld -shared tmp.o -o tmp.so
+  SmallVector<const char *> lldArgs = {
+      "ld.lld", "-shared", objFilePath.c_str(), "-o", sharedObjPath.c_str(),
+  };
+  llvm::cl::ResetCommandLineParser();
+  std::string linkErrs;
+  llvm::raw_string_ostream errStream(linkErrs);
+  lld::Result r = lld::lldMain(lldArgs, llvm::nulls(), errStream,
+                               {{lld::Gnu, lld::elf::link}});
+  if (r.retCode != 0 || !r.canRunAgain)
+    return Error(Twine("failed to generate shared object binary: ") +
+                 linkErrs.c_str());
+
+  // Read linked dynamic library in to memory.
+  ErrorOr<BufferRef> sharedObjBufOr =
+      M::Buffer::getFile(sharedObjPath, std::nullopt, 0);
+  if (sharedObjBufOr.isError())
+    return Error("failed to open shared object binary");
+
+  // Save to temp file if needed.
+  if (failed(writeBufToTemp(options.saveTempsPrefix,
+                            std::string(".") + sharedObjPath.stem().c_str() +
+                                ".so",
+                            **sharedObjBufOr)))
+    return Error("failed to write shared object binary to saveTemps");
+
+  // Send dynamic library to output stream.
+  os << sharedObjBufOr->getPointer()->getBuffer();
+
   return success();
 }
