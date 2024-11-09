@@ -343,7 +343,8 @@ static std::string canonicalizeFileCompilationDir(StringRef stripFilePrefix) {
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     : diags(sourceMgr, config.context, config.useMLIRDiagnostics,
             config.maxNotesPerDiagnostic,
-            canonicalizeFileCompilationDir(config.stripFilePrefix)),
+            canonicalizeFileCompilationDir(config.stripFilePrefix),
+            /*extraContext*/ this),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
       parserListener(config.parserListener),
