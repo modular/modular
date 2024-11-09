@@ -235,7 +235,7 @@ ParamBindings::verifyBindingsImpl(
 
   // Use an expr emitter to perform implicit conversions within a parameter
   // context.
-  ExprEmitter emitter(shared, declScope, EC_ParameterList);
+  ExprEmitter emitter(declScope, EC_ParameterList);
 
   size_t posBindingIdx = 0;
   size_t numBindings = operands.size();

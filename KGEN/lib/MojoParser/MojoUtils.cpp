@@ -134,8 +134,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
         return false;
 
       std::optional<InflightDiag> diag;
-      if (fromDecl->doesNominalTypeConformsTo(toAnyTrait.getTraitType(), diag,
-                                              shared))
+      if (fromDecl->doesNominalTypeConformsTo(toAnyTrait.getTraitType(), diag))
         return true;
       if (diag)
         diag->abandon();

@@ -45,7 +45,7 @@ static ParseResult parseType(ParserBase &p, ASTType &result, ASTDecl &declScope,
   if (p.parseExpression(expr, stmtIndent))
     return failure();
 
-  ExprEmitter emitter(p.shared, declScope, EC_Type);
+  ExprEmitter emitter(declScope, EC_Type);
   result = emitter.emitExprType(expr);
   if (!result)
     return failure();
@@ -89,8 +89,9 @@ public:
   /// Create a class to handle decorators for a decl. If `signatureOnly` is set,
   /// the class will reject any decorator not processed during signature
   /// resolution.
-  Decorators(ASTDecl &decl, SharedState &shared, bool signatureOnly = false)
-      : SharedStateUser(shared), decl(decl), signatureOnly(signatureOnly) {}
+  Decorators(ASTDecl &decl, bool signatureOnly = false)
+      : SharedStateUser(decl.getShared()), decl(decl),
+        signatureOnly(signatureOnly) {}
 
   /// Handle the `@deprecated` decorator for all decls.
   LogicalResult handleDeprecated(ExprNode *expr);
@@ -197,7 +198,7 @@ void Decorators::applySignatureDecorators(
   }
 
   // Defer the rest of the decorators through the shared state.
-  decl.setBodyDecorators(bodyDecorators, shared);
+  decl.setBodyDecorators(bodyDecorators);
 }
 
 LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
@@ -264,7 +265,7 @@ void Decorators::applyBodyDecorators(
   if (decl.isErroneous())
     return;
 
-  ArrayRef<ExprNode *> decoratorExprs = decl.getBodyDecorators(shared);
+  ArrayRef<ExprNode *> decoratorExprs = decl.getBodyDecorators();
   while (true) {
     // If there are no decorators left, just exit.
     if (decoratorExprs.empty())
@@ -279,7 +280,7 @@ void Decorators::applyBodyDecorators(
   // TODO: Emit an attempt to call the decorator value.
   SmallVector<TypedAttr> decoPValues;
   decoPValues.reserve(decoratorExprs.size());
-  ExprEmitter emitter(shared, decl, EC_Decorator);
+  ExprEmitter emitter(decl, EC_Decorator);
   for (auto [i, decorator] : llvm::enumerate(decoratorExprs)) {
     // Make sure we don't have another body decorator.
     if (failed(process(decorator))) {
@@ -316,9 +317,10 @@ static constexpr const StringLiteral kMainSymbolName = "main";
 
 /// Apply `@export` to an exportable declaration and register it with the shared
 /// state to ensure no duplicate exports.
-static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
-                        StringRef unmangledName, StringRef aliasName,
-                        ExportInterface itf, bool isCExport = false) {
+static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
+                        StringRef aliasName, ExportInterface itf,
+                        bool isCExport = false) {
+  auto &shared = decl.getShared();
   // Handle the unique case of main. We implicitly export main, so this is
   // simply checking that the user didn't try to export it as something else.
   if (aliasName == kMainSymbolName) {
@@ -345,9 +347,9 @@ static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
 
 /// Apply `@export("linkageName")` to an exportable declaration and register it
 /// with the shared state to ensure no duplicate exports.
-static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
-                        StringRef unmangledName, const CallNode &node,
-                        ExportInterface itf) {
+static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
+                        const CallNode &node, ExportInterface itf) {
+  auto &shared = decl.getShared();
   ArrayRef<Operand> operands = node.operands;
   if (operands.empty() || operands.size() > 2) {
     shared.emitError(node.getLoc(), "@export requires 1 or 2 arguments");
@@ -379,7 +381,7 @@ static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
     shared.emitError(loc, *aliasName) << " is not a valid C identifier";
     return;
   }
-  applyExport(loc, shared, decl, unmangledName,
+  applyExport(loc, decl, unmangledName,
               aliasName ? StringRef(*aliasName) : unmangledName, itf,
               exportABI.has_value());
 }
@@ -414,8 +416,7 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
   // Process all the decorators we know about.
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "export")
-      applyExport(decorator->getLoc(), shared, decl, baseName, baseName,
-                  funcOp);
+      applyExport(decorator->getLoc(), decl, baseName, baseName, funcOp);
     else if (declRef->spelling == "staticmethod")
       applyStaticMethod(*declRef);
     else if (declRef->spelling == "always_inline")
@@ -442,8 +443,7 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
           callNode->operands[0].isPositionalStringLiteral("nodebug"))
         funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
       else if (declRef->spelling == "export")
-        applyExport(decorator->getLoc(), shared, decl, baseName, *callNode,
-                    funcOp);
+        applyExport(decorator->getLoc(), decl, baseName, *callNode, funcOp);
       else if (declRef->spelling == "__move_capture")
         applyCopyOrMoveCapture(*callNode, /*isMove=*/true, declRef->spelling);
       else if (declRef->spelling == "__copy_capture")
@@ -507,7 +507,7 @@ void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
       return;
     }
 
-    ExprEmitter emitter(shared, *decl.getParentDecl(), OpBuilder(funcOp));
+    ExprEmitter emitter(*decl.getParentDecl(), OpBuilder(funcOp));
     RValue captureRVal;
     if (!isMove) {
       // For a copy capture, just emit the value reference as an RValue, which
@@ -566,7 +566,7 @@ void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
 
 void FnDecorators::applyLLVMMetadata(const CallNode &node) {
   NamedAttrList attrs;
-  ExprEmitter emitter(shared, sigDecl, EC_Decorator);
+  ExprEmitter emitter(sigDecl, EC_Decorator);
   for (Operand value : node.operands) {
     if (!value.name) {
       emitError(value.getLoc(), "LLVM metadata requires a name");
@@ -581,7 +581,7 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
 void FnDecorators::applyOp(const CallNode *node) {
   SmallVector<Attribute> patterns;
   if (node) {
-    ExprEmitter emitter(shared, sigDecl, EC_Decorator);
+    ExprEmitter emitter(sigDecl, EC_Decorator);
     for (const Operand &arg : node->operands)
       if (PValue pattern = emitter.emitExprPValue(arg.expr, EC_Decorator))
         patterns.push_back(pattern.get());
@@ -664,7 +664,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
     argTypes.push_back(type);
   }
 
-  ExprEmitter emitter(shared, decl, EC_Type);
+  ExprEmitter emitter(decl, EC_Type);
   auto generateConformancesImpl = [&](ASTType type, Location loc) {
     SyntheticNode node(shared.diags.convertLocToSMLoc(loc));
     ASTType metatype = type.getMetaType();
@@ -795,7 +795,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
 
   builder.restoreInsertionPoint(insertPoint);
 
-  ExprEmitter exprEmitter(shared, *nestedFnDecl.getParentDecl(), builder);
+  ExprEmitter exprEmitter(*nestedFnDecl.getParentDecl(), builder);
   SyntheticNode node(loc);
 
   // Pass all the captured values into the initializer.  In the case of a move
@@ -876,7 +876,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // values.
   if (parsedParamList.parseOptionalParameters(p, ArgListKind::kParamList))
     return failure();
-  TypeCheckedParamList paramList(parsedParamList.params, sigDecl, shared);
+  TypeCheckedParamList paramList(parsedParamList.params, sigDecl);
 
   // Parse the function signature next.
   ParsedArgumentList fnSignature;
@@ -928,10 +928,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
   FnDecorators fnDecorators(decl, sigDecl, shared, baseName, tcSignature);
-  Decorators(decl, shared)
-      .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
-        return fnDecorators.apply(decorator);
-      });
+  Decorators(decl).applySignatureDecorators(
+      decoratorExprs,
+      [&](ExprNode *decorator) { return fnDecorators.apply(decorator); });
 
   // Propagate errors and the parsed decls in the signature.
   decl.takeDecls(sigDecl);
@@ -1161,7 +1160,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Set up information about value arguments.
   Block *bodyBlock = funcOp.getBody();
-  ExprEmitter emitter(shared, decl, OpBuilder::atBlockEnd(bodyBlock));
+  ExprEmitter emitter(decl, OpBuilder::atBlockEnd(bodyBlock));
 
   LITSignatureType funcSignature = funcOp.getSignature();
 
@@ -1298,7 +1297,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // Now that the body of the function is parsed, run any body decorators.
-  Decorators(decl, shared).applyBodyDecorators([&](ExprNode *decorator) {
+  Decorators(decl).applyBodyDecorators([&](ExprNode *decorator) {
     processExtensibilityDecorator(shared, decl, decorator);
     return failure();
   });
@@ -1440,7 +1439,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
 
   // Parse the type if present.
   ASTType parsedType;
-  ExprEmitter emitter(shared, *decl.getParentDecl(), EC_VarInit);
+  ExprEmitter emitter(*decl.getParentDecl(), EC_VarInit);
   if (p.consumeIf(Token::colon)) {
     ExprNode *typeExpr = nullptr;
     if (p.parseExpression(typeExpr, decl.getIndentation()))
@@ -1505,7 +1504,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  Decorators(decl, shared, /*signatureOnly=*/true)
+  Decorators(decl, /*signatureOnly=*/true)
       .applySignatureDecorators(decoratorExprs);
 
   // Parse the type if present.
@@ -1536,7 +1535,7 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
       // Don't return; continue parsing as if it has no name, so that references
       // to the name will resolve.
     } else {
-      ExprEmitter emitter(shared, parentDecl, EC_AliasValue);
+      ExprEmitter emitter(parentDecl, EC_AliasValue);
 
       // Emit the value and convert to the expected type if we know it.
       auto rhsValue = emitter.emitExprPValue(initExpr, EC_AliasValue, type);
@@ -1702,7 +1701,7 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
           callNode->operands.size() == 1) {
         if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].expr)) {
           ASTDecl *parentDecl = structDecl.getParentDecl();
-          ExprEmitter emitter(shared, *parentDecl, EC_Type);
+          ExprEmitter emitter(*parentDecl, EC_Type);
           if (ASTType t = emitter.emitExprType(drn)) {
             structOp.setNonmaterializableTargetAttr(TypeAttr::get(t.mlirType));
             return success();
@@ -1757,7 +1756,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
       decl.isErroneous())
     return failure();
 
-  TypeCheckedParamList paramSignature(parsedParams.params, sigDecl, shared);
+  TypeCheckedParamList paramSignature(parsedParams.params, sigDecl);
 
   // Propagate signature errors and decls.
   decl.takeDecls(sigDecl);
@@ -1786,8 +1785,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setConvention(TypeConvention::MemoryOnly);
 
   // Now that we have the basic struct set up, process signature decorators.
-  Decorators(decl, shared)
-      .applySignatureDecorators(decoratorExprs, [&](ExprNode *decorator) {
+  Decorators(decl).applySignatureDecorators(
+      decoratorExprs, [&](ExprNode *decorator) {
         return processStructSignatureDecorator(decorator, structOp, shared,
                                                decl);
       });
@@ -1831,10 +1830,9 @@ static SymbolConstantAttr lookupDestructor(ASTDecl &structDecl,
 /// one implementation (not overloaded).  This returns the method if successful,
 /// and returns null if there is none.
 static SymbolConstantAttr lookupSpecialMethod(ASTDecl &structDecl,
-                                              SharedState &shared,
                                               SpecialFunctionKind specialKind) {
   const char *name = SpecialFunctionInfo::get(specialKind).name;
-  LookupResult inits = shared.lookupAndResolveDecl(
+  LookupResult inits = structDecl.getShared().lookupAndResolveDecl(
       name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
 
   for (ASTDecl *candidate : inits.getIfSuccess()) {
@@ -1879,16 +1877,15 @@ private:
 /// decorated structs early to ensure their movability and copyability
 /// requirements are satisfied.
 static std::pair<LIT::FuncOp, LIT::FuncOp>
-preprocessValueDecorator(SharedState &shared, ASTDecl &structDecl) {
+preprocessValueDecorator(ASTDecl &structDecl) {
   auto declOp = cast<StructDeclOp>(structDecl);
-  for (ExprNode *decorator : structDecl.getBodyDecorators(shared)) {
+  for (ExprNode *decorator : structDecl.getBodyDecorators()) {
     if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
       if (declRef->spelling == "value") {
-        std::optional<ValueInfo> info =
-            ValueInfo::createValueInfo(structDecl, shared);
+        std::optional<ValueInfo> info = ValueInfo::createValueInfo(structDecl);
         if (!info)
           break;
-        StructEmitter emitter(shared);
+        StructEmitter emitter(structDecl.getShared());
         LIT::FuncOp moveFunc, copyFunc;
         if (!declOp.isRegisterPassable() && !info->hasMove()) {
           moveFunc = emitter.synthesizeEmptyMoveInit(structDecl);
@@ -1979,7 +1976,7 @@ SymbolConstantAttr StructBodyDecorators::getSymbolForMethod(
 
   // Emit the constant symbol.
   auto methodsUValue = OverloadSetUValue::create(std::move(methods));
-  ExprEmitter emitter(shared, structDecl, {});
+  ExprEmitter emitter(structDecl, {});
   PValue value =
       emitter.emitPValue({methodsUValue, decorator}, ExprContext::EC_Decorator);
   if (!value)
@@ -2049,13 +2046,12 @@ static void processRegisterPassableDecorator(
 // Trait Conformance Checking
 
 /// Check conformance for struct that implements traits.
-static LogicalResult verifyExplicitConformances(ASTDecl &structDecl,
-                                                SharedState &shared) {
+static LogicalResult verifyExplicitConformances(ASTDecl &structDecl) {
   bool hadErrors = false;
   auto structDeclOp = cast<StructDeclOp>(structDecl);
   for (TypeLineageAttr parent : structDeclOp.getParentTypes()) {
     std::optional<InflightDiag> diag;
-    hadErrors |= failed(verifyConformance(structDecl, parent, shared, diag));
+    hadErrors |= failed(verifyConformance(structDecl, parent, diag));
   }
 
   return success(!hadErrors);
@@ -2089,11 +2085,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   // Look up move and copy constructors and record them.
   if (!structOp.isRegisterPassable()) {
-    if (auto copyInitAttr = lookupSpecialMethod(structDecl, shared,
-                                                SpecialFunctionKind::kCopyInit))
+    if (auto copyInitAttr =
+            lookupSpecialMethod(structDecl, SpecialFunctionKind::kCopyInit))
       structOp.setCopyInitAttr(copyInitAttr);
-    if (auto moveInitAttr = lookupSpecialMethod(structDecl, shared,
-                                                SpecialFunctionKind::kMoveInit))
+    if (auto moveInitAttr =
+            lookupSpecialMethod(structDecl, SpecialFunctionKind::kMoveInit))
       structOp.setMoveInitAttr(moveInitAttr);
   }
 
@@ -2101,7 +2097,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // and move constructors before the field types are signature resolved to
   // ensure that the Copyable and Movable trait requirements are satisfied.
   // FIXME: The order of decorator resolution here is a bit gross.
-  auto [moveFunc, copyFunc] = preprocessValueDecorator(shared, structDecl);
+  auto [moveFunc, copyFunc] = preprocessValueDecorator(structDecl);
 
   // This collects all the resolved struct fields. Now that the body is
   // completely resolved, check the declared fields for extra invariants.
@@ -2130,7 +2126,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   // If any of the fields are bad, we do not process decorators since they
   // assume that the struct body if valid.
-  if (hasBadField && !structDecl.getBodyDecorators(shared).empty()) {
+  if (hasBadField && !structDecl.getBodyDecorators().empty()) {
     structDecl.setErroneous();
     return failure();
   }
@@ -2138,7 +2134,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // If there are any body decorators, resolve them now.
   StructBodyDecorators structDecorators(structOp, structDecl, *this,
                                         structFields);
-  Decorators(structDecl, shared)
+  Decorators(structDecl)
       .applyBodyDecorators(
           [&, moveFunc = moveFunc, copyFunc = copyFunc](ExprNode *decorator) {
             return structDecorators.processDecorator(decorator, structOp,
@@ -2149,7 +2145,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     return success();
 
   // Finally, verify conformance of inherited traits.
-  return verifyExplicitConformances(structDecl, shared);
+  return verifyExplicitConformances(structDecl);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2200,9 +2196,9 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  Decorators(decl, shared, /*signatureOnly=*/true)
+  Decorators(decl, /*signatureOnly=*/true)
       .applySignatureDecorators(decoratorExprs);
-  if (ArrayRef<ExprNode *> bodyDecorators = decl.getBodyDecorators(shared);
+  if (ArrayRef<ExprNode *> bodyDecorators = decl.getBodyDecorators();
       !bodyDecorators.empty()) {
     emitError(bodyDecorators.front()->getLoc(),
               "body decorators not supported on this statement")

@@ -114,7 +114,7 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
                                           LexerCursor endCursor,
                                           ssize_t indentation) {
   ASTDecl *decl = shared.allocPersistent<ASTDecl>(
-      irValue, loc, parentDecl, cursor, endCursor, indentation);
+      shared, irValue, loc, parentDecl, cursor, endCursor, indentation);
   parsedDeclList.push_back(decl);
 
   // If this is a declaration which has a TypeCheckErrorType, then all
@@ -582,7 +582,7 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
     // When validating doc strings, we wish to only validate those defined on
     // decl in the main container. As this point the main container decl has
     // been fully resolved, so it's an opportune time to validate.
-    validateDocString(shared, *declIt);
+    validateDocString(*declIt);
 
     // If this is a package, resolve all of the modules within it as a pre-step.
     // Normally these get lazily resolved, but if we're forcing pulling them in,

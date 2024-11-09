@@ -449,6 +449,18 @@ bool ValueDest::isNonDefaultAddressSpace() const {
 // ExprEmitter
 //===----------------------------------------------------------------------===//
 
+/// Create an ExprEmitter for a dynamic context with a builder.
+ExprEmitter::ExprEmitter(ASTDecl &declScope, OpBuilder builder,
+                         std::optional<OpBuilder> varDeclCursor)
+    : SharedStateUser(declScope.getShared()), builder(builder),
+      paramContext(EC_InvalidContext), declScope(declScope),
+      varDeclCursor(varDeclCursor) {}
+
+/// Create an ExprEmitter for a parameter context.
+ExprEmitter::ExprEmitter(ASTDecl &declScope, ExprContext paramContext)
+    : SharedStateUser(declScope.getShared()), builder({}),
+      paramContext(paramContext), declScope(declScope) {}
+
 /// Emit an error about use of a dynamic value (the expression) in a context
 /// that only allows parameter expressions.  This always returns a null
 /// PValue.
@@ -1097,7 +1109,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     return {}; // erroneous
 
   std::optional<InflightDiag> checkDiag;
-  if (!metaTypeDecl->doesNominalTypeConformsTo(trait, checkDiag, shared)) {
+  if (!metaTypeDecl->doesNominalTypeConformsTo(trait, checkDiag)) {
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                         << ASTType(typeValue) << " to trait " << ASTType(trait)
                         << value.expr->getRange();
@@ -1332,7 +1344,7 @@ bool ExprEmitter::canImplicitlyConvertToType(
     std::optional<InflightDiag> diag;
     // Struct types and Trait types can conform to traits.
     if (isa<AnyStructType, TraitType>(rvType) &&
-        rvType.getDecl(shared)->doesNominalTypeConformsTo(trait, diag, shared))
+        rvType.getDecl(shared)->doesNominalTypeConformsTo(trait, diag))
       return cacheAndReturnVal(true);
     if (diag)
       diag->abandon();
@@ -1871,7 +1883,7 @@ void ExprEmitter::emitExpressionWithOutEvaluatingIt(
   // block, which keeps any code we're emitting contained.
   Region &r = opToInsertInto->getRegion(0);
   Block &tmpBlock = r.emplaceBlock();
-  ExprEmitter tmpEmitter(shared, declScope, OpBuilder::atBlockBegin(&tmpBlock));
+  ExprEmitter tmpEmitter(declScope, OpBuilder::atBlockBegin(&tmpBlock));
 
   // Go further and add a 'try' op to it, ensuring that throwing functions are
   // allowed in this expression.

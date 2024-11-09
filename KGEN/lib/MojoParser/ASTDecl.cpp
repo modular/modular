@@ -16,10 +16,12 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-ASTDecl::ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
-                 LexerCursor cursor, LexerCursor endCursor, ssize_t indentation)
-    : irValue(irValue), loc(loc), parentDecl(parentDecl), cursor(cursor),
-      endCursorState(endCursor.getState()), indentation(indentation) {
+ASTDecl::ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
+                 ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+                 ssize_t indentation)
+    : shared(shared), irValue(irValue), loc(loc), parentDecl(parentDecl),
+      cursor(cursor), endCursorState(endCursor.getState()),
+      indentation(indentation) {
   resolvedness = DeclResolvedness::unparsed;
   referencedFromBytecode = false;
   hasReferenceError = false;
@@ -149,18 +151,6 @@ void ASTDecl::dump() const {
   } else {
     llvm::errs() << "<null decl>\n";
   }
-}
-
-MLIRContext *ASTDecl::getContext() const {
-  if (auto *op = getIfOperation())
-    return op->getContext();
-
-  auto cv = getIfIRValue();
-  if (auto mv = cv.getIfPValue())
-    return mv.get().getContext();
-  if (Value v = cv.getMlirValue())
-    return v.getContext();
-  llvm_unreachable("unknown IRValue");
 }
 
 std::optional<StringRef> ASTDecl::getNameIfOperation() const {

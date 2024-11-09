@@ -40,7 +40,9 @@ using DeclIRValue = SmartVariant<Operation *, CValue>;
 /// notices a declaration but does not parse its body until it is demanded.
 class ASTDecl {
 public:
-  MLIRContext *getContext() const;
+  /// ASTDecl's always have a notion of where they came from.
+  SharedState &getShared() const { return shared; }
+  MLIRContext *getContext() const { return shared.getContext(); }
 
   CValue getIfIRValue() const { return dyn_cast<CValue>(irValue); }
 
@@ -130,8 +132,7 @@ public:
   /// inflight diagnostic that explains why this doesn't conform.  It can be
   /// reported or abandoned based on the client's needs.
   bool doesNominalTypeConformsTo(TraitType trait,
-                                 std::optional<InflightDiag> &diag,
-                                 SharedState &shared);
+                                 std::optional<InflightDiag> &diag);
 
   //===--------------------------------------------------------------------===//
   // Name lookup
@@ -174,11 +175,11 @@ public:
 
   /// Return any decorators that need to be processed as part of body resolution
   /// phase for a decl.
-  ArrayRef<ExprNode *> getBodyDecorators(SharedState &state) const;
+  ArrayRef<ExprNode *> getBodyDecorators() const;
 
   /// During signature resolution, this is called with any decorators that need
   /// to persist until body resolution.
-  void setBodyDecorators(ArrayRef<ExprNode *> decorators, SharedState &state);
+  void setBodyDecorators(ArrayRef<ExprNode *> decorators);
 
   /// Check if the given name collides with an existing user declared parameter
   /// name in the scope, and if so, uniquely mangle it by postpending a backtick
@@ -205,12 +206,16 @@ public:
 private:
   friend class DeclResolver;
   friend class SharedState;
-  ASTDecl(DeclIRValue irValue, llvm::SMLoc loc, ASTDecl *parentDecl,
-          LexerCursor cursor, LexerCursor endCursor, ssize_t indentation);
+  ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
+          ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
+          ssize_t indentation);
   ASTDecl(const ASTDecl &) = delete;
   ASTDecl &operator=(const ASTDecl &) = delete;
 
 private:
+  /// The Mojo shared state this decl is associated with.
+  SharedState &shared;
+
   /// This is the IRValue or MLIR operation that this decl corresponds to if it
   /// has one.
   DeclIRValue irValue;

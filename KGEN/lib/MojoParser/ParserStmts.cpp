@@ -154,8 +154,8 @@ ParserBase::parseDecorators(ssize_t indentation) {
 /// grammar.
 namespace {
 struct StmtParser : public ParserBase {
-  StmtParser(SharedState &shared, Lexer &lexer, ASTDecl &curDeclScope)
-      : ParserBase(shared, lexer), parentDecl(curDeclScope),
+  StmtParser(Lexer &lexer, ASTDecl &curDeclScope)
+      : ParserBase(curDeclScope.getShared(), lexer), parentDecl(curDeclScope),
         curDeclScope(&curDeclScope), builder(curDeclScope.getDeclEndBuilder()) {
 
     // If we are parsing into a function, then we need a position to synthesize
@@ -198,12 +198,12 @@ struct StmtParser : public ParserBase {
   // Expression emission.
 
   ExprEmitter getEmitter() {
-    return ExprEmitter(shared, *curDeclScope, builder, varDeclCursor);
+    return ExprEmitter(*curDeclScope, builder, varDeclCursor);
   }
 
   /// Get an expression emitter for a parameter expression.
   ExprEmitter getParamEmitter(ExprContext context) {
-    return ExprEmitter(shared, *curDeclScope, context);
+    return ExprEmitter(*curDeclScope, context);
   }
 
   ParseResult parseSuite(ssize_t curIndent);
@@ -2693,7 +2693,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
 
   if (parseToken(Token::colon, "expected ':' after region argument list"))
     return failure();
-  StmtParser parser(shared, lexer, decl);
+  StmtParser parser(lexer, decl);
   return parser.parseLocalScopeSuite(curIndent);
 }
 
@@ -2704,7 +2704,7 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
 /// Parse a 'suite' production into the declaration specified by `ASTDecl`.
 /// This is the main entrypoint to this file.
 ParseResult ParserBase::parseSuite(ASTDecl &containingDecl) {
-  StmtParser parser(shared, lexer, containingDecl);
+  StmtParser parser(lexer, containingDecl);
 
   // Parse the docstring if present.
   parser.parseDocString(containingDecl);

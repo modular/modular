@@ -264,7 +264,7 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
     return makeNoneReturn();
 
   ASTType resultType = func.getUserResultType();
-  ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
+  ExprEmitter emitter(funcDecl, EC_ReturnValue);
   emitter.builder = b;
   if (resultType.isNoneType()) {
     if (!sig.hasMemoryOnlyResult())
@@ -310,7 +310,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   builder.setLoc(funcOp->getLoc());
   ASTDecl *funcDecl = shared.declResolver->getDeclForFuncSymbol(
       getFullyResolvedSymbolRef(funcOp));
-  ExprEmitter emitter(shared, *funcDecl, builder);
+  ExprEmitter emitter(*funcDecl, builder);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
@@ -370,7 +370,7 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
     diScopeGuard = shared.diBuilder->pushScopeGuard(func.getLocScope());
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
       shared.translateLocation(location), func.getBody());
-  ExprEmitter emitter(shared, *declScope, b);
+  ExprEmitter emitter(*declScope, b);
 
   assert(func.getNumArguments() == 2 &&
          "copy functions should have two arguments");
@@ -513,8 +513,8 @@ LIT::FuncOp StructEmitter::synthesizeEmptyCopyInit(ASTDecl &structDecl) {
   return synthesizeEmptyMoveOrCopyInit(*this, structDecl, /*isMove=*/false);
 }
 
-std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl,
-                                                    SharedState &shared) {
+std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
+  auto &shared = structDecl.getShared();
   std::bitset<4> existingFunctions;
   existingFunctions.reset();
   auto structOp = cast<StructDeclOp>(structDecl);
@@ -602,8 +602,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     ASTDecl &structDecl, bool generateFieldwiseInit,
     bool forceGenerateDestructor) {
   auto declOp = cast<StructDeclOp>(structDecl);
-  std::optional<ValueInfo> valueInfo =
-      ValueInfo::createValueInfo(structDecl, shared);
+  std::optional<ValueInfo> valueInfo = ValueInfo::createValueInfo(structDecl);
   if (!valueInfo)
     return {};
 

@@ -30,7 +30,7 @@ using namespace LIT;
 namespace {
 class BindingGenerator : public SharedStateUser {
 public:
-  BindingGenerator(SharedState &shared, ASTDecl &moduleDecl);
+  BindingGenerator(ASTDecl &moduleDecl);
 
   LogicalResult genPyInitImplFunc();
   void finalizePyInit();
@@ -93,9 +93,10 @@ static StringAttr getTypeName(MLIRContext *ctx, const ASTType &type) {
 }
 
 /// Instantiates TypedPythonObject["Tuple"]
-static ASTType makeTupleTypedPythonObj(SharedState &shared, ASTDecl &moduleDecl,
+static ASTType makeTupleTypedPythonObj(ASTDecl &moduleDecl,
                                        ASTDecl &pythonModule, SMLoc moduleLoc,
                                        ::mlir::MLIRContext *context) {
+  auto &shared = moduleDecl.getShared();
   auto typedPyObjType =
       shared.lookupNamedType("TypedPythonObject", pythonModule, moduleLoc);
   if (typedPyObjType.isTypeCheckErrorType())
@@ -128,8 +129,8 @@ static ASTType makeTupleTypedPythonObj(SharedState &shared, ASTDecl &moduleDecl,
   return ASTType(BindTypeAttr::get(PValue(typedPyObjType), bindingsAttr));
 }
 
-BindingGenerator::BindingGenerator(SharedState &shared, ASTDecl &moduleDecl)
-    : SharedStateUser(shared), ctx(getContext()),
+BindingGenerator::BindingGenerator(ASTDecl &moduleDecl)
+    : SharedStateUser(moduleDecl.getShared()), ctx(getContext()),
       moduleLoc(moduleDecl.getLoc()), moduleDecl(moduleDecl),
       moduleOp(cast<FileModuleOp>(moduleDecl)),
       pyBindDecl(&shared.importModule("builtin._pybind",
@@ -139,8 +140,8 @@ BindingGenerator::BindingGenerator(SharedState &shared, ASTDecl &moduleDecl)
                                        /*currentPackage=*/nullptr, moduleLoc)),
       pyObjType(
           shared.lookupNamedType("PythonObject", pythonModule, moduleLoc)),
-      tupleTypedPyObjType(makeTupleTypedPythonObj(
-          shared, moduleDecl, pythonModule, moduleLoc, ctx)) {}
+      tupleTypedPyObjType(
+          makeTupleTypedPythonObj(moduleDecl, pythonModule, moduleLoc, ctx)) {}
 
 LogicalResult BindingGenerator::genPyInitImplFunc() {
   ImplicitLocOpBuilder b(moduleOp.getLoc(), moduleDecl.getDeclEndBuilder());
@@ -164,8 +165,7 @@ LogicalResult BindingGenerator::genPyInitImplFunc() {
       /*resultType=*/pyObjType, FnEffects().setThrows());
 
   // Generate the module object.
-  ExprEmitter emitter(shared, *pyInitDecl,
-                      OpBuilder::atBlockEnd(pyInitFunc.getBody()));
+  ExprEmitter emitter(*pyInitDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   SyntheticNode node(loc);
   OverloadSet createModuleOv =
       lookupPyBindFunction("create_pybind_module", *pyInitDecl, node);
@@ -228,7 +228,7 @@ LogicalResult BindingGenerator::genPyInitHook() {
             b.getStringAttr("PyInit_" + moduleOp.getSymName()));
   pyInitHook->setAttrs(attrs.getDictionary(ctx));
 
-  ExprEmitter emitter(shared, *pyInitHookDecl,
+  ExprEmitter emitter(*pyInitHookDecl,
                       OpBuilder::atBlockBegin(pyInitHook.getBody()));
   VarDeclOp moduleDecl = emitter.emitVarDecl(
       "module", UnresolvedType::get(ctx), b.getLoc(), VarDeclKind::Synthesized);
@@ -417,7 +417,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
 
   AnyValue pyArgsTuple = MBValue(wrapperFunc.getArgument(1));
 
-  ExprEmitter emitter(shared, *wrapperDecl, builder);
+  ExprEmitter emitter(*wrapperDecl, builder);
 
   SyntheticNode synth(funcDecl.getLoc());
 
@@ -556,7 +556,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   pyTypeOv.paramBindings.add(synth, wrapperDecl->getFuncAsPValue());
   pyTypeOv.paramBindings.add(synth, originalFuncNameStrAttr);
 
-  ExprEmitter pyInitEmitter(shared, *pyInitDecl,
+  ExprEmitter pyInitEmitter(*pyInitDecl,
                             OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   ValueDest addWrapperToModuleCallDest(EC_PyBindGen);
   pyTypeOv.emitCall(CallOperands({{pyModule, synth}}),
@@ -603,8 +603,7 @@ ErrorOrSuccess BindingGenerator::genTypeBinding(ASTType type) {
   pyTypeOv.paramBindings.add(node, PValue(type));
   pyTypeOv.paramBindings.add(node, getTypeName(ctx, type));
 
-  ExprEmitter emitter(shared, *pyInitDecl,
-                      OpBuilder::atBlockEnd(pyInitFunc.getBody()));
+  ExprEmitter emitter(*pyInitDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   ValueDest noneDest(EC_PyBindGen);
   pyTypeOv.emitCall(CallOperands({{pyModule, node}}), noneDest, emitter);
 
@@ -688,14 +687,13 @@ BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
       SpecialFunctionKind::kNormal, parent.getLoc(), b, effects);
 }
 
-LogicalResult LIT::generatePythonBindings(SharedState &shared,
-                                          ASTDecl &moduleDecl) {
+LogicalResult LIT::generatePythonBindings(ASTDecl &moduleDecl) {
   // Don't generate debuginfo.
   DebugInfo::DIBuilder::ScopeGuard scopeGuard;
-  if (shared.diBuilder)
-    scopeGuard = shared.diBuilder->pushScopeGuard(/*scope=*/nullptr);
+  if (auto &dibuilder = moduleDecl.getShared().diBuilder)
+    scopeGuard = dibuilder->pushScopeGuard(/*scope=*/nullptr);
 
-  BindingGenerator gen(shared, moduleDecl);
+  BindingGenerator gen(moduleDecl);
 
   ArrayRef<std::pair<StringAttr, TinyPtrVector<ASTDecl *>>> userFuncs =
       moduleDecl.getDeclsInScope();

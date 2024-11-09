@@ -153,7 +153,7 @@ public:
   /// Type check each of the parameters from 'parsedParams' into their
   /// decomposed representation.
   TypeCheckedParamList(ArrayRef<ParsedArgument> parsedParams,
-                       ASTDecl &declScope, SharedState &shared);
+                       ASTDecl &declScope);
 
   /// Get an PogListAttr for this parameter list.
   PogListAttr getParamListAttr();

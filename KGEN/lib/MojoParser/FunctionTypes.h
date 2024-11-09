@@ -25,11 +25,6 @@ struct TypeCheckScopeInfo;
 bool canConvertFunctionTypes(LITSignatureType actual, LITSignatureType expected,
                              const TypeCheckScopeInfo &scopeInfo);
 
-/// This function generates a thunk inside `moduleDecl` to convert between two
-/// function types.
-FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
-                               SharedState &shared);
-
 /// Emit a non-trivial conversion between two function types. This generates a
 /// thunk and passes it on as the converted value.
 CValue convertFunctionValue(CValue value, const ExprNode *expr,

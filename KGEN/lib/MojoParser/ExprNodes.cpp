@@ -505,8 +505,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     OpBuilder varDeclBuilder(
         emitter.varDeclCursor->getInsertionBlock(),
         std::next(emitter.varDeclCursor->getInsertionPoint()));
-    ExprEmitter varDeclEmitter(emitter.shared, emitter.declScope,
-                               varDeclBuilder);
+    ExprEmitter varDeclEmitter(emitter.declScope, varDeclBuilder);
 
     // Add implicitly declared variable to the name table OF THE FUNCTION, so
     // subsequent uses find this one.  We don't want implicit declarations in
@@ -1370,13 +1369,13 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // thus, cannot be on the stack.
     DeclRefNode *declRef = shared.allocPersistent<DeclRefNode>(spelling);
     if (emitter.builder) {
-      ExprEmitter moduleEmitter(shared, *typeDecl, *emitter.builder,
+      ExprEmitter moduleEmitter(*typeDecl, *emitter.builder,
                                 emitter.varDeclCursor);
 
       return declRef->emitIR(dest, moduleEmitter);
     }
 
-    ExprEmitter moduleEmitter(shared, *typeDecl, emitter.paramContext);
+    ExprEmitter moduleEmitter(*typeDecl, emitter.paramContext);
     return declRef->emitIR(dest, moduleEmitter);
   }
 
@@ -3095,7 +3094,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       nullptr, StringAttr(), getLoc(), &emitter.declScope);
 
   // Type check any parameters we have.
-  TypeCheckedParamList paramList(parsedParams, dummyScope, emitter.shared);
+  TypeCheckedParamList paramList(parsedParams, dummyScope);
 
   ParsedArgumentList argList;
   argList.parsedArgs = llvm::to_vector(parsedArgs);

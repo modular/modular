@@ -51,12 +51,13 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
 }
 
 /// Allow synthesizing default implementations of certain special functions.
-static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
+static void synthesizeSpecialFunction(ASTDecl &structDecl,
                                       SpecialFunctionKind kind) {
-  StructEmitter gen(shared);
+  auto &shared = structDecl.getShared();
+  StructEmitter gen(structDecl.getShared());
   auto selfRefType =
       structDecl.getTypeDeclSelf().getRefForArgument("self", /*isMut=*/true);
-  MLIRContext *ctx = shared.getContext();
+  MLIRContext *ctx = structDecl.getContext();
   auto empty = StringAttr::get(ctx);
 
   // Synthesize the required special method. Importantly, don't mark the struct
@@ -120,18 +121,18 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
 
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
                                      TypeLineageAttr parent,
-                                     SharedState &shared,
                                      std::optional<InflightDiag> &diag) {
   auto trait = dyn_cast<TraitType>(parent.getType());
   if (!trait)
     return success();
 
+  auto &shared = structDecl.getShared();
   auto structDeclOp = cast<StructDeclOp>(structDecl);
   bool rpTrivial = structDeclOp.isRegisterPassableTrivial();
   bool regPassable = structDeclOp.isRegisterPassable();
   bool hadErrors = false;
   SyntheticNode node(structDecl.getLoc());
-  ExprEmitter emitter(shared, structDecl, EC_Trait);
+  ExprEmitter emitter(structDecl, EC_Trait);
   ASTType selfType = structDecl.getTypeDeclSelf();
 
   // These are the special methods that need to be synthesized.
@@ -310,7 +311,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   if (hadErrors)
     return failure();
   for (SpecialFunctionKind kind : specialFns)
-    synthesizeSpecialFunction(structDecl, shared, kind);
+    synthesizeSpecialFunction(structDecl, kind);
   return success();
 }
 
@@ -319,8 +320,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 /// diagnostic that explains why this doesn't conform.  It can be reported or
 /// abandoned based on the client's needs.
 bool ASTDecl::doesNominalTypeConformsTo(TraitType trait,
-                                        std::optional<InflightDiag> &diag,
-                                        SharedState &shared) {
+                                        std::optional<InflightDiag> &diag) {
   assert((::isa<StructDeclOp, TraitDeclOp>(*this)) && "Invalid decl kind");
 
   if (failed(shared.declResolver->resolveFully(*this, getLoc())))
@@ -359,7 +359,7 @@ bool ASTDecl::doesNominalTypeConformsTo(TraitType trait,
   StructEmitter::appendTraits(newParentTypes, traitDecl);
   for (TypeLineageAttr newParent :
        llvm::drop_begin(newParentTypes, curNumParents))
-    if (failed(verifyConformance(*this, newParent, shared, diag)))
+    if (failed(verifyConformance(*this, newParent, diag)))
       return false;
 
   // If we succeeded, remember this so we don't check again.

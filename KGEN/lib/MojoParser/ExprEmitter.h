@@ -254,21 +254,15 @@ private:
 class ExprEmitter : public SharedStateUser {
 public:
   /// Create an ExprEmitter for a dynamic context with a builder.
-  ExprEmitter(SharedState &shared, ASTDecl &declScope, OpBuilder builder,
-              std::optional<OpBuilder> varDeclCursor = {})
-      : SharedStateUser(shared), builder(builder),
-        paramContext(EC_InvalidContext), declScope(declScope),
-        varDeclCursor(varDeclCursor) {}
-
+  ExprEmitter(ASTDecl &declScope, OpBuilder builder,
+              std::optional<OpBuilder> varDeclCursor = {});
   /// Create an ExprEmitter for a parameter context.
-  ExprEmitter(SharedState &shared, ASTDecl &declScope, ExprContext paramContext)
-      : SharedStateUser(shared), builder({}), paramContext(paramContext),
-        declScope(declScope) {}
+  ExprEmitter(ASTDecl &declScope, ExprContext paramContext);
 
   /// Get an emitter set up for parameter expressions only with the specified
   /// context.
   ExprEmitter getParamEmitter(ExprContext context) {
-    return ExprEmitter(shared, declScope, context);
+    return ExprEmitter(declScope, context);
   }
 
   //===--------------------------------------------------------------------===//
