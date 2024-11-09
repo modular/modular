@@ -219,7 +219,7 @@ struct ManagedTensorSlice[
         _rank: Int,
     ](self, index: IndexList[_rank]) -> SIMD[type, width]:
         # Nop function to preserve symbols from DCE.
-        self._input_fusion_hook[StaticTensorSpec[type, rank]()]()
+        self._input_fusion_hook()
 
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
@@ -305,7 +305,7 @@ struct ManagedTensorSlice[
         _rank: Int,
     ](self, index: IndexList[_rank], val: SIMD[type, width]):
         # Nop function to preserve symbols from DCE.
-        self._output_fusion_hook[StaticTensorSpec[type, rank]()]()
+        self._output_fusion_hook()
 
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
@@ -354,52 +354,36 @@ struct ManagedTensorSlice[
             else:
                 return strided_store(val, self._ptr.offset(flat_index), stride)
 
-    # Helper function used in SliceMOGGDPSFunc to generate a new TensorSpec with the lambda.
+    # Helper functions used in SliceMOGGDPSFunc to ensure the lambda isn't DCE
     @no_inline
-    fn _extract_new_spec[T: StaticTensorSpec[type, rank]](self):
+    fn _extract_lambda[T: StaticTensorSpec[type, rank].in_lambda_t](self):
+        pass
+
+    @no_inline
+    fn _extract_lambda[T: StaticTensorSpec[type, rank].out_lambda_t](self):
         pass
 
     # Helper function used in SliceMOGGDPSFunc to generate the body of the input lambda
     @__mogg_intrinsic_attr("mogg.dps_input_fusion_hook")
     @no_inline
-    fn _input_fusion_hook[spec: StaticTensorSpec[type, rank]](self):
+    fn _input_fusion_hook(self):
         @always_inline
         @parameter
         fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
             return rebind[SIMD[type, _w]](self._simd_load_internal[_w](i))
 
-        self._extract_new_spec[
-            StaticTensorSpec[type, rank](
-                spec.shape,
-                spec.strides,
-                spec.alignment,
-                spec.address_space,
-                spec.exclusive,
-                _input_lambda,
-                None,
-            )
-        ]()
+        self._extract_lambda[_input_lambda]()
 
     # Helper function used in SliceMOGGDPSFunc to generate the body of the output lambda
     @__mogg_intrinsic_attr("mogg.dps_output_fusion_hook")
     @no_inline
-    fn _output_fusion_hook[spec: StaticTensorSpec[type, rank]](self):
+    fn _output_fusion_hook(self):
         @always_inline
         @parameter
         fn _output_lambda[_w: Int](i: IndexList[rank], v: SIMD[type, _w]):
             self._simd_store_internal(i, rebind[SIMD[type, _w]](v))
 
-        self._extract_new_spec[
-            StaticTensorSpec[type, rank](
-                spec.shape,
-                spec.strides,
-                spec.alignment,
-                spec.address_space,
-                spec.exclusive,
-                None,
-                _output_lambda,
-            )
-        ]()
+        self._extract_lambda[_output_lambda]()
 
 
 @parameter
