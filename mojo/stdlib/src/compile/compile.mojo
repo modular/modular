@@ -66,6 +66,7 @@ struct Info:
 alias _EMISSION_KIND_ASM = 0
 alias _EMISSION_KIND_LLVM = 1
 alias _EMISSION_KIND_LLVM_OPT = 2
+alias _EMISSION_KIND_SHARED_OBJ = 3
 
 
 fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
@@ -208,6 +209,27 @@ fn compile_info[
                 func_type,
                 func,
                 emission_kind=_EMISSION_KIND_LLVM_OPT,
+                compile_options=compile_options,
+                target=target,
+            ]()
+
+    @parameter
+    if emission_kind == "shared-obj":
+
+        @parameter
+        if is_failable:
+            return _compile_info_failable_impl[
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_SHARED_OBJ,
+                compile_options=compile_options,
+                target=target,
+            ]()
+        else:
+            return _compile_info_non_failable_impl[
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_SHARED_OBJ,
                 compile_options=compile_options,
                 target=target,
             ]()
