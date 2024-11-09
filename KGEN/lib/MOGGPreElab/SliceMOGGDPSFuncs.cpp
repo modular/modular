@@ -117,13 +117,8 @@ private:
   void enableFusion(GeneratorOp gen,
                     MutableArrayRef<std::string> inputLambdaNames,
                     MutableArrayRef<std::string> outputLambdaNames,
-                    SymbolTable &symTab, ArrayRef<unsigned> fusedOperands) {
+                    ArrayRef<unsigned> fusedOperands) {
     Block *computeBlock = gen.getBody();
-
-    ArrayAttr tensorSpecParams = dyn_cast_or_null<ArrayAttr>(
-        gen->getAttr(kKernelTensorSpecParameterAttrName));
-    if (!tensorSpecParams)
-      return;
 
     ArrayAttr argsParams =
         dyn_cast_or_null<ArrayAttr>(gen->getAttr(MOGG_TENSOR_ARG_PARAMS));
@@ -132,16 +127,6 @@ private:
 
     for (unsigned idx : fusedOperands) {
       Value tensorFusionEnabledOn = gen.getBody()->getArgument(idx);
-
-      if (idx >= tensorSpecParams.size())
-        continue;
-      auto argTensorSpecParam =
-          dyn_cast<KGEN::ParamDeclAttr>(tensorSpecParams[idx]);
-      if (!argTensorSpecParam)
-        continue;
-
-      ParamDeclRefAttr tensorSpecRef =
-          ParamDeclRefAttr::get(argTensorSpecParam);
 
       bool isInput = idx > 0;
       ASSERT_STREAM(inLambdaTemplate.templateOp && outLambdaTemplate.templateOp,
@@ -171,8 +156,6 @@ private:
       SmallVector<TypedAttr> remappedLambdaParams;
       for (auto attr : cast<ArrayAttr>(argsParams[idx]).getValue())
         remappedLambdaParams.push_back(cast<TypedAttr>(attr));
-      // The method has an extra param_spec argument.
-      remappedLambdaParams.push_back(tensorSpecRef);
       ASSERT_STREAM(remappedLambdaParams.size() ==
                         lambda->templateOp.getInputParams().size(),
                     << "parameters count mismatch");
@@ -199,48 +182,6 @@ private:
                                           /*replaceTypes=*/true);
       newLambda.setParamDeclAttr(ParamDeclAttr::get(
           newLambdaName, newLambda.getParamDecl().getType()));
-
-      // Now that we have the lambda parameter,
-      // We need to rebuild a new StaticTensorSpec.
-
-      // The parameter reference of the lambda.
-      auto refToLambda =
-          ParamDeclRefAttr::get(newLambda.getParamDecl().getName(),
-                                newLambda.getParamDecl().getType());
-
-      // Any call to the original lambda.
-      evaluator.setParameterValue(
-          lambda->canonicalLambda.getParamDecl().getName(), refToLambda);
-
-      // Clone the call in the mojo template function which tells us how to
-      // rebuild the tensor spec
-      OwningOpRef<CallOp> newSampleCall = lambda->callUsingLambda.clone();
-      walker.recursivelyReplaceElementsIn(*newSampleCall,
-                                          /*replaceAttrs=*/true,
-                                          /*replaceLocs=*/false,
-                                          /*replaceTypes=*/true);
-
-      auto newTensorSpecBinding =
-          newSampleCall->getCallee().getParamValues().back();
-      ASSERT_STREAM(tensorSpecRef.getType() == newTensorSpecBinding.getType(),
-                    << "invalid type");
-
-      // Now replace all uses of the tensor spec in the IR.
-      ParameterEvaluator fixIREvaluator;
-      fixIREvaluator.setParameterValue(tensorSpecRef.getName(),
-                                       newTensorSpecBinding);
-      mlir::AttrTypeReplacer fixIRWalker;
-      fixIRWalker.addReplacement([&](ParamDeclRefAttr attr) {
-        return fixIREvaluator.getReboundAttribute(attr);
-      });
-
-      for (Operation &op : gen.getBody()->getOperations()) {
-        if (&op != newLambda) {
-          fixIRWalker.recursivelyReplaceElementsIn(&op, /*replaceAttrs=*/true,
-                                                   /*replaceLocs=*/false,
-                                                   /*replaceTypes=*/true);
-        }
-      };
     }
   }
 
@@ -326,7 +267,7 @@ public:
       outputLambdaNames.resize(kernelOutputsCount, "");
 
       enableFusion(slicedComputeFunction, inputLambdaNames, outputLambdaNames,
-                   symTab, fusedOperands);
+                   fusedOperands);
 
       // Strip all debug info. Its too annoying to maintain and there is no
       // way to actually debug the sliced kernel directly. Users would debug
