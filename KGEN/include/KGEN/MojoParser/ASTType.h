@@ -179,7 +179,7 @@ public:
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.
   /// TODO(16040): Remove demangleParams flag when symbol names are name-erased.
-  std::string getAsString(bool forDiag = false,
+  std::string getAsString(SharedState *forDiag = nullptr,
                           bool demangleParams = false) const;
 
   /// Print to standard error with newline after it, for use in a debugger.
@@ -193,18 +193,18 @@ public:
     return ASTType(Type::getFromOpaquePointer(ptr));
   }
 
-  /// Print the ASTType. If `forDiag` is set, prettier printing is used to
+  /// Print the ASTType. If `diagShared` is set, prettier printing is used to
   /// print the type. If `demangleParams` is set, parameter names will be
   /// demangled, if necessary.
   /// TODO(16040): Remove demangleParams flag when symbol names are name-erased.
-  void print(raw_ostream &os, bool forDiag = false,
+  void print(raw_ostream &os, SharedState *diagShared = nullptr,
              bool demangleParams = false) const;
 
   /// Print the specified parameter like we would in AST type printing.
-  static void printParam(raw_ostream &os, TypedAttr param, bool forDiag,
-                         bool demangleParams);
+  static void printParam(raw_ostream &os, TypedAttr param,
+                         SharedState *diagShared, bool demangleParams);
   /// Get the specified parameter as a string.
-  static std::string getParamAsString(TypedAttr param, bool forDiag,
+  static std::string getParamAsString(TypedAttr param, SharedState *diagShared,
                                       bool demangleParams);
 
   /// Create and return a reference type with 'this' as the underlying element

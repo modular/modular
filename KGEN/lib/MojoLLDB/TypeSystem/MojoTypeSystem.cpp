@@ -566,7 +566,7 @@ MojoTypeSystem::GetDisplayTypeName(lldb::opaque_compiler_type_t type) {
   if (!astType)
     return {};
 
-  std::string name = astType.getAsString();
+  std::string name = astType.getAsString(impl->parserContext->getSharedState());
 
   auto mangledOr =
       LIT::MangledSymbol::demangle(StringAttr::get(&impl->mlirContext, name));
@@ -1172,9 +1172,9 @@ ConstString
 MojoTypeSystem::DeclContextGetScopeQualifiedName(void *opaqueDeclCtx) {
   if (!opaqueDeclCtx)
     return {};
-  return ConstString(MojoASTDeclRef(static_cast<LIT::ASTDecl *>(opaqueDeclCtx))
-                         .getType()
-                         .getAsString());
+  auto *decl = static_cast<LIT::ASTDecl *>(opaqueDeclCtx);
+  return ConstString(MojoASTDeclRef(decl).getType().getAsString(
+      impl->parserContext->getSharedState()));
 }
 
 ConstString MojoTypeSystem::DeclContextGetName(void *opaqueDeclCtx) {

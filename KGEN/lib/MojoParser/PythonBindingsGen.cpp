@@ -84,11 +84,11 @@ private:
 };
 } // namespace
 
-static StringAttr getTypeName(MLIRContext *ctx, const ASTType &type) {
+static StringAttr getTypeName(SharedState &shared, const ASTType &type) {
   // TODO: Figure out if the name needs to be globally unique.
   auto typeName = StringAttr::get(
-      type.getAsString(/*forDiag=*/true, /*demangleParam=*/true),
-      StringType::get(ctx));
+      type.getAsString(/*forDiag=*/&shared, /*demangleParam=*/true),
+      StringType::get(shared.getContext()));
   return typeName;
 }
 
@@ -472,7 +472,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
                                  std::move(bindings), &synth,
                                  CallSyntax::kDirectCall);
 
-    PValue argTypeNameStr = getTypeName(ctx, rvType);
+    PValue argTypeNameStr = getTypeName(shared, rvType);
 
     AnyValue argIndexAttr = IntegerAttr::get(IndexType::get(ctx), argIndex);
 
@@ -600,7 +600,7 @@ ErrorOrSuccess BindingGenerator::genTypeBinding(ASTType type) {
   // forbidden, the type and its parameters will be concrete.
   // FIXME(MOCO-1306): The name parameter should not be required.
   pyTypeOv.paramBindings.add(node, PValue(type));
-  pyTypeOv.paramBindings.add(node, getTypeName(ctx, type));
+  pyTypeOv.paramBindings.add(node, getTypeName(shared, type));
 
   ExprEmitter emitter(*pyInitDecl, OpBuilder::atBlockEnd(pyInitFunc.getBody()));
   ValueDest noneDest(EC_PyBindGen);

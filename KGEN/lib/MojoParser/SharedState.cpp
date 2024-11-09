@@ -1764,7 +1764,7 @@ LIT::StructDeclOp SharedState::getOrCreateClosureWrapper(SMLoc loc,
   StructDeclOp &existing = impl->closureWrappers[{sig, moduleDecl}];
   if (!existing) {
     std::string name =
-        ASTType(sig).getAsString(/*forDiag=*/true, /*demangleParams=*/true);
+        ASTType(sig).getAsString(/*diags=*/this, /*demangleParams=*/true);
     ClosureEmitter emitter(*moduleDecl, *this);
     existing = emitter.createClosureWrapperStructDecl(
         StringAttr::get(getContext(), name), sig, loc);
