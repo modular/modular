@@ -6,8 +6,10 @@
 
 import asyncio
 import logging
+import math
 import os
 import queue
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Awaitable, Callable, Mapping, Optional, Sequence
@@ -252,10 +254,15 @@ async def model_worker_run_v2(
             max_batch_size_ce = config.context_encoding.size
             max_forward_steps_ce = config.context_encoding.max_forward_steps
             target_sum_seq_len = config.context_encoding.target_sum_seq_len
+            if math.isclose(config.context_encoding.timeout, 0.0):
+                batch_timeout = None
+            else:
+                batch_timeout = config.context_encoding.timeout
         else:
             max_batch_size_ce = max_batch_size_tg
             max_forward_steps_ce = max_forward_steps_tg
             target_sum_seq_len = None
+            batch_timeout = None
         logger.info("Token generators loaded!")
 
         started.set()
@@ -274,11 +281,12 @@ async def model_worker_run_v2(
                     max_batch_size_ce, max_batch_size_tg - len(batch_continuous)
                 )
                 if len(
-                    batch_to_execute := create_batch(
+                    batch_to_execute := await create_batch(
                         request_queue,
                         max_batch_size_to_execute,
                         cache_indices,
                         target_sum_seq_len,
+                        batch_timeout,
                     )
                 ):
                     logger.debug(
@@ -347,12 +355,14 @@ def should_schedule_ce(
     return True
 
 
-def create_batch(
+async def create_batch(
     request_queue: MPQueue,
     max_batch_size: int,
     request_indices: set,
     target_sum_seq_len: Optional[int],
+    timeout_s: Optional[float],
 ) -> BatchInputs:
+    start_time = time.monotonic()
     batch: BatchInputs = {}
     sum_seq_len = 0
     while len(batch) < max_batch_size:
@@ -373,7 +383,13 @@ def create_batch(
                 ):
                     break
         except queue.Empty:
-            break
+            if timeout_s:
+                if time.monotonic() >= start_time + timeout_s:
+                    break
+                else:
+                    await asyncio.sleep(0)
+            else:
+                break
     return batch
 
 
