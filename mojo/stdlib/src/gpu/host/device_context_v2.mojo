@@ -1220,7 +1220,7 @@ struct DeviceContextV2:
 
     fn can_access(self, peer: DeviceContextV2) raises -> Bool:
         var result: Bool = False
-        # const char* AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
+        # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_canAccess",
@@ -1237,7 +1237,7 @@ struct DeviceContextV2:
         return result
 
     fn enable_peer_access(self, peer: DeviceContextV2) raises:
-        # const char * AsyncRT_DeviceContext_enablePeerAccess(const DeviceContext *ctx, const DeviceContext *peer)
+        # const char *AsyncRT_DeviceContext_enablePeerAccess(const DeviceContext *ctx, const DeviceContext *peer)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_enablePeerAccess",
@@ -1250,16 +1250,19 @@ struct DeviceContextV2:
             )
         )
 
-    fn disable_peer_access(self, peer: DeviceContextV2) raises:
-        # const char * AsyncRT_DeviceContext_disablePeerAccess(const DeviceContext *ctx, const DeviceContext *peer)
+    @staticmethod
+    fn number_of_devices(device_kind: StringLiteral) raises -> Int:
+        # const char *AsyncRT_DeviceContext_numberOfDevices(int32_t *result, const char* kind)
+        var num_devices: Int32 = 0
         _checked(
             external_call[
-                "AsyncRT_DeviceContext_disablePeerAccess",
+                "AsyncRT_DeviceContext_numberOfDevices",
                 _CharPtr,
-                _DeviceContextPtr,
-                _DeviceContextPtr,
+                _IntPtr,
+                _CharPtr,
             ](
-                self._handle,
-                peer._handle,
+                UnsafePointer.address_of(num_devices),
+                device_kind.unsafe_ptr(),
             )
         )
+        return int(num_devices)

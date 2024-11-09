@@ -607,9 +607,10 @@ struct DeviceContextVariant:
         else:
             raise Error("Peer access is not supported on DeviceContextV1")
 
-    fn disable_peer_access(self, peer: DeviceContextVariant) raises:
+    @staticmethod
+    fn number_of_devices(kind: StringLiteral) raises -> Int:
         @parameter
         if _device_ctx_v2():
-            self.v2().disable_peer_access(peer.v2())
+            return DeviceContextV2.number_of_devices(kind)
         else:
-            raise Error("Peer access is not supported on DeviceContextV1")
+            return 1
