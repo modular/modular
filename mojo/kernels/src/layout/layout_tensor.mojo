@@ -1201,6 +1201,7 @@ struct LayoutTensor[
         circular=False,
         axis=axis,
         layout_bitwidth = Self.layout_bitwidth,
+        masked = masked or _tile_is_masked[layout, *tile_sizes](),
     ] as result:
         """Returns the tiled iterator of the LayoutTensor.
 
@@ -1247,15 +1248,31 @@ struct LayoutTensor[
             alias stride = __tiled_layout[1].stride[axis].value()
             # fmt: on
 
-            return __type_of(result)(
-                self.ptr + ptr_offset,
-                bound,
-                stride=stride,
-                offset=0,
-                runtime_layout=RuntimeLayout(runtime_shape, runtime_stride),
-                dim_bound=int(self.runtime_layout.shape[axis].get_int()),
-                idx=tile_coords[axis],
-            )
+            @parameter
+            if result.masked:
+
+                @parameter
+                for i in range(result.layout.rank()):
+                    cur_dim = self.dim(i) - (tile_coords[i] * tile_sizes[i])
+                    shape_i = max(0, min(tile_sizes[i], cur_dim))
+                    runtime_shape.value[i] = shape_i
+
+                return __type_of(result)(
+                    self.ptr + ptr_offset,
+                    bound,
+                    RuntimeLayout(runtime_shape, runtime_stride),
+                    stride=stride,
+                    offset=0,
+                    dimension_bound=self.dim(axis),
+                    idx=tile_coords[axis],
+                )
+            else:
+                return __type_of(result)(
+                    self.ptr + ptr_offset,
+                    bound,
+                    stride=stride,
+                    offset=0,
+                )
 
         else:
             var runtime_shape = RuntimeTuple[
@@ -1278,13 +1295,19 @@ struct LayoutTensor[
             var iter_bound = axis_dim * axis_stride
             var iter_stride = tile_sizes[axis] * axis_stride
 
+            @parameter
+            for i in range(result.layout.rank()):
+                cur_dim = self.dim(i) - (tile_coords[i] * tile_sizes[i])
+                shape_i = max(0, min(tile_sizes[i], cur_dim))
+                runtime_shape.value[i] = shape_i
+
             return __type_of(result)(
                 self.ptr + ptr_offset,
                 iter_bound,
                 stride=iter_stride,
                 offset=0,
                 runtime_layout=RuntimeLayout(runtime_shape, runtime_stride),
-                dim_bound=self.dim(axis),
+                dimension_bound=self.dim(axis),
                 idx=tile_coords[axis],
             )
 
@@ -2920,6 +2943,7 @@ struct LayoutTensorIter[
     circular: Bool = False,
     axis: OptionalReg[Int] = None,
     layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),
+    masked: Bool = False,
 ]:
     """Iterate through a memory buffer and construct layout tensor.
 
@@ -2931,7 +2955,7 @@ struct LayoutTensorIter[
     var stride: Scalar[_get_unsigned_type(layout, address_space)]
     var bound: Scalar[_get_unsigned_type(layout, address_space)]
     var runtime_layout: RuntimeLayout[layout, bitwidth=layout_bitwidth]
-    var dim_bound: Scalar[_get_unsigned_type(layout, address_space)]
+    var dimension_bound: Scalar[_get_unsigned_type(layout, address_space)]
     var idx: Scalar[_get_unsigned_type(layout, address_space)]
 
     @always_inline
@@ -2950,7 +2974,7 @@ struct LayoutTensorIter[
         self.stride = 0
         self.bound = 0
         self.runtime_layout = RuntimeLayout[layout, bitwidth=layout_bitwidth]()
-        self.dim_bound = 0
+        self.dimension_bound = 0
         self.idx = 0
 
     @always_inline
@@ -2971,7 +2995,7 @@ struct LayoutTensorIter[
         self.stride = stride
         self.runtime_layout = RuntimeLayout[layout, bitwidth=layout_bitwidth]()
         self.offset = offset
-        self.dim_bound = 0
+        self.dimension_bound = 0
         self.idx = 0
 
     @always_inline
@@ -2984,7 +3008,7 @@ struct LayoutTensorIter[
             self.stride
         ) = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
         offset: __type_of(self.offset) = 0,
-        dim_bound: __type_of(self.offset) = 0,
+        dimension_bound: __type_of(self.offset) = 0,
         idx: __type_of(self.offset) = 0,
     ):
         constrained[
@@ -3008,13 +3032,15 @@ struct LayoutTensorIter[
         self.runtime_layout = rebind[
             RuntimeLayout[layout, bitwidth=layout_bitwidth]
         ](runtime_layout)
-        self.dim_bound = dim_bound
+        self.dimension_bound = dimension_bound
         self.idx = idx
 
     @always_inline
     fn get(
         self,
-    ) -> LayoutTensor[type, layout, address_space=address_space] as result:
+    ) -> LayoutTensor[
+        type, layout, address_space=address_space, masked=masked
+    ] as result:
         """Return the layout tensor at current iterator."""
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
@@ -3028,9 +3054,18 @@ struct LayoutTensorIter[
     @always_inline
     fn __getitem__(
         self,
-    ) -> LayoutTensor[type, layout, address_space=address_space]:
+    ) -> LayoutTensor[type, layout, address_space=address_space, masked=masked]:
         """Return the layout tensor at current iterator."""
         return self.get()
+
+    @always_inline
+    fn _clip_shape(self) -> RuntimeLayout[layout, bitwidth=layout_bitwidth]:
+        new_shape = self.runtime_layout.shape
+        var cur_dim = new_shape.value[axis.value()]
+        new_shape.value[axis.value()] = max(
+            0, min(int(self.dimension_bound - self.idx * cur_dim), cur_dim)
+        )
+        return RuntimeLayout(new_shape, self.runtime_layout.stride)
 
     @always_inline
     fn __iadd__[T: Intable](inout self, rhs: T):
@@ -3046,6 +3081,10 @@ struct LayoutTensorIter[
             self.idx += int(rhs)
 
         @parameter
+        if masked:
+            self.runtime_layout = self._clip_shape()
+
+        @parameter
         if circular:
             self.offset = self.offset % self.bound
 
@@ -3054,10 +3093,6 @@ struct LayoutTensorIter[
         """Increment the iterator by 1. Equivalent to `iter += 1` but w/o the division.
         """
         self.offset += self.stride
-
-        @parameter
-        if axis:
-            self.idx += 1
 
         @parameter
         if circular:
@@ -3081,11 +3116,16 @@ struct LayoutTensorIter[
 
         var next_idx = 0
         var next_offset = self.offset + int(rhs) * self.stride
-        var new_shape = self.runtime_layout.shape
 
         @parameter
         if axis:
             next_idx = int(self.idx) + int(rhs)
+
+        @parameter
+        if masked:
+            runtime_layout = self._clip_shape()
+        else:
+            runtime_layout = self.runtime_layout
 
         @parameter
         if circular:
@@ -3096,9 +3136,9 @@ struct LayoutTensorIter[
             self.bound,
             stride=self.stride,
             offset=int(next_offset),
-            runtime_layout=RuntimeLayout(new_shape, self.runtime_layout.stride),
-            dim_bound=self.dim_bound,
-            idx=int(next_idx),
+            runtime_layout=runtime_layout,
+            dimension_bound=self.dimension_bound,
+            idx=next_idx,
         )
 
     @always_inline
@@ -3110,12 +3150,11 @@ struct LayoutTensorIter[
         """Return an iterator pointing to the next `rhs` layout tensor.
         This is the unsafe version and user must ensure rhs < bound / stride.
         """
-        var next_idx = 0
-        var next_offset = self.offset + int(rhs) * self.stride
+        constrained[
+            not masked, "Cannot use unsafe increment for masked iterator."
+        ]()
 
-        @parameter
-        if axis:
-            next_idx = int(self.idx) + int(rhs)
+        var next_offset = self.offset + int(rhs) * self.stride
 
         @parameter
         if circular:
@@ -3127,11 +3166,8 @@ struct LayoutTensorIter[
         return Self(
             self.ptr,
             self.bound,
-            runtime_layout=self.runtime_layout,
             stride=self.stride,
             offset=int(next_offset),
-            dim_bound=self.dim_bound,
-            idx=int(next_idx),
         )
 
     @always_inline
@@ -3144,6 +3180,7 @@ struct LayoutTensorIter[
         alignment=alignment,
         circular=circular,
         layout_bitwidth=layout_bitwidth,
+        masked=masked,
     ] as result:
         """Reshape the iterator to a new layout.
 
@@ -3183,7 +3220,7 @@ struct LayoutTensorIter[
             RuntimeLayout[dst_layout, bitwidth=layout_bitwidth](),
             int(self.stride),
             int(self.offset),
-            dim_bound=int(self.dim_bound),
+            dimension_bound=int(self.dimension_bound),
             idx=int(self.idx),
         )
 
@@ -3200,6 +3237,7 @@ struct LayoutTensorIter[
         alignment=alignment,
         circular = Self.circular,
         layout_bitwidth=layout_bitwidth,
+        masked=masked,
     ] as result:
         """Reinterpret the iterator's underlying pointer as a different data type.
 
@@ -3225,6 +3263,6 @@ struct LayoutTensorIter[
             self.runtime_layout,
             int(self.stride),
             int(self.offset),
-            dim_bound=int(self.dim_bound),
+            dimension_bound=int(self.dimension_bound),
             idx=int(self.idx),
         )

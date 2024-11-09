@@ -112,6 +112,21 @@ fn test_tile_and_distribute():
                 print(distributed_masked_tensor)
 
 
+fn test_tile_iterator_masked():
+    print("== test_tile_iterator_masked")
+    ptr_5x3_f32 = stack_allocation[15, DType.float32]()
+    tensor_UxU = tb[DType.float32]().row_major(5, 3).view(ptr_5x3_f32)
+    arange(tensor_UxU)
+    print(tensor_UxU)
+    for tile_j in range(2):
+        tensor_iter_2x2_masked = tensor_UxU.tiled_iterator[2, 2](0, tile_j)
+        for tile_i in range(3):
+            print("--tile[", tile_i, ", ", tile_j, "]--")
+            print(tensor_iter_2x2_masked.runtime_layout)
+            print(tensor_iter_2x2_masked[])
+            tensor_iter_2x2_masked += 1
+
+
 fn main():
     # CHECK-LABEL: test_tile_masked
     # CHECK: --tile[ 0 ,  0 ]--
@@ -348,3 +363,33 @@ fn main():
     # CHECK: ----thread[ 2 ]----
     # CHECK: ----thread[ 3 ]----
     test_tile_and_distribute()
+
+    # CHECK: == test_tile_iterator_masked
+    # CHECK: 0.0 1.0 2.0
+    # CHECK: 3.0 4.0 5.0
+    # CHECK: 6.0 7.0 8.0
+    # CHECK: 9.0 10.0 11.0
+    # CHECK: 12.0 13.0 14.0
+    # CHECK: --tile[ 0 ,  0 ]--
+    # CHECK: ((2, 2):(3, 1))
+    # CHECK: 0.0 1.0
+    # CHECK: 3.0 4.0
+    # CHECK: --tile[ 1 ,  0 ]--
+    # CHECK: ((2, 2):(3, 1))
+    # CHECK: 6.0 7.0
+    # CHECK: 9.0 10.0
+    # CHECK: --tile[ 2 ,  0 ]--
+    # CHECK: ((1, 2):(3, 1))
+    # CHECK: 12.0 13.0
+    # CHECK: --tile[ 0 ,  1 ]--
+    # CHECK: ((2, 1):(3, 1))
+    # CHECK: 2.0
+    # CHECK: 5.0
+    # CHECK: --tile[ 1 ,  1 ]--
+    # CHECK: ((2, 1):(3, 1))
+    # CHECK: 8.0
+    # CHECK: 11.0
+    # CHECK: --tile[ 2 ,  1 ]--
+    # CHECK: ((1, 1):(3, 1))
+    # CHECK: 14.0
+    test_tile_iterator_masked()
