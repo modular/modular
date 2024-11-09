@@ -1452,6 +1452,7 @@ fn mha_single_batch[
                 True,  # transpose_b
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
+                next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
                 k_group_size = config.k_group_size,
             ](
                 p_reg_tile,
@@ -1479,6 +1480,7 @@ fn mha_single_batch[
                 True,  # transpose_b
                 continue_prefetch_b=True,
                 b_next_smem_layout = Layout.row_major(BK, BN),
+                next_op_b_iter_masked = __type_of(v_gmem_iter).masked,
                 k_group_size = config.k_group_size,
             ](
                 p_reg_tile,
