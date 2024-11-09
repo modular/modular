@@ -157,8 +157,8 @@ fn _top_k[
     fn process_rows(start_row: Int, end_row: Int):
         # Allocate the index list without initializing its elements.
         var idxs = List(
-            unsafe_pointer=UnsafePointer[Int64].alloc(shape[axis]),
-            size=shape[axis],
+            ptr=UnsafePointer[Int64].alloc(shape[axis]),
+            length=shape[axis],
             capacity=shape[axis],
         )
 
