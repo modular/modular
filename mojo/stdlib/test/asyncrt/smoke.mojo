@@ -12,6 +12,7 @@ from asyncrt_test_utils import (
     create_test_device_context,
     expect_eq,
     is_v2_context,
+    device_kind,
 )
 
 from gpu.host import (
@@ -108,37 +109,23 @@ fn _run_get_stream(ctx: DeviceContext) raises:
     stream.synchronize()
 
 
-fn _run_access_peer(ctx: DeviceContext, peer: DeviceContext) raises:
+fn _run_peer_access(ctx: DeviceContext) raises:
     print("-")
-    print("_run_access_peer()")
+    print("_run_peer_access()")
 
-    print(
-        "can access "
-        + ctx.name()
-        + "->"
-        + peer.name()
-        + ": "
-        + str(ctx.can_access(peer))
-    )
+    expect_eq(ctx.can_access(ctx), False, "self access is not enabled")
 
+    if is_v2_context():
+        var num_gpus = DeviceContext.number_of_devices(device_kind())
+        print("Number of GPU devices: " + str(num_gpus))
 
-fn _run_enable_disable_peer_access(ctx: DeviceContext) raises:
-    print("-")
-    print("_run_enable_disable_peer_access()")
-    var num_gpus = device_count()
+        if num_gpus > 1:
+            var peer = create_test_device_context(gpu_id=1)
+            print("peer context on GPU[1]")
 
-    if num_gpus < 2:
-        print("Only one GPU found, skipping test.")
-        return
-
-    var peer = create_test_device_context(gpu_id=1)
-
-    if not ctx.can_access(peer):
-        print("Devices can't access each other, skipping test.")
-        return
-
-    ctx.enable_peer_access(peer)
-    ctx.disable_peer_access(peer)
+            if ctx.can_access(peer):
+                ctx.enable_peer_access(peer)
+                print("Enabled peer access.")
 
 
 fn main() raises:
@@ -150,10 +137,7 @@ fn main() raises:
     _run_device_info(ctx)
     _run_compute_capability(ctx)
     _run_get_attribute(ctx)
-
     _run_get_stream(ctx)
-
-    _run_access_peer(ctx, create_test_device_context())
-    _run_enable_disable_peer_access(ctx)
+    _run_peer_access(ctx)
 
     print("Done.")

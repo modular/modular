@@ -16,8 +16,21 @@ fn expect_eq[
         raise Error("expect_eq failed: " + msg)
 
 
+fn expect_eq(val: Bool, expected: Bool, msg: String = "") raises:
+    if val != expected:
+        raise Error("expect_eq failed: " + msg)
+
+
 fn is_v2_context() -> Bool:
     return is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+
+
+fn device_kind() -> StringLiteral:
+    @parameter
+    if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
+        return env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+    else:
+        return "default"
 
 
 fn create_test_device_context(gpu_id: Int = 0) raises -> DeviceContext:
