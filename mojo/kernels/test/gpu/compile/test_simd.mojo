@@ -134,13 +134,13 @@ def test_cast():
         ]()
     )
     assert_true(
-        "mov.b32 %f1, {0, %rs1};"
+        "cvt.f32.bf16"
         in _compile_code_asm[
             cast[src_type = DType.bfloat16, dst_type = DType.float32, width=1]
         ]()
     )
     assert_true(
-        "mov.b32 %f1, {0, %rs1};"
+        "cvt.f32.bf16"
         in _compile_code_asm[
             cast[src_type = DType.bfloat16, dst_type = DType.float32, width=4]
         ]()
