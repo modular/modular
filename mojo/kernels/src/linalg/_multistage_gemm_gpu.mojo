@@ -95,6 +95,7 @@ fn multistage_mma[
     transpose_b_next: Bool = False,
     b_next_gmem_layout: Layout = Layout(),
     b_next_smem_layout: Layout = Layout(),
+    next_op_b_iter_masked: Bool = False,
     next_op_b_iter_alignment: Int = alignof[b_type](),
     k_group_size: UInt = 1,
 ](
@@ -113,9 +114,15 @@ fn multistage_mma[
     num_a_rows: OptionalReg[Int] = None,
     num_b_rows: OptionalReg[Int] = None,
     next_op_b_iter: LayoutTensorIter[
-        b_type, b_next_gmem_layout, alignment=next_op_b_iter_alignment
+        b_type,
+        b_next_gmem_layout,
+        alignment=next_op_b_iter_alignment,
+        masked=next_op_b_iter_masked,
     ] = LayoutTensorIter[
-        b_type, b_next_gmem_layout, alignment=next_op_b_iter_alignment
+        b_type,
+        b_next_gmem_layout,
+        alignment=next_op_b_iter_alignment,
+        masked=next_op_b_iter_masked,
     ](),
 ):
     alias simd_size = simdwidthof[a_type]()
