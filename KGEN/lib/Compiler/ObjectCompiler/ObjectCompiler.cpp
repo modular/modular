@@ -650,8 +650,7 @@ ObjectCompiler::emitArchiveParallelCompilation(
   // TODO: MOCO-1407 investigate how to workaround NVPTX backend for
   // per function codegen.
   bool parLLC = runtime.getWorkQueue()->getParallelismLevel() >= 2 &&
-                options.enableParallelLLC &&
-                !llvm::Triple(options.targetTriple).isNVPTX();
+                options.enableParallelLLC && !isGPUBackend(options);
 
   SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
 
