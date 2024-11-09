@@ -17,6 +17,7 @@ from max.pipelines.interfaces import (
     TokenGeneratorFactoryMap,
 )
 from max.serve.multiprocessing.worker import (
+    MPQueue,
     ProcessPoolWorker,
     Worker,
     all_events,
@@ -24,9 +25,12 @@ from max.serve.multiprocessing.worker import (
     register_mp_queue,
     running_workers,
 )
+from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.scheduler.queues import (
+    STOP_STREAM,
     Batch,
     BatchEntry,
+    BatchInputs,
     BatchMultiplexQueue,
     BatchOutputs,
 )
@@ -51,9 +55,20 @@ async def run_model_worker(
     )
 
 
+async def run_model_worker_v2(
+    worker: Worker,
+    pipelines: Mapping[str, BatchedTokenGeneratorState],
+):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        worker.executor, model_worker_run_v2_sync, pipelines
+    )
+
+
 @asynccontextmanager
 async def start_model_worker(
     factories: TokenGeneratorFactoryMap,
+    pipelines: Mapping[str, BatchedTokenGeneratorState],
     name: str = "MODEL_" + str(uuid.uuid4()),
     timeout_secs: float = 5 * 60.0,
 ):
@@ -206,6 +221,161 @@ def model_worker_run(factories: Mapping[str, TokenGeneratorFactory]):
     finally:
         stopped.set()
         logger.info("Stopped model worker at process %d!", pid)
+
+
+async def model_worker_run_v2(
+    pipelines: Mapping[str, BatchedTokenGeneratorState],
+):
+    try:
+        pid = os.getpid()
+        logger.info("Starting model worker on process %d!", pid)
+
+        # Global multiprocessing resources.
+        events = all_events()
+        started = events["STARTED"]
+        stopped = events["STOPPED"]
+        shutdown = events["SHUTDOWN"]
+
+        queues = all_queues()
+        request_queue = queues["REQUEST"]
+        response_queue = queues["RESPONSE"]
+        cancel_queue = queues["CANCEL"]
+
+        # Initialize all token generators.
+        assert len(pipelines) == 1, "We can host only one Pipeline right now"
+        ((_, state),) = pipelines.items()
+        model = state.model_factory()
+        config = state.batched_generator.config
+        max_batch_size_tg = config.token_generation.size
+        max_forward_steps_tg = config.token_generation.max_forward_steps
+        if config.context_encoding:
+            max_batch_size_ce = config.context_encoding.size
+            max_forward_steps_ce = config.context_encoding.max_forward_steps
+        else:
+            max_batch_size_ce = max_batch_size_tg
+            max_forward_steps_ce = max_forward_steps_tg
+        logger.info("Token generators loaded!")
+
+        started.set()
+        logger.info("Started model worker!")
+
+        cache_indices = set(range(max_batch_size_tg))
+        batch_continuous: BatchInputs = {}
+        i = 0
+        while i % 100 or not shutdown.is_set():
+            i += 1
+
+            if should_schedule_ce(
+                batch_continuous, request_queue, max_batch_size_tg
+            ):
+                max_batch_size_to_execute = min(
+                    max_batch_size_ce, max_batch_size_tg - len(batch_continuous)
+                )
+                if len(
+                    batch_to_execute := create_batch(
+                        request_queue,
+                        max_batch_size_to_execute,
+                        cache_indices,
+                    )
+                ):
+                    logger.debug(
+                        "Scheduling CE with BS: %d", len(batch_to_execute)
+                    )
+                    batch_responses = model.next_token(
+                        batch_to_execute, num_steps=max_forward_steps_ce
+                    )
+                    handle_terminated_responses(
+                        batch_to_execute, batch_responses, model, cache_indices
+                    )
+
+                    for req_id in batch_to_execute:
+                        batch_continuous[req_id] = batch_to_execute[req_id]
+
+                    response_queue.queue.put_many_nowait(batch_responses)
+
+            elif batch_continuous:
+                logger.debug("Scheduling TG with BS: %d", len(batch_continuous))
+                batch_responses = model.next_token(
+                    batch_continuous, num_steps=max_forward_steps_tg
+                )
+                handle_terminated_responses(
+                    batch_continuous, batch_responses, model, cache_indices
+                )
+
+                response_queue.queue.put_many_nowait(batch_responses)
+
+            # Occasionally clear out contexts cancelled out API worker side.
+            if i % 20 == 0 and not cancel_queue.queue.empty():
+                try:
+                    for req_id in cancel_queue.queue.get_many_nowait():
+                        if req_id in batch_continuous:
+                            model.release(batch_continuous[req_id])
+                            cache_indices.add(
+                                batch_continuous[req_id].cache_seq_id
+                            )
+                            del batch_continuous[req_id]
+                except queue.Empty:
+                    continue
+
+            await asyncio.sleep(0)
+
+    finally:
+        stopped.set()
+        logger.info("Stopped model worker at process %d!", pid)
+
+
+def model_worker_run_v2_sync(
+    pipelines: Mapping[str, BatchedTokenGeneratorState],
+):
+    asyncio.run(model_worker_run_v2(pipelines))
+
+
+def should_schedule_ce(
+    batch_continuous: BatchInputs,
+    request_queue: MPQueue,
+    max_batch_size_tg: int,
+):
+    if request_queue.queue.empty():
+        return False
+
+    if len(batch_continuous) >= max_batch_size_tg:
+        return False
+
+    return True
+
+
+def create_batch(
+    request_queue: MPQueue,
+    max_batch_size: int,
+    request_indices: set,
+) -> BatchInputs:
+    batch: BatchInputs = {}
+    while len(batch) < max_batch_size:
+        try:
+            max_messages_to_get = max_batch_size - len(batch)
+            for req_id, data in request_queue.queue.get_many_nowait(
+                max_messages_to_get=max_messages_to_get
+            ):
+                data.cache_seq_id = request_indices.pop()
+                batch[req_id] = data
+        except queue.Empty:
+            break
+    return batch
+
+
+def handle_terminated_responses(
+    batch_executed, batch_responses, model, cache_indices
+):
+    already_terminated = set()
+    for batch_response in batch_responses:
+        terminated = batch_executed.keys() - batch_response.keys()
+        for req_id in terminated:
+            if req_id not in already_terminated:
+                model.release(batch_executed[req_id])
+                cache_indices.add(batch_executed[req_id].cache_seq_id)
+                del batch_executed[req_id]
+                batch_response[req_id] = STOP_STREAM
+                already_terminated.add(req_id)
 
 
 # TESTING

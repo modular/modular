@@ -10,15 +10,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from functools import partial
 import logging
 import os
 from contextlib import AsyncExitStack, asynccontextmanager
+from functools import partial
 from typing import Mapping, Optional
 
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
 from max.serve.telemetry.logger import configureLogging
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 console_level: int = logging.INFO
 file_path: str = ""
@@ -48,7 +47,7 @@ from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
 from max.serve.telemetry.metrics import METRICS
-from prometheus_client import make_asgi_app, disable_created_metrics
+from prometheus_client import disable_created_metrics, make_asgi_app
 from pydantic_settings import CliSettingsSource
 from uvicorn import Config, Server
 
@@ -73,7 +72,7 @@ async def lifespan(
                 contexts.append(state.batched_generator)
 
         await asyncio.gather(*map(stack.enter_async_context, contexts))
-        async with start_model_worker(model_factories):
+        async with start_model_worker(model_factories, pipelines):
             yield
 
 
