@@ -174,8 +174,8 @@ static std::string generateThunkName(Type expected, Type actual) {
   return name;
 }
 
-LIT::FuncOp LIT::generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
-                                         SharedState &shared) {
+static LIT::FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
+  SharedState &shared = moduleDecl.getShared();
   // Don't generate any debuginfo for the thunk. Push a null scope.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
@@ -244,7 +244,7 @@ LIT::FuncOp LIT::generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
   // Now prepare to emit the call.
   b = ImplicitLocOpBuilder::atBlockBegin(mlirLoc, thunk.getBody());
-  ExprEmitter emitter(shared, *thunkDecl, b);
+  ExprEmitter emitter(*thunkDecl, b);
 
   // Construct the call operands from the function block arguments.
   CallOperands operands;

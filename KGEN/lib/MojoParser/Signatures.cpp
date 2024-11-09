@@ -48,7 +48,7 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
   if (isa<TypeCheckErrorType>(type))
     return hadError();
 
-  ExprEmitter emitter(shared, paramList.declScope, EC_Origin);
+  ExprEmitter emitter(paramList.declScope, EC_Origin);
 
   // If the origin expression is syntactically a 2-element tuple, then
   // take it apart into a origin and address space.
@@ -632,11 +632,10 @@ static ASTType addImplicitTypeParams(ASTType type,
 }
 
 TypeCheckedParamList::TypeCheckedParamList(
-    ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope,
-    SharedState &shared)
-    : TypeCheckScopeInfo{declScope, shared} {
+    ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope)
+    : TypeCheckScopeInfo{declScope, declScope.getShared()} {
   // Resolve each of the parameter declarations.
-  ExprEmitter emitter(shared, declScope, EC_Type);
+  ExprEmitter emitter(declScope, EC_Type);
   for (const ParsedArgument &arg : parsedParams) {
     // Check for things supported in arguments that are not supported in
     // parameters.
@@ -926,8 +925,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   ParsedArgument &arg = tcSignature.argList.parsedArgs[idx];
 
   ASTDecl &declScope = tcSignature.paramList.declScope;
-  SharedState &shared = tcSignature.paramList.shared;
-  ExprEmitter typeEmitter(shared, declScope, EC_Type);
+  SharedState &shared = declScope.getShared();
+  ExprEmitter typeEmitter(declScope, EC_Type);
 
   // Start by computing the declared type of the argument.
   ASTType type;
@@ -1253,7 +1252,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     // If the result type is a `None` literal, then convert it to NoneType.
     resultType = shared.getNoneType();
   } else {
-    ExprEmitter typeEmitter(shared, declScope, EC_Type);
+    ExprEmitter typeEmitter(declScope, EC_Type);
     resultType = typeEmitter.emitExprType(resultArg.typeExpr);
 
     // On error, a diagnostic will be emitted, but we don't want to kill the
@@ -1449,7 +1448,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                SpecialFunctionInfo &fnInfo)
     : paramList(paramList), argList(argList), resultArg(resultArg) {
   SharedState &shared = paramList.shared;
-  ExprEmitter typeEmitter(shared, paramList.declScope, EC_Type);
+  ExprEmitter typeEmitter(paramList.declScope, EC_Type);
 
   // If this definition is a struct/class member, compute the self type.
   ASTType selfType;

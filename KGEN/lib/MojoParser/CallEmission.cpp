@@ -94,14 +94,15 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
       erroneous(erroneous) {}
 
 /// Resolve the callee into a single PValue callee.
-static PValue getCallee(SharedState &shared, ASTDecl *fnDecl,
-                        StringRef baseName, const ParamBindings &paramBindings,
+static PValue getCallee(ASTDecl *fnDecl, StringRef baseName,
+                        const ParamBindings &paramBindings,
                         const ExprNode *expr) {
   auto funcOp = cast<LIT::FuncOp>(*fnDecl);
   // Check if the function overload set resolved to a deprecated overload.
   if (StringAttr warning = funcOp.getDeprecationWarningAttr()) {
-    auto diag = shared.emitWarning(expr->getLoc(), warning.getValue())
-                << expr->getRange();
+    auto diag =
+        paramBindings.shared.emitWarning(expr->getLoc(), warning.getValue())
+        << expr->getRange();
     diag.attachNote(fnDecl->getLoc())
         << "'" << *funcOp.getSourceName() << "' declared here";
   }
@@ -235,7 +236,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(expr, bind);
-    return getCallee(getShared(), newFnDecls[0], baseName, newBindings, expr);
+    return getCallee(newFnDecls[0], baseName, newBindings, expr);
   }
   if (isErroneous())
     return {};
@@ -440,8 +441,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(expr, bind);
 
-    PValue boundFunction =
-        getCallee(getShared(), selectedDecl, baseName, newBindings, expr);
+    PValue boundFunction = getCallee(selectedDecl, baseName, newBindings, expr);
 
     // It is possible this candidate needs some arguments emitted as MValues
     // (from PValue or SValues) to be passed as 'ref' arguments.  If this
@@ -498,7 +498,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     for (TypedAttr bind : newFitness.getParamBindings())
       newBindings.addPrechecked(expr, bind);
 
-    return getCallee(getShared(), selectedDecl, baseName, newBindings, expr);
+    return getCallee(selectedDecl, baseName, newBindings, expr);
   }
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
@@ -613,10 +613,9 @@ PValue OverloadSet::filterOverloadSetForValueType(
       newBindings.addPrechecked(expr, bind);
 
     // Use an emitter with invalid context, since errors aren't expected.
-    ExprEmitter emitter(scopeInfo.shared, scopeInfo.declScope,
-                        EC_InvalidContext);
-    PValue callee = getCallee(getShared(), validCandidates.front(), baseName,
-                              newBindings, expr);
+    ExprEmitter emitter(scopeInfo.declScope, EC_InvalidContext);
+    PValue callee =
+        getCallee(validCandidates.front(), baseName, newBindings, expr);
     return emitter.emitPValue({callee, expr}, EC_InvalidContext, functionType);
   }
 
@@ -650,7 +649,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {
   if (fnDecls.size() == 1)
-    return getCallee(getShared(), fnDecls[0], baseName, paramBindings, expr);
+    return getCallee(fnDecls[0], baseName, paramBindings, expr);
 
   // If we have multiple candidates, emit an ambiguity error.
   assert(!fnDecls.empty() && "DirectCallable malformed");
@@ -1141,7 +1140,7 @@ FailureOr<PValue> OverloadSet::canConstructType(
 
   // Determine if we can emit this using an ExprEmitter in the parameter domain.
   // This ensures we don't emit any code converting parameters to MValues etc.
-  ExprEmitter paramEmitter(scopeInfo.shared, scopeInfo.declScope,
+  ExprEmitter paramEmitter(scopeInfo.declScope,
                            ExprContext::EC_CallCalleeValue);
 
   // If we have at least one candidate, we check to see if any of them can

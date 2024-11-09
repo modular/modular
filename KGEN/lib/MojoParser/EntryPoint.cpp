@@ -257,7 +257,7 @@ static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *> importMojoImpl(
 
   // Generate python bindings into the module if requested.
   if (genPythonBindings) {
-    (void)generatePythonBindings(sharedState, moduleDecl);
+    (void)generatePythonBindings(moduleDecl);
     // Resolve everything again.
     sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
   }

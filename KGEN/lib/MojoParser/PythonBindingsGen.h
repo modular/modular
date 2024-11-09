@@ -18,7 +18,7 @@ namespace M::KGEN::LIT {
 class ASTDecl;
 class SharedState;
 
-LogicalResult generatePythonBindings(SharedState &shared, ASTDecl &moduleDecl);
+LogicalResult generatePythonBindings(ASTDecl &moduleDecl);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_PYTHONBINDINGSGEN_H

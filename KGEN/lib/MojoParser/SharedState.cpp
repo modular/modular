@@ -566,20 +566,19 @@ Operation *SharedState::lookupSymbolIn(ASTDecl *container, StringAttr name) {
 
 /// Return any decorators that need to be processed as part of body resolution
 /// phase for a decl.
-ArrayRef<ExprNode *> ASTDecl::getBodyDecorators(SharedState &state) const {
+ArrayRef<ExprNode *> ASTDecl::getBodyDecorators() const {
   if (!hasBodyDecorators)
     return {};
-  return state.getImpl().bodyDecorators[this];
+  return shared.getImpl().bodyDecorators[this];
 }
 
 /// During signature resolution, this is called with any decorators that need
 /// to persist until body resolution.
-void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators,
-                                SharedState &state) {
+void ASTDecl::setBodyDecorators(ArrayRef<ExprNode *> decorators) {
   if (decorators.empty())
     return;
 
-  state.getImpl().bodyDecorators.insert({this, decorators.vec()});
+  shared.getImpl().bodyDecorators.insert({this, decorators.vec()});
   hasBodyDecorators = true;
 }
 
@@ -1776,7 +1775,7 @@ LIT::FuncOp SharedState::getOrCreateFunctionThunk(Attribute key,
                                                   CreateThunkFn create) {
   LIT::FuncOp &thunk = impl->conversionThunks[key];
   if (!thunk)
-    thunk = create(key, getTopLevelDecl(), *this);
+    thunk = create(key, getTopLevelDecl());
   return thunk;
 }
 

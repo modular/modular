@@ -31,8 +31,7 @@ class ValueInfo {
 public:
   enum FuncIndex { Destruct = 0, Move = 1, Copy = 2, FieldwiseInit = 3 };
 
-  static std::optional<ValueInfo> createValueInfo(ASTDecl &structDecl,
-                                                  SharedState &shared);
+  static std::optional<ValueInfo> createValueInfo(ASTDecl &structDecl);
   bool hasDestructor() const { return existingFunctions[FuncIndex::Destruct]; }
   bool hasMove() const { return existingFunctions[FuncIndex::Move]; }
   bool hasCopy() const { return existingFunctions[FuncIndex::Copy]; }

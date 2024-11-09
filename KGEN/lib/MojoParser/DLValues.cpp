@@ -354,7 +354,7 @@ DefArgumentWrapperDLValue::prepareForInoutAccess(SMLoc loc,
   // Okay, if the by-reg def argument is mutated, we need to snap into action
   // and lazily build a shadow in the function entry.
   auto func = cast<FuncOp>(argDecl->getParentDecl());
-  ExprEmitter entryEmitter(emitter.shared, *argDecl->getParentDecl(),
+  ExprEmitter entryEmitter(*argDecl->getParentDecl(),
                            OpBuilder::atBlockBegin(func.getBody()));
   StringAttr argName = func.getSignature().getArgName(argIndex);
 

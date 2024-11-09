@@ -452,7 +452,7 @@ public:
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
-  using CreateThunkFn = LIT::FuncOp (*)(Attribute, ASTDecl &, SharedState &);
+  using CreateThunkFn = LIT::FuncOp (*)(Attribute, ASTDecl &);
 
   /// This gets a function conversion thunk between the two provided function
   /// types within the provided module, or creates one if needed.

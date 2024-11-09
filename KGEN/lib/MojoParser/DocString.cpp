@@ -346,8 +346,8 @@ static bool isValidFirstCharacter(char c) { return !llvm::isLower(c); }
 
 class DocStringValidator {
 public:
-  DocStringValidator(SharedState &sharedState, ASTDecl &decl)
-      : sharedState(sharedState),
+  DocStringValidator(ASTDecl &decl)
+      : sharedState(decl.getShared()),
         diagnoseMissingDocStrings(
             sharedState.shouldDiagnoseMissingDocStrings()),
         errorOnInvalidDocStrings(sharedState.shouldErrorOnInvalidDocStrings()),
@@ -757,8 +757,8 @@ private:
 };
 } // namespace
 
-void M::KGEN::LIT::validateDocString(SharedState &sharedState, ASTDecl &decl) {
-  DocStringValidator validator(sharedState, decl);
+void M::KGEN::LIT::validateDocString(ASTDecl &decl) {
+  DocStringValidator validator(decl);
   validator.validate(decl);
 }
 

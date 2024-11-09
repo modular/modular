@@ -564,7 +564,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       ImplicitLocOpBuilder::atBlockBegin(initFunc.getLoc(), initFunc.getBody());
 
   StructFieldOp paramField;
-  ExprEmitter emitter(shared, nestedFnDecl, builder);
+  ExprEmitter emitter(nestedFnDecl, builder);
   SyntheticNode loc(nestedFnDecl.getLoc());
   if (hasParamClosureCaptures) {
     // Propagate the 'capturing' bit to the init function.
@@ -837,7 +837,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                      /*endUninit=*/false);
 
   // Move the contents of the injected impl into the heap memory.
-  ExprEmitter emitter(shared, moduleDecl, builder);
+  ExprEmitter emitter(moduleDecl, builder);
   emitter.emitStoreToLValue({MRValue(source), &node}, MLValue(targetRef),
                             EC_Assignment);
 
@@ -919,7 +919,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                          /*endUninit=*/false);
 
     // Copy the existing value into the target.
-    ExprEmitter emitter(shared, moduleDecl, builder);
+    ExprEmitter emitter(moduleDecl, builder);
     emitter.emitStoreToLValue({MLValue(existingRef), &node}, MLValue(targetRef),
                               EC_Assignment);
 

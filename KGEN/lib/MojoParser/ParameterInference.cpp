@@ -340,7 +340,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       // If the types don't agree, attempt an implicit conversion between the
       // actual value and the expected type.
       if (actualAttr.getType() != expectedType) {
-        ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
+        ExprEmitter emitter(declScope, EC_TypeParamValue);
         SyntheticNode node(declScope.getLoc());
         if (ExprEmitter::canImplicitlyConvertToType(
                 {actualAttr, node}, expectedType, emitter.getScopeInfo())) {
@@ -846,7 +846,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // Determine if we can construct the requested type given the existing value
   // we have.  If so, get the type inferred signature of the init method that
   // would make it work.
-  ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
+  ExprEmitter emitter(declScope, ExprContext::EC_CallArgValue);
 
   // The expected type may be parameterized, and that type may both have
   // parameters that we are trying to infer as well as parameters that are
@@ -1075,7 +1075,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
       Type elementType = packType.getVariadicElementType();
 
       SmallVector<TypedAttr> types;
-      ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
+      ExprEmitter emitter(declScope, EC_TypeParamValue);
       while (posOperandIdx != numOperands) {
         const auto &operand = operands[posOperandIdx++];
         if (operand.keyword) // Ignore keyword operands.

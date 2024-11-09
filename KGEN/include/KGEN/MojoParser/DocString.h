@@ -128,7 +128,7 @@ bool shouldHideDeclInDocGen(ASTDecl &decl, StringRef name);
 
 /// Validate the doc string for the given decl, emitting warnings for any
 /// invalid format issues.
-void validateDocString(SharedState &sharedState, ASTDecl &decl);
+void validateDocString(ASTDecl &decl);
 
 /// Generate a template doc string for the given decl. Returns nullopt if no
 /// template is available. The provided `indent` is the desired indentation
