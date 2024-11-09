@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # Unit tests for model_worker
 
-import pytest
 import time
-from max.pipelines.interfaces import (
-    TokenGenerator,
-)
+
+import pytest
+from max.pipelines.interfaces import TokenGenerator
+from max.serve.pipelines.deps import echo_generator_pipeline
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
 
@@ -18,7 +18,9 @@ from max.serve.pipelines.model_worker import start_model_worker
 async def test_model_worker_propagates_exception() -> None:
     """Tests raising in the model worker context manager."""
     with pytest.raises(AssertionError):
-        async with start_model_worker({"test": EchoTokenGenerator}):
+        async with start_model_worker(
+            {"test": EchoTokenGenerator}, {"test": echo_generator_pipeline()}
+        ):
             raise AssertionError
 
 
@@ -41,7 +43,10 @@ async def test_model_worker_propagates_construction_exception() -> None:
     with pytest.raises(
         ValueError, match=MockInvalidTokenGenerator.ERROR_MESSAGE
     ):
-        async with start_model_worker({"test": MockInvalidTokenGenerator}):
+        async with start_model_worker(
+            {"test": MockInvalidTokenGenerator},
+            {"test": echo_generator_pipeline()},
+        ):
             pass
 
 
@@ -61,6 +66,8 @@ async def test_model_worker_start_timeout() -> None:
     """Tests raising in the model worker task."""
     with pytest.raises(TimeoutError):
         async with start_model_worker(
-            {"test": MockSlowTokenGenerator}, timeout_secs=0.1
+            {"test": MockSlowTokenGenerator},
+            {"test": echo_generator_pipeline()},
+            timeout_secs=0.1,
         ):
             pass
