@@ -216,7 +216,7 @@ fn _top_k[
                         var ptr = idxs.data + i
                         sort(
                             Span[idxs.T, __origin_of(idxs)](
-                                unsafe_ptr=ptr, len=num_equal
+                                ptr=ptr, length=num_equal
                             )
                         )
                     i += num_equal
