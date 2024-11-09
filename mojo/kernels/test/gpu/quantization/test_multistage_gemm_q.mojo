@@ -782,13 +782,17 @@ fn create_ref_b[
     ) -> SIMD[DType.bfloat16, 2]:
         alias MASK: Int32 = 0x000F000F
         alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
-        var BF16_BIAS = SIMD[DType.bfloat16, 2](-136 * scale, -136 * scale)
         alias lut: Int32 = (0xF0 & 0xCC) | 0xAA
+        var BF16_BIAS = SIMD[DType.bfloat16, 2](-136, -136)
         var BF16_SCALE = SIMD[DType.bfloat16, 2](scale, scale)
+        var BF16_ZERO = SIMD[DType.bfloat16, 2](0, 0)
+        var BF16_ONE = SIMD[DType.bfloat16, 2](1, 1)
 
         var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
 
-        var v = bitcast[DType.bfloat16, 2](t).fma(BF16_SCALE, BF16_BIAS)
+        var v = bitcast[DType.bfloat16, 2](t).fma(BF16_ONE, BF16_BIAS).fma(
+            BF16_SCALE, BF16_ZERO
+        )
         return v
 
     alias write_back_layout = Layout.row_major(1, 32)
