@@ -737,6 +737,6 @@ fn test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
   # expected-error @+1 {{argument #0 cannot be converted from 'HasDependent[a]' to 'HasDependent[42]'}}
   test_dependent[42](arg, arg2)
   # expected-error @below {{argument #1 cannot be converted from 'HasDependent[a]' to 'HasDependent[a, 4]'}}
-  # expected-note @below {{one of the types includes a parameter expression}}
+  # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
   test_dependent(arg, arg)
 

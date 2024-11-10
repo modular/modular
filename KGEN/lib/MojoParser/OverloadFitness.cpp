@@ -161,6 +161,36 @@ InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
          << expectedType;
 }
 
+/// Return true if the two types are the same when any parameter expressions are
+/// ignored.  This is to tell when two types might be the same after
+/// evaluation in the elaborator, in order to give better error messages when
+/// people are confused that seemingly identical types don't match during
+/// overload resolution.
+static bool isEqualModuloExpressions(ASTType lhsType, ASTType rhsType,
+                                     SharedState &shared) {
+  // Must have the same struct declarations.
+  if (lhsType.getDecl(shared) != rhsType.getDecl(shared))
+    return false;
+
+  assert(lhsType.getParamBindings().size() ==
+             rhsType.getParamBindings().size() &&
+         "Type with the same decl should have consistent number of params");
+
+  bool hadMismatchedParamExpr = false;
+  for (auto [lhs, rhs] :
+       llvm::zip(lhsType.getParamBindings(), rhsType.getParamBindings())) {
+    // If any hard known differences exist, then unfolded exprs are not the
+    // problem.
+    if (lhs == rhs)
+      continue;
+    if (isa<ParamOperatorAttr>(lhs) || isa<ParamOperatorAttr>(rhs))
+      hadMismatchedParamExpr = true;
+    else
+      return false;
+  }
+  return hadMismatchedParamExpr;
+}
+
 /// Attach extra type conversion error detail or hints to the user when
 /// reporting an error passing `operand` to an argument of type `argType`.
 static void addTypeConversionDetail(InflightDiag &diag,
@@ -191,13 +221,11 @@ static void addTypeConversionDetail(InflightDiag &diag,
     return;
   }
 
-  if (argType.isEqualModuloExpressions(operandType, shared)) {
+  if (isEqualModuloExpressions(argType, operandType, shared)) {
     diag.attachNote(loc)
-        << "one of the types includes a parameter expression that can't "
-           "be evaluated at overload resolution time; a possible fix is to use "
-           "a new parameter in place of the parameter expression and use the "
-           "`constrained` function to enforce that the new parameter is "
-           "equivalent to the parameter expression";
+        << "types parameters include unfolded expression at parser time; try "
+           "rebinding to a consistent type?";
+    return;
   }
 }
 
