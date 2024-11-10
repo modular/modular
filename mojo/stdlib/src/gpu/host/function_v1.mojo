@@ -330,7 +330,7 @@ struct Function[
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
-    alias emission_kind = "llvm" if _is_amd_gpu[target]() else "asm"
+    alias emission_kind = "shared-obj" if _is_amd_gpu[target]() else "asm"
     var info: _CachedFunctionInfo
     var cuda_dll: CudaDLL
     var cuda_function_cache: UnsafePointer[FunctionCache]

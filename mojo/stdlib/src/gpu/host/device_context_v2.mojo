@@ -333,7 +333,7 @@ struct DeviceFunctionV2[
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
-    alias emission_kind = "llvm" if _is_amd_gpu[target]() else "asm"
+    alias emission_kind = "shared-obj" if _is_amd_gpu[target]() else "asm"
     var _handle: _DeviceFunctionPtr
     alias _func_impl = _compile_code[
         func,
