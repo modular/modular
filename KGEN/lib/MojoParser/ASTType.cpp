@@ -143,39 +143,6 @@ bool ASTType::isEqualAllowingUnknownAttr(ASTType other,
   return true;
 }
 
-bool ASTType::isEqualModuloExpressions(ASTType other,
-                                       SharedState &shared) const {
-  if (isEqualCanon(other))
-    return true;
-
-  // Must have the same struct declarations.
-  if (getDecl(shared) != other.getDecl(shared))
-    return false;
-
-  ArrayRef<TypedAttr> lhsParams = getParamBindings();
-  ArrayRef<TypedAttr> rhsParams = other.getParamBindings();
-  assert(lhsParams.size() == rhsParams.size() &&
-         "Type with the same decl should have consistent number of params");
-
-  // I don't believe there is currently a way to construct a flat expression
-  // that has the same problem as the parameterized struct case.  The problem
-  // arises for parameterized structs that have expressions for one of the
-  // parameters that can't yet be evaluated.  If the type itself is a parameter
-  // expression, other error paths catch it.  Thus if there are no parameter
-  // bindings, return false.
-  if (lhsParams.size() == 0)
-    return false;
-
-  for (auto [lhsParam, rhsParam] : llvm::zip(lhsParams, rhsParams)) {
-    if (lhsParam != rhsParam) {
-      if (isa<ParamOperatorAttr>(lhsParam) || isa<ParamOperatorAttr>(rhsParam))
-        continue;
-      return false;
-    }
-  }
-  return true;
-}
-
 /// Return true if this is a None type.
 bool ASTType::isNoneType() const { return isa<KGEN::NoneType>(mlirType); }
 

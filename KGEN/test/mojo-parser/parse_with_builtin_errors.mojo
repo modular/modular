@@ -30,5 +30,5 @@ fn has_expr_for_elaborator[width: Int](x: HasSize[width + 4]):
 fn use_take_args():
     alias width = 4
     # expected-error @below {{cannot be converted}}
-    # expected-note @below {{one of the types includes a parameter expression that can't be evaluated at overload resolution time; a possible fix is to use a new parameter in place of the parameter expression and use the `constrained` function to enforce that the new parameter is equivalent to the parameter expression}}
+    # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     _ = has_expr_for_elaborator[width](HasSize[size=width + 4]())
