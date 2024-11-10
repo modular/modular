@@ -101,6 +101,16 @@ fn test_takes_mem_type():
     # expected-error @below {{use of unknown declaration 'takes_type'}}
     takes_type(SomeType)
 
+# MOCO-56: Mojo produces weird error when inout function is used in non mutating function
+struct SomethingWithInferredParam[T: CollectionElement]:
+  pass
+# expected-note @+1 {{function declared here}}
+fn SomethingWithInferredParamCallee(inout v: SomethingWithInferredParam):
+  pass
+ 
+fn SomethingWithInferredParamCaller(v: SomethingWithInferredParam):
+  # expected-error @+1 {{must be mutable in order to pass to a mutating argument}}
+  SomethingWithInferredParamCallee(v)
 
 ##===----------------------------------------------------------------------===##
 # Conversions

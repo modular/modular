@@ -685,8 +685,10 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   case ArgConvention::InOut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError: {
-    // The actual value must be an lvalue if callee takes things by-ref.
-    LValue argVal = value.getIfLValue();
+    // The actual value must be an lvalue if callee takes things by-ref, but we
+    // don't want to force this - we want parameter inference to infer argument
+    // types etc instead of producing a "failed to infer" message.
+    CValue argVal = value.getIfCValue();
     if (!argVal)
       return failure();
 
