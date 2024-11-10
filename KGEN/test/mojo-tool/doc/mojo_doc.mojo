@@ -40,7 +40,7 @@ alias alias_Value = 10
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_construct",
-# CHECK:  "value": "DynamicTuple(0, 1, 2, 3, 4)"
+# CHECK:  "value": "DynamicTuple(DynamicTuple(0), DynamicTuple(1), DynamicTuple(2), DynamicTuple(3), DynamicTuple(4))"
 alias alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 

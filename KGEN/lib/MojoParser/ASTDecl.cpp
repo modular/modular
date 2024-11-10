@@ -59,6 +59,18 @@ ArrayRef<ASTDecl *> ASTDecl::lookupInCurrentScope(StringAttr name) const {
   return {};
 }
 
+/// If this is a method of a struct or trait, return the decl for the struct
+/// or trait.
+ASTDecl *ASTDecl::tryGetMethodParentDecl() const {
+  // Methods are always FuncOps.
+  if (!isa<LIT::FuncOp>(*this))
+    return nullptr;
+
+  // Don't return non-null for nested functions or module-level functions.
+  ASTDecl *parent = getParentDecl();
+  return isa<StructDeclOp, TraitDeclOp>(*parent) ? parent : nullptr;
+}
+
 void ASTDecl::takeDecls(ASTDecl &src) {
   if (src.isErroneous())
     setErroneous();

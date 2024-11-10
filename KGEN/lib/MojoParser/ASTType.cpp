@@ -416,6 +416,7 @@ static SymbolRefAttr tryGetSymbolName(TypedAttr param) {
     return symbolCst.getSymbol();
   if (auto op = dyn_cast<ParamOperatorAttr>(param)) {
     switch (op.getOpcode()) {
+      // rebind is used to bind implicit lifetimes away.
     case POC::Rebind:
       return tryGetSymbolName(op.getOperands().front());
     default:
@@ -465,6 +466,22 @@ static std::string getDTypeAsString(KGENDType dtype) {
     return dtype.getAsString();
   }
 }
+static bool isKnownNonStaticMethod(SharedState *diagShared,
+                                   SymbolRefAttr callee) {
+  if (!diagShared) // Need SharedState to figure this out.
+    return false;
+  // Must be able to figure out the decl in question, and must be a method.
+  ASTDecl *decl = diagShared->getDeclResolver().getDeclForFuncSymbol(callee);
+  if (!decl || !decl->tryGetMethodParentDecl())
+    return false;
+
+  // Return false for static methods and initializers.
+  auto func = cast<LIT::FuncOp>(*decl);
+  if (func.getIsStatic() ||
+      func.getSignature().getArgConvention(0) == ArgConvention::InitSelf)
+    return false;
+  return true;
+}
 
 /// Pretty print a parameter value.
 static void printDemangledParam(raw_ostream &os, TypedAttr param,
@@ -501,18 +518,23 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     switch (op.getOpcode()) {
     case POC::Apply:
     case POC::ApplyResultSlot: {
+      auto operandsToPrint = operands.drop_front();
+
       // Check if we're applying a known symbol, in which case we can do some
       // more specialized printing.
       if (SymbolRefAttr nameAttr = tryGetSymbolName(operands.front())) {
         StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
-
-        // If this is an init and we have a single argument, elide the init.
-        if (name == "__init__" && nameAttr.getNestedReferences().size() >= 2) {
-          if (operands.size() == 2)
-            return printDemangledParam(os, operands.back(), diagShared);
-        }
+        // Don't print conversions of boolean's to i1.
         if (name == "__mlir_i1__" && operands.size() == 2)
           return printDemangledParam(os, operands.back(), diagShared);
+
+        // If we can tell that this is a method call, print the receiver first.
+        if (!operandsToPrint.empty() &&
+            isKnownNonStaticMethod(diagShared, nameAttr)) {
+          printDemangledParam(os, operandsToPrint.front(), diagShared);
+          os << '.';
+          operandsToPrint = operandsToPrint.drop_front();
+        }
 
         // Otherwise, print the symbol and go through the normal argument list.
         printSymbol(os, name, nameAttr);
@@ -521,7 +543,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       }
 
       os << '(';
-      llvm::interleaveComma(operands.drop_front(), os, [&](TypedAttr value) {
+      llvm::interleaveComma(operandsToPrint, os, [&](TypedAttr value) {
         printDemangledParam(os, value, diagShared);
       });
       os << ')';

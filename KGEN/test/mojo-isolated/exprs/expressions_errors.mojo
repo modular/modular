@@ -740,3 +740,15 @@ fn test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
   # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
   test_dependent(arg, arg)
 
+struct HasIntParam[p: Int]:
+  fn __init__(inout self):
+     pass
+
+# MOCO-846: Poor error message when type conversion fails due to IntLiteral materialization
+
+# expected-note @below {{function declared here}}
+fn take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntParam[width * 4]): 
+  # expected-error @below {{cannot be converted from 'HasIntParam[Int(x.__mul__(4))]' to 'HasIntParam[Int(x).__mul__(4)]'}}
+  # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
+  take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
+
