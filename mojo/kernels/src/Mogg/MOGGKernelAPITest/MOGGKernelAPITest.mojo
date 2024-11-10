@@ -555,3 +555,44 @@ struct BasicInplaceRaises:
         x = input[0, 0]
         x += 1
         input[0, 0] = x
+
+
+@compiler.register("variadic_add")
+struct VariadicAdd:
+    @compiler.enable_fusion_for("inputs")
+    @staticmethod
+    fn execute[
+        type: DType,
+        rank: Int,
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, rank],
+        inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
+    ):
+        alias inputs_specs = compiler.specsof[type, rank, inputs.size]("inputs")
+
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[rank]) -> SIMD[type, width]:
+            var acc = SIMD[type, width](0)
+
+            @parameter
+            for i in range(inputs.size):
+                alias in_lambda = inputs_specs[i].in_lambda
+
+                @parameter
+                if in_lambda:
+                    alias in_fn = in_lambda.value()
+                    acc += in_fn[width](idx)
+                else:
+                    acc += inputs[i].load[width](idx)
+
+            return acc
+
+        # Wrapper to hide the foreach call from MOGGPreElab.
+        # Otherwhise it would still be detected as an elementwise kernel.
+        fn foo():
+            foreach[func](output)
+
+        foo()
