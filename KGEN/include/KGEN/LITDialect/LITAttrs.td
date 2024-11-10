@@ -168,6 +168,9 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
     /// individual argument/parameter metadata attributes.
     PogListAttr cloneWith(ArrayRef<PogMetadataAttr> pogs) const;
 
+    /// Return the number of parameter entries.
+    size_t size() const { return getPogs().size(); }
+
     /// Return true if the argument/param at `idx` is a variadic.
     bool isVariadic(size_t idx) const;
     /// Return true if the argument/param at `idx` is a pack.
