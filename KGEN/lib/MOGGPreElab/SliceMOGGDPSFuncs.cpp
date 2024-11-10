@@ -120,6 +120,9 @@ private:
                     ArrayRef<unsigned> fusedOperands) {
     Block *computeBlock = gen.getBody();
 
+    ArrayAttr argumentTypeNames =
+        cast<ArrayAttr>(gen->getAttr(MOGG_ARG_TYPE_NAMES));
+
     ArrayAttr argsParams =
         dyn_cast_or_null<ArrayAttr>(gen->getAttr(MOGG_TENSOR_ARG_PARAMS));
     if (!argsParams)
@@ -129,6 +132,10 @@ private:
       Value tensorFusionEnabledOn = gen.getBody()->getArgument(idx);
 
       bool isInput = idx > 0;
+      auto typeNameAttr =
+          dyn_cast<StringAttr>(argumentTypeNames.getValue()[idx]);
+      bool isVariadic =
+          typeNameAttr && typeNameAttr.getValue() == MOJO_STATIC_INT_TUPLE_NAME;
       ASSERT_STREAM(inLambdaTemplate.templateOp && outLambdaTemplate.templateOp,
                     "intrinsic I/O fusion hooks not found");
       LambdaTemplate *lambda = isInput ? &inLambdaTemplate : &outLambdaTemplate;
@@ -145,13 +152,31 @@ private:
       IRMapping mapper;
       ASSERT_STREAM(lambda->templateOp != nullptr, "missing lambda");
 
+      OpBuilder builder{computeBlock, computeBlock->begin()};
+
+      if (isVariadic) {
+        // The fused argument is a StaticTuple (array) of tensors.
+        // We load the tensor at index 0 here (In MoToMOGG 0 will be replaced
+        // with the right index for each input lambda). We insert the load
+        // outside of the lambda first, then move it inside later (to ensure
+        // mapper works correctly).
+        tensorFusionEnabledOn = builder.create<KGEN::POP::ArrayGetOp>(
+            tensorFusionEnabledOn.getLoc(), tensorFusionEnabledOn, 0);
+      }
+
       mapper.map(lambda->templateOp.getBody()->getArgument(0),
                  tensorFusionEnabledOn);
-      OpBuilder b{computeBlock, computeBlock->begin()};
 
       // Copy the param region into the body.
-      auto newLambda =
-          cast<ParamDeclareRegionOp>(b.clone(*lambda->canonicalLambda, mapper));
+      auto newLambda = cast<ParamDeclareRegionOp>(
+          builder.clone(*lambda->canonicalLambda, mapper));
+
+      if (isVariadic) {
+        // Move the ArrayGetOp at the beginning of the block.
+        Operation *getTensorOp = tensorFusionEnabledOn.getDefiningOp();
+        getTensorOp->moveBefore(&newLambda.getBodyRegion().front(),
+                                newLambda.getBodyRegion().front().begin());
+      }
 
       SmallVector<TypedAttr> remappedLambdaParams;
       for (auto attr : cast<ArrayAttr>(argsParams[idx]).getValue())
@@ -240,7 +265,8 @@ public:
       for (size_t i = 1, e = argumentTypeNames.getValue().size(); i < e; i++) {
         auto nameAttr = dyn_cast<StringAttr>(argumentTypeNames.getValue()[i]);
         if (nameAttr &&
-            nameAttr.getValue() == MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME) {
+            (nameAttr.getValue() == MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME ||
+             nameAttr.getValue() == MOJO_STATIC_INT_TUPLE_NAME)) {
           ++kernelInputsCount;
         }
       }

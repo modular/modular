@@ -126,7 +126,9 @@ static void identifyGetterFunctions(CallGraphNode *node, SymbolTable &symTab) {
 
     // Check if the targetted function is the known intrinsic function and
     // attach that as metadata for the function if so.
-    if (invokedFunc->hasAttr(MOGGPreElab::MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
+    if (invokedFunc->hasAttr(MOGGPreElab::MOGG_INTRINSIC_TENSOR_SPEC_HOOK) ||
+        invokedFunc->hasAttr(
+            MOGGPreElab::MOGG_INTRINSIC_TENSOR_SPEC_TUPLE_HOOK)) {
       node->getterFunctions.push_back(attr);
 
       // Identify which tensor is getting the spec.
