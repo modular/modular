@@ -573,7 +573,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
   var bref = Pointer.address_of(b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[CopyAndInitMemType, b, 0]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[CopyAndInitMemType, b]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonTrivRegPassable, *vararg: String):
@@ -650,10 +650,10 @@ fn invalid_call_variadic_int(a: Int):
         pass
 
 fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, origin, 0]'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, origin]'}}
   var x : Pointer[T, b.origin] = a[]
 
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutableAnyOrigin, 0]'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutableAnyOrigin]'}}
   var y : Pointer[T,  __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`, a.address_space] = a[]
 
 fn test_subscript_conflict(a: Int):
@@ -666,7 +666,7 @@ struct Addable:
     fn __add__(self, other: Self): pass # expected-note {{function declared here}}
 fn test(a: Pointer[Addable, _], b: Addable):
     # FIXME: This shouldn't mention is_mutable since it is an implicit parameter.
-    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[Addable, origin, 0]' to 'Addable'}}
+    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[Addable, origin]' to 'Addable'}}
     _ = b+a
 
 
@@ -682,7 +682,7 @@ fn field_sensitive_origins(a: ThingWithFields)
   # expected-error @+1 {{MLIR type 'index' has no attributes}}
   _ = __origin_of(int.field_abc)
 
-  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, a.field, 0]'}}
+  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, a.field]'}}
   return a
 
 
@@ -705,18 +705,38 @@ fn unbound_function_type():
   var f: fn() [_] -> None
 
 
-
 # Crash converting mvalue of #lit.any.origin origin to Pointer with specific one.
 # https://github.com/modularml/mojo/issues/1921
 struct SomeStruct:
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
       -> Pointer[Int, __origin_of(self)]:
-    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin, 0]' value to 'Pointer[Int, self, 0]'}}
+    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin]' value to 'Pointer[Int, self]'}}
     return Pointer.address_of(ptr[])
 
+# Various type printing cases.
+#
 struct HasKWOnlyParam[*, kwplz: Int]: pass
 
 # expected-note @+1 {{function declared here}}
 fn test_kw_only[a: Int](arg: HasKWOnlyParam[kwplz=a]):
-  # expected-error @+1 {{invalid call to 'test_kw_only': argument #0 cannot be converted from 'HasKWOnlyParam[kwplz=a]' to 'HasKWOnlyParam[kwplz=42]'}}
+  # expected-error @+1 {{cannot be converted from 'HasKWOnlyParam[kwplz=a]' to 'HasKWOnlyParam[kwplz=42]'}}
   test_kw_only[42](arg)
+
+struct HasMultipleOnlyParam[x: Int = 1, y: Int = 4]: pass
+
+# expected-note @+1 {{function declared here}}
+fn test_mixedkw_only[a: Int](arg: HasMultipleOnlyParam[1, a]):
+  # expected-error @+1 {{cannot be converted from 'HasMultipleOnlyParam[y=a]' to 'HasMultipleOnlyParam[y=42]'}}
+  test_mixedkw_only[42](arg)
+
+fn int_fn(arg: Int) -> Int: return arg+1
+struct HasDependent[x: Int, y: Int = int_fn(x)]: pass
+
+# expected-note @+1 {{function declared here}}
+fn test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
+  # expected-error @+1 {{argument #0 cannot be converted from 'HasDependent[a]' to 'HasDependent[42]'}}
+  test_dependent[42](arg, arg2)
+  # expected-error @below {{argument #1 cannot be converted from 'HasDependent[a]' to 'HasDependent[a, 4]'}}
+  # expected-note @below {{one of the types includes a parameter expression}}
+  test_dependent(arg, arg)
+
