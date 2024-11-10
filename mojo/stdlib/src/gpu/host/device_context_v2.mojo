@@ -652,7 +652,7 @@ struct DeviceContextV2:
     var _handle: _DeviceContextPtr
 
     fn __init__(
-        inout self, device_kind: StringLiteral = "cuda", device_id: Int = 0
+        inout self, device_kind: StringRef = "cuda", device_id: Int = 0
     ) raises:
         # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *kind, int id)
         var result = _DeviceContextPtr()
@@ -710,6 +710,17 @@ struct DeviceContextV2:
         result = String(StringRef(ptr=name_ptr))
         external_call["free", NoneType, _CharPtr](name_ptr)
         return result
+
+    fn device_kind(self) -> StringRef:
+        # const char *AsyncRT_DeviceContext_deviceKind(const DeviceContext *ctx)
+        var kind_ptr = external_call[
+            "AsyncRT_DeviceContext_deviceKind",
+            _CharPtr,
+            _DeviceContextPtr,
+        ](
+            self._handle,
+        )
+        return StringRef(ptr=kind_ptr)
 
     fn malloc_host[
         type: AnyType
@@ -1251,7 +1262,7 @@ struct DeviceContextV2:
         )
 
     @staticmethod
-    fn number_of_devices(device_kind: StringLiteral) raises -> Int:
+    fn number_of_devices(device_kind: StringRef) raises -> Int:
         # const char *AsyncRT_DeviceContext_numberOfDevices(int32_t *result, const char* kind)
         var num_devices: Int32 = 0
         _checked(

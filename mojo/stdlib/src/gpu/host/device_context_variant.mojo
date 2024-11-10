@@ -190,9 +190,7 @@ struct DeviceContextVariant:
     fn v2(self) -> ref [__origin_of(self._impl)] Self.V2:
         return self._impl[Self.V2]
 
-    fn __init__(
-        inout self, kind: StringLiteral = "cuda", gpu_id: Int = 0
-    ) raises:
+    fn __init__(inout self, kind: StringRef = "cuda", gpu_id: Int = 0) raises:
         @parameter
         if _device_ctx_v2():
             self._impl = Self.V2(kind, gpu_id)
@@ -214,6 +212,13 @@ struct DeviceContextVariant:
             return self.v2().name()
         else:
             return "DeviceContextV1"
+
+    fn device_kind(self) -> StringRef:
+        @parameter
+        if _device_ctx_v2():
+            return self.v2().device_kind()
+        else:
+            return "cuda"
 
     fn malloc_host[
         type: AnyType
@@ -608,7 +613,7 @@ struct DeviceContextVariant:
             raise Error("Peer access is not supported on DeviceContextV1")
 
     @staticmethod
-    fn number_of_devices(kind: StringLiteral) raises -> Int:
+    fn number_of_devices(kind: StringRef) raises -> Int:
         @parameter
         if _device_ctx_v2():
             return DeviceContextV2.number_of_devices(kind)
