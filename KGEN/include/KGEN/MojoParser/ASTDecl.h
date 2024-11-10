@@ -134,6 +134,10 @@ public:
   bool doesNominalTypeConformsTo(TraitType trait,
                                  std::optional<InflightDiag> &diag);
 
+  /// If this is a method of a struct or trait, return the decl for the struct
+  /// or trait.
+  ASTDecl *tryGetMethodParentDecl() const;
+
   //===--------------------------------------------------------------------===//
   // Name lookup
   //===--------------------------------------------------------------------===//

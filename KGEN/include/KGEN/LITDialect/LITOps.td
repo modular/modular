@@ -50,8 +50,7 @@ def LIT_FuncOp : LITOp<"func", [
     ASTDeclInterface, DeclInterface, FuncInterface, ExportInterface]> {
   let summary = "High level generator definition";
   let description = [{
-    The `lit.func` operation models a def/fn declaration at the Lit source
-    level.
+    The `lit.func` operation models a def/fn declaration.
 
     @staticmethod decorators correspond to the attribute `isStatic`.
   }];

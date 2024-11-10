@@ -127,6 +127,14 @@ struct IntLiteral:
     fn __bool__(self) -> Bool:
         return self != Self()
 
+    @always_inline("nodebug")
+    fn __mul__(self, rhs: Self) -> Self:
+        return Self(
+            __mlir_op.`kgen.int_literal.binop`[
+                oper = __mlir_attr.`#kgen<int_literal.binop_kind mul>`
+            ](self.value, rhs.value)
+        )
+
 
 @value
 @nonmaterializable(FloatDyn)
@@ -170,6 +178,10 @@ struct Int(Copyable):
     @always_inline("nodebug")
     fn __sub__(lhs, rhs: Int) -> Int:
         return __mlir_op.`index.sub`(lhs.value, rhs.value)
+
+    @always_inline("nodebug")
+    fn __mul__(lhs, rhs: Int) -> Int:
+        return __mlir_op.`index.mul`(lhs.value, rhs.value)
 
     @always_inline("nodebug")
     fn __iadd__(inout self, rhs: Int):

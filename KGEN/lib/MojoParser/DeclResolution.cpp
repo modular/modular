@@ -462,7 +462,7 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
 
 void FnDecorators::applyStaticMethod(const DeclRefNode &node) {
   // This decorator only applies to methods of structs and traits.
-  if (!isa<StructDeclOp, TraitDeclOp>(*decl.getParentDecl())) {
+  if (!decl.tryGetMethodParentDecl()) {
     emitError(node.getLoc(), "only methods on structs may be declared static");
     return;
   }
