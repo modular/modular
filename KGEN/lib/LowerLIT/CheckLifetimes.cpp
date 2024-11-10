@@ -2598,7 +2598,8 @@ void DestructorInsertion::scanBlock(Block &block) {
     // attribute with all the value ID's in question.
     if (auto extraUses = op.getAttrOfType<mlir::DenseI32ArrayAttr>(
             extraOriginUsesAttrName)) {
-      op.removeAttr(extraOriginUsesAttrName);
+      if (!dryRun)
+        op.removeAttr(extraOriginUsesAttrName);
 
       // Treat this op as using each of the indicated values, putting out a
       // destructor call if this is the last use.
