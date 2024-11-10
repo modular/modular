@@ -8,7 +8,7 @@ from collections import OptionalReg
 
 from buffer.dimlist import DimList
 
-from utils import IndexList
+from utils import IndexList, StaticTuple
 
 
 fn __mogg_intrinsic_attr(intrin: StringLiteral):
@@ -110,5 +110,17 @@ fn create_none_spec[type: DType, rank: Int]() -> StaticTensorSpec[type, rank]:
 fn specsof[
     type: DType, rank: Int
 ](name: StringLiteral) -> StaticTensorSpec[type, rank]:
+    alias TENSOR_SPEC_NONE = create_none_spec[type, rank]()
+    return TENSOR_SPEC_NONE
+
+
+@__mogg_intrinsic_attr("mogg.intrinsic_tensor_spec_tuple_hook")
+fn specsof[
+    type: DType,
+    rank: Int,
+    tensors_count: Int,
+](name: StringLiteral) -> StaticTuple[
+    StaticTensorSpec[type, rank], tensors_count
+]:
     alias TENSOR_SPEC_NONE = create_none_spec[type, rank]()
     return TENSOR_SPEC_NONE
