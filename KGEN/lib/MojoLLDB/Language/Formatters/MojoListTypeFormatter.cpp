@@ -125,10 +125,7 @@ lldb_private::ConstString MojoListSyntheticFrontEnd::GetSyntheticTypeName() {
   if (fullTypeName.consume_back(", 1]"))
     return lldb_private::ConstString(fullTypeName.str() + ", Trivial]");
 
-  // Otherwise, just use `List[element_type]` and drop the `, 0]` part since
-  // it's not important to the consumer.
-  fullTypeName.consume_back(", 0]");
-  return lldb_private::ConstString(fullTypeName.str() + "]");
+  return lldb_private::ConstString(fullTypeName.str());
 }
 
 SyntheticChildrenFrontEnd *

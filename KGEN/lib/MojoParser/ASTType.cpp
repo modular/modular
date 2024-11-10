@@ -13,6 +13,7 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 
 #include "KGEN/Interpreter/InterpreterAttrs.h"
@@ -686,17 +687,45 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       assert(paramInfo.size() == params.size() &&
              "Unexpected number of bound params");
 
+      ParserParamEvaluator evaluator(typeDecl->getShared().getDeclResolver(),
+                                     params);
+
+      // Find out about default parameter values.
+      DefaultValueHandler defaultValueHandler(paramInfo);
+      bool skippedPositional = false;
       for (auto [idx, pog, paramValue] :
            llvm::enumerate(paramInfo.getPogs(), params)) {
 
+        auto passingKind = pog.getPassingKind();
+
+        // See if this parameter has a default value.  If so, and if the
+        // provided value matches it, then don't print the parameter in the
+        // list.
+        if (auto def = defaultValueHandler.getDefault(idx)) {
+          // Make sure to substitute other parameter values in, e.g. so we can
+          // handle things like:
+          //   struct UnsafePointer[type: AnyType,
+          //                        align: Int = _default_alignment[type]()]:
+          def = cast<TypedAttr>(evaluator.getReboundAttribute(def));
+          if (paramValue == def && passingKind != PassingKind::PosOnly) {
+            // If we skip a posOrKw then include keyword names for any other
+            // posOrKw's that come after it.
+            skippedPositional |= (passingKind == PassingKind::PosOrKw);
+            continue;
+          }
+        }
+
         StringAttr name;
-        switch (pog.getPassingKind()) {
+        switch (passingKind) {
         case PassingKind::Implicit:
         case PassingKind::Inferred:
           continue; // Don't print implicit parameters at all.
-        case PassingKind::PosOrKw:
         case PassingKind::PosOnly:
-          break; // Don't include a name.
+          break; // Never include a name.
+        case PassingKind::PosOrKw:
+          if (!skippedPositional)
+            break; // Don't include a name unless we skipped another one.
+          [[fallthrough]];
         case PassingKind::KwOnly:
           name = paramInfo.getName(idx);
           break;

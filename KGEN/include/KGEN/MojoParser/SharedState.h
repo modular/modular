@@ -109,6 +109,7 @@ public:
 
   llvm::SourceMgr &getSourceMgr() const { return diags.sourceMgr; }
   MLIRContext *getContext() const { return diags.context; }
+  DeclResolver &getDeclResolver() const { return *declResolver; }
 
   /// Returns if we should diagnose missing doc strings.
   bool shouldDiagnoseMissingDocStrings() const;
@@ -554,7 +555,7 @@ public:
 
   MLIRContext *getContext() const { return shared.getContext(); }
   llvm::SourceMgr &getSourceMgr() const { return shared.getSourceMgr(); }
-  DeclResolver &getDeclResolver() const { return *shared.declResolver; }
+  DeclResolver &getDeclResolver() const { return shared.getDeclResolver(); }
 
   mlir::Location translateLocation(SMLoc loc) {
     return shared.translateLocation(loc);
