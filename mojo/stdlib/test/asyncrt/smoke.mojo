@@ -116,7 +116,7 @@ fn _run_peer_access(ctx: DeviceContext) raises:
     expect_eq(ctx.can_access(ctx), False, "self access is not enabled")
 
     if is_v2_context():
-        var num_gpus = DeviceContext.number_of_devices(device_kind())
+        var num_gpus = DeviceContext.number_of_devices(ctx.device_kind())
         print("Number of GPU devices: " + str(num_gpus))
 
         if num_gpus > 1:
