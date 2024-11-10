@@ -47,6 +47,9 @@ struct MemExample:
     fn __bool__(self) -> Bool:
         return True
 
+    fn unsafe_ptr(self) -> UnsafePointer[Int]:
+        return UnsafePointer[Int]()
+
     fn __del__(owned self):
         pass
 
@@ -617,3 +620,25 @@ fn test_elif(cond: Bool, cond2: Bool):
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%mem3)
     # CHECK-NEXT: lifetime.end %mem3
     # CHECK-NEXT: hlcf.yield
+
+# https://github.com/modularml/mojo/issues/3710
+# Mojo frees memory while reference to it is still in use
+# CHECK-LABEL: lit.func @"loop_any_origin
+fn loop_any_origin(owned mem: MemExample, cond: Bool):
+  # CHECK: lit.call {{.*}}unsafe_ptr
+  ptr = mem.unsafe_ptr()
+
+  # The "mem" destructor must be in the loop exit, not ahead of the loop because
+  # there is an access through AnyOrigin within the loop.
+  # CHECK: hlcf.loop
+  # CHECK-NEXT:     lit.call {{.*}}Bool::@"__mlir_i1__
+  # CHECK-NEXT:     hlcf.if 
+  # CHECK-NEXT:       hlcf.yield
+  # CHECK-NEXT:     } else {
+  # CHECK-NEXT:       lit.var.lifetime.end %ptr
+  # CHECK-NEXT:       lit.call {{.*}}MemExample::@"__del__
+  # CHECK-NEXT:       hlcf.break
+  while cond:
+    ptr[] = 4
+
+  
