@@ -668,23 +668,59 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
 
   Type type = mlirType;
   auto printUserType = [&](SymbolRefAttr symbol, ArrayRef<TypedAttr> params,
-                           TypeSignatureType tstInfo) {
+                           ASTDecl *typeDecl) {
     // Only print the leaf reference when pretty printing types.
     printSymbol(os, symbol, diagShared, /*isFunc=*/false);
 
     if (params.empty())
       return;
 
-    // If this type has parameters, some number of them may be implicit.  Go
-    // ahead and drop those because they aren't part of the general UX of the
-    // type from the user's perspective.
-    params = params.drop_front(tstInfo.getParamListAttrs().getNumImplicit());
+    SmallVector<std::pair<StringAttr, TypedAttr>> paramsToPrint;
 
-    os << '[';
-    llvm::interleaveComma(params, os, [&](TypedAttr value) {
-      printParam(os, value, diagShared, demangleParams);
-    });
-    os << ']';
+    // If we're printing for diagnostics, we'll have a 'typeDecl' corresponding
+    // to this.  In that case we want to avoid printing defaulted parameter
+    // values that are the same as their default value.
+    if (typeDecl) {
+      TypeSignatureType origSig = cast<StructDeclOp>(*typeDecl).getSignature();
+      PogListAttr paramInfo = origSig.getParamListAttrs();
+      assert(paramInfo.size() == params.size() &&
+             "Unexpected number of bound params");
+
+      for (auto [idx, pog, paramValue] :
+           llvm::enumerate(paramInfo.getPogs(), params)) {
+
+        StringAttr name;
+        switch (pog.getPassingKind()) {
+        case PassingKind::Implicit:
+        case PassingKind::Inferred:
+          continue; // Don't print implicit parameters at all.
+        case PassingKind::PosOrKw:
+        case PassingKind::PosOnly:
+          break; // Don't include a name.
+        case PassingKind::KwOnly:
+          name = paramInfo.getName(idx);
+          break;
+        }
+        paramsToPrint.push_back({name, paramValue});
+      }
+
+    } else {
+      // When generating mangled names, don't include names for parameters since
+      // positional information is enough.
+      for (TypedAttr paramValue : params)
+        paramsToPrint.push_back({StringAttr(), paramValue});
+    }
+
+    if (!paramsToPrint.empty()) {
+      os << '[';
+      llvm::interleaveComma(
+          paramsToPrint, os, [&](std::pair<StringAttr, TypedAttr> param) {
+            if (param.first)
+              os << param.first.strref() << '=';
+            printParam(os, param.second, diagShared, demangleParams);
+          });
+      os << ']';
+    }
   };
 
   auto printConvention = [&os](ArgConvention conv) {
@@ -705,15 +741,16 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
   };
 
   if (auto structTy = dyn_cast<StructType>(type)) {
-    // FIXME: StructType invariants should be tightened.  Some legacy .mlir
-    // test-cases need to be updated.
-    TypeSignatureType tstInfo =
-        cast<AnyStructType>(structTy.getMetaType()).getSignature();
-    printUserType(structTy.getSymbol(), structTy.getParamValues(), tstInfo);
+    ASTDecl *decl = nullptr;
+    if (diagShared)
+      decl = ASTType(type).getDecl(*diagShared);
+    printUserType(structTy.getSymbol(), structTy.getParamValues(), decl);
   } else if (auto anyStruct = dyn_cast<AnyStructType>(type)) {
+    ASTDecl *decl = nullptr;
+    if (diagShared)
+      decl = ASTType(type).getDecl(*diagShared);
     os << "AnyStruct[";
-    printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(),
-                  anyStruct.getSignature());
+    printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(), decl);
     os << ']';
   } else if (auto traitType = dyn_cast<TraitType>(type)) {
     printSymbol(os, traitType.getSymbol(), diagShared, /*isFunc=*/false);

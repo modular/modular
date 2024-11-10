@@ -201,7 +201,7 @@ bool PogListAttr::hasVariadic() const {
 bool PogListAttr::hasPack() const { return getPackIndex() != -1; }
 
 bool PogListAttr::hasKwVariadics() const {
-  for (size_t idx = 0, e = getPogs().size(); idx < e; ++idx)
+  for (size_t idx = 0, e = size(); idx != e; ++idx)
     if (isKwVariadic(idx))
       return true;
   return false;
@@ -385,12 +385,12 @@ FnMetadataAttr::prependPosParams(size_t numNewParams,
 
   PogListAttr oldParamListAttr = getParamListAttrs();
   SmallVector<PogMetadataAttr> mergedPogs;
-  for (size_t iNew = 0, iOld = 0, eOld = oldParamListAttr.getPogs().size(),
+  for (size_t iNew = 0, iOld = 0, eOld = oldParamListAttr.size(),
               eNew = newPogs.size();
        iOld < eOld || iNew < eNew;) {
     // Put inferred parameters first.
-    if (iOld < eOld && oldParamListAttr.getPogs()[iOld].getPassingKind() ==
-                           PassingKind::Inferred) {
+    if (iOld < eOld &&
+        oldParamListAttr.getPassingKind(iOld) == PassingKind::Inferred) {
       mergedPogs.push_back(oldParamListAttr.getPogs()[iOld]);
       iOld++;
     } else if (iNew < eNew) {
@@ -445,7 +445,7 @@ LogicalResult FnMetadataAttr::verifySignature(
     return emitError() << "expected no result parameters";
 
   PogListAttr paramListAttr = getParamListAttrs();
-  if (paramListAttr.getPogs().size() != inputParamTypes.size()) {
+  if (paramListAttr.size() != inputParamTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
                           "input parameter types";
   }

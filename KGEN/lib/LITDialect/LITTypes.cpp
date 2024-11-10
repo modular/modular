@@ -76,7 +76,7 @@ LogicalResult
 TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                           ArrayRef<Type> paramTypes,
                           PogListAttr paramListAttrs) {
-  if (paramListAttrs.getPogs().size() != paramTypes.size()) {
+  if (paramListAttrs.size() != paramTypes.size()) {
     return emitError() << "number of parameters doesn't match number of input "
                           "parameter types";
   }

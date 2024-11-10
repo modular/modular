@@ -329,7 +329,7 @@ void LIT::printConventionAndVariadicness(AsmPrinter &p,
 /// Return an array of enums representing the variadicness of each
 /// argument/parameter in the given list.
 SmallVector<Variadicness> LIT::getVariadicness(PogListAttr pogListAttr) {
-  size_t numPogs = pogListAttr.getPogs().size();
+  size_t numPogs = pogListAttr.size();
   SmallVector<Variadicness> res;
   res.reserve(numPogs);
   for (size_t idx = 0; idx < numPogs; ++idx) {
@@ -710,7 +710,7 @@ PassingKindPrinter::PassingKindPrinter(raw_ostream &os, PogListAttr pogListAttr,
                                        bool suppressSlashAfterSelf, char slash,
                                        StringRef plus)
     : PassingKindPrinter(
-          os, pogListAttr.getPogs().size(),
+          os, pogListAttr.size(),
           [pogListAttr](size_t idx) { return pogListAttr.getPassingKind(idx); },
           suppressSlashAfterSelf, slash, plus) {}
 

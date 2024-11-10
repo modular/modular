@@ -563,7 +563,7 @@ fn test_bad_ref(a: Int, b: CopyAndInitMemType):
 
   var bref = Pointer.address_of(b) # ok
 
-  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[0, CopyAndInitMemType, b, 0]' to 'CopyAndInitMemType'}}
+  # expected-error @+1 {{invalid call to '__le__': right side cannot be converted from 'Pointer[CopyAndInitMemType, b, 0]' to 'CopyAndInitMemType'}}
   _ = b <= bref
 
 fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonTrivRegPassable, *vararg: String):
@@ -640,10 +640,10 @@ fn invalid_call_variadic_int(a: Int):
         pass
 
 fn test_bad_ref_errors[T: AnyType](a: Pointer[T, _], b: Pointer[T, _]):
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[is_mutable, T, origin, 0]'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, origin, 0]'}}
   var x : Pointer[T, b.origin] = a[]
 
-  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[1, T, MutableAnyOrigin, 0]'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Pointer[T, MutableAnyOrigin, 0]'}}
   var y : Pointer[T,  __mlir_attr.`#lit.any.origin<1>: !lit.origin<1>`, a.address_space] = a[]
 
 fn test_subscript_conflict(a: Int):
@@ -656,7 +656,7 @@ struct Addable:
     fn __add__(self, other: Self): pass # expected-note {{function declared here}}
 fn test(a: Pointer[Addable, _], b: Addable):
     # FIXME: This shouldn't mention is_mutable since it is an implicit parameter.
-    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[is_mutable, Addable, origin, 0]' to 'Addable'}}
+    # expected-error @+1 {{invalid call to '__add__': right side cannot be converted from 'Pointer[Addable, origin, 0]' to 'Addable'}}
     _ = b+a
 
 
@@ -672,7 +672,7 @@ fn field_sensitive_origins(a: ThingWithFields)
   # expected-error @+1 {{MLIR type 'index' has no attributes}}
   _ = __origin_of(int.field_abc)
 
-  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[0, ThingWithFields, a.field, 0]'}}
+  # expected-error @+1 {{cannot implicitly convert 'ThingWithFields' value to 'Pointer[ThingWithFields, a.field, 0]'}}
   return a
 
 
@@ -701,5 +701,12 @@ fn unbound_function_type():
 struct SomeStruct:
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
       -> Pointer[Int, __origin_of(self)]:
-    # expected-error @below {{cannot implicitly convert 'Pointer[1, Int, MutableAnyOrigin, 0]' value to 'Pointer[1, Int, self, 0]'}}
+    # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin, 0]' value to 'Pointer[Int, self, 0]'}}
     return Pointer.address_of(ptr[])
+
+struct HasKWOnlyParam[*, kwplz: Int]: pass
+
+# expected-note @+1 {{function declared here}}
+fn test_kw_only[a: Int](arg: HasKWOnlyParam[kwplz=a]):
+  # expected-error @+1 {{invalid call to 'test_kw_only': argument #0 cannot be converted from 'HasKWOnlyParam[kwplz=a]' to 'HasKWOnlyParam[kwplz=42]'}}
+  test_kw_only[42](arg)
