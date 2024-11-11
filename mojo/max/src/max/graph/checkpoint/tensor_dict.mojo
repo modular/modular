@@ -84,7 +84,7 @@ struct TensorDict(Sized):
 
     var _items: Dict[String, _CheckpointTensor]
 
-    def __init__(inout self):
+    def __init__(out self):
         self._items = Dict[String, _CheckpointTensor]()
 
     fn __setitem__[T: DType](inout self, key: String, value: Tensor[T]):
@@ -186,7 +186,7 @@ struct TensorDict(Sized):
     ) -> _DictKeyIter[String, _CheckpointTensor, __origin_of(self._items)]:
         return _DictKeyIter(_DictEntryIter(0, 0, self._items))
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         """Copies a dictionary.
 
         Args:
@@ -194,7 +194,7 @@ struct TensorDict(Sized):
         """
         self._items = existing._items
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Moves data of an existing dictionary into a new one.
 
         Args:

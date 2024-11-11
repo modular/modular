@@ -24,11 +24,11 @@ struct _EngineImpl:
 
     alias VersionFnName = "M_version"
 
-    fn __init__(inout self, path: String):
+    fn __init__(out self, path: String):
         self.lib = DLHandle(path)
         self.can_close_lib = True
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.lib = existing.lib
         self.can_close_lib = exchange[Bool](existing.can_close_lib, False)
 

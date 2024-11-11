@@ -274,11 +274,11 @@ struct _ContinuousBatchingInflightBatchHandle(CollectionElement):
         self.cache_lengths = cache_lengths^
         self.lookup_table = lookup_table^
 
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         self.cache_lengths = other.cache_lengths
         self.lookup_table = other.lookup_table
 
-    fn __moveinit__(inout self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         self.cache_lengths = other.cache_lengths^
         self.lookup_table = other.lookup_table^
 

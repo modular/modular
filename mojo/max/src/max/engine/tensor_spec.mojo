@@ -42,7 +42,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
 
     alias _NewTensorSpecFnName = "M_newTensorSpec"
 
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         """Copy constructor for Tensor Spec.
 
         Args:
@@ -56,7 +56,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             other._session,
         )
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Move constructor for Tensor Spec.
 
         Args:

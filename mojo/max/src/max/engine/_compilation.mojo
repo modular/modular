@@ -122,7 +122,7 @@ struct TorchInputSpec(Movable):
 
     alias NewTorchInputSpecFnName = "M_newTorchInputSpec"
 
-    fn __init__(inout self, spec: TensorSpec, lib: DLHandle) raises:
+    fn __init__(out self, spec: TensorSpec, lib: DLHandle) raises:
         var shape = Self.shape_type()
         shape.reserve(spec.rank())
         for i in range(spec.rank()):
@@ -206,7 +206,7 @@ struct TorchInputSpec(Movable):
         self.ptr = ptr
         self.torch_lib = lib
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.shape = existing.shape^
         self.dtype = existing.dtype
         self.ptr = existing.ptr
@@ -226,7 +226,7 @@ struct CompileConfig:
 
     alias NewCompileConfigFnName = "M_newCompileConfig"
 
-    fn __init__(inout self, lib: DLHandle):
+    fn __init__(out self, lib: DLHandle):
         self._ptr = OwnedPointer(
             call_dylib_func[CCompileConfig](lib, Self.NewCompileConfigFnName)
         )
@@ -254,7 +254,7 @@ struct CompileConfig:
 
         return DLHandle(torch_ext_lib_path)
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._ptr = existing._ptr^
         self.lib = existing.lib
         self.input_specs = existing.input_specs^
@@ -420,7 +420,7 @@ struct CompiledModel:
 
     alias CompileModelFnName = "M_compileModelSync"
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ptr = exchange[CCompiledModel](
             existing.ptr, UnsafePointer[NoneType]()
         )

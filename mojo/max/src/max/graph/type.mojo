@@ -89,7 +89,7 @@ struct StaticDim(CollectionElement):
     var dim: Int64
     """The size of the static dimension."""
 
-    fn __init__(inout self, dim: Int):
+    fn __init__(out self, dim: Int):
         """Int conversion constructor.
 
         Args:
@@ -151,7 +151,7 @@ struct Dim(CollectionElement):
     var value: Variant[DynamicDim, StaticDim, SymbolicDim]
     """The dimension data."""
 
-    fn __init__(inout self, dim: Int):
+    fn __init__(out self, dim: Int):
         """Int static dimension conversion constructor.
 
         Args:
@@ -159,7 +159,7 @@ struct Dim(CollectionElement):
         """
         self.value = StaticDim(dim)
 
-    fn __init__(inout self, name: StringLiteral):
+    fn __init__(out self, name: StringLiteral):
         """StringLiteral symbolic dimension conversion constructor.
 
         Args:
@@ -374,7 +374,7 @@ struct TensorType(CollectionElement):
     # Constructors
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(inout self, dtype: DType):
+    fn __init__(out self, dtype: DType):
         """Constructs a 0-d tensor type.
 
         Args:
@@ -383,7 +383,7 @@ struct TensorType(CollectionElement):
         self.dtype = dtype
         self.dims = List[Dim]()
 
-    fn __init__(inout self, dtype: DType, *dims: Dim):
+    fn __init__(out self, dtype: DType, *dims: Dim):
         """Constructs a tensor type.
 
         Args:
@@ -396,7 +396,7 @@ struct TensorType(CollectionElement):
         for d in dims:
             self.dims.append(d[])
 
-    fn __init__(inout self, dtype: DType, dims: List[Dim]):
+    fn __init__(out self, dtype: DType, dims: List[Dim]):
         """Constructs a ranked tensor type.
 
         Args:
@@ -411,7 +411,7 @@ struct TensorType(CollectionElement):
     # Auxiliary factories
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(inout self, spec: TensorSpec):
+    fn __init__(out self, spec: TensorSpec):
         """Constructs a tensor type from a TensorSpec.
 
         Since TensorSpec can only contain static shapes, this will always
@@ -643,7 +643,7 @@ struct Type(CollectionElement):
     var type: Variant[TensorType, ListType, _OpaqueType]
     """The type data."""
 
-    fn __init__(inout self, t: TensorType):
+    fn __init__(out self, t: TensorType):
         """Constructs a type from a tensor type.
 
         Args:
@@ -651,7 +651,7 @@ struct Type(CollectionElement):
         """
         self.type = t
 
-    fn __init__(inout self, t: ListType):
+    fn __init__(out self, t: ListType):
         """Constructs a type from a list type.
 
         Args:
@@ -659,7 +659,7 @@ struct Type(CollectionElement):
         """
         self.type = t
 
-    fn __init__(inout self, t: _OpaqueType):
+    fn __init__(out self, t: _OpaqueType):
         """Constructs a type from an opaque typ.
 
         Args:

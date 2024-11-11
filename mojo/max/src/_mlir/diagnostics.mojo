@@ -152,7 +152,7 @@ struct ErrorCapturingDiagnosticHandler:
     var handler: Optional[Self.Handler]
     var error: String
 
-    fn __init__(inout self, ctx: Context):
+    fn __init__(out self, ctx: Context):
         self.error = "MLIR raised but didn't set an error"
         self.ctx = ctx
         self.handler = None

@@ -31,7 +31,7 @@ struct EngineDType:
 
     alias bool: Int32 = 30
 
-    fn __init__(inout self, dtype: DType):
+    fn __init__(out self, dtype: DType):
         if dtype is DType.int8:
             self.dtype = EngineDType.int8
         elif dtype is DType.int16:

@@ -42,7 +42,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
     var _static: Int64
     var _name: String
 
-    fn __init__(inout self, static: Int):
+    fn __init__(out self, static: Int):
         """Create a static shape element with the given static dimension value.
 
         Args:
@@ -50,7 +50,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         """
         self.__init__(Int64(static))
 
-    fn __init__(inout self, static: Int64):
+    fn __init__(out self, static: Int64):
         """Create a static shape element with the given static dimension value.
 
         Args:
@@ -63,7 +63,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initilaizer from a `NoneType`.
-    fn __init__(inout self, unnamed: NoneType._mlir_type):
+    fn __init__(out self, unnamed: NoneType._mlir_type):
         """Create an unnamed dynamic shape element.
 
         Args:
@@ -71,7 +71,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         """
         self = Self(NoneType(unnamed))
 
-    fn __init__(inout self, unnamed: NoneType):
+    fn __init__(out self, unnamed: NoneType):
         """Create an unnamed dynamic shape element.
 
         Args:
@@ -81,7 +81,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         self._static = 0
         self._name = String()
 
-    fn __init__(inout self, owned name: String):
+    fn __init__(out self, owned name: String):
         """Create a dynamic shape element with the given name.
 
         Args:
@@ -94,7 +94,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         self._static = 0
         self._name = name^
 
-    fn __init__(inout self, name: StringRef):
+    fn __init__(out self, name: StringRef):
         """Create a dynamic shape element with the given name.
 
         Args:
@@ -105,7 +105,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         """
         self.__init__(String(name))
 
-    fn __init__(inout self, name: StringLiteral):
+    fn __init__(out self, name: StringLiteral):
         """Create a dynamic shape element with the given name.
 
         Args:
@@ -116,7 +116,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         """
         self.__init__(String(name))
 
-    fn __moveinit__(inout self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         """Initialize from another owned ShapeElement.
 
         Args:
@@ -126,7 +126,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         self._static = other._static
         self._name = other._name^
 
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         """Create a copy of another ShapeElement.
 
         Args:

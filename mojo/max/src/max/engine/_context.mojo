@@ -91,7 +91,7 @@ struct RuntimeConfig:
 
         self.ptr.set_api_language(self.lib, "mojo")
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ptr = exchange[CRuntimeConfig](
             existing.ptr, UnsafePointer[NoneType]()
         )
@@ -125,7 +125,7 @@ struct RuntimeContext:
     alias NewRuntimeContextFnName = "M_newRuntimeContext"
     alias SetDebugPrintOptionsFnName = "M_setDebugPrintOptions"
 
-    fn __init__(inout self, owned config: RuntimeConfig, lib: DLHandle):
+    fn __init__(out self, owned config: RuntimeConfig, lib: DLHandle):
         var status = Status(lib)
         self.ptr = call_dylib_func[CRuntimeContext](
             lib,
@@ -139,7 +139,7 @@ struct RuntimeContext:
         _ = config^
         self.lib = lib
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ptr = exchange[CRuntimeContext](
             existing.ptr, UnsafePointer[NoneType]()
         )

@@ -16,10 +16,10 @@ struct FunctionType(DialectType):
     var inputs: List[Type]
     var results: List[Type]
 
-    fn __init__(inout self, ctx: Context):
+    fn __init__(out self, ctx: Context):
         self.__init__(ctx, List[Type](), List[Type]())
 
-    fn __init__(inout self, inputs: List[Type], results: List[Type]):
+    fn __init__(out self, inputs: List[Type], results: List[Type]):
         debug_assert(
             len(inputs).__bool__() or len(results).__bool__(),
             "nullary functions must use the context constructor",

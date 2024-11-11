@@ -27,10 +27,10 @@ struct _OwningPointer(Movable):
 
     var ptr: UnsafePointer[NoneType]
 
-    fn __init__(inout self, ptr: UnsafePointer[NoneType]):
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
         self.ptr = ptr
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ptr = existing.ptr
 
     fn __del__(owned self):
@@ -148,7 +148,7 @@ struct EngineNumpyView:
     var _np: _Numpy
     var _obj: PythonObject
 
-    fn __init__(inout self, tensor: PythonObject) raises:
+    fn __init__(out self, tensor: PythonObject) raises:
         """Creates a non-owning view of given numpy array.
 
         Args:

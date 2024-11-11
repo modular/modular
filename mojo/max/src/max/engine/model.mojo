@@ -59,7 +59,7 @@ struct Model:
     alias _InitModelFnName = "M_initModel"
     alias _ExecuteFnName = "M_executeModelSync"
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Move initializer for model.
 
         Args:

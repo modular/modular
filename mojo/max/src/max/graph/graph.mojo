@@ -100,7 +100,7 @@ struct _OwnedGraph(Movable):
         except:
             return abort[_mlir.Module]("invalid MLIR state for graph")
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ctx = existing.ctx
         self.op = existing.op
         self.layers = existing.layers^
@@ -171,7 +171,7 @@ struct Graph(CollectionElement, Stringable, Writable):
 
     var _graph: _GraphRef
 
-    fn __init__(inout self, in_type: Type):
+    fn __init__(out self, in_type: Type):
         """Constructs a new `Graph` with a single input type.
 
         Although a `Graph` is technically valid once constructed, it is not
@@ -253,7 +253,7 @@ struct Graph(CollectionElement, Stringable, Writable):
 
         self._graph = Arc(_OwnedGraph(ctx, op, in_types))
 
-    fn __init__(inout self: Self, path: Path) raises:
+    fn __init__(out self: Self, path: Path) raises:
         """Constructs a new `Graph` from a MLIR file.
 
         Experimental. Recreates a graph from an MLIR file.

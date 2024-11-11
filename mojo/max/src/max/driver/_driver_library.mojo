@@ -14,10 +14,10 @@ from ._status import _CStatus
 struct ManagedDLHandle:
     var lib: DLHandle
 
-    fn __init__(inout self, lib: DLHandle):
+    fn __init__(out self, lib: DLHandle):
         self.lib = lib
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.lib = existing.lib
 
     fn get_handle(self) -> DLHandle:
@@ -71,7 +71,7 @@ struct DriverLibrary:
     alias get_data_fn_sig = fn (Self.device_memory_type) -> UnsafePointer[UInt8]
     var get_data_fn: Self.get_data_fn_sig
 
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
         var lib = DLHandle(_get_driver_path())
         self.destroy_device_fn = lib.get_function[Self.destroy_device_fn_sig](
             "M_destroyDevice"

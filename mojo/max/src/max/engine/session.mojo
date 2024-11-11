@@ -39,7 +39,7 @@ struct _InferenceSessionImpl(Movable):
     var context: RuntimeContext
     var device: Device
 
-    fn __init__(inout self, lib_path: String, device: Device):
+    fn __init__(out self, lib_path: String, device: Device):
         self.engine = _EngineImpl(lib_path)
         self.device = device
         var config = RuntimeConfig(
@@ -49,7 +49,7 @@ struct _InferenceSessionImpl(Movable):
         )
         self.context = RuntimeContext(config^, self.engine.lib)
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.engine = existing.engine^
         self.context = existing.context^
         self.device = existing.device^
@@ -259,7 +259,7 @@ struct InputSpec(CollectionElement):
     var _dynamic: Self._dynamic_type
     var _dtype: DType
 
-    fn __init__(inout self, spec: TensorSpec):
+    fn __init__(out self, spec: TensorSpec):
         """
         Create input specifications for one input tensor, as a
         [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
@@ -301,7 +301,7 @@ struct InputSpec(CollectionElement):
             self._dynamic = None
         self._dtype = dtype
 
-    fn __init__(inout self, spec: Optional[List[ShapeElement]], dtype: DType):
+    fn __init__(out self, spec: Optional[List[ShapeElement]], dtype: DType):
         """
         Create specifications for one input tensor, as a list of shape
         elements.  Only applicable for TorchScript models.
@@ -320,7 +320,7 @@ struct InputSpec(CollectionElement):
         self._dynamic = spec
         self._dtype = dtype
 
-    fn __init__(inout self, spec: NoneType, dtype: DType):
+    fn __init__(out self, spec: NoneType, dtype: DType):
         """
         Create a specification for a dynamic-rank input.  Only applicable for
         TorchScript models.
@@ -351,7 +351,7 @@ struct _TorchLoadOptions(CollectionElement):
     var _custom_ops_paths: List[Path]
     var _input_specs: List[InputSpec]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         """Creates a new _TorchLoadOptions object."""
         self._source = None
         self._model_path = None
@@ -417,11 +417,11 @@ struct SessionOptions:
 
     var _device: Optional[Device]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         """Creates a new SessionOptions object."""
         self._device = None
 
-    fn __init__(inout self, device: Device):
+    fn __init__(out self, device: Device):
         """Creates a new SessionOptions object with a device set."""
         self._device = device
 
@@ -444,7 +444,7 @@ struct InferenceSession:
 
     var _ptr: Arc[_InferenceSessionImpl]
 
-    fn __init__(inout self, options: SessionOptions = SessionOptions()) raises:
+    fn __init__(out self, options: SessionOptions = SessionOptions()) raises:
         """Creates a new inference session.
 
         Args:

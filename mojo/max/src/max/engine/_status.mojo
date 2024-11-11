@@ -48,11 +48,11 @@ struct Status:
 
     alias NewStatusFnName = "M_newStatus"
 
-    fn __init__(inout self, lib: DLHandle):
+    fn __init__(out self, lib: DLHandle):
         self.ptr = call_dylib_func[CStatus](lib, self.NewStatusFnName)
         self.lib = lib
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ptr = exchange[CStatus](existing.ptr, UnsafePointer[NoneType]())
         self.lib = existing.lib
 

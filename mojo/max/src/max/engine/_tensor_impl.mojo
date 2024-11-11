@@ -76,7 +76,7 @@ struct EngineTensor(Sized):
         self.lib = lib
         self.session = session^
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ptr = exchange[CTensor](existing.ptr, UnsafePointer[NoneType]())
         self.lib = existing.lib
         self.session = existing.session^
@@ -127,7 +127,7 @@ struct EngineTensor(Sized):
 struct _Numpy:
     var np: PythonObject
 
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
         self.np = Python.import_module("numpy")
 
     fn __getattr__(self, attr: StringLiteral) raises -> PythonObject:

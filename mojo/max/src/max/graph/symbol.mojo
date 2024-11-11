@@ -870,14 +870,14 @@ struct SymbolicSlice(CollectionElement):
     var step: Optional[Symbol]
     """The slice's step."""
 
-    def __init__(inout self, start: Optional[Symbol], stop: Optional[Symbol]):
+    def __init__(out self, start: Optional[Symbol], stop: Optional[Symbol]):
         """Convenience constructor from `start` and `step` that doesn't require `step`.
         """
         self.start = start
         self.stop = stop
         self.step = Optional[Symbol]()
 
-    def __init__(inout self, g: Graph, s: Slice):
+    def __init__(out self, g: Graph, s: Slice):
         """Convenience constructor from a `Slice`.
 
         This wraps any indices in `s` into constant nodes (using `mo.constant`).

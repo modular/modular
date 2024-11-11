@@ -50,7 +50,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
     # function set on the cpp side.
     var _device_memory_impl_ptr: UnsafePointer[NoneType]
 
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
         """Default constructor for Tensor. Accessing the elements of default
         constructed tensor is undefined behavior.
         """
@@ -61,7 +61,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self.name = None
         self._device_memory_impl_ptr = UnsafePointer[NoneType]()
 
-    fn __init__(inout self, *, owned device_tensor: DeviceTensor) raises:
+    fn __init__(out self, *, owned device_tensor: DeviceTensor) raises:
         """Creates a tensor from DeviceTensor.
 
         Args:
@@ -91,7 +91,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         var dt = dev.allocate(spec)
         self = Self(device_tensor=dt)
 
-    fn __init__(inout self, tensor: OldTensor[type]) raises:
+    fn __init__(out self, tensor: OldTensor[type]) raises:
         """Converts max.tensor to max.driver.Tensor. This creates tensor on
         the CPU.
 
@@ -100,7 +100,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         """
         self = _convert_from[rank=rank](tensor)
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Move constructor for Tensor.
 
         Args:
@@ -114,7 +114,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self._device_memory_impl_ptr = existing._device_memory_impl_ptr
 
     @doc_private
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         # This temporarily exists so that we can store Tensor in a List
         # TODO(MSTDL-467): Once Copyable requirement on List is removed, this
         # can be removed

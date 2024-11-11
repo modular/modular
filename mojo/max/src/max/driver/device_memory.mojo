@@ -74,7 +74,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
     var name: Optional[String]
     var num_bytes: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         """Constructs a DeviceMemory object in a state that is only valid for deletion.
         Can be used to represent a `moved from` state.
         """
@@ -125,7 +125,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         self.name = name
         self.num_bytes = num_bytes
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         # This temporarily exists so that we can store DeviceMemory in a List
         # TODO(MSTDL-467): Once Copyable requirement on List is removed, this
         # can be removed
@@ -152,7 +152,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         self._impl_ptr = tensor._device_memory_impl_ptr
         tensor._device_memory_impl_ptr = UnsafePointer[NoneType]()
 
-    fn __init__(inout self, owned anytensor: AnyTensor) raises:
+    fn __init__(out self, owned anytensor: AnyTensor) raises:
         """Creates a device tensor the existing `anytensor` storage.
 
         Args:
@@ -190,7 +190,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
 
         return self._device
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._impl_ptr = existing._impl_ptr
         self._device = existing._device^
         self.name = existing.name^
@@ -321,7 +321,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
             name,
         )
 
-    fn __init__(inout self):
+    fn __init__(out self):
         """Constructs a DeviceTensor in a state that is only valid for deletion.
         Can be used to represent a `moved from` state.
         """
@@ -412,7 +412,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         """Returns the name of the DeviceTensor."""
         return self._storage.name
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         # This temporarily exists so that we can store DeviceMemory in a List
         # TODO(MSTDL-467): Once Copyable requirement on List is removed, this
         # can be removed
@@ -422,7 +422,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         self._storage = existing._storage
         self.spec = existing.spec
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._storage = existing._storage^
         self.spec = existing.spec^
 

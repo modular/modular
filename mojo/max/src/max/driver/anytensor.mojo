@@ -44,7 +44,7 @@ struct AnyTensor:
     var _name: Optional[String]
     var _device_memory_impl_ptr: UnsafePointer[NoneType]
 
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
         """Default constructor for AnyTensor."""
         self._device = Device()
         self._spec = TensorSpec(DType.uint8, 0)
@@ -52,7 +52,7 @@ struct AnyTensor:
         self._data = UnsafePointer[UInt8]()
         self._device_memory_impl_ptr = UnsafePointer[NoneType]()
 
-    fn __init__(inout self, owned device_tensor: DeviceTensor):
+    fn __init__(out self, owned device_tensor: DeviceTensor):
         """Creates AnyTensor from a DeviceTensor.
 
         Args:
@@ -68,7 +68,7 @@ struct AnyTensor:
         self._device_memory_impl_ptr = tmp_dm^._steal_impl_ptr()
 
     @doc_private
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         constrained[False, "AnyTensor is non-copyable"]()
         self._device = existing._device
         self._spec = existing._spec
@@ -76,7 +76,7 @@ struct AnyTensor:
         self._data = existing._data
         self._device_memory_impl_ptr = existing._device_memory_impl_ptr
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Move constructor for AnyTensor.
 
         Args:
@@ -271,7 +271,7 @@ struct _CMojoValue:
     alias _destroy_func_type = fn (UnsafePointer[NoneType]) -> None
     var _destroy_func: Self._destroy_func_type
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self._ptr = UnsafePointer[NoneType]()
         self._destroy_func = Self._destroy_pointee_wrapper[NoneType]
 
@@ -309,12 +309,12 @@ struct AnyMojoValue:
 
     var _impl: Self.c_type
 
-    fn __init__(inout self):
+    fn __init__(out self):
         """Default constructor for MojoValue."""
         self._impl = _CMojoValue()
 
     @doc_private
-    fn __init__(inout self, impl: _CMojoValue):
+    fn __init__(out self, impl: _CMojoValue):
         self._impl = impl
 
     fn __init__[T: Movable](inout self, owned val: T):
@@ -330,11 +330,11 @@ struct AnyMojoValue:
         self._impl = _CMojoValue(ptr)
 
     @doc_private
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         constrained[False, "AnyMojoValue is not copyable"]()
         self._impl = existing._impl
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Move constructor for AnyMojoValue.
 
         Args:
@@ -383,11 +383,11 @@ struct AnyMemory:
 
     var _value: Variant[AnyTensor, AnyMojoValue]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         "Default constructor for AnyMemory."
         self._value = AnyMojoValue()
 
-    fn __init__(inout self, owned device_tensor: DeviceTensor):
+    fn __init__(out self, owned device_tensor: DeviceTensor):
         """Creates AnyMemory from a DeviceTensor.
 
         Args:
@@ -405,7 +405,7 @@ struct AnyMemory:
         """
         self._value = AnyTensor(tensor^)
 
-    fn __init__(inout self, owned tensor: AnyTensor):
+    fn __init__(out self, owned tensor: AnyTensor):
         """Creates AnyMemory from a AnyTensor.
 
         Args:
@@ -413,7 +413,7 @@ struct AnyMemory:
         """
         self._value = tensor^
 
-    fn __init__(inout self, owned value: AnyMojoValue):
+    fn __init__(out self, owned value: AnyMojoValue):
         """Creates AnyMemory from AnyMojoValue.
 
         Args:

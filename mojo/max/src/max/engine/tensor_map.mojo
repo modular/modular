@@ -83,7 +83,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         self._lib = lib
         self._session = session^
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Move contructor for TensorMap.
 
         Args:
@@ -95,7 +95,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         self._lib = existing._lib
         self._session = existing._session^
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         """Copy contructor for TensorMap.
 
         Args:

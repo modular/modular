@@ -20,7 +20,7 @@ struct CString:
 
     var ptr: UnsafePointer[c_char]
 
-    fn __init__(inout self, ptr: UnsafePointer[c_char]):
+    fn __init__(out self, ptr: UnsafePointer[c_char]):
         """
         Construct a `CString` from a C string data pointer.
 
@@ -541,13 +541,13 @@ struct OwningVector[T: Movable](Sized):
     alias initial_capacity = 5
     var capacity: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         var ptr = UnsafePointer[T].alloc(Self.initial_capacity)
         self.ptr = ptr
         self.size = 0
         self.capacity = Self.initial_capacity
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ptr = existing.ptr
         self.size = existing.size
         self.capacity = existing.capacity

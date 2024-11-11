@@ -32,7 +32,7 @@ from ._status import Status, _CStatus
 struct _CPUDescriptor:
     var numa_id: Int
 
-    fn __init__(inout self, *, numa_id: Optional[Int] = None):
+    fn __init__(out self, *, numa_id: Optional[Int] = None):
         self.numa_id = numa_id.value() if numa_id else -1
 
 
@@ -69,7 +69,7 @@ struct Device(Stringable):
     var _lib: Optional[DriverLibrary]
     var _cdev: _CDevice
 
-    fn __init__(inout self):
+    fn __init__(out self):
         """Constructs a default initialized Device in a state that is only valid
         for deletion. Can be used to represent a 'moved from' state.
 
@@ -87,7 +87,7 @@ struct Device(Stringable):
         self._lib = lib
         self._cdev = owned_ptr
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         """Create a copy of the Device (bumping a refcount on the underlying Device).
 
         Args:
@@ -97,7 +97,7 @@ struct Device(Stringable):
         self._lib = existing._lib
         self._cdev = existing._cdev.copy(existing._lib)
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Create a new Device and consume `existing`.
 
         Args:

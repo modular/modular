@@ -114,7 +114,7 @@ struct CUDACompiledKernelArgs:
     ](kwargs: OwnedKwargsDict[CompileArg], key: String) raises -> Optional[T]:
         return kwargs.find(key).value()[T] if key in kwargs else Optional[T]()
 
-    fn __init__(inout self, kwargs: OwnedKwargsDict[CompileArg]) raises:
+    fn __init__(out self, kwargs: OwnedKwargsDict[CompileArg]) raises:
         self.max_registers = Self._get_opt[Int](kwargs, "max_registers")
         self.threads_per_block = Self._get_opt[Int](kwargs, "threads_per_block")
 

@@ -47,7 +47,7 @@ struct Value:
         self._lib = lib
         self._session = session^
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Take ownership of the value contained in another `Value`.
 
         Args:
@@ -197,7 +197,7 @@ struct List(Sized):
         self._lib = lib
         self._session = session^
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         """Create a new List pointing at the internals of another List.
 
         Lists do not own anything and are borrowed from the internal storage of

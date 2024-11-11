@@ -43,7 +43,7 @@ struct TensorNamesIterator(Sized):
     var length: Int
     var lib: DLHandle
 
-    fn __init__(inout self, ptr: CTensorNameArray, length: Int, lib: DLHandle):
+    fn __init__(out self, ptr: CTensorNameArray, length: Int, lib: DLHandle):
         self.ptr = ptr
         self.current = 0
         self.length = length
@@ -86,7 +86,7 @@ struct TensorNames(Sized):
         self.length = length
         self.lib = lib
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ptr = exchange[CTensorNameArray](
             existing.ptr, UnsafePointer[NoneType]()
         )
@@ -120,7 +120,7 @@ struct InputTensorNames(Sized):
             Self.GetInputTensorNamesFnName, ptr, length, lib
         )
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.names = existing.names^
 
     fn __getitem__(self, idx: Int) raises -> String:
@@ -147,7 +147,7 @@ struct OutputTensorNames(Sized):
             Self.GetOutputTensorNamesFnName, ptr, length, lib
         )
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.names = existing.names^
 
     fn __getitem__(self, idx: Int) raises -> String:

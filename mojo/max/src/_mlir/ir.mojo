@@ -59,7 +59,7 @@ struct DialectRegistry:
     alias cType = _c.IR.MlirDialectRegistry
     var c: Self.cType
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.c = _c.IR.mlirDialectRegistryCreate()
 
     fn __del__(owned self):
@@ -105,10 +105,10 @@ struct Context:
     alias cType = _c.IR.MlirContext
     var c: Self.cType
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.c = _c.IR.mlirContextCreateWithThreading(False)
 
-    fn __init__(inout self, threading_enabled: Bool):
+    fn __init__(out self, threading_enabled: Bool):
         self.c = _c.IR.mlirContextCreateWithThreading(threading_enabled)
 
     fn __init__(
@@ -240,7 +240,7 @@ struct Module(Stringable, Writable):
     alias cType = _c.IR.MlirModule
     var c: Self.cType
 
-    fn __init__(inout self, location: Location):
+    fn __init__(out self, location: Location):
         self.c = _c.IR.mlirModuleCreateEmpty(location.c)
 
     # TODO: The lifetime of module appears to be iffy in the current codebase.
@@ -288,16 +288,16 @@ struct Module(Stringable, Writable):
 struct _OpBuilderList[T: CollectionElement]:
     var elements: List[T]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.elements = List[T]()
 
-    fn __init__(inout self, empty: ListLiteral[]):
+    fn __init__(out self, empty: ListLiteral[]):
         self.elements = List[T]()
 
-    fn __init__(inout self, owned elements: List[T]):
+    fn __init__(out self, owned elements: List[T]):
         self.elements = elements^
 
-    fn __init__(inout self, element: T):
+    fn __init__(out self, element: T):
         self.elements = List[T]()
         self.elements.append(element)
 
@@ -311,7 +311,7 @@ struct NamedAttribute(CollectionElement):
     var name: Identifier
     var attr: Attribute
 
-    fn __init__(inout self, attr: Self.cType):
+    fn __init__(out self, attr: Self.cType):
         self.name = Identifier(attr.name)
         self.attr = Attribute(attr.attribute)
 
@@ -334,7 +334,7 @@ struct Operation(CollectionElement, Stringable, Writable):
     alias cType = _c.IR.MlirOperation
     var c: Self.cType
 
-    fn __init__(inout self, op: Self.cType):
+    fn __init__(out self, op: Self.cType):
         self.c = op
 
     fn __init__(
@@ -604,7 +604,7 @@ struct Identifier(CollectionElement, Stringable):
     alias cType = _c.IR.MlirIdentifier
     var c: Self.cType
 
-    fn __init__(inout self, ctx: Context, identifier: String):
+    fn __init__(out self, ctx: Context, identifier: String):
         self.c = _c.IR.mlirIdentifierGet(
             ctx.c, StringRef(ptr=identifier.unsafe_ptr())
         )
@@ -720,7 +720,7 @@ struct Block(CollectionElement, Stringable):
     alias cType = _c.IR.MlirBlock
     var c: Self.cType
 
-    fn __init__(inout self, args: List[Type]):
+    fn __init__(out self, args: List[Type]):
         var locations = List[Location]()
         for i in range(len(args)):
             var ctx = args[i].context()
@@ -783,7 +783,7 @@ struct Region(CollectionElement):
     alias cType = _c.IR.MlirRegion
     var c: Self.cType
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.c = _c.IR.mlirRegionCreate()
 
     fn append(self, block: Block):
