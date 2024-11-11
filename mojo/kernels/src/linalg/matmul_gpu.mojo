@@ -922,7 +922,7 @@ fn multistage_gemm[
     # Split K dispatch
     if runtime_config.num_k_partitions > 1:
         alias work_space_type = config.split_k_reduction_type
-        var work_space_data = ctx.create_buffer[work_space_type](
+        var work_space_data = ctx.enqueue_create_buffer[work_space_type](
             runtime_config.num_k_partitions * M * N
         )
         var work_space = NDBuffer[work_space_type, 3](
