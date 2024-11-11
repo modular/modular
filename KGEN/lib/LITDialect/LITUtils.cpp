@@ -966,9 +966,8 @@ LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
                         ArrayRef<TypedAttr> defaultsKwOnly,
                         PogListAttr pogListAttr, ArrayRef<Type> types,
                         StringRef argOrParam, ArrayRef<ArgConvention> convs) {
-  ArrayRef<PogMetadataAttr> pogs = pogListAttr.getPogs();
-  DefaultValueHandler defaultHandler(pogs, defaultsPos, defaultsKwOnly);
-  for (size_t idx = 0; idx < pogs.size(); ++idx) {
+  DefaultValueHandler defaultHandler(pogListAttr);
+  for (size_t idx = 0; idx < pogListAttr.size(); ++idx) {
     TypedAttr defaultOr = defaultHandler.getDefault(idx);
     if (!defaultOr || pogListAttr.isPack(idx) || pogListAttr.isVariadic(idx))
       continue;
