@@ -340,7 +340,7 @@ struct _DeviceImpl:
     var handle: UnsafePointer[NoneType]
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.handle = UnsafePointer[NoneType]()
 
     @always_inline
@@ -352,7 +352,7 @@ struct Device(Writable):
     var idx: Int
     var device: _DeviceImpl
 
-    fn __init__(inout self, idx: Int = 0) raises:
+    fn __init__(out self, idx: Int = 0) raises:
         var device = _DeviceImpl()
         _check_error(
             _get_dylib_function[
@@ -363,7 +363,7 @@ struct Device(Writable):
         self.idx = idx
         self.device = device
 
-    fn __copyinit__(inout self: Self, existing: Self):
+    fn __copyinit__(out self: Self, existing: Self):
         self.idx = existing.idx
         self.device = existing.device
 
