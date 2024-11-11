@@ -33,7 +33,7 @@ struct Chain(Boolable):
     # Actually an AsyncValueRef<Chain>, which is just an AsyncValue*
     var storage: UnsafePointer[Int]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.storage = UnsafePointer[Int]()
 
     fn __bool__(self) -> Bool:
@@ -114,11 +114,11 @@ fn _async_wait_timeout(chain: UnsafePointer[Chain], timeout: Int) -> Bool:
 struct ChainPromise:
     var chain: Chain
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.chain = Chain()
         _init_asyncrt_chain(UnsafePointer.address_of(self.chain))
 
-    fn __init__(inout self, owned chain: Chain):
+    fn __init__(out self, owned chain: Chain):
         self.chain = chain
 
     fn __del__(owned self):
@@ -221,7 +221,7 @@ struct Task[type: AnyType, origins: OriginSet]:
     var _handle: Coroutine[type, origins]
     var _result: type
 
-    fn __init__(inout self, owned handle: Coroutine[type, origins]):
+    fn __init__(out self, owned handle: Coroutine[type, origins]):
         self._handle = handle^
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._result)
@@ -291,7 +291,7 @@ struct _TaskGroupBox(CollectionElement):
         __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(coro))
         self.handle = handle
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -304,7 +304,7 @@ struct _TaskGroupBox(CollectionElement):
 
     # FIXME(MSTDL-573): `List` requires copyability. Just crash here because it
     # should never get called.
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         abort("_TaskGroupBox.__copyinit__ should never get called")
         while True:
             pass
@@ -315,7 +315,7 @@ struct TaskGroup:
     var chain: Chain
     var tasks: List[_TaskGroupBox]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         var chain = Chain()
         _init_asyncrt_chain(UnsafePointer[Chain].address_of(chain))
         self.counter = 1
@@ -398,11 +398,11 @@ struct MojoCallContextPtr:
     var ptr: Self.ptr_type
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.ptr = UnsafePointer[NoneType]()
 
     @always_inline
-    fn __init__(inout self, ptr: Self.ptr_type):
+    fn __init__(out self, ptr: Self.ptr_type):
         """Casts a raw pointer to our MojoCallContextPtr."""
         self.ptr = ptr
 
