@@ -744,8 +744,10 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
   auto printConvention = [&os](ArgConvention conv) {
     if (conv == ArgConvention::OwnedInMem)
       os << "owned ";
-    else if (conv == ArgConvention::InOut || conv == ArgConvention::InitSelf)
+    else if (conv == ArgConvention::InOut)
       os << "inout ";
+    else if (conv == ArgConvention::InitSelf)
+      os << "out ";
   };
 
   auto printRef = [&](RefType refType) {

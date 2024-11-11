@@ -289,7 +289,7 @@ struct Thing:
     var x: Int
 
     @no_inline
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.x = existing.x
 
 

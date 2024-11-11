@@ -168,6 +168,15 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   else if (p.getToken().is(Token::kw_ref)) {
     if (succeeded(p.parseRefSpecifier(refOriginExpr)))
       convention = kConventionRef;
+  } else if (p.consumeIfSoftIdentifier("out")) {
+    // Handle "out foo:" as a name, not an argument convention.
+    if (p.getToken().isNot(Token::colon, Token::equal, Token::r_paren,
+                           Token::r_square)) {
+      convention = kConventionInitSelfResult;
+    } else {
+      // Otherwise, the "out" is the argument name.
+      name = StringAttr::get(p.getContext(), "out");
+    }
   }
 
   while (p.getToken().isAny(Token::kw_owned, Token::kw_borrowed,
@@ -206,9 +215,12 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     kwArgHandling = KWArgHandling::kKeywordOnly;
   }
 
-  // When parsing a function type, the name is optional.
-  if (kind == ArgListKind::kFnTypeArgList ||
-      kind == ArgListKind::kFnTypeParamList) {
+  // Parse the argument name if present.
+  if (name) {
+    // If we already parsed a name due to lookahead, then we are done.
+  } else if (kind == ArgListKind::kFnTypeArgList ||
+             kind == ArgListKind::kFnTypeParamList) {
+    // When parsing a function type, the name is optional.
     StringAttr maybeArgName;
     if (succeeded(p.parseOptionalIdentifier(maybeArgName, Token::colon)))
       name = maybeArgName;
@@ -259,8 +271,9 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
 
     if (convention == kConventionInOut ||
         convention == kConventionInitSelfResult) {
-      p.emitError(equalLoc, "inout arguments may not have defaults")
-          << initExpr->getRange();
+      p.emitError(equalLoc)
+          << (convention == kConventionInitSelfResult ? "out" : "inout")
+          << " arguments may not have defaults" << initExpr->getRange();
       initExpr = nullptr;
     }
 
@@ -1074,6 +1087,20 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     break;
   case ParsedArgument::kConventionInitSelfResult:
     arg.kgenConvention = ArgConvention::InitSelf;
+    // Check that 'out' argument is only used how we support it.
+    if (idx) {
+      shared.emitError(arg.loc,
+                       "'out' convention only supported on the first argument");
+      arg.isErroneous = true;
+      arg.kgenConvention = ArgConvention::InOut;
+      break;
+    }
+    if (arg.vararg != VarArgKind::None) {
+      shared.emitError(arg.loc, "'out' convention may not be variadic");
+      arg.isErroneous = true;
+      arg.vararg = VarArgKind::None;
+      break;
+    }
     break;
   }
 

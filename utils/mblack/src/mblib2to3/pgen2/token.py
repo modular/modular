@@ -99,7 +99,8 @@ MLIR_REGION: Final = 66
 OWNED: Final = 67
 BORROWED: Final = 68
 INOUT: Final = 69
-TRAIT: Final = 70
+OUT: Final = 70
+TRAIT: Final = 71
 NT_OFFSET: Final = 256
 # --end constants--
 

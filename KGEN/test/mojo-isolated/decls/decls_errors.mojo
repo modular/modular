@@ -80,6 +80,11 @@ struct MemType:
 fn missingColon(x: Int)
   return x
 
+# expected-error @+1 {{'out' convention only supported on the first argument}}
+fn bad_out1(a: Int, out b: Int): pass
+
+# expected-error @+1 {{'out' convention may not be variadic}}
+fn bad_out2(out *b: Int): pass
 
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs

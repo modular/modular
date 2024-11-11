@@ -125,6 +125,16 @@ public:
     return consumedToken;
   }
 
+  /// If the current token is an identifier with the current spelling, consume
+  /// it and return true, otherwise return false.
+  bool consumeIfSoftIdentifier(StringRef identifier) {
+    Token tok = getToken();
+    if (!tok.isIdentifier() || tok.getSpelling() != identifier)
+      return false;
+    consumeIdentifier();
+    return true;
+  }
+
   /// Consume the specified token if present and return success.  On failure,
   /// output a diagnostic and return failure. If `loc` is set, it is populated
   /// with the source location of the token.

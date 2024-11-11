@@ -58,7 +58,7 @@ struct Constructible:
 
 
 fn init_self_conversion():
-    # expected-error @below {{cannot implicitly convert 'fn(inout self: Constructible, arg: Int) -> None' value to 'fn() -> None'}}
+    # expected-error @below {{cannot implicitly convert 'fn(out self: Constructible, arg: Int) -> None' value to 'fn() -> None'}}
     alias f: fn () -> None = Constructible.__init__
 
 
@@ -69,7 +69,7 @@ struct ConvertibleFromInt:
 
 
 @value
-# expected-note @below {{candidate generated with type 'fn(inout AmbiguousCtor, /, owned a: ConvertibleFromInt, b: Int) -> None'}}
+# expected-note @below {{candidate generated with type 'fn(out AmbiguousCtor, /, owned a: ConvertibleFromInt, b: Int) -> None'}}
 struct AmbiguousCtor:
     var a: ConvertibleFromInt
     var b: Int

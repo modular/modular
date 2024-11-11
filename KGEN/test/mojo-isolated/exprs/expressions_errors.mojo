@@ -753,8 +753,11 @@ fn take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntPara
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 fn test_signature():
-  # expected-error @+1 {{cannot implicitly convert 'fn(inout self: HasIntParam[1]) -> None' value to 'fn(x: HasIntParam[1]) -> None'}}
+  # expected-error @+1 {{cannot implicitly convert 'fn(out self: HasIntParam[1]) -> None' value to 'fn(x: HasIntParam[1]) -> None'}}
   var x : fn(x: HasIntParam[1])->None = HasIntParam[1].__init__
 
   # expected-error @+1 {{use of unknown declaration 'UndefinedStruct'}}
   var y : fn(x: UndefinedStruct)->None = HasIntParam[1].__init__
+
+  # Ok!
+  var z : fn(out x: HasIntParam[1])->None = HasIntParam[1].__init__
