@@ -18,17 +18,17 @@ struct Counter(Movable):
     var a: Int
     var b: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.a = 0
         self.b = 0
         print("counter init (no arg)")
 
-    fn __init__(inout self, a: Int, b: Int):
+    fn __init__(out self, a: Int, b: Int):
         self.a = a
         self.b = b
         print("counter init", a, b)
 
-    fn __moveinit__(inout self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         self.a = other.a
         self.b = other.b
 
