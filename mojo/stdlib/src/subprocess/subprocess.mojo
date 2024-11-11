@@ -22,7 +22,7 @@ struct _POpenHandle:
 
     var _handle: FILE_ptr
 
-    fn __init__(inout self, cmd: String, mode: String = "r") raises:
+    fn __init__(out self, cmd: String, mode: String = "r") raises:
         """Construct the _POpenHandle using the command and mode provided.
 
         Args:
