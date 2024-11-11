@@ -67,7 +67,7 @@ struct _RepKind(EqualityComparable):
     var kind: UInt8
 
     @always_inline("nodebug")
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self.kind = value
 
     @always_inline("nodebug")
@@ -96,7 +96,7 @@ struct _Rep16(Stringable, Writable, EqualityComparable):
     """Auxillary information about the shape."""
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Default initializes the _Rep16 type."""
         self.dims = StaticTuple[Int16, 6]()
         self._unused = 0
@@ -224,7 +224,7 @@ struct _Rep32(Writable, EqualityComparable):
     """Auxillary information about the shape."""
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Default initializes the _Rep32 type."""
         self.dims012 = StaticTuple[Int32, 3]()
         self.dim3 = 0
@@ -368,7 +368,7 @@ struct _RepOutOfLine(Writable, EqualityComparable):
     """Auxillary information about the shape."""
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Default initializes the _RepOutOfLine type."""
         constrained[
             is_little_endian(),
@@ -511,14 +511,14 @@ struct _TensorShapeStorage:
     var idx: Int64
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Default initializes the _TensorShapeStorage type."""
         var rep = _Rep32()
         var rep_ptr = UnsafePointer.address_of(rep)
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
     @always_inline
-    fn __init__(inout self, rep: _Rep16):
+    fn __init__(out self, rep: _Rep16):
         """Initializes the _TensorShapeStorage from a _Rep16.
 
         Args:
@@ -529,7 +529,7 @@ struct _TensorShapeStorage:
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
     @always_inline
-    fn __init__(inout self, rep: _Rep32):
+    fn __init__(out self, rep: _Rep32):
         """Initializes the _TensorShapeStorage from a _Rep32.
 
         Args:
@@ -540,7 +540,7 @@ struct _TensorShapeStorage:
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
     @always_inline
-    fn __init__(inout self, rep: _RepOutOfLine):
+    fn __init__(out self, rep: _RepOutOfLine):
         """Initializes the _TensorShapeStorage from a _Rep32.
 
         Note that this will not copy the underlying data.
@@ -691,7 +691,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
     """The underlying _TensorShapeStorage backing."""
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Default initializer for TensorShape."""
         self._rep = _TensorShapeStorage()
 
@@ -726,7 +726,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         self = Self(tuple)
 
     @always_inline
-    fn __init__(inout self, *shapes: Int):
+    fn __init__(out self, *shapes: Int):
         """Initializes a TensorShape from the values provided.
 
         Args:
@@ -735,7 +735,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         self = TensorShape(shapes)
 
     @always_inline
-    fn __init__(inout self, shapes: VariadicList[Int]):
+    fn __init__(out self, shapes: VariadicList[Int]):
         """Initializes a TensorShape from the values provided.
 
         Args:
@@ -783,7 +783,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         self._rep = rep
 
     @always_inline
-    fn __init__(inout self, shapes: List[Int, *_]):
+    fn __init__(out self, shapes: List[Int, *_]):
         """Initializes a TensorShape from the list provided.
 
         Args:
@@ -883,7 +883,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         self._rep = rep
 
     @always_inline
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         """Creates a deep copy of an existing shape.
 
         Args:

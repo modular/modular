@@ -40,12 +40,12 @@ struct TensorSpec(
     """The underlying shape of the specification."""
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Default initializer for TensorShape."""
         self.shape = TensorShape()
 
     @always_inline
-    fn __init__(inout self, type: DType, *shapes: Int):
+    fn __init__(out self, type: DType, *shapes: Int):
         """Initializes a Tensorspec from the dtype and shapes provided.
 
         Args:
@@ -55,7 +55,7 @@ struct TensorSpec(
         self = TensorSpec(type, shapes)
 
     @always_inline
-    fn __init__(inout self, type: DType, shape: Tuple):
+    fn __init__(out self, type: DType, shape: Tuple):
         """Initializes a Tensorspec from the dtype and shapes provided.
 
         Args:
@@ -65,7 +65,7 @@ struct TensorSpec(
         self = TensorSpec(type, TensorShape(shape))
 
     @always_inline
-    fn __init__(inout self, type: DType, shapes: VariadicList[Int]):
+    fn __init__(out self, type: DType, shapes: VariadicList[Int]):
         """Initializes a Tensorspec from the dtype and shapes provided.
 
         Args:
@@ -75,7 +75,7 @@ struct TensorSpec(
         self = TensorSpec(type, TensorShape(shapes))
 
     @always_inline
-    fn __init__(inout self, type: DType, shapes: List[Int, *_]):
+    fn __init__(out self, type: DType, shapes: List[Int, *_]):
         """Initializes a Tensorspec from the dtype and shapes provided.
 
         Args:
@@ -85,7 +85,7 @@ struct TensorSpec(
         self = TensorSpec(type, shape=shapes)
 
     @always_inline
-    fn __init__(inout self, type: DType, owned shape: TensorShape):
+    fn __init__(out self, type: DType, owned shape: TensorShape):
         """Initializes a Tensorspec from the dtype and shape provided.
 
         Args:
@@ -229,7 +229,7 @@ struct TensorSpec(
 struct RuntimeTensorSpec[type: DType, rank: Int]:
     var shape: IndexList[rank]
 
-    fn __init__(inout self, spec: TensorSpec):
+    fn __init__(out self, spec: TensorSpec):
         """Construct from TensorSpec.
 
         Args:

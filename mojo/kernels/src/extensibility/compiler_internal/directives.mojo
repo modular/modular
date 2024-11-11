@@ -87,7 +87,7 @@ struct StaticTensorSpec[
         self.in_lambda = in_lambda
         self.out_lambda = out_lambda
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self = Self(
             DimList(),
             DimList(),

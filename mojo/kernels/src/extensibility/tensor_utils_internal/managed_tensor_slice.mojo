@@ -108,7 +108,7 @@ struct ManagedTensorSlice[
             strides,
         )
 
-    fn __init__(inout self, ndbuffer: NDBuffer[type, rank]):
+    fn __init__(out self, ndbuffer: NDBuffer[type, rank]):
         """Initializes a ManagedTensorSlice from an NDBuffer.
 
         Note that forwarding of static shape, strides, and lambdas won't work.
