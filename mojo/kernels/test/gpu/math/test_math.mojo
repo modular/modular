@@ -26,7 +26,7 @@ fn run_func[
 
     var func = ctx.compile_function[kernel]()
 
-    var out = ctx.create_buffer[type](1)
+    var out = ctx.enqueue_create_buffer[type](1)
     ctx.enqueue_function(func, out, val, grid_dim=1, block_dim=1)
     ctx.synchronize()
 

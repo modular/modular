@@ -69,10 +69,10 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     _fill_buffer(input_3_host)
 
     var total_size_inp: Int = input_shape.product[rank]().get()
-    var input_0_device = ctx.create_buffer[dtype](total_size_inp)
-    var input_1_device = ctx.create_buffer[dtype](total_size_inp)
-    var input_2_device = ctx.create_buffer[dtype](total_size_inp)
-    var input_3_device = ctx.create_buffer[dtype](total_size_inp)
+    var input_0_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
+    var input_1_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
+    var input_2_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
+    var input_3_device = ctx.enqueue_create_buffer[dtype](total_size_inp)
 
     var input_0_device_ref = NDBuffer[dtype, rank](
         input_0_device.ptr, input_shape
@@ -93,7 +93,7 @@ fn test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(input_3_device, input_3_host.data)
 
     var total_size_outp: Int = output_shape.product[rank]().get()
-    var output_device = ctx.create_buffer[dtype](total_size_outp)
+    var output_device = ctx.enqueue_create_buffer[dtype](total_size_outp)
     var output_device_ref = NDBuffer[dtype, rank](
         output_device.ptr, output_shape
     )

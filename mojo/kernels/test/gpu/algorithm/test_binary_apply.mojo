@@ -42,9 +42,9 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
         in0_host[i] = i
         in1_host[i] = 2
 
-    var in0_device = ctx.create_buffer[DType.float32](length)
-    var in1_device = ctx.create_buffer[DType.float32](length)
-    var out_device = ctx.create_buffer[DType.float32](length)
+    var in0_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var in1_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
 
     ctx.enqueue_copy_to_device(in0_device, in0_host)
     ctx.enqueue_copy_to_device(in1_device, in1_host)

@@ -31,8 +31,8 @@ def run_add_constant(ctx: DeviceContext):
     for i in range(length):
         in_host[i] = i
 
-    var in_device = ctx.create_buffer[DType.float32](length)
-    var out_device = ctx.create_buffer[DType.float32](length)
+    var in_device = ctx.enqueue_create_buffer[DType.float32](length)
+    var out_device = ctx.enqueue_create_buffer[DType.float32](length)
 
     ctx.enqueue_copy_to_device(in_device, in_host)
 

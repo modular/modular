@@ -198,12 +198,14 @@ fn scatter_nd[
 
     # Allocate and copy output data, elements_counts_and_input_dims, updates,
     # indices to GPU.
-    var output_device = ctx.create_buffer[type](data_count_copy)
-    var element_counts_and_input_dims_device = ctx.create_buffer[DType.int64](
-        last_shape_of_indices * 2
+    var output_device = ctx.enqueue_create_buffer[type](data_count_copy)
+    var element_counts_and_input_dims_device = ctx.enqueue_create_buffer[
+        DType.int64
+    ](last_shape_of_indices * 2)
+    var updates_device = ctx.enqueue_create_buffer[type](updates_count_copy)
+    var indices_device = ctx.enqueue_create_buffer[indices_type](
+        indices_count_copy
     )
-    var updates_device = ctx.create_buffer[type](updates_count_copy)
-    var indices_device = ctx.create_buffer[indices_type](indices_count_copy)
     ctx.enqueue_copy_to_device(output_device, output_flat.data)
     ctx.enqueue_copy_to_device(
         element_counts_and_input_dims_device,

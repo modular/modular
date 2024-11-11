@@ -52,9 +52,9 @@ fn fused_reduce_inner_test[
     for i in range(in_size):
         vec_host[i] = i // shape[axis] + 1
 
-    var vec_device = ctx.create_buffer[type](in_size)
-    var res_device0 = ctx.create_buffer[type](out_size)
-    var res_device1 = ctx.create_buffer[type](out_size)
+    var vec_device = ctx.enqueue_create_buffer[type](in_size)
+    var res_device0 = ctx.enqueue_create_buffer[type](out_size)
+    var res_device1 = ctx.enqueue_create_buffer[type](out_size)
     var input_buf_device = NDBuffer[type, rank](vec_device.ptr, shape)
     var output_buf_device0 = NDBuffer[type, rank](res_device0.ptr, out_shape)
     var output_buf_device1 = NDBuffer[type, rank](res_device1.ptr, out_shape)
@@ -140,8 +140,8 @@ fn reduce_inner_test[
     for i in range(in_size):
         vec_host[i] = i // shape[axis] + 1
 
-    var vec_device = ctx.create_buffer[type](in_size)
-    var res_device = ctx.create_buffer[type](out_size)
+    var vec_device = ctx.enqueue_create_buffer[type](in_size)
+    var res_device = ctx.enqueue_create_buffer[type](out_size)
     var input_buf_device = NDBuffer[type, rank](vec_device.ptr, shape)
     var output_buf_device = NDBuffer[type, rank](res_device.ptr, out_shape)
 

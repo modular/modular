@@ -52,9 +52,9 @@ fn run_block_reduction[
     alias shape = DimList(N)
     alias num_parts = 16
 
-    var a_device = ctx.create_buffer[type](N)
-    var c_device = ctx.create_buffer[type](N)
-    var lock_dev = ctx.create_buffer[type](num_parts)
+    var a_device = ctx.enqueue_create_buffer[type](N)
+    var c_device = ctx.enqueue_create_buffer[type](N)
+    var lock_dev = ctx.enqueue_create_buffer[type](num_parts)
     var a_buf = NDBuffer[type, 1, shape](a_device.ptr, Index(N))
     var c_buf = NDBuffer[type, 1, shape](c_device.ptr, Index(N))
 

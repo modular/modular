@@ -50,7 +50,7 @@ fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
 
     alias size = 4
     var host_ptr = UnsafePointer[Scalar[dst_type]].alloc(size)
-    var device_buf = ctx.create_buffer[dst_type](size)
+    var device_buf = ctx.enqueue_create_buffer[dst_type](size)
 
     for i in range(size):
         host_ptr[i] = 0

@@ -19,7 +19,7 @@ fn kernel_with_list(res: UnsafePointer[Float32]):
 fn test_kernel_with_list(ctx: DeviceContext) raises:
     print("== test_kernel_with_list")
     var res_host = UnsafePointer[Float32].alloc(1)
-    var res_device = ctx.create_buffer[DType.float32](1)
+    var res_device = ctx.enqueue_create_buffer[DType.float32](1)
     res_host[0] = 0
     ctx.enqueue_copy_to_device(res_device, res_host)
     # CHECK: call.uni

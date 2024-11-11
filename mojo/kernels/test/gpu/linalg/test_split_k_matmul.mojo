@@ -136,10 +136,10 @@ fn test_split_k_multistage_gemm[
     for _ in range(k_partition):
         c_dev_list.append(DeviceNDBuffer[type, 2, c_dim](ctx=ctx))
 
-    var a_device = ctx.create_buffer[type](M * K)
-    var b_device = ctx.create_buffer[type](K * N)
-    var c_device = ctx.create_buffer[type](M * N)
-    var c_device_ref = ctx.create_buffer[type](M * N)
+    var a_device = ctx.enqueue_create_buffer[type](M * K)
+    var b_device = ctx.enqueue_create_buffer[type](K * N)
+    var c_device = ctx.enqueue_create_buffer[type](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[type](M * N)
 
     var a_tensor = LayoutTensor[type, a_layout](a_device.ptr, a_runtime_layout)
     var b_tensor = LayoutTensor[type, b_layout](b_device.ptr, b_runtime_layout)

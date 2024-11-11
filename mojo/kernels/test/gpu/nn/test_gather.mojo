@@ -35,7 +35,7 @@ fn test_gather(ctx: DeviceContext) raises:
         for i in range(num_rows):
             for j in range(row_size):
                 input_host[Index(i, j)] = Float32(i).value
-        var input_device_ptr = ctx.create_buffer[DType.float32](
+        var input_device_ptr = ctx.enqueue_create_buffer[DType.float32](
             input_host.size() * sizeof[DType.float32]()
         )
         ctx.enqueue_copy_to_device(input_device_ptr, input_host.data)
@@ -54,7 +54,7 @@ fn test_gather(ctx: DeviceContext) raises:
             1,
             DimList(num_indices),
         ](indices_host_ptr)
-        var indices_device_ptr = ctx.create_buffer[indices_type](
+        var indices_device_ptr = ctx.enqueue_create_buffer[indices_type](
             indices_host.size() * sizeof[indices_type]()
         )
         var indices_device = NDBuffer[
@@ -79,7 +79,7 @@ fn test_gather(ctx: DeviceContext) raises:
             2,
             DimList(num_indices, row_size),
         ](output_host_ptr)
-        var output_device_ptr = ctx.create_buffer[DType.float32](
+        var output_device_ptr = ctx.enqueue_create_buffer[DType.float32](
             output_host.size() * sizeof[DType.float32]()
         )
         var output_device = NDBuffer[

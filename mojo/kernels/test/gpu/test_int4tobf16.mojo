@@ -57,7 +57,7 @@ fn call_int4tobf16[
 
 def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
     var out_host = Buffer[DType.bfloat16, 8].stack_allocation()
-    var out_device = ctx.create_buffer[DType.bfloat16](8)
+    var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
     var func = ctx.compile_function[call_int4tobf16[no_lop]]()
     ctx.enqueue_function(

@@ -42,10 +42,10 @@ fn test_cublas(ctx: DeviceContext) raises:
         for n in range(N):
             b_host[k * N + n] = random_float64(-0.1, 0.1).cast[type]()
 
-    var a_device = ctx.create_buffer[type](M * K)
-    var b_device = ctx.create_buffer[type](K * N)
-    var c_device = ctx.create_buffer[type](M * N)
-    var c_device_ref = ctx.create_buffer[type](M * N)
+    var a_device = ctx.enqueue_create_buffer[type](M * K)
+    var b_device = ctx.enqueue_create_buffer[type](K * N)
+    var c_device = ctx.enqueue_create_buffer[type](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[type](M * N)
 
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)

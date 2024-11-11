@@ -41,7 +41,7 @@ fn _kernel_launch_helper[
     block_size: Int,
     ctx: DeviceContext,
 ) raises:
-    var device_ptr = ctx.create_buffer[type](buffer_size)
+    var device_ptr = ctx.enqueue_create_buffer[type](buffer_size)
     ctx.enqueue_copy_to_device(device_ptr, host_ptr)
 
     var gpu_func = ctx.compile_function[

@@ -170,7 +170,7 @@ def execute_flash_attention[
     for i in range(batch_size):
         if cache_valid_length[i] != 0:
             is_context_encoding = False
-    var cache_lengths_dev = ctx.create_buffer[DType.uint32](batch_size)
+    var cache_lengths_dev = ctx.enqueue_create_buffer[DType.uint32](batch_size)
 
     ctx.enqueue_copy_to_device(cache_lengths_dev, cache_valid_length.data)
     var cache_lengths = NDBuffer[DType.uint32, 1](

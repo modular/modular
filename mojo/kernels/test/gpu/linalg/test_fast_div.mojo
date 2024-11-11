@@ -25,8 +25,8 @@ def run_elementwise[type: DType](ctx: DeviceContext):
     var divisors = NDBuffer[type, 1, DimList(length)].stack_allocation()
     var remainders = NDBuffer[type, 1, DimList(length)].stack_allocation()
 
-    var out_divisors = ctx.create_buffer[type](length)
-    var out_remainders = ctx.create_buffer[type](length)
+    var out_divisors = ctx.enqueue_create_buffer[type](length)
+    var out_remainders = ctx.enqueue_create_buffer[type](length)
 
     var out_divisors_buffer = NDBuffer[type, 1](out_divisors.ptr, Index(length))
     var out_remainders_buffer = NDBuffer[type, 1](

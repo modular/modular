@@ -50,8 +50,8 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
     var in_data = UnsafePointer[Float32].alloc(16)
     var out_data = UnsafePointer[Float32].alloc(16)
-    var in_data_device = ctx.create_buffer[DType.float32](16)
-    var out_data_device = ctx.create_buffer[DType.float32](16)
+    var in_data_device = ctx.enqueue_create_buffer[DType.float32](16)
+    var out_data_device = ctx.enqueue_create_buffer[DType.float32](16)
 
     for i in range(16):
         in_data[i] = i + 1
@@ -122,8 +122,8 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     for i in range(2 * size):
         b_host[i] = i + 1
 
-    var a_device = ctx.create_buffer[DType.float32](size)
-    var b_device = ctx.create_buffer[DType.float32](2 * size)
+    var a_device = ctx.enqueue_create_buffer[DType.float32](size)
+    var b_device = ctx.enqueue_create_buffer[DType.float32](2 * size)
 
     ctx.enqueue_copy_to_device(a_device, a_host)
 

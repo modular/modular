@@ -18,7 +18,7 @@ fn gpu_kernel(buff: UnsafePointer[Int64]):
 
 def test_with_cache_mode[cache_mode: CacheMode](ctx: DeviceContext):
     var buff_host_ptr = UnsafePointer[Int64].alloc(16)
-    var buff_dev = ctx.create_buffer[DType.int64](16)
+    var buff_dev = ctx.enqueue_create_buffer[DType.int64](16)
 
     for i in range(16):
         buff_host_ptr[i] = 0

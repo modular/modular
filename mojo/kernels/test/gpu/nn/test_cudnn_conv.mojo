@@ -136,10 +136,16 @@ fn test_conv[
     for i in range(filter_dim_flattened):
         filter_data_host[i] = Scalar[filter_type](1)
 
-    var input_dev = ctx.create_buffer[input_type](input_dim_flattened)
-    var filter_dev = ctx.create_buffer[filter_type](filter_dim_flattened)
-    var output_dev = ctx.create_buffer[output_type](output_dim_flattened)
-    var output_ref_dev = ctx.create_buffer[output_type](output_dim_flattened)
+    var input_dev = ctx.enqueue_create_buffer[input_type](input_dim_flattened)
+    var filter_dev = ctx.enqueue_create_buffer[filter_type](
+        filter_dim_flattened
+    )
+    var output_dev = ctx.enqueue_create_buffer[output_type](
+        output_dim_flattened
+    )
+    var output_ref_dev = ctx.enqueue_create_buffer[output_type](
+        output_dim_flattened
+    )
 
     ctx.enqueue_copy_to_device(input_dev, input_data_host)
     ctx.enqueue_copy_to_device(filter_dev, filter_data_host)

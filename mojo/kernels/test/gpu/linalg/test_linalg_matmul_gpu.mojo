@@ -34,7 +34,7 @@ fn _create_device_buffer[
 ](ctx: DeviceContext, dynamic_shape: IndexList[rank]) raises -> Tuple[
     DeviceBuffer[dtype], NDBuffer[dtype, rank, shape]
 ]:
-    var storage = ctx.create_buffer[dtype](_size(dynamic_shape))
+    var storage = ctx.enqueue_create_buffer[dtype](_size(dynamic_shape))
     return (
         storage,
         NDBuffer[dtype, rank, shape](storage.ptr, dynamic_shape=dynamic_shape),
