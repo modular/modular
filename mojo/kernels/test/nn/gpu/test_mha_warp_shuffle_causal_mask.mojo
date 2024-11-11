@@ -71,10 +71,10 @@ fn test[
     rand[qkv_type](v_ptr, v_size)
 
     # Device pointers
-    var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
-    var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
-    var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
-    var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
+    var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+    var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
+    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy_to_device(q_device_ptr, q_ptr)

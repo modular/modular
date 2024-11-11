@@ -695,7 +695,9 @@ fn _topp_minp_sampling_gpu[
         return val / temperature
 
     # TODO: Should softmax be done in-place without needing this other buffer?
-    var probs_buf = ctx.create_buffer[type](input_shape.flattened_length())
+    var probs_buf = ctx.enqueue_create_buffer[type](
+        input_shape.flattened_length()
+    )
     var input_probs = NDBuffer[type, rank](probs_buf.ptr, input_shape)
 
     _softmax_gpu[
@@ -707,11 +709,11 @@ fn _topp_minp_sampling_gpu[
     #   token exceeds P. If it does, we skip sorting by setting
     #   begin_offset_buf[bi] = offset_buf[bi]
     # materialize a vals buffer
-    var max_vals_cache_buf = ctx.create_buffer[type](int(batch_size))
+    var max_vals_cache_buf = ctx.enqueue_create_buffer[type](int(batch_size))
     var max_vals = NDBuffer[type, rank](
         max_vals_cache_buf.ptr, DimList(batch_size)
     )
-    var skip_sort_buf = ctx.create_buffer[DType.bool](int(batch_size))
+    var skip_sort_buf = ctx.enqueue_create_buffer[DType.bool](int(batch_size))
     var skip_sort = NDBuffer[DType.bool, rank](
         skip_sort_buf.ptr, DimList(batch_size)
     )
@@ -739,15 +741,19 @@ fn _topp_minp_sampling_gpu[
 
     # Step 3: Apply a global sort on the input tensor of probs
     # Create the input_ids buffer
-    var sorted_probs_buf = ctx.create_buffer[type](batch_size * vocab_size)
+    var sorted_probs_buf = ctx.enqueue_create_buffer[type](
+        batch_size * vocab_size
+    )
     var sorted_probs = NDBuffer[type, rank](
         sorted_probs_buf.ptr, DimList(batch_size, vocab_size)
     )
-    var input_ids_buf = ctx.create_buffer[out_idx_type](batch_size * vocab_size)
+    var input_ids_buf = ctx.enqueue_create_buffer[out_idx_type](
+        batch_size * vocab_size
+    )
     var input_ids = NDBuffer[out_idx_type, rank](
         input_ids_buf.ptr, DimList(batch_size, vocab_size)
     )
-    var sorted_ids_buf = ctx.create_buffer[out_idx_type](
+    var sorted_ids_buf = ctx.enqueue_create_buffer[out_idx_type](
         batch_size * vocab_size
     )
     var sorted_ids = NDBuffer[out_idx_type, rank](

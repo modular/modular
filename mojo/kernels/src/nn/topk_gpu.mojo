@@ -726,7 +726,7 @@ fn topk_gpu[
     var internal_cache_shape = DimList(internal_bs, num_blocks_per_input_ * K)
 
     # Create temporary buffer for local top-K values
-    var internal_vals_buf = ctx.create_buffer[type](
+    var internal_vals_buf = ctx.enqueue_create_buffer[type](
         int(internal_cache_shape.product())
     )
     var device_local_topk_vals = NDBuffer[type, internal_rank](
@@ -734,7 +734,7 @@ fn topk_gpu[
     )
 
     # Create temporary buffer for local top-K indices
-    var internal_idxs_buf = ctx.create_buffer[out_idx_type](
+    var internal_idxs_buf = ctx.enqueue_create_buffer[out_idx_type](
         int(internal_cache_shape.product())
     )
     var device_local_topk_idxs = NDBuffer[out_idx_type, internal_rank](
@@ -789,7 +789,7 @@ fn topk_fused_sampling_gpu[
 
     var out_vals_shape = input.get_shape()
     out_vals_shape[rank - 1] = K
-    var out_vals_buf = ctx.create_buffer[type](
+    var out_vals_buf = ctx.enqueue_create_buffer[type](
         out_vals_shape.flattened_length()
     )
     var out_vals = NDBuffer[type, rank](out_vals_buf.ptr, out_vals_shape)

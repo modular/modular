@@ -2514,7 +2514,7 @@ fn mha_gpu_naive[
 
     var num_keys = max_prompt_len + max_cache_size
     alias p_type = get_accum_type[q_type]()
-    var p_device = ctx.create_buffer[p_type](
+    var p_device = ctx.enqueue_create_buffer[p_type](
         batch_size * num_heads * max_prompt_len * num_keys
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
@@ -2841,7 +2841,7 @@ fn mha_gpu_naive[
     ctx: DeviceContext,
 ) raises:
     alias p_type = get_accum_type[q_type]()
-    var p_device = ctx.create_buffer[p_type](
+    var p_device = ctx.enqueue_create_buffer[p_type](
         batch_size * num_heads * seq_len * num_keys
     )
     # FIXME: RUNP-356 Direct access to CUDA within DeviceContext

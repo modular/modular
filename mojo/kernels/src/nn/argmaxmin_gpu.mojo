@@ -41,7 +41,7 @@ fn argmaxmin_gpu[
 
     var out_vals_shape = input.get_shape()
     out_vals_shape[rank - 1] = K
-    var out_vals_buf = ctx.create_buffer[type](
+    var out_vals_buf = ctx.enqueue_create_buffer[type](
         out_vals_shape.flattened_length()
     )
     var out_vals = NDBuffer[type, rank](out_vals_buf.ptr, out_vals_shape)

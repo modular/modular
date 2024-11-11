@@ -31,7 +31,9 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     var in_host_ptr = UnsafePointer[Scalar[type]].alloc(
         shape.flattened_length()
     )
-    var in_device_ptr = ctx.create_buffer[type](shape.flattened_length())
+    var in_device_ptr = ctx.enqueue_create_buffer[type](
+        shape.flattened_length()
+    )
     var in_host = NDBuffer[type, rank](in_host_ptr, shape)
     var in_device = NDBuffer[type, rank](in_device_ptr.ptr, shape)
     var out_host_ptr = UnsafePointer[Scalar[type]].alloc(
@@ -40,7 +42,9 @@ fn test_gpu_softmax(ctx: DeviceContext) raises:
     var out_ref_ptr = UnsafePointer[Scalar[type]].alloc(
         shape.flattened_length()
     )
-    var out_device_ptr = ctx.create_buffer[type](shape.flattened_length())
+    var out_device_ptr = ctx.enqueue_create_buffer[type](
+        shape.flattened_length()
+    )
     var out_host = NDBuffer[type, rank](out_host_ptr, shape)
     var out_ref = NDBuffer[type, rank](out_ref_ptr, shape)
     var out_device = NDBuffer[type, rank](out_device_ptr.ptr, shape)
@@ -112,18 +116,18 @@ def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext):
     var length = shape.flattened_length()
 
     var in_host_ref_ptr = UnsafePointer[Scalar[ref_type]].alloc(length)
-    var in_device_ref_ptr = ctx.create_buffer[ref_type](length)
+    var in_device_ref_ptr = ctx.enqueue_create_buffer[ref_type](length)
     var in_host_test_ptr = UnsafePointer[Scalar[test_type]].alloc(length)
-    var in_device_test_ptr = ctx.create_buffer[test_type](length)
+    var in_device_test_ptr = ctx.enqueue_create_buffer[test_type](length)
     var in_device_ref = NDBuffer[ref_type, rank](in_device_ref_ptr.ptr, shape)
     var in_device_test = NDBuffer[test_type, rank](
         in_device_test_ptr.ptr, shape
     )
 
     var out_host_ref_ptr = UnsafePointer[Scalar[ref_type]].alloc(length)
-    var out_device_ref_ptr = ctx.create_buffer[ref_type](length)
+    var out_device_ref_ptr = ctx.enqueue_create_buffer[ref_type](length)
     var out_host_test_ptr = UnsafePointer[Scalar[test_type]].alloc(length)
-    var out_device_test_ptr = ctx.create_buffer[test_type](length)
+    var out_device_test_ptr = ctx.enqueue_create_buffer[test_type](length)
 
     var out_device_ref = NDBuffer[ref_type, rank](out_device_ref_ptr.ptr, shape)
     var out_device_test = NDBuffer[test_type, rank](
@@ -214,8 +218,12 @@ fn test_gpu_online_softmax[WM: Int, WN: Int](ctx: DeviceContext) raises:
     var in_host = NDBuffer[type, rank](in_host_ptr, shape)
     var out_ref = NDBuffer[type, rank](out_ref_ptr, shape)
 
-    var in_device_ptr = ctx.create_buffer[type](shape.flattened_length())
-    var out_device_ptr = ctx.create_buffer[type](shape.flattened_length())
+    var in_device_ptr = ctx.enqueue_create_buffer[type](
+        shape.flattened_length()
+    )
+    var out_device_ptr = ctx.enqueue_create_buffer[type](
+        shape.flattened_length()
+    )
 
     var in_device = LayoutTensor[type, Layout.row_major(shape[1], shape[2])](
         in_device_ptr.ptr
