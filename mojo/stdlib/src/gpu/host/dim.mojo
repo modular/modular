@@ -13,16 +13,16 @@ from utils.index import Index, IndexList
 struct Dim(Stringable):
     var _value: IndexList[3]
 
-    fn __init__(inout self, dims: (Int,)):
+    fn __init__(out self, dims: (Int,)):
         self = Self(dims[0])
 
-    fn __init__(inout self, dims: (Int, Int)):
+    fn __init__(out self, dims: (Int, Int)):
         self = Self(dims[0], dims[1])
 
-    fn __init__(inout self, dims: (Int, Int, Int)):
+    fn __init__(out self, dims: (Int, Int, Int)):
         self = Self(dims[0], dims[1], dims[2])
 
-    fn __init__(inout self, x: Int, y: Int = 1, z: Int = 1):
+    fn __init__(out self, x: Int, y: Int = 1, z: Int = 1):
         self._value = Index(x, y, z)
 
     fn __getitem__(self, idx: Int) -> Int:

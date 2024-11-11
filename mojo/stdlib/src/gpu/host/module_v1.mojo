@@ -280,10 +280,10 @@ struct JitOptions:
       Applies to: compiler only
     """
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self._value = 0
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
 
@@ -297,17 +297,17 @@ struct Module:
     var module: _ModuleHandle
     var cuda_dll: CudaDLL
 
-    fn __init__(inout self, ctx: Context):
+    fn __init__(out self, ctx: Context):
         self.__init__(ctx.cuda_dll)
 
-    fn __init__(inout self, cuda_dll: CudaDLL):
+    fn __init__(out self, cuda_dll: CudaDLL):
         self.module = _ModuleHandle()
         self.cuda_dll = cuda_dll
 
-    fn __init__(inout self, ctx: Context, path: Path) raises:
+    fn __init__(out self, ctx: Context, path: Path) raises:
         self.__init__(path, ctx.cuda_dll)
 
-    fn __init__(inout self, path: Path, cuda_dll: CudaDLL) raises:
+    fn __init__(out self, path: Path, cuda_dll: CudaDLL) raises:
         self.cuda_dll = cuda_dll
         var module = _ModuleHandle()
         var path_cstr = str(path)

@@ -593,7 +593,7 @@ struct DeviceAttribute:
     """Device supports switch multicast and reduction operations.
     """
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
 
@@ -612,7 +612,7 @@ fn device_count() raises -> Int:
 struct DeviceContextInfo(StringableRaising):
     var _ctx: DeviceContext
 
-    fn __init__(inout self, ctx: DeviceContext):
+    fn __init__(out self, ctx: DeviceContext):
         self._ctx = ctx
 
     @no_inline
@@ -723,15 +723,15 @@ struct DeviceV1:
     var id: Int32
     var cuda_dll: CudaDLL
 
-    fn __init__(inout self, id: Int = 0):
+    fn __init__(out self, id: Int = 0):
         self.id = id
         self.cuda_dll = CudaDLL()
 
-    fn __init__(inout self, cuda_instance: CudaInstance, id: Int = 0):
+    fn __init__(out self, cuda_instance: CudaInstance, id: Int = 0):
         self.id = id
         self.cuda_dll = cuda_instance.cuda_dll
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.id = existing.id
         self.cuda_dll = existing.cuda_dll
 

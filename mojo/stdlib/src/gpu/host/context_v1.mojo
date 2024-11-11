@@ -30,10 +30,10 @@ struct Context:
 
     alias USE_CTX_RETAIN = False
 
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
         self.__init__(DeviceV1())
 
-    fn __init__(inout self, device: DeviceV1, flags: Int = 0) raises:
+    fn __init__(out self, device: DeviceV1, flags: Int = 0) raises:
         self.device = device
         self.cuda_dll = device.cuda_dll
         self.cuda_function_cache = UnsafePointer[FunctionCache]().alloc(1)
@@ -88,7 +88,7 @@ struct Context:
     fn __enter__(owned self) -> Self:
         return self^
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.device = existing.device
         self.ctx = existing.ctx
         self.cuda_dll = existing.cuda_dll
@@ -98,7 +98,7 @@ struct Context:
         existing.cuda_dll = CudaDLL()
         existing.owner = False
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.device = existing.device
         self.ctx = existing.ctx
         self.cuda_dll = existing.cuda_dll

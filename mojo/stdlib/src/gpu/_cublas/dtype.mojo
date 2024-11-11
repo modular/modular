@@ -15,7 +15,7 @@ struct Property:
     alias MINOR_VERSION = Self(1)
     alias PATCH_LEVEL = Self(2)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -73,7 +73,7 @@ struct DataType:
     alias R_64U = Self(26)
     alias C_64U = Self(27)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:

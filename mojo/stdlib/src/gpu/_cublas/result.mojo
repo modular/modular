@@ -22,7 +22,7 @@ struct Result(Writable):
     alias NOT_SUPPORTED = Self(15)
     alias LICENSE_ERROR = Self(16)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:

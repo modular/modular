@@ -339,7 +339,7 @@ struct TensorMapDataType:
     alias TFLOAT32 = Self(11)
     alias TFLOAT32_FTZ = Self(12)
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
     @staticmethod
@@ -364,7 +364,7 @@ struct TensornsorMapInterleave:
     alias INTERLEAVE_16B = Self(1)
     alias INTERLEAVE_32B = Self(2)
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
 
@@ -378,7 +378,7 @@ struct TensorMapSwizzle:
     alias SWIZZLE_64B = Self(2)
     alias SWIZZLE_128B = Self(3)
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
 
@@ -392,7 +392,7 @@ struct TensorMapL2Promotion:
     alias L2_128B = Self(2)
     alias L2_256B = Self(3)
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
 
@@ -404,7 +404,7 @@ struct TensorMapFloatOOBFill:
     alias NONE = Self(0)
     alias NAN_REQUEST_ZERO_FMA = Self(1)
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
 
@@ -414,7 +414,7 @@ struct TMADescriptor:
     var data: StaticTuple[UInt8, 128]
 
     @always_inline
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         self.data = other.data
 
 
@@ -502,7 +502,7 @@ struct MemLocationType:
     alias HOST_NUMA_CURRENT = Self(4)
     alias MAX = Self(0x7FFFFFFF)
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
     fn __eq__(self, other: MemLocationType) -> Bool:
@@ -539,7 +539,7 @@ struct MemAllocationType:
     alias PINNED = Self(1)
     alias MAX = Self(0x7FFFFFFF)
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
     fn __eq__(self, other: MemAllocationType) -> Bool:
@@ -573,7 +573,7 @@ struct MemAllocationHandleType:
     alias FABRIC = Self(8)
     alias MAX = Self(0x7FFFFFFF)
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
     fn __eq__(self, other: MemAllocationHandleType) -> Bool:
@@ -606,7 +606,7 @@ struct MemLocation:
     var type: MemLocationType
     var id: Int32
 
-    fn __init__(inout self, type: MemLocationType, id: Int32):
+    fn __init__(out self, type: MemLocationType, id: Int32):
         self.type = type
         self.id = id
 
@@ -666,7 +666,7 @@ struct MemAllocationGranularityFlags:
     alias MINIMUM = Self(0)
     alias RECOMMENDED = Self(1)
 
-    fn __init__(inout self, value: Int32):
+    fn __init__(out self, value: Int32):
         self._value = value
 
 

@@ -153,7 +153,7 @@ struct Order:
     32-wide group of columns. E.g. if matrix has 33 columns and 1 row, ld must be at least (32*32)*1 = 1024.
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -374,7 +374,7 @@ struct ClusterShape:
     """Let library pick cluster shape automatically.
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -620,7 +620,7 @@ struct MatmulAlgorithmCapability:
     int32_t.
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -704,7 +704,7 @@ struct PointerMode:
     """alpha pointer targets an array in device memory, beta is a single value in host memory.
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -850,7 +850,7 @@ struct Search:
     """reserved for future use.
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -903,7 +903,7 @@ struct ReductionScheme:
     """Intermediate results are stored in output type in the workspace and reduced in a separate step.
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -1287,7 +1287,7 @@ struct cublasLtMatmulDescAttributes_t:
     int32_t *, default: NULL.
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -1678,7 +1678,7 @@ struct Preference:
     uint64_t, default: uint64_t(-1) (allow everything).
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -1786,7 +1786,7 @@ struct AlgorithmConfig:
     uint16_t, default: 0 (SHAPE_AUTO).
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -1914,7 +1914,7 @@ struct InnerShape:
     alias MMA16816 = Self(4)
     alias END = Self(5)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -2013,7 +2013,7 @@ struct LayoutAttribute:
     in memory in each element).
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -2190,7 +2190,7 @@ struct Stages:
     alias STAGES_128xAUTO = Self(34)
     alias STAGES_END = Self(35)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -2490,7 +2490,7 @@ struct Epilogue:
     (see CUBLASLT_MATMUL_DESC_BIAS_POINTER).
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -2588,7 +2588,7 @@ struct PointerModeMask:
     alias ALPHA_DEVICE_VECTOR_BETA_HOST = Self(4)
     """see ALPHA_DEVICE_VECTOR_BETA_HOST."""
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -2689,7 +2689,7 @@ struct Tile:
     alias TILE_256x32 = Self(35)
     alias TILE_END = Self(36)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:
@@ -3031,7 +3031,7 @@ struct TransformDescriptor:
     int32_t, default: CUBLAS_OP_N.
     """
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) raises -> Bool:

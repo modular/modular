@@ -754,7 +754,7 @@ struct cublasPointerMode_t:
     alias CUBLAS_POINTER_MODE_HOST = cublasPointerMode_t(0)
     alias CUBLAS_POINTER_MODE_DEVICE = cublasPointerMode_t(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -918,7 +918,7 @@ struct cublasMath_t:
     alias CUBLAS_TF32_TENSOR_OP_MATH = cublasMath_t(3)
     alias CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION = cublasMath_t(4)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2078,7 +2078,7 @@ struct Algorithm:
     alias ALGO14_TENSOR_OP = Self(114)
     alias ALGO15_TENSOR_OP = Self(115)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2604,7 +2604,7 @@ struct cublasDiagType_t:
     alias CUBLAS_DIAG_NON_UNIT = cublasDiagType_t(0)
     alias CUBLAS_DIAG_UNIT = cublasDiagType_t(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2641,7 +2641,7 @@ struct ComputeType:
     alias COMPUTE_32I = Self(72)
     alias COMPUTE_32I_PEDANTIC = Self(73)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -4648,7 +4648,7 @@ struct FillMode:
     alias UPPER = Self(1)
     alias FULL = Self(2)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -6095,7 +6095,7 @@ struct cublasAtomicsMode_t:
     alias CUBLAS_ATOMICS_NOT_ALLOWED = cublasAtomicsMode_t(0)
     alias CUBLAS_ATOMICS_ALLOWED = cublasAtomicsMode_t(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -6396,7 +6396,7 @@ struct cublasSideMode_t:
     alias CUBLAS_SIDE_LEFT = cublasSideMode_t(0)
     alias CUBLAS_SIDE_RIGHT = cublasSideMode_t(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -7026,7 +7026,7 @@ struct cublasOperation_t:
     alias CUBLAS_OP_HERMITAN = cublasOperation_t(2)
     alias CUBLAS_OP_CONJG = cublasOperation_t(3)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:

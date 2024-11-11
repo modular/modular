@@ -20,12 +20,12 @@ struct Stream(CollectionElement):
     var owning: Bool
     var cuda_dll: CudaDLL
 
-    fn __init__(inout self, stream: _StreamHandle, cuda_dll: CudaDLL):
+    fn __init__(out self, stream: _StreamHandle, cuda_dll: CudaDLL):
         self.stream = stream
         self.owning = False
         self.cuda_dll = cuda_dll
 
-    fn __init__(inout self, ctx: Context, stream: _StreamHandle):
+    fn __init__(out self, ctx: Context, stream: _StreamHandle):
         self.__init__(stream, ctx.cuda_dll)
 
     fn __init__(
@@ -43,7 +43,7 @@ struct Stream(CollectionElement):
             )
         )
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -51,7 +51,7 @@ struct Stream(CollectionElement):
         """
         self = other
 
-    fn __init__(inout self, ctx: Context, flags: Int = 0) raises:
+    fn __init__(out self, ctx: Context, flags: Int = 0) raises:
         self.__init__(ctx.cuda_dll, flags)
 
     fn __del__(owned self):
@@ -61,7 +61,7 @@ struct Stream(CollectionElement):
         except e:
             abort(e.__str__())
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.stream = existing.stream
         self.owning = False
         self.cuda_dll = existing.cuda_dll

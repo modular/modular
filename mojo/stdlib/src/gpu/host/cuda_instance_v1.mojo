@@ -344,7 +344,7 @@ struct AccessProperty:
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -397,7 +397,7 @@ struct AccessPolicyWindow:
     var miss_prop: AccessProperty
     """AccessProperty set for miss. Must be either NORMAL or STREAMING."""
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.base_ptr = UnsafePointer[NoneType]()
         self.num_bytes = 0
         self.hit_ratio = 0
@@ -512,7 +512,7 @@ struct LimitProperty:
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -564,12 +564,12 @@ struct LaunchAttribute:
     var __pad: StaticTuple[UInt8, 8 - sizeof[LaunchAttributeID]()]
     var value: LaunchAttributeValue
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.id = LaunchAttributeID.IGNORE
         self.__pad = __type_of(self.__pad)()
         self.value = LaunchAttributeValue()
 
-    fn __init__(inout self, policy: AccessPolicyWindow):
+    fn __init__(out self, policy: AccessPolicyWindow):
         self = Self()
         self.id = LaunchAttributeID.ACCESS_POLICY_WINDOW
         self.value = LaunchAttributeValue(policy)
@@ -597,15 +597,15 @@ struct LaunchAttributeValue:
     alias _storage_type = StaticTuple[UInt8, 64]
     var _storage: Self._storage_type
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self._storage = StaticTuple[UInt8, 64](0)
 
-    fn __init__(inout self, policy: AccessPolicyWindow):
+    fn __init__(out self, policy: AccessPolicyWindow):
         var tmp = policy
         var ptr = UnsafePointer.address_of(tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
-    fn __init__(inout self, dim: Dim):
+    fn __init__(out self, dim: Dim):
         var tmp = StaticTuple[UInt32, 3](dim.x(), dim.y(), dim.z())
         var ptr = UnsafePointer.address_of(tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
@@ -742,7 +742,7 @@ struct LaunchAttributeID:
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -851,7 +851,7 @@ struct CacheMode:
     fn __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -954,7 +954,7 @@ struct CudaDLL:
     # cuMem
     var cuMemGetInfo: cuMemGetInfo.type
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.cuDeviceGetCount = cuDeviceGetCount.load()
         self.cuDeviceGetAttribute = cuDeviceGetAttribute.load()
         self.cuDriverGetVersion = cuDriverGetVersion.load()
@@ -1009,7 +1009,7 @@ struct CudaDLL:
         self.cuModuleGetGlobal = cuModuleGetGlobal.load()
         self.cuMemGetInfo = cuMemGetInfo.load()
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -1021,10 +1021,10 @@ struct CudaDLL:
 struct CudaInstance:
     var cuda_dll: CudaDLL
 
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
         self.cuda_dll = CudaDLL()
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.cuda_dll = existing.cuda_dll
 
     fn num_devices(self) raises -> Int:

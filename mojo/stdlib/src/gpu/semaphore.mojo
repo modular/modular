@@ -24,7 +24,7 @@ struct Semaphore:
     var _state: Int32
 
     @always_inline
-    fn __init__(inout self, lock: UnsafePointer[Int32], thread_id: Int):
+    fn __init__(out self, lock: UnsafePointer[Int32], thread_id: Int):
         constrained[triple_is_nvidia_cuda(), "target must be cuda"]()
         self._lock = lock
         self._wait_thread = thread_id <= 0

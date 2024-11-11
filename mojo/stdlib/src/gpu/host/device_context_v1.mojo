@@ -39,7 +39,7 @@ struct DeviceBufferV1[type: DType](Sized):
     fn v1(self) -> ref [__origin_of(self)] Self:
         return self
 
-    fn __init__(inout self, ctx: DeviceContextV1, size: Int) raises:
+    fn __init__(out self, ctx: DeviceContextV1, size: Int) raises:
         """This init takes in a constructed DeviceContext and schedules an owned buffer allocation
         using the stream in the device context.
         """
@@ -77,13 +77,13 @@ struct DeviceBufferV1[type: DType](Sized):
         self.size = size
         self.owning = owning
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.ctx_ptr = existing.ctx_ptr
         self.ptr = existing.ptr
         self.size = existing.size
         self.owning = False
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.ctx_ptr = existing.ctx_ptr
         self.ptr = existing.ptr
         self.size = existing.size
@@ -207,7 +207,7 @@ struct DeviceContextV1:
     # profiling_enabled = False, which is OK. But for the Driver API, we would
     # want profiling to occur for appropriate builds when it substitutes the
     # current MGP implementation.
-    fn __init__(inout self, kind: StringRef = "cuda", gpu_id: Int = 0) raises:
+    fn __init__(out self, kind: StringRef = "cuda", gpu_id: Int = 0) raises:
         self.cuda_instance = CudaInstance()
         self.cuda_context = Context(DeviceV1(self.cuda_instance, gpu_id))
         self.cuda_stream = Stream(self.cuda_context)

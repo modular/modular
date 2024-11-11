@@ -136,10 +136,10 @@ fn _get_dylib_function[
 struct CudaHandle(Boolable, Stringable):
     var handle: UnsafePointer[NoneType]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.handle = UnsafePointer[NoneType]()
 
-    fn __init__(inout self, handle: UnsafePointer[NoneType]):
+    fn __init__(out self, handle: UnsafePointer[NoneType]):
         self.handle = handle
 
     fn __bool__(self) -> Bool:

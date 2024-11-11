@@ -406,7 +406,7 @@ struct WGMMADescriptor[dtype: DType]:
 
     var desc: Int64
 
-    fn __init__(inout self, val: Int64):
+    fn __init__(out self, val: Int64):
         self.desc = val
 
     @staticmethod

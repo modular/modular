@@ -79,7 +79,7 @@ struct cudnnSoftmaxMode_t:
     alias CUDNN_SOFTMAX_MODE_INSTANCE = Self(0)
     alias CUDNN_SOFTMAX_MODE_CHANNEL = Self(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -142,7 +142,7 @@ struct cudnnReduceTensorIndices_t:
     alias CUDNN_REDUCE_TENSOR_NO_INDICES = Self(0)
     alias CUDNN_REDUCE_TENSOR_FLATTENED_INDICES = Self(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -335,7 +335,7 @@ struct cudnnReduceTensorOp_t:
     alias CUDNN_REDUCE_TENSOR_NORM2 = Self(7)
     alias CUDNN_REDUCE_TENSOR_MUL_NO_ZEROS = Self(8)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -441,7 +441,7 @@ struct cudnnDeterminism_t:
     alias CUDNN_NON_DETERMINISTIC = Self(0)
     alias CUDNN_DETERMINISTIC = Self(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -501,7 +501,7 @@ struct cudnnStatus_t:
     alias CUDNN_STATUS_RUNTIME_FP_OVERFLOW = Self(13)
     alias CUDNN_STATUS_VERSION_MISMATCH = Self(14)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -569,7 +569,7 @@ struct cudnnCTCLossAlgo_t:
     alias CUDNN_CTC_LOSS_ALGO_DETERMINISTIC = Self(0)
     alias CUDNN_CTC_LOSS_ALGO_NON_DETERMINISTIC = Self(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -635,7 +635,7 @@ struct cudnnTensorFormat_t:
     alias CUDNN_TENSOR_NHWC = Self(1)
     alias CUDNN_TENSOR_NCHW_VECT_C = Self(2)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -802,7 +802,7 @@ struct cudnnNormAlgo_t:
     alias CUDNN_NORM_ALGO_STANDARD = Self(0)
     alias CUDNN_NORM_ALGO_PERSIST = Self(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -848,7 +848,7 @@ struct cudnnOpTensorOp_t:
     alias CUDNN_OP_TENSOR_SQRT = Self(4)
     alias CUDNN_OP_TENSOR_NOT = Self(5)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1148,7 +1148,7 @@ struct cudnnActivationMode_t:
     alias CUDNN_ACTIVATION_IDENTITY = Self(5)
     alias CUDNN_ACTIVATION_SWISH = Self(6)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1233,7 +1233,7 @@ struct cudnnConvolutionBwdDataAlgo_t:
     alias CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD_NONFUSED = Self(5)
     alias CUDNN_CONVOLUTION_BWD_DATA_ALGO_COUNT = Self(6)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1333,7 +1333,7 @@ struct cudnnSamplerType_t:
     var _value: Int8
     alias CUDNN_SAMPLER_BILINEAR = Self(0)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1400,7 +1400,7 @@ struct cudnnNormMode_t:
     alias CUDNN_NORM_PER_ACTIVATION = Self(0)
     alias CUDNN_NORM_PER_CHANNEL = Self(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1517,7 +1517,7 @@ struct cudnnNormOps_t:
     alias CUDNN_NORM_OPS_NORM_ACTIVATION = Self(1)
     alias CUDNN_NORM_OPS_NORM_ADD_ACTIVATION = Self(2)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1594,7 +1594,7 @@ struct cudnnSoftmaxAlgorithm_t:
     alias CUDNN_SOFTMAX_ACCURATE = Self(1)
     alias CUDNN_SOFTMAX_LOG = Self(2)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1683,7 +1683,7 @@ struct cudnnBatchNormOps_t:
     alias CUDNN_BATCHNORM_OPS_BN_ACTIVATION = Self(1)
     alias CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION = Self(2)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1734,7 +1734,7 @@ struct cudnnConvolutionFwdAlgo_t:
     alias CUDNN_CONVOLUTION_FWD_ALGO_WINOGRAD_NONFUSED = Self(7)
     alias CUDNN_CONVOLUTION_FWD_ALGO_COUNT = Self(8)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1978,7 +1978,7 @@ struct cudnnLRNMode_t:
     var _value: Int8
     alias CUDNN_LRN_CROSS_CHANNEL_DIM1 = Self(0)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2103,7 +2103,7 @@ struct cudnnFoldingDirection_t:
     alias CUDNN_TRANSFORM_FOLD = Self(0)
     alias CUDNN_TRANSFORM_UNFOLD = Self(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2167,7 +2167,7 @@ struct cudnnErrQueryMode_t:
     alias CUDNN_ERRQUERY_NONBLOCKING = Self(1)
     alias CUDNN_ERRQUERY_BLOCKING = Self(2)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2327,7 +2327,7 @@ struct cudnnBatchNormMode_t:
     alias CUDNN_BATCHNORM_SPATIAL = Self(1)
     alias CUDNN_BATCHNORM_SPATIAL_PERSISTENT = Self(2)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2417,7 +2417,7 @@ struct cudnnSeverity_t:
     alias CUDNN_SEV_WARNING = Self(2)
     alias CUDNN_SEV_INFO = Self(3)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2468,7 +2468,7 @@ struct cudnnMathType_t:
     alias CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION = Self(2)
     alias CUDNN_FMA_MATH = Self(3)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2514,7 +2514,7 @@ struct cudnnNanPropagation_t:
     alias CUDNN_NOT_PROPAGATE_NAN = Self(0)
     alias CUDNN_PROPAGATE_NAN = Self(1)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2562,7 +2562,7 @@ struct cudnnRNNAlgo_t:
     alias CUDNN_RNN_ALGO_PERSIST_STATIC_SMALL_H = Self(3)
     alias CUDNN_RNN_ALGO_COUNT = Self(4)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2701,7 +2701,7 @@ struct cudnnDataType_t:
     alias CUDNN_DATA_FP8_E5M2 = Self(13)
     alias CUDNN_DATA_FAST_FLOAT_FOR_FP8 = Self(14)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -2891,7 +2891,7 @@ struct cudnnIndicesType_t:
     alias CUDNN_16BIT_INDICES = Self(2)
     alias CUDNN_8BIT_INDICES = Self(3)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -3182,7 +3182,7 @@ struct cudnnConvolutionBwdFilterAlgo_t:
     alias CUDNN_CONVOLUTION_BWD_FILTER_ALGO_FFT_TILING = Self(6)
     alias CUDNN_CONVOLUTION_BWD_FILTER_ALGO_COUNT = Self(7)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -3338,7 +3338,7 @@ struct cudnnPoolingMode_t:
     alias CUDNN_POOLING_AVERAGE_COUNT_EXCLUDE_PADDING = Self(2)
     alias CUDNN_POOLING_MAX_DETERMINISTIC = Self(3)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -3436,7 +3436,7 @@ struct cudnnDivNormMode_t:
     var _value: Int8
     alias CUDNN_DIVNORM_PRECOMPUTED_MEANS = Self(0)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:

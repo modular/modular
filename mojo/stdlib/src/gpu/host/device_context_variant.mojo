@@ -61,16 +61,16 @@ struct DeviceFunctionVariant[
     fn v2(self) -> ref [__origin_of(self._impl)] Self.V2:
         return self._impl[Self.V2]
 
-    fn __init__(inout self, owned impl: Self.V1):
+    fn __init__(out self, owned impl: Self.V1):
         self._impl = impl^
 
-    fn __init__(inout self, owned impl: Self.V2):
+    fn __init__(out self, owned impl: Self.V2):
         self._impl = impl^
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self._impl = existing._impl
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._impl = existing._impl^
 
     fn test_only_num_captures(self) raises -> Int:
@@ -102,13 +102,13 @@ struct DeviceBufferVariant[type: DType](Sized):
     fn v2(self) -> ref [__origin_of(self._impl)] Self.V2:
         return self._impl[Self.V2]
 
-    def __init__(inout self, owned impl: Self.V1):
+    def __init__(out self, owned impl: Self.V1):
         self._impl = impl^
 
-    def __init__(inout self, owned impl: Self.V2):
+    def __init__(out self, owned impl: Self.V2):
         self._impl = impl^
 
-    fn __init__(inout self, ctx: DeviceContextVariant, size: Int) raises:
+    fn __init__(out self, ctx: DeviceContextVariant, size: Int) raises:
         @parameter
         if _device_ctx_v2():
             # TODO(iposva): Should we expose the sync mode to the public API?
@@ -130,10 +130,10 @@ struct DeviceBufferVariant[type: DType](Sized):
         else:
             self._impl = Self.V1(ctx.v1(), ptr, size, owning=owning)
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self._impl = existing._impl
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._impl = existing._impl^
 
     fn __len__(self) -> Int:
@@ -190,17 +190,17 @@ struct DeviceContextVariant:
     fn v2(self) -> ref [__origin_of(self._impl)] Self.V2:
         return self._impl[Self.V2]
 
-    fn __init__(inout self, kind: StringRef = "cuda", gpu_id: Int = 0) raises:
+    fn __init__(out self, kind: StringRef = "cuda", gpu_id: Int = 0) raises:
         @parameter
         if _device_ctx_v2():
             self._impl = Self.V2(kind, gpu_id)
         else:
             self._impl = Self.V1(kind, gpu_id)
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self._impl = existing._impl
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._impl = existing._impl^
 
     fn __enter__(owned self) -> Self:

@@ -70,7 +70,7 @@ fn _checked(err_msg: _CharPtr) raises:
 struct _DeviceTimer:
     var _handle: _DeviceTimerPtr
 
-    fn __init__(inout self, ptr: _DeviceTimerPtr):
+    fn __init__(out self, ptr: _DeviceTimerPtr):
         self._handle = ptr
 
     fn __del__(owned self):
@@ -189,7 +189,7 @@ struct DeviceBufferV2[type: DType](Sized):
         self._device_ptr = ptr
         self._handle = cpp_handle
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         # Increment the reference count before copying the handle.
         #
         # void AsyncRT_DeviceBuffer_retain(const DeviceBuffer *buffer)
@@ -201,7 +201,7 @@ struct DeviceBufferV2[type: DType](Sized):
         self._device_ptr = existing._device_ptr
         self._handle = existing._handle
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._device_ptr = existing._device_ptr
         self._handle = existing._handle
 
@@ -276,7 +276,7 @@ struct DeviceBufferV2[type: DType](Sized):
 struct DeviceStreamV2:
     var _handle: _DeviceStreamPtr
 
-    fn __init__(inout self, ctx: DeviceContextV2) raises:
+    fn __init__(out self, ctx: DeviceContextV2) raises:
         var result = _DeviceStreamPtr()
         # const char *AsyncRT_DeviceContext_stream(const DeviceStream **result, const DeviceContext *ctx)
         _checked(
@@ -289,7 +289,7 @@ struct DeviceStreamV2:
         )
         self._handle = result
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         # void AsyncRT_DeviceStream_retain(const DeviceStream *stream)
         external_call[
             "AsyncRT_DeviceStream_retain",
@@ -298,7 +298,7 @@ struct DeviceStreamV2:
         ](existing._handle)
         self._handle = existing._handle
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._handle = existing._handle
 
     @always_inline
@@ -342,7 +342,7 @@ struct DeviceFunctionV2[
         target=target,
     ]()
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         # Increment the reference count before copying the handle.
         #
         # void AsyncRT_DeviceFunction_retain(const DeviceFunction *ctx)
@@ -353,7 +353,7 @@ struct DeviceFunctionV2[
         ](existing._handle)
         self._handle = existing._handle
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._handle = existing._handle
 
     fn __del__(owned self):
@@ -671,7 +671,7 @@ struct DeviceContextV2:
         )
         self._handle = result
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         # Increment the reference count before copying the handle.
         #
         # void AsyncRT_DeviceContext_retain(const DeviceContext *ctx)
@@ -682,7 +682,7 @@ struct DeviceContextV2:
         ](existing._handle)
         self._handle = existing._handle
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._handle = existing._handle
 
     fn __del__(owned self):

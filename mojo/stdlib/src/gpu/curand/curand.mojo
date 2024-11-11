@@ -199,7 +199,7 @@ struct curandRngType:
     alias CURAND_RNG_QUASI_SOBOL64 = Self(10)
     alias CURAND_RNG_QUASI_SCRAMBLED_SOBOL64 = Self(11)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -553,7 +553,7 @@ struct curandMethod:
     alias CURAND_DEFINITION = Self(12)
     alias CURAND_POISSON = Self(13)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -716,7 +716,7 @@ struct curandStatus:
     alias CURAND_STATUS_ARCH_MISMATCH = Self(11)
     alias CURAND_STATUS_INTERNAL_ERROR = Self(12)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -786,7 +786,7 @@ struct curandDirectionVectorSet:
     alias CURAND_DIRECTION_VECTORS_64_JOEKUO6 = Self(2)
     alias CURAND_SCRAMBLED_DIRECTION_VECTORS_64_JOEKUO6 = Self(3)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:
@@ -1257,7 +1257,7 @@ struct curandOrdering:
     alias CURAND_ORDERING_PSEUDO_DYNAMIC = Self(4)
     alias CURAND_ORDERING_QUASI_DEFAULT = Self(5)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self._value = value
 
     fn __eq__(self, other: Self) -> Bool:

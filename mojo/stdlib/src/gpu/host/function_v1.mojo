@@ -178,7 +178,7 @@ struct CacheConfig(CollectionElement, EqualityComparable):
     fn __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -206,7 +206,7 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
 
     alias NULL = FuncAttribute(Attribute(-1), -1)
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -260,12 +260,12 @@ struct _CachedFunctionInfo(Boolable):
     var func_handle: _FunctionHandle
     var error: Error
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.mod_handle = _ModuleHandle()
         self.func_handle = _FunctionHandle()
         self.error = Error()
 
-    fn __init__(inout self, error: Error):
+    fn __init__(out self, error: Error):
         self.mod_handle = _ModuleHandle()
         self.func_handle = _FunctionHandle()
         self.error = error
@@ -285,11 +285,11 @@ struct FunctionCache:
     var dict: Dict[String, _CachedFunctionInfo]
     var lock: BlockingSpinLock
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.dict = Dict[String, _CachedFunctionInfo]()
         self.lock = BlockingSpinLock()
 
-    fn __moveinit__(inout self: Self, owned existing: Self):
+    fn __moveinit__(out self: Self, owned existing: Self):
         self.dict = existing.dict^
         self.lock = BlockingSpinLock()
 

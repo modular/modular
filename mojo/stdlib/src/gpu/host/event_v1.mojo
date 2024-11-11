@@ -36,7 +36,7 @@ struct Flag:
     set."""
 
     @always_inline("nodebug")
-    fn __init__(inout self, value: UInt32):
+    fn __init__(out self, value: UInt32):
         self._value = value
 
     @always_inline("nodebug")
@@ -62,7 +62,7 @@ struct Event:
     var cuda_dll: CudaDLL
 
     @always_inline
-    fn __init__(inout self, ctx: Context, flags: Flag = Flag.DEFAULT) raises:
+    fn __init__(out self, ctx: Context, flags: Flag = Flag.DEFAULT) raises:
         """Creates an event for the current CUDA context."""
         self.cuda_dll = ctx.cuda_dll
         self._event = _EventHandle()
