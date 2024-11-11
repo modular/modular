@@ -1,7 +1,7 @@
 // RUN: kgen-opt -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect -verify-parameters | FileCheck %s
 // RUN: kgen-opt -emit-bytecode -allow-unregistered-dialect %s | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
-#target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128, warp_size=32> : !kgen.target
+#target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
 // CHECK-LABEL: kgen.generator @param_expr
 kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype, mlirType: type, fn: (index) -> index>()  {
@@ -605,14 +605,6 @@ kgen.generator @target_get_field() {
                     "simd_bit_width is always greater than 1"
   kgen.param.assert<eq(:string target_get_field(#target, "os"), "darwin")>,
                     "target os is darwin"
-  kgen.return
-}
-
-
-// CHECK-LABEL: kgen.generator @target_get_warp_size()
-kgen.generator @target_get_warp_size() {
-  kgen.param.assert<eq(:!kgen.int_literal #kgen.int_literal<32>, target_get_field(#target, "warp_size"))>,
-                    "warp_size is always greater than 1"
   kgen.return
 }
 

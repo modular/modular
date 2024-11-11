@@ -1086,7 +1086,7 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), arch, features,
                              std::move(*dl), machine->getRelocationModel(),
                              simdWidthFromFeatures(features),
-                             dl->getPointerBitWidth(), std::nullopt, tuneCpu);
+                             dl->getPointerBitWidth(), tuneCpu);
 }
 
 ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
@@ -1110,7 +1110,6 @@ TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
       encodeFeatures(runtimeTargetInfo.features),
       /*data_layout=*/{}, /*relocation_model=*/llvm::Reloc::Static,
       /*simd_bit_width=*/0, /*index_width=*/std::nullopt,
-      /*warp_size=*/std::nullopt,
       /*tune_cpu=*/{});
 }
 

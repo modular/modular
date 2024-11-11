@@ -276,9 +276,9 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     contains the target triple, microarchitecture, optional features, and
     derived data such as data layout and SIMD width.
 
-    The user can also specify the default index bit width and warp size being
-    used. This is important for GPUs where the hardware can support different
-    index bit widths and warp sizes.
+    The user can also specify the default index bit width being used. This is
+    important for GPUs where the hardware can support different index bit widths
+    for cross compilation.
 
     The microarchitecture and features may encode version numbers, such as
     'sm_80' for CUDA compute capability 8.0. When deciding if a runtime host
@@ -308,8 +308,6 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     DefaultValuedParameter<"int64_t", "0">:$simd_bit_width,
     DefaultValuedParameter<"std::optional<int64_t>",
                            "std::nullopt">:$index_bit_width,
-    DefaultValuedParameter<"std::optional<int64_t>",
-                           "std::nullopt">:$warp_size,
     OptionalStringRefParameter:$tune_cpu
   );
 
