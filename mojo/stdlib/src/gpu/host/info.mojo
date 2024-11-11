@@ -33,8 +33,7 @@ fn _get_a100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
             `features = "+ptx81", `,
             `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `simd_bit_width = 128,`,
-            `index_bit_width = 64,`,
-            `warp_size = 32`,
+            `index_bit_width = 64`,
             `> : !kgen.target`,
         ]
     return __mlir_attr[
@@ -43,8 +42,7 @@ fn _get_a100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
         `features = "+ptx81", `,
         `data_layout="e-p:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
-        `index_bit_width = 32,`,
-        `warp_size = 32`,
+        `index_bit_width = 32`,
         `> : !kgen.target`,
     ]
 
@@ -87,8 +85,7 @@ fn _get_a10_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
             `features = "+ptx81", `,
             `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `simd_bit_width = 128,`,
-            `index_bit_width = 64,`,
-            `warp_size = 32`,
+            `index_bit_width = 64`,
             `> : !kgen.target`,
         ]
     return __mlir_attr[
@@ -97,8 +94,7 @@ fn _get_a10_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
         `features = "+ptx81", `,
         `data_layout="e-p:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
-        `index_bit_width = 32,`,
-        `warp_size = 32`,
+        `index_bit_width = 32`,
         `> : !kgen.target`,
     ]
 
@@ -141,8 +137,7 @@ fn _get_l4_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
             `features = "+ptx81", `,
             `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `simd_bit_width = 128,`,
-            `index_bit_width = 64,`,
-            `warp_size = 32`,
+            `index_bit_width = 64`,
             `> : !kgen.target`,
         ]
     return __mlir_attr[
@@ -151,8 +146,7 @@ fn _get_l4_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
         `features = "+ptx81", `,
         `data_layout="e-p:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
-        `index_bit_width = 32,`,
-        `warp_size = 32`,
+        `index_bit_width = 32`,
         `> : !kgen.target`,
     ]
 
@@ -195,8 +189,7 @@ fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
             `features = "+ptx85", `,
             `data_layout = "e-p3:32:32-p4:32:32-p5:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
             `index_bit_width = 64,`,
-            `simd_bit_width = 128,`,
-            `warp_size = 32`,
+            `simd_bit_width = 128`,
             `> : !kgen.target`,
         ]
     return __mlir_attr[
@@ -205,8 +198,7 @@ fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
         `features = "+ptx85", `,
         `data_layout="e-p:32:32-i64:64-i128:128-v16:16-v32:32-n16:32:64",`,
         `simd_bit_width = 128,`,
-        `index_bit_width = 32,`,
-        `warp_size = 32`,
+        `index_bit_width = 32`,
         `> : !kgen.target`,
     ]
 
@@ -249,8 +241,7 @@ fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
             `features = "", `,
             `data_layout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-p7:160:256:256:32-p8:128:128-p9:192:256:256:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5-G1-ni:7:8:9",`,
             `index_bit_width = 64,`,
-            `simd_bit_width = 128,`,
-            `warp_size = 64`,
+            `simd_bit_width = 128`,
             `> : !kgen.target`,
         ]
     debug_assert(False, "mi300x with 32bit config is not currently supported")
