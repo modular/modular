@@ -12,7 +12,7 @@ struct MyInt:
     var value: int
 
     @always_inline("nodebug")
-    fn __init__(inout self, v: int):
+    fn __init__(out self, v: int):
         self.value = v
 
 
@@ -83,7 +83,7 @@ fn test_kw_args_param_infer(x: int, f: float, s: MyInt):
 
 # COM: Test overloading precedence in the presence of static methods.
 struct StaticOverloadStruct:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     fn foo(inout self):
@@ -112,7 +112,7 @@ struct MyElement(Copyable):
 
 
 struct ConvertibleFromInt:
-    fn __init__(inout self, a: int):
+    fn __init__(out self, a: int):
         pass
 
 

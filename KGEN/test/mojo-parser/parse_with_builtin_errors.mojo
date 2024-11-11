@@ -20,7 +20,7 @@ struct FailingStruct:
 # MOCO-846: bad message when types don't match due to parameter expressions
 # that can't be evaluated at overload resolution time.
 struct HasSize[size: Int]:
-    fn __init__(inout self: Self):
+    fn __init__(out self: Self):
         pass
 
 # expected-note @below {{function declared here}}

@@ -608,10 +608,10 @@ struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
 
 
 struct InMemoryStruct(Sized):
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
     fn __del__(owned self):

@@ -26,7 +26,7 @@ struct MyUnsafePointer[
     var address: Self._mlir_type
 
     @always_inline
-    fn __init__(inout self, value: Self._mlir_type):
+    fn __init__(out self, value: Self._mlir_type):
         self.address = value
 
 # CHECK-LABEL: lit.func @"unsafe_ptr

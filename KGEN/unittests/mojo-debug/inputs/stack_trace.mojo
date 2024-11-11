@@ -6,7 +6,7 @@
 
 
 struct Foo[X: AnyTrivialRegType, Y: AnyTrivialRegType]:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     fn getParametrized[T: AnyTrivialRegType](self, val: T) -> T:

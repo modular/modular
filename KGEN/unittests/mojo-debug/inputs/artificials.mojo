@@ -11,7 +11,7 @@ struct Foo:
     var y: String
     var z: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.x = 123
         self.y = "This is a string"
         self.z = 234

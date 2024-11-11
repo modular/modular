@@ -168,13 +168,13 @@ fn rethrowsToRethrow():
 struct S:
     var v: Int
 
-    fn __init__(inout self, x: Int):
+    fn __init__(out self, x: Int):
         self.v = x
 
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
         self.v = 1
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.v = existing.v
 
 

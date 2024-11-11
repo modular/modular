@@ -31,17 +31,17 @@ fn use_mut(inout a: MemExample):
 struct MemExample:
     var x: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.x = 42
         pass
 
     fn noop(self):
         pass
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.x = existing.x
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.x = existing.x
 
     fn __bool__(self) -> Bool:
@@ -364,7 +364,7 @@ struct TestLoopWithWholeObjectBit:
     var field: MemExample
 
     # CHECK: lit.func @"__init__
-    fn __init__(inout self, cond: __mlir_type.i1):
+    fn __init__(out self, cond: __mlir_type.i1):
         # CHECK-NEXT: %buf = lit.var.decl "buf"
         # CHECK-NEXT: lifetime.start %buf
         # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%buf)
@@ -443,13 +443,13 @@ fn mojo98(n: Int):
 struct MyStringReturningCtx:
     var s: String
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.s = "hey"
 
     fn __enter__(owned self) -> Self:
         return self^
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.s = ""
 
     fn read(self) raises -> String:

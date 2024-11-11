@@ -18,7 +18,7 @@ struct Bar:
     var x: Int
     var ptr: UnsafePointer[Bar]
 
-    fn __init__(inout self, x: Int, ptr: UnsafePointer[Bar]):
+    fn __init__(out self, x: Int, ptr: UnsafePointer[Bar]):
         self.x = x
         self.ptr = ptr
 

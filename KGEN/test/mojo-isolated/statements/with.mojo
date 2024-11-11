@@ -21,7 +21,7 @@ fn raise_string() raises:
 
 
 struct ExampleCM:
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
     fn __enter__(self) -> Int:
@@ -36,7 +36,7 @@ struct ExampleCM:
 # Cannot use mutating __enter__
 # https://github.com/modularml/modular/issues/27371
 struct MutatingCM:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     fn __enter__(inout self) -> Int:
@@ -228,10 +228,10 @@ def testWithInDef(a: ExampleCM):
 
 
 struct CMWithoutExit:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         pass
 
     # This context manager consumes itself and returns it as the value.

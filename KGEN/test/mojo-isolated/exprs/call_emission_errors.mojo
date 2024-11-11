@@ -133,10 +133,10 @@ fn test_missing_keyword_arg_with_vararg_keyword(x: int):
 
 
 struct MemExample:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
 

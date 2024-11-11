@@ -49,7 +49,7 @@ struct MemType:
 struct NoCopyType:
     var a: int
 
-    fn __init__(inout self, aa: int):
+    fn __init__(out self, aa: int):
         self.a = aa
 
     fn foo(self) -> NoCopyType:

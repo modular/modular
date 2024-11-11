@@ -11,10 +11,10 @@
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
   var x : Int
-  fn __init__(inout self): self.x = 42; pass
+  fn __init__(out self): self.x = 42; pass
   fn noop(self): pass
-  fn __moveinit__(inout self, owned existing: Self): self.x = existing.x
-  fn __copyinit__(inout self, existing: Self): self.x = existing.x
+  fn __moveinit__(out self, owned existing: Self): self.x = existing.x
+  fn __copyinit__(out self, existing: Self): self.x = existing.x
   fn __bool__(self) -> Bool: return True
 
   # Destructor should not recurse.
@@ -32,7 +32,7 @@ fn consume(owned a: MemExample): pass
 struct MemPair:
   var a: MemExample
   var b: MemExample
-  fn __init__(inout self):
+  fn __init__(out self):
     self.a = self.b := MemExample()
 
   fn use(self): pass
@@ -42,9 +42,9 @@ struct MemPair:
 # CHECK: destructor {{.*}}@RegExample::@"__del__
 @register_passable
 struct RegExample:
-  fn __init__(inout self):
+  fn __init__(out self):
     return
-  fn __copyinit__(inout self, existing: Self): # CHECK: lit.func @"__copyinit__
+  fn __copyinit__(out self, existing: Self): # CHECK: lit.func @"__copyinit__
     return
 
   fn noop(self): pass
@@ -185,7 +185,7 @@ fn indirect_call[detail_fn: fn() -> MemExample]():
 
 # CHECK-LABEL: lit.struct.decl @Parameterized<level: !Int>
 struct Parameterized[level: Int]:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
 
     fn __del__(owned self):
         pass
@@ -268,7 +268,7 @@ struct FieldSensitiveMemExample:
   var f2 : MemExample
 
   # CHECK: lit.func @"__init__
-  fn __init__(inout self):
+  fn __init__(out self):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%0)
     self.f1 = MemExample()
@@ -279,11 +279,11 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: kgen.return
 
   # CHECK: lit.func @"__init__
-  fn __init__(inout self, a: MemExample, b: MemExample):
+  fn __init__(out self, a: MemExample, b: MemExample):
     self.f1 = a
     self.f2 = b
 
-  fn __copyinit__(inout self, existing: Self):
+  fn __copyinit__(out self, existing: Self):
     self = Self(existing.f1, existing.f2)
 
   # CHECK-LABEL: lit.func @"mutate
@@ -510,7 +510,7 @@ struct BigRegExample:
   var b: RegExample
 
   # CHECK-LABEL: lit.func @"__init__(ownership::BigRegExample=&)"
-  fn __init__(inout self):
+  fn __init__(out self):
     # CHECK-NEXT: [[A:%.*]] = lit.ref.struct.ger %self[a]
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[A]])
     # CHECK-NEXT: [[B:%.*]] = lit.ref.struct.ger %self[b]
@@ -519,7 +519,7 @@ struct BigRegExample:
     self.b = RegExample()
 
   # CHECK-LABEL: lit.func @"__copyinit__
-  fn __copyinit__(inout self, existing: Self):
+  fn __copyinit__(out self, existing: Self):
     # CHECK-NEXT: [[EA:%.*]] = lit.ref.struct.ger %existing[a]
     # CHECK-NEXT: [[SA:%.*]] = lit.ref.struct.ger %self[a]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[SA]], [[EA]])
@@ -638,7 +638,7 @@ def def_borrowed(a: MemExample) -> None:
 struct AddrSpace:
     var _value: __mlir_type.index
     @always_inline("nodebug")
-    fn __init__(inout self, value: __mlir_type.index):
+    fn __init__(out self, value: __mlir_type.index):
         self._value = value
     fn value(self) -> __mlir_type.index:
         return self._value
@@ -700,7 +700,7 @@ struct MemoryNoDtor:
 @register_passable
 struct RegExampleValue:
   var x: RegExample
-  fn __init__(inout self):
+  fn __init__(out self):
     self.x = RegExample()
 
   # Make sure the synthesized dtor is taken register style.
@@ -865,7 +865,7 @@ struct UninitField:
   var field: MemExample
 
   # CHECK: lit.func @"__init__
-  fn __init__(inout self):
+  fn __init__(out self):
       # Show that we can mark a field as intentionally uninitialized.
       # Even after checklifetimes, we don't want the thing initialized.
       __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self.field))
@@ -934,7 +934,7 @@ struct List:
 struct DoNotPropagateErrorStateIntoContinueSet:
   var dims: List
   # CHECK-LABEL: @"__init__({{.*}}::DoNotPropagateErrorStateIntoContinueSet
-  fn __init__(inout self, cond: __mlir_type.`i1`, owned list: List) raises:
+  fn __init__(out self, cond: __mlir_type.`i1`, owned list: List) raises:
     # CHECK:     hlcf.loop "_loop_0" {
     # CHECK-NEXT:  hlcf.if %cond {
     # CHECK-NEXT:    hlcf.yield
@@ -1164,7 +1164,7 @@ fn handleAnyLifetime4():
 
 struct A:
     var data: UnsafePointer[Int]
-    fn __init__(inout self):
+    fn __init__(out self):
         self.data = UnsafePointer[Int]()
     fn __del__(owned self): pass
 

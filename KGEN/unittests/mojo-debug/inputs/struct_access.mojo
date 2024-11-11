@@ -14,7 +14,7 @@ struct MyPair:
 
     # Make the struct go thru SROA by inlining its init.
     @always_inline("nodebug")
-    fn __init__(inout self, first: Int, second: Int):
+    fn __init__(out self, first: Int, second: Int):
         self.first = first
         self.second = second
 
@@ -24,7 +24,7 @@ struct MyPairPair:
     var second: MyPair
 
     @always_inline("nodebug")
-    fn __init__(inout self, a: Int, b: Int, c: Int, d: Int):
+    fn __init__(out self, a: Int, b: Int, c: Int, d: Int):
         self.first = MyPair(a, b)
         self.second = MyPair(c, d)
 

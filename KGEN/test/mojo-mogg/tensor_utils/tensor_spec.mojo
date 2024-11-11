@@ -13,10 +13,10 @@ struct OptionalReg[T: AnyTrivialRegType]:
     alias _mlir_type = __mlir_type[`!kgen.variant<`, T, `, i1>`]
     var _value: Self._mlir_type
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self = Self(None)
 
-    fn __init__(inout self, value: NoneType):
+    fn __init__(out self, value: NoneType):
         self._value = __mlir_op.`kgen.variant.create`[
             _type = Self._mlir_type, index = Int(1).value
         ](__mlir_attr.false)
@@ -57,7 +57,7 @@ struct StaticTensorSpec[type: DType, rank: Int]:
         self.in_lambda = in_lambda
         self.out_lambda = out_lambda
 
-    fn __init__(inout self):
+    fn __init__(out self):
         var shape = __mlir_op.`pop.variadic.create`[_type = Self._dims_type,]()
         var strides = __mlir_op.`pop.variadic.create`[
             _type = Self._dims_type,

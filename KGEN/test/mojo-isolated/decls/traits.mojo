@@ -214,7 +214,7 @@ struct StaticMethodStruct(StaticMethodTrait, Copyable):
     fn foobar():
         pass
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
 
@@ -246,10 +246,10 @@ fn move_me[T: Movable](owned value: T) -> T:
 
 # COM: Just check that conformance checking succeeds.
 trait TraitForReg:
-    fn __init__(inout self, x: int):
+    fn __init__(out self, x: int):
         ...
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         ...
 
     @staticmethod
@@ -270,10 +270,10 @@ trait TraitForReg:
 struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.func @"__init__
     # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, %x: index)
-    fn __init__(inout self, x: int):
+    fn __init__(out self, x: int):
         pass
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
     @staticmethod
@@ -354,7 +354,7 @@ trait ThunkAmbiguity:
     fn mismatched_ret() -> Self:
         ...
 
-    fn __init__(inout self):
+    fn __init__(out self):
         ...
 
 
@@ -367,7 +367,7 @@ struct ThunkAmbiguityRP(ThunkAmbiguity):
     fn mismatched_ret() -> Self:
         return Self {}
 
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -394,7 +394,7 @@ struct NoDtor(OwnedArguments, DefaultConstructible):
     fn take(owned self, owned x: RegTraitType):
         pass
 
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     fn method(self):
@@ -402,7 +402,7 @@ struct NoDtor(OwnedArguments, DefaultConstructible):
 
 
 trait DefaultConstructible:
-    fn __init__(inout self):
+    fn __init__(out self):
         ...
 
 
@@ -485,7 +485,7 @@ struct RegTrivialSpecial(AnyType, Copyable, Movable):
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 @register_passable
 struct RegSpecial(AnyType, Copyable, Movable):
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
     # CHECK: lit.func @"__del__
@@ -494,10 +494,10 @@ struct RegSpecial(AnyType, Copyable, Movable):
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlySpecial
 struct MemoryOnlySpecial(AnyType, Copyable, Movable):
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         pass
 
     # CHECK: lit.func @"__del__
@@ -700,7 +700,7 @@ struct HasMyPointerSelf(AnyType):
     var x: MyPointer[Self]
     # CHECK: lit.func @"__del__
 
-    fn __moveinit__(inout self, owned existing: Self, /):
+    fn __moveinit__(out self, owned existing: Self, /):
         pass
 
 
@@ -727,13 +727,13 @@ trait SomeTrait:
 
 
 struct ABC(SomeTrait):
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
 @register_passable("trivial")
 struct ABCOptionalParamInt[dim_parametric: ABCDim]:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -845,7 +845,7 @@ struct ChildFirst:
 @register_passable
 struct RegisterPassable:
     # CHECK: lit.func @"__copyinit__{{.*}}"
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
     # CHECK: lit.func @"implicit{{.*}}"

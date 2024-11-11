@@ -47,7 +47,7 @@ struct Parameterized[p1: Int]:
     fn b[p2: Int, p2: Int, p3: Int](self):  # Cannot shadow parameter names.
         pass
 
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     # expected-note @+2 {{'method' declared here}}
@@ -103,7 +103,7 @@ fn testSIMD(
 
 
 struct TwoParams[a: int, b: int]:
-    fn __init__(inout self, other: TwoParams[`1`, `1`]):
+    fn __init__(out self, other: TwoParams[`1`, `1`]):
         pass
 
 
@@ -198,12 +198,12 @@ fn unbind_variadic(x: StructWithVariadic[_]):
 
 
 struct ConvertibleFromInt:
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         pass
 
 
 struct AlsoConvertibleFromInt:
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         pass
 
 

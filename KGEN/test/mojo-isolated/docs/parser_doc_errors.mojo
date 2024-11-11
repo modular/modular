@@ -83,7 +83,7 @@ struct StructWithMissingMethod:
         pass
 
     # expected-warning @below {{public symbol '__init__' is missing a doc string}}
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 

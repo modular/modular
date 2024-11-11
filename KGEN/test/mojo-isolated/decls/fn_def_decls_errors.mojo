@@ -100,7 +100,7 @@ fn invalid_inferred_default[x: int = `1`, //]():
     pass
 
 struct NonCopyable:
-    fn __init__(inout self):
+    fn __init__(out self):
        pass
 
 def test_non_copyable_def_arg(arg: NonCopyable, arg2: int):

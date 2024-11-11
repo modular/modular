@@ -22,7 +22,7 @@ trait E(A):
 struct List[T: A]():
     pass
 
-    fn __init__(inout self: List[T]):
+    fn __init__(out self: List[T]):
         pass
 
 

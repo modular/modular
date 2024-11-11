@@ -13,7 +13,7 @@ struct RP_NotTrivial:
 
 
 struct Foo:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -40,20 +40,20 @@ fn test_type_instead_of_instance() -> Foo:
 # COM: https://github.com/modularml/modular/issues/29438
 # COM: ensure we do not crash in the example below, but emit an error.
 struct MadeFromPack[*Ts: AnyType]:
-    fn __init__(inout self, *args: *Ts):
+    fn __init__(out self, *args: *Ts):
         pass
 
 
 struct WrapsMadeFromPack[*Ts: AnyType]:
     var data: MadeFromPack[*Ts]
 
-    fn __init__(inout self, *args: *Ts):
+    fn __init__(out self, *args: *Ts):
         # expected-error @+1 {{cannot implicitly convert 'VariadicPack[0, args, AnyType, Ts]' value to 'MadeFromPack[Ts]'}}
         self.data = args
 
 
 struct Constructible:
-    fn __init__(inout self, arg: Int):
+    fn __init__(out self, arg: Int):
         pass
 
 
@@ -64,7 +64,7 @@ fn init_self_conversion():
 
 @value
 struct ConvertibleFromInt:
-    fn __init__(inout self, arg: Int):
+    fn __init__(out self, arg: Int):
         pass
 
 
@@ -75,22 +75,22 @@ struct AmbiguousCtor:
     var b: Int
 
     # expected-note @below {{candidate declared here}}
-    fn __init__(inout self, b: Int, a: ConvertibleFromInt):
+    fn __init__(out self, b: Int, a: ConvertibleFromInt):
         pass
 
 
 struct AlsoConvertibleFromInt:
-    fn __init__(inout self, arg: Int):
+    fn __init__(out self, arg: Int):
         pass
 
 
 struct AmbiguousConversion:
     # expected-note @below {{candidate declared here}}
-    fn __init__(inout self, x: ConvertibleFromInt):
+    fn __init__(out self, x: ConvertibleFromInt):
         pass
 
     # expected-note @below {{candidate declared here}}
-    fn __init__(inout self, x: AlsoConvertibleFromInt):
+    fn __init__(out self, x: AlsoConvertibleFromInt):
         pass
 
 
@@ -104,12 +104,12 @@ fn ambiguous_ctor_call(x: Int):
 
 # MOCO-990: Conditional conformance trick fails on SIMD constructor from Bool
 struct MySIMD[value: Int]:
-    fn __init__(inout self: MySIMD[0], value: MyBool):
+    fn __init__(out self: MySIMD[0], value: MyBool):
         pass
 
 
 struct MyBool:
-    fn __init__(inout self, value: MySIMD[0]):
+    fn __init__(out self, value: MySIMD[0]):
         pass
 
 

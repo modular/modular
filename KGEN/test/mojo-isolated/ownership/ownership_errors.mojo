@@ -8,10 +8,10 @@
 
 
 struct Empty:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
 
@@ -20,7 +20,7 @@ struct MemExample:
     var y: Int
 
     # expected-error @+1 {{'self.x' is uninitialized at the implicit return from this function}}
-    fn __init__(inout self):  # expected-note {{'self' declared here}}
+    fn __init__(out self):  # expected-note {{'self' declared here}}
         pass
 
     # expected-error @below {{'self.y' is uninitialized at the implicit return from this function}}
@@ -52,10 +52,10 @@ fn use_inout(inout x: MemExample):
 struct RegExample:
     var regstate: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.regstate = 1
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.regstate = 12
 
     fn __del__(owned self):
@@ -249,11 +249,11 @@ struct TwoRegs:
     var reg1: RegExample
     var reg2: RegExample
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.reg1 = RegExample()
         self.reg2 = RegExample()
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.reg1 = existing.reg1
         self.reg2 = existing.reg2
 
@@ -263,11 +263,11 @@ struct TwoRegsRP:
     var reg1: RegExample
     var reg2: RegExample
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.reg1 = RegExample()
         self.reg2 = RegExample()
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.reg1 = existing.reg1
         self.reg2 = existing.reg2
 
@@ -276,13 +276,13 @@ struct MoreComplexExample:
     var mem: MemExample
     var reg: TwoRegs
 
-    fn __init__(inout self):
+    fn __init__(out self):
         var result: MoreComplexExample  # expected-note {{'result' declared here}}
         result.mem = MemExample()
         result.reg.reg2 = RegExample()
         self = result  # expected-error {{use of uninitialized value 'result.reg.reg1'}}
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.mem = existing.mem
         self.reg = existing.reg
 
@@ -349,7 +349,7 @@ fn fieldConsumeError(
 
 # https://github.com/modularml/modular/issues/15404
 struct SimpleStructNoDtor:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -373,7 +373,7 @@ fn issue15404():
 struct StructWithNoDel:
     var x: Int
 
-    fn __init__(inout self, a: Int):
+    fn __init__(out self, a: Int):
         self.x = a
 
 

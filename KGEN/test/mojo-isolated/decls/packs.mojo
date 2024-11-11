@@ -16,13 +16,13 @@ trait SomeTrait:
 
 
 struct SomeMem(SomeTrait):
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
 
 @register_passable
 struct SomeReg(SomeTrait):
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -153,7 +153,7 @@ fn test_inout():
 
 
 struct not_nested_struct[*Ts: AnyType]:
-    fn __init__(inout self, inout *args: *Ts):
+    fn __init__(out self, inout *args: *Ts):
         pass
 
 
@@ -172,7 +172,7 @@ fn test_empty_pack():
 # CHECK-LABEL: lit.struct.decl @MyTuple
 # CHECK-SAME: <Ts: variadic<!AnyType> var>
 struct MyTuple[*Ts: AnyType]:
-    fn __init__(inout self, *args: *Ts):
+    fn __init__(out self, *args: *Ts):
         pass
 
 

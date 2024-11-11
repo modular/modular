@@ -64,7 +64,7 @@ struct OpArrayRef:
     var ptr: UnsafePointer[Operation]
     var size: Int
 
-    fn __init__(inout self, list: List[Operation]):
+    fn __init__(out self, list: List[Operation]):
         self.ptr = list.unsafe_ptr()
         self.size = len(list)
 
@@ -168,7 +168,7 @@ struct UnusedStr:
 
     @no_inline
     @op
-    fn __init__(inout self):
+    fn __init__(out self):
         self.ptr = UnsafePointer[Int].alloc(1)
         self.size = 0
 

@@ -288,7 +288,7 @@ fn mutate_in_addrspace(
 
 @register_passable("trivial")
 struct ExampleRegPassable:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     fn mutateArg(self, inout other: Self):
@@ -339,15 +339,15 @@ fn test_implicit_conversion_bvalue():
 
 
 struct Struct1:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         pass
 
 
 struct Struct2:
-    fn __init__(inout self, owned foo: Struct1):
+    fn __init__(out self, owned foo: Struct1):
         pass
 
 

@@ -10,7 +10,7 @@
 # expected-note @below {{trait 'Movable' declared here}}
 trait Movable:
     # expected-note @below {{required function '__moveinit__' is not implemented}}
-    fn __moveinit__(inout self, owned existing: Self, /):
+    fn __moveinit__(out self, owned existing: Self, /):
         pass
 
 

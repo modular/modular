@@ -17,7 +17,7 @@ var inferred_type = `1`
 # COM: this also serves for testing how we emit memory-only globals.
 @value
 struct ConvertibleFromInt:
-    fn __init__(inout self, v: int):
+    fn __init__(out self, v: int):
         pass
 
     fn __del__(owned self):

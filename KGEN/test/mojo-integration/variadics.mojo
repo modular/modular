@@ -12,7 +12,7 @@
 struct TalkativeMem(Stringable, Writable):
     var state: Int
 
-    fn __init__(inout self, state: Int):
+    fn __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
 
@@ -31,7 +31,7 @@ struct TalkativeMem(Stringable, Writable):
 struct TalkativeReg(Stringable, Writable):
     var state: Int
 
-    fn __init__(inout self, state: Int):
+    fn __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
 
@@ -50,11 +50,11 @@ struct TalkativeReg(Stringable, Writable):
 struct TalkativeCopableReg(Stringable, Writable):
     var state: Int
 
-    fn __init__(inout self, state: Int):
+    fn __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.state = existing.state
         print("copying", self.state)
 
@@ -72,15 +72,15 @@ struct TalkativeCopableReg(Stringable, Writable):
 struct TalkativeCopableMovableMem(Stringable, Writable, CollectionElement):
     var state: Int
 
-    fn __init__(inout self, state: Int):
+    fn __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.state = existing.state
         print("copying", self.state)
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.state = existing.state
         print("moving", self.state)
 

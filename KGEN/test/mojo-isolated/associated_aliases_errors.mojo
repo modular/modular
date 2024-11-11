@@ -12,13 +12,13 @@ alias K: Int
 
 @value
 struct Int:
-    fn __init__(inout self: Self):
+    fn __init__(out self: Self):
         pass
 
 
 @value
 struct Bool:
-    fn __init__(inout self: Self):
+    fn __init__(out self: Self):
         pass
 
 
