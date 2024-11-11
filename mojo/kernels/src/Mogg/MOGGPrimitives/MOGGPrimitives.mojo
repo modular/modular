@@ -129,7 +129,7 @@ fn byte_buffer_alloc[
     @parameter
     if "cuda" in target:
         # For now, only cuda targets can use device context directly
-        var buf = device_context[].create_buffer[DType.int8](byte_size)
+        var buf = device_context[].enqueue_create_buffer[DType.int8](byte_size)
         return NDBuffer[DType.int8, 1](buf^.take_ptr(), shape)
     else:
         return NDBuffer[DType.int8, 1](
