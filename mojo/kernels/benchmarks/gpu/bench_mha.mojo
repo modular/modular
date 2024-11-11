@@ -81,11 +81,11 @@ fn run_mha[
                     )
 
     # Device pointers
-    var q_device_ptr = ctx.create_buffer[qkv_type](q_size)
-    var k_device_ptr = ctx.create_buffer[qkv_type](k_size)
-    var v_device_ptr = ctx.create_buffer[qkv_type](v_size)
-    var mask_device_ptr = ctx.create_buffer[mask_type](mask_size)
-    var output_device_ptr = ctx.create_buffer[qkv_type](o_size)
+    var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
+    var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+    var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
+    var mask_device_ptr = ctx.enqueue_create_buffer[mask_type](mask_size)
+    var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
     ctx.enqueue_copy_to_device(q_device_ptr, q_ptr)
@@ -160,7 +160,7 @@ fn run_mha[
     ctx.synchronize()
     ctx.enqueue_copy_from_device(flash_output_ptr, output_device_ptr)
 
-    var output_ref_device_ptr = ctx.create_buffer[qkv_type](o_size)
+    var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
 
     mha_gpu_naive[4](

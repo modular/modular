@@ -81,8 +81,8 @@ fn bench_memcpy[
         length
     ) if config.pinned_memory else UnsafePointer[Scalar[dtype]].alloc(length)
 
-    var mem_device = context.create_buffer[dtype](length)
-    var mem2_device = context.create_buffer[dtype](length)
+    var mem_device = context.enqueue_create_buffer[dtype](length)
+    var mem2_device = context.enqueue_create_buffer[dtype](length)
 
     @parameter
     @always_inline
@@ -130,8 +130,8 @@ fn bench_p2p(
     iota(host_ptr, length)
 
     # Create and initialize device buffers
-    var src_buf = ctx1.create_buffer[dtype](length)
-    var dst_buf = ctx2.create_buffer[dtype](length)
+    var src_buf = ctx1.enqueue_create_buffer[dtype](length)
+    var dst_buf = ctx2.enqueue_create_buffer[dtype](length)
 
     # Copy initial data to source buffer
     ctx1.enqueue_copy_to_device(src_buf, host_ptr)

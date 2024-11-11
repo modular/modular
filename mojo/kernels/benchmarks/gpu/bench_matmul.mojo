@@ -98,9 +98,9 @@ fn bench_matmul[
     var cache_b = align_up(k128, stride_b * sizeof[dtype]()) // sizeof[dtype]()
     var cache_c = align_up(k128, stride_c * sizeof[dtype]()) // sizeof[dtype]()
 
-    var buffer_a = ctx.create_buffer[dtype](cache_a)
-    var buffer_b = ctx.create_buffer[dtype](cache_b)
-    var buffer_c = ctx.create_buffer[dtype](cache_c)
+    var buffer_a = ctx.enqueue_create_buffer[dtype](cache_a)
+    var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
+    var buffer_c = ctx.enqueue_create_buffer[dtype](cache_c)
 
     var cublas_handle = UnsafePointer[cublasContext]()
     check_cublas_error(cublasCreate(UnsafePointer.address_of(cublas_handle)))

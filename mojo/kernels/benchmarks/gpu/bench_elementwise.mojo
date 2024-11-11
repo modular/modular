@@ -145,8 +145,8 @@ fn run_elementwise[
     for i in range(N_cache):
         in_host_ptr[i] = i
 
-    var in_buffer = ctx.create_buffer[type](N_cache)
-    var out_buffer = ctx.create_buffer[type](N_cache)
+    var in_buffer = ctx.enqueue_create_buffer[type](N_cache)
+    var out_buffer = ctx.enqueue_create_buffer[type](N_cache)
 
     ctx.enqueue_copy_to_device(in_buffer, in_host.data)
 
