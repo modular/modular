@@ -151,7 +151,7 @@ struct Person:
     var name: String
     var age: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.name = "John Smith"
         self.age = 123
 
