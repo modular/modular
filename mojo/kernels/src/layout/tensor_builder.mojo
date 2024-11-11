@@ -18,14 +18,14 @@ from .int_tuple import UNKNOWN_VALUE
 struct ValueOrUnknown[dim: Int = UNKNOWN_VALUE]:
     var value: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         constrained[
             not dim == UNKNOWN_VALUE,
             "Can't construct a dynamic dim with no runtime value",
         ]()
         self.value = dim
 
-    fn __init__(inout self, v: Int):
+    fn __init__(out self, v: Int):
         self.value = v
 
 
@@ -79,7 +79,7 @@ struct LayoutTensorBuild[
 ]:
     var runtime_layout: RuntimeLayout[__layout, bitwidth=__layout_bitwidth]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.runtime_layout = __type_of(self.runtime_layout)()
 
     fn row_major[

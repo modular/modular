@@ -46,7 +46,7 @@ struct RuntimeTuple[
     ]
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Initialize a RuntimeTuple with default values.
 
         For dimensions with known compile-time values in S, uses those values.
@@ -67,7 +67,7 @@ struct RuntimeTuple[
                 self.value[i] = UNKNOWN_VALUE
 
     @always_inline
-    fn __init__(inout self, *values: Int):
+    fn __init__(out self, *values: Int):
         """Initialize a RuntimeTuple with the provided values.
 
         Args:

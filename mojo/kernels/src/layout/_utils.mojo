@@ -84,7 +84,7 @@ struct ManagedLayoutTensor[
     ]
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.tensor = LayoutTensor[
             dtype,
             layout,

@@ -139,19 +139,19 @@ struct Layout(
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.shape = IntTuple()
         self.stride = IntTuple()
 
     @always_inline
-    fn __init__(inout self, shape: IntTuple, stride: IntTuple = IntTuple()):
+    fn __init__(out self, shape: IntTuple, stride: IntTuple = IntTuple()):
         self.shape = shape
         if len(stride) == 0:
             self.stride = prefix_product(self.shape)
         else:
             self.stride = stride
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -224,12 +224,12 @@ struct Layout(
             return Layout(shape_with_unknown, self.stride)
 
     @always_inline
-    fn __moveinit__(inout self: Self, owned existing: Self):
+    fn __moveinit__(out self: Self, owned existing: Self):
         self.shape = existing.shape^
         self.stride = existing.stride^
 
     @always_inline
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.shape = existing.shape
         self.stride = existing.stride
 

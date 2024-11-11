@@ -30,7 +30,7 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     var stride: RuntimeTuple[layout.stride, unsigned=True]
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         constrained[
             layout.all_dims_known(), "Static layout with known dims is required"
         ]()

@@ -74,7 +74,7 @@ struct Element[
 
     var runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth]
 
-    fn __init__(inout self, element_data: Self.element_data_type):
+    fn __init__(out self, element_data: Self.element_data_type):
         self.element_data = element_data
         self.runtime_layout = RuntimeLayout[layout, bitwidth=bitwidth]()
 

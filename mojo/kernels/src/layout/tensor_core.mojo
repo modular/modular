@@ -69,7 +69,7 @@ struct TensorCore[
         address_space = AddressSpace.LOCAL,
     ]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     @staticmethod

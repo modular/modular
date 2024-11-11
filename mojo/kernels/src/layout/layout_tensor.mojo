@@ -224,7 +224,7 @@ struct LayoutTensor[
     # ===------------------------------------------------------------------=== #
 
     @always_inline
-    fn __init__(inout self, ptr: UnsafePointer[Scalar[dtype], address_space]):
+    fn __init__(out self, ptr: UnsafePointer[Scalar[dtype], address_space]):
         """Create a LayoutTensor with an UnsafePointer. Expect layout to be
         fully static.
 
@@ -287,7 +287,7 @@ struct LayoutTensor[
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = element_runtime_layout
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly copy the other LayoutTensor.
 
         Args:
@@ -2959,7 +2959,7 @@ struct LayoutTensorIter[
     var idx: Scalar[_get_unsigned_type(layout, address_space)]
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Empty iterator, used as default value."""
 
         @parameter

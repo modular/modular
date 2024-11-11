@@ -317,10 +317,10 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
 ):
     var stride: IndexList[rank]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.stride = IndexList[rank]()
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:

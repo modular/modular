@@ -243,7 +243,7 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
     var zzz_mask: Int
 
     @always_inline
-    fn __init__(inout self, bits: Int, base: Int, shift: Int):
+    fn __init__(out self, bits: Int, base: Int, shift: Int):
         # if bits < 0 or base < 0:
         #     raise Error("Require non-negative mask bits and base")
 
@@ -367,7 +367,7 @@ struct ComposedLayout[
     var layout_b: LayoutB
 
     @always_inline
-    fn __init__(inout self, layout_a: LayoutA, layout_b: LayoutB):
+    fn __init__(out self, layout_a: LayoutA, layout_b: LayoutB):
         constrained[
             not offset or offset.value() >= 0,
             "Requires non-negative offset if present",
@@ -376,7 +376,7 @@ struct ComposedLayout[
         self.layout_b = layout_b
 
     @always_inline
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         self.layout_a = other.layout_a
         self.layout_b = other.layout_b
 
