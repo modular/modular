@@ -29,12 +29,12 @@ struct Matrix[rows: Int, cols: Int]:
     var data: UnsafePointer[Scalar[dtype]]
 
     # Initialize zeroeing all values
-    fn __init__(inout self):
+    fn __init__(out self):
         self.data = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
         memset_zero(self.data, rows * cols)
 
     # Initialize taking a pointer, don't set any elements
-    fn __init__(inout self, data: UnsafePointer[Scalar[dtype]]):
+    fn __init__(out self, data: UnsafePointer[Scalar[dtype]]):
         self.data = data
 
     ## Initialize with random values

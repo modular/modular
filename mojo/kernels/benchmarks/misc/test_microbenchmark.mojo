@@ -53,7 +53,7 @@ struct MatmulNaiveTest[a_type: DType, b_type: DType, c_type: DType](
     var bm: NDBuffer[b_type, 2, DimList.create_unknown[2]()]
     var cm: NDBuffer[c_type, 2, DimList.create_unknown[2]()]
 
-    fn __init__(inout self, m: Int, n: Int, k: Int):
+    fn __init__(out self, m: Int, n: Int, k: Int):
         self.m = m
         self.n = n
         self.k = k
@@ -137,7 +137,7 @@ struct MatmulTest[a_type: DType, b_type: DType, c_type: DType](Benchmarkable):
     var bm: NDBuffer[b_type, 2, DimList.create_unknown[2]()]
     var cm: NDBuffer[c_type, 2, DimList.create_unknown[2]()]
 
-    fn __init__(inout self, m: Int, n: Int, k: Int):
+    fn __init__(out self, m: Int, n: Int, k: Int):
         self.m = m
         self.n = n
         self.k = k
