@@ -105,7 +105,7 @@ struct Level:
 struct Logger[level: Level = DEFAULT_LEVEL]:
     var _fd: FileDescriptor
 
-    fn __init__(inout self, fd: FileDescriptor = sys.stdout):
+    fn __init__(out self, fd: FileDescriptor = sys.stdout):
         self._fd = fd
 
     @always_inline
