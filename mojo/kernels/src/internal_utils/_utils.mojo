@@ -123,7 +123,7 @@ struct DeviceNDBuffer[
             ),
         ]()
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.create_buffer[type](shape.product().get())
+        self.buffer = ctx.enqueue_create_buffer[type](shape.product().get())
         self.tensor = NDBuffer[type, rank, shape](
             self.buffer.ptr,
         )
@@ -136,7 +136,9 @@ struct DeviceNDBuffer[
         ctx: DeviceContext,
     ) raises:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.create_buffer[type](product(dynamic_shape, rank))
+        self.buffer = ctx.enqueue_create_buffer[type](
+            product(dynamic_shape, rank)
+        )
         self.tensor = NDBuffer[type, rank, shape](
             self.buffer.ptr, dynamic_shape
         )
@@ -159,7 +161,9 @@ struct DeviceNDBuffer[
         ctx: DeviceContext,
     ) raises:
         # FIXME: RUNP-356 Direct access to CUDA within DeviceContext
-        self.buffer = ctx.create_buffer[type](product(dynamic_shape, rank))
+        self.buffer = ctx.enqueue_create_buffer[type](
+            product(dynamic_shape, rank)
+        )
         self.tensor = NDBuffer[type, rank, shape](
             self.buffer.ptr, dynamic_shape, stride
         )
