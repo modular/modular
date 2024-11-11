@@ -487,7 +487,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
         qgemm.pack_b_buffer(b, b_packed)
         return b_packed
 
-    def __init__(inout self, M: Int, N: Int, K: Int):
+    def __init__(out self, M: Int, N: Int, K: Int):
         self.a = Self._build_float_buffer(M, K)
         self.b = Self._build_b_buffer(N, K)
         self.b_packed = Self._pack_b_buffer(self.b)

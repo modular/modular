@@ -148,14 +148,14 @@ struct Q4sym[
         ]()
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Construct a default initialized Q4sym."""
         self.scale = StaticTuple[UInt8, 2]()
         self.bits = StaticTuple[UInt8, group_size // 2]()
         self._check_constraints()
 
     @always_inline
-    fn __init__(inout self, data: SIMD[float_dtype, group_size]):
+    fn __init__(out self, data: SIMD[float_dtype, group_size]):
         """
         Construct an encoded Q4sym from data.
 
