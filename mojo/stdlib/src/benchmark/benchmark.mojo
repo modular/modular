@@ -156,7 +156,7 @@ struct Batch(CollectionElement):
     var _is_significant: Bool
     """This batch contributes to the reporting of this benchmark."""
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -217,7 +217,7 @@ struct Report(CollectionElement):
     var runs: List[Batch]
     """A `List` of benchmark runs."""
 
-    fn __init__(inout self):
+    fn __init__(out self):
         """
         Default initializer for the Report.
 
@@ -226,7 +226,7 @@ struct Report(CollectionElement):
         self.warmup_duration = 0
         self.runs = List[Batch]()
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -234,7 +234,7 @@ struct Report(CollectionElement):
         """
         self = other
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         """
         Creates a shallow copy (it doesn't copy the data).
 

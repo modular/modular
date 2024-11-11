@@ -15,7 +15,7 @@ struct QuickBench:
     """Bench object to collect the results."""
 
     @always_inline
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
         """Just initialize the Bench object."""
         self.m = Bench()
 

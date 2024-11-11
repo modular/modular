@@ -70,17 +70,17 @@ struct Progress:
     var _term_dims: Tuple[Int, Int]
 
     @always_inline("nodebug")
-    fn __init__(inout self, end: Int):
+    fn __init__(out self, end: Int):
         self = Self(0, end)
 
     @always_inline("nodebug")
-    fn __init__(inout self, start: Int, end: Int, step: Int = 1):
+    fn __init__(out self, start: Int, end: Int, step: Int = 1):
         self._range = _StridedRange(start, end, step)
         self._percentage = Float64(1) / len(self._range)
         self._term_dims = _get_terminal_size()
         print("")
 
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         self._range = other._range
         self._percentage = other._percentage
         self._term_dims = (other._term_dims[0], other._term_dims[1])

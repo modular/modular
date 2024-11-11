@@ -43,7 +43,7 @@ struct BenchMetric(CollectionElement):
     alias DEFAULTS = List[BenchMetric](Self.elements, Self.bytes, Self.flops)
     """Default set of benchmark metrics."""
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -154,7 +154,7 @@ struct ThroughputMeasure(CollectionElement):
         self.metric = metric
         self.value = value
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -296,7 +296,7 @@ struct BenchConfig(CollectionElement):
 
         argparse()
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -315,7 +315,7 @@ struct BenchId:
     var input_id: Optional[String]
     """The target function input id phrase."""
 
-    fn __init__(inout self, func_name: String, input_id: String):
+    fn __init__(out self, func_name: String, input_id: String):
         """Constructs a Benchmark Id object from input function name and Id phrase.
 
         Args:
@@ -326,7 +326,7 @@ struct BenchId:
         self.func_name = func_name
         self.input_id = input_id
 
-    fn __init__(inout self, func_name: String):
+    fn __init__(out self, func_name: String):
         """Constructs a Benchmark Id object from input function name.
 
         Args:
@@ -373,7 +373,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         self.measures = measures
         self.verbose_timing = verbose_timing
 
-    fn __init__(inout self, *, other: Self):
+    fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
 
         Args:
@@ -923,7 +923,7 @@ struct Bencher:
     var elapsed: Int
     """ The total time elpased when running the target function."""
 
-    fn __init__(inout self, num_iters: Int):
+    fn __init__(out self, num_iters: Int):
         """Constructs a Bencher object to run and time a function.
 
         Args:

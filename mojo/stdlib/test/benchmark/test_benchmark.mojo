@@ -63,7 +63,7 @@ struct SomeStruct:
     var y: Int
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.x = 5
         self.y = 4
 
@@ -74,7 +74,7 @@ struct SomeTrivialStruct:
     var y: Int
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.x = 3
         self.y = 5
 
