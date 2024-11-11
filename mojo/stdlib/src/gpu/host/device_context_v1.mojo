@@ -239,12 +239,6 @@ struct DeviceContextV1:
         self.synchronize()
         return result
 
-    fn create_buffer[
-        type: DType
-    ](self, size: Int) raises -> DeviceBufferV1[type]:
-        """Enqueues a buffer creation using the DeviceBuffer constructor."""
-        return DeviceBufferV1[type](self, size)
-
     fn compile_function[
         func_type: AnyTrivialRegType, //,
         func: func_type,

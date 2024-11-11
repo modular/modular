@@ -258,15 +258,6 @@ struct DeviceContextVariant:
         else:
             return self.v1().create_buffer_sync[type](size)
 
-    fn create_buffer[
-        type: DType
-    ](self, size: Int) raises -> DeviceBufferVariant[type]:
-        @parameter
-        if _device_ctx_v2():
-            return self.v2().enqueue_create_buffer[type](size)
-        else:
-            return self.v1().enqueue_create_buffer[type](size)
-
     fn compile_function[
         func_type: AnyTrivialRegType, //,
         func: func_type,
