@@ -706,3 +706,20 @@ fn expand_modes_alike(
         layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
     )
     return InlineArray[Layout, 2](Layout(uc[0], uc[1]), Layout(uc[0], uc[2]))
+
+
+fn right_inverse(layout: Layout) -> Layout:
+    var flat_layout = coalesce(layout)
+    var rstride = prefix_product(flat_layout.shape)
+    var shape = IntTuple()
+    var stride = IntTuple()
+    var next_stride = 1
+    for _ in range(flat_layout.rank()):
+        for j in range(flat_layout.rank()):
+            if to_int(flat_layout.stride[j]) == next_stride:
+                var shape_j = flat_layout.shape[j]
+                shape.append(shape_j)
+                stride.append(rstride[j])
+                next_stride *= to_int(shape_j)
+                break
+    return Layout(shape, stride)

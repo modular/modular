@@ -19,6 +19,7 @@ from layout.layout import (
     logical_divide,
     logical_product,
     print_layout,
+    right_inverse,
     size,
     sublayout,
     zipped_divide,
@@ -554,6 +555,37 @@ def test_expand_modes_alike():
     print(ema3[1])
 
 
+fn validate_right_inverse[layout: Layout]() raises:
+    alias rinv_layout = right_inverse(layout)
+    for i in range(layout.size()):
+        assert_equal(i, layout(rinv_layout(i)))
+
+
+fn test_right_inverse() raises:
+    validate_right_inverse[
+        Layout(
+            IntTuple(2, IntTuple(3, IntTuple(4))),
+            IntTuple(1, IntTuple(2, IntTuple(6))),
+        )
+    ]()
+    validate_right_inverse[Layout.row_major(8, 4)]()
+    validate_right_inverse[Layout.col_major(8, 4)]()
+    validate_right_inverse[
+        Layout(
+            IntTuple(IntTuple(3, IntTuple(IntTuple(IntTuple(7, 11), 5), 2)), 4),
+            IntTuple(
+                IntTuple(1, IntTuple(IntTuple(IntTuple(120, 840), 24), 12)), 3
+            ),
+        )
+    ]()
+    validate_right_inverse[
+        Layout(
+            IntTuple(IntTuple(3, IntTuple(5, 2)), 4),
+            IntTuple(IntTuple(1, IntTuple(24, 12)), 3),
+        )
+    ]()
+
+
 def main():
     test_layout_basic()
     test_coalesce()
@@ -568,3 +600,4 @@ def main():
     test_sublayout()
     test_crd2idx()
     test_expand_modes_alike()
+    test_right_inverse()
