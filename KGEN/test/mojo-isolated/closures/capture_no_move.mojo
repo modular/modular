@@ -9,7 +9,7 @@
 
 
 struct StringNoMove:
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
     fn __del__(owned self):

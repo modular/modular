@@ -11,7 +11,7 @@ from memory import UnsafePointer
 struct A:
     var x: UnsafePointer[Scalar[DType.invalid]]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         var y = UnsafePointer[Int8].alloc(1)
         self.x = y.bitcast[DType.invalid]()
 

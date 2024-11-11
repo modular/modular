@@ -21,7 +21,7 @@ struct MyRP[A: Int]:
     var a: Int
     var b: Int
 
-    fn __init__(inout self, b: Int):
+    fn __init__(out self, b: Int):
         self.a = A
         self.b = b
 
@@ -33,7 +33,7 @@ struct MyData[A: Int, B: MyRP[3], C: AnyTrivialRegType]:
     var b: MyRP[3]
     var c: C
 
-    fn __init__(inout self, c: C):
+    fn __init__(out self, c: C):
         self.a = A
         self.b = B
         self.c = c

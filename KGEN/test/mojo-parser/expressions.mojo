@@ -18,7 +18,7 @@ struct MemoryOnlyInt:
   var x: Int
 
   # CHECK-LABEL: lit.func @"__init__
-  fn __init__(inout self, a: Int = 42):
+  fn __init__(out self, a: Int = 42):
     # CHECK: %0 = lit.ref.struct.ger %self[x]
     # CHECK: %1 = {{.*}}constant: !Int = <{1}>
     # CHECK: lit.ref.store %1, %0
@@ -26,7 +26,7 @@ struct MemoryOnlyInt:
   fn __del__(owned self): pass
 
   # CHECK-LABEL: lit.func @"__copyinit__
-  fn __copyinit__(inout self, other: Self):
+  fn __copyinit__(out self, other: Self):
     self.x = other.x
 
   @staticmethod
@@ -38,7 +38,7 @@ fn consume(owned a: MemoryOnlyInt): pass
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyFloat64:
   var x: Float64
-  fn __init__(inout self, value: MemoryOnlyInt):
+  fn __init__(out self, value: MemoryOnlyInt):
     self.x = 1.0
 
 # CHECK-LABEL: lit.struct.decl @MemoryOnlyPair
@@ -48,7 +48,7 @@ struct MemoryOnlyPair:
 
   # CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> init_self,
   # CHECK-SAME: %other: !lit.ref<!MemoryOnlyPair, imm {{.*}}> borrow_in_mem)
-  fn __copyinit__(inout self, other: MemoryOnlyPair):
+  fn __copyinit__(out self, other: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %other[x]
     # CHECK-NEXT: %1 = lit.ref.struct.ger %self[x]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%1, %0)
@@ -156,7 +156,7 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   return v2
 
 struct DirectInit:
-  fn __init__(inout self):
+  fn __init__(out self):
     pass
 
 fn direct_call_init():
@@ -165,7 +165,7 @@ fn direct_call_init():
   value.__init__()
 
 struct DummyFunc:
-    fn __init__(inout self, f: def(Int)):
+    fn __init__(out self, f: def(Int)):
         pass
 
 fn func_arg_conversion(f: DummyFunc): pass
@@ -190,10 +190,10 @@ fn implicit_func_conversion():
 struct RegPassable:
   var value: Int
   # CHECK-LABEL: lit.func @"__init__
-  fn __init__(inout self, value: Int):
+  fn __init__(out self, value: Int):
     self.value = value
 
-  fn __copyinit__(inout self, existing: Self): pass
+  fn __copyinit__(out self, existing: Self): pass
   fn __del__(owned self): pass
   fn __neg__(self) -> Self: pass
   fn __add__(self, rhs: Self) -> Self: pass
@@ -392,12 +392,12 @@ fn comparisons(a: Int, b: Int):
 
 @register_passable
 struct Boolish:
-  fn __copyinit__(inout self, existing: Self): pass
+  fn __copyinit__(out self, existing: Self): pass
   fn __bool__(self) -> Bool: return True
 
 struct MemBoolish:
-  fn __init__(inout self, value: Boolish): pass
-  fn __copyinit__(inout self, other: Self): pass
+  fn __init__(out self, value: Boolish): pass
+  fn __copyinit__(out self, other: Self): pass
   fn __bool__(self) -> Bool: return True
 
 # CHECK-LABEL: @"unary
@@ -909,21 +909,21 @@ struct MyInlineIntInit:
     var value: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__(expressions::MyInlineIntInit=&,expressions::MemoryOnlyInt)"
     # CHECK-SAME: (%self: !lit.ref<!MyInlineIntInit, mut {{.*}}> init_self, %value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> borrow_in_mem) -> !kgen.none
-    fn __init__(inout self, value: MemoryOnlyInt):
+    fn __init__(out self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.ref.struct.ger %self[value]
         # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%0, %value)
         self.value = value
 
 @register_passable
 struct ConstDynamicObject:
-    fn __init__(inout self):
+    fn __init__(out self):
         return
 
     fn __getattr__(self, name: StringLiteral) -> Int:
         return 0
 
 struct DynamicObject:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     fn __getattr__(self, name: StringLiteral) -> Int:
@@ -1090,7 +1090,7 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
 struct CallableStruct:
     var value: Int
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self.value = value
 
     fn __call__(self, rhs: Int) -> Int:
@@ -1104,7 +1104,7 @@ fn test_call_method():
     _ = value(2)
 
 struct MemoryType:
-  fn __copyinit__(inout self, other: Self):
+  fn __copyinit__(out self, other: Self):
     pass
 
 @register_passable
@@ -1171,7 +1171,7 @@ fn func_with_decorator(): pass
 
 
 struct TwoParamsStruct[a: Int, b: Int]:
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         pass
 
 # CHECK-LABEL: lit.func @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> var>
@@ -1287,7 +1287,7 @@ fn useBigNumber() -> Int:
 @value
 @register_passable("trivial")
 struct IndexList[size: Int]:
-    fn __init__(inout self, *elements: Int):
+    fn __init__(out self, *elements: Int):
         pass
 
     fn __setitem__(inout self, val: Int):

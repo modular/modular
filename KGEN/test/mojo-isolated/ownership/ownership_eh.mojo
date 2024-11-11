@@ -27,7 +27,7 @@ def use_and_raise(x: Int):
 # CHECK: destructor {{.*}}RegExample::@"__del__
 @register_passable
 struct RegExample:
-    fn __init__(inout self):
+    fn __init__(out self):
         return
 
     fn __copyinit__(
@@ -37,7 +37,7 @@ struct RegExample:
 
     # Test a raising constructor.
     # CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!RegExample, {{.*}}> init_self, %a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error) throws -> i1
-    fn __init__(inout self, a: MemExample, b: MemExample) raises:
+    fn __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NOT: __del__
         # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
         # CHECK-NEXT: kgen.return [[FALSE]]
@@ -56,17 +56,17 @@ struct RegExample:
 struct MemExample:
     var x: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.x = 42
         pass
 
     fn noop(self):
         pass
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.x = existing.x
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.x = existing.x
 
     fn __bool__(self) -> Bool:
@@ -124,7 +124,7 @@ fn thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
 struct RaisingInit:
     var stream: Int
 
-    fn __init__(inout self, flags: Int = 0) raises:
+    fn __init__(out self, flags: Int = 0) raises:
         var stream = 4
         # This can raise, but 'self' doesn't need to be initialized.
         _ = somethingThatRaises()
@@ -251,7 +251,7 @@ struct BigRegExample:
 
     # Test a raising constructor.
     # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
-    fn __init__(inout self, a: MemExample, b: MemExample) raises:
+    fn __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NEXT: [[A_REF:%.*]] = lit.ref.struct.ger %self[a]
         # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}([[A_REF]])
         self.a = RegExample()
@@ -265,13 +265,13 @@ struct BigRegExample:
 struct MyStringReturningCtx:
     var s: String
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.s = "hey"
 
     fn __enter__(owned self) -> Self:
         return self^
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.s = existing.s
 
     fn read(self) raises -> String:
@@ -292,7 +292,7 @@ fn testErrorReturn() raises:
 
 # COM: Test partial destruction of initialized fields upon an error return.
 struct Field:
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
 
@@ -302,7 +302,7 @@ struct DestructSome:
     var b: Field
 
     # CHECK-LABEL: lit.func @"__init__
-    fn __init__(inout self, a: Field, b: Field) raises:
+    fn __init__(out self, a: Field, b: Field) raises:
         # CHECK:      lifetime.start %anonymous
         # CHECK-NEXT: call {{.*}}somethingThatRaises
         # CHECK-NEXT: if
@@ -383,11 +383,11 @@ struct ThrowingSelfInit:
     var x: Int
 
     # CHECK-LABEL: lit.func @"__init__
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
         self.x = 0
 
     # CHECK-LABEL: lit.func @"__init__
-    fn __init__(inout self, x: Int) raises:
+    fn __init__(out self, x: Int) raises:
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%self, %__error__)
         # CHECK-NEXT: if [[IS_ERR]]
         # CHECK-NEXT:   mark_consumed %self
@@ -399,7 +399,7 @@ struct ThrowingSelfInit:
         self = ThrowingSelfInit()
 
     # CHECK-LABEL: lit.func @"__init__
-    fn __init__(inout self, x: Int, y: Int) raises:
+    fn __init__(out self, x: Int, y: Int) raises:
         # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%self, %__error__)
         # CHECK:      else
         # CHECK-NEXT:   call {{.*}}__del__{{.*}}(%self)
@@ -421,11 +421,11 @@ fn emplace_error() raises:
 struct InitFieldsDestroyedInThrowingConstructor:
     var x: MemExample
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.x = MemExample()
 
     # CHECK-LABEL: lit.func @"__init__({{.*}}::InitFieldsDestroyedInThrowingConstructor=&,__mlir_type.i1)"
-    fn __init__(inout self, cond: __mlir_type.`i1`) raises:
+    fn __init__(out self, cond: __mlir_type.`i1`) raises:
         self = InitFieldsDestroyedInThrowingConstructor()
         # CHECK:      hlcf.elif {
         # CHECK-NEXT:   hlcf.elif.yield %cond : i1

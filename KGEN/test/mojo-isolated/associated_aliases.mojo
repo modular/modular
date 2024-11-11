@@ -24,7 +24,7 @@ trait TraitWithAlias:
 struct StructWithMatchingAlias(TraitWithAlias):
     alias N: Int = 42
 
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 # CHECK-LABEL: getNFromTraitWithAlias

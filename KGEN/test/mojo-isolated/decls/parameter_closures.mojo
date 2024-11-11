@@ -11,10 +11,10 @@
 struct BoxedInt:
     var value: int
 
-    fn __init__(inout self, value: int):
+    fn __init__(out self, value: int):
         self.value = value
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.value = existing.value
 
     fn boxedAdd(self, rhs: int) -> int:

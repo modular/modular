@@ -29,7 +29,7 @@ def elif_parse_error(a: Bool):
     pass
 
 struct NotBoolConvertible:
-  fn __copyinit__(inout self, existing: Self):
+  fn __copyinit__(out self, existing: Self):
     pass
 
 def test_bool_context(a: NotBoolConvertible):
@@ -52,40 +52,40 @@ fn test_if_decorator(a: Bool):
 ##===----------------------------------------------------------------------===##
 
 struct my_iter_no_len:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __next__(inout self) -> Int: return 0
 
 
 struct MyList_range_no_len:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __iter__(self) -> my_iter_no_len: return my_iter_no_len()
 
 
 struct my_iter_no_next:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __has_next__(self) -> Bool: return False
 
 
 struct MyList_range_no_next:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __iter__(self) -> my_iter_no_next: return my_iter_no_next()
 
 
 struct MyList_no_iter:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
 
 @value
 struct MyFloat:
     pass
 
 struct my_iter_wrong_int:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __next__(inout self) -> Int: return 0
     fn __has_next__(self: my_iter_wrong_int) -> MyFloat: return MyFloat()
 
 
 struct MyList_invalid_boxed_type:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __iter__(self) -> my_iter_wrong_int: return my_iter_wrong_int()
 
 
@@ -129,7 +129,7 @@ fn spurious_for_loop_variable_unknown_decl():
 ##===----------------------------------------------------------------------===##
 
 struct ExampleCM:
-  fn __moveinit__(inout self, owned other: Self): pass
+  fn __moveinit__(out self, owned other: Self): pass
   fn __enter__(self) -> Int:
     return 42
   fn __exit__(self):
@@ -164,7 +164,7 @@ fn withNoRaise(owned mgr: ExampleCM): # expected-note {{or mark surrounding func
 # Poor error when with context managers that take ownership in enter
 # https://github.com/modularml/modular/issues/23100
 struct BadCM: # expected-note {{'BadCM' declared here}}
-  fn __init__(inout self): pass
+  fn __init__(out self): pass
 
   fn __enter__(owned self) -> Int:
     return 42

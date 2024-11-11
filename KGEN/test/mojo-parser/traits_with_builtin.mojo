@@ -9,10 +9,10 @@
 
 # COM: Just check that conformance checking succeeds.
 trait TraitForReg:
-    fn __init__(inout self, x: Int):
+    fn __init__(out self, x: Int):
         ...
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         ...
 
     @staticmethod
@@ -22,7 +22,7 @@ trait TraitForReg:
 
 @register_passable("trivial")
 struct RegTypeTrivial(TraitForReg):
-    fn __init__(inout self, x: Int):
+    fn __init__(out self, x: Int):
         pass
 
     @staticmethod

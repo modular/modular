@@ -12,7 +12,7 @@ alias AnyCoroutine = __mlir_type.`!co.routine`
 struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
     var value: __mlir_type.`!co.routine`
 
-    fn __init__(inout self, handle: AnyCoroutine):
+    fn __init__(out self, handle: AnyCoroutine):
         self.value = handle
 
     fn __await__(owned self) -> T:

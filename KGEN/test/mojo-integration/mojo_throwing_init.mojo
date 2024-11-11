@@ -11,10 +11,10 @@
 struct MemType1:
     var value: Int
 
-    fn __init__(inout self, v: Int):
+    fn __init__(out self, v: Int):
         self.value = v
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.value = existing.value + 1
         print("Copy to", self.value)
 
@@ -28,7 +28,7 @@ struct PartialInitType:
     var mem3: MemType1
     var setTwice: MemType1
 
-    fn __init__(inout self, cond: Int, other: MemType1) raises:
+    fn __init__(out self, cond: Int, other: MemType1) raises:
         self.mem1 = other
         self.mem2 = MemType1(2)
 

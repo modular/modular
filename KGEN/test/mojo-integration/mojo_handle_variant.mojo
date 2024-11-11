@@ -12,14 +12,14 @@ from utils import StringRef
 struct S:
     var v: Int
 
-    fn __init__(inout self, x: Int):
+    fn __init__(out self, x: Int):
         print("init", x)
         self.v = x
 
     fn __del__(owned self):
         print("destroy", self.v)
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.v = existing.v
 
 

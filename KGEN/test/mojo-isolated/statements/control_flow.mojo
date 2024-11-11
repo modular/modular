@@ -422,12 +422,12 @@ fn test_simple(a: Bool):
 
 # This iterator returns elements by value.
 struct ValueIter:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __next__(inout self) -> Int: return 0
     fn __has_next__(self) -> Bool: return False
 
 struct ListValueIter:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __iter__(self) -> ValueIter: return ValueIter()
 
 fn use(value: Int): pass
@@ -458,12 +458,12 @@ fn for_range_loop():
 # of the list.
 struct RefIter[list_mutability: Bool, //,
                list_origin: Origin[list_mutability].type]:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __next__(inout self) -> ref [list_origin] Int: pass
     fn __has_next__(self) -> Bool: return False
 
 struct ListWithRefIter:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn __iter__(ref [_] self: Self) -> RefIter[__origin_of(self)]:
         return RefIter[__origin_of(self)]()
 

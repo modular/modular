@@ -155,7 +155,7 @@ fn ownedVariadicReg(owned *args: WrongType): pass
 # expected-note @+1 {{struct declared here}}
 struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
     # expected-note @+1 {{function declared here}}
-    def __init__(inout self, *args: T):
+    def __init__(out self, *args: T):
         pass
 
 @value
@@ -330,7 +330,7 @@ struct TestOverloading:
 
 # Test that static methods don't get dispatched if their first arg is self type.
 struct StructWithStaticMethod:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
 
     # expected-note @+2 {{function declared here}}
     @staticmethod
@@ -369,7 +369,7 @@ fn test_missing_args():
 
 
 struct ConvertibleFromInt:
-  fn __init__(inout self, value: Int):
+  fn __init__(out self, value: Int):
     pass
 
 # expected-note @below {{candidate declared here}}
@@ -422,10 +422,10 @@ fn test_param_deduction_failure[
 struct InitOverloaded:
   # expected-note @below {{argument #1 cannot be converted from 'StringLiteral' to 'Int'}}
   # expected-note @below {{argument #1 cannot be converted from 'Parametric[1]' to 'Int'}}
-  fn __init__(inout self, a: Int): pass
+  fn __init__(out self, a: Int): pass
   # expected-note @below {{argument #1 cannot be converted from 'StringLiteral' to 'index'}}
   # expected-note @below {{argument #1 cannot be converted from 'Parametric[1]' to 'index'}}
-  fn __init__(inout self, a: int): pass
+  fn __init__(out self, a: int): pass
 
 fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
   # expected-error @+1 {{cannot construct 'InitOverloaded' with itself, you can remove the constructor call}}
@@ -571,16 +571,16 @@ struct WrongType:
   def __init__(self): pass
 
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}
-  fn __init__(inout self: Int): pass
+  fn __init__(out self: Int): pass
 
   # expected-error @+1 {{existing value argument must be passed as borrowed}}
-  fn __copyinit__(inout self, inout existing: Self): pass
+  fn __copyinit__(out self, inout existing: Self): pass
 
   # TODO: Should err.
-  fn __copyinit__(inout self, existing: Int): pass
+  fn __copyinit__(out self, existing: Int): pass
 
   # expected-error @+1 {{'@register_passable' types may not have a '__moveinit__' method, they are always movable by copying a register}}
-  fn __moveinit__(inout self, owned existing: Self): pass
+  fn __moveinit__(out self, owned existing: Self): pass
 
 
 struct WrongSelfType[a: Int]:
@@ -590,7 +590,7 @@ struct WrongSelfType[a: Int]:
 
   # Issue #13358
   # expected-error @+1 {{'__copyinit__' requires 2 operands}}
-  fn __copyinit__(inout self, other: Self, moar: Int): pass
+  fn __copyinit__(out self, other: Self, moar: Int): pass
 
   # expected-error @+1 {{'__add__' requires 2 operands}}
   fn __add__(self): pass
@@ -607,7 +607,7 @@ struct WrongSelfType[a: Int]:
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
-  fn __init__(inout self, elem: BadInit[Int(1).value]):
+  fn __init__(out self, elem: BadInit[Int(1).value]):
     var x : __mlir_type[`!pop.simd<`, size, `, FloatDyn>`]
     # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatDyn>' value to 'BadInit[size]'}}
     self = x
@@ -670,7 +670,7 @@ struct OtherInMemStruct:
 struct InvalidMember:
   var x: __mlir_type.index
   # expected-error @+1 {{trivial types may not have a '__copyinit__' method, they are always trivially copyable}}
-  fn __copyinit__(inout self, existing: Self): pass
+  fn __copyinit__(out self, existing: Self): pass
   # expected-error @+1 {{trivial types may not have a '__del__' method, they are always trivially destroyable}}
   fn __del__(owned self): pass
 
@@ -681,7 +681,7 @@ struct BadDtor1:
     pass
 
 struct BadDtor:
-  fn __init__(inout self): pass
+  fn __init__(out self): pass
   fn __del__[x: Int](owned self):
     pass
 
@@ -697,7 +697,7 @@ struct CantSynthesize:
 @value # expected-error {{'@value' cannot synthesize members of struct 'ResolveErrorIsBubbled'}}
 struct ResolveErrorIsBubbled:
    var x: Int
-   fn __init__(inout self, x: unknown): # expected-error {{use of unknown declaration 'unknown'}}
+   fn __init__(out self, x: unknown): # expected-error {{use of unknown declaration 'unknown'}}
       pass
 
 fn function_with_struct():
@@ -706,19 +706,19 @@ fn function_with_struct():
 
 # https://github.com/modularml/modular/issues/12598
 struct not_nested_struct[*Ts: AnyType]:
-    fn __init__(inout self, *args: *Ts):
+    fn __init__(out self, *args: *Ts):
         pass
 fn function_with_struct2():
     var s1 = not_nested_struct()  # ok
     struct S2[*Ts: AnyType]: # expected-error {{struct inside a function not supported here}}
-        fn __init__(inout self, *args: *Ts):
+        fn __init__(out self, *args: *Ts):
             pass
     var s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
 
 # https://github.com/modularml/modular/issues/33557
 struct HasBadCtor:
     var v: Int
-    fn __init__(inout self, v: Int) -> Self: # expected-error {{'__init__' result type must be elided (or None)}}
+    fn __init__(out self, v: Int) -> Self: # expected-error {{'__init__' result type must be elided (or None)}}
         self.v = v
 def useBadCtor():
     # Note that the key thing we're checking for here is that this does NOT have
@@ -726,7 +726,7 @@ def useBadCtor():
     var fromBadCtor = HasBadCtor(123)
 
 struct NotRegisterPassable:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 # https://github.com/modularml/modular/issues/34551
@@ -735,7 +735,7 @@ struct NotRegisterPassable:
 @register_passable
 struct Outer34551: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
     var _inner: NotRegisterPassable # expected-note {{'_inner' declared with type 'NotRegisterPassable'}}
-    fn __init__(inout self):
+    fn __init__(out self):
         self._inner = NotRegisterPassable()
     # The key point of this test is that these errors break an invariant needed
     # for emission, so previously it would crash while emitting this __del__.
@@ -921,12 +921,12 @@ struct copy_init_def:
   var field: Int
 
   # expected-error @+1 {{cannot define '__copyinit__' as 'def'; 'def' implicitly raises}}
-  def __copyinit__(inout self, existing: Self):
+  def __copyinit__(out self, existing: Self):
     self.field = existing.field
 
 struct copy_init_raises:
   # expected-error @+1 {{'__copyinit__' cannot be declared as raising an exception}}
-  fn __copyinit__(inout self, existing: Self) raises:
+  fn __copyinit__(out self, existing: Self) raises:
      pass
 
 

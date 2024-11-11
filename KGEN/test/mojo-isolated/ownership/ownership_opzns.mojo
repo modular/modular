@@ -15,17 +15,17 @@
 struct MemExample:
     var x: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.x = 42
         pass
 
     fn noop(self):
         pass
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.x = existing.x
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.x = existing.x
 
     fn __bool__(self) -> Bool:
@@ -38,10 +38,10 @@ struct MemExample:
 # CHECK-LABEL: lit.struct.decl @RegExample
 @register_passable
 struct RegExample:
-    fn __init__(inout self):
+    fn __init__(out self):
         return
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         return
 
     fn noop(self):
@@ -59,11 +59,11 @@ struct RegExample:
 struct MemoryUniqueMovable:
     var state: MemExample
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.state = MemExample()
 
     # CHECK: lit.func @"__moveinit__
-    fn __moveinit__(inout self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         # Mercilessly steal 'other's state which could be interesting.
 
         # CHECK-NEXT: %0 = lit.ref.struct.ger %other[state]
@@ -82,14 +82,14 @@ struct MemoryUniqueMovable:
 struct MemoryMovableCopyable:
     var state: MemExample
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.state = MemExample()
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         # Mercilessly steal 'existing's state which could be interesting.
         self.state = existing.state^
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.state = existing.state
 
     fn __del__(owned self):
@@ -116,7 +116,7 @@ fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
 
 @register_passable
 struct RegUniqueMovable:
-    fn __init__(inout self):
+    fn __init__(out self):
         return
 
     fn __del__(owned self):
@@ -125,10 +125,10 @@ struct RegUniqueMovable:
 
 @register_passable
 struct RegMovableCopyable:
-    fn __init__(inout self):
+    fn __init__(out self):
         return
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         return
 
     fn __del__(owned self):
@@ -201,7 +201,7 @@ fn passFieldToOwnedInt(owned a: MemExample):
 struct MyGenericType[Type: AnyTrivialRegType]:
     var value: Type
 
-    fn __init__(inout self, v: Type):
+    fn __init__(out self, v: Type):
         self.value = v
 
 

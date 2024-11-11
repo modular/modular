@@ -24,7 +24,7 @@ struct ARegisterPassableStruct:
     var uint16: UInt16
     var int32: Int32
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.int = -101
         self.f32 = 24.125
         self.another_int = 101
@@ -40,7 +40,7 @@ struct AStruct:
     var int: UInt8
     var tuple: Tuple[Int, Int8, Float32]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.int = 12
         self.tuple = Tuple[Int, Int8, Float32](1, 87, 123.125)
 
@@ -48,7 +48,7 @@ struct AStruct:
 struct ParamStruct[T: AnyTrivialRegType]:
     var t: T
 
-    fn __init__(inout self, t: T):
+    fn __init__(out self, t: T):
         self.t = t
 
 

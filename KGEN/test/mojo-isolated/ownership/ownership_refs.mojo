@@ -15,9 +15,9 @@
 
 # CHECK-LABEL: lit.struct.decl @MemExample
 struct MemExample:
-  fn __init__(inout self): pass
-  fn __moveinit__(inout self, owned existing: Self): pass
-  fn __copyinit__(inout self, existing: Self): pass
+  fn __init__(out self): pass
+  fn __moveinit__(out self, owned existing: Self): pass
+  fn __copyinit__(out self, existing: Self): pass
   fn __del__(owned self): pass
   fn noop(self): pass
   fn mutate(inout self): pass
@@ -209,7 +209,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 # https://github.com/modularml/modular/issues/29069
 
 struct SelfRefTest:
-  fn __init__(inout self): pass
+  fn __init__(out self): pass
 
   # CHECK-LABEL: lit.func @"method
   # CHECK-SAME: (%self: !lit.ref<!SelfRefTest
@@ -262,11 +262,11 @@ fn returnTwoArgLifetimes(a: MemExample, b: MemExample)
   return TwoLifetimes[__origin_of(a), __origin_of(b)]()
 
 struct OneLifetime[a_origin: ImmutableOrigin]:
-  fn __init__(inout self): pass
+  fn __init__(out self): pass
 
 struct TwoLifetimes[a_origin: ImmutableOrigin,
                     b_origin: ImmutableOrigin]:
-  fn __init__(inout self): pass
+  fn __init__(out self): pass
 
 # Test that we can infer the type of 'T' in the func param invocation.
 # CHECK-LABEL: CutDownVariadicPack
@@ -337,7 +337,7 @@ fn parametric_mut_mbvalue[
 
 # Pointer directly with inferred params.
 struct SomeStructWithReferenceSelfArgument:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
     fn hello(ref [_] self: Self):
         pass
 
@@ -410,7 +410,7 @@ struct FieldRefPropagation:
   var field1 : Optional[Int]
   var field2 : Int
 
-  fn __init__(inout self):
+  fn __init__(out self):
      # Should be able to initialize field1 and use it.
      self.field1 = 42
      # Should be able to project it and assign through ref.
@@ -422,19 +422,19 @@ struct FieldRefPropagation:
 # Issue #3444 (nightly) Raising init causing use of uninitialized variable
 # https://github.com/modularml/mojo/issues/3444
 struct HasRaisingInit:
-  fn __init__(inout self) raises: pass
-  fn __moveinit__(inout self, owned existing: Self): pass
-  fn __copyinit__(inout self, existing: Self): pass
+  fn __init__(out self) raises: pass
+  fn __moveinit__(out self, owned existing: Self): pass
+  fn __copyinit__(out self, existing: Self): pass
   fn __del__(owned self): pass
 
 struct ImmovableRaisingInit:
-  fn __init__(inout self) raises: pass
+  fn __init__(out self) raises: pass
 
 struct RaisingInitWrapper:
     var field: HasRaisingInit
     var immfield: ImmovableRaisingInit
 
-    fn __init__(inout self) raises:
+    fn __init__(out self) raises:
       self.field = HasRaisingInit()
       self.immfield = ImmovableRaisingInit()
 

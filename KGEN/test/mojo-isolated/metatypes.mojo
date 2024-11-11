@@ -13,7 +13,7 @@
 @value
 @register_passable("trivial")
 struct Thing:
-    fn __init__(inout self, x: NMType):
+    fn __init__(out self, x: NMType):
         return
 
     fn foo(self):

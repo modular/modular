@@ -15,7 +15,7 @@ struct ThreeInts:
     var y: Int
     var z: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.x = 0
         self.y = 0
         self.z = 0
@@ -24,7 +24,7 @@ struct ThreeInts:
 struct OwnedInt:
     var value: Int
 
-    fn __init__(inout self, value: Int, inout ints: ThreeInts):
+    fn __init__(out self, value: Int, inout ints: ThreeInts):
         if ints.x == 0:
             ints.x = value
         elif ints.y == 0:

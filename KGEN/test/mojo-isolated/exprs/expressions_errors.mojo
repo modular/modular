@@ -192,8 +192,8 @@ fn assignRValue():
   42 = 17 # expected-error {{expression must be mutable in assignment}}
 
 struct LValuesRvalues:
-  fn __init__(inout self): pass
-  fn __copyinit__(inout self, existing: Self): pass
+  fn __init__(out self): pass
+  fn __copyinit__(out self, existing: Self): pass
 
   def normalMethod(self): pass
   # expected-note @+1 {{function declared here}}
@@ -206,15 +206,15 @@ struct LValuesRvalues:
 struct MemoryOnlyPair:
   var x: Int
   var y: Int
-  fn __init__(inout self):
+  fn __init__(out self):
     self.x = 0
     self.y = 0
-  fn __copyinit__(inout self, existing: Self):
+  fn __copyinit__(out self, existing: Self):
     self.x = existing.x
     self.y = existing.y
 
 struct NonCopyable:
-  fn __init__(inout self): pass
+  fn __init__(out self): pass
 
 fn generic_on_type_ok[T: AnyTrivialRegType](): pass
 
@@ -380,7 +380,7 @@ fn bad_func return fn() -> __mlir_type.index
 @register_passable
 struct WeirdBoolish:
   fn __bool__(self) -> Bool: return False
-  fn __copyinit__(inout self, existing: Self): pass;
+  fn __copyinit__(out self, existing: Self): pass;
 
 fn badParamAnd[a: Bool, b: WeirdBoolish]():
   #expected-error @+1 {{value of type 'Bool' is not compatible with value of type 'WeirdBoolish'}}
@@ -392,9 +392,9 @@ fn badSelf(a: Self):
 
 # Structs convertible to each other.
 struct Conv1:
-  fn __init__(inout self, value: Conv2): pass
+  fn __init__(out self, value: Conv2): pass
 struct Conv2:
-  fn __init__(inout self, value: Conv1): pass
+  fn __init__(out self, value: Conv1): pass
 
 @register_passable
 struct MyIntPair:
@@ -488,8 +488,8 @@ def doIsNot(a: Int, b: Int):
 ##===----------------------------------------------------------------------===##
 
 struct ConvertFromInt:
-    fn __init__(inout self): pass
-    fn __init__(inout self, value: Int): pass
+    fn __init__(out self): pass
+    fn __init__(out self, value: Int): pass
 
 struct IncompatElementTypes:
   fn __getitem__(self, x: Int) -> Int: pass
@@ -503,7 +503,7 @@ fn test_subscript_implicit_conversion(c: IncompatElementTypes):
 
 struct GetAttrNotString:
     # expected-note @below {{function declared here}}
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     # expected-note @below {{function declared here}}
@@ -522,7 +522,7 @@ struct GetSettable:
 
 struct NoSelfCtor:
   var x: Int
-  fn __init__(inout self: Self, x: Int):
+  fn __init__(out self: Self, x: Int):
     self.x = x
 
 fn test_int_to_int_error(a: Int, b: NoSelfCtor):
@@ -557,8 +557,8 @@ def testInExpr(x: Int, y: Int):
 ##===----------------------------------------------------------------------===##
 
 struct CopyAndInitMemType:
-  fn __init__(inout self): pass
-  fn __copyinit__(inout self, other: Self): pass
+  fn __init__(out self): pass
+  fn __copyinit__(out self, other: Self): pass
   # expected-note @+1 {{function declared here}}
   fn __le__(self, other: Self) -> Self: return self
   fn __mlir_i1__(self) -> __mlir_type.i1: pass
@@ -741,7 +741,7 @@ fn test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
   test_dependent(arg, arg)
 
 struct HasIntParam[p: Int]:
-  fn __init__(inout self):
+  fn __init__(out self):
      pass
 
 # MOCO-846: Poor error message when type conversion fails due to IntLiteral materialization

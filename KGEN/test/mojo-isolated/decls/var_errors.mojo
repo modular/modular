@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 struct SomeStruct:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
 
 struct SomeOtherStruct: pass
 
@@ -71,7 +71,7 @@ fn empty_name():
 
 # COM: Issue #957 https://github.com/modularml/mojo/issues/957
 struct MemoryStruct:
-  fn __init__(inout self, s: Int): pass
+  fn __init__(out self, s: Int): pass
 
 fn take_variadic(*elements: MemoryStruct): pass
 

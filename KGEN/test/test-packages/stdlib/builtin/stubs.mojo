@@ -70,13 +70,13 @@ trait KeyElement:
 
 @register_passable
 struct Error:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __init__(inout self, value: StringLiteral):
+    fn __init__(out self, value: StringLiteral):
         pass
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
     # A method for testing.
@@ -85,25 +85,25 @@ struct Error:
 
 
 struct object:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __init__(inout self, value: NoneType):
+    fn __init__(out self, value: NoneType):
         pass
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         pass
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         pass
 
-    fn __copyinit__(inout self, existing: Self, /):
+    fn __copyinit__(out self, existing: Self, /):
         pass
 
 
 @register_passable("trivial")
 struct NoneType:
-    fn __init__(inout self, x: __mlir_type.`!kgen.none`):
+    fn __init__(out self, x: __mlir_type.`!kgen.none`):
         pass
 
 
@@ -114,7 +114,7 @@ struct IntLiteral:
     var value: __mlir_type.`!kgen.int_literal`
 
     @always_inline("nodebug")
-    fn __init__(inout self):
+    fn __init__(out self):
         self.value = __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
 
     @always_inline("nodebug")
@@ -149,7 +149,7 @@ struct FloatDyn:
     var value: __mlir_type.f64
 
     @always_inline("nodebug")
-    fn __init__(inout self, value: FloatLiteral):
+    fn __init__(out self, value: FloatLiteral):
         self = Self(
             __mlir_op.`kgen.float_literal.convert`[_type = __mlir_type.f64](
                 value.value
@@ -162,11 +162,11 @@ struct FloatDyn:
 struct Int(Copyable):
     var value: int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
 
     @always_inline("nodebug")
-    fn __init__(inout self, value: IntLiteral):
+    fn __init__(out self, value: IntLiteral):
         self.value = __mlir_op.`kgen.int_literal.convert`[
             _type = __mlir_type.index
         ](value.value)
@@ -221,7 +221,7 @@ struct Int(Copyable):
 @value
 @register_passable("trivial")
 struct UInt8:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -236,16 +236,16 @@ struct StringLiteral:
 
 
 struct String(KeyElement):
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __init__(inout self, literal: StringLiteral):
+    fn __init__(out self, literal: StringLiteral):
         pass
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
-    fn __moveinit__(inout self, owned existing: String):
+    fn __moveinit__(out self, owned existing: String):
         pass
 
     fn __del__(owned self):
@@ -267,11 +267,11 @@ struct Bool(AnyType):
     var value: __mlir_type.i1
 
     @always_inline("nodebug")
-    fn __init__(inout self):
+    fn __init__(out self):
         self.value = __mlir_attr.`0 : i1`
 
     @always_inline("nodebug")
-    fn __init__(inout self, value: __mlir_type.i1):
+    fn __init__(out self, value: __mlir_type.i1):
         self.value = value
 
     @always_inline("nodebug")
@@ -289,10 +289,10 @@ struct Bool(AnyType):
 
 @register_passable("trivial")
 struct Slice:
-    fn __init__(inout self, end: int):
+    fn __init__(out self, end: int):
         pass
 
-    fn __init__(inout self, start: int, end: int):
+    fn __init__(out self, start: int, end: int):
         return
 
     fn __init__[
@@ -307,12 +307,12 @@ struct Slice:
 
 
 trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
+    fn __copyinit__(out self, existing: Self, /):
         pass
 
 
 trait Movable:
-    fn __moveinit__(inout self, owned existing: Self, /):
+    fn __moveinit__(out self, owned existing: Self, /):
         pass
 
 
@@ -330,7 +330,7 @@ trait AnyType:
 struct VariadicList[type: AnyTrivialRegType]:
     alias _mlir_type = __mlir_type[`!kgen.variadic<`, type, `>`]
 
-    fn __init__(inout self, value: Self._mlir_type):
+    fn __init__(out self, value: Self._mlir_type):
         return
 
 
@@ -481,7 +481,7 @@ struct VariadicPack[
         `>`,
     ]
 
-    fn __init__(inout self, value: Self._mlir_pack_type, is_owned: Bool):
+    fn __init__(out self, value: Self._mlir_pack_type, is_owned: Bool):
         pass
 
     fn __getitem__[
@@ -500,11 +500,11 @@ struct __ParameterClosureCaptureList[
     # Parameter closure invariant requires this function be marked 'capturing'.
     @parameter
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.value = __mlir_op.`kgen.capture_list.create`[callee=fn_ref]()
 
     @always_inline
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.value = __mlir_op.`kgen.capture_list.copy`[callee=fn_ref](
             existing.value
         )
@@ -553,7 +553,7 @@ struct Pointer[
     var _value: Self._mlir_type
 
     @always_inline("nodebug")
-    fn __init__(inout self, *, _mlir_value: Self._mlir_type):
+    fn __init__(out self, *, _mlir_value: Self._mlir_type):
         self._value = _mlir_value
 
     @staticmethod
@@ -571,13 +571,13 @@ struct Pointer[
 
 
 struct Tuple[*element_types: AnyType]:
-    fn __init__(inout self, *args: *element_types):
+    fn __init__(out self, *args: *element_types):
         pass
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         pass
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         pass
 
     fn __getitem__[
@@ -598,10 +598,10 @@ struct UnsafePointer[
     ]
     var address: Self._mlir_type
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
-    fn __init__(inout self, value: Self._mlir_type):
+    fn __init__(out self, value: Self._mlir_type):
         self.address = value
 
     @staticmethod
@@ -678,7 +678,7 @@ struct _ParamForIterator[IteratorT: Copyable]:
     var value: Int
     var stop: Bool
 
-    fn __init__(inout self, next_it: IteratorT, value: Int, stop: Bool):
+    fn __init__(out self, next_it: IteratorT, value: Int, stop: Bool):
         self.next_it = next_it
         self.value = value
         self.stop = stop
@@ -716,19 +716,19 @@ fn _generator[
 
 
 struct Optional[T: CollectionElement]:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __init__(inout self, owned value: T):
+    fn __init__(out self, owned value: T):
         pass
 
-    fn __init__(inout self, value: NoneType):
+    fn __init__(out self, value: NoneType):
         pass
 
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         pass
 
-    fn __moveinit__(inout self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         pass
 
     fn value(ref [_]self: Self) -> ref [self] T:

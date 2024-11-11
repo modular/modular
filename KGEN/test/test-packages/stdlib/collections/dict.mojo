@@ -6,7 +6,7 @@
 
 
 struct OwnedKwargsDict[V: CollectionElement]:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     fn _insert(inout self, owned key: String, owned value: V):

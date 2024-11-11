@@ -129,7 +129,7 @@ struct MyInt:
     var value: Int
 
     @always_inline("nodebug")
-    fn __init__(inout self, _a: Int):
+    fn __init__(out self, _a: Int):
         self.value = _a
 
 
@@ -210,7 +210,7 @@ fn callParametricOverload[a: Int, b: Int, c: Int](x: Int):
 
 
 struct VariadicStruct[*Ts: AnyTrivialRegType]:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     @staticmethod
@@ -344,6 +344,13 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
     # CHECK-NEXT: lit.call {{.*}}__add__{{.*}}(%a, %b)
     a + b
 
+# CHECK-LABEL: lit.func @"testContextSensitiveKeyword
+# CHECK-SAME: (%x: !lit.ref<!Int, mut *"x`"> init_self, %out: !Int)
+fn testContextSensitiveKeyword(out x: Int, out: Int):
+    # out is an argument specifier, but that's a context sensitive keyword.
+    # The identifier can be used like normal as well.
+    x = out
+
 
 ##===----------------------------------------------------------------------===##
 # Conventions
@@ -426,7 +433,7 @@ fn callerFn(arg0: BorrowStruct):
 
 
 struct SomeResultType:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -489,7 +496,7 @@ def defaultArgumentUntyped(a=1):
 struct MemoryType:
     var value: Int
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self.value = value
 
 
@@ -538,12 +545,12 @@ fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T):
 
 
 struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
-    fn __init__(inout self, *args: T):
+    fn __init__(out self, *args: T):
         pass
 
 
 struct VarArgsParameterizedStruct[*Is: Int]:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -713,7 +720,7 @@ struct StructWithInit:
 
     # CHECK: lit.func @"__init__(decls::StructWithInit=&,{{.*}}Int)"
     # CHECK-SAME: (%self: !lit.ref<!StructWithInit, mut {{.*}}> init_self,
-    fn __init__(inout self, a: Int):
+    fn __init__(out self, a: Int):
         # CHECK: %0 = lit.ref.struct.ger %self[x]
         # CHECK: lit.ref.store %a, %0
         self.x = a
@@ -729,7 +736,7 @@ struct StructWithInit:
     # Not very useful, but this form also works, so test it.
     # CHECK: lit.func @"__init__
     # CHECK-SAME: (%self: !lit.ref<!StructWithInit, mut {{.*}}> init_self,
-    fn __init__(inout self, a: Int, b: Int):
+    fn __init__(out self, a: Int, b: Int):
         # CHECK: hlcf.elif
         if a == b:
             # CHECK:  lit.call {{.*}}__init__{{.*}}(%self, %a)
@@ -742,17 +749,17 @@ struct StructWithInit:
             self.x = a
             self.y = b
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self = Self(0)
 
 
 # CHECK-LABEL: lit.struct.decl @StructExample
 @register_passable
 struct StructExample:
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         pass
 
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     # CHECK: lit.func @"maybe_static({{.*}}Int)"(%x: !Int) {{.*}}isStatic
@@ -805,11 +812,11 @@ struct DelegatingInitMem:
     var value: Int
 
     # CHECK: lit.func @"__init__{{.*}}(%self
-    fn __init__(inout self, value: Bool):
+    fn __init__(out self, value: Bool):
         # CHECK: lit.call @{{.*}}__init__{{.*}}(%self, %0)
         self.__init__(42)
 
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self.value = value
 
 
@@ -821,6 +828,12 @@ fn nameOutsideStruct(x: Int, y: Int):
 struct ShadowsOuterName:
     fn nameOutsideStruct(self: Self):
         nameOutsideStruct(1, 2)
+
+struct LegacyInOutInit:
+    # This should be accepted for compatibility, but "out" is the preferred
+    # spelling.
+    fn __init__(inout self):
+        pass
 
 
 ##===----------------------------------------------------------------------===##
@@ -879,7 +892,7 @@ struct ValueMemHasCopy:
     var a: Int
     var b: StructExample
 
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         self.a = other.a
         self.b = other.b
 
@@ -890,7 +903,7 @@ struct ValueMemHasMove:
     var a: Int
     var b: StructExample
 
-    fn __moveinit__(inout self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         self.a = other.a
         self.b = other.b
 
@@ -996,7 +1009,7 @@ struct VarArgInit:
 
     # CHECK: lit.func @"__init__(decls::VarArgInit=&,decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> var)
     # The argument is intentionally memory-only.
-    fn __init__(inout self, *values: ValueMem):
+    fn __init__(out self, *values: ValueMem):
         self.a = 42
 
     # CHECK: lit.func @"__init__({{.*}}Int)"{{.*}}({{.*}}, %a: !Int)
@@ -1029,7 +1042,7 @@ struct RaisingMemberwiseInit:
     var x: Int
 
     # CHECK-LABEL: lit.func @"__init__{{.*}} throws
-    fn __init__(inout self, /, x: Int) raises:
+    fn __init__(out self, /, x: Int) raises:
         pass
 
 
@@ -1047,7 +1060,7 @@ struct Container[T: AnyType]:
     ]
     var address: Self._mlir_type
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
 
@@ -1088,7 +1101,7 @@ async fn call_struct_async(f: StructWithAsync):
 
 
 struct Awaitable:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     fn __await__(inout self) -> Int:
@@ -1473,7 +1486,7 @@ alias deprecated_alias = 1
 
 
 struct MyStruct:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -1534,14 +1547,14 @@ trait BarTrait:
 
 
 struct Bar[T: BarTrait]:
-    fn __init__(inout self: Self):
+    fn __init__(out self: Self):
         pass
 
 
 struct BarSelf(BarTrait):
     var bar: Bar[Self]
 
-    fn __init__(inout self: Self):
+    fn __init__(out self: Self):
         # CHECK: [[V0:%.*]] = lit.ref.struct.ger %self
         # CHECK: lit.call{{.*}}__init__{{.*}}([[V0]])
         self.bar = Bar[Self]()
@@ -1554,12 +1567,12 @@ struct RegPassableInitSelfInit:
 
     # CHECK: lit.func @"__init__
     # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self)
-    fn __init__(inout self):
+    fn __init__(out self):
         self.a = 42
 
     # CHECK: lit.func @"__copyinit__
     # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self,
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.a = existing.a
 
 

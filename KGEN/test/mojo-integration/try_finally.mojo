@@ -26,7 +26,7 @@ def try_it(c0: Bool, c1: Bool) -> StringLiteral:
 struct MyCtxtMgr:
     var handle: Bool
 
-    fn __init__(inout self, handle: Bool = True):
+    fn __init__(out self, handle: Bool = True):
         self.handle = handle
 
     fn __enter__(self):

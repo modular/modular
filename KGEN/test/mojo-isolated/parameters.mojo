@@ -165,12 +165,12 @@ struct Pair[dt: DType]:
   var b : Int
 
   # CHECK: lit.func @"__init__{{.*}}@parameters::@Pair<:!DType dt>
-  fn __init__(inout self, a: SIMD[dt, 42]):
+  fn __init__(out self, a: SIMD[dt, 42]):
     self.a = a
     self.b = 4
   # CHECK: }
 
-  fn __copyinit__(inout self, existing: Self): pass
+  fn __copyinit__(out self, existing: Self): pass
 
 # CHECK: }
 
@@ -295,7 +295,7 @@ fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
 
 @register_passable("trivial")
 struct IndexParam[x: int]:
-    fn __init__(inout self, p: __mlir_type.`!kgen.none`):
+    fn __init__(out self, p: __mlir_type.`!kgen.none`):
         pass
 
 
@@ -360,7 +360,7 @@ trait ASubTrait(ASuperTrait):
 struct StructWithTraitParam[T: ASuperTrait]():
     pass
 
-    fn __init__(inout self: StructWithTraitParam[T]):
+    fn __init__(out self: StructWithTraitParam[T]):
         pass
 
 
@@ -381,7 +381,7 @@ struct NonMovableMemoryType:
     var value: Int
 
     @always_inline
-    fn __init__(inout self, value: Int):
+    fn __init__(out self, value: Int):
         self.value = value
 
 fn makeMemoryValue(x: Int) -> MemoryType:
@@ -434,7 +434,7 @@ struct InitSelfCtor:
     var x: Int
 
     @always_inline
-    fn __init__(inout self, x: Int):
+    fn __init__(out self, x: Int):
         self.x = x
 
     @always_inline
@@ -476,7 +476,7 @@ fn refine_memory_only_results[a: InitSelfCtor, b: InitSelfCtor]() -> InitSelfPar
 
 
 struct ConvertFromIntLiteral:
-    fn __init__(inout self, x: IntLiteral):
+    fn __init__(out self, x: IntLiteral):
         pass
 
 
@@ -609,10 +609,10 @@ fn testUseOfAliases():
 struct MyDType:
   var state : int
 
-  fn __copyinit__(inout self, existing: Self):
+  fn __copyinit__(out self, existing: Self):
     self.state = self.state
 
-  fn __init__(inout self, value: int):
+  fn __init__(out self, value: int):
      self.state = value
 
   fn __eq__(self, rhs: MyDType) -> Bool:
@@ -651,7 +651,7 @@ fn fnWithVariadics[*b: Int]():
 
 # CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: variadic<!Int> var>
 struct StructWithVariadics[*b: Int]:
-    fn __init__(inout self, i: Int):
+    fn __init__(out self, i: Int):
         pass
 
 # CHECK-LABEL: lit.func @"useParamVariadics
@@ -725,7 +725,7 @@ fn init_self_memory_variadics():
     alias x = MyList[Int](1, 2)
 
 struct MyList[T: Copyable]:
-    fn __init__(inout self, *values: T): pass
+    fn __init__(out self, *values: T): pass
 
 
 ##===----------------------------------------------------------------------===##
@@ -797,7 +797,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 struct Abstraction[a: Int]:
   alias val = a.value
 
-  fn __init__(inout self, arg: Int):
+  fn __init__(out self, arg: Int):
     pass
 
   @staticmethod
@@ -847,10 +847,10 @@ fn takeAbstraction2(value: Abstraction[2]):
 struct AnotherAbstraction[a: Int]:
     var value : Abstraction[a + 1]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.value = Abstraction[a + 1]()
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.value = existing.value
 
 # CHECK-LABEL: lit.func @"testDependentField()"
@@ -970,7 +970,7 @@ fn signature_inference[dt: DType, rank: Int]():
 
 
 struct ClosureParam[lt: MutableOrigin, f: fn () capturing [lt] -> None]:
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         pass
 
 
@@ -1023,7 +1023,7 @@ fn useMixedInferAndPosParam():
 
 @register_passable("trivial")
 struct Box[T: AnyType]:
-    fn __init__(inout self, x: T):
+    fn __init__(out self, x: T):
         pass
 
 # CHECK-LABEL: lit.func @"infer_box_type
@@ -1036,7 +1036,7 @@ fn infer_box_type[T: AnyType, //, box: Box[T]]():
 ##===----------------------------------------------------------------------===##
 
 struct MultiStruct[p1: Int, p2: Int, p3: Int]:
-    fn __init__(inout self): pass
+    fn __init__(out self): pass
 
 fn foo[x: Int]():
   pass
@@ -1171,10 +1171,10 @@ fn test_param_default():
     param_default()
 
 struct Optional[T: AnyType]:
-    fn __init__(inout self, none: __mlir_type.`!kgen.none`):
+    fn __init__(out self, none: __mlir_type.`!kgen.none`):
         pass
 
-    fn __init__(inout self, value: T):
+    fn __init__(out self, value: T):
         pass
 
 fn default_on_infer_failure[p: int = `0`](a: Optional[ParamType[p]] = None):
@@ -1289,9 +1289,9 @@ fn test_struct_kw_params():
 struct Thing[v: Int]: pass
 
 struct CtadStruct[a: Int, b: Int]:
-    fn __init__(inout self, x: Thing[a]): pass
+    fn __init__(out self, x: Thing[a]): pass
 
-    fn __init__(inout self, x: Thing[a], y: Thing[b]): pass
+    fn __init__(out self, x: Thing[a], y: Thing[b]): pass
 
     @staticmethod
     fn foo(x: Thing[a]): pass
@@ -1300,9 +1300,9 @@ struct CtadStruct[a: Int, b: Int]:
     fn foo(x: Thing[a], y: Thing[b]): pass
 
 struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8]:
-    fn __init__(inout self, x: Thing[a]): pass
+    fn __init__(out self, x: Thing[a]): pass
 
-    fn __init__(inout self, x: Thing[a], y: Thing[b]): pass
+    fn __init__(out self, x: Thing[a], y: Thing[b]): pass
 
     @staticmethod
     fn foo(x: Thing[a]): pass
@@ -1312,7 +1312,7 @@ struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8]:
 
 
 struct CtadStructWithMultiDefault[a: Int, b: Int = 6, c: Int = 8, d: Int = 10]:
-    fn __init__(inout self, x: CtadStructWithMultiDefault[a]): pass
+    fn __init__(out self, x: CtadStructWithMultiDefault[a]): pass
 
 
 # CHECK-LABEL: lit.func @"test_partial_binding_CTAD(
@@ -1395,9 +1395,9 @@ fn funct_partial_binding[x: T, F: fn[t: T, s: T] () -> None]():
 
 @value
 struct StructWithSpecificSelfInitTypes[size: Int]:
-   fn __init__(inout self: StructWithSpecificSelfInitTypes[0]): pass
-   fn __init__(inout self: StructWithSpecificSelfInitTypes[1], a: Int): pass
-   fn __init__(inout self: StructWithSpecificSelfInitTypes[2], a: Int, b: Int): pass
+   fn __init__(out self: StructWithSpecificSelfInitTypes[0]): pass
+   fn __init__(out self: StructWithSpecificSelfInitTypes[1], a: Int): pass
+   fn __init__(out self: StructWithSpecificSelfInitTypes[2], a: Int, b: Int): pass
 
 struct DependentSpecificInitSelf[T: AnyType]:
     fn __init__[U: Movable](inout self: DependentSpecificInitSelf[U], owned value: U):
@@ -1429,8 +1429,8 @@ fn test_inference_from_Self_type(x: Int):
   _ = DependentSpecificInitSelf(x)
 
 struct AutoParamDefault[value: int, param: int, default: int = param]:
-    fn __init__(inout self, ptr: ParamType[value]): pass
-    fn __init__(inout self, *, other: Self): pass
+    fn __init__(out self, ptr: ParamType[value]): pass
+    fn __init__(out self, *, other: Self): pass
     fn method(self, other: ParamType[value]): pass
     fn method(self, other: AutoParamDefault[value, *_]): pass
 

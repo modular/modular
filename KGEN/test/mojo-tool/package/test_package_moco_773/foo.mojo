@@ -9,5 +9,5 @@
 
 
 struct LocTest:
-    fn __init__(inout self) -> LocTest:
+    fn __init__(out self) -> LocTest:
         pass

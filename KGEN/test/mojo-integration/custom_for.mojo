@@ -14,12 +14,12 @@ struct my_iter:
     var end: Int
     var list: MyList
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.start = existing.start
         self.end = existing.end
         self.list = existing.list
 
-    fn __init__(inout self, list: MyList):
+    fn __init__(out self, list: MyList):
         self.start = 0
         self.end = list.size
         self.list = list
@@ -43,11 +43,11 @@ struct MyList:
     var start: UnsafePointer[Int]
     var size: Int
 
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.start = existing.start
         self.size = existing.size
 
-    fn __init__(inout self, ptr: UnsafePointer[Int], size: Int):
+    fn __init__(out self, ptr: UnsafePointer[Int], size: Int):
         self.start = ptr
         self.size = size
 
