@@ -63,7 +63,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         self = Dim(value.__mlir_index__())
 
     @always_inline("nodebug")
-    fn __init__(inout self, value: __mlir_type.index):
+    fn __init__(out self, value: __mlir_type.index):
         """Creates a statically-known dimension.
 
         Args:
@@ -72,7 +72,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         self._value_or_missing = Int(value)
 
     @always_inline("nodebug")
-    fn __init__(inout self):
+    fn __init__(out self):
         """Creates a dynamic dimension with no static value."""
         self._value_or_missing = Self._sentinel
 
@@ -329,7 +329,7 @@ struct DimList(
         )
 
     @always_inline("nodebug")
-    fn __init__(inout self, values: VariadicList[Dim]):
+    fn __init__(out self, values: VariadicList[Dim]):
         """Creates a dimension list from the given list of values.
 
         Args:
@@ -338,7 +338,7 @@ struct DimList(
         self.value = values
 
     @always_inline("nodebug")
-    fn __init__(inout self, *values: Dim):
+    fn __init__(out self, *values: Dim):
         """Creates a dimension list from the given Dim values.
 
         Args:

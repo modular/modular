@@ -71,7 +71,7 @@ struct Buffer[
         return alignof[SIMD[type, width]]() if triple_is_nvidia_cuda() else 1
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Default initializer for Buffer. By default the fields are all
         initialized to 0.
         """
@@ -81,7 +81,7 @@ struct Buffer[
         self.dtype = type
 
     @always_inline
-    fn __init__(inout self, ptr: UnsafePointer[Scalar[type], address_space]):
+    fn __init__(out self, ptr: UnsafePointer[Scalar[type], address_space]):
         """Constructs a Buffer with statically known size and type.
 
         Constraints:
@@ -517,7 +517,7 @@ struct NDBuffer[
         return alignof[SIMD[type, width]]() if triple_is_nvidia_cuda() else 1
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         """Default initializer for NDBuffer. By default the fields are all
         initialized to 0.
         """
