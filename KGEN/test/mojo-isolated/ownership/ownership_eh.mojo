@@ -36,7 +36,7 @@ struct RegExample:
         return
 
     # Test a raising constructor.
-    # CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!RegExample, {{.*}}> init_self, |, %a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error) throws -> i1
+    # CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!RegExample, {{.*}}> init_self, %a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error) throws -> i1
     fn __init__(inout self, a: MemExample, b: MemExample) raises:
         # CHECK-NOT: __del__
         # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
