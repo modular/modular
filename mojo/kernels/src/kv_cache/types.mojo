@@ -327,7 +327,7 @@ struct ContiguousKVCacheCollection[
         self.cache_lengths = cache_lengths
         self.is_context_encoding = is_context_encoding
 
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         self.key_cache = other.key_cache
         self.value_cache = other.value_cache
         self.seq_ids = other.seq_ids
@@ -338,7 +338,7 @@ struct ContiguousKVCacheCollection[
         self.batch_size = other.batch_size
         self.max_seq_len = other.max_seq_len
 
-    fn __moveinit__(inout self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         self.key_cache = other.key_cache
         self.value_cache = other.value_cache
         self.seq_ids = other.seq_ids^
@@ -674,7 +674,7 @@ struct ContinuousBatchingKVCacheCollection[
         self.num_layers = blocks.dim[2]()
         self.batch_size = cache_lengths.dim[0]()
 
-    fn __moveinit__(inout self, owned other: Self):
+    fn __moveinit__(out self, owned other: Self):
         self.blocks = other.blocks
         self.seq_ids = other.seq_ids
         self.cache_lengths = other.cache_lengths
@@ -683,7 +683,7 @@ struct ContinuousBatchingKVCacheCollection[
         self.batch_size = other.batch_size
         self.is_cache_empty = other.is_cache_empty
 
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         self.blocks = other.blocks
         self.seq_ids = other.seq_ids
         self.cache_lengths = other.cache_lengths
