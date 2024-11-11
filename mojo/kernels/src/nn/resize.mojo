@@ -88,11 +88,11 @@ struct Interpolator[mode: InterpolationMode]:
     var cubic_coeff: Float32
 
     @always_inline
-    fn __init__(inout self, cubic_coeff: Float32):
+    fn __init__(out self, cubic_coeff: Float32):
         self.cubic_coeff = cubic_coeff
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.cubic_coeff = 0
 
     @staticmethod

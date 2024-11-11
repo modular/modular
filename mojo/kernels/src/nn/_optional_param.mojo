@@ -24,7 +24,7 @@ struct OptionalParamInt[dim_parametric: Dim](EqualityComparable):
     var dim_dynamic: Int
 
     @always_inline("nodebug")
-    fn __init__(inout self, dim_dynamic: Int):
+    fn __init__(out self, dim_dynamic: Int):
         self.dim_dynamic = dim_dynamic
 
     @always_inline("nodebug")

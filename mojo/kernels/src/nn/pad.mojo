@@ -47,7 +47,7 @@ struct _NestedLoopIter[n_loops: Int]:
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
-    fn __init__(inout self: Self, loop_bounds: Self.LoopBoundSpec):
+    fn __init__(out self: Self, loop_bounds: Self.LoopBoundSpec):
         debug_assert(
             len(loop_bounds) == n_loops,
             (
@@ -76,7 +76,7 @@ struct _NestedLoopIter[n_loops: Int]:
     fn _ub_loop(self, axis: Int) -> Int:
         return self.loop_bounds[axis][1]
 
-    fn __copyinit__(inout self: Self, other: Self):
+    fn __copyinit__(out self: Self, other: Self):
         self.cur = other.cur
         self.loop_bounds = InlinedFixedVector(other.loop_bounds)
         self.early_stop = other.early_stop

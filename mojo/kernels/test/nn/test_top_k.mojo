@@ -23,12 +23,12 @@ struct TestTensor[rank: Int, type: DType]:
     var storage: List[Scalar[type]]
     var shape: IndexList[rank]
 
-    fn __init__(inout self, shape: IndexList[rank]):
+    fn __init__(out self, shape: IndexList[rank]):
         self.storage = List[Scalar[type]](capacity=shape.flattened_length())
         self.storage.resize(shape.flattened_length(), 0)
         self.shape = shape
 
-    fn __moveinit__(inout self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.storage = existing.storage
         self.shape = existing.shape
 

@@ -489,7 +489,7 @@ struct _FlashAttentionConfig[
     var qk_block_n: Int
     var o_block_n: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.qk_block_n = 128
         self.o_block_n = 128
 

@@ -508,7 +508,7 @@ struct ConvInfoStatic[rank: Int]:
     var num_groups: Dim
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.pad = DimList.create_unknown[2 * rank]()
         self.stride = DimList.create_unknown[rank]()
         self.dilation = DimList.create_unknown[rank]()

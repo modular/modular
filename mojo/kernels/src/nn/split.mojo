@@ -30,28 +30,28 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
     var storage: Self.StorageType
 
     @always_inline
-    fn __init__(inout self, num_inputs: Int):
+    fn __init__(out self, num_inputs: Int):
         self.storage = Self.StorageType(num_inputs)
 
     @always_inline
-    fn __init__(inout self, *inputs: DynamicRankBuffer):
+    fn __init__(out self, *inputs: DynamicRankBuffer):
         self.__init__(inputs)
 
-    fn __init__(inout self, input_list: VariadicList[DynamicRankBuffer]):
+    fn __init__(out self, input_list: VariadicList[DynamicRankBuffer]):
         self.storage = Self.StorageType(len(input_list))
         for i in range(len(input_list)):
             self.storage.append(input_list[i].to_ndbuffer[type, rank]())
 
     @always_inline
-    fn __init__(inout self, *inputs: Self.BufferType):
+    fn __init__(out self, *inputs: Self.BufferType):
         self.__init__(inputs)
 
-    fn __init__(inout self, input_list: VariadicList[Self.BufferType]):
+    fn __init__(out self, input_list: VariadicList[Self.BufferType]):
         self.storage = Self.StorageType(len(input_list))
         for i in range(len(input_list)):
             self.storage.append(input_list[i])
 
-    fn __init__(inout self, inputs: StaticTuple[NDBuffer[type, rank]]):
+    fn __init__(out self, inputs: StaticTuple[NDBuffer[type, rank]]):
         self.storage = Self.StorageType(inputs.size)
 
         @parameter

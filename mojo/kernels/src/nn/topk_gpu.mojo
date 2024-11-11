@@ -54,7 +54,7 @@ struct TopK_2[T: DType, largest: Bool = True]:
     var p: Int  # flattened index of the element
     var u: Scalar[T]  # value of the element
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.p = -1
         self.u = _topk_dead_val[T, largest]()
 
