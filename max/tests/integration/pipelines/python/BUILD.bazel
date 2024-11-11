@@ -73,7 +73,6 @@ modular_py_test(
     requires_gpu = False,
     tags = [
         "huggingface",
-        "manual",
         "no-remote-exec",
         "no-sandbox",
         "requires-network",

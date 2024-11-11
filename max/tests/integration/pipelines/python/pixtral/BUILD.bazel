@@ -20,9 +20,15 @@ modular_py_test(
         "//ModularFramework/tools/mof",
         "@llvm-project//compiler-rt:orc_rt",
     ],
+    env = {
+        "HF_ESCAPES_SANDBOX": "1",
+    },
     exec_compatible_with = ["//:large"],
     requires_gpu = False,
     tags = [
+        "huggingface",
+        "no-remote-exec",
+        "no-sandbox",
         "requires-network",
     ],
     target_compatible_with = select(

@@ -16,11 +16,11 @@ modular_py_test(
     ],
     env = {
         "BAZEL": "true",
+        "HF_ESCAPES_SANDBOX": "1",
     },
     requires_gpu = False,
     tags = [
         "huggingface",
-        "manual",
         "no-remote-exec",
         "no-sandbox",
         "requires-network",

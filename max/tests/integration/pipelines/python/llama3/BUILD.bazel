@@ -79,6 +79,7 @@ modular_py_binary(
         ],
         env = {
             "BAZEL": "true",
+            "HF_ESCAPES_SANDBOX": "1",
             "MODULAR_PATH": ".",
             "PIPELINES_TESTDATA": (
                 "SDK/integration-test/pipelines/python/llama3/testdata"
@@ -90,6 +91,9 @@ modular_py_binary(
         exec_compatible_with = ["//:large"],
         requires_gpu = False,
         tags = [
+            "huggingface",
+            "no-remote-exec",
+            "no-sandbox",
             "requires-network",
         ],
         target_compatible_with = select(
@@ -147,6 +151,7 @@ modular_py_test(
     ],
     env = {
         "BAZEL": "true",
+        "HF_ESCAPES_SANDBOX": "1",
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
         "MODULAR_SYSTEM_INFO_PATH": "$(location //Support/tools/system-info)",
         "MODULAR_PATH": ".",
@@ -158,6 +163,9 @@ modular_py_test(
     tags = [
         "A100",
         "gpu",
+        "huggingface",
+        "no-remote-exec",
+        "no-sandbox",
         "requires-network",
     ],
     target_compatible_with = select(
