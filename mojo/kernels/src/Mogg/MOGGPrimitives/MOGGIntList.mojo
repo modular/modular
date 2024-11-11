@@ -29,14 +29,14 @@ struct IntList[static_values: DimList = DimList()](Sized):
     var length: Int
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         self.length = Self._length
         self.data = UnsafePointer[Int]()
         self.stack_alloc_data = IndexList[Self._safe_len]()
 
     # Should not be copy constructable, i.e passed by value, but can be cloned.
     @always_inline
-    fn __init__(inout self, other: IntList):
+    fn __init__(out self, other: IntList):
         var num_elements = len(other)
         self.length = Self._length
         self.data = UnsafePointer[Int]()
@@ -63,7 +63,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.stack_alloc_data = IndexList[Self._safe_len]()
 
     @always_inline
-    fn __init__(inout self, *elems: Int):
+    fn __init__(out self, *elems: Int):
         var num_elements = len(elems)
 
         self.length = Self._length
@@ -100,7 +100,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         self.stack_alloc_data = rebind[IndexList[Self._safe_len]](shape)
 
     @always_inline
-    fn __copyinit__(inout self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.stack_alloc_data = existing.stack_alloc_data
         self.length = existing.length
         self.data = UnsafePointer[Int]()

@@ -26,7 +26,7 @@ from register import uses_opaque
 struct MyCustomScalarRegSI32:
     var val: Scalar[DType.int32]
 
-    fn __init__(inout self, val: Scalar[DType.int32]):
+    fn __init__(out self, val: Scalar[DType.int32]):
         print("MyCustomScalarRegSI32.__init__", val)
         self.val = val
 
@@ -41,7 +41,7 @@ struct MyCustomScalarRegSI32:
 struct MyCustomScalarRegF32:
     var val: Scalar[DType.float32]
 
-    fn __init__(inout self, val: Scalar[DType.float32]):
+    fn __init__(out self, val: Scalar[DType.float32]):
         print("MyCustomScalarRegF32.__init__", val)
         self.val = val
 
@@ -100,7 +100,7 @@ struct OpaqueAddToTensorF32:
 struct MyCustomScalarSI32:
     var val: Scalar[DType.int32]
 
-    fn __init__(inout self, val: Scalar[DType.int32]):
+    fn __init__(out self, val: Scalar[DType.int32]):
         print("MyCustomScalarSI32.__init__", val)
         self.val = val
 

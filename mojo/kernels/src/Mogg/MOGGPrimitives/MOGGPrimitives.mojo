@@ -41,7 +41,7 @@ struct StaticTensorSpec[rank: Int]():
     var type: DType
 
     @always_inline
-    fn __init__(inout self, shape: IndexList[rank, **_], type: DType):
+    fn __init__(out self, shape: IndexList[rank, **_], type: DType):
         """Constructs a static tensor spec with a static rank shape and type.
 
         Args:
@@ -94,7 +94,7 @@ struct StateContext:
     var ctx_ptr: UnsafePointer[NoneType]
 
     @always_inline
-    fn __init__(inout self, num_slots: Int, ctx_ptr: UnsafePointer[NoneType]):
+    fn __init__(out self, num_slots: Int, ctx_ptr: UnsafePointer[NoneType]):
         self.num_slots = num_slots
         self.ctx_ptr = ctx_ptr
 
@@ -1034,10 +1034,10 @@ fn mg_debug_print[
 struct MyInt(Movable):
     var val: Int
 
-    fn __init__(inout self, val: Int):
+    fn __init__(out self, val: Int):
         self.val = val
 
-    fn __moveinit__(inout self, owned other: MyInt):
+    fn __moveinit__(out self, owned other: MyInt):
         print("MyInt.__moveinit__", other.val)
         self.val = other.val
 
@@ -1068,7 +1068,7 @@ fn test_my_int_to_index(x: MyInt) -> Int:
 struct MyIntReg:
     var val: Int
 
-    fn __init__(inout self, val: Int):
+    fn __init__(out self, val: Int):
         self.val = val
 
 
@@ -1083,7 +1083,7 @@ fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
 struct MyIntReg2:
     var val: Int
 
-    fn __init__(inout self, val: Int):
+    fn __init__(out self, val: Int):
         self.val = val
 
     fn __del__(owned self):
