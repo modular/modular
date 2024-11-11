@@ -1553,7 +1553,7 @@ struct RegPassableInitSelfInit:
     var a: Int
 
     # CHECK: lit.func @"__init__
-    # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self,
+    # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self)
     fn __init__(inout self):
         self.a = 42
 

@@ -1481,9 +1481,6 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
         argList.parsedArgs[0].convention == ParsedArgument::kConventionInOut) {
       auto &selfArg = argList.parsedArgs[0];
       selfArg.convention = ParsedArgument::kConventionInitSelfResult;
-      // We also force the passing kind of self to positional-only.
-      if (selfArg.kwArgHandling == KWArgHandling::kPositionalOrKeyword)
-        selfArg.kwArgHandling = KWArgHandling::kPositionalOnly;
     }
 
     // TODO(MOCO-789): Async initializers require a `byref_result` thunk to be

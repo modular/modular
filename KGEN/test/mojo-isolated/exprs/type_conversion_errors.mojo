@@ -58,7 +58,7 @@ struct Constructible:
 
 
 fn init_self_conversion():
-    # expected-error @below {{cannot implicitly convert 'fn(inout self: Constructible, /, arg: Int) -> None' value to 'fn() -> None'}}
+    # expected-error @below {{cannot implicitly convert 'fn(inout self: Constructible, arg: Int) -> None' value to 'fn() -> None'}}
     alias f: fn () -> None = Constructible.__init__
 
 

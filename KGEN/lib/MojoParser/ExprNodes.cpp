@@ -3110,6 +3110,14 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!signature)
     return {}; // Error already emitted.
 
+  // Check to see if any of the arguments were erroneous. If so, we don't want
+  // to produce a function type with a nested type check error, just fail.  This
+  // is unlike function defs which want to handle arguments that are invalid.
+  for (auto &arg : tcSignature.argList.parsedArgs) {
+    if (arg.isErroneous)
+      return {};
+  }
+
   // Set the value of the dummy scope to the generated signature so that we can
   // still resolve information about it in tools.
   dummyScope.setIRValue(PValue(signature));

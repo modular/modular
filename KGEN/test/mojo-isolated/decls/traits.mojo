@@ -269,7 +269,7 @@ trait TraitForReg:
 @register_passable
 struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.func @"__init__
-    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %x: index)
+    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, %x: index)
     fn __init__(inout self, x: int):
         pass
 
@@ -463,7 +463,7 @@ struct RegPassableRequiredType(RequiredType):
 
 # CHECK-LABEL: lit.func @"bind_regpassable_required_type
 fn bind_regpassable_required_type():
-    # CHECK-NEXT: fn(::Int, /) -> ::Int
+    # CHECK-NEXT: fn(::Int) -> ::Int
     # CHECK-SAME: @RegPassableRequiredType::@"use_it
     alias T: RequiredType = RegPassableRequiredType
 
