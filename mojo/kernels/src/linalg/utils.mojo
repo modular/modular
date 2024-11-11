@@ -76,7 +76,7 @@ struct MicroKernelShape:
 
     var simd_cols: Int
 
-    fn __init__(inout self, rows: Int, cols: Int):
+    fn __init__(out self, rows: Int, cols: Int):
         self.simd_rows = rows
         self.simd_cols = cols
 
@@ -145,7 +145,7 @@ struct GemmShape:
             self.K = value
             return
 
-    fn __init__(inout self, index: IndexList[3]):
+    fn __init__(out self, index: IndexList[3]):
         """Constructor of a gemm shape record from a index tuple.
 
         Args:

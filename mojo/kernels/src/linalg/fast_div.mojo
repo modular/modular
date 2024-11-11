@@ -34,7 +34,7 @@ struct FastDiv[type: DType]:
     var _sh2: Int32
 
     @always_inline
-    fn __init__(inout self, divisor: Int = 1):
+    fn __init__(out self, divisor: Int = 1):
         constrained[
             bitwidthof[type]() <= 32, "larger types are not currently supported"
         ]()

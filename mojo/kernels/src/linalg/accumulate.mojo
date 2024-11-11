@@ -43,7 +43,7 @@ struct _Accumulator[
     var _storage: Buffer[type, num_rows * num_cols * simd_width]
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(out self):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
         alias alignment = alignof[SIMD[type, simd_width]]()
         self._storage = Buffer[
@@ -60,7 +60,7 @@ struct _Accumulator[
 
     # NOTE: This is NOT a deepcopy; self uses the same _storage as other.
     @always_inline
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(out self, other: Self):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
         self._storage = other._storage
 
