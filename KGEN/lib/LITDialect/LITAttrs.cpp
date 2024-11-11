@@ -151,15 +151,11 @@ PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
       return emitError() << "pack convention specified without pack";
   }
 
-  bool seenInferred = true;
   for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
-    if (pogAttr.getPassingKind() == PassingKind::Inferred) {
-      if (!seenInferred) {
-        return emitError()
-               << "'inferred' parameter follows non-inferred parameter";
-      }
-    } else {
-      seenInferred = false;
+    if (pogAttr.getPassingKind() == PassingKind::Inferred && idx != 0 &&
+        pogs[idx - 1].getPassingKind() != PassingKind::Inferred) {
+      return emitError()
+             << "'inferred' parameter follows non-inferred parameter";
     }
     if (pogAttr.isVariadic() &&
         failed(verifyVariadicIdx(idx, /*isPack=*/false)))
