@@ -94,9 +94,7 @@ def maybe(*choices):
 
 
 def _combinations(*l):
-    return set(
-        x + y for x in l for y in l + ("",) if x.casefold() != y.casefold()
-    )
+    return set(x + y for x in l for y in l + ("",) if x.casefold() != y.casefold())
 
 
 Whitespace = r"[ \f\t]*"
@@ -112,9 +110,9 @@ Octnumber = r"0[oO]?_?[0-7]+(?:_[0-7]+)*[lL]?"
 Decnumber = group(r"[1-9]\d*(?:_\d+)*[lL]?", "0[lL]?")
 Intnumber = group(Binnumber, Hexnumber, Octnumber, Decnumber)
 Exponent = r"[eE][-+]?\d+(?:_\d+)*"
-Pointfloat = group(
-    r"\d+(?:_\d+)*\.(?:\d+(?:_\d+)*)?", r"\.\d+(?:_\d+)*"
-) + maybe(Exponent)
+Pointfloat = group(r"\d+(?:_\d+)*\.(?:\d+(?:_\d+)*)?", r"\.\d+(?:_\d+)*") + maybe(
+    Exponent
+)
 Expfloat = r"\d+(?:_\d+)*" + Exponent
 Floatnumber = group(Pointfloat, Expfloat)
 Imagnumber = group(r"\d+(?:_\d+)*[jJ]", Floatnumber + r"[jJ]")
@@ -136,7 +134,7 @@ Triple = group(_litprefix + "'''", _litprefix + '"""')
 String = group(
     _litprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*'",
     _litprefix + r'"[^\n"\\]*(?:\\.[^\n"\\]*)*"',
-    _litprefix + r'`[^\n`\\]*(?:\\.[^\n`\\]*)*`',
+    _litprefix + r"`[^\n`\\]*(?:\\.[^\n`\\]*)*`",
 )
 
 # Because of leftmost-then-longest match semantics, be sure to put the
@@ -162,7 +160,7 @@ Funny = group(Operator, Bracket, Special)
 ContStr = group(
     _litprefix + r"'[^\n'\\]*(?:\\.[^\n'\\]*)*" + group("'", r"\\\r?\n"),
     _litprefix + r'"[^\n"\\]*(?:\\.[^\n"\\]*)*' + group('"', r"\\\r?\n"),
-    _litprefix + r'`[^\n`\\]*(?:\\.[^\n`\\]*)*' + group('`', r"\\\r?\n"),
+    _litprefix + r"`[^\n`\\]*(?:\\.[^\n`\\]*)*" + group("`", r"\\\r?\n"),
 )
 PseudoExtras = group(r"\\\r?\n", Comment, Triple)
 PseudoToken = Whitespace + group(PseudoExtras, Number, Funny, ContStr, Name)
@@ -210,14 +208,11 @@ class StopTokenizing(Exception):
     pass
 
 
-def printtoken(
-    type, token, xxx_todo_changeme, xxx_todo_changeme1, line
-):  # for testing
+def printtoken(type, token, xxx_todo_changeme, xxx_todo_changeme1, line):  # for testing
     (srow, scol) = xxx_todo_changeme
     (erow, ecol) = xxx_todo_changeme1
     print(
-        "%d,%d-%d,%d:\t%s\t%s"
-        % (srow, scol, erow, ecol, tok_name[type], repr(token))
+        "%d,%d-%d,%d:\t%s\t%s" % (srow, scol, erow, ecol, tok_name[type], repr(token))
     )
 
 
@@ -225,9 +220,7 @@ Coord = Tuple[int, int]
 TokenEater = Callable[[int, Text, Coord, Coord, Text], None]
 
 
-def tokenize(
-    readline: Callable[[], Text], tokeneater: TokenEater = printtoken
-) -> None:
+def tokenize(readline: Callable[[], Text], tokeneater: TokenEater = printtoken) -> None:
     """
     The tokenize() function accepts two parameters: one representing the
     input stream, and one providing an output mechanism for tokenize().
@@ -257,7 +250,6 @@ TokenInfo = Union[Tuple[int, str], GoodTokenInfo]
 
 
 class Untokenizer:
-
     tokens: List[Text]
     prev_row: int
     prev_col: int
@@ -290,9 +282,7 @@ class Untokenizer:
                 self.prev_col = 0
         return "".join(self.tokens)
 
-    def compat(
-        self, token: Tuple[int, Text], iterable: Iterable[TokenInfo]
-    ) -> None:
+    def compat(self, token: Tuple[int, Text], iterable: Iterable[TokenInfo]) -> None:
         startline = False
         indents = []
         toks_append = self.tokens.append
@@ -480,6 +470,7 @@ def generate_tokens(
         "owned": OWNED,
         "borrowed": BORROWED,
         "inout": INOUT,
+        "out": OUT,
         "trait": TRAIT,
         "ref": REF,
     }
@@ -600,6 +591,17 @@ def generate_tokens(
                 raise TokenError("EOF in multi-line statement", (lnum, 0))
             continued = 0
 
+        # Given an identifier matching a Mojo token, do extra context sensitive
+        # checks for validity.  This is because we can't get things like 'out'
+        # handled properly as soft tokens.  This returns true if this can be
+        # handled as a normal Mojo token.
+        def check_mojo_token():
+            # "out" is only a keyword if followed by an identifier letter.
+            if token != "out":
+                return True
+            next_token = line[end:].lstrip()
+            return next_token and next_token[0].isidentifier()
+
         while pos < max:
             pseudomatch = pseudoprog.match(line, pos)
             if pseudomatch:  # scan for tokens
@@ -668,7 +670,11 @@ def generate_tokens(
                     endmatch = endprog.match(line, pos)
                     yield (NAME, token, spos, epos, line)
                 elif initial.isidentifier():  # ordinary name
-                    if has_mojo_keywords and token in mojo_keyword_tokens:
+                    if (
+                        has_mojo_keywords
+                        and token in mojo_keyword_tokens
+                        and check_mojo_token()
+                    ):
                         yield (
                             mojo_keyword_tokens[token],
                             token,
@@ -695,12 +701,7 @@ def generate_tokens(
                         continue
 
                     if token == "for" or token in def_keywords:
-                        if (
-                            stashed
-                            and stashed[0] == NAME
-                            and stashed[1] == "async"
-                        ):
-
+                        if stashed and stashed[0] == NAME and stashed[1] == "async":
                             if token in def_keywords:
                                 async_def = True
                                 async_def_indent = indents[-1]
