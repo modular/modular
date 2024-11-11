@@ -91,7 +91,7 @@ struct test_matmul[
     var c_device_buffer: DeviceBuffer[dtype]
     var c_device_buffer_ref: DeviceBuffer[dtype]
 
-    fn __init__(inout self, inout m: Bench, ctx: DeviceContext) raises:
+    fn __init__(out self, inout m: Bench, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.M = a_layout.shape[0].value()
         self.N = b_layout.shape[1].value()

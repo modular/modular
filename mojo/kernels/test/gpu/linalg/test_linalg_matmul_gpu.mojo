@@ -152,14 +152,14 @@ fn matmul_test_case[
 struct ValOrDim[dim: Dim = Dim()]:
     var value: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         constrained[
             not dim.is_dynamic(),
             "Can't construct a dynamic dim with no runtime value",
         ]()
         self.value = dim.get()
 
-    fn __init__(inout self, v: Int):
+    fn __init__(out self, v: Int):
         self.value = v
 
 
