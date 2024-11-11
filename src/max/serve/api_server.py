@@ -17,7 +17,6 @@ from functools import partial
 from typing import Mapping, Optional
 
 from max.serve.telemetry.logger import configureLogging
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 console_level: int = logging.INFO
 file_path: str = ""
@@ -109,9 +108,6 @@ def fastapi_app(
 
     app.state.debug_settings = debug_settings
     register_debug(app, debug_settings)
-
-    # Instrument application with traces
-    FastAPIInstrumentor.instrument_app(app, excluded_urls="metrics/.*")
     return app
 
 
