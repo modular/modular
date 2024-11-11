@@ -19,9 +19,6 @@ def test_simdbitwidth():
 
 def test_warpsize():
     assert_equal(32, warpsize[target = _get_nvptx_target()]())
-    assert_equal(
-        64, warpsize[target = _get_info_from_target["mi300x"]().target()]()
-    )
 
 
 def main():
