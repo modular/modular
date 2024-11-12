@@ -18,10 +18,14 @@ import pytest
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import Llama3, load_llama3_and_kv_manager
 from max.engine import InferenceSession
-from max.pipelines import PipelineConfig, SupportedEncoding, TextContext
+from max.pipelines import (
+    PipelineConfig,
+    SupportedEncoding,
+    TextContext,
+    TextTokenizer,
+)
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
-from nn.tokenizer import TextTokenizer
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
 

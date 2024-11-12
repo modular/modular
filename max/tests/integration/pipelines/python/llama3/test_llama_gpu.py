@@ -19,9 +19,8 @@ from llama3.llama3 import load_llama3_and_kv_manager
 from max.driver import CUDA
 from max.engine import InferenceSession
 from llama3.llama3 import Llama3
-from max.pipelines import TextContext
+from max.pipelines import TextContext, TextTokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
-from nn.tokenizer import TextTokenizer
 from test_common.evaluate import (
     PROMPTS,
     compare_values,

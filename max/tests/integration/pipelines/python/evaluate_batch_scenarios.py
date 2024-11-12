@@ -18,9 +18,13 @@ from llama3.config import get_llama_huggingface_file
 from llama3.llama3 import load_llama3_and_kv_manager
 from max.driver import CPU, CUDA
 from max.engine import InferenceSession
-from max.pipelines import PipelineConfig, SupportedEncoding, TokenGenerator
+from max.pipelines import (
+    PipelineConfig,
+    SupportedEncoding,
+    TokenGenerator,
+    TextTokenizer,
+)
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from nn.tokenizer import TextTokenizer
 
 from utils import DevicesOptionType, config_to_flag
 

@@ -21,7 +21,7 @@ import transformers
 # MAX
 from max import driver
 from max import pipelines
-from max.pipelines import interfaces
+from max.pipelines import interfaces, TextTokenizer
 from max.pipelines import kv_cache
 
 # Pipelines
@@ -191,8 +191,10 @@ class LlamaPipelineOracle(PipelineOracle):
                 in ["bfloat16", "float32"] else kv_cache.KVCacheStrategy.NAIVE
             ),
         )
-        tokenizer = nn.tokenizer.TextTokenizer(config)
-        generator = llama3.Llama3TokenGenerator(config, tokenizer.eos)
+        tokenizer = TextTokenizer(config)
+        generator = llama3.Llama3TokenGenerator(
+            config, tokenizer.eos, tokenizer.delegate.vocab_size
+        )
         return MaxPipelineAndTokenizer(
             model=generator.model, generator=generator, tokenizer=tokenizer
         )
@@ -275,7 +277,7 @@ class ReplitPipelineOracle(PipelineOracle):
             ).download(),
         )
         generator = replit.Replit(config)
-        tokenizer = nn.tokenizer.TextTokenizer(config)
+        tokenizer = TextTokenizer(config)
         return MaxPipelineAndTokenizer(
             # Unlike the other pipelines, replit.Replit is both a model and a
             # generator at the same time.

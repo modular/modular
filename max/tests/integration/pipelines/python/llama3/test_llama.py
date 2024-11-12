@@ -11,7 +11,7 @@ import pytest
 from max.engine import InferenceSession
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import load_llama3_and_kv_manager
-from nn.tokenizer import TextTokenizer
+from max.pipelines import TextTokenizer
 from test_common.evaluate import PROMPTS, compare_values, run_model
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path

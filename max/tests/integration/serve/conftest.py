@@ -13,7 +13,11 @@ import pytest
 from llama3.llama3 import (
     load_llama3_and_kv_manager,
 )
-from max.pipelines import PipelineConfig, PreTrainedTokenGeneratorTokenizer
+from max.pipelines import (
+    PipelineConfig,
+    PreTrainedTokenGeneratorTokenizer,
+    TextTokenizer,
+)
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.serve.api_server import fastapi_app
 from max.serve.config import APIType, Settings
@@ -23,7 +27,6 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
-from nn.tokenizer import TextTokenizer
 from transformers import AutoTokenizer
 
 

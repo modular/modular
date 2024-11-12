@@ -5,8 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from nn import TextTokenizer
-from max.pipelines import PipelineConfig, SupportedEncoding, TextContext
+from max.pipelines import (
+    PipelineConfig,
+    SupportedEncoding,
+    TextContext,
+    TextTokenizer,
+)
 
 
 @pytest.mark.asyncio

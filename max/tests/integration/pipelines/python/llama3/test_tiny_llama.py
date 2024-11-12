@@ -15,10 +15,9 @@ import pytest
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import Llama3
 from llama3.llama3_token_gen import Llama3TokenGenerator
-from max.pipelines import PipelineConfig
+from max.pipelines import PipelineConfig, TextTokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
-from nn.tokenizer import TextTokenizer
 from test_common.evaluate import PROMPTS, run_model
 
 

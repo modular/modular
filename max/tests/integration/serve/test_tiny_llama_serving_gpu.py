@@ -13,10 +13,9 @@ from async_asgi_testclient import TestClient
 from evaluate_llama import SupportedTestModels
 from max.driver import DeviceSpec
 
-from max.pipelines import SupportedEncoding
+from max.pipelines import SupportedEncoding, TextTokenizer
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import CreateChatCompletionResponse
-from nn.tokenizer import TextTokenizer
 from test_common.evaluate import PROMPTS
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path

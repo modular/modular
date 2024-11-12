@@ -11,10 +11,9 @@ from typing import Literal
 import pytest
 from evaluate_llama import SupportedTestModels
 from llama3.llama3_token_gen import Llama3TokenGenerator
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig, SupportedEncoding, TextTokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
-from nn.tokenizer import TextTokenizer
 from test_common.evaluate import PROMPTS, next_token_with_logits
 
 
