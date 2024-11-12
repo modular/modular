@@ -48,7 +48,7 @@ try:
         ["gpu-query", "--arch"], check=False, capture_output=True
     )
     output = sh.stdout.decode().strip()
-    if "sm_" in output:
+    if "sm_" in output or "CDNA" in output:
         DEFAULT_GPU_ARCH = ["-D", f"DEFAULT_GPU_ARCH={output}"]
 except Exception as error:
     pass
