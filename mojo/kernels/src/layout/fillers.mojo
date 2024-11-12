@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from random import random_float64
-from sys import triple_is_nvidia_cuda
+from sys import is_nvidia_gpu
 from utils.numerics import max_finite
 
 
@@ -68,7 +68,7 @@ fn random(
     min: Scalar[tensor.dtype] = 0,
     max: Scalar[tensor.dtype] = 1,
 ):
-    constrained[not triple_is_nvidia_cuda(), "Cannot run random on the gpu"]()
+    constrained[not is_nvidia_gpu(), "Cannot run random on the gpu"]()
 
     @parameter
     fn filler(i: Int) -> Scalar[tensor.dtype]:

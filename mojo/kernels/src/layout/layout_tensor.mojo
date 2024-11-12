@@ -13,7 +13,7 @@ from sys import (
     bitwidthof,
     simdwidthof,
     sizeof,
-    triple_is_nvidia_cuda,
+    is_nvidia_gpu,
 )
 from sys.intrinsics import PrefetchOptions
 
@@ -2939,7 +2939,7 @@ struct LayoutTensorIter[
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    alignment: Int = alignof[type]() if triple_is_nvidia_cuda() else 1,
+    alignment: Int = alignof[type]() if is_nvidia_gpu() else 1,
     circular: Bool = False,
     axis: OptionalReg[Int] = None,
     layout_bitwidth: Int = bitwidthof[_get_index_type(address_space)](),

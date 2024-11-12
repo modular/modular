@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from sys import triple_is_nvidia_cuda, bitwidthof
+from sys import is_nvidia_gpu, bitwidthof
 
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import LayoutTensorIter, _get_index_type
@@ -319,7 +319,7 @@ struct LayoutTensorBuild[
         __address_space = _GPUAddressSpace.SHARED,
     ] as res:
         constrained[
-            triple_is_nvidia_cuda(),
+            is_nvidia_gpu(),
             "shared memory is supported on cuda devices only.",
         ]()
         return __type_of(res)(
@@ -340,7 +340,7 @@ struct LayoutTensorBuild[
         __address_space = _GPUAddressSpace.LOCAL,
     ] as res:
         constrained[
-            triple_is_nvidia_cuda(),
+            is_nvidia_gpu(),
             "local memory is supported on cuda devices only.",
         ]()
         return __type_of(res)(
