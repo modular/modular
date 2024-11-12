@@ -64,6 +64,11 @@ modular_py_test(
     srcs = glob([
         "graph_tests/**/*.py",
     ]),
+    args = [
+        "-n",
+        # Engflow is reporting more cores than are available, so we limit to 4
+        "4",
+    ],
     data = [
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
@@ -110,6 +115,7 @@ modular_py_test(
         requirement("sentencepiece"),
         requirement("gguf"),
         requirement("pytest-asyncio"),
+        requirement("pytest-xdist"),
     ],
 )
 
