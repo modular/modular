@@ -48,9 +48,14 @@ def test_mlp(session: InferenceSession, input_type: TensorType) -> None:
             # Transpose weights to match our Linear semantics.
             expected = TorchVisionEncoderMLP(w1, w2)(x).detach().numpy()
             # Relative L2 norm threshold
-            threshold = 0.01
+            rel_threshold = 0.01
+            # Absolute threshold to exclude tiny values affected by round-off.
+            abs_threshold = 1e-5
+
+            diff_norm = np.linalg.norm(result - expected)
             assert (
-                np.linalg.norm(result - expected)
+                diff_norm < abs_threshold
+                or diff_norm
                 / (np.linalg.norm(expected) + np.finfo(np.float32).eps)
-                < threshold
+                < rel_threshold
             )
