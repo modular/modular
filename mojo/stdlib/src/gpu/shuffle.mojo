@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes intrinsics for NVIDIA GPUs shuffle instructions."""
 
-from sys import llvm_intrinsic
-
+from sys import llvm_intrinsic, is_nvidia_gpu
 from memory import bitcast
+from gpu import lane_id
 
 from .globals import WARP_SIZE
 from .tensor_ops import tc_reduce
@@ -211,6 +211,25 @@ fn shuffle_down[
 
 
 @always_inline
+fn _shuffle_down_amd[
+    type: DType, simd_width: Int, //
+](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+    type, simd_width
+]:
+    alias WARP_SIZE_AMD = 64
+    # FIXME: Use a function to get the warp_size
+    alias _WIDTH_MASK = WARP_SIZE_AMD - 1
+    # FIXME: Set the EXECute mask register to the mask
+    var lane = lane_id()
+    # set the offset to 0 if lane + offset >= WARP_SIZE
+    var v = (lane + offset > _WIDTH_MASK).select(0, offset)
+    v += lane
+    # The address needs to be in bytes
+    v *= 4
+    return llvm_intrinsic["llvm.amdgcn.ds.bpermute", Scalar[type]](v, val)
+
+
+@always_inline
 fn shuffle_down[
     type: DType, simd_width: Int, //
 ](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
@@ -233,7 +252,12 @@ fn shuffle_down[
     Returns:
       The value at the specified offset.
     """
-    return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
+
+    @parameter
+    if is_nvidia_gpu():
+        return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
+    else:
+        return _shuffle_down_amd(mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
