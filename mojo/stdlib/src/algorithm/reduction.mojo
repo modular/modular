@@ -15,7 +15,7 @@ from algorithm import map_reduce
 from collections import OptionalReg
 from math import align_down, ceildiv, iota
 from os import abort
-from sys.info import bitwidthof, simdwidthof, sizeof, triple_is_nvidia_cuda
+from sys.info import bitwidthof, simdwidthof, sizeof, is_nvidia_gpu
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers

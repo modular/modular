@@ -18,7 +18,7 @@ from sys import (
     bitwidthof,
     num_physical_cores,
     simdwidthof,
-    triple_is_nvidia_cuda,
+    is_nvidia_gpu,
 )
 
 from bit import is_power_of_two
@@ -163,7 +163,7 @@ fn vectorize[
     /,
     *,
     size: Int,
-    unroll_factor: Int = size if triple_is_nvidia_cuda() else 1,
+    unroll_factor: Int = size if is_nvidia_gpu() else 1,
 ]():
     """Simplifies SIMD optimized loops by mapping a function across a range from
     0 to `size`, incrementing by `simd_width` at each step. The remainder of
