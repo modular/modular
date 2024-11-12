@@ -24,7 +24,7 @@ from max._tensor_utils import TensorLike
 from collections import InlineArray
 from math import ceil
 from max.tensor import TensorSpec
-from sys import triple_is_nvidia_cuda
+from sys import is_nvidia_gpu
 from sys.intrinsics import strided_load, strided_store
 
 
@@ -88,7 +88,7 @@ struct TensorSlice[
         @always_inline
         @parameter
         fn _indexible() -> Bool:
-            return triple_is_nvidia_cuda() or "cpu" in str(self._ref[]._device)
+            return is_nvidia_gpu() or "cpu" in str(self._ref[]._device)
 
         debug_assert[_indexible](
             "Cannot index into non-CPU Tensor from host",
@@ -111,7 +111,7 @@ struct TensorSlice[
         @always_inline
         @parameter
         fn _is_cpu() -> Bool:
-            return triple_is_nvidia_cuda() or "cpu" in str(self._ref[]._device)
+            return is_nvidia_gpu() or "cpu" in str(self._ref[]._device)
 
         debug_assert[_is_cpu](
             "Cannot index into non-CPU Tensor from host",
