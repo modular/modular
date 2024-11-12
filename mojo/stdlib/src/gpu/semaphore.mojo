@@ -8,7 +8,7 @@
 Implementation of a CTA-wide semaphore for inter-CTA synchronization.
 """
 
-from sys import llvm_intrinsic, triple_is_nvidia_cuda
+from sys import llvm_intrinsic, is_nvidia_gpu
 from sys._assembly import inlined_assembly
 
 from memory import UnsafePointer
@@ -25,7 +25,7 @@ struct Semaphore:
 
     @always_inline
     fn __init__(out self, lock: UnsafePointer[Int32], thread_id: Int):
-        constrained[triple_is_nvidia_cuda(), "target must be cuda"]()
+        constrained[is_nvidia_gpu(), "target must be cuda"]()
         self._lock = lock
         self._wait_thread = thread_id <= 0
         self._state = -1

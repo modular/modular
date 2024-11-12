@@ -6,7 +6,7 @@
 """This module includes NVIDIA GPUs memory operations."""
 
 from collections import OptionalReg
-from sys import alignof, bitwidthof, sizeof, triple_is_nvidia_cuda
+from sys import alignof, bitwidthof, sizeof, is_nvidia_gpu
 from sys._assembly import inlined_assembly
 from sys.intrinsics import _RegisterPackType
 
@@ -450,7 +450,7 @@ fn _load_impl[
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if triple_is_nvidia_cuda() else 1,
+    alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
     constrained[
         ptr.address_space == _GPUAddressSpace.GENERIC,
@@ -570,7 +570,7 @@ fn load[
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if triple_is_nvidia_cuda() else 1,
+    alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
     return _load_impl[
         width=width,
@@ -592,7 +592,7 @@ fn load[
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if triple_is_nvidia_cuda() else 1,
+    alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[type]], offset: OffsetType) -> SIMD[type, width]:
     return _load_impl[
         width=width,

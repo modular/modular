@@ -6,7 +6,7 @@
 """This module includes NVIDIA GPUs id operations."""
 
 from gpu import WARP_SIZE
-from sys import llvm_intrinsic, triple_is_nvidia_cuda
+from sys import llvm_intrinsic, is_nvidia_gpu
 from os import abort
 
 # ===----------------------------------------------------------------------===#
@@ -22,7 +22,7 @@ struct ThreadIdx:
     @staticmethod
     fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
         @parameter
-        if triple_is_nvidia_cuda():
+        if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.tid." + dim
         else:
             return "llvm.amdgcn.workitem.id." + dim
@@ -79,7 +79,7 @@ struct BlockIdx:
     @staticmethod
     fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
         @parameter
-        if triple_is_nvidia_cuda():
+        if is_nvidia_gpu():
             return "llvm.nvvm.read.ptx.sreg.ctaid." + dim
         else:
             return "llvm.amdgcn.workgroup.id." + dim
@@ -145,7 +145,7 @@ struct BlockDim:
     @staticmethod
     fn _dispatch[dim: StringLiteral]() -> UInt:
         @parameter
-        if triple_is_nvidia_cuda():
+        if is_nvidia_gpu():
             alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
             return UInt(
                 int(
@@ -213,7 +213,7 @@ struct GridDim:
     @staticmethod
     fn _dispatch[dim: StringLiteral]() -> UInt:
         @parameter
-        if triple_is_nvidia_cuda():
+        if is_nvidia_gpu():
             alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
             return UInt(
                 int(
@@ -282,7 +282,7 @@ fn lane_id() -> UInt:
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return UInt(
             int(
                 llvm_intrinsic[
@@ -321,7 +321,7 @@ fn sm_id() -> UInt:
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return UInt(
             int(
                 llvm_intrinsic[

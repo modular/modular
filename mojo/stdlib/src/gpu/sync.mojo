@@ -27,7 +27,7 @@ fn barrier():
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         __mlir_op.`nvvm.barrier0`()
     else:
         __mlir_op.`pop.fence`[
@@ -58,7 +58,7 @@ fn syncwarp(mask: Int = -1):
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         __mlir_op.`nvvm.bar.warp.sync`(
             __mlir_op.`index.casts`[_type = __mlir_type.i32](mask.value)
         )
@@ -112,7 +112,7 @@ fn mbarrier[
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         _mbarrier_impl(address)
     else:
         constrained[
@@ -135,7 +135,7 @@ fn mbarrier_init[
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
             shared_mem, num_threads
         )
@@ -159,7 +159,7 @@ fn mbarrier_arrive[
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return llvm_intrinsic["llvm.nvvm.mbarrier.arrive.shared", Int](
             shared_mem
         )
@@ -188,7 +188,7 @@ fn mbarrier_test_wait[
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return llvm_intrinsic["llvm.nvvm.mbarrier.test.wait.shared", Bool](
             shared_mem, state
         )
@@ -215,7 +215,7 @@ fn mbarrier_arrive_expect_tx_shared[
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         __mlir_op.`nvvm.mbarrier.arrive.expect_tx.shared`(
             to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
         )
@@ -247,7 +247,7 @@ fn mbarrier_try_wait_parity_shared[
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         __mlir_op.`nvvm.mbarrier.try_wait.parity.shared`(
             to_llvm_shared_mem_ptr(addr), to_i32(phase), to_i32(ticks)
         )

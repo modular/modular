@@ -116,14 +116,14 @@ fn warpgroup_reg_dealloc[count: Int]():
 @always_inline("nodebug")
 fn clock() -> UInt:
     """Returns a 32-bit unsigned cycle counter."""
-    alias asm = "llvm.nvvm.read.ptx.sreg.clock" if triple_is_nvidia_cuda() else "llvm.amdgcn.s.memtime"
+    alias asm = "llvm.nvvm.read.ptx.sreg.clock" if is_nvidia_gpu() else "llvm.amdgcn.s.memtime"
     return int(llvm_intrinsic[asm, Int32]())
 
 
 @always_inline("nodebug")
 fn clock64() -> UInt:
     """Returns a 64-bit unsigned cycle counter."""
-    alias asm = "llvm.nvvm.read.ptx.sreg.clock64" if triple_is_nvidia_cuda() else "llvm.amdgcn.s.memtime"
+    alias asm = "llvm.nvvm.read.ptx.sreg.clock64" if is_nvidia_gpu() else "llvm.amdgcn.s.memtime"
     return int(llvm_intrinsic[asm, Int64]())
 
 
@@ -137,7 +137,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
     """Performs arbitrary logical operation on 3 inputs."""
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return inlined_assembly[
             "lop3.b32 $0, $1, $2, $3, $4;",
             Int32,
@@ -157,7 +157,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
 @always_inline
 fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
     """Return selected bytes from two 32-bit unsigned integers."""
-    alias asm = "llvm.nvvm.prmt" if triple_is_nvidia_cuda() else "llvm.amdgcn.perm"
+    alias asm = "llvm.nvvm.prmt" if is_nvidia_gpu() else "llvm.amdgcn.perm"
     return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
 
 
@@ -172,7 +172,7 @@ fn mulhi(a: UInt16, b: UInt16) -> UInt32:
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
         ](a, b)
@@ -188,7 +188,7 @@ fn mulhi(a: Int16, b: Int16) -> Int32:
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
         ](a, b)
@@ -204,7 +204,7 @@ fn mulhi(a: UInt32, b: UInt32) -> UInt32:
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
         ](a, b)
@@ -219,7 +219,7 @@ fn mulhi(a: Int32, b: Int32) -> Int32:
     """Calculate the most significant 32 bits of the product of the two Ints."""
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
         ](a, b)
@@ -240,7 +240,7 @@ fn mulwide(a: UInt32, b: UInt32) -> UInt64:
     """
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return inlined_assembly[
             "mul.wide.u32 $0, $1, $2;",
             UInt64,
@@ -258,7 +258,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
     """Calculate the most significant 32 bits of the product of the two Ints."""
 
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return inlined_assembly[
             "mul.wide.s32 $0, $1, $2;",
             Int64,
