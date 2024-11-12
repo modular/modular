@@ -1630,6 +1630,7 @@ struct LayoutTensor[
         coalesce(Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True),
         address_space=address_space,
         element_layout = Self._divide_tiles[*vector_shape]()[0],
+        masked=masked,
     ] as result:
         @parameter
         @always_inline
@@ -1658,47 +1659,48 @@ struct LayoutTensor[
                         "vectorize shape has to be smaller than tensor shape.",
                     ]()
 
+        runtime_shape = RuntimeTuple[
+            result.layout.shape,
+            element_bitwidth = result.layout_bitwidth,
+            unsigned=True,
+        ]()
+        runtime_stride = RuntimeTuple[result.layout.stride, unsigned=True]()
+
+        @parameter
+        if result.masked or not layout.all_dims_known():
+
+            @parameter
+            for i in range(runtime_shape.scalar_length):
+                runtime_shape.value[i] = ceildiv(
+                    self.runtime_layout.shape.value[i], vector_shape[i]
+                )
+                runtime_stride.value[i] = (
+                    self.runtime_layout.stride.value[i] * vector_shape[i]
+                )
+
         @parameter
         if layout.all_dims_known():
-            runtime_shape = RuntimeTuple[
-                result.layout.shape,
-                element_bitwidth = result.layout_bitwidth,
-                unsigned=True,
-            ]()
-            runtime_stride = RuntimeTuple[result.layout.stride, unsigned=True]()
 
-            return __type_of(result)(
-                self.ptr, RuntimeLayout(runtime_shape, runtime_stride)
-            )
+            @parameter
+            if result.masked:
+                return __type_of(result)(
+                    self.ptr,
+                    RuntimeLayout(runtime_shape, runtime_stride),
+                )
+            else:
+                return __type_of(result)(self.ptr)
         else:
             constrained[
                 coalesce(result.element_layout).known_shape(),
                 "Result element layout should have known shape",
             ]()
-            var runtime_shape = RuntimeTuple[
-                result.layout.shape,
-                element_bitwidth = result.layout_bitwidth,
-                unsigned=True,
-            ]()
-            var runtime_stride = RuntimeTuple[
-                result.layout.stride, unsigned=True
-            ]()
 
-            var runtime_element_layout_shape = RuntimeTuple[
+            runtime_element_layout_shape = RuntimeTuple[
                 result.element_layout.shape, unsigned=True
             ]()
-            var runtime_element_layout_stride = RuntimeTuple[
+            runtime_element_layout_stride = RuntimeTuple[
                 result.element_layout.stride, unsigned=True
             ](self.runtime_layout.stride.value)
-
-            @parameter
-            for i in range(runtime_shape.scalar_length):
-                runtime_shape.value[i] = (
-                    self.runtime_layout.shape.value[i] // vector_shape[i]
-                )
-                runtime_stride.value[i] = (
-                    self.runtime_layout.stride.value[i] * vector_shape[i]
-                )
 
             return __type_of(result)(
                 self.ptr,

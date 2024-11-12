@@ -127,6 +127,18 @@ fn test_tile_iterator_masked():
             tensor_iter_2x2_masked += 1
 
 
+fn test_tile_and_vectorize():
+    print("== test_tile_and_vectorize")
+    ptr_3x4_f32 = stack_allocation[12, DType.float32]()
+    tensor_UxU = tb[DType.float32]().row_major(3, 4).view(ptr_3x4_f32)
+    arange(tensor_UxU)
+    print(tensor_UxU)
+    for tile_i in range(2):
+        for tile_j in range(2):
+            print("--tile[", tile_i, ", ", tile_j, "]--")
+            print(tensor_UxU.tile[2, 2](tile_i, tile_j).vectorize[1, 2]())
+
+
 fn main():
     # CHECK-LABEL: test_tile_masked
     # CHECK: --tile[ 0 ,  0 ]--
@@ -393,3 +405,19 @@ fn main():
     # CHECK: ((1, 1):(3, 1))
     # CHECK: 14.0
     test_tile_iterator_masked()
+
+    # CHECK: == test_tile_and_vectorize
+    # CHECK: 0.0 1.0 2.0 3.0
+    # CHECK: 4.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0
+    # CHECK: --tile[ 0 ,  0 ]--
+    # CHECK: [0.0, 1.0]
+    # CHECK: [4.0, 5.0]
+    # CHECK: --tile[ 0 ,  1 ]--
+    # CHECK: [2.0, 3.0]
+    # CHECK: [6.0, 7.0]
+    # CHECK: --tile[ 1 ,  0 ]--
+    # CHECK: [8.0, 9.0]
+    # CHECK: --tile[ 1 ,  1 ]--
+    # CHECK: [10.0, 11.0]
+    test_tile_and_vectorize()
