@@ -768,7 +768,7 @@ fn multistage_gemm_kernel[
                 var dst_idx = 0
 
                 @parameter
-                if c_layout.all_dims_known():
+                if c_gmem_frag.layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
                     dst_idx = c_gmem_frag.runtime_layout(i)
@@ -827,7 +827,7 @@ fn multistage_gemm_kernel[
                 var dst_idx = 0
 
                 @parameter
-                if c_layout.all_dims_known():
+                if c_gmem_frag.layout.all_dims_known():
                     dst_idx = dst_static_idx
                 else:
                     dst_idx = c_gmem_frag.runtime_layout(i)
