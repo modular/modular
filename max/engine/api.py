@@ -194,7 +194,7 @@ class Model:
                     " implementing the dlpack protocol. We do not"
                     f" currently support inputs of the type {type(arg)}."
                 )
-
+            # AIPIPE-115: Need an input tensor <--> device mapping
             if copy_inputs_to_device:
                 tensor = tensor.to(self.device)
             input_impls.append(tensor._impl)
