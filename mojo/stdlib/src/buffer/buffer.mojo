@@ -14,7 +14,7 @@ from buffer import Buffer
 
 from math import align_down, fma, iota
 from pathlib import Path
-from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
+from sys.info import alignof, simdwidthof, sizeof, is_nvidia_gpu
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 
 from buffer.dimlist import Dim, DimList, _make_tuple
@@ -68,7 +68,7 @@ struct Buffer[
 
     @staticmethod
     fn _default_alignment[width: Int = 1]() -> Int:
-        return alignof[SIMD[type, width]]() if triple_is_nvidia_cuda() else 1
+        return alignof[SIMD[type, width]]() if is_nvidia_gpu() else 1
 
     @always_inline
     fn __init__(out self):
@@ -356,7 +356,7 @@ fn _compute_ndbuffer_offset(
         return 0
 
     @parameter
-    if triple_is_nvidia_cuda() and buf.address_space in (
+    if is_nvidia_gpu() and buf.address_space in (
         _GPUAddressSpace.SHARED,
         _GPUAddressSpace.LOCAL,
         _GPUAddressSpace.CONSTANT,
@@ -402,7 +402,7 @@ fn _compute_ndbuffer_offset(
         return 0
 
     @parameter
-    if triple_is_nvidia_cuda() and buf.address_space == _GPUAddressSpace.SHARED:
+    if is_nvidia_gpu() and buf.address_space == _GPUAddressSpace.SHARED:
         var result: Int32 = 0
 
         @parameter
@@ -514,7 +514,7 @@ struct NDBuffer[
 
     @staticmethod
     fn _default_alignment[width: Int = 1]() -> Int:
-        return alignof[SIMD[type, width]]() if triple_is_nvidia_cuda() else 1
+        return alignof[SIMD[type, width]]() if is_nvidia_gpu() else 1
 
     @always_inline
     fn __init__(out self):
