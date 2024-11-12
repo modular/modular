@@ -69,6 +69,10 @@ modular_py_binary(
             "torch_vision_encoder.py",
             src,
         ],
+        args = [
+            "-n",
+            "auto",
+        ],
         data = [
             "//KGEN:CompilerRT",
             "//ModularFramework/tools/mof",
@@ -118,6 +122,7 @@ modular_py_binary(
             requirement("hypothesis"),
             requirement("transformers"),
             requirement("pytest-asyncio"),
+            requirement("pytest-xdist"),
             requirement("huggingface_hub"),
         ],
     )
