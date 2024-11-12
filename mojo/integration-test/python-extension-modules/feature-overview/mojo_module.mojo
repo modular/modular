@@ -261,15 +261,11 @@ fn add_to_int__wrapper(
         "add_to_int", "Int", py_args, 0
     )
 
-    # Stack space to hold a converted value for this argument, if needed.
-    # TODO: It should not be necessary to provide a default value for this.
-    var arg_1_owned: Int = 0
     var arg_1: UnsafePointer[Int] = check_and_get_or_convert_arg[Int](
         "add_to_int",
         "Int",
         py_args,
         1,
-        UnsafePointer.address_of(arg_1_owned),
     )
 
     # Note: Pass an `inout` reference to the wrapped function
