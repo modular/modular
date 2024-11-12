@@ -9,7 +9,7 @@ from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma, ceildiv, align_up
 from sys import (
     alignof,
     sizeof,
-    triple_is_nvidia_cuda,
+    is_nvidia_gpu,
     simdwidthof,
     env_get_string,
     env_get_int,
