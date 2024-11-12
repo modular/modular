@@ -45,7 +45,14 @@ def _traceback_location(frame):
     # For now, it is just storing the source context as the name.
     # Would be good to add a bit more info to recreate the full python trace back.
     code = frame.code_context[frame.index] if frame.code_context else ""
-    col_offset = frame.positions.col_offset if frame.positions else 0
+    # frame.positions does not exist before python 3.11.
+    # Loading it will lead to an attribute error.
+    # Instead set the col_offset to zero in that case.
+    try:
+        col_offset = frame.positions.col_offset
+    except AttributeError:
+        col_offset = 0
+
     return mlir.Location.name(
         code,
         mlir.Location.file(
