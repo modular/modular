@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import exp
-from sys import simdwidthof, triple_is_nvidia_cuda
+from sys import simdwidthof, is_nvidia_gpu
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer

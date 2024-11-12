@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from pathlib import Path
-from sys.info import triple_is_nvidia_cuda
+from sys.info import is_nvidia_gpu
 
 from gpu import *
 from gpu.host import DeviceContext, Dim

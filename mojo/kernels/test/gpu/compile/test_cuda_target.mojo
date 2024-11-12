@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import erf
-from sys.info import simdwidthof, triple_is_nvidia_cuda
+from sys.info import simdwidthof, is_nvidia_gpu
 
 from algorithm.functional import elementwise
 from builtin.io import _printf
@@ -34,14 +34,14 @@ from utils.index import IndexList
 # ===----------------------------------------------------------------------===#
 
 
-# COM: Checks if we can do parameterization on the triple_is_nvidia_cuda check.
+# COM: Checks if we can do parameterization on the is_nvidia_gpu check.
 # COM: In this case the code that would run on CUDA would return 42 and the
 # COM: one that does not would return -1.
 
 
 fn parameterized_on_cuda() -> Int:
     @parameter
-    if triple_is_nvidia_cuda():
+    if is_nvidia_gpu():
         return 42
     else:
         return -1
