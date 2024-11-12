@@ -120,7 +120,7 @@ modular_py_test(
 )
 
 modular_py_test(
-    name = "cuda_tests",
+    name = "gpu-tests",
     size = "large",
     srcs = glob(["gpu_tests/**/*.py"]),
     data = [
@@ -142,6 +142,40 @@ modular_py_test(
         "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
     },
     tags = ["gpu"],
+    target_compatible_with = select({
+        # TODO: Sanitizer libs aren't available when python loads pybind shared libs
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//SDK/lib/API/python/max/engine",
+    ],
+)
+
+modular_py_test(
+    name = "multi-gpu-tests",
+    size = "large",
+    srcs = glob(["multi_gpu_tests/**/*.py"]),
+    data = [
+        "//KGEN:CompilerRT",
+        "//ModularFramework/tools/mof",
+        "//ONNX/tools/onnx:monnx",
+        "//PyTorch:TorchRuntimePlugins",
+        "//PyTorch/tools/torch:mtorch",
+        "//SDK/integration-test:test_user_op",
+        "//SDK/integration-test/API:inputs",
+        "//SDK/integration-test/API:pytest_inputs",
+        "//SDK/test/API/graph/python/pytests/testdata",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "BAZEL": "true",
+        "CUSTOM_OPS_PATH": "$(location //SDK/integration-test:test_user_op)",
+        "MODULAR_PATH": ".",
+        "GRAPH_TESTDATA": "SDK/test/API/graph/python/pytests/testdata",
+    },
+    tags = ["multi-gpu"],
     target_compatible_with = select({
         # TODO: Sanitizer libs aren't available when python loads pybind shared libs
         "//:asan": ["@platforms//:incompatible"],
