@@ -19,7 +19,7 @@ This is a module summary, that
 spills over to the next line."""
 
 from layout.int_tuple import *
-from sys.info import triple_is_nvidia_cuda
+from sys.info import is_nvidia_gpu
 
 
 # CHECK:  "aliases": [
@@ -46,8 +46,8 @@ alias alias_construct = IntTuple(0, 1, 2, 3, 4)
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_cond",
-# CHECK:  "value": "2 if triple_is_nvidia_cuda() else 1"
-alias alias_cond = 2 if triple_is_nvidia_cuda() else 1
+# CHECK:  "value": "2 if is_nvidia_gpu() else 1"
+alias alias_cond = 2 if is_nvidia_gpu() else 1
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_fn",
