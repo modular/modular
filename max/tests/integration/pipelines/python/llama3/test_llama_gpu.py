@@ -89,7 +89,7 @@ def test_llama(model: str, encoding: str, testdata_directory: Path) -> None:
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config(max_length=512)
     tokenizer = TextTokenizer(config)
-    session = InferenceSession(device=config.device)
+    session = InferenceSession(devices=[config.device])
     model, _ = load_llama3_and_kv_manager(config, session)
     actual = run_model(
         model,
@@ -126,7 +126,7 @@ async def test_llama_ragged(model: str, encoding: str) -> None:
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config()
     tokenizer = TextTokenizer(config)
-    session = InferenceSession(device=config.device)
+    session = InferenceSession(devices=[config.device])
     llama, _ = load_llama3_and_kv_manager(config, session)
 
     def request(prompt: str, idx: int) -> TokenGeneratorRequest:

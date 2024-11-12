@@ -24,7 +24,7 @@ def test_load_on_gpu(gpu_session: InferenceSession, mo_model_path: Path):
 def test_execute_gpu(gpu_session: InferenceSession, mo_model_path: Path):
     """Validate that we can execute inputs on GPU."""
     model = gpu_session.load(mo_model_path)
-    cuda = model.device
+    cuda = model.devices[0]
     input_tensor = Tensor.from_numpy(np.ones(5, dtype=np.float32)).to(cuda)
     outputs = model.execute(input_tensor)
     assert len(outputs) == 1
@@ -39,7 +39,7 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
     # of larger tensors. This will be important for things like our kv cache
     # implementation.
     model = gpu_session.load(mo_model_path)
-    cuda = model.device
+    cuda = model.devices[0]
 
     arr = np.arange(0, 20, dtype=np.float32).reshape((2, 10))
     input_tensor = Tensor.from_numpy(arr).to(cuda)[0, :5]
@@ -71,7 +71,7 @@ def test_execute_subtensor(gpu_session: InferenceSession, mo_model_path: Path):
 def test_scalar_inputs(gpu_session: InferenceSession, scalar_input_path: Path):
     # We should be able to execute models with scalar inputs.
     model = gpu_session.load(scalar_input_path)
-    cuda = model.device
+    cuda = model.devices[0]
     scalar = Tensor.scalar(3, dtype=DType.int32, device=cuda)
     vector = np.arange(1, 6, dtype=np.int32)
 
@@ -136,7 +136,7 @@ def test_execute_external_weights_gpu(gpu_session: InferenceSession) -> None:
     )
 
     compiled = gpu_session.load(graph, weights_registry={"foo": weights})
-    cuda = compiled.device
+    cuda = compiled.devices[0]
     input_np = (
         np.random.default_rng(seed=42)
         .standard_normal(num_elems)
@@ -153,7 +153,7 @@ def test_execute_external_weights_gpu(gpu_session: InferenceSession) -> None:
 def test_execute_external_weights_gpu_resident() -> None:
     """Executes a model with external weights already resident on device."""
     cuda = CUDA()
-    gpu_session = InferenceSession(device=cuda)
+    gpu_session = InferenceSession(devices=[cuda])
 
     num_elems = 4096
     weights_np = np.arange(num_elems, dtype=np.float32)
@@ -210,7 +210,7 @@ def test_aliasing_outputs(
     # The device tensor execution path should support models that return the
     # same tensor outputs more than once.
     model = gpu_session.load(aliasing_outputs_path)
-    cuda = model.device
+    cuda = model.devices[0]
 
     arr = np.arange(0, 5, dtype=np.int32)
     input_tensor = Tensor.from_numpy(arr).to(cuda)

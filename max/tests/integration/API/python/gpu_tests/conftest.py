@@ -69,4 +69,4 @@ def aliasing_outputs_path(modular_path: Path) -> Path:
 
 @pytest.fixture(scope="module")
 def gpu_session() -> InferenceSession:
-    return InferenceSession(device=CUDA())
+    return InferenceSession(devices=[CUDA()])
