@@ -83,6 +83,7 @@ def test_hf_architecture():
     config = PipelineConfig(
         architecture=None,
         huggingface_repo_id="replit/replit-code-v1_5-3b",
+        trust_remote_code=True,
     )
 
     assert config.architecture == "MPTForCausalLM"
