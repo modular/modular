@@ -70,9 +70,9 @@ def test_max_graph_export_import_mef(session):
 def test_max_graph_device(session):
     graph = create_test_graph()
     device = CPU()
-    session = InferenceSession(devices=[device])
+    session = InferenceSession(device=device)
     compiled = session.load(graph)
-    assert str(device) == str(compiled.devices[0])
+    assert str(device) == str(compiled.device)
 
 
 def test_identity(session):
