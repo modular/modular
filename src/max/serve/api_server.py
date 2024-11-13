@@ -65,13 +65,15 @@ async def lifespan(
     async with AsyncExitStack() as stack:
         contexts = []
         model_factories = {}
+        model_configs = {}
         for name, state in pipelines.items():
             model_factories[name] = state.model_factory
+            model_configs[name] = state.batched_generator.config
             if isinstance(state, BatchedTokenGeneratorState):
                 contexts.append(state.batched_generator)
 
         await asyncio.gather(*map(stack.enter_async_context, contexts))
-        async with start_model_worker(model_factories, pipelines):
+        async with start_model_worker(model_factories, model_configs):
             yield
 
 
