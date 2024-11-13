@@ -12,7 +12,6 @@ from max.pipelines.interfaces import TokenGenerator
 from max.serve.pipelines.deps import echo_generator_pipeline
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 
 
 @pytest.mark.asyncio
@@ -20,12 +19,7 @@ async def test_model_worker_propagates_exception() -> None:
     """Tests raising in the model worker context manager."""
     with pytest.raises(AssertionError):
         async with start_model_worker(
-            {"test": EchoTokenGenerator},
-            {
-                "test": TokenGeneratorPipelineConfig.continuous_heterogenous(
-                    tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
-                )
-            },
+            {"test": EchoTokenGenerator}, {"test": echo_generator_pipeline()}
         ):
             raise AssertionError
 
@@ -51,11 +45,7 @@ async def test_model_worker_propagates_construction_exception() -> None:
     ):
         async with start_model_worker(
             {"test": MockInvalidTokenGenerator},
-            {
-                "test": TokenGeneratorPipelineConfig.continuous_heterogenous(
-                    tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
-                )
-            },
+            {"test": echo_generator_pipeline()},
         ):
             pass
 
@@ -77,11 +67,7 @@ async def test_model_worker_start_timeout() -> None:
     with pytest.raises(TimeoutError):
         async with start_model_worker(
             {"test": MockSlowTokenGenerator},
-            {
-                "test": TokenGeneratorPipelineConfig.continuous_heterogenous(
-                    tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
-                )
-            },
+            {"test": echo_generator_pipeline()},
             timeout_secs=0.1,
         ):
             pass

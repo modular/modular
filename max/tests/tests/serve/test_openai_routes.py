@@ -46,15 +46,14 @@ def app(fixture_tokenizer):
         settings,
         debug_settings,
         {
-            # TODO(SI-741): Restore tunable_app OpenAI API tests
-            # "tunable_app": BatchedTokenGeneratorState(
-            #     TokenGeneratorPipeline(
-            #         pipeline_config,
-            #         "tunable_app",
-            #         PerformanceFakingTokenGeneratorTokenizer(fixture_tokenizer),
-            #     ),
-            #     functools.partial(get_performance_fake, "no-op"),
-            # ),
+            "tunable_app": BatchedTokenGeneratorState(
+                TokenGeneratorPipeline(
+                    pipeline_config,
+                    "tunable_app",
+                    PerformanceFakingTokenGeneratorTokenizer(fixture_tokenizer),
+                ),
+                functools.partial(get_performance_fake, "no-op"),
+            ),
             "echo_app": BatchedTokenGeneratorState(
                 TokenGeneratorPipeline(
                     pipeline_config,
@@ -68,9 +67,7 @@ def app(fixture_tokenizer):
 
 
 @pytest.mark.asyncio
-# TODO(SI-741): Restore tunable_app OpenAI API tests
-# @pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
-@pytest.mark.parametrize("model_name", ["echo_app"])
+@pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
 async def test_openai_chat_completion(app, model_name):
     async with TestClient(app) as client:
         request_content = "test data"
@@ -92,9 +89,7 @@ async def test_openai_chat_completion(app, model_name):
         assert choice.finish_reason == "stop"
 
 
-# TODO(SI-741): Restore tunable_app OpenAI API tests
-# @pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
-@pytest.mark.parametrize("model_name", ["echo_app"])
+@pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
 def test_openai_chat_completion_concurrent(app, model_name):
     request_contents: dict[int, str] = {}
     responses: dict[int, CreateChatCompletionResponse] = {}
