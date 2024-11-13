@@ -292,7 +292,7 @@ kgen.func @store_with_volatile(%p: !kgen.pointer<scalar<si32>>, %v: !pop.scalar<
 
 // CHECK-LABEL: @offset
 kgen.func @offset(%p: !kgen.pointer<scalar<f32>>, %i: index) -> !kgen.pointer<scalar<f32>> {
-  // CHECK: llvm.getelementptr %{{.*}}[{{.*}}]
+  // CHECK: llvm.getelementptr inbounds %{{.*}}[{{.*}}]
   %0 = pop.offset %p[%i] : !kgen.pointer<scalar<f32>>
   kgen.return %0 : !kgen.pointer<scalar<f32>>
 }

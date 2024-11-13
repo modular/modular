@@ -471,7 +471,7 @@ struct ConvertPOPOffset : public ConvertPOPToLLVMPattern<OffsetOp> {
     auto gep = rewriter.create<LLVM::GEPOp>(
         op.getLoc(), /*resultType=*/adaptor.getPtr().getType(),
         /*basePtrType=*/elementType,
-        /*basePtr=*/adaptor.getPtr(), adaptor.getIndex());
+        /*basePtr=*/adaptor.getPtr(), adaptor.getIndex(), /*inbounds=*/true);
     rewriter.replaceOp(op, gep);
     return success();
   }
