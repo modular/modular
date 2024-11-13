@@ -186,7 +186,7 @@ class Model:
                 tensor = Tensor.from_dlpack(arg)
             elif isinstance(arg, ScalarType):
                 spec = self.input_metadata[idx]
-                tensor = Tensor.scalar(arg, spec.dtype, self.devices[0])
+                tensor = Tensor.scalar(arg, spec.dtype, self.device)
             else:
                 raise ValueError(
                     "All positional arguments must be of the type"
@@ -196,7 +196,7 @@ class Model:
                 )
             # AIPIPE-115: Need an input tensor <--> device mapping
             if copy_inputs_to_device:
-                tensor = tensor.to(self.devices[0])
+                tensor = tensor.to(self.device)
             input_impls.append(tensor._impl)
         results = self._impl.execute_device_tensors(input_impls)
 
@@ -210,7 +210,7 @@ class Model:
             # If an output device is provided and it is different from the
             # device the tensor is already present on, we should copy to
             # that device.
-            if output_device and output_device != self.devices[0]:
+            if output_device and output_device != self.device:
                 wrapped_tensor = wrapped_tensor.copy(output_device)
             processed_results.append(wrapped_tensor)
         return processed_results
@@ -367,11 +367,11 @@ class Model:
         return Signature(parameters=parameters)
 
     @property
-    def devices(self) -> List[Device]:
+    def device(self) -> Device:
         """
         Returns the device object that the session is configured for.
         """
-        return [Device(device) for device in self._impl.devices]
+        return Device(self._impl.device)
 
 
 class TensorSpec:
@@ -610,14 +610,14 @@ class InferenceSession:
     def __init__(
         self,
         num_threads: Optional[int] = None,
-        devices: List[Device] = [CPU()],
+        device: Device = CPU(),
         **kwargs,
     ):
         config: dict[str, Any] = {}
         self.num_threads = num_threads
         if num_threads:
             config["num_threads"] = num_threads
-        config["devices"] = [device._device for device in devices]
+        config["device"] = device._device
         if "custom_extensions" in kwargs:
             config["custom_extensions"] = _process_custom_extensions_objects(
                 kwargs["custom_extensions"]
