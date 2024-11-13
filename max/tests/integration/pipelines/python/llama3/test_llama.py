@@ -28,7 +28,7 @@ def test_llama(model, encoding, testdata_directory):
     config = test_model.build_config()
 
     tokenizer = TextTokenizer(config)
-    session = InferenceSession(devices=[config.device])
+    session = InferenceSession(device=config.device)
     model, _ = load_llama3_and_kv_manager(config, session)
     actual = run_model(
         model,

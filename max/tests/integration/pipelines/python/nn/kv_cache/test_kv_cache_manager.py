@@ -28,7 +28,7 @@ async def test_step():
         max_seq_len=100,
         num_layers=10,
         device=device,
-        session=InferenceSession(devices=[device]),
+        session=InferenceSession(device=device),
     )
 
     # Claim three items
@@ -65,7 +65,7 @@ async def test_claim_and_release():
         max_seq_len=100,
         num_layers=10,
         device=device,
-        session=InferenceSession(devices=[device]),
+        session=InferenceSession(device=device),
     )
 
     # Claim 5 ids
@@ -107,7 +107,7 @@ async def test_fetch_continuous():
         max_seq_len=100,
         num_layers=10,
         device=device,
-        session=InferenceSession(devices=[device]),
+        session=InferenceSession(device=device),
     )
 
     # Raise on fetch when nothing has been claimed

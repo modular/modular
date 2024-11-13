@@ -145,7 +145,7 @@ def test_attention__wrong_mask_dtype():
             DType.uint8,
             CPU(),
             KVCacheStrategy.CONTINUOUS,
-            InferenceSession(devices=[CPU()]),
+            InferenceSession(device=CPU()),
         )
 
 
@@ -158,7 +158,7 @@ def test_attention__wrong_strategy():
             DType.float32,
             CPU(),
             KVCacheStrategy.NAIVE,
-            InferenceSession(devices=[CPU()]),
+            InferenceSession(device=CPU()),
         )
 
 
@@ -178,7 +178,7 @@ def test_attention__valid_logits(session, start_pos, seq_len):
         DType.float32,
         CPU(),
         KVCacheStrategy.CONTINUOUS,
-        InferenceSession(devices=[CPU()]),
+        InferenceSession(device=CPU()),
     )
 
     # Claim seq_ids in cache

@@ -80,7 +80,7 @@ def pipeline_model(
 ) -> Llama3:
     model, _ = load_llama3_and_kv_manager(
         pipeline_config,
-        InferenceSession(devices=[pipeline_config.device]),
+        InferenceSession(device=pipeline_config.device),
     )
     return model
 
