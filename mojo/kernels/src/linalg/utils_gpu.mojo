@@ -95,6 +95,15 @@ struct MatmulConfig[
     # acceptible since the number of partitions is small, typically < 8.
     # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
     # by default to be safe. TODO: set via env var KERN-1002.
+
+    alias split_k_reduction_scheme = env_get_int["SPLITK_REDUCTION_SCHEME", 2]()
+
+    alias OUTPUT_PRECISION = 2
+
+    alias ACCUM_PRECISION = 1
+
+    # TODO: output precision will break the integration test.
+    # alias split_k_reduction_type = Self.accum_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else c_type
     alias split_k_reduction_type = Self.accum_type
 
     fn __init__(

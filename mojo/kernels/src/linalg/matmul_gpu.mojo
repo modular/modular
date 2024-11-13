@@ -819,39 +819,6 @@ fn _matmul_gpu[
 
 @always_inline
 fn split_k_reduce[
-    type: DType,
-    a_shape: DimList,
-    b_shape: DimList,
-](
-    A: NDBuffer[type, 2, a_shape],
-    B: NDBuffer[type, 2, b_shape],
-    num_partition: UInt,
-    ctx: DeviceContext,
-):
-    alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
-    var M = A.dim[0]()
-    var N = A.dim[1]()
-
-    @always_inline
-    @__copy_capture(A, B, N)
-    @parameter
-    fn _reduce[simd_width: Int, rank: Int](idx0: IndexList[rank]):
-        var idx = rebind[IndexList[2]](idx0)
-        var i = idx[0]
-        var j = idx[1]
-
-        var vec = A.load[width=simd_width](idx)
-        for k in range(num_partition):
-            vec += B.load[width=simd_width](i, j + k * N)
-        A.store[width=simd_width](idx, vec)
-
-    elementwise[_reduce, pack_size, target=DEFAULT_GPU_ARCH](
-        IndexList[2](M, N), ctx
-    )
-
-
-@always_inline
-fn split_k_reduce[
     c_type: DType,
     work_space_type: DType,
     c_shape: DimList,
