@@ -1100,6 +1100,11 @@ bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
           llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput);
 } // namespace lld::elf
 
+namespace lld::macho {
+bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
+          llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput);
+}
+
 //===----------------------------------------------------------------------===//
 // emitSharedObject
 //===----------------------------------------------------------------------===//
@@ -1107,9 +1112,12 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
                                                 llvm::raw_pwrite_stream &os) {
   // This function is added to support AMD GPU compilation to hsaco binary.
   // Generalize to all platforms+formats when needed.
-  if (llvm::Triple(options.targetTriple).getObjectFormat() != llvm::Triple::ELF)
-    return Error(
-        "cannot create shared object binary from non-elf target triple");
+  if (llvm::Triple(options.targetTriple).getObjectFormat() !=
+          llvm::Triple::ELF &&
+      llvm::Triple(options.targetTriple).getObjectFormat() !=
+          llvm::Triple::MachO)
+    return Error("cannot create shared object binary from target triple that "
+                 "is not ELF or MachO");
 
   CompilerTimeTraceScope traceScope("emitSharedObj");
 
@@ -1142,17 +1150,47 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
 
   std::string objFilePath = objFileOr->getPath().string();
 
+  auto triple = llvm::Triple(options.targetTriple);
+  std::string version = triple.getOSVersion().getAsString();
+  std::string arch = "unknown";
+  if (triple.getArch() == llvm::Triple::ArchType::aarch64)
+    arch = "arm64";
+  else if (triple.getArch() == llvm::Triple::ArchType::x86_64)
+    arch = "x86_64";
+
   // Call lld to generate a dynamic library.
   // For ELF:
   //  ld.lld -shared tmp.o -o tmp.so
-  SmallVector<const char *> lldArgs = {
-      "ld.lld", "-shared", objFilePath.c_str(), "-o", sharedObjPath.c_str(),
-  };
+  // For MACHO (on MacOS)
+  //  ld64.lld -platform_version macos 16.0 16.0 -arch arm64
+  //           -dylib tmp.o -o tmp.so -undefined dynamic_lookup
+  SmallVector<const char *> lldArgs = [&]() -> SmallVector<const char *> {
+    if (llvm::Triple(options.targetTriple).getObjectFormat() ==
+        llvm::Triple::MachO) {
+      return {"ld64.lld",
+              "-platform_version",
+              "macos",
+              version.c_str(),
+              version.c_str(),
+              "-arch",
+              arch.c_str(),
+              "-undefined",
+              "dynamic_lookup",
+              "-dylib",
+              objFilePath.c_str(),
+              "-o",
+              sharedObjPath.c_str()};
+    }
+    return {"ld.lld", "-shared", objFilePath.c_str(), "-o",
+            sharedObjPath.c_str()};
+  }();
+
   llvm::cl::ResetCommandLineParser();
   std::string linkErrs;
   llvm::raw_string_ostream errStream(linkErrs);
-  lld::Result r = lld::lldMain(lldArgs, llvm::nulls(), errStream,
-                               {{lld::Gnu, lld::elf::link}});
+  lld::Result r = lld::lldMain(
+      lldArgs, llvm::nulls(), errStream,
+      {{lld::Gnu, lld::elf::link}, {lld::Darwin, lld::macho::link}});
   if (r.retCode != 0 || !r.canRunAgain)
     return Error(Twine("failed to generate shared object binary: ") +
                  linkErrs.c_str());
