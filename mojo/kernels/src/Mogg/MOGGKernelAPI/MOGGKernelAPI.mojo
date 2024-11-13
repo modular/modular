@@ -20,7 +20,7 @@ from math import (
     sqrt,
     tanh,
 )
-from nn.concat import concat, _concat_cpu
+from nn.concat import _concat_cpu, test_concat_fusion
 from random import randn, seed
 from sys import llvm_intrinsic
 from sys.info import simdwidthof
@@ -38,6 +38,7 @@ from algorithm import min as reduce_min
 from algorithm import product, sum
 from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
 from utils import StaticTuple
+from utils.static_tuple import _set_array_elem
 from nn.kv_cache import (
     ContiguousKVCacheCollection,
     ContinuousBatchingKVCacheCollection,
@@ -4108,16 +4109,57 @@ fn concat_shape_impl[
     return output_shape
 
 
+# TODO(GRA-1263): Cleanup mo.concat code hack to get the tuple of inputs lambdas.
+@always_inline("nodebug")
+fn statictuple_setitem__[
+    element_type: AnyTrivialRegType,
+    size: Int,
+    index: Int,
+    val: element_type,
+](inout static_tuple: StaticTuple[element_type, size]):
+    constrained[index < size]()
+    var tmp = static_tuple
+    _set_array_elem[index, size, element_type](val, tmp.array)
+    static_tuple = tmp
+
+
+fn get_inputs_lambdas[
+    type: DType,
+    _rank: Int,
+    size: Int,
+    specs: StaticTuple[StaticTensorSpec[type, _rank, *_], size],
+]() -> StaticTuple[
+    fn[
+        width: Int, rank: Int
+    ] (IndexList[rank]) capturing -> SIMD[type, width], size
+] as result:
+    var res = __type_of(result)()
+
+    @parameter
+    for i in range(size):
+
+        @parameter
+        fn input_wrapper[
+            width: Int, rank: Int
+        ](indices: IndexList[rank]) capturing -> SIMD[type, width]:
+            alias in_lambda = specs[i].in_lambda.value()
+            return in_lambda[simd_width=width](
+                rebind[IndexList[_rank]](indices)
+            )
+
+        statictuple_setitem__[res.element_type, res.size, i, input_wrapper](res)
+    return res
+
+
 @compiler.register("mo.concat")
 struct Concat:
+    @compiler.enable_fusion_for("inputs", "output")
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         synchronous: Bool,
         target: StringLiteral,
-        # TODO(GRA-1116): Support input fusion for concat
-        # lambdas_have_fusion: Bool,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         axis: ManagedTensorSlice[rank=1],
@@ -4126,18 +4168,41 @@ struct Concat:
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
         var axis_val = axis._ptr.load(0)
-        var input_bufs = StaticTuple[NDBuffer[type, rank], inputs.size]()
+        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
         @parameter
         for i in range(inputs.size):
-            input_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+            input_shapes[i] = inputs[i]._spec.shape
 
-        alias fusion = None
-        concat[rank, type, synchronous, target, fusion](
-            output_buf,
+        alias inputs_lambdas = get_inputs_lambdas[
+            type,
+            rank,
+            inputs.size,
+            compiler.specsof[type, rank, inputs.size]("inputs"),
+        ]()
+
+        @always_inline
+        @parameter
+        fn epilogue_wrapper[
+            _type: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_type, width]):
+            output._fused_store[width=width](
+                rebind[IndexList[output.rank]](indices),
+                rebind[SIMD[output.type, width]](value),
+            )
+
+        test_concat_fusion[
+            type,
+            rank,
+            synchronous,
+            inputs_lambdas,
+            epilogue_wrapper,
+            target,
+        ](
             int(normalize_neg_index(axis_val, rank)),
-            input_bufs,
-            context=ctx,
+            input_shapes,
+            output_buf,
+            ctx,
         )
 
     @staticmethod
