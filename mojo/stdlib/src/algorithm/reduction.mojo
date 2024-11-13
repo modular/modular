@@ -1144,24 +1144,32 @@ fn max[
 
     @always_inline
     @parameter
-    fn reduce_fn[
-        width: Int
-    ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+    fn input_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
+        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+
+    @always_inline
+    @parameter
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return _max(v1, v2)
 
-    _reduce_generator_wrapper[
-        type,
-        input_fn,
-        output_fn,
-        reduce_fn,
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_impl,
         target=target,
         single_thread_blocking_override=single_thread_blocking_override,
-    ](
-        input_shape,
-        init=Scalar[type].MIN,
-        reduce_dim=reduce_dim,
-        context=context,
-    )
+    ](input_shape, Scalar[type].MIN, reduce_dim, context=context)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1260,24 +1268,32 @@ fn min[
 
     @always_inline
     @parameter
-    fn reduce_fn[
-        width: Int
-    ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+    fn input_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
+        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+
+    @always_inline
+    @parameter
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return _min(v1, v2)
 
-    _reduce_generator_wrapper[
-        type,
-        input_fn,
-        output_fn,
-        reduce_fn,
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_impl,
         target=target,
         single_thread_blocking_override=single_thread_blocking_override,
-    ](
-        input_shape,
-        init=Scalar[type].MAX,
-        reduce_dim=reduce_dim,
-        context=context,
-    )
+    ](input_shape, Scalar[type].MAX, reduce_dim, context=context)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1376,24 +1392,32 @@ fn sum[
 
     @always_inline
     @parameter
-    fn reduce_fn[
-        width: Int
-    ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+    fn input_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
+        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+
+    @always_inline
+    @parameter
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 + v2
 
-    _reduce_generator_wrapper[
-        type,
-        input_fn,
-        output_fn,
-        reduce_fn,
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_impl,
         target=target,
         single_thread_blocking_override=single_thread_blocking_override,
-    ](
-        input_shape,
-        init=Scalar[type](0),
-        reduce_dim=reduce_dim,
-        context=context,
-    )
+    ](input_shape, Scalar[type](0), reduce_dim, context=context)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1492,24 +1516,32 @@ fn product[
 
     @always_inline
     @parameter
-    fn reduce_fn[
-        width: Int
-    ](v1: SIMD[type, width], v2: SIMD[type, width]) -> SIMD[type, width]:
+    fn input_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: IndexList[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_fn[width, rank](idx))
+
+    @always_inline
+    @parameter
+    fn output_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](indices: IndexList[rank], value: SIMD[_type, width]):
+        output_fn[width, rank](indices, rebind[SIMD[type, width]](value))
+
+    @always_inline
+    @parameter
+    fn reduce_impl[
+        ty: DType, width: Int
+    ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
         return v1 * v2
 
-    _reduce_generator_wrapper[
-        type,
-        input_fn,
-        output_fn,
-        reduce_fn,
+    _reduce_generator[
+        input_fn_wrapper,
+        output_fn_wrapper,
+        reduce_impl,
         target=target,
         single_thread_blocking_override=single_thread_blocking_override,
-    ](
-        input_shape,
-        init=Scalar[type](1),
-        reduce_dim=reduce_dim,
-        context=context,
-    )
+    ](input_shape, Scalar[type](1), reduce_dim, context=context)
 
 
 # ===----------------------------------------------------------------------===#
