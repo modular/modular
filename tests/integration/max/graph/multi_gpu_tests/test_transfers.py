@@ -10,14 +10,12 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import pytest
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Device, Graph, TensorType, ops
 
 
-@pytest.mark.skip("Re-enable when PT-545 is fixed")
 def create_multi_device_graph_with_cpu_io() -> Graph:
     input_type = TensorType(
         dtype=DType.float32, shape=["batch", "channels"], device=Device.CPU()
@@ -36,7 +34,6 @@ def create_multi_device_graph_with_cpu_io() -> Graph:
     return graph
 
 
-@pytest.mark.skip("Re-enable when PT-545 is fixed")
 def test_cpu_io_graph_execution() -> None:
     """Tests multi-device transfers where inputs/outputs are on cpu."""
     graph = create_multi_device_graph_with_cpu_io()
