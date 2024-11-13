@@ -35,6 +35,20 @@ Adds two symbolic tensors.
 Creates a new op node to compute the addition of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
+The following shows an example of the `add()` function with two inputs:
+
+.. code-block:: python
+
+    def add_graph():
+        input_type = TensorType(dtype=DType.float32, shape=(2,))
+
+        with Graph("add_graph", input_types=(input_type, input_type)) as graph:
+            x = graph.inputs[0]
+            y = graph.inputs[1]
+
+            out = ops.add(x, y)
+            graph.output(out)
+
 -
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted according
         to the dtype promotion rules before the operation.
@@ -93,6 +107,15 @@ Computes the elementwise maximum of two symbolic tensors.
 Creates a new op node to compute the maximum of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
+.. code-block:: python
+
+    def maximum_graph():
+        input_type = TensorType(dtype=DType.float32, shape=(2,))
+
+        with Graph("maximum_graph", input_types=(input_type, input_type)) as graph:
+            out = ops.max(graph.inputs[0], graph.inputs[1])
+            graph.output(out)
+
 -
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
@@ -120,6 +143,15 @@ Computes the elementwise minimum of two symbolic tensors.
 
 Creates a new op node to compute the minimum of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
+
+.. code-block:: python
+
+    def min_graph():
+        input_type = TensorType(dtype=DType.float32, shape=(2,))
+
+        with Graph("min_graph", input_types=(input_type, input_type)) as graph:
+            out = ops.min(graph.inputs[0], graph.inputs[1])
+            graph.output(out)
 
 -
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
@@ -233,6 +265,18 @@ Computes the elementwise subtraction of two symbolic tensors.
 Creates a new op node to compute the subtraction of two symbol tensor values
 and adds it to the graph, returning the symbolic result.
 
+.. code-block:: python
+
+    def sub_graph():
+        input_type = TensorType(dtype=DType.float32, shape=(2,))
+
+        with Graph("sub_graph", input_types=(input_type, input_type)) as graph:
+            x = graph.inputs[0]  # Minuend (number being subtracted from)
+            y = graph.inputs[1]  # Subtrahend (number being subtracted)
+
+            out = ops.sub(x, y)
+            graph.output(out)
+
 -
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
@@ -261,6 +305,18 @@ Computes the elementwise equality comparison between two symbolic tensors.
 Creates a new op node to compute the equality comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
 
+.. code-block:: python
+
+    def equal_graph():
+        input_type = TensorType(dtype=DType.float32, shape=(3,))
+
+        with Graph("equal_graph", input_types=(input_type, input_type)) as graph:
+            x = graph.inputs[0]  # First input
+            y = graph.inputs[1]  # Second input
+
+            out = ops.equal(x, y)
+            graph.output(out)
+
 -
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
       according to the dtype promotion rules before the operation.
@@ -288,6 +344,19 @@ Computes the elementwise greater than comparison between two symbolic tensors.
 
 Creates a new op node to compute the greater than comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
+
+
+.. code-block:: python
+
+    def greater_than_graph():
+        input_type = TensorType(dtype=DType.float32, shape=(2,))
+
+        with Graph("greater_graph", input_types=(input_type, input_type)) as graph:
+            x = graph.inputs[0]  # Left hand side
+            y = graph.inputs[1]  # Right hand side
+
+            out = ops.greater(x, y)
+            graph.output(out)
 
 -
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
@@ -344,6 +413,19 @@ Computes the elementwise inequality comparison between two symbolic tensors.
 
 Creates a new op node to compute the inequality comparison of two symbol
 tensor values and adds it to the graph, returning the symbolic result.
+
+
+.. code-block:: python
+
+    def not_equal_graph():
+        input_type = TensorType(dtype=DType.float32, shape=(2,))
+
+        with Graph("not_equal_graph", input_types=(input_type, input_type)) as graph:
+            x = graph.inputs[0]  # Left hand side
+            y = graph.inputs[1]  # Right hand side
+
+            out = ops.not_equal(x, y)
+            graph.output(out)
 
 -
     - If ``lhs`` and ``rhs`` have different dtypes, they will be promoted
@@ -458,6 +540,19 @@ Computes the elementwise absolute value of a symbolic tensor.
 
 Creates a new op node to compute the elementwise absolute value of a
 symbolic tensor and adds it to the graph, returning the symbolic result.
+
+The following demonstrates how to compute the absolute value using the :obj:`abs()` function:
+
+.. code-block:: python
+
+    def abs_graph():
+        input_type = TensorType(dtype=DType.float32, shape=(2,))
+
+        with Graph("abs_graph", input_types=(input_type,)) as graph:
+            x = graph.inputs[0]
+
+            out = ops.abs(x)
+            graph.output(out)
 
 Args:
     value: The symbolic tensor to use as the input to the absolute value
@@ -730,8 +825,21 @@ round = _elementwise_unary(rmo.mo_round)
 """
 Computes the elementwise round of a symbolic tensor.
 
+
 Creates a new op node to compute the elementwise round of a
 symbolic tensor and adds it to the graph, returning the symbolic result.
+
+For example, if the model has one input tensor:
+
+.. code-block:: python
+
+    def round_graph():
+        input_type = TensorType(dtype=DType.float32, shape=(4,))
+
+        with Graph("round_graph_example", input_types=(input_type,)) as graph:
+            x = graph.inputs[0]
+            out = ops.round(x)
+            graph.output(out)
 
 Args:
     value: The symbolic tensor to use as the input to the round
