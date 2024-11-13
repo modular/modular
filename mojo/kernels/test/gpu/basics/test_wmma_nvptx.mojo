@@ -72,12 +72,12 @@ def test_SM80_m16n8k8_F32TF32TF32F32_TN():
 
 
 fn SM80_m16n8k32_F8E4M3F8E4M_TN(
-    a: SIMD[DType.float8e4m3, 4],
-    b: SIMD[DType.float8e4m3, 2],
+    a: SIMD[DType.float8e4m3, 16],
+    b: SIMD[DType.float8e4m3, 8],
     c: SIMD[DType.float32, 4],
 ) -> SIMD[DType.float32, 4]:
     var d = SIMD[DType.float32, 4]()
-    mma(d, a, b.join(b), c)
+    mma(d, a, b, c)
     return d
 
 

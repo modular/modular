@@ -15,8 +15,8 @@ from builtin.io import _printf
 
 
 fn mma_sync_16x8x32_E4M3():
-    a = SIMD[DType.float8e4m3, 4](1.0)
-    b = SIMD[DType.float8e4m3, 2](2.0)
+    a = SIMD[DType.float8e4m3, 16](1.0)
+    b = SIMD[DType.float8e4m3, 8](2.0)
     c = SIMD[DType.float32, 4](0.0)
     d = SIMD[DType.float32, 4](0.0)
     mma(d, a, b, c)
@@ -44,8 +44,8 @@ def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext):
 
 
 fn mma_sync_16x8x32_E4M2():
-    a = SIMD[DType.float8e5m2, 4](2.0)
-    b = SIMD[DType.float8e5m2, 2](3.0)
+    a = SIMD[DType.float8e5m2, 16](2.0)
+    b = SIMD[DType.float8e5m2, 8](3.0)
     c = SIMD[DType.float32, 4](0.0)
     d = SIMD[DType.float32, 4](0.0)
     mma(d, a, b, c)
