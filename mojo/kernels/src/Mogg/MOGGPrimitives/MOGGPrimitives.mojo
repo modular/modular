@@ -145,11 +145,10 @@ fn byte_buffer_alloc[
 
 @register_internal("builtin.create_errror_async_values_and_destruct_error")
 @always_inline
-fn create_errror_async_values_and_destruct_error[
-    len: Int
-](
+fn create_errror_async_values_and_destruct_error(
     ctx: MojoCallContextPtr,
-    ptr: UnsafePointer[UnsafePointer[NoneType]],
+    async_ptr: UnsafePointer[UnsafePointer[NoneType]],
+    async_len: Int,
     runtime: UnsafePointer[NoneType],
     owned err: Error,
 ):
@@ -157,7 +156,12 @@ fn create_errror_async_values_and_destruct_error[
     var str = err.__str__()
     var strslice = str.as_string_slice()
     external_call["KGEN_CompilerRT_AsyncRT_CreateAsyncs_Error", NoneType](
-        ctx, ptr, len, runtime, strslice.unsafe_ptr(), strslice.byte_length()
+        ctx,
+        async_ptr,
+        async_len,
+        runtime,
+        strslice.unsafe_ptr(),
+        strslice.byte_length(),
     )
 
 
