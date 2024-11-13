@@ -226,7 +226,10 @@ fn _shuffle_down_amd[
     v += lane
     # The address needs to be in bytes
     v *= 4
-    return llvm_intrinsic["llvm.amdgcn.ds.bpermute", Scalar[type]](v, val)
+    var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
+        v, bitcast[DType.int32, 1](val)
+    )
+    return bitcast[type, simd_width](result_packed)
 
 
 @always_inline
