@@ -458,7 +458,7 @@ def main(
     if model_name == "rev-echo":
         model = EchoTokenGenerator()
     elif model_name == "llama3":
-        session = InferenceSession(device=config.device)
+        session = InferenceSession(devices=[config.device])
         model, _ = load_llama3_and_kv_manager(config, session)
     else:
         raise ValueError("invalid model name")

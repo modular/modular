@@ -33,16 +33,16 @@ def create_test_graph_with_transfer() -> Graph:
 def test_explicit_device_compilation() -> None:
     graph = create_test_graph_with_transfer()
     device = CUDA(0)
-    session = InferenceSession(device=device)
+    session = InferenceSession(devices=[device])
     compiled = session.load(graph)
-    assert str(device) == str(compiled.device)
+    assert str(device) == str(compiled.devices[0])
 
 
 def test_explicit_device_execution() -> None:
     graph = create_test_graph_with_transfer()
     host = CPU()
     device = CUDA(0)
-    session = InferenceSession(device=device)
+    session = InferenceSession(devices=[device])
     compiled = session.load(graph)
     a_np = np.ones((1, 1)).astype(np.float32)
     b_np = np.ones((1, 1)).astype(np.float32)

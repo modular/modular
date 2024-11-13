@@ -212,7 +212,7 @@ def main(model, encoding, verbose):
             config = model_encoding.build_config(testdata_directory)
             tokenizer = TextTokenizer(config)
 
-            session = InferenceSession(device=config.device)
+            session = InferenceSession(devices=[config.device])
             llama3, _ = load_llama3_and_kv_manager(config, session)
             results = run_model(llama3, tokenizer, PROMPTS)
 
