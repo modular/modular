@@ -1471,6 +1471,12 @@ static FailureOr<NVVM::WGMMATypesAttr> getMMAType(MLIRContext *ctx, Type type) {
     return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::f32);
   if (type.isTF32())
     return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::tf32);
+  if (type.isSignedInteger(8))
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::s8);
+  if (type.isUnsignedInteger(8))
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::u8);
+  if (type.isSignedInteger(32))
+    return NVVM::WGMMATypesAttr::get(ctx, NVVM::WGMMATypes::s32);
   return failure();
 }
 
