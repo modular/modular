@@ -27,7 +27,7 @@ from max.serve.multiprocessing.worker import (
     register_mp_queue,
     running_workers,
 )
-from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
+from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.scheduler.queues import (
     STOP_STREAM,
     Batch,
@@ -59,21 +59,20 @@ async def run_model_worker(
 
 async def run_model_worker_v2(
     worker: Worker,
-    factories: TokenGeneratorFactoryMap,
-    configs: Mapping[str, TokenGeneratorPipelineConfig],
+    pipelines: Mapping[str, BatchedTokenGeneratorState],
 ):
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
-        worker.executor, model_worker_run_v2_sync, factories, configs
+        worker.executor, model_worker_run_v2_sync, pipelines
     )
 
 
 @asynccontextmanager
 async def start_model_worker(
     factories: TokenGeneratorFactoryMap,
-    configs: Mapping[str, TokenGeneratorPipelineConfig],
+    pipelines: Mapping[str, BatchedTokenGeneratorState],
     name: str = "MODEL_" + str(uuid.uuid4()),
-    timeout_secs: float = 8 * 60.0,
+    timeout_secs: float = 5 * 60.0,
 ):
     """Starts a model worker and associated process.
 
@@ -107,7 +106,7 @@ async def start_model_worker(
     logger.info("Starting worker: %s", name)
     loop = asyncio.get_running_loop()
     worker.task = loop.create_task(
-        run_model_worker_v2(worker, factories, configs),
+        run_model_worker(worker, factories),
         name="model_worker",
     )
     running[name] = worker
@@ -227,8 +226,7 @@ def model_worker_run(factories: Mapping[str, TokenGeneratorFactory]):
 
 
 async def model_worker_run_v2(
-    factories: TokenGeneratorFactoryMap,
-    configs: Mapping[str, TokenGeneratorPipelineConfig],
+    pipelines: Mapping[str, BatchedTokenGeneratorState],
 ):
     try:
         pid = os.getpid()
@@ -246,12 +244,10 @@ async def model_worker_run_v2(
         cancel_queue = queues["CANCEL"]
 
         # Initialize all token generators.
-        assert (
-            len(factories) == 1 and len(configs) == 1
-        ), "We can host only one Pipeline right now"
-        ((_, model_factory),) = factories.items()
-        model = model_factory()
-        ((_, config),) = configs.items()
+        assert len(pipelines) == 1, "We can host only one Pipeline right now"
+        ((_, state),) = pipelines.items()
+        model = state.model_factory()
+        config = state.batched_generator.config
         max_batch_size_tg = config.token_generation.size
         max_forward_steps_tg = config.token_generation.max_forward_steps
         if config.context_encoding:
@@ -340,10 +336,9 @@ async def model_worker_run_v2(
 
 
 def model_worker_run_v2_sync(
-    factories: TokenGeneratorFactoryMap,
-    configs: Mapping[str, TokenGeneratorPipelineConfig],
+    pipelines: Mapping[str, BatchedTokenGeneratorState],
 ):
-    asyncio.run(model_worker_run_v2(factories, configs))
+    asyncio.run(model_worker_run_v2(pipelines))
 
 
 def should_schedule_ce(
