@@ -785,13 +785,14 @@ LogicalResult UnionUnwrapOp::verify() {
 
 static bool isValidInputOperandType(Type type) {
   if (type.isTF32() || type.isBF16() || type.isF16() || type.isFloat8E4M3() ||
-      type.isFloat8E5M2())
+      type.isFloat8E5M2() || type.isSignedInteger(8) ||
+      type.isUnsignedInteger(8))
     return true;
   return false;
 }
 
 static bool isValidOutputOperandType(Type type) {
-  if (type.isF32() || type.isF16())
+  if (type.isF32() || type.isF16() || type.isSignedInteger(32))
     return true;
   return false;
 }
