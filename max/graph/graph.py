@@ -69,9 +69,18 @@ def _location():
     # Remove the call to `inspect.stack()`, the call to `_location()`, and the
     # call to `_add_op()` wrapping this.
     trace_back = trace_back[3:]
+
+    # If this was called dircetly from a script root, python gives us no
+    # location info.
+    if not trace_back:
+        return mlir.Location.unknown()
+
     frame = _traceback_location(trace_back[0])
     stack = [_traceback_location(tb) for tb in trace_back[1:]]
-    return mlir.Location.callsite(frame, stack)
+
+    # If this was called by a function directly called from a script root, we
+    # have no callstack. As such, we need to return only the single frame.
+    return mlir.Location.callsite(frame, stack) if stack else frame
 
 
 # From https://stackoverflow.com/a/76301341

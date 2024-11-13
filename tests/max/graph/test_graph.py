@@ -5,7 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
+import dis
+import inspect
 import sys
+from unittest import mock
 
 import pytest
 from hypothesis import assume, given
@@ -139,6 +142,61 @@ def test_location() -> None:
     assert f"test_location" in str(loc)
     assert f"foo" in str(loc)
     assert f"elided" not in str(loc)
+
+
+def test_location_no_stack() -> None:
+    with mock.patch("inspect.stack") as mock_stack:
+        mock_stack.return_value = []
+        with mlir.Context():
+            loc = graph._location()
+            assert loc == mlir.Location.unknown()
+
+
+def test_location_single_frame() -> None:
+    # Note: `_location` thows away 3 frames: inspect.stack, _location, and _add_op.
+    # As such, a single frame location is generated from a 4 frame stack.
+    with mock.patch("inspect.stack") as mock_stack:
+        frame = inspect.currentframe()
+        assert frame is not None
+
+        mock_stack.return_value = [
+            inspect.FrameInfo(
+                frame=frame,
+                filename="not_used.py",
+                lineno=0,
+                function="throw_away",
+                code_context=None,
+                index=0,
+            ),
+            inspect.FrameInfo(
+                frame=frame,
+                filename="not_used.py",
+                lineno=0,
+                function="throw_away",
+                code_context=None,
+                index=0,
+            ),
+            inspect.FrameInfo(
+                frame=frame,
+                filename="not_used.py",
+                lineno=0,
+                function="throw_away",
+                code_context=None,
+                index=0,
+            ),
+            inspect.FrameInfo(
+                frame=frame,
+                filename="single_frame.py",
+                lineno=0,
+                function="kept",
+                code_context=None,
+                index=0,
+            ),
+        ]
+        with mlir.Context():
+            loc = graph._location()
+            assert "kept" in str(loc)
+            assert "throw_away" not in str(loc)
 
 
 def test_add_op() -> None:
