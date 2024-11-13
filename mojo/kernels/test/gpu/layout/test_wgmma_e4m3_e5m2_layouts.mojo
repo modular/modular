@@ -26,7 +26,6 @@ from layout.fillers import arange
 from layout.int_tuple import to_int
 from layout.layout import print_layout
 from memory import bitcast
-
 from sys.info import _current_arch, _is_sm_8x, _is_sm_9x
 
 
