@@ -16,7 +16,7 @@ from typing import AsyncGenerator, List, Literal, Optional, cast
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.applications import State
 from fastapi.responses import JSONResponse, Response
-from max.pipelines import PreTrainedTokenGeneratorTokenizer
+from max.pipelines import PreTrainedTokenGeneratorTokenizer, TextTokenizer
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
@@ -218,8 +218,9 @@ def build_prompt(
 ) -> str:
     """Build the chat completion prompt."""
     request_prompt = ""
-    if pipeline.tokenizer is not None and isinstance(
-        pipeline.tokenizer, PreTrainedTokenGeneratorTokenizer
+    if pipeline.tokenizer is not None and (
+        isinstance(pipeline.tokenizer, PreTrainedTokenGeneratorTokenizer)
+        or isinstance(pipeline.tokenizer, TextTokenizer)
     ):
         messages = [
             {
@@ -230,7 +231,7 @@ def build_prompt(
         ]
         # TODO: This is being addressed in an upcoming design doc
         # Currently, not all PreTrainedTokenGeneratorTokenizer's use a chat template
-        if completion_request.model == "replit":
+        if "replit" in completion_request.model:
             request_prompt = str(
                 "\n".join([message["content"] for message in messages])
             )
