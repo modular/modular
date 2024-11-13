@@ -94,6 +94,8 @@ async def start_model_worker(
         queues={
             "IN": queues["MODEL_IN"],
             "OUT": queues["MODEL_OUT"],
+            "REQUEST": queues["REQUEST"],
+            "RESPONSE": queues["RESPONSE"],
             "CANCEL": queues["MODEL_CANCEL"],
         },
     )
