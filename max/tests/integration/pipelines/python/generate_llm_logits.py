@@ -29,7 +29,6 @@ import llama3
 import replit
 import replit.config
 import mistral
-import nn.tokenizer
 
 # Tests
 import replit_compat
@@ -192,9 +191,7 @@ class LlamaPipelineOracle(PipelineOracle):
             ),
         )
         tokenizer = TextTokenizer(config)
-        generator = llama3.Llama3TokenGenerator(
-            config, tokenizer.eos, tokenizer.delegate.vocab_size
-        )
+        generator = llama3.Llama3TokenGenerator(config, tokenizer.eos)
         return MaxPipelineAndTokenizer(
             model=generator.model, generator=generator, tokenizer=tokenizer
         )
