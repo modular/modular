@@ -479,7 +479,6 @@ fn wgmma_async[
 ) -> __type_of(c_reg):
     """Performs warp group async Matrix-multiply and accumulate(WGMMA) operation.
     """
-    constrained[a_type == b_type, "Operands type musth match"]()
     var desc_a_value = __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.i64](
         mat_a_desc.desc.value
     )
@@ -537,5 +536,104 @@ fn wgmma_async[
                 layout_b = layout_b.value,
                 _type = __type_of(c_reg.value),
             ](desc_a_value, desc_b_value, c_reg.value)
-
+    elif a_type is DType.float8e4m3 and b_type is DType.float8e4m3:
+        if c_dtype is DType.uint32:
+            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+                shape_m = m.value,
+                shape_n = n.value,
+                shape_k = k.value,
+                type_a = __mlir_attr.`f8E4M3`,
+                type_b = __mlir_attr.`f8E4M3`,
+                type_c = __mlir_attr.`f16`,
+                layout_a = layout_a.value,
+                layout_b = layout_b.value,
+                _type = __type_of(c_reg.value),
+            ](desc_a_value, desc_b_value, c_reg.value)
+        else:
+            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+                shape_m = m.value,
+                shape_n = n.value,
+                shape_k = k.value,
+                type_a = __mlir_attr.`f8E4M3`,
+                type_b = __mlir_attr.`f8E4M3`,
+                type_c = __mlir_attr.`f32`,
+                layout_a = layout_a.value,
+                layout_b = layout_b.value,
+                _type = __type_of(c_reg.value),
+            ](desc_a_value, desc_b_value, c_reg.value)
+    elif a_type is DType.float8e5m2 and b_type is DType.float8e5m2:
+        if c_dtype is DType.uint32:
+            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+                shape_m = m.value,
+                shape_n = n.value,
+                shape_k = k.value,
+                type_a = __mlir_attr.`f8E5M2`,
+                type_b = __mlir_attr.`f8E5M2`,
+                type_c = __mlir_attr.`f16`,
+                layout_a = layout_a.value,
+                layout_b = layout_b.value,
+                _type = __type_of(c_reg.value),
+            ](desc_a_value, desc_b_value, c_reg.value)
+        else:
+            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+                shape_m = m.value,
+                shape_n = n.value,
+                shape_k = k.value,
+                type_a = __mlir_attr.`f8E5M2`,
+                type_b = __mlir_attr.`f8E5M2`,
+                type_c = __mlir_attr.`f32`,
+                layout_a = layout_a.value,
+                layout_b = layout_b.value,
+                _type = __type_of(c_reg.value),
+            ](desc_a_value, desc_b_value, c_reg.value)
+    elif a_type is DType.float8e4m3 and b_type is DType.float8e5m2:
+        if c_dtype is DType.uint32:
+            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+                shape_m = m.value,
+                shape_n = n.value,
+                shape_k = k.value,
+                type_a = __mlir_attr.`f8E4M3`,
+                type_b = __mlir_attr.`f8E5M2`,
+                type_c = __mlir_attr.`f16`,
+                layout_a = layout_a.value,
+                layout_b = layout_b.value,
+                _type = __type_of(c_reg.value),
+            ](desc_a_value, desc_b_value, c_reg.value)
+        else:
+            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+                shape_m = m.value,
+                shape_n = n.value,
+                shape_k = k.value,
+                type_a = __mlir_attr.`f8E4M3`,
+                type_b = __mlir_attr.`f8E5M2`,
+                type_c = __mlir_attr.`f32`,
+                layout_a = layout_a.value,
+                layout_b = layout_b.value,
+                _type = __type_of(c_reg.value),
+            ](desc_a_value, desc_b_value, c_reg.value)
+    elif a_type is DType.float8e5m2 and b_type is DType.float8e4m3:
+        if c_dtype is DType.uint32:
+            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+                shape_m = m.value,
+                shape_n = n.value,
+                shape_k = k.value,
+                type_a = __mlir_attr.`f8E5M2`,
+                type_b = __mlir_attr.`f8E4M3`,
+                type_c = __mlir_attr.`f16`,
+                layout_a = layout_a.value,
+                layout_b = layout_b.value,
+                _type = __type_of(c_reg.value),
+            ](desc_a_value, desc_b_value, c_reg.value)
+        else:
+            return __mlir_op.`pop.nvvm.wgmma.mma_async`[
+                shape_m = m.value,
+                shape_n = n.value,
+                shape_k = k.value,
+                type_a = __mlir_attr.`f8E5M2`,
+                type_b = __mlir_attr.`f8E4M3`,
+                type_c = __mlir_attr.`f32`,
+                layout_a = layout_a.value,
+                layout_b = layout_b.value,
+                _type = __type_of(c_reg.value),
+            ](desc_a_value, desc_b_value, c_reg.value)
     return c_reg
