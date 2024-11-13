@@ -16,7 +16,7 @@ from typing import AsyncGenerator, List, Literal, Optional, cast
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.applications import State
 from fastapi.responses import JSONResponse, Response
-from max.pipelines import PreTrainedTokenGeneratorTokenizer, TextTokenizer
+from max.pipelines import TokenGeneratorTokenizer
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
@@ -217,11 +217,7 @@ def build_prompt(
     completion_request: CreateChatCompletionRequest,
 ) -> str:
     """Build the chat completion prompt."""
-    request_prompt = ""
-    if pipeline.tokenizer is not None and (
-        isinstance(pipeline.tokenizer, PreTrainedTokenGeneratorTokenizer)
-        or isinstance(pipeline.tokenizer, TextTokenizer)
-    ):
+    if isinstance(pipeline.tokenizer, TokenGeneratorTokenizer):
         messages = [
             {
                 "role": message.root.role,
@@ -229,28 +225,13 @@ def build_prompt(
             }
             for message in completion_request.messages
         ]
-        # TODO: This is being addressed in an upcoming design doc
-        # Currently, not all PreTrainedTokenGeneratorTokenizer's use a chat template
-        if "replit" in completion_request.model:
-            request_prompt = str(
-                "\n".join([message["content"] for message in messages])
-            )
-        else:
-            request_prompt = str(
-                pipeline.tokenizer.delegate.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                ) if pipeline.tokenizer.delegate else messages
-            )
-
+        return pipeline.tokenizer.apply_chat_template(messages)
     else:
-        request_prompt = " ".join(
-            [
-                message.root.content
-                for message in completion_request.messages
-                if isinstance(message.root.content, str)
-            ]
+        msg = (
+            "pipeline.tokenizer must implement the TokenGeneratorTokenizer"
+            " protocol."
         )
-    return request_prompt
+        raise ValueError(msg)
 
 
 @router.post("/chat/completions")
