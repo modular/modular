@@ -12,16 +12,25 @@ transformers.models.mllama.modeling_mllama.py as of version 4.45.2.
 """
 
 from __future__ import annotations
+
 import math
+
 import torch
 import torch.nn as nn
-from torch_utils import torch_layer_norm, TorchVisionEncoderMLP
+from torch_utils import (
+    TorchVisionAttention,
+    TorchVisionEncoderMLP,
+    torch_layer_norm,
+)
 
 
 class MllamaVisionEncoderLayer(nn.Module):
     def __init__(
         self,
         eps: float,
+        hidden_size: int,
+        attention_heads: int,
+        attn_weight: torch.Tensor,
         mlp_fc1: torch.Tensor,
         mlp_fc2: torch.Tensor,
         encoder_layernorm_w1: torch.Tensor,
@@ -31,6 +40,11 @@ class MllamaVisionEncoderLayer(nn.Module):
         super().__init__()
 
         self.eps = eps
+        self.self_attn = TorchVisionAttention(
+            attn_weight=attn_weight,
+            hidden_size=hidden_size,
+            attention_heads=attention_heads,
+        )
         self.mlp = TorchVisionEncoderMLP(mlp_fc1, mlp_fc2)
 
         self.encoder_layernorm_w1 = encoder_layernorm_w1
@@ -44,7 +58,7 @@ class MllamaVisionEncoderLayer(nn.Module):
     def forward(
         self,
         hidden_state: torch.Tensor,
-        # attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor,
     ):
         # Self Attention
         residual = hidden_state
@@ -53,10 +67,9 @@ class MllamaVisionEncoderLayer(nn.Module):
             self.eps, hidden_state, self.encoder_layernorm_w1
         )
 
-        # TODO: Marking this as a no-op for now.
-        # hidden_state, attn_weights = self.self_attn(
-        #     hidden_state, attention_mask=attention_mask
-        # )
+        hidden_state, _ = self.self_attn(
+            hidden_state, attention_mask=attention_mask
+        )
         if self.is_gated:
             hidden_state = self.gate_attn.tanh() * hidden_state
         hidden_state = residual + hidden_state
@@ -85,6 +98,9 @@ class MllamaVisionEncoder(nn.Module):
     def __init__(
         self,
         eps: float,
+        hidden_size: int,
+        attention_heads: int,
+        attn_weight,
         mlp_fc1,
         mlp_fc2,
         encoder_layernorm_w1,
@@ -97,6 +113,9 @@ class MllamaVisionEncoder(nn.Module):
             [
                 MllamaVisionEncoderLayer(
                     eps=eps,
+                    hidden_size=hidden_size,
+                    attention_heads=attention_heads,
+                    attn_weight=attn_weight,
                     mlp_fc1=mlp_fc1,
                     mlp_fc2=mlp_fc2,
                     encoder_layernorm_w1=encoder_layernorm_w1,
