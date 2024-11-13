@@ -10,7 +10,7 @@ from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
-from gpu.host import Stream
+from gpu.host.nvidia_cuda import _CUstream_st
 
 from utils import StaticTuple
 
@@ -1384,7 +1384,7 @@ fn cublasLtMatrixLayoutDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixLayoutDestroy",
-        fn (UnsafePointer[MatrixLayout]) raises -> Result,
+        fn (UnsafePointer[MatrixLayout]) -> Result,
     ]()(mat_layout)
 
 
@@ -1413,7 +1413,7 @@ fn cublasLtMatmul(
     algo: UnsafePointer[MatmulAlgorithm],
     workspace: UnsafePointer[NoneType],
     workspace_size_in_bytes: Int,
-    stream: UnsafePointer[Stream],
+    stream: _CUstream_st,
 ) raises -> Result:
     """Execute matrix multiplication (D = alpha * op(A) * op(B) + beta * C).
 
@@ -1445,8 +1445,8 @@ fn cublasLtMatmul(
             UnsafePointer[MatmulAlgorithm],
             UnsafePointer[NoneType],
             Int,
-            UnsafePointer[Stream],
-        ) raises -> Result,
+            _CUstream_st,
+        ) -> Result,
     ]()(
         light_handle,
         compute_desc,
@@ -1476,7 +1476,7 @@ fn cublasLtMatrixTransformDescDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescDestroy",
-        fn (UnsafePointer[Transform]) raises -> Result,
+        fn (UnsafePointer[Transform]) -> Result,
     ]()(transform_desc)
 
 
@@ -1516,7 +1516,7 @@ fn cublasLtMatmulAlgoCapGetAttribute(
             UnsafePointer[NoneType],
             Int,
             UnsafePointer[Int],
-        ) raises -> Result,
+        ) -> Result,
     ]()(algo, attr, buf, size_in_bytes, size_written)
 
 
@@ -1544,7 +1544,7 @@ fn cublasLtMatmulDescSetAttribute(
             cublasLtMatmulDescAttributes_t,
             UnsafePointer[NoneType],
             Int,
-        ) raises -> Result,
+        ) -> Result,
     ]()(matmul_desc, attr, buf, size_in_bytes)
 
 
@@ -1572,7 +1572,7 @@ fn cublasLtMatmulPreferenceSetAttribute(
             Preference,
             UnsafePointer[NoneType],
             Int,
-        ) raises -> Result,
+        ) -> Result,
     ]()(pref, attr, buf, size_in_bytes)
 
 
@@ -1602,7 +1602,7 @@ fn cublasLtMatrixLayoutInit_internal(
             UInt64,
             UInt64,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(mat_layout, size, type, rows, cols, ld)
 
 
@@ -1723,6 +1723,9 @@ struct MatmulAlgorithm:
 
     var data: StaticTuple[UInt64, 8]  # uint64_t data[8]
 
+    fn __init__(inout self):
+        self.data = StaticTuple[UInt64, 8](0)
+
 
 alias cublasLtNumericalImplFlags_t = UInt64
 
@@ -1830,71 +1833,69 @@ fn cublasLtMatmulPreferenceDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceDestroy",
-        fn (UnsafePointer[PreferenceOpaque]) raises -> Result,
+        fn (UnsafePointer[PreferenceOpaque]) -> Result,
     ]()(pref)
 
 
-# fn cublasLtMatmulAlgoGetHeuristic(
-#     light_handle: UnsafePointer[Context],
-#     operation_desc: UnsafePointer[Descriptor],
-#     _adesc: UnsafePointer[MatrixLayout],
-#     _bdesc: UnsafePointer[MatrixLayout],
-#     _cdesc: UnsafePointer[MatrixLayout],
-#     _ddesc: UnsafePointer[MatrixLayout],
-#     preference: UnsafePointer[PreferenceOpaque],
-#     requested_algo_count: Int16,
-#     heuristic_results_array: UNKNOWN,
-#     return_algo_count: UnsafePointer[Int16],
-# ) raises -> Result:
-#     """Query cublasLt heuristic for algorithm appropriate for given use case.
+fn cublasLtMatmulAlgoGetHeuristic(
+    light_handle: UnsafePointer[Context],
+    operation_desc: UnsafePointer[Descriptor],
+    _adesc: UnsafePointer[MatrixLayout],
+    _bdesc: UnsafePointer[MatrixLayout],
+    _cdesc: UnsafePointer[MatrixLayout],
+    _ddesc: UnsafePointer[MatrixLayout],
+    preference: UnsafePointer[PreferenceOpaque],
+    requested_algo_count: Int,
+    heuristic_results_array: UnsafePointer[cublasLtMatmulHeuristicResult_t],
+    return_algo_count: UnsafePointer[Int],
+) raises -> Result:
+    """Query cublasLt heuristic for algorithm appropriate for given use case.
 
-#         lightHandle            UnsafePointer to the allocated cuBLASLt handle for the cuBLASLt
-#                                           context. See cublasLtHandle_t.
-#         operationDesc          Handle to the matrix multiplication descriptor.
-#         Adesc                  Handle to the layout descriptors for matrix A.
-#         Bdesc                  Handle to the layout descriptors for matrix B.
-#         Cdesc                  Handle to the layout descriptors for matrix C.
-#         Ddesc                  Handle to the layout descriptors for matrix D.
-#         preference             UnsafePointer to the structure holding the heuristic search
-#                                           preferences descriptor. See cublasLtMatrixLayout_t.
-#         requestedAlgoCount     Size of heuristicResultsArray (in elements) and requested
-#                                           maximum number of algorithms to return.
-#     \param[in, out] heuristicResultsArray  Output algorithms and associated runtime characteristics,
-#                                           ordered in increasing estimated compute time.
-#         returnAlgoCount        The number of heuristicResultsArray elements written.
+        lightHandle            UnsafePointer to the allocated cuBLASLt handle for the cuBLASLt
+                                          context. See cublasLtHandle_t.
+        operationDesc          Handle to the matrix multiplication descriptor.
+        Adesc                  Handle to the layout descriptors for matrix A.
+        Bdesc                  Handle to the layout descriptors for matrix B.
+        Cdesc                  Handle to the layout descriptors for matrix C.
+        Ddesc                  Handle to the layout descriptors for matrix D.
+        preference             UnsafePointer to the structure holding the heuristic search
+                                          preferences descriptor. See cublasLtMatrixLayout_t.
+        requestedAlgoCount     Size of heuristicResultsArray (in elements) and requested
+                                          maximum number of algorithms to return.
+        returnAlgoCount        The number of heuristicResultsArray elements written.
 
-#     \retval  CUBLAS_STATUS_INVALID_VALUE   if requestedAlgoCount is less or equal to zero
-#     \retval  CUBLAS_STATUS_NOT_SUPPORTED   if no heuristic function available for current configuration
-#     \retval  CUBLAS_STATUS_SUCCESS         if query was successful, inspect
-#                                           heuristicResultsArray[0 to (returnAlgoCount - 1)].state
-#                                           for detail status of results
-#     ."""
-#     return _get_dylib_function[
-#         "cublasLtMatmulAlgoGetHeuristic",
-#         fn (
-#             UnsafePointer[Context],
-#             UnsafePointer[Descriptor],
-#             UnsafePointer[MatrixLayout],
-#             UnsafePointer[MatrixLayout],
-#             UnsafePointer[MatrixLayout],
-#             UnsafePointer[MatrixLayout],
-#             UnsafePointer[PreferenceOpaque],
-#             Int16,
-#             UNKNOWN,
-#             UnsafePointer[Int16],
-#         ) raises -> Result,
-#     ]()(
-#         light_handle,
-#         operation_desc,
-#         _adesc,
-#         _bdesc,
-#         _cdesc,
-#         _ddesc,
-#         preference,
-#         requested_algo_count,
-#         heuristic_results_array,
-#         return_algo_count,
-#     )
+    \retval  CUBLAS_STATUS_INVALID_VALUE   if requestedAlgoCount is less or equal to zero
+    \retval  CUBLAS_STATUS_NOT_SUPPORTED   if no heuristic function available for current configuration
+    \retval  CUBLAS_STATUS_SUCCESS         if query was successful, inspect
+                                          heuristicResultsArray[0 to (returnAlgoCount - 1)].state
+                                          for detail status of results
+    ."""
+    return _get_dylib_function[
+        "cublasLtMatmulAlgoGetHeuristic",
+        fn (
+            UnsafePointer[Context],
+            UnsafePointer[Descriptor],
+            UnsafePointer[MatrixLayout],
+            UnsafePointer[MatrixLayout],
+            UnsafePointer[MatrixLayout],
+            UnsafePointer[MatrixLayout],
+            UnsafePointer[PreferenceOpaque],
+            Int16,
+            UnsafePointer[cublasLtMatmulHeuristicResult_t],
+            UnsafePointer[Int],
+        ) -> Result,
+    ]()(
+        light_handle,
+        operation_desc,
+        _adesc,
+        _bdesc,
+        _cdesc,
+        _ddesc,
+        preference,
+        requested_algo_count,
+        heuristic_results_array,
+        return_algo_count,
+    )
 
 
 @value
@@ -2288,7 +2289,7 @@ fn cublasLtMatmulDescDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulDescDestroy",
-        fn (UnsafePointer[Descriptor]) raises -> Result,
+        fn (UnsafePointer[Descriptor]) -> Result,
     ]()(matmul_desc)
 
 
@@ -2567,7 +2568,7 @@ fn cublasLtMatrixLayoutCreate(
             UInt64,
             UInt64,
             Int64,
-        ) raises -> Result,
+        ) -> Result,
     ]()(mat_layout, type, rows, cols, ld)
 
 
@@ -2638,7 +2639,7 @@ fn cublasLtMatmulDescCreate(
             UnsafePointer[UnsafePointer[Descriptor]],
             ComputeType,
             DataType,
-        ) raises -> Result,
+        ) -> Result,
     ]()(matmul_desc, compute_type, scale_type)
 
 
@@ -2796,7 +2797,7 @@ fn cublasLtMatmulPreferenceCreate(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceCreate",
-        fn (UnsafePointer[UnsafePointer[PreferenceOpaque]],) raises -> Result,
+        fn (UnsafePointer[UnsafePointer[PreferenceOpaque]],) -> Result,
     ]()(pref)
 
 
@@ -2826,6 +2827,13 @@ struct cublasLtMatmulHeuristicResult_t:
     # .
     var wavesCount: Float32
     var reserved: StaticTuple[Int32, 4]
+
+    fn __init__(inout self):
+        self.algo = MatmulAlgorithm()
+        self.workspaceSize = 0
+        self.state = Result.NOT_INITIALIZED
+        self.wavesCount = 0.0
+        self.reserved = StaticTuple[Int32, 4](0)
 
 
 fn cublasLtLoggerSetFile(file: UnsafePointer[NoneType]) raises -> Result:
@@ -2863,7 +2871,7 @@ fn cublasLtMatrixTransform(
     _bdesc: UnsafePointer[MatrixLayout],
     _c: UnsafePointer[NoneType],
     _cdesc: UnsafePointer[MatrixLayout],
-    stream: UnsafePointer[Stream],
+    stream: _CUstream_st,
 ) raises -> Result:
     """Matrix layout conversion helper (C = alpha * op(A) + beta * op(B)).
 
@@ -2891,7 +2899,7 @@ fn cublasLtMatrixTransform(
             UnsafePointer[MatrixLayout],
             UnsafePointer[NoneType],
             UnsafePointer[MatrixLayout],
-            UnsafePointer[Stream],
+            _CUstream_st,
         ) raises -> Result,
     ]()(
         light_handle,

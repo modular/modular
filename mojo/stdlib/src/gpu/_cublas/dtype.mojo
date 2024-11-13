@@ -140,6 +140,10 @@ struct DataType:
             return "R_64U"
         if self == Self.C_64U:
             return "C_64U"
+        if self == Self.R_8F_E4M3:
+            return "R_8F_E4M3"
+        if self == Self.R_8F_E5M2:
+            return "R_8F_E5M2"
 
         return abort[String]("invalid DataType entry")
 
