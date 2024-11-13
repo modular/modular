@@ -3190,6 +3190,7 @@ struct GatherND:
 
 @compiler.register("mo.gather")
 struct Gather:
+    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         synchronous: Bool,
@@ -3206,7 +3207,7 @@ struct Gather:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
-            return input.load[width=width](
+            return input._fused_load[width=width](
                 rebind[IndexList[input.rank]](coords)
             )
 
@@ -3215,7 +3216,7 @@ struct Gather:
         fn indices_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[indices.type, width]:
-            return indices.load[width=width](
+            return indices._fused_load[width=width](
                 rebind[IndexList[indices.rank]](coords)
             )
 
@@ -3224,7 +3225,7 @@ struct Gather:
         fn output_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank], val: SIMD[output.type, width]):
-            output.store[width=width](
+            output._fused_store[width=width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, width]](val),
             )
@@ -3957,6 +3958,7 @@ struct StaticRandomNormal:
 
 @compiler.register("mo.softmax")
 struct Softmax:
+    @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
         target: StringLiteral
@@ -3979,15 +3981,9 @@ struct Softmax:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
-            @parameter
-            if compiler.specsof[output.type, output.rank]("input").in_lambda:
-                return input._fused_load[width=width](
-                    rebind[IndexList[input.rank]](coords)
-                )
-            else:
-                return input.load[width=width](
-                    rebind[IndexList[input.rank]](coords)
-                )
+            return input._fused_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
 
         softmax[
             output.type,
@@ -4006,6 +4002,7 @@ struct Softmax:
 
 @compiler.register("mo.logsoftmax")
 struct LogSoftmax:
+    @compiler.enable_fusion_for("input")
     @staticmethod
     fn execute[
         target: StringLiteral
@@ -4027,15 +4024,9 @@ struct LogSoftmax:
         fn input_fn[
             width: Int, _rank: Int
         ](coords: IndexList[_rank]) -> SIMD[output.type, width]:
-            @parameter
-            if compiler.specsof[output.type, output.rank]("input").in_lambda:
-                return input._fused_load[width=width](
-                    rebind[IndexList[input.rank]](coords)
-                )
-            else:
-                return input.load[width=width](
-                    rebind[IndexList[input.rank]](coords)
-                )
+            return input._fused_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
 
         logsoftmax[
             output.type,
@@ -4374,6 +4365,7 @@ struct SplitOutputShapeHelper:
 
 @compiler.register("mo.conv")
 struct Conv:
+    @compiler.enable_fusion_for("output")
     @staticmethod
     fn execute[
         filter_packed: Bool,
@@ -4395,7 +4387,7 @@ struct Conv:
         fn output_fn[
             _type: DType, _rank: Int, _width: Int
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
-            output.store[width=_width](
+            output._fused_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
                 rebind[SIMD[output.type, _width]](val),
             )
@@ -4868,6 +4860,7 @@ struct WithMAskFusedAttentionCPU:
 
 @compiler.register("no_mask_flash_attention_cpu")
 struct NoMaskFlashAttentionCPU:
+    @compiler.enable_fusion_for("k", "v")
     @staticmethod
     fn execute[
         type: DType,
@@ -4888,14 +4881,14 @@ struct NoMaskFlashAttentionCPU:
         fn k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.type, width]:
-            return k.load[width=width](rebind[IndexList[k.rank]](coords))
+            return k._fused_load[width=width](rebind[IndexList[k.rank]](coords))
 
         @parameter
         @always_inline
         fn v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.type, width]:
-            return v.load[width=width](rebind[IndexList[v.rank]](coords))
+            return v._fused_load[width=width](rebind[IndexList[v.rank]](coords))
 
         @parameter
         @always_inline
@@ -4916,6 +4909,7 @@ struct NoMaskFlashAttentionCPU:
 
 @compiler.register("with_mask_flash_attention_split_kv_cpu")
 struct WithMaskFlashAttentionSplitKVCPU:
+    @compiler.enable_fusion_for("k", "v", "k_cache", "v_cache", "mask")
     @staticmethod
     fn execute[
         type: DType,
@@ -4939,21 +4933,21 @@ struct WithMaskFlashAttentionSplitKVCPU:
         fn k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.type, width]:
-            return k.load[width=width](rebind[IndexList[k.rank]](coords))
+            return k._fused_load[width=width](rebind[IndexList[k.rank]](coords))
 
         @parameter
         @always_inline
         fn v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.type, width]:
-            return v.load[width=width](rebind[IndexList[v.rank]](coords))
+            return v._fused_load[width=width](rebind[IndexList[v.rank]](coords))
 
         @parameter
         @always_inline
         fn k_cache_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k_cache.type, width]:
-            return k_cache.load[width=width](
+            return k_cache._fused_load[width=width](
                 rebind[IndexList[k_cache.rank]](coords)
             )
 
@@ -4962,7 +4956,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         fn v_cache_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v_cache.type, width]:
-            return v_cache.load[width=width](
+            return v_cache._fused_load[width=width](
                 rebind[IndexList[v_cache.rank]](coords)
             )
 
@@ -4971,7 +4965,9 @@ struct WithMaskFlashAttentionSplitKVCPU:
         fn mask_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[mask.type, width]:
-            return mask.load[width=width](rebind[IndexList[mask.rank]](coords))
+            return mask._fused_load[width=width](
+                rebind[IndexList[mask.rank]](coords)
+            )
 
         flash_attention_split_kv[
             k_input_fn,
@@ -4997,6 +4993,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
 
 @compiler.register("with_mask_flash_attention_cpu")
 struct WithMaskFlashAttentionCPU:
+    @compiler.enable_fusion_for("k", "v", "mask")
     @staticmethod
     fn execute[
         type: DType,
@@ -5018,21 +5015,23 @@ struct WithMaskFlashAttentionCPU:
         fn k_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[k.type, width]:
-            return k.load[width=width](rebind[IndexList[k.rank]](coords))
+            return k._fused_load[width=width](rebind[IndexList[k.rank]](coords))
 
         @parameter
         @always_inline
         fn v_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[v.type, width]:
-            return v.load[width=width](rebind[IndexList[v.rank]](coords))
+            return v._fused_load[width=width](rebind[IndexList[v.rank]](coords))
 
         @parameter
         @always_inline
         fn mask_input_fn[
             width: Int, rank: Int
         ](coords: IndexList[rank]) -> SIMD[mask.type, width]:
-            return mask.load[width=width](rebind[IndexList[mask.rank]](coords))
+            return mask._fused_load[width=width](
+                rebind[IndexList[mask.rank]](coords)
+            )
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn,](
             managed_tensor_slice_to_ndbuffer(q),
