@@ -21,13 +21,13 @@ import transformers
 # MAX
 from max import driver
 from max import pipelines
-from max.pipelines import interfaces, TextTokenizer, TextGenerationPipeline
+from max.pipelines import interfaces, TextTokenizer
 from max.pipelines import kv_cache
 
 # Pipelines
 import llama3
+import replit
 import replit.config
-from replit import ReplitModel
 import mistral
 
 # Tests
@@ -274,12 +274,8 @@ class ReplitPipelineOracle(PipelineOracle):
             ).download(),
             trust_remote_code=True,
         )
+        generator = replit.Replit(config)
         tokenizer = TextTokenizer(config)
-        generator = TextGenerationPipeline(
-            pipeline_config=config,
-            pipeline_model=ReplitModel,
-            eos_token_id=tokenizer.eos,
-        )
         return MaxPipelineAndTokenizer(
             # Unlike the other pipelines, replit.Replit is both a model and a
             # generator at the same time.
