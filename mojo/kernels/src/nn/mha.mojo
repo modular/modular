@@ -329,7 +329,7 @@ fn flash_attention[
     target: StringLiteral,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = True,
+    use_warp_shuffle_decoding: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
     output: NDBuffer[_, rank, *_],
@@ -387,7 +387,7 @@ fn flash_attention[
     target: StringLiteral,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = True,
+    use_warp_shuffle_decoding: Bool = False,
     config: MHAConfig = MHAConfig(
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     ),
@@ -717,7 +717,7 @@ fn flash_attention[
     target: StringLiteral,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = True,
+    use_warp_shuffle_decoding: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
     output: NDBuffer[_, rank, *_],
@@ -1842,7 +1842,7 @@ fn mha_decoding[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = True,
+    use_warp_shuffle_decoding: Bool = False,
     ragged: Bool = False,
     block_size_warp_shuffle: Int = 16,
 ](
@@ -1965,7 +1965,7 @@ fn mha_decoding[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = True,
+    use_warp_shuffle_decoding: Bool = False,
     block_size_warp_shuffle: Int = 16,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
