@@ -45,8 +45,7 @@ bool fromJSON(const json::Value &value, KGEN::CompilationOptions &result,
     return false;
   result.relocModel = (llvm::Reloc::Model)kind;
 
-  return o.map("enableXRayInstrumentation", result.enableXRayInstrumentation) &&
-         o.map("targetTriple", result.targetTriple) &&
+  return o.map("targetTriple", result.targetTriple) &&
          o.map("targetCpu", result.targetCpu) &&
          o.map("targetFeatures", result.targetFeatures) &&
          o.map("saveTempsPrefix", result.saveTempsPrefix) &&
@@ -61,7 +60,6 @@ json::Value toJSON(const KGEN::CompilationOptions &value) {
       {"optimizationLevel", value.optimizationLevel},
       {"debugLevel", static_cast<int64_t>(value.debugLevel)},
       {"debugAtLevel", static_cast<std::optional<int64_t>>(value.debugAtLevel)},
-      {"enableXRayInstrumentation", value.enableXRayInstrumentation},
       {"targetTriple", value.targetTriple},
       {"targetCpu", value.targetCpu},
       {"targetFeatures", value.targetFeatures},

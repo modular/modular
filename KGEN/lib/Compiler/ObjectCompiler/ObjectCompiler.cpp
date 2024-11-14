@@ -512,20 +512,18 @@ KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
 // lowerAllFuncsToLLVM
 //===----------------------------------------------------------------------===//
 
-/// If requested, attach sanitizer/XRay/etc. instrumentations to the given
+/// If requested, attach sanitizer, etc. instrumentations to the given
 /// module.
 /// TODO: Eventually we should explore attaching this information at a higher
 /// level of the stack.
 static void attachInstrumentationAttributes(llvm::Module &module,
                                             const CompilationOptions &options) {
-  if (!options.enableXRayInstrumentation && !options.sanitizers)
+  if (!options.sanitizers)
     return;
 
   for (llvm::Function &f : module.functions()) {
     if (f.isDeclaration())
       continue;
-    if (options.enableXRayInstrumentation)
-      f.addFnAttr("function-instrument", "xray-always");
     if (options.sanitizers.has(Sanitizers::kAddress))
       f.addFnAttr(llvm::Attribute::SanitizeAddress);
     if (options.sanitizers.has(Sanitizers::kThread))

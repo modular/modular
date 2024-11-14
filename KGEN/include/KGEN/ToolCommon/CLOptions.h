@@ -87,8 +87,6 @@ public:
 
   std::string stripFilePrefix;
 
-  bool enableXRayInstrumentation{false};
-
   SmallVector<std::string> includePaths;
 
   SmallVector<std::string> defines;
@@ -139,8 +137,8 @@ public:
     if (debugAtLevel != CompilationOptions::kDebugUnset)
       debugAt = debugAtLevel;
     return CompilationOptions(optLevel, debugInfoLevel, debugAt,
-                              sanitizerOptions, enableXRayInstrumentation,
-                              targetTriple, targetCpu, targetFeatures);
+                              sanitizerOptions, targetTriple, targetCpu,
+                              targetFeatures);
   }
 
   bool optLevel0{false};
@@ -206,12 +204,6 @@ private:
       llvm::cl::desc(
           "Strip this prefix from filenames used for diagnostics & debugging."),
       llvm::cl::location(options.stripFilePrefix),
-      llvm::cl::cat(KGENOptionsCategory)};
-
-  M::cl::MOpt<bool, true> enableXRayInstrumentation{
-      "xray-instrument",
-      cl::desc("Enable XRay instrumentation for the generated code."),
-      llvm::cl::location(options.enableXRayInstrumentation),
       llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MListOpt<std::string, SmallVector<std::string>> includePaths{
