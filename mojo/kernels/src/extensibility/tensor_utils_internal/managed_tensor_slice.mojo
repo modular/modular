@@ -54,14 +54,17 @@ struct ManagedTensorSlice[
         slicer_spec: RuntimeTensorSpec[type, rank],
     ):
         @parameter
+        @always_inline
         fn start_fn(slice: Slice) -> Int:
             return slice.start.value()
 
         @parameter
+        @always_inline
         fn stop_fn(slice: Slice) -> Int:
             return slice.end.value()
 
         @parameter
+        @always_inline
         fn step_fn(slice: Slice) -> Int:
             return slice.step.or_else(1)
 
@@ -115,6 +118,7 @@ struct ManagedTensorSlice[
         """
         self = Self(ndbuffer.data, ndbuffer.get_shape())
 
+    @always_inline
     fn get_runtime_spec(self) -> RuntimeTensorSpec[type, rank]:
         """Gets the static spec of the slice.
 
@@ -177,9 +181,11 @@ struct ManagedTensorSlice[
         var offset = self._start_offset + _dot_prod(indices, self._strides)
         self._ptr[offset] = val
 
+    @always_inline
     fn spec(self) -> TensorSpec:
         return self._spec.get_tensor_spec()
 
+    @always_inline
     fn dim_size(self, index: Int) -> Int:
         return self._spec.shape[index]
 
@@ -198,6 +204,7 @@ struct ManagedTensorSlice[
 
         return product
 
+    @always_inline
     fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
         return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
 
@@ -387,6 +394,7 @@ struct ManagedTensorSlice[
 
 
 @parameter
+@always_inline
 fn gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
     constrained[
@@ -410,6 +418,7 @@ fn foreach[
     alias simd_width = simdwidthof[tensor.type]()
 
     @parameter
+    @always_inline
     fn elementwise_fn_wrapper[
         width: Int, rank: Int
     ](index: IndexList[rank]) capturing:
@@ -436,6 +445,7 @@ fn foreach[
     alias simd_width = simdwidthof[tensor.type]()
 
     @parameter
+    @always_inline
     fn elementwise_fn_wrapper[
         width: Int, rank: Int
     ](index: IndexList[rank]) capturing:
