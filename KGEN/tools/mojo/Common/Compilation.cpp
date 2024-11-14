@@ -182,7 +182,8 @@ ErrorOrSuccess M::parseTargetOptions(
     // get the target info.
     targetOr = getTargetInfoFor(&ctx, compilationOptions.targetTriple,
                                 compilationOptions.targetCpu,
-                                compilationOptions.targetFeatures);
+                                compilationOptions.targetFeatures,
+                                compilationOptions.targetAccelerator);
   }
   if (targetOr.isError())
     return targetOr.takeError();

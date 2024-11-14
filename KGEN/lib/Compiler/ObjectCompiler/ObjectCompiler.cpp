@@ -830,7 +830,8 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
       }
 
       // Split the module into multiple slices and compile each in parallel.
-      bool isNVPTX = llvm::Triple(options.targetTriple).isNVPTX();
+      [[maybe_unused]] bool isNVPTX =
+          llvm::Triple(options.targetTriple).isNVPTX();
       assert((!isNVPTX || (isNVPTX && emitAssembly)) &&
              "should only emit assembly with NVPTX backend");
 

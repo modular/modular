@@ -134,7 +134,9 @@ struct MojoTypeSystem::Impl {
     auto targetInfoOr = M::getTargetInfoFor(
         &mlirContext, compilationOptions.targetTriple,
         compilationOptions.targetCpu, compilationOptions.targetFeatures,
-        /*tuneCpu=*/"", compilationOptions.relocModel);
+        /*tuneCpu=*/"",
+        /*targetAccelerator=*/compilationOptions.targetAccelerator,
+        compilationOptions.relocModel);
     if (succeeded(targetInfoOr))
       targetInfo = *targetInfoOr;
 

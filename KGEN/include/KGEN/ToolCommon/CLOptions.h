@@ -103,6 +103,8 @@ public:
 
   std::string targetCpu{llvm::sys::getHostCPUName().str()};
 
+  std::string targetAccelerator{""};
+
   std::string targetFeatures{getHostCPUFeatures()};
 
   std::string march;

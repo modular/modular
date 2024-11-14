@@ -347,6 +347,7 @@ void eraseTargetInfo(ModuleOp module);
 ErrorOr<TargetInfoAttr>
 getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
                  StringRef features, StringRef tuneCpu = "",
+                 StringRef acceleratorArch = {},
                  llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_);
 
 /// Returns runtime representation of target info attribute.
