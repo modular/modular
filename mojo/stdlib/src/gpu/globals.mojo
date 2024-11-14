@@ -14,3 +14,5 @@ from sys import warpsize
 
 alias WARP_SIZE = 32
 """The warp size of the NVIDIA hardware."""
+alias WARP_SIZE_AMD = 64
+"""The warp size of the AMD GPU compute hardware."""

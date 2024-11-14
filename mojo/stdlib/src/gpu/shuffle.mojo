@@ -9,11 +9,13 @@ from sys import llvm_intrinsic, is_nvidia_gpu
 from memory import bitcast
 from gpu import lane_id
 
-from .globals import WARP_SIZE
+from .globals import WARP_SIZE, WARP_SIZE_AMD
+
 from .tensor_ops import tc_reduce
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
+alias _WIDTH_MASK_AMD = WARP_SIZE_AMD - 1
 
 # shfl.sync.up.b32 prepares this mask differently from other shuffle intrinsics
 alias _WIDTH_MASK_SHUFFLE_UP = 0
@@ -179,7 +181,14 @@ fn shuffle_up[
     Returns:
       The value at the specified offset.
     """
-    return _shuffle["up", WIDTH_MASK=_WIDTH_MASK_SHUFFLE_UP](mask, val, offset)
+
+    @parameter
+    if is_nvidia_gpu():
+        return _shuffle["up", WIDTH_MASK=_WIDTH_MASK_SHUFFLE_UP](
+            mask, val, offset
+        )
+    else:
+        return _shuffle_up_amd(mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
@@ -216,16 +225,32 @@ fn _shuffle_down_amd[
 ](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
-    alias WARP_SIZE_AMD = 64
-    # FIXME: Use a function to get the warp_size
-    alias _WIDTH_MASK = WARP_SIZE_AMD - 1
     # FIXME: Set the EXECute mask register to the mask
     var lane = lane_id()
     # set the offset to 0 if lane + offset >= WARP_SIZE
-    var v = (lane + offset > _WIDTH_MASK).select(0, offset)
+    var v = (lane + offset > _WIDTH_MASK_AMD).select(0, offset)
     v += lane
     # The address needs to be in bytes
-    v *= 4
+    v <<= 2
+    var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
+        v, bitcast[DType.int32, 1](val)
+    )
+    return bitcast[type, simd_width](result_packed)
+
+
+@always_inline
+fn _shuffle_up_amd[
+    type: DType, simd_width: Int, //
+](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+    type, simd_width
+]:
+    # FIXME: Set the EXECute mask register to the mask
+    var lane: Int32 = lane_id()
+    var t0 = lane - offset.cast[DType.int32]()
+    var t1 = lane & -WARP_SIZE_AMD
+    var v = (t0 < t1).select(lane, t0)
+    # The address needs to be in bytes
+    v <<= 2
     var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
         v, bitcast[DType.int32, 1](val)
     )
