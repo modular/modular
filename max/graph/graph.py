@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from max import _graph, mlir
+from max._mlir.ir import OpView
 from max.mlir.dialects import mo
 
 from .type import (
@@ -317,7 +318,7 @@ class Graph:
                     # Intentionally suppress extra stack traces from max._mlir.
                 ) from None
 
-        if isinstance(results, mlir.Operation):
+        if isinstance(results, (mlir.Operation, OpView)):
             return []
 
         # Convert op results from  mlir.Value to instances of Value graph-api
