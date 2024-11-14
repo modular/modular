@@ -21,8 +21,8 @@ import {
   readFile,
 } from '../utils/files';
 import { MojoSDKVersion } from './sdkVersion';
-import { findMagicSDKSpec } from './magicSdk';
-import { MojoSDKSpec } from './types';
+import { findMagicSDKSpec, installMagicSDK } from './magicSdk';
+import { Expected, MojoSDKSpec } from './types';
 import { Subject } from 'rxjs';
 
 type NotYetSelectedSDK = {
@@ -97,21 +97,29 @@ export class MojoSDKManager extends DisposableContext {
             'mojo.defaultSDK',
             selectedName,
           );
-          vscode.commands.executeCommand('mojo.extension.restart', selectedSDK);
+          this.activeSDK = { state: 'selected', sdkSpec: selectedSDK };
         }
       }),
     );
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.sdk.reinstall', async () => {
-        const spec = await findMagicSDKSpec(
+        const result = await installMagicSDK(
           /*withLock=*/ false,
           this.extensionContext,
           this.logger,
           this.isNightly,
           /*reinstall=*/ true,
         );
-        if (spec !== undefined) {
-          vscode.commands.executeCommand('mojo.extension.restart');
+        if (
+          this.activeSDK.state === 'selected' &&
+          this.activeSDK.sdkSpec?.kind === 'magic' &&
+          this.activeSDK.errorMessage !== undefined &&
+          result === 'succeeded'
+        ) {
+          this.activeSDK = {
+            state: 'selected',
+            sdkSpec: this.activeSDK.sdkSpec,
+          };
         }
       }),
     );
@@ -122,7 +130,11 @@ export class MojoSDKManager extends DisposableContext {
   ): Promise<Optional<MojoSDK>> {
     const doWork = async () => {
       if (this.activeSDK.state === 'selected') {
-        return this.createSDKAndShowError(this.activeSDK, hideRepeatedErrors);
+        return this.createSDKAndShowError(
+          this.activeSDK,
+          hideRepeatedErrors,
+          /*allowInstallation=*/ false,
+        );
       } else {
         // This is invoked only once per extension activation.
         const sdkSpec = await this.selectSDK();
@@ -130,6 +142,7 @@ export class MojoSDKManager extends DisposableContext {
         const sdk = await this.createSDKAndShowError(
           sdkSelection,
           /*hideRepeatedErrors=*/ false,
+          /*allowInstallation=*/ true,
         );
         this.activeSDK = sdkSelection;
         return sdk;
@@ -144,12 +157,14 @@ export class MojoSDKManager extends DisposableContext {
     section: Optional<string>,
   ): Promise<Optional<MojoSDK>> {
     const hideRepeatedErrors = false;
+    const allowInstallation = false;
 
     const devSDKSpec = await this.findDevSDKSpecFromSubPath(modularHomePath);
     if (devSDKSpec !== undefined) {
       return this.createSDKAndShowError(
         { state: 'selected', sdkSpec: devSDKSpec },
         hideRepeatedErrors,
+        /*allowInstallation=*/ false,
       );
     }
     if (
@@ -157,7 +172,11 @@ export class MojoSDKManager extends DisposableContext {
       this.activeSDK.sdkSpec?.modularHomePath === modularHomePath &&
       this.activeSDK.sdkSpec.section === section
     ) {
-      return this.createSDKAndShowError(this.activeSDK, hideRepeatedErrors);
+      return this.createSDKAndShowError(
+        this.activeSDK,
+        hideRepeatedErrors,
+        allowInstallation,
+      );
     }
     const sdkSpec: MojoSDKSpec = {
       kind: 'custom',
@@ -174,20 +193,25 @@ export class MojoSDKManager extends DisposableContext {
     return this.createSDKAndShowError(
       { state: 'selected', sdkSpec },
       hideRepeatedErrors,
+      allowInstallation,
     );
   }
 
   private async createSDKAndShowError(
     selectedSDK: SelectedSDK,
     hideRepeatedErrors: boolean,
+    allowInstallation: boolean,
   ): Promise<Optional<MojoSDK>> {
-    const result = await this.doCreateSDK(selectedSDK);
-    if (typeof result === 'string') {
-      if (hideRepeatedErrors && selectedSDK.errorMessage === result) {
+    const result = await this.doCreateSDK(selectedSDK, allowInstallation);
+    if (result.errorMessage !== undefined) {
+      if (
+        hideRepeatedErrors &&
+        selectedSDK.errorMessage === result.errorMessage
+      ) {
         return undefined;
       }
-      let errorMessage = result;
-      selectedSDK.errorMessage = result;
+      let errorMessage = result.errorMessage;
+      selectedSDK.errorMessage = result.errorMessage;
 
       if (selectedSDK.sdkSpec?.kind === 'dev') {
         this.showBazelwRunInstallPrompt(
@@ -210,7 +234,7 @@ export class MojoSDKManager extends DisposableContext {
       this.logger.main.logError(errorMessage);
       return undefined;
     }
-    return result;
+    return result.value;
   }
 
   public showBazelwRunInstallPrompt(
@@ -234,15 +258,30 @@ export class MojoSDKManager extends DisposableContext {
 
   private async doCreateSDK(
     selectedSDK: SelectedSDK,
-  ): Promise<MojoSDK | string> {
+    allowInstallation: boolean,
+  ): Promise<Expected<MojoSDK>> {
     const spec = selectedSDK.sdkSpec;
     if (spec === undefined) {
-      return 'The Mojo🔥 development environment was not found.';
+      return {
+        errorMessage: 'The Mojo🔥 development environment was not found.',
+      };
+    }
+    if (selectedSDK.sdkSpec?.kind === 'magic') {
+      if (allowInstallation) {
+        await installMagicSDK(
+          /*withLock=*/ true,
+          this.extensionContext,
+          this.logger,
+          this.isNightly,
+        );
+      }
     }
     const modularConfigPath = path.join(spec.modularHomePath, 'modular.cfg');
     const modularConfigContents = await readFile(modularConfigPath);
     if (modularConfigContents === undefined) {
-      return `The modular config file '${modularConfigPath}' can't be read.`;
+      return {
+        errorMessage: `The modular config file '${modularConfigPath}' can't be read.`,
+      };
     }
     const modularConfig = ini.parse(modularConfigContents);
     this.logger.main.logInfo(
@@ -251,7 +290,9 @@ export class MojoSDKManager extends DisposableContext {
     );
     const mojoConfig = modularConfig[spec.section];
     if (!mojoConfig) {
-      return `The modular config file '${modularConfigPath}' doesn't have the expected section ${spec.section}`;
+      return {
+        errorMessage: `The modular config file '${modularConfigPath}' doesn't have the expected section ${spec.section}`,
+      };
     }
     const sdkConfig = new MojoSDKConfig(
       spec.version,
@@ -259,9 +300,11 @@ export class MojoSDKManager extends DisposableContext {
       mojoConfig,
     );
     if (!sdkConfig) {
-      return `Unable to determine the MAX SDK version.`;
+      return {
+        errorMessage: `Unable to determine the MAX SDK version.`,
+      };
     }
-    return new MojoSDK(sdkConfig, spec.kind, this.logger);
+    return { value: new MojoSDK(sdkConfig, spec.kind, this.logger) };
   }
 
   private async selectSDK(): Promise<Optional<MojoSDKSpec>> {
@@ -316,7 +359,7 @@ export class MojoSDKManager extends DisposableContext {
   private async findAllSDKs(): Promise<MojoSDKSpec[]> {
     // If we're only going to use the release SDK specs, don't bother looking for others.
     if (process.env['MOJO_EXTENSION_FORCE_MAGIC']) {
-      const releaseSDKSpecs = await this.findReleaseSDKSpecs();
+      const releaseSDKSpecs = await this.findMagicSDKSpecs();
       this.logger.main.logDebug(
         'MOJO_EXTENSION_FORCE_MAGIC is set; using release SDK spec(s)',
         releaseSDKSpecs,
@@ -327,7 +370,7 @@ export class MojoSDKManager extends DisposableContext {
     const [devSDKSpecs, releaseSDKSpecs, userProvidedSDKSpecs] =
       await Promise.all([
         this.findDevSDKSpecs(),
-        this.findReleaseSDKSpecs(),
+        this.findMagicSDKSpecs(),
         this.findUserProvidedSDKSpecs(),
       ]);
 
@@ -439,9 +482,8 @@ export class MojoSDKManager extends DisposableContext {
     return spec;
   }
 
-  private async findReleaseSDKSpecs(): Promise<MojoSDKSpec[]> {
+  private async findMagicSDKSpecs(): Promise<MojoSDKSpec[]> {
     const spec = await findMagicSDKSpec(
-      /*withLock=*/ true,
       this.extensionContext,
       this.logger,
       this.isNightly,

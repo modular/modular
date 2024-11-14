@@ -18,6 +18,7 @@ const execFileSync = util.promisify(execFile);
 import { MojoSDKVersion as MaxSDKVersion } from './sdkVersion';
 
 const SDK_INSTALLATION_CANCELLATION_MSG = 'SDK installation cancelled';
+type MagicInstallationResult = 'succeeded' | 'failed' | 'cancelled';
 
 async function downloadFile(
   url: string,
@@ -390,16 +391,16 @@ async function acquireLockIfNeeded(
   return releaseLock;
 }
 
-export async function findMagicSDKSpec(
+export async function installMagicSDK(
   withLock: boolean,
   context: vscode.ExtensionContext,
   logger: Logger,
   isNightly: boolean,
   reinstall: boolean = false,
-): Promise<Optional<MojoSDKSpec>> {
+): Promise<MagicInstallationResult> {
   const downloadSpec = await createDownloadSpec(context, isNightly, logger);
   if (downloadSpec === undefined) {
-    return undefined;
+    return 'failed';
   }
   await mkdirp(downloadSpec.magicDataHome);
 
@@ -429,10 +430,25 @@ export async function findMagicSDKSpec(
     );
   }
   if (!success) {
-    errorMessage = errorMessage ? `\n${errorMessage}.` : '';
+    const displayErrorMessage = errorMessage ? `\n${errorMessage}.` : '';
     vscode.window.showErrorMessage(
-      `Couldn't install the MAX SDK for VS Code.${errorMessage}`,
+      `Couldn't install the MAX SDK for VS Code.${displayErrorMessage}`,
     );
+    if (errorMessage === SDK_INSTALLATION_CANCELLATION_MSG) {
+      return 'cancelled';
+    }
+    return 'failed';
+  }
+  return 'succeeded';
+}
+
+export async function findMagicSDKSpec(
+  context: vscode.ExtensionContext,
+  logger: Logger,
+  isNightly: boolean,
+): Promise<Optional<MojoSDKSpec>> {
+  const downloadSpec = await createDownloadSpec(context, isNightly, logger);
+  if (downloadSpec === undefined) {
     return undefined;
   }
   const modularHomePath = path.join(

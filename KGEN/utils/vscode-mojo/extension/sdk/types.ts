@@ -12,3 +12,12 @@ export type MojoSDKSpec = {
   section: string;
   version: MojoSDKVersion;
 };
+
+export type Expected<T> =
+  | {
+      errorMessage: string;
+    }
+  | {
+      value: T;
+      errorMessage?: undefined;
+    };
