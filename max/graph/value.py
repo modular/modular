@@ -181,6 +181,16 @@ class BufferValue(Value):
 
         return DType(_graph.buffer_type_get_dtype(t))
 
+    @property
+    def rank(self) -> int:
+        """Returns the rank (number of dims) of the buffer."""
+        t = self._mlir_value.type
+        if not _graph.type_is_buffer(t):
+            msg = f"Expected BufferType, got: {t}"
+            raise TypeError(msg)
+
+        return _graph.buffer_type_get_rank(t)
+
     def __repr__(self):
         dtype = self.dtype
         shape = self.shape
