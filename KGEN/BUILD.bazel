@@ -958,7 +958,6 @@ modular_shared_library(
         "//AsyncRT:RuntimeGlobals",
         "//AsyncRT:Support",
         "//Runtime",
-        "//Runtime:CUDA",
         "//Runtime:Tensor",
         "//Support:Base",
         "//Support:Configuration",
