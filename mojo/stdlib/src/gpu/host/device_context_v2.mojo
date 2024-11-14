@@ -684,15 +684,25 @@ struct DeviceContextV2:
         )
         self._handle = result
 
-    fn __copyinit__(out self, existing: Self):
-        # Increment the reference count before copying the handle.
+    fn _retain(self):
+        # Increment the reference count.
         #
         # void AsyncRT_DeviceContext_retain(const DeviceContext *ctx)
         external_call[
             "AsyncRT_DeviceContext_retain",
             NoneType,
             _DeviceContextPtr,
-        ](existing._handle)
+        ](self._handle)
+
+    fn __init__(out self, handle: UnsafePointer[NoneType]):
+        """Create a Mojo DeviceContext from a pointer to an existing C++ object.
+        """
+        self._handle = handle.bitcast[_DeviceContextCpp]()
+        self._retain()
+
+    fn __copyinit__(out self, existing: Self):
+        # Increment the reference count before copying the handle.
+        existing._retain()
         self._handle = existing._handle
 
     fn __moveinit__(out self, owned existing: Self):

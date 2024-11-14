@@ -212,6 +212,13 @@ struct DeviceContextVariant:
         else:
             self._impl = Self.V1(kind, gpu_id)
 
+    fn __init__(out self, handle: UnsafePointer[NoneType]) raises:
+        @parameter
+        if _device_ctx_v2():
+            self._impl = Self.V2(handle)
+        else:
+            raise Error("DeviceContextV1 does not support init from pointer")
+
     fn __copyinit__(out self, existing: Self):
         self._impl = existing._impl
 
