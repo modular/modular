@@ -272,6 +272,7 @@ class ReplitPipelineOracle(PipelineOracle):
             weight_path=replit.config.get_replit_huggingface_file(
                 pipelines.SupportedEncoding[encoding]
             ).download(),
+            trust_remote_code=True,
         )
         generator = replit.Replit(config)
         tokenizer = TextTokenizer(config)
