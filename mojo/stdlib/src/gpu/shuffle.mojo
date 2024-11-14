@@ -16,6 +16,8 @@ from .tensor_ops import tc_reduce
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
 alias _WIDTH_MASK_AMD = WARP_SIZE_AMD - 1
+alias FULL_MASK = 2**WARP_SIZE - 1
+alias FULL_MASK_AMD = 2**WARP_SIZE_AMD - 1
 
 # shfl.sync.up.b32 prepares this mask differently from other shuffle intrinsics
 alias _WIDTH_MASK_SHUFFLE_UP = 0
@@ -33,7 +35,7 @@ fn _shuffle[
     simd_width: Int,
     *,
     WIDTH_MASK: Int32,
-](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     constrained[
@@ -98,13 +100,14 @@ fn shuffle_idx[
     Returns:
       The value from the offset.
     """
-    return shuffle_idx(0xFFFFFFFF, val, offset)
+    alias mask = FULL_MASK if is_nvidia_gpu() else FULL_MASK_AMD
+    return shuffle_idx(mask, val, offset)
 
 
 @always_inline
 fn shuffle_idx[
     type: DType, simd_width: Int, //
-](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     """Copies a value from a source lane to other lanes in a warp.
@@ -155,13 +158,14 @@ fn shuffle_up[
     Returns:
       The value at the specified offset.
     """
-    return shuffle_up(0xFFFFFFFF, val, offset)
+    alias mask = FULL_MASK if is_nvidia_gpu() else FULL_MASK_AMD
+    return shuffle_up(mask, val, offset)
 
 
 @always_inline
 fn shuffle_up[
     type: DType, simd_width: Int, //
-](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     """Copies values from other lanes in the warp.
@@ -216,13 +220,14 @@ fn shuffle_down[
     Returns:
       The value at the specified offset.
     """
-    return shuffle_down(0xFFFFFFFF, val, offset)
+    alias mask = FULL_MASK if is_nvidia_gpu() else FULL_MASK_AMD
+    return shuffle_down(mask, val, offset)
 
 
 @always_inline
 fn _shuffle_down_amd[
     type: DType, simd_width: Int, //
-](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
@@ -241,7 +246,7 @@ fn _shuffle_down_amd[
 @always_inline
 fn _shuffle_up_amd[
     type: DType, simd_width: Int, //
-](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     # FIXME: Set the EXECute mask register to the mask
@@ -260,7 +265,7 @@ fn _shuffle_up_amd[
 @always_inline
 fn shuffle_down[
     type: DType, simd_width: Int, //
-](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     """Copies values from other lanes in the warp.
@@ -313,13 +318,35 @@ fn shuffle_xor[
     Returns:
       The value at the lane based on bitwise XOR of own lane id.
     """
-    return shuffle_xor(0xFFFFFFFF, val, offset)
+    alias mask = FULL_MASK if is_nvidia_gpu() else FULL_MASK_AMD
+    return shuffle_xor(mask, val, offset)
+
+
+@always_inline
+fn _shuffle_xor_amd[
+    type: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+    type, simd_width
+]:
+    # FIXME: Set the EXECute mask register to the mask
+    var lane: UInt32 = lane_id()
+    var t0 = lane ^ offset
+    var t1 = lane & -WARP_SIZE_AMD
+    # This needs to be "add nsw" = add no sign wrap
+    var t2 = t1 + WARP_SIZE_AMD
+    var v = (t0 < t2).select(t0, lane)
+    # The address needs to be in bytes
+    v <<= 2
+    var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
+        v, bitcast[DType.int32, 1](val)
+    )
+    return bitcast[type, simd_width](result_packed)
 
 
 @always_inline
 fn shuffle_xor[
     type: DType, simd_width: Int, //
-](mask: Int, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
     type, simd_width
 ]:
     """Copies values from between lanes (butterfly pattern).
@@ -339,7 +366,12 @@ fn shuffle_xor[
     Returns:
       The value at the lane based on bitwise XOR of own lane id.
     """
-    return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
+
+    @parameter
+    if is_nvidia_gpu():
+        return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
+    else:
+        return _shuffle_xor_amd(mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
