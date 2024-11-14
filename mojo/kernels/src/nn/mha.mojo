@@ -584,13 +584,12 @@ fn flash_attention[
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
                 var shared_mem_bytes = 80 * 1024
-                var num_blocks_y = num_heads
+                alias num_blocks_y = num_heads // group
 
                 alias block_size_warp_shuffle = 16
 
                 @parameter
                 if (not add_attn_mask) and use_warp_shuffle_decoding:
-                    num_blocks_y = num_blocks_y // group
                     alias accum_type = get_accum_type[q.type]()
                     alias num_warps = num_threads // WARP_SIZE
                     shared_mem_bytes = (
@@ -856,13 +855,12 @@ fn flash_attention[
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
                 var shared_mem_bytes = 80 * 1024
-                var num_blocks_y = num_heads
+                alias num_blocks_y = num_heads // group
 
                 alias block_size_warp_shuffle = 16
 
                 @parameter
                 if (not add_attn_mask) and use_warp_shuffle_decoding:
-                    num_blocks_y = num_blocks_y // group
                     alias accum_type = get_accum_type[q.type]()
                     alias num_warps = num_threads // WARP_SIZE
                     shared_mem_bytes = (
@@ -2044,6 +2042,8 @@ fn scale_and_mask_helper[
     mask_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
+    group: Int,
+    mask_rank: Int,
     num_n_mmas: Int,
     WN: Int,
     MMA_N: Int,
@@ -2063,18 +2063,25 @@ fn scale_and_mask_helper[
     mask: mask_t,
     score_mod: score_mod_t,
     kv_tile_start_row: Int,
+    mask_stride: UInt,
 ):
     # Apply mask and scale to mma result. Only the first row (lane 0-3) has
     # meaningful data, other fragments are zero. The mask is an 1D vector.
     # The dimension of mask are assumed dynamic here so still using index calculation.
     # TODO: check if the explicit index calculation can be avoided.
 
-    # For mma output, thread 0-3 are on the first row.
-    if lane >= 4:
+    # For mma output, thread 0-3 are on the first row, 4-7 second row, etc.
+    if lane >= 4 * group:
         return
 
     var batch_cache_valid_length = num_keys - 1
     var warp_offset = warp * WN
+
+    var group_idx = lane // 4
+    var q_head_idx = BlockIdx.y() * group + group_idx
+    var q_head_offset = Int(mask_stride * group_idx) if mask_rank == 4 else 0
+
+    var q_mask_warp_ptr = mask_warp_ptr + q_head_offset
 
     @parameter
     for n_mma in range(Int(num_n_mmas)):
@@ -2083,9 +2090,9 @@ fn scale_and_mask_helper[
         # Current thread's offset mapped in num_keys dim
         var key_offset = warp_offset + frag_offset
         # Current thread's index in current mma tile, e.g. T1 is 2 in 16x8 mma output.
-        var frag_lane_col = int(lane * simd_width)
+        var frag_lane_col = int((lane % 4) * simd_width)
 
-        var mask_frag_ptr = mask_warp_ptr + frag_offset
+        var mask_frag_ptr = q_mask_warp_ptr + frag_offset
 
         @parameter
         if use_mask_tensor:
@@ -2109,7 +2116,7 @@ fn scale_and_mask_helper[
                 p_reg_tile[n_mma, i] = mask.mask(
                     Index(
                         int(BlockIdx.z()),
-                        int(BlockIdx.y()),
+                        int(q_head_idx),
                         int(score_row),
                         int(score_col),
                     ),
@@ -2121,7 +2128,7 @@ fn scale_and_mask_helper[
                     p_reg_tile[n_mma, i] = score_mod.score_mod(
                         Index(
                             int(BlockIdx.z()),
-                            int(BlockIdx.y()),
+                            int(q_head_idx),
                             int(score_row),
                             int(score_col),
                         ),
@@ -2229,7 +2236,7 @@ fn mha_decoding_single_batch[
         circular=True,
     ](k_smem, k_smem_size)
 
-    var head_idx = BlockIdx.y()
+    var kv_head_idx = BlockIdx.y()
 
     alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
     alias MMA_M = mma_shape[0]
@@ -2298,36 +2305,51 @@ fn mha_decoding_single_batch[
     # flash_attention kernels. Once we only have one we can just use
     # max_cache_valid_length + 1.
     var stride = num_keys if max_cache_valid_length == num_keys else max_cache_valid_length + 1
-    var mask_offset = Int(head_idx * stride) if mask_rank == 4 else 0
+    var kv_head_offset = Int(
+        kv_head_idx * group * stride
+    ) if mask_rank == 4 else 0
     var warp_offset = warp_y * WM * num_keys + warp_x * WN
-    var mask_warp_ptr = mask_ptr + Int(mask_offset) + Int(warp_offset)
+    var mask_warp_ptr = mask_ptr + Int(kv_head_offset) + Int(warp_offset)
 
     # Account for group query.
     alias kv_num_heads = num_heads // group
-    var kv_offset = depth * (head_idx // group)
+    var kv_offset = depth * kv_head_idx
 
-    # Load q from global to shared memory. q is a 1D vector of size `depth`.
-    # This is hard coded for depth < warp_size * simd_width
-    # TODO: generalize with layout tensor's masked copy
-    var q_offset = depth * head_idx
+    var q_offset = depth * kv_head_idx * group
 
-    for i in range(tid * simd_size, BM * depth, BlockDim.x() * simd_size):
-        var vec = SIMD[q_type, simd_size](0.0)
-        if i < depth:
-            vec = q_ptr.load[
-                width=simd_size, alignment = alignof[SIMD[q_type, simd_size]]()
-            ](q_offset + i)
-        row, col = divmod(i, depth)
-        chunk_id, in_chunk_id = divmod(col, BK)
-        if i < BM * depth:
-            UnsafePointer[
-                Scalar[q_type],
-                address_space = AddressSpace.SHARED,
-                alignment = alignof[SIMD[q_type, simd_size]](),
-            ](q_smem.address).store[alignment = alignof[__type_of(vec)]()](
-                chunk_id * BM * BK + row * BK + in_chunk_id,
-                vec,
-            )
+    var q_gmem_block = LayoutTensor[
+        q_type,
+        Layout.row_major(group, depth),
+    ](q_ptr + int(q_offset))
+    var q_gmem_iter = q_gmem_block.tiled_iterator[group, BK, axis=1](0, 0)
+
+    # q tile has valid shape q_tile_num_rows x depth
+    # q_tile_num_rows could be less than BM when seqlen % BM != 0
+    var q_tile_num_rows = group
+
+    # load q for group = 1 here because it does not work
+    # inside mma for reasons I don't quite understand
+    # TODO: Check why this is required.
+    @parameter
+    if group == 1:
+        for i in range(tid * simd_size, BM * depth, BlockDim.x() * simd_size):
+            var vec = SIMD[q_type, simd_size](0.0)
+            if i < depth:
+                vec = q_ptr.load[
+                    width=simd_size,
+                    alignment = alignof[SIMD[q_type, simd_size]](),
+                ](q_offset + i)
+            row, col = divmod(i, depth)
+            chunk_id, in_chunk_id = divmod(col, BK)
+            if i < BM * depth:
+                UnsafePointer[
+                    Scalar[q_type],
+                    address_space = AddressSpace.SHARED,
+                    alignment = alignof[SIMD[q_type, simd_size]](),
+                ](q_smem.address).store[alignment = alignof[__type_of(vec)]()](
+                    chunk_id * BM * BK + row * BK + in_chunk_id,
+                    vec,
+                )
 
     # Loop over Key and Value tiles
     for kv_tile_start_row in range(0, num_keys, BN):
@@ -2343,29 +2365,49 @@ fn mha_decoding_single_batch[
         var kv_tile_num_rows = min(BN, num_keys - kv_tile_start_row)
 
         _ = p_reg_tile.fill(0)
+        if kv_tile_start_row == 0 and group != 1:
+            multistage_mma[
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                True,  # transpose_b
+            ](
+                p_reg_tile,
+                # Pass shared memory iterator to hint not loading from global memory.
+                q_gmem_iter,
+                k_gmem_iter,
+                q_smem_iter,
+                k_smem_iter,
+                depth // BK,
+                num_a_rows=int(q_tile_num_rows),
+                num_b_rows=Int(kv_tile_num_rows),
+            )
+        else:
+            multistage_mma[
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                True,  # transpose_b
+            ](
+                p_reg_tile,
+                # Pass shared memory iterator to hint not loading from global memory.
+                q_smem_iter,
+                k_gmem_iter,
+                q_smem_iter,
+                k_smem_iter,
+                depth // BK,
+                num_a_rows=None,
+                num_b_rows=Int(kv_tile_num_rows),
+            )
 
-        multistage_mma[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            num_threads,
-            num_pipeline_stages,
-            True,  # transpose_b
-        ](
-            p_reg_tile,
-            # Pass shared memory iterator to hint not loading from global memory.
-            q_smem_iter,
-            k_gmem_iter,
-            q_smem_iter,
-            k_smem_iter,
-            depth // BK,
-            num_a_rows=None,
-            num_b_rows=Int(kv_tile_num_rows),
-        )
-
-        # Apply scale and mask
         scale_and_mask_helper[
             num_n_mmas=num_n_mmas,
             WN=WN,
@@ -2373,6 +2415,8 @@ fn mha_decoding_single_batch[
             simd_width=p_frag_simdwidth,
             use_mask_tensor=use_mask_tensor,
             use_score_mod=use_score_mod,
+            group=group,
+            mask_rank=mask_rank,
         ](
             p_reg_tile,
             mask_warp_ptr,
@@ -2384,6 +2428,7 @@ fn mha_decoding_single_batch[
             mask,
             score_mod,
             kv_tile_start_row,
+            stride,
         )
         # Increment mask to next BM x BN block.
         mask_warp_ptr += BN
@@ -2462,15 +2507,19 @@ fn mha_decoding_single_batch[
     # Vectorized copy from shared to global memory, during which every 2 FP32
     # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
     # vector and stored using 16B store instruction.
-    var output_gmem_tile = LayoutTensor[output_type, Layout.row_major(depth)](
-        output_ptr + q_offset
-    )
+    var output_gmem_tile = LayoutTensor[
+        output_type, Layout.row_major(depth * group)
+    ](output_ptr + q_offset)
     var output_smem_tile = LayoutTensor[
-        accum_type, Layout.row_major(depth), address_space = AddressSpace.SHARED
+        accum_type,
+        Layout.row_major(depth * group),
+        address_space = AddressSpace.SHARED,
     ](q_smem.bitcast[accum_type]())
 
-    if tid < depth // simd_size:
-        copy_sram_to_dram[thread_layout = Layout.row_major(depth // simd_size)](
+    if tid < (depth // simd_size) * group:
+        copy_sram_to_dram[
+            thread_layout = Layout.row_major((depth // simd_size) * group)
+        ](
             output_gmem_tile.vectorize[simd_size](),
             output_smem_tile.vectorize[simd_size](),
         )
