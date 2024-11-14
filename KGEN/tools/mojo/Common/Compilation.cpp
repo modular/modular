@@ -180,10 +180,10 @@ ErrorOrSuccess M::parseTargetOptions(
   } else {
     // Use the full triple, specific CPU, and manually specified features to
     // get the target info.
-    targetOr = getTargetInfoFor(&ctx, compilationOptions.targetTriple,
-                                compilationOptions.targetCpu,
-                                compilationOptions.targetFeatures,
-                                compilationOptions.targetAccelerator);
+    targetOr = getTargetInfoFor(
+        &ctx, compilationOptions.targetTriple, compilationOptions.targetCpu,
+        compilationOptions.targetFeatures, /*tuneCpu=*/"",
+        /*acceleratorArch=*/compilationOptions.targetAccelerator);
   }
   if (targetOr.isError())
     return targetOr.takeError();

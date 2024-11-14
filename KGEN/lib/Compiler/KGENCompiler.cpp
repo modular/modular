@@ -222,9 +222,10 @@ compilePatterns(OwningOpRef<ModuleOp> module,
 
   // Run the KGEN pipeline, and compile it to an archive.
   KGENCompiler kgenCompiler(*ctx, options);
-  TargetInfoAttr target =
-      *getTargetInfoFor(ctx, llvm::sys::getDefaultTargetTriple(),
-                        llvm::sys::getHostCPUName(), getHostCPUFeatures());
+  TargetInfoAttr target = *getTargetInfoFor(
+      ctx, llvm::sys::getDefaultTargetTriple(), llvm::sys::getHostCPUName(),
+      getHostCPUFeatures(), /*tuneCpu=*/"",
+      /*acceleratorArch=*/options.targetAccelerator);
   if (auto err = kgenCompiler.runElaborationPipeline(
           *module, target, *loadContext(ctx)->get<AsyncRT::Runtime>()))
     return err.takeError();
