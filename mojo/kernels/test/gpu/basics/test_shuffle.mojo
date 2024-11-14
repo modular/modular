@@ -226,7 +226,7 @@ fn _shuffle_xor_launch_helper[
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
     alias constant_add: Scalar[type] = 42.0
-    alias offset = 1
+    alias offset = WARP_SIZE // 2
 
     var host_ptr = UnsafePointer[Scalar[type]].alloc(buffer_size)
 

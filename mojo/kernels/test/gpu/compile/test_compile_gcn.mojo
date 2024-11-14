@@ -9,7 +9,7 @@ from pathlib import Path
 from sys._assembly import inlined_assembly
 
 from gpu import ThreadIdx, BlockDim, GridDim, barrier, lane_id
-from gpu.shuffle import shuffle_down
+from gpu.shuffle import shuffle_down, shuffle_up, shuffle_xor
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_nvptx_target
 from memory import UnsafePointer
@@ -30,6 +30,20 @@ fn kernel_shuffle_down(x: UnsafePointer[UInt32]):
     var mask = UInt(0xFFFFFFFF_FFFFFFFF)
     var offset = x[0]
     x[0] = shuffle_down(mask, val, offset)
+
+
+fn kernel_shuffle_up(x: UnsafePointer[UInt32]):
+    var val = x[0]
+    var mask = UInt(0xFFFFFFFF_FFFFFFFF)
+    var offset = x[0]
+    x[0] = shuffle_up(mask, val, offset)
+
+
+fn kernel_shuffle_xor(x: UnsafePointer[UInt32]):
+    var val = x[0]
+    var mask = UInt(0xFFFFFFFF_FFFFFFFF)
+    var offset = x[0]
+    x[0] = shuffle_xor(mask, val, offset)
 
 
 fn parametric[f: fn (UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
@@ -58,6 +72,37 @@ def test_shuffle_compile():
     print(
         _compile_code_asm[
             kernel_shuffle_down, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
+
+    # CHECK: %3 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
+    # CHECK: %5 = sub i32 %4, %2
+    # CHECK: %6 = and i32 %4, -64
+    # CHECK: %7 = icmp slt i32 %5, %6
+    # CHECK: %8 = select i1 %7, i32 %4, i32 %5
+    # CHECK: %9 = shl i32 %8, 2
+    # CHECK: %10 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %9, i32 %2)
+
+    print(
+        _compile_code_asm[
+            kernel_shuffle_up, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
+
+    # CHECK: %3 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
+    # CHECK: %5 = xor i32 %4, %2
+    # CHECK: %6 = and i32 %4, -64
+    # CHECK: %7 = add i32 %6, 64
+    # CHECK: %8 = icmp ult i32 %5, %7
+    # CHECK: %9 = select i1 %8, i32 %5, i32 %4
+    # CHECK: %10 = shl i32 %9, 2
+    # CHECK: %11 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %10, i32 %2)
+
+    print(
+        _compile_code_asm[
+            kernel_shuffle_xor, target=MI300X_TARGET, emission_kind="llvm-opt"
         ]()
     )
 
