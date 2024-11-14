@@ -37,7 +37,7 @@ def test_compile_code():
     # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
     print(_compile_code_asm[kernel[DType.bfloat16, memory=False]]())
 
-    # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$0], $1;", "l,h,~{memory}"(ptr %0, bfloat %1)
+    # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$1], $0;", "h,l,~{memory}"(bfloat %1, ptr %0)
     # CHECK: tail call bfloat asm sideeffect "ld.acquire.sys.global.u16 $0, [$1];", "=h,l,~{memory}"(ptr %0)
     print(
         _compile_code_asm[
@@ -45,7 +45,7 @@ def test_compile_code():
         ]()
     )
 
-    # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$0], $1;", "l,h"(ptr %0, bfloat %1)
+    # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$1], $0;", "h,l"(bfloat %1, ptr %0)
     # CHECK: tail call bfloat asm sideeffect "ld.acquire.sys.global.u16 $0, [$1];", "=h,l"(ptr %0)
     print(
         _compile_code_asm[
