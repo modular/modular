@@ -5,16 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the gpu host package."""
 
-from .context_v1 import *
-from .cuda_instance_v1 import *
-from .device_v1 import *
-from .device_context_v1 import *
-from .device_context_v2 import *
-from .device_context_variant import *
+from .cache_config import CacheConfig
+from .cache_mode import CacheMode
+from .device_attribute import DeviceAttribute
+from .device_context_variant import (
+    DeviceContext,
+    DeviceBuffer,
+    DeviceFunction,
+    DeviceStream,
+)
 from .dim import *
-from .function_v1 import *
-from .memory_v1 import *
-from .module_v1 import *
-from .result_v1 import *
-from .stream_v1 import *
-from .sync_v1 import *
+from .func_attribute import FuncAttribute, Attribute
+from .launch_attribute import LaunchAttribute
+from .constant_memory_mapping import ConstantMemoryMapping

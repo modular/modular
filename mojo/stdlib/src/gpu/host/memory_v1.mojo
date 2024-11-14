@@ -7,13 +7,14 @@
 
 from sys import bitwidthof, sizeof
 
-from memory import UnsafePointer
+from memory import UnsafePointer, stack_allocation
 from memory.unsafe import bitcast
 
 from utils import StaticTuple
 
-from ._utils_v1 import _check_error, _get_dylib_function
-from .stream_v1 import Stream, _StreamHandle
+from gpu.host._utils_v1 import _check_error, _get_dylib_function
+from gpu.host.result_v1 import Result
+from gpu.host.stream_v1 import Stream, _StreamHandle
 
 # ===----------------------------------------------------------------------===#
 # Memory

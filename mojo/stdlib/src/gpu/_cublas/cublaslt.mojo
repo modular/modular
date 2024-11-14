@@ -1723,7 +1723,7 @@ struct MatmulAlgorithm:
 
     var data: StaticTuple[UInt64, 8]  # uint64_t data[8]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.data = StaticTuple[UInt64, 8](0)
 
 
@@ -2828,7 +2828,7 @@ struct cublasLtMatmulHeuristicResult_t:
     var wavesCount: Float32
     var reserved: StaticTuple[Int32, 4]
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.algo = MatmulAlgorithm()
         self.workspaceSize = 0
         self.state = Result.NOT_INITIALIZED

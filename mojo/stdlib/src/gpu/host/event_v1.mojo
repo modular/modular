@@ -8,9 +8,10 @@
 from os import abort
 from time import perf_counter_ns
 
-from ._utils_v1 import _check_error, _EventHandle, _StreamHandle
-from .context_v1 import Context
-from .stream_v1 import Stream
+from gpu.host._utils_v1 import _check_error, _EventHandle, _StreamHandle
+from gpu.host.context_v1 import Context
+from gpu.host.cuda_instance_v1 import CudaDLL
+from gpu.host.stream_v1 import Stream
 
 # ===----------------------------------------------------------------------===#
 # Flag

@@ -5,16 +5,16 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA context operations."""
 
+from memory import UnsafePointer, bitcast
 from os import abort
 from sys import bitwidthof, sizeof
 from sys.ffi import c_size_t
 
+from gpu.host._utils_v1 import _check_error, _ContextHandle, _StreamHandle
+from gpu.host.cuda_instance_v1 import *
+from gpu.host.device_v1 import DeviceV1
 from gpu.host.function_v1 import FunctionCache
-from memory import UnsafePointer, bitcast
-
-from ._utils_v1 import _check_error, _ContextHandle, _StreamHandle
-from .cuda_instance_v1 import *
-from .device_v1 import DeviceV1
+from gpu.host.stream_v1 import Stream
 
 # ===----------------------------------------------------------------------===#
 # Context

@@ -7,7 +7,9 @@
 
 from os import abort
 
-from ._utils_v1 import _check_error, _StreamHandle
+from gpu.host.context_v1 import Context
+from gpu.host.cuda_instance_v1 import CudaDLL
+from gpu.host._utils_v1 import _check_error, _StreamHandle
 
 # ===----------------------------------------------------------------------===#
 # Stream

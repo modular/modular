@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the result type."""
 
-from collections import KeyElement
+from collections import Dict, KeyElement
 
 # ===----------------------------------------------------------------------===#
 # Result

@@ -13,7 +13,7 @@ from memory import UnsafePointer
 
 from utils import StaticTuple
 
-from ..host import Stream
+from gpu.host.stream_v1 import Stream
 from .backend import *
 
 # ===----------------------------------------------------------------------===#

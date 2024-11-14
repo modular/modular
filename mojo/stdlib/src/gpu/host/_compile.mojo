@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA compilation operations."""
 
+from collections import Optional
 import subprocess
 import tempfile
 from os import abort

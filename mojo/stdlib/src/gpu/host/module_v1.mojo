@@ -14,7 +14,9 @@ from memory import memset_zero, stack_allocation
 
 from utils import StringRef, StringSlice
 
-from ._utils_v1 import _check_error, _FunctionHandle, _ModuleHandle
+from gpu.host._utils_v1 import _check_error, _FunctionHandle, _ModuleHandle
+from gpu.host.context_v1 import Context
+from gpu.host.cuda_instance_v1 import CudaDLL
 
 # ===----------------------------------------------------------------------===#
 # JitOptions

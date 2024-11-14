@@ -3,10 +3,25 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from pathlib import Path
 from sys.ffi import c_size_t
 from sys.param_env import is_defined
+from utils import StringRef, Variant
 
 from gpu.host._compile import _get_nvptx_target
+from gpu.host.device_attribute import DeviceAttribute
+from gpu.host.device_context_v1 import (
+    DeviceBufferV1,
+    DeviceContextV1,
+    DeviceFunctionV1,
+)
+from gpu.host.device_context_v2 import (
+    DeviceBufferV2,
+    DeviceContextV2,
+    DeviceFunctionV2,
+    DeviceStreamV2,
+)
+from gpu.host.launch_attribute import LaunchAttribute
 
 # The structs in this file are thin wrappers that delegate to either
 # DeviceContextV1 (the old, Mojo implementation) or DeviceContextV2 (the new,

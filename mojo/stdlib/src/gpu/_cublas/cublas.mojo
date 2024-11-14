@@ -10,7 +10,7 @@ from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
-from gpu.host import Stream
+from gpu.host.stream_v1 import Stream
 
 from .dtype import DataType, Property
 from .result import Result

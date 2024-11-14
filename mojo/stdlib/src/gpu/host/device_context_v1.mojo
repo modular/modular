@@ -6,13 +6,17 @@
 
 from collections import List, Optional
 from os import abort
+from pathlib import Path
 from sys import external_call, sizeof
 from sys.ffi import c_size_t
+from utils import StringRef, Variant
 
 from gpu.host._compile import _get_nvptx_target, _get_nvptx_fn_name
+from gpu.host.launch_attribute import LaunchAttribute
 from gpu.host._utils_v1 import _check_error, _StreamHandle
 from gpu.host.context_v1 import Context
-from gpu.host.cuda_instance_v1 import CudaInstance, LaunchAttribute
+from gpu.host.cuda_instance_v1 import CudaInstance
+from gpu.host.device_attribute import DeviceAttribute
 from gpu.host.device_v1 import DeviceV1
 from gpu.host.event_v1 import Event
 from gpu.host.function_v1 import Function

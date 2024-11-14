@@ -5,12 +5,21 @@
 # ===----------------------------------------------------------------------=== #
 
 # Implementation of the C++ backed DeviceContext in Mojo
-# WIP, just stubs for now
 
+from collections import List, Optional
 from memory import stack_allocation
+from pathlib import Path
+from sys import (
+    external_call,
+    env_get_int,
+    env_get_string,
+    sizeof,
+    env_get_string,
+)
+from utils import StringRef, Variant
 from sys.info import _get_arch
 
-from ._compile import (
+from gpu.host._compile import (
     _compile_code,
     _compile_code_asm,
     _get_nvptx_fn_name,
@@ -18,6 +27,10 @@ from ._compile import (
     _ptxas_compile,
     _to_sass,
 )
+
+alias DeviceFunction = DeviceFunctionV2
+alias DeviceBuffer = DeviceBufferV2
+alias DeviceContext = DeviceContextV2
 
 
 # Create empty structs to ensure type checking when using the C++ handles.
