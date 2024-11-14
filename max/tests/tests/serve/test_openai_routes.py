@@ -81,7 +81,7 @@ async def test_openai_chat_completion(app, model_name):
             ),
         )
         # This is not a streamed completion - There is no [DONE] at the end.
-        response = CreateChatCompletionResponse.model_validate_json(
+        response = CreateChatCompletionResponse.model_validate(
             response_json.json()
         )
         assert len(response.choices) == 1
@@ -108,7 +108,7 @@ def test_openai_chat_completion_concurrent(app, model_name):
                 model_name=model_name, content=request_content
             ),
         )
-        response = CreateChatCompletionResponse.model_validate_json(
+        response = CreateChatCompletionResponse.model_validate(
             response_json.json()
         )
         responses[idx] = response
