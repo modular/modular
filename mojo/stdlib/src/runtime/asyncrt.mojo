@@ -435,3 +435,21 @@ struct MojoCallContextPtr:
             "KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
             UnsafePointer[NoneType],
         ](self.ptr, byte_size, alignment)
+
+
+# ===----------------------------------------------------------------------===#
+# DeviceContext
+# ===----------------------------------------------------------------------===#
+
+
+@register_passable("trivial")
+struct DeviceContextPtr:
+    """Exposes a pointer to a C++ DeviceContext to Mojo."""
+
+    var handle_: UnsafePointer[NoneType]
+
+    fn __init__(inout self, handle: UnsafePointer[NoneType]):
+        self.handle_ = handle
+
+    fn __getitem__(self) raises -> DeviceContext:
+        return DeviceContext(self.handle_)
