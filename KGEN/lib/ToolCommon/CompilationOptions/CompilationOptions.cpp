@@ -15,12 +15,10 @@ using namespace KGEN;
 CompilationOptions::CompilationOptions(
     unsigned optimizationLevel, DebugInfoLevel debugLevel,
     std::optional<DebugAtLevel> debugAtLevel, Sanitizers sanitizers,
-    bool enableXRayInstrumentation, std::string targetTriple,
-    std::string targetCpu, std::string targetFeatures,
+    std::string targetTriple, std::string targetCpu, std::string targetFeatures,
     DebugInfoLanguage debugInfoLanguage, std::string searchPaths)
     : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
       debugAtLevel(debugAtLevel), sanitizers(sanitizers),
-      enableXRayInstrumentation(enableXRayInstrumentation),
       targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
       targetFeatures(std::move(targetFeatures)),
       debugInfoLanguage(debugInfoLanguage), searchPaths(searchPaths) {}
@@ -92,8 +90,6 @@ void CompilationOptions::print(raw_ostream &os) const {
     os << ", sanitizers:";
     sanitizers.print(os);
   }
-  if (enableXRayInstrumentation)
-    os << ", enableXRayInstrumentation";
 
   os << ", relocModel: " << stringifyRelocationModel(relocModel);
 

@@ -10,7 +10,6 @@
     "compilationOptions": {
         "optimizationLevel": 3,
         "debugLevel": 0,
-        "enableXRayInstrumentation": false,
         "targetTriple": "arm64-apple-darwin23.4.0",
         "targetCpu": "apple-m3",
         "targetFeatures": "+aes,+bf16,+complxnum,+crc,+dotprod,+fp-armv8,+fp16fml,+fpac,+fullfp16,+hcx,+i8mm,+jsconv,+lse,+neon,+pauth,+perfmon,+ras,+rcpc,+rdm,+sha2,+sha3,+ssbs",

@@ -53,7 +53,6 @@ public:
       unsigned optimizationLevel = 3, DebugInfoLevel debugLevel = kNoDebug,
       std::optional<DebugAtLevel> debugAtLevel = std::nullopt,
       Sanitizers sanitizers = Sanitizers(),
-      bool enableXRayInstrumentation = false,
       std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures(),
@@ -87,7 +86,6 @@ public:
   DebugInfoLevel debugLevel = kNoDebug;
   std::optional<DebugAtLevel> debugAtLevel;
   Sanitizers sanitizers = Sanitizers();
-  bool enableXRayInstrumentation = false;
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
