@@ -13,8 +13,7 @@ from sys.info import num_physical_cores
 from sys.param_env import is_defined
 
 from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
-from gpu.host import Context as CudaContext
-from gpu.host import CudaInstance, DeviceContext
+from gpu.host import DeviceContext
 from memory import UnsafePointer
 
 from utils import StringRef
