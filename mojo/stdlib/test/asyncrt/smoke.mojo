@@ -20,7 +20,6 @@ from gpu.host import (
     DeviceContext,
     DeviceAttribute,
     DeviceStream,
-    device_count,
 )
 
 
