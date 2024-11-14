@@ -124,7 +124,7 @@ async def test_llama_ragged(model: str, encoding: str) -> None:
     stored_logits: dict[str, list[TextContext]] = {"A": [], "B": [], "C": []}
 
     test_model = SupportedTestModels.get(model, encoding)
-    config = test_model.build_config()
+    config = test_model.build_config(max_cache_batch_size=4)
     tokenizer = TextTokenizer(config)
     session = InferenceSession(devices=[config.device])
     llama, _ = load_llama3_and_kv_manager(config, session)
