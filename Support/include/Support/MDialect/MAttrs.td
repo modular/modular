@@ -296,6 +296,10 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     ```
 
     Can be (partially) represented at runtime by M::TargetInfo.
+
+    The `accelerator_arch` contains the vendor name of the accelerator in
+    lowercase (e.g. nvidia or amd) along with the subarch (e.g. sm_80, sm_90).
+    For example, a valid `accelerator_arch` is `nvidia_sm_80` or `amd_mi300x`.
   }];
 
   let parameters = (ins
@@ -308,7 +312,8 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     DefaultValuedParameter<"int64_t", "0">:$simd_bit_width,
     DefaultValuedParameter<"std::optional<int64_t>",
                            "std::nullopt">:$index_bit_width,
-    OptionalStringRefParameter:$tune_cpu
+    OptionalStringRefParameter:$tune_cpu,
+    OptionalStringRefParameter:$accelerator_arch
   );
 
   let assemblyFormat = "`<` struct(params) `>`";

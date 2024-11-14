@@ -903,6 +903,7 @@ modular_cc_library(
     visibility = ["//visibility:private"],
     deps = [
         ":KGENPassesIncGen",
+        "//AsyncRT:DeviceContext",
         "//Support:CommonCLOptions",
     ],
 )

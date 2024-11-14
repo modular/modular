@@ -11,16 +11,19 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace AsyncRT;
 
 CompilationOptions::CompilationOptions(
     unsigned optimizationLevel, DebugInfoLevel debugLevel,
     std::optional<DebugAtLevel> debugAtLevel, Sanitizers sanitizers,
     std::string targetTriple, std::string targetCpu, std::string targetFeatures,
-    DebugInfoLanguage debugInfoLanguage, std::string searchPaths)
+    std::string targetAccelerator, DebugInfoLanguage debugInfoLanguage,
+    std::string searchPaths)
     : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
       debugAtLevel(debugAtLevel), sanitizers(sanitizers),
       targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
       targetFeatures(std::move(targetFeatures)),
+      targetAccelerator(std::move(targetAccelerator)),
       debugInfoLanguage(debugInfoLanguage), searchPaths(searchPaths) {}
 
 llvm::CodeGenOptLevel CompilationOptions::getCodeGenOptLevel() const {
@@ -92,6 +95,9 @@ void CompilationOptions::print(raw_ostream &os) const {
   }
 
   os << ", relocModel: " << stringifyRelocationModel(relocModel);
+
+  if (!targetAccelerator.empty())
+    os << ", targetAccelerator: " << targetAccelerator;
 
   os << ", debugInfoLang: " << debugInfoLanguage;
   os << " }";

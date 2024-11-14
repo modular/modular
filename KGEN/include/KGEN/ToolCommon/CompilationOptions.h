@@ -7,6 +7,7 @@
 #ifndef KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H
 #define KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H
 
+#include "AsyncRT/DeviceContext/DeviceContext.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "Support/Compiler/Sanitizers.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
@@ -56,6 +57,8 @@ public:
       std::string targetTriple = llvm::sys::getDefaultTargetTriple(),
       std::string targetCpu = llvm::sys::getHostCPUName().str(),
       std::string targetFeatures = getHostCPUFeatures(),
+      std::string targetAccelerator =
+          M::AsyncRT::Device::getAcceleratorArchOrEmpty(),
       DebugInfoLanguage debugInfoLanguage = kLangMojo,
       std::string searchPaths = "");
 
@@ -89,6 +92,8 @@ public:
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
+  std::string targetAccelerator =
+      M::AsyncRT::Device::getAcceleratorArchOrEmpty();
   llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_;
   DebugInfoLanguage debugInfoLanguage = kLangMojo;
 

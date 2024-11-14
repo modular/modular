@@ -1061,11 +1061,10 @@ void M::eraseTargetInfo(ModuleOp module) {
   assert(target && "module did not have a target to remove");
 }
 
-ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
-                                            StringRef targetTriple,
-                                            StringRef arch, StringRef features,
-                                            StringRef tuneCpu,
-                                            llvm::Reloc::Model relocModel) {
+ErrorOr<TargetInfoAttr>
+M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
+                    StringRef features, StringRef tuneCpu,
+                    StringRef acceleratorArch, llvm::Reloc::Model relocModel) {
   std::string errorMessage;
   const llvm::Target *target =
       llvm::TargetRegistry::lookupTarget(targetTriple.str(), errorMessage);
@@ -1083,10 +1082,10 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
   assert(!dl.isError() && "failed to parse LLVM data layout?");
 
   // Return a TargetInfoAttr built for the host.
-  return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), arch, features,
-                             std::move(*dl), machine->getRelocationModel(),
-                             simdWidthFromFeatures(features),
-                             dl->getPointerBitWidth(), tuneCpu);
+  return TargetInfoAttr::get(
+      ctx, llvm::Triple(targetTriple), arch, features, std::move(*dl),
+      machine->getRelocationModel(), simdWidthFromFeatures(features),
+      dl->getPointerBitWidth(), tuneCpu, acceleratorArch);
 }
 
 ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
@@ -1110,7 +1109,7 @@ TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
       encodeFeatures(runtimeTargetInfo.features),
       /*data_layout=*/{}, /*relocation_model=*/llvm::Reloc::Static,
       /*simd_bit_width=*/0, /*index_width=*/std::nullopt,
-      /*tune_cpu=*/{});
+      /*tune_cpu=*/{}, /*accelerator_arch=*/{});
 }
 
 namespace mlir {

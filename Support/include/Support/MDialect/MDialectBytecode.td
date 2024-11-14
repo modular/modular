@@ -98,7 +98,8 @@ def TargetInfoAttr : DialectAttribute<(attr
   LLVMRelocModel:$relocation_model,
   SignedVarInt:$simd_bit_width,
   OptionalInt64:$index_bit_width,
-  String:$tune_cpu
+  String:$tune_cpu,
+  String:$accelerator_arch
 )>;
 
 def MDialectAttributes : DialectAttributes<"M"> {
