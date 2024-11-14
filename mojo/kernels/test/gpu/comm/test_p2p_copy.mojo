@@ -6,7 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv
-from gpu.host import DeviceContext, device_count, DeviceBufferVariant
+from gpu.host import DeviceContext, DeviceBuffer
 from gpu import BlockIdx, GridDim, ThreadIdx, BlockDim
 from memory import UnsafePointer
 from sys import env_get_int
@@ -25,8 +25,8 @@ fn p2p_copy_kernel(
 
 fn launch_p2p_copy_kernel(
     ctx1: DeviceContext,
-    dst_buf: DeviceBufferVariant[DType.float32],
-    src_buf: DeviceBufferVariant[DType.float32],
+    dst_buf: DeviceBuffer[DType.float32],
+    src_buf: DeviceBuffer[DType.float32],
     num_elements: Int,
 ) raises:
     alias BLOCK_SIZE = 256
@@ -54,7 +54,7 @@ def main():
     constrained[log2_length > 0]()
     var length = 1 << log2_length
 
-    var num_devices = device_count()
+    var num_devices = DeviceContext.number_of_devices("cuda")
     if num_devices == 1:
         print("Only one device found, skipping peer-to-peer copy")
         return

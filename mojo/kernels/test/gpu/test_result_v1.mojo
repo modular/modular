@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host import Result
+from gpu.host.result_v1 import Result
 from testing import assert_equal
 
 
