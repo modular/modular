@@ -530,7 +530,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                                 cancelled.add(req_id)
 
                     if cancelled:
-                        self.queue_cancel.queue.put_many_nowait(cancelled)
+                        self.queue_cancel.queue.put_many_nowait(list(cancelled))
 
                 except queue.Empty:
                     await asyncio.sleep(0)
