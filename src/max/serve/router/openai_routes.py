@@ -235,7 +235,9 @@ def build_prompt(
 
 
 @router.post("/chat/completions")
-async def openai_create_chat_completion(request: Request) -> Response:
+async def openai_create_chat_completion(
+    request: Request,
+) -> CreateChatCompletionResponse:
     request_id = request.state.request_id
     try:
         request_json = await request.json()
@@ -268,7 +270,7 @@ async def openai_create_chat_completion(request: Request) -> Response:
             return EventSourceResponse(response_generator.stream(token_request))
 
         response = await response_generator.complete(token_request)
-        return JSONResponse(response.model_dump_json())
+        return response
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
@@ -389,7 +391,9 @@ def openai_get_prompt_from_completion_request(
 
 
 @router.post("/completions")
-async def openai_create_completion(request: Request) -> Response:
+async def openai_create_completion(
+    request: Request,
+) -> CreateCompletionResponse:
     """
     Legacy OpenAI /completion endpoint.
     https://platform.openai.com/docs/api-reference/completions
@@ -428,7 +432,7 @@ async def openai_create_completion(request: Request) -> Response:
             return EventSourceResponse(response_generator.stream(token_request))
 
         response = await response_generator.complete(token_request)
-        return JSONResponse(response.model_dump_json())
+        return response
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError for request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
