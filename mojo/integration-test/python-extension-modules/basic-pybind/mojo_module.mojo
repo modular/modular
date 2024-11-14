@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from python import Python
+
 
 fn arg_reg_trivial_borrowed(arg: Int):
     pass

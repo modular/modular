@@ -66,6 +66,14 @@ class TestMojoPythonInterop(unittest.TestCase):
             ),
         )
 
+    def test_case_create_mojo_object_in_mojo(self):
+        # Returns a new Mojo 'String' object, not derived from
+        # any of the arguments. This requires creating a PythonObject from
+        # within Mojo code.
+        string = feature_overview.create_string()
+
+        self.assertEqual(repr(string), "'Hello'")
+
     def test_case_mutate_wrapped_object(self):
         mojo_int = feature_overview.Int()
         self.assertEqual(repr(mojo_int), "0")

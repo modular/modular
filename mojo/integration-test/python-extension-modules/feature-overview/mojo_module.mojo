@@ -29,6 +29,7 @@ from python._cpython import (
     PyMethodDef,
     PyObject,
     PyObjectPtr,
+    PyTypeObject,
 )
 
 
@@ -76,6 +77,10 @@ fn PyInit_mojo_module() -> PythonObject:
             py_c_function_wrapper[add_to_int__wrapper],
             "add_to_int",
         ](),
+        PyMethodDef.function[
+            py_c_function_wrapper[create_string__wrapper],
+            "create_string",
+        ](),
     )
 
     try:
@@ -85,6 +90,7 @@ fn PyInit_mojo_module() -> PythonObject:
 
     add_person_type(module)
     add_int_type(module)
+    add_string_type(module)
 
     return module
 
@@ -272,3 +278,66 @@ fn add_to_int__wrapper(
     add_to_int(arg_0[], arg_1[])
 
     return PythonObject(None)
+
+
+# ====================================
+# Recipe: Function: Returning New Mojo Values
+# ====================================
+
+
+fn add_string_type(inout module: TypedPythonObject["Module"]):
+    try:
+        var type_obj = python_type_object[String, "String"](
+            methods=List[PyMethodDef]()
+        )
+
+        Python.add_object(module, "String", type_obj)
+    except e:
+        abort("error adding object: " + str(e))
+
+
+fn create_string() raises -> String:
+    return "Hello"
+
+
+fn create_string__wrapper(
+    py_self: PythonObject,
+    py_args: TypedPythonObject["Tuple"],
+) raises -> PythonObject:
+    alias func_name = "create_int"
+    alias func_arity = 0
+
+    check_arguments_arity(func_name, func_arity, py_args)
+
+    var cpython = Python().impl.cpython()
+
+    var result = create_string()
+
+    # TODO(MSTDL-1018):
+    #   Improve how we're looking up the PyTypeObject for a Mojo type.
+    # NOTE:
+    #   We can't just use python_type_object[String] because that constructs
+    #   a _new_ PyTypeObject. We want to reference the existing _singleton_
+    #   PyTypeObject that represents a given Mojo type.
+    var string_ty = Python.import_module("mojo_module").String
+
+    # SAFETY:
+    #   `Int` was added to the module by us, so it should be an instance
+    #   of PyTypeObject. (Caveat: This theoretically might not be true if the
+    #   user has manually re-assigned the `Int` attribute.)
+    var string_ty_ptr = string_ty.unsafe_as_py_object_ptr().unsized_obj_ptr.bitcast[
+        PyTypeObject
+    ]()
+
+    # Allocate storage to hold a PyMojoObject[String]
+    var string_obj_raw_ptr: PyObjectPtr = cpython.PyType_GenericAlloc(
+        string_ty_ptr,
+        0,
+    )
+
+    # Initialize the PyMojoObject[String]
+    string_obj_raw_ptr.unchecked_cast_to_mojo_value[String]().init_pointee_move(
+        result
+    )
+
+    return PythonObject(string_obj_raw_ptr)
