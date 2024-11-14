@@ -3191,7 +3191,7 @@ struct GatherND:
 
 @compiler.register("mo.gather")
 struct Gather:
-    @compiler.enable_fusion_for("input", "output")
+    @compiler.enable_fusion_for("input", "indices", "output")
     @staticmethod
     fn execute[
         synchronous: Bool,
