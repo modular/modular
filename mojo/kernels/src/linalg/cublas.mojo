@@ -14,7 +14,7 @@ from gpu.cublas.cublas import (
     check_cublas_error,
     cublasOperation_t,
 )
-from gpu.host import Stream, DeviceContext
+from gpu.host import DeviceContext
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout import Layout
 

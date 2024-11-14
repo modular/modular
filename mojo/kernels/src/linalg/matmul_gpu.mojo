@@ -21,8 +21,6 @@ from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import (
-    AccessPolicyWindow,
-    AccessProperty,
     DeviceContext,
     FuncAttribute,
     LaunchAttribute,

@@ -19,7 +19,7 @@ from gpu import (
     lane_id,
     warp_broadcast,
 )
-from gpu.host import Context, FuncAttribute, Function, Stream, synchronize
+from gpu.host import FuncAttribute
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,

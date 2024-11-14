@@ -14,13 +14,12 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import (
-    AccessPolicyWindow,
-    AccessProperty,
     DeviceContext,
     FuncAttribute,
     LaunchAttribute,
     DeviceAttribute,
 )
+from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.host._compile import _get_nvptx_target
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.shuffle import ReductionMethod, warp_sum, warp_broadcast
