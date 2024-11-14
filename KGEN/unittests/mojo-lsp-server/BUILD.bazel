@@ -13,6 +13,7 @@ modular_cc_library(
 
 modular_cc_test(
     name = "unittests",
+    size = "large",
     srcs = glob(
         ["*.cpp"],
         exclude = ["Support.cpp"],
