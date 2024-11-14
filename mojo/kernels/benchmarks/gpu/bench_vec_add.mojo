@@ -9,7 +9,7 @@ from pathlib import Path
 from builtin._closure import __ownership_keepalive
 
 from gpu import *
-from gpu.host import DeviceContext, Dim, Function, Stream
+from gpu.host import DeviceContext
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from testing import assert_equal

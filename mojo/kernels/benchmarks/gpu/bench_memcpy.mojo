@@ -10,7 +10,7 @@ from os import abort
 from math import iota, floor
 from algorithm.functional import parallelize_over_rows
 from memory import UnsafePointer
-from gpu.host import DeviceContext, device_count
+from gpu.host import DeviceContext
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from testing import assert_almost_equal
 from utils import IndexList
@@ -207,7 +207,7 @@ def main():
         )
         bench_memcpy[Config.DEVICE_TO_DEVICE](m, length=length, context=ctx)
 
-    var num_devices = device_count()
+    var num_devices = DeviceContext.number_of_devices("cuda")
     if num_devices > 1:
         # Create contexts for both same-device and peer device transfers
         var ctx1 = DeviceContext(gpu_id=0)
