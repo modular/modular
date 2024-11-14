@@ -128,6 +128,7 @@ struct BlockIdx:
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
 fn _get_gcn_idx[offset: Int]() -> UInt:
     var ptr = llvm_intrinsic[
         "llvm.amdgcn.implicitarg.ptr",
