@@ -124,7 +124,7 @@ struct WaveFrontSummary:
     var total_wavefronts: Int
     var expected_wavefronts: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         self.total_wavefronts = 0
         self.expected_wavefronts = 0
 
