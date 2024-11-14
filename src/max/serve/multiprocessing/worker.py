@@ -15,8 +15,57 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from multiprocessing.synchronize import Event as MPEvent
 from typing import Any, Callable, Union
+from max.serve.telemetry.tracing import tracer
 
 from faster_fifo import Queue
+
+
+class TracedFasterFifoQueue(Queue):
+    def put(self, *args, **kwargs):
+        with tracer.start_as_current_span("TracedFasterFifoQueue.put"):
+            return super().put(*args, **kwargs)
+
+    def put_many(self, objs, **kwargs):
+        with tracer.start_as_current_span(
+            "TracedFasterFifoQueue.put_many"
+        ) as span:
+            span.set_attribute("size", len(objs))
+            return super().put_many(objs, **kwargs)
+
+    def put_nowait(self, obj):
+        with tracer.start_as_current_span("TracedFasterFifoQueue.put_nowait"):
+            return super().put_nowait(obj)
+
+    def put_many_nowait(self, objs):
+        with tracer.start_as_current_span(
+            "TracedFasterFifoQueue.put_many_nowait"
+        ) as span:
+            span.set_attribute("size", len(objs))
+            return super().put_many_nowait(objs)
+
+    def get(self, *args, **kwargs):
+        with tracer.start_as_current_span("TracedFasterFifoQueue.get"):
+            return super().get(*args, **kwargs)
+
+    def get_many(self, *args, **kwargs):
+        with tracer.start_as_current_span(
+            "TracedFasterFifoQueue.get_many"
+        ) as span:
+            vals = super().get_many(*args, **kwargs)
+            span.set_attribute("size", len(vals))
+            return vals
+
+    def get_nowait(self):
+        with tracer.start_as_current_span("TracedFasterFifoQueue.get_nowait"):
+            return super().get_nowait()
+
+    def get_many_nowait(self, *args, **kwargs):
+        with tracer.start_as_current_span(
+            "TracedFasterFifoQueue.get_many_nowait"
+        ) as span:
+            vals = super().get_many_nowait(*args, **kwargs)
+            span.set_attribute("size", len(vals))
+            return vals
 
 
 @dataclass
@@ -149,7 +198,7 @@ def all_queues(pred: Union[Predicate, None] = None) -> dict[str, MPQueue]:
 
 def register_mp_queue(key: str, queue: Queue = None):
     if not queue:
-        queue = Queue(max_size_bytes=10_000_000)
+        queue = TracedFasterFifoQueue(max_size_bytes=10_000_000)
 
     q = MPQueue(key, queue)
     ALL_QUEUES[key] = q

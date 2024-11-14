@@ -25,6 +25,7 @@ from max.serve.scheduler.queues import (
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
+from max.serve.telemetry.tracing import tracer
 
 
 @dataclass(frozen=True)
@@ -189,7 +190,8 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
                 if token_idx == 0:
                     METRICS.ttft(timers.ttft.elapsed_ms)
                 token_idx += 1
-                yield await self.tokenizer.decode(context, encoded_token)
+                with tracer.start_as_current_span("decode"):
+                    yield await self.tokenizer.decode(context, encoded_token)
         finally:
             self._complete_request(request)
             if self.debug_logging:
