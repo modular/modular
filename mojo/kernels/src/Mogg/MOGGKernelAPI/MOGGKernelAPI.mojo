@@ -3579,8 +3579,6 @@ struct Matmul:
         var b_buffer = managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b)
         var c_buffer = managed_tensor_slice_to_ndbuffer[static_shape=c_shape](c)
 
-        alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
-
         @parameter
         @always_inline
         fn output_fn[
@@ -3625,8 +3623,6 @@ struct BatchMatmul:
         var a_buffer = managed_tensor_slice_to_ndbuffer(a)
         var b_buffer = managed_tensor_slice_to_ndbuffer(b)
         var c_buffer = managed_tensor_slice_to_ndbuffer(c)
-
-        alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
 
         @parameter
         @always_inline
