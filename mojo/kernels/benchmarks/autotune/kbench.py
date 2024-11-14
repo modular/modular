@@ -687,11 +687,12 @@ def run(
             output_lines += [sorted_df.to_string(index=False)]
             # Index to top spec after sort
             top_spec_idx = sorted_df.iloc[0].mesh_idx
+            runtime = sorted_df.iloc[0][met_col]
 
             output_lines += [LINE]
             output_lines += ["Spec with the best measured time:"]
             output_lines += [LINE]
-            output_lines += [f"mesh_idx: {top_spec_idx}"]
+            output_lines += [f"mesh_idx: {top_spec_idx} Runtime: {runtime}"]
             output_lines += [spec_list[top_spec_idx].to_obj()]
             output_lines += [LINE]
         else:
