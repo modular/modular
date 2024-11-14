@@ -11,7 +11,7 @@ from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import elementwise
 from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceBuffer, DeviceContext, Stream
+from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_nvptx_target
 from kv_cache.types import (
     ContiguousKVCache,
