@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from memory import UnsafePointer
+from memory import stack_allocation, UnsafePointer
 from compile import _internal_compile_code, compile_info
 from testing import *
 from gpu import *
