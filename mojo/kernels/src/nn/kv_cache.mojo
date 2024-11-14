@@ -1781,11 +1781,7 @@ fn _flash_attention_kv_cache_causal_mask_gpu[
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
     # KERN-725
-    gpu_flash_attention[
-        add_attn_mask=False,
-        use_tensor_core=True,
-        target=target,
-    ](
+    gpu_flash_attention[add_attn_mask=False, target=target,](
         output,
         q,
         k,
@@ -1843,11 +1839,7 @@ fn _flash_attention_kv_cache_gpu[
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
     # KERN-725
-    gpu_flash_attention[
-        add_attn_mask=True,
-        use_tensor_core=True,
-        target=target,
-    ](
+    gpu_flash_attention[add_attn_mask=True, target=target,](
         output,
         q,
         k,

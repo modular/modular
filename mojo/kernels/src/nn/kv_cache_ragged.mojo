@@ -1006,12 +1006,7 @@ fn _flash_attention_kv_cache_ragged_gpu[
         DimList.create_unknown[4](),
     ]()
 
-    gpu_flash_attention[
-        add_attn_mask=False,
-        use_tensor_core=True,
-        target=target,
-        ragged=True,
-    ](
+    gpu_flash_attention[add_attn_mask=False, target=target, ragged=True,](
         output,
         q,
         k,

@@ -329,7 +329,7 @@ fn flash_attention[
     target: StringLiteral,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
-    use_tensor_core: Bool = False,
+    use_warp_shuffle_decoding: Bool = True,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
     output: NDBuffer[_, rank, *_],
@@ -345,7 +345,7 @@ fn flash_attention[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            "use_tensor_core=" + str(use_tensor_core),
+            "use_warp_shuffle_decoding=" + str(use_warp_shuffle_decoding),
             trace_arg("q", q),
             trace_arg("k", k),
             trace_arg("v", v),
@@ -360,7 +360,7 @@ fn flash_attention[
             add_attn_mask=add_attn_mask,
             use_score_mod=use_score_mod,
             target=target,
-            use_tensor_core=use_tensor_core,
+            use_warp_shuffle_decoding=use_warp_shuffle_decoding,
             config=config,
         ](
             output,
@@ -387,7 +387,7 @@ fn flash_attention[
     target: StringLiteral,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
-    use_tensor_core: Bool = True,
+    use_warp_shuffle_decoding: Bool = True,
     config: MHAConfig = MHAConfig(
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     ),
@@ -452,7 +452,7 @@ fn flash_attention[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            "use_tensor_core=" + str(use_tensor_core),
+            "use_warp_shuffle_decoding=" + str(use_warp_shuffle_decoding),
             trace_arg("q", q),
             trace_arg("output", output),
         )
@@ -505,7 +505,7 @@ fn flash_attention[
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]() and k.get_block_static_shape().has_value[1]()
         # Current impl has only been verified for depth = 128.
-        alias flash_attention_applicable = head_depth_known and q.shape.get[rank-1]() == 128 and use_tensor_core
+        alias flash_attention_applicable = head_depth_known and q.shape.get[rank-1]() == 128
         alias q_half_float = q.type in (DType.float16, DType.bfloat16)
         # fmt: on
 
@@ -589,7 +589,7 @@ fn flash_attention[
                 alias block_size_warp_shuffle = 16
 
                 @parameter
-                if not add_attn_mask:
+                if (not add_attn_mask) and use_warp_shuffle_decoding:
                     num_blocks_y = num_blocks_y // group
                     alias accum_type = get_accum_type[q.type]()
                     alias num_warps = num_threads // WARP_SIZE
@@ -628,7 +628,7 @@ fn flash_attention[
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_score_mod=use_score_mod,
-                        use_tensor_core=use_tensor_core,
+                        use_warp_shuffle_decoding=use_warp_shuffle_decoding,
                         ragged=ragged,
                         block_size_warp_shuffle=block_size_warp_shuffle,
                     ]
@@ -718,7 +718,7 @@ fn flash_attention[
     target: StringLiteral,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
-    use_tensor_core: Bool = True,
+    use_warp_shuffle_decoding: Bool = True,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
     output: NDBuffer[_, rank, *_],
@@ -763,7 +763,7 @@ fn flash_attention[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            "use_tensor_core=" + str(use_tensor_core),
+            "use_warp_shuffle_decoding=" + str(use_warp_shuffle_decoding),
             trace_arg("q", q),
             trace_arg("k", k),
             trace_arg("v", v),
@@ -784,7 +784,7 @@ fn flash_attention[
         # fmt: off
         alias head_depth_known = q.shape.all_known[2, 4]() and k.shape.has_value[2]()
         # Current impl has only been verified for depth = 128.
-        alias flash_attention_applicable = head_depth_known and q.shape.get[3]() == 128 and use_tensor_core
+        alias flash_attention_applicable = head_depth_known and q.shape.get[3]() == 128
         alias q_half_float = q.type in (DType.float16, DType.bfloat16)
         # fmt: on
 
@@ -861,7 +861,7 @@ fn flash_attention[
                 alias block_size_warp_shuffle = 16
 
                 @parameter
-                if not add_attn_mask:
+                if (not add_attn_mask) and use_warp_shuffle_decoding:
                     num_blocks_y = num_blocks_y // group
                     alias accum_type = get_accum_type[q.type]()
                     alias num_warps = num_threads // WARP_SIZE
@@ -898,7 +898,7 @@ fn flash_attention[
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_score_mod=use_score_mod,
-                        use_tensor_core=use_tensor_core,
+                        use_warp_shuffle_decoding=use_warp_shuffle_decoding,
                         block_size_warp_shuffle=block_size_warp_shuffle,
                     ]
                 ](
@@ -1844,7 +1844,7 @@ fn mha_decoding[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
-    use_tensor_core: Bool = True,
+    use_warp_shuffle_decoding: Bool = True,
     ragged: Bool = False,
     block_size_warp_shuffle: Int = 16,
 ](
@@ -1897,7 +1897,7 @@ fn mha_decoding[
     var v_ptr = v_nd_buffer.data
 
     @parameter
-    if use_mask_tensor:
+    if use_mask_tensor or (not use_warp_shuffle_decoding):
         mha_decoding_single_batch[
             mask_rank,
             BM=BM,
@@ -1967,7 +1967,7 @@ fn mha_decoding[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
-    use_tensor_core: Bool = True,
+    use_warp_shuffle_decoding: Bool = True,
     block_size_warp_shuffle: Int = 16,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
@@ -1989,7 +1989,7 @@ fn mha_decoding[
     )
 
     @parameter
-    if use_mask_tensor:
+    if use_mask_tensor or (not use_warp_shuffle_decoding):
         mha_decoding_single_batch[
             mask_rank,
             BM=BM,
