@@ -112,6 +112,9 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   case POC::CurrentTarget:
     // Retrieve the contextual compilation target info.
     return {TargetParamAttr::get(elaborator->getTarget())};
+  case POC::AcceleratorArch:
+    return {StringAttr::get(elaborator->options.targetAccelerator,
+                            StringType::get(op.getContext()))};
   case POC::GetEnv:
     return evaluateGetEnv(op);
   case POC::Apply:

@@ -1178,6 +1178,12 @@ LogicalResult ParamOperatorAttr::verify(
     if (!llvm::isa<StringType>(operands[1].getType()))
       return emitError() << "target_get_field operand 1 must be a string type";
     break;
+  case POC::AcceleratorArch:
+    if (!operands.empty())
+      return emitError() << "'accelerator_arch' expected no operands";
+    if (!llvm::isa<StringType>(type))
+      return emitError() << "'accelerator_arch' must return a string type";
+    break;
   case POC::In:
     if (operands.empty())
       return emitError() << "operator requires at least one operand";
@@ -2544,6 +2550,9 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::TargetGetField:
     result = simplifyTargetGetField(operands, resultType);
     break;
+  case POC::AcceleratorArch:
+    resultType = StringType::get(ctx);
+    break;
   case POC::In:
     result = simplifyIn(operands);
     resultType = IntegerType::get(ctx, 1);
@@ -2637,8 +2646,8 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn.front().getType();
   assert(llvm::is_contained(
              {POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
-              POC::TargetHasFeature, POC::TargetGetField, POC::GetSizeOf,
-              POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
+              POC::TargetHasFeature, POC::TargetGetField, POC::AcceleratorArch,
+              POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
               POC::CompileAssembly, POC::GetLinkageName, POC::GetTypeMethod,
               POC::VariadicPtrMap, POC::VariadicPtrRemoveMap},
              opcode) ||
