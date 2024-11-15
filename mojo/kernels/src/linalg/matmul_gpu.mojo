@@ -25,7 +25,7 @@ from gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from gpu.host.info import A100, Info, _get_info_from_target
+from gpu.host.info import A100
 from gpu.host._compile import _get_gpu_target
 from gpu.memory import (
     AddressSpace,
@@ -349,7 +349,7 @@ fn _matmul_gpu[
             if (
                 a_type == b_type
                 and a_type.is_half_float()
-                and "sm_80" in target
+                and ctx.device_info is A100
                 and transpose_b
             ):
                 alias static_K = a_shape.get[1]()
