@@ -92,7 +92,7 @@ fn _reshape_nd_buffer_with_batch_to_3d(
     )
 
     return NDBuffer[buffer.type, 3, address_space = buffer.address_space](
-        buffer.data.bitcast[buffer.type](), matrix_shape
+        buffer.data.bitcast[Scalar[buffer.type]](), matrix_shape
     )
 
 

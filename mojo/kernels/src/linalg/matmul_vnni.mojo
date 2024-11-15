@@ -72,7 +72,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         # Global K index.
         var global_k = global_offset.K + kl
         var b_ptr = b_packed._offset(Index(n_outer_idx, kl // 4, 0)).bitcast[
-            c_type
+            Scalar[c_type]
         ]()
 
         @parameter
@@ -128,7 +128,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                 ) if (is_tail and has_avx512f()) else a_ptr.offset(
                     idx0 * a_ptr_stride
                 ).bitcast[
-                    c_type
+                    Scalar[c_type]
                 ]().load()
 
                 alias alignment = alignof[SIMD[c_type, simd_size]]()

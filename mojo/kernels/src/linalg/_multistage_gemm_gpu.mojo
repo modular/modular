@@ -720,8 +720,7 @@ fn multistage_gemm_kernel[
 
         var accum_smem_warp_tile = tb[c_type]().row_major[
             WM, WN
-        ]().shared().view(a_smem.bitcast[c_type]() + warp_id * WM * WN)
-
+        ]().shared().view(a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
         copy_local_to_sram[
             thread_layout = Layout.row_major(8, 4),
             swizzle=swizzle,
