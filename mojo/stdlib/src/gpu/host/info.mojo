@@ -12,6 +12,43 @@ from sys import env_get_string
 alias DEFAULT_GPU_ARCH = env_get_string["DEFAULT_GPU_ARCH", "sm_80"]()
 
 # ===----------------------------------------------------------------------===#
+# Vendor
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable
+struct Vendor:
+    var _value: Int8
+
+    alias AMD_GPU = Self(1)
+    alias NVIDIA_GPU = Self(2)
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    @no_inline
+    fn write_to[W: Writer](self, inout writer: W):
+        if self is Vendor.AMD_GPU:
+            writer.write("amd_gpu")
+            return
+        writer.write("nvidia_gpu")
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+
+# ===----------------------------------------------------------------------===#
 # A100
 # ===----------------------------------------------------------------------===#
 
@@ -49,6 +86,7 @@ fn _get_a100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias A100 = Info(
     name="A100",
+    vendor=Vendor.NVIDIA_GPU,
     arch_name="ampere",
     compute=8.0,
     version="sm_80",
@@ -101,6 +139,7 @@ fn _get_a10_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias A10 = Info(
     name="A10",
+    vendor=Vendor.NVIDIA_GPU,
     arch_name="ampere",
     compute=8.6,
     version="sm_86",
@@ -153,6 +192,7 @@ fn _get_l4_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias L4 = Info(
     name="L4",
+    vendor=Vendor.NVIDIA_GPU,
     arch_name="ada",
     compute=8.9,
     version="sm_89",
@@ -205,6 +245,7 @@ fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias H100 = Info(
     name="H100",
+    vendor=Vendor.NVIDIA_GPU,
     arch_name="hopper",
     compute=9.0,
     version="sm_90a",
@@ -250,6 +291,7 @@ fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 
 alias MI300X = Info(
     name="MI300X",
+    vendor=Vendor.AMD_GPU,
     arch_name="gfx942",
     compute=9.4,
     version="CDNA3",
@@ -331,6 +373,7 @@ struct Flops:
 @register_passable
 struct Info:
     var name: StringLiteral
+    var vendor: Vendor
     var arch_name: StringLiteral
     var compute: Float32
     var version: StringLiteral
@@ -494,6 +537,7 @@ struct Info:
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
         writer.write("name: ", self.name, "\n")
+        writer.write("vendor: ", self.vendor, "\n")
         writer.write("arch_name: ", self.arch_name, "\n")
         writer.write("compute: ", self.compute, "\n")
         writer.write("version: ", self.version, "\n")
