@@ -36,6 +36,7 @@ from .flatten import flatten
 from .gather import gather, gather_nd
 from .layer_norm import layer_norm
 from .matmul import matmul
+from .nonzero import nonzero
 from .outer import outer
 from .permute import permute
 from .quantized import dequantize, qmatmul

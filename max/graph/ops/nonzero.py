@@ -1,0 +1,45 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Op implementation for nonzero."""
+
+import numpy as np
+from max.mlir.dialects import rmo
+from max.dtype import DType
+
+from ..graph import Graph
+from ..type import DimLike, TensorType
+from ..value import TensorValue, TensorValueLike
+
+
+def nonzero(x: TensorValueLike, out_dim: DimLike) -> TensorValue:
+    """Returns the indices of all nozero elements in a tensor.
+
+    Returns a tensor of indices of the nonzero values in the given tensor.
+    The return value is a 2D tensor of shape [out_dim x rank_in], where out_dim is the
+    number of nonzero elements in the input tensor, and rank_in is the rank of
+    the input tensor. Indices are generated in row-major order.
+
+    Args:
+        x: The input symbolic tensor.
+        out_dim:
+            The newly generated dimension that is sized for the number of
+            nonzero elements.
+
+    Returns:
+        A symbolic tensor of indices
+    """
+    x = TensorValue(x)
+
+    if x.rank == 0:
+        raise ValueError("Scalar inputs not supported")
+
+    return Graph.current._add_op(
+        rmo.mo_arg_nonzero,
+        TensorType(
+            dtype=DType.int64, shape=[out_dim, x.rank], device=x.device
+        ).to_mlir(),
+        TensorValue(x),
+    )[0].tensor
