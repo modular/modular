@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TargetAdapter.h"
+#include "AMDGPUAdapter.h"
 #include "NVPTXAdapter.h"
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
@@ -20,10 +21,13 @@ namespace LLVM = mlir::LLVM;
 //===----------------------------------------------------------------------===//
 // TargetAdapter
 //===----------------------------------------------------------------------===//
+
 TargetAdapter DebugInfo::getTargetAdapter(M::TargetInfoAttr target,
                                           bool tradeoffPerfForVariableDI) {
   if (target && target.getTriple().isNVPTX())
     return getNVPTXAdapter(tradeoffPerfForVariableDI);
+  if (target && target.getTriple().isAMDGCN())
+    return getAMDGPUAdapter(tradeoffPerfForVariableDI);
   return getFallbackAdapter(tradeoffPerfForVariableDI);
 }
 
