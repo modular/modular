@@ -609,18 +609,19 @@ class InferenceSession:
 
     def __init__(
         self,
-        num_threads: Optional[int] = None,
-        devices: List[Device] = [CPU()],
-        **kwargs,
+        num_threads: int | None = None,
+        devices: list[Device] = [CPU()],
+        *,
+        custom_extensions: CustomExtensionsType | None = None,
     ):
         config: dict[str, Any] = {}
         self.num_threads = num_threads
         if num_threads:
             config["num_threads"] = num_threads
         config["devices"] = [device._device for device in devices]
-        if "custom_extensions" in kwargs:
+        if custom_extensions is not None:
             config["custom_extensions"] = _process_custom_extensions_objects(
-                kwargs["custom_extensions"]
+                custom_extensions
             )
         self._impl = _InferenceSession(config)
 
