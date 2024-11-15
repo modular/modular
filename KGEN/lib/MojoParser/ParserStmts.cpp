@@ -1200,8 +1200,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
       "$RANGE", getUnresolvedType(), forLoc, VarDeclKind::Synthesized);
   ValueDest rangeDest(rangeRef, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall("__iter__", {loadedSeq}, rangeDest,
-                                        CallSyntax::kImplicitConvert,
-                                        seqExpr)) {
+                                        CallSyntax::kMethodCall, seqExpr)) {
     auto newRefType =
         indvarDeclOp.getType().getWithElement(shared.getTypeCheckErrorType());
     indvarDeclOp.getResult().setType(newRefType);
@@ -1220,7 +1219,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   ValueDest lengthDest(EC_ForIterator);
   CValue hasNextBool = getEmitter().emitNamedMethodCall(
       "__has_next__", CallOperands({{MLValue(rangeRef), seqExpr}}), lengthDest,
-      CallSyntax::kImplicitConvert, seqExpr);
+      CallSyntax::kMethodCall, seqExpr);
   if (!hasNextBool)
     return {};
   CValue hasNext = getEmitter().emitI1({hasNextBool, seqExpr}, EC_ForIterator);
@@ -1239,7 +1238,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   ValueDest indvarDest(indvarDeclOp, EC_ForIterator);
   if (!getEmitter().emitNamedMethodCall(
           "__next__", CallOperands({{MLValue(rangeRef), seqExpr}}), indvarDest,
-          CallSyntax::kImplicitConvert, seqExpr))
+          CallSyntax::kMethodCall, seqExpr))
     return {};
 
   avoidDroppingDeclOnFail.release();

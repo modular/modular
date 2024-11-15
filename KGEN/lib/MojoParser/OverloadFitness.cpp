@@ -543,7 +543,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         // Initializer lists are good if we can construct the expected type.
         FailureOr<PValue> initFn = OverloadSet::canConstructType(
             expectedType, CallOperands(initValue.get()), operand.expr,
-            declScope);
+            declScope, /*isImplicitConversion=*/false);
         // If there were declaration errors, assume construction is possible to
         // avoid spurious errors.
         bool valid = (bool)failed(initFn) || initFn.value();

@@ -1794,7 +1794,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   for (OpResult opResult : resultOp->getResults())
     operands.add({SRValue(opResult), &call});
   return emitter.emitConstructorCall(tupleType, std::move(operands), &call,
-                                     CallSyntax::kImplicitConvert, dest,
+                                     CallSyntax::kTypeCall, dest,
                                      /*allowImplicitConversion=*/true);
 }
 
@@ -2035,7 +2035,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
   return emitter.emitConstructorCall(type, std::move(operands), node,
-                                     CallSyntax::kImplicitConvert, dest);
+                                     CallSyntax::kTypeCall, dest);
 }
 
 AnyValue ListNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -2770,7 +2770,7 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
     ValueDest subDest(EC_OperatorOperandValue);
     argValue.ir =
         emitter.emitNamedMethodCall("__bool__", CallOperands(argValue), subDest,
-                                    CallSyntax::kImplicitConvert, expr);
+                                    CallSyntax::kMethodCall, expr);
     if (!argValue.ir)
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
@@ -3377,5 +3377,5 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
   return emitter.emitConstructorCall(tupleType, CallOperands(elements), this,
-                                     CallSyntax::kImplicitConvert, dest);
+                                     CallSyntax::kTypeCall, dest);
 }

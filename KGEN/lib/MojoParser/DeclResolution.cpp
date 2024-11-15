@@ -387,9 +387,9 @@ static void applyExport(SMLoc loc, ASTDecl &decl, StringRef unmangledName,
 }
 
 namespace {
-struct FnDecorators : public SharedStateUser {
-  FnDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
-               StringRef baseName, TypeCheckedFnSignature &tcSignature)
+struct FnSigDecorators : public SharedStateUser {
+  FnSigDecorators(ASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
+                  StringRef baseName, TypeCheckedFnSignature &tcSignature)
       : SharedStateUser(shared), decl(decl), sigDecl(sigDecl),
         funcOp(cast<LIT::FuncOp>(decl)), baseName(baseName),
         tcSignature(tcSignature) {}
@@ -399,6 +399,7 @@ struct FnDecorators : public SharedStateUser {
 
 private:
   void applyStaticMethod(const DeclRefNode &node);
+  void applyImplicitDecorator(const DeclRefNode &node);
   void applyCopyOrMoveCapture(const CallNode &node, bool isMove,
                               StringRef decorator);
   void applyLLVMMetadata(const CallNode &node);
@@ -412,7 +413,7 @@ private:
 };
 } // namespace
 
-LogicalResult FnDecorators::apply(ExprNode *decorator) {
+LogicalResult FnSigDecorators::apply(ExprNode *decorator) {
   // Process all the decorators we know about.
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "export")
@@ -427,6 +428,8 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
       tcSignature.argList.effects.setCapturing();
     else if (declRef->spelling == "__unsafe_disable_nested_origin_exclusivity")
       tcSignature.isNestedOriginExclusivityCheckingDisabled = true;
+    else if (declRef->spelling == "implicit")
+      applyImplicitDecorator(*declRef);
     else if (declRef->spelling == "op")
       applyOp(/*patterns=*/nullptr);
     else
@@ -460,7 +463,7 @@ LogicalResult FnDecorators::apply(ExprNode *decorator) {
   return failure();
 }
 
-void FnDecorators::applyStaticMethod(const DeclRefNode &node) {
+void FnSigDecorators::applyStaticMethod(const DeclRefNode &node) {
   // This decorator only applies to methods of structs and traits.
   if (!decl.tryGetMethodParentDecl()) {
     emitError(node.getLoc(), "only methods on structs may be declared static");
@@ -469,8 +472,19 @@ void FnDecorators::applyStaticMethod(const DeclRefNode &node) {
   funcOp.setIsStatic(true);
 }
 
-void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
-                                          StringRef decoratorSpelling) {
+void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
+  if (SpecialFunctionInfo::get(baseName).kind != SpecialFunctionKind::kInit ||
+      tcSignature.argList.parsedArgs.size() != 2) {
+    emitError(node.getLoc())
+        << "'@implicit' may only be applied to single-argument '__init__' "
+           "methods";
+    return;
+  }
+  funcOp.setIsImplicitConversion(true);
+}
+
+void FnSigDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
+                                             StringRef decoratorSpelling) {
   // HACK(#16110): Need to implement proper capture list syntax rather than rely
   // on a special decorator.
   for (const Operand &operand : node.operands) {
@@ -564,7 +578,7 @@ void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
   }
 }
 
-void FnDecorators::applyLLVMMetadata(const CallNode &node) {
+void FnSigDecorators::applyLLVMMetadata(const CallNode &node) {
   NamedAttrList attrs;
   ExprEmitter emitter(sigDecl, EC_Decorator);
   for (Operand value : node.operands) {
@@ -578,7 +592,7 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
   funcOp.setLLVMMetadataAttr(attrs.getDictionary(getContext()));
 }
 
-void FnDecorators::applyOp(const CallNode *node) {
+void FnSigDecorators::applyOp(const CallNode *node) {
   SmallVector<Attribute> patterns;
   if (node) {
     ExprEmitter emitter(sigDecl, EC_Decorator);
@@ -927,7 +941,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Now that we have figured out the lexical structure, allow decorators to
   // take a crack at the signature.
-  FnDecorators fnDecorators(decl, sigDecl, shared, baseName, tcSignature);
+  FnSigDecorators fnDecorators(decl, sigDecl, shared, baseName, tcSignature);
   Decorators(decl).applySignatureDecorators(
       decoratorExprs,
       [&](ExprNode *decorator) { return fnDecorators.apply(decorator); });
