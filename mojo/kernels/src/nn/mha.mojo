@@ -312,7 +312,7 @@ fn fused_attention[
 
         # We did not reuse the output buffer, so we have to free the allocate
         # intermediate buffer.
-        if score_ptr != output.data.bitcast[score_type]():
+        if score_ptr != output.data.bitcast[Scalar[score_type]]():
             score_ptr.free()
 
 
@@ -2514,7 +2514,7 @@ fn mha_decoding_single_batch[
         accum_type,
         Layout.row_major(depth * group),
         address_space = AddressSpace.SHARED,
-    ](q_smem.bitcast[accum_type]())
+    ](q_smem.bitcast[Scalar[accum_type]]())
 
     if tid < (depth // simd_size) * group:
         copy_sram_to_dram[

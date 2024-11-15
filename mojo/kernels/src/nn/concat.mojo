@@ -66,7 +66,7 @@ fn memcpy_or_fuse[
 
         # Cast
         var shape_1d = IndexList[1](typed_len)
-        var typed_src = src_data.bitcast[type]()
+        var typed_src = src_data.bitcast[Scalar[type]]()
         var input = NDBuffer[type, 1](
             typed_src,
             shape_1d,
