@@ -328,7 +328,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
       [nonBitcodeKeySize, loc, &runtime, keyBuf = keyBuf.copy(),
        output = output.copy(), options, isJIT, isParLLC, moduleIdx, splitIdx,
        numFunctionBase, inputModule = std::move(module)]() mutable {
-        if (llvm::Triple(options.targetTriple).isNVPTX() && isParLLC) {
+        if (isNVPTXBackend(options) && isParLLC) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "cannot do per function codegen for NVPTX backedn.", loc));
         }
@@ -564,10 +564,10 @@ static void attachInstrumentationAttributes(llvm::Module &module,
 /// HACK HACK HACK https://github.com/modularml/modular/issues/27478
 /// Using LineTables for NVPTX backend disables optimizations in cuda JIT. Use
 /// DebugDirectives instead for equivalent performance to no-debug.
-static void adaptDebugEmissionKind(ModuleOp module, StringRef targetTriple,
-                                   DebugInfo::EmissionKind debugLevel) {
-  bool generatingPtx = llvm::Triple(targetTriple).isNVPTX();
-  if (generatingPtx && debugLevel == DebugInfo::EmissionKind::LineTablesOnly) {
+static void adaptDebugEmissionKind(ModuleOp module,
+                                   CompilationOptions &options) {
+  if (isNVPTXBackend(options) &&
+      options.getDIEmissionKind() == DebugInfo::EmissionKind::LineTablesOnly) {
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement(
         [](DebugInfo::DICompileUnitAttr CU) -> std::optional<Attribute> {
@@ -623,8 +623,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   if (configPM)
     return configPM.takeError();
 
-  adaptDebugEmissionKind(module, options.targetTriple,
-                         options.getDIEmissionKind());
+  adaptDebugEmissionKind(module, options);
 
   LowerToLLVMOptions llvmOptions(
       options.optimizationLevel, options.getDIEmissionKind(),
@@ -860,8 +859,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
       }
 
       // Split the module into multiple slices and compile each in parallel.
-      [[maybe_unused]] bool isNVPTX =
-          llvm::Triple(options.targetTriple).isNVPTX();
+      [[maybe_unused]] bool isNVPTX = isNVPTXBackend(options);
       assert((!isNVPTX || (isNVPTX && emitAssembly)) &&
              "should only emit assembly with NVPTX backend");
 
@@ -881,7 +879,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
       // declaration properly to avoid use before def/decl illegal instructions.
       // Keep record of the ordering here so that we can sort the linkedModule
       // to its original order.
-      if (llvm::Triple(options.targetTriple).isNVPTX())
+      if (isNVPTXBackend(options))
         computeFnOrdering(*llvmModule, originalFnOrdering);
 
       // Split the module into multiple slices and compile each in parallel.
@@ -919,7 +917,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
             WriteableBufferRef linkedObj = *mcLinkResult;
             if (emitAssembly) {
               std::string postfix = ".s";
-              if (llvm::Triple(options.targetTriple).isNVPTX())
+              if (isNVPTXBackend(options))
                 postfix = ".ptx";
 
               if (failed(writeBufToTemp(options.saveTempsPrefix, postfix,

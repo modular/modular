@@ -217,7 +217,7 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
   llvm::Module *oneSplitModule = nullptr;
 
   if (!hasOneSplit) {
-    if (llvm::Triple(options.targetTriple).isNVPTX()) {
+    if (isNVPTXBackend(options)) {
       // For NVPTX backend to avoid false hit
       // with its stale AnnotationCache which is populated during both
       // llvm-opt and llc pipeline passes but is only cleared at the end of
@@ -240,7 +240,7 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
     // declaration properly to avoid use before def/decl illegal instructions.
     // Sort the linkedModule's functions back to to its original order
     // (only definition matter, declaration doesn't).
-    if (llvm::Triple(options.targetTriple).isNVPTX()) {
+    if (isNVPTXBackend(options)) {
       linkedModule->getFunctionList().sort(
           [&](const auto &lhs, const auto &rhs) {
             if (lhs.isDeclaration() && rhs.isDeclaration())
