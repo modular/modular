@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V1 %s
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cuda %s
 
@@ -119,7 +118,7 @@ fn _run_peer_access(ctx: DeviceContext) raises:
         print("Number of GPU devices: " + str(num_gpus))
 
         if num_gpus > 1:
-            var peer = create_test_device_context(gpu_id=1)
+            var peer = create_test_device_context(device_id=1)
             print("peer context on GPU[1]")
 
             if ctx.can_access(peer):

@@ -33,7 +33,7 @@ fn device_kind() -> StringLiteral:
         return "default"
 
 
-fn create_test_device_context(gpu_id: Int = 0) raises -> DeviceContext:
+fn create_test_device_context(device_id: Int = 0) raises -> DeviceContext:
     # Create an instance of the DeviceContext
     var test_ctx: DeviceContext
 
@@ -41,9 +41,11 @@ fn create_test_device_context(gpu_id: Int = 0) raises -> DeviceContext:
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         var kind = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
         print("Using DeviceContext: V2 - " + str(kind))
-        test_ctx = DeviceContext(kind, gpu_id=gpu_id)
+        test_ctx = DeviceContext(kind, device_id=device_id)
+    elif is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():
+        raise Error("DeviceContextV1 is unsupported")
     else:
         print("Using DeviceContext: default")
-        test_ctx = DeviceContext(gpu_id=gpu_id)
+        test_ctx = DeviceContext(device_id=device_id)
 
     return test_ctx
