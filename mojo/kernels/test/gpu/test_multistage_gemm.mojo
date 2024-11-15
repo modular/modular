@@ -525,7 +525,9 @@ fn multistage_gemm[
 
         var accum_smem_warp_tile = tb[accum_type]().row_major[
             WM, WN
-        ]().shared().view(a_smem.bitcast[accum_type]() + int(warp_id * WM * WN))
+        ]().shared().view(
+            a_smem.bitcast[Scalar[accum_type]]() + int(warp_id * WM * WN)
+        )
 
         copy_local_to_sram[
             thread_layout = Layout.row_major(8, 4),
