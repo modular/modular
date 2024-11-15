@@ -10,10 +10,11 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/BLAKE3.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1887,6 +1888,21 @@ OpFoldResult StringReplaceOp::fold(FoldAdaptor adaptor) {
   std::string replacement = str.str();
   replaceAll(replacement, src.str(), target.str());
   return StringAttr::get(replacement, StringType::get(getContext()));
+}
+
+//===----------------------------------------------------------------------===//
+// StringHashOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult StringHashOp::fold(FoldAdaptor adaptor) {
+  auto str = dyn_cast_or_null<StringAttr>(adaptor.getStr());
+  if (!str)
+    return {};
+
+  auto hash =
+      llvm::BLAKE3::hash<16>(llvm::arrayRefFromStringRef(str.getValue()));
+  return StringAttr::get(llvm::toHex(hash, true),
+                         StringType::get(getContext()));
 }
 
 //===----------------------------------------------------------------------===//

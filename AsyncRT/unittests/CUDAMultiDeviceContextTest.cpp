@@ -27,7 +27,7 @@ TEST(CUDAMultiDeviceContextTest, MultiGPUKernels) {
 // Cuda compilation tools, release 12.1, V12.1.105
 // Based on NVVM 7.0.1
 //
-// Compiled by nvcc -ptx 
+// Compiled by nvcc -ptx
 // Simple copy kernel
 // __global__ void p2pMemcpyKernel(float* dst, float* src, size_t numElements) {
 //     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -157,8 +157,8 @@ $L__BB0_2:
 
     DeviceFunction::SignatureBuilder sig =
         DeviceFunction::SignatureBuilder().addBuffer().addBuffer().addUInt64();
-    ErrorOr<DeviceFunctionRef> err_fun =
-        src_ctx->loadFunction("_Z15p2pMemcpyKernelPfS_m", sig, p2p_copy_ptx);
+    ErrorOr<DeviceFunctionRef> err_fun = src_ctx->loadFunction(
+        "my_module", "_Z15p2pMemcpyKernelPfS_m", sig, p2p_copy_ptx);
     EXPECT_FALSE(err_fun) << err_fun.getError() << "\n";
     DeviceFunctionRef device_function = std::move(err_fun.get());
     EXPECT_TRUE(device_function);
