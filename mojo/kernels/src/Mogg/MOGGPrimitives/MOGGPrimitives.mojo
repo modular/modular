@@ -1005,7 +1005,6 @@ fn mgp_device_context_profile_end[
 @register_internal("mgp.sync")
 @always_inline
 fn mgp_sync[
-    aRuntimeSlot: UInt64,
     bDevice: StringLiteral,
 ](
     in_chain: Int,
