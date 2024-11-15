@@ -59,7 +59,7 @@ from nn.concat import (
 )
 from nn.concat import concat_shape as concat_from_list_shape
 from nn.concat import _concat_cpu, test_concat_fusion
-from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
+from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape, conv_gpu
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as _pack_conv_filter_shape
 from nn.conv_transpose import conv_transpose_shape
@@ -3208,6 +3208,7 @@ fn conv[
     output_0_fn: fn[width: Int, rank: Int, element_alignment: Int] (
         IndexList[rank], SIMD[output_type, width]
     ) capturing -> None,
+    target: StringLiteral = "cpu",
 ](
     input: NDBuffer[input_type, input_rank, input_0_static_shape],
     filter: NDBuffer[filter_type, filter_rank, input_1_static_shape],
@@ -3217,11 +3218,13 @@ fn conv[
     num_groups: Scalar,
     # output and input have the same rank.
     output: NDBuffer[output_type, input_rank, input_6_static_shape],
+    ctx: MojoCallContextPtr,
 ) raises:
     """Including this function in MOGG.mojo since it is intended to be a temporary
     wrapper around the Stdlib conv. Currently the strides and dilation are NDBuffers,
     but eventually they will be IndexList parameters (along with padding).
     """
+    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
     constrained[
         strides_type.is_integral() and dilation_type.is_integral(),
         "stride and dilation must have integral type",
@@ -3286,30 +3289,65 @@ fn conv[
             coords, rebind[SIMD[output_type, _width]](val)
         )
 
-    conv_nhwc_direct[
-        input_rank,
-        filter_rank,
-        input_0_static_shape,  # input shape
-        input_1_static_shape,  # filter shape
-        input_6_static_shape,  # output shape
-        input_type,
-        filter_type,
-        output_type,
-        filter_packed,
-        conv_attr,
-        lambdas_have_fusion,
-        epilogue_wrapper,
-    ](
-        input,
-        filter,
-        output,
-        stride_tuple,
-        dilation_tuple,
-        pad_d_tuple,
-        pad_h_tuple,
-        pad_w_tuple,
-        int(num_groups[0]),
-    )
+    @parameter
+    if target == "cpu":
+        conv_nhwc_direct[
+            input_rank,
+            filter_rank,
+            input_0_static_shape,  # input shape
+            input_1_static_shape,  # filter shape
+            input_6_static_shape,  # output shape
+            input_type,
+            filter_type,
+            output_type,
+            filter_packed,
+            conv_attr,
+            lambdas_have_fusion,
+            epilogue_wrapper,
+        ](
+            input,
+            filter,
+            output,
+            stride_tuple,
+            dilation_tuple,
+            pad_d_tuple,
+            pad_h_tuple,
+            pad_w_tuple,
+            int(num_groups[0]),
+        )
+    else:
+        constrained[
+            input_rank == 4 and filter_rank == 4,
+            "only rank 4 tensor is supported on cuda gpu",
+        ]()
+        constrained[
+            filter_packed == False,
+            "only unpacked filter is supported on cuda gpu",
+        ]()
+
+        constrained[
+            lambdas_have_fusion == False, "lambda fusion isnt supported"
+        ]()
+
+        var cuda_ctx = ctx.get_device_context()
+
+        conv_gpu[
+            input_0_static_shape,  # input shape
+            input_1_static_shape,  # filter shape
+            input_6_static_shape,  # output shape
+            input_type,
+            filter_type,
+            output_type,
+        ](
+            input.data,
+            filter.data,
+            output.data,
+            IndexList[2](stride_tuple[0], stride_tuple[1]),
+            IndexList[2](dilation_tuple[0], dilation_tuple[1]),
+            IndexList[2](pad_h_tuple[0], pad_w_tuple[0]),
+            int(num_groups[0]),
+            cuda_ctx,
+        )
 
 
 @register_internal("mo.conv_transpose")
