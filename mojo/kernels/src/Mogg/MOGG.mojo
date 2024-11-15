@@ -28,7 +28,7 @@ from buffer.buffer import _compute_ndbuffer_offset
 from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin.simd import Int64, UInt8, UInt64, _pow
 from compiler_internal import StaticTensorSpec
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from linalg.bmm import batched_matmul as _batched_matmul
 from linalg.bmm import batched_matmul_shape
 from linalg.matmul import matmul as _matmul
@@ -1124,7 +1124,7 @@ fn get_target_simd[type: DType]() -> __mlir_type.index:
 
 @register_internal("simd_target_cuda")
 fn get_target_simd_cuda[type: DType]() -> __mlir_type.index:
-    return int(simdwidthof[Scalar[type], target = _get_nvptx_target()]()).value
+    return int(simdwidthof[Scalar[type], target = _get_gpu_target()]()).value
 
 
 @register_internal("simd_target_to_int")
