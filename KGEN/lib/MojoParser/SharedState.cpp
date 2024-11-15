@@ -385,7 +385,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
     // enough for now).
     diBuilder->initializeCompileUnit(
         options.debugInfoLanguage,
-        diBuilder->createFile(diags.getBufferNameIdentifier(), "/"), "Mojo",
+        diBuilder->createFile(diags.getBufferNameIdentifier()), "Mojo",
         /*isOptimized=*/true, options.getDIEmissionKind());
   }
 }

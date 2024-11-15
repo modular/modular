@@ -71,7 +71,7 @@ DIFileAttr DIBuilder::createFile(StringRef name, StringRef directory) {
   return DIFileAttr::get(context, name, directory);
 }
 DIFileAttr DIBuilder::createFile(FileLineColLoc loc) {
-  return DIFileAttr::get(context, loc.getFilename(), "/");
+  return DIFileAttr::get(context, loc.getFilename(), "");
 }
 
 DILocalVariableAttr DIBuilder::createLocalVariable(StringRef name,

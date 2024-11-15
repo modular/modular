@@ -275,7 +275,7 @@ void StmtParser::pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard) {
   SMLoc curLoc = getToken().getLoc();
   FileLineColLoc loc = shared.diags.translateLocation(curLoc);
   scopeGuard = shared.diBuilder->pushNestedLexicalBlock(
-      shared.diBuilder->createFile(loc.getFilename(), "/"), loc.getLine(),
+      shared.diBuilder->createFile(loc.getFilename()), loc.getLine(),
       loc.getColumn());
 }
 

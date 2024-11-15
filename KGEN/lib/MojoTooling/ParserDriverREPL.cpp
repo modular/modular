@@ -688,7 +688,7 @@ static ASTDecl &buildREPLModule(const llvm::MemoryBuffer *sourceBuf,
   // If we are emitting debug info, create a file entry for this file.
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
   if (sharedState.diBuilder)
-    fileGuard = sharedState.diBuilder->pushFile(exprId, "/");
+    fileGuard = sharedState.diBuilder->pushFile(exprId);
 
   // Create the input module.
   MLIRContext *ctx = sharedState.getContext();

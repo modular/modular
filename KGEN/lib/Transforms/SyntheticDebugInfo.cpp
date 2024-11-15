@@ -62,7 +62,7 @@ synthesizeDebugInfo(ModuleOp module,
                             /*isOptimized=*/true,
                             DebugInfo::EmissionKind::LineTablesOnly);
   DebugInfo::DIBuilder::ScopeGuard moduleGuard =
-      dib.pushFile(fileLoc.getFilename(), "/");
+      dib.pushFile(fileLoc.getFilename());
 
   module->setLoc(dib.createScopedLoc(module.getLoc()));
 
@@ -83,7 +83,7 @@ synthesizeDebugInfo(ModuleOp module,
         llvm::map_to_vector(func.getResultTypes(), toDIType));
 
     DebugInfo::DIBuilder::ScopeGuard fileGuard =
-        dib.pushFile(fileLoc.getFilename(), "/");
+        dib.pushFile(fileLoc.getFilename());
 
     // Attempt to determine an un-mangled name.
     StringAttr name = func.getSymNameAttr();
