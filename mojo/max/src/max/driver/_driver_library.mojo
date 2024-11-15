@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import DLHandle, _get_dylib
+from sys.ffi import DLHandle
 from memory import Arc, UnsafePointer
 from max._utils import call_dylib_func, get_lib_path_from_cfg
 from max.tensor import TensorSpec
