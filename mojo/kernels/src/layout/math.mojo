@@ -165,6 +165,7 @@ fn max[
     inp.rank - 1,
     address_space = inp.address_space,
     element_layout = inp.element_layout,
+    layout_bitwidth = inp.layout_bitwidth,
 ] as res:
     var res_tensor = __type_of(res).stack_allocation()
     max[axis](inp, res_tensor)
@@ -194,6 +195,7 @@ fn sum[
     inp.rank - 1,
     address_space = inp.address_space,
     element_layout = inp.element_layout,
+    layout_bitwidth = inp.layout_bitwidth,
 ] as res:
     var res_tensor = __type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)
