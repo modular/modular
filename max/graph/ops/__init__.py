@@ -44,6 +44,7 @@ from .range import range
 from .rebind import rebind
 from .reduction import argmax, mean
 from .reshape import reshape
+from .scatter import masked_scatter
 from .select import select
 from .shape_to_tensor import shape_to_tensor
 from .slice_tensor import slice_tensor
