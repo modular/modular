@@ -593,7 +593,9 @@ struct ContinuousBatchingKVCache[
         )
         var block_idx = int(self.lookup_table[batch_idx])
         var full_block_idx = self._get_idx_tuple(block_idx, 0, 0, 0)
-        var block_pointer = self.blocks._offset(full_block_idx).bitcast[type_]()
+        var block_pointer = self.blocks._offset(full_block_idx).bitcast[
+            Scalar[type_]
+        ]()
         var block_dynamic_shape = IndexList[3](
             self.blocks.dim[3](),
             self.blocks.dim[4](),
