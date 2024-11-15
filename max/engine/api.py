@@ -119,8 +119,8 @@ class Model:
         self,
         *args: InputType,
         copy_inputs_to_device: bool = True,
-        output_device: Optional[Device] = None,
-    ) -> List[TensorOrMojoType]:
+        output_device: Device | None = None,
+    ) -> list[TensorOrMojoType]:
         """Executes the model with the provided input and returns the outputs.
 
         For example, if the model has one input tensor:
@@ -163,7 +163,7 @@ class Model:
               types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
               :obj:`max.driver.Tensor`.
         """
-        input_impls: List[Union[_Tensor, MojoValue]] = []
+        input_impls: list[Union[_Tensor, MojoValue]] = []
 
         for idx, arg in enumerate(args):
             # Validate that input is one of supported types and convert if
@@ -217,7 +217,7 @@ class Model:
 
     def __call__(
         self, *args: InputType, **kwargs: InputType
-    ) -> List[TensorOrMojoType]:
+    ) -> list[TensorOrMojoType]:
         """Executes the model with the provided input and returns the outputs.
 
         Models can be called with any mixture of named and positional inputs:
@@ -328,7 +328,7 @@ class Model:
         return f"Model(inputs={self.input_metadata})"
 
     @property
-    def input_metadata(self) -> List[TensorSpec]:
+    def input_metadata(self) -> list[TensorSpec]:
         """
         Metadata about the model's input tensors, as a list of
         :obj:`TensorSpec` objects.
@@ -343,7 +343,7 @@ class Model:
         return [TensorSpec._init(spec) for spec in self._impl.input_metadata]
 
     @property
-    def output_metadata(self) -> List[TensorSpec]:
+    def output_metadata(self) -> list[TensorSpec]:
         """
         Metadata about the model's output tensors, as a list of
         :obj:`TensorSpec` objects.
@@ -367,7 +367,7 @@ class Model:
         return Signature(parameters=parameters)
 
     @property
-    def devices(self) -> List[Device]:
+    def devices(self) -> list[Device]:
         """
         Returns the device object that the session is configured for.
         """
@@ -409,7 +409,7 @@ class TensorSpec:
             return f"None x {self.dtype.name}"
 
     @property
-    def shape(self) -> Optional[List[int]]:
+    def shape(self) -> list[int] | None:
         """The shape of the tensor as a list of integers.
 
         If a dimension size is unknown/dynamic (such as the batch size), its
@@ -637,10 +637,10 @@ class InferenceSession:
         self,
         model: Union[str, Path, Any],
         *,
-        custom_extensions: Optional[CustomExtensionsType] = None,
-        custom_ops_path: Optional[str] = None,
-        input_specs: Optional[List[TorchInputSpec]] = None,
-        weights_registry: Optional[dict[str, DLPackArray]] = None,
+        custom_extensions: CustomExtensionsType | None = None,
+        custom_ops_path: str | None = None,
+        input_specs: list[TorchInputSpec] | None = None,
+        weights_registry: dict[str, DLPackArray] | None = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
