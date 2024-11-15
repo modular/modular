@@ -16,7 +16,7 @@ from typing import AsyncGenerator, List, Literal, Optional, cast
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.applications import State
 from fastapi.responses import JSONResponse, Response
-from max.pipelines import TokenGeneratorTokenizer
+from max.pipelines import PipelineTokenizer
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
@@ -217,7 +217,7 @@ def build_prompt(
     completion_request: CreateChatCompletionRequest,
 ) -> str:
     """Build the chat completion prompt."""
-    if isinstance(pipeline.tokenizer, TokenGeneratorTokenizer):
+    if isinstance(pipeline.tokenizer, PipelineTokenizer):
         messages = [
             {
                 "role": message.root.role,

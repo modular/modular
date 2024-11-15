@@ -16,7 +16,7 @@ from typing import AsyncGenerator, Callable, Generic, Mapping, Optional, TypeVar
 
 from max.pipelines.interfaces import (
     TokenGeneratorRequest,
-    TokenGeneratorTokenizer,
+    PipelineTokenizer,
 )
 from max.serve.scheduler.queues import (
     BatchingStrategy,
@@ -127,7 +127,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         self,
         config: TokenGeneratorPipelineConfig,
         model_name: str,
-        tokenizer: TokenGeneratorTokenizer,
+        tokenizer: PipelineTokenizer,
         tg_yield_to_ce: bool = True,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)

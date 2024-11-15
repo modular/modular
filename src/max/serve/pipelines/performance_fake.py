@@ -14,7 +14,7 @@ from typing import Any, Iterable, List, Literal, Optional, Union
 
 import numpy as np
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
-from max.pipelines.tokenizer import PreTrainedTokenGeneratorTokenizer
+from max.pipelines.tokenizer import PreTrainedPipelineTokenizer
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
 
@@ -45,8 +45,8 @@ class BatchInfo:
     """Number of steps to do in the pipeline"""
 
 
-class PerformanceFakingTokenGeneratorTokenizer(
-    PreTrainedTokenGeneratorTokenizer[PerformanceFakingContext]
+class PerformanceFakingPipelineTokenizer(
+    PreTrainedPipelineTokenizer[PerformanceFakingContext]
 ):
     def __init__(
         self, delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]

@@ -13,7 +13,7 @@ from max.pipelines.interfaces import (
 )
 from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
-    EchoTokenGeneratorTokenizer,
+    EchoPipelineTokenizer,
 )
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
@@ -33,7 +33,7 @@ def echo_generator_pipeline() -> BatchedTokenGeneratorState:
         batched_generator=TokenGeneratorPipeline(
             TokenGeneratorPipelineConfig.dynamic_homogenous(batch_size=1),
             "echo",
-            EchoTokenGeneratorTokenizer(),
+            EchoPipelineTokenizer(),
         ),
         model_factory=EchoTokenGenerator,
     )

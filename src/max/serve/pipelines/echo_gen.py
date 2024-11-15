@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
-from max.pipelines import IdentityTokenGeneratorTokenizer
+from max.pipelines import IdentityPipelineTokenizer
 
 
 @dataclass
@@ -21,8 +21,8 @@ class EchoTokenGeneratorContext:
 
 
 @dataclass
-class EchoTokenGeneratorTokenizer(
-    IdentityTokenGeneratorTokenizer[EchoTokenGeneratorContext]
+class EchoPipelineTokenizer(
+    IdentityPipelineTokenizer[EchoTokenGeneratorContext]
 ):
     async def new_context(
         self, request: TokenGeneratorRequest
