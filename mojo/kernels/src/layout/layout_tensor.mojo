@@ -315,7 +315,7 @@ struct LayoutTensor[
             element_layout: The element layout of the returned LayoutTensor.
         """
         return __type_of(result)(
-            self.ptr.bitcast[new_type, address_space=address_space](),
+            self.ptr.bitcast[Scalar[new_type], address_space=address_space](),
             rebind[RuntimeLayout[layout, bitwidth = result.layout_bitwidth]](
                 self.runtime_layout
             ),
@@ -2159,7 +2159,7 @@ struct LayoutTensor[
                     if masked:
                         var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
                         async_copy[element_size_bytes, fill = Fill.ZERO](
-                            src_ptr.bitcast[dtype]() + src_idx,
+                            src_ptr.bitcast[Scalar[dtype]]() + src_idx,
                             dst_ptr + dst_idx,
                             src_copy_size,
                         )
@@ -2168,7 +2168,7 @@ struct LayoutTensor[
                             element_size_bytes,
                             eviction_policy=eviction_policy,
                         ](
-                            src_ptr.bitcast[dtype]() + src_idx,
+                            src_ptr.bitcast[Scalar[dtype]]() + src_idx,
                             dst_ptr + dst_idx,
                         )
 
@@ -2194,7 +2194,8 @@ struct LayoutTensor[
                     )(i)
 
                 async_copy[4, eviction_policy=eviction_policy](
-                    src_ptr.bitcast[dtype]() + src_idx, dst_ptr + dst_idx
+                    src_ptr.bitcast[Scalar[dtype]]() + src_idx,
+                    dst_ptr + dst_idx,
                 )
 
     @always_inline
@@ -3259,7 +3260,9 @@ struct LayoutTensorIter[
         """
         return __type_of(result)(
             self.ptr.bitcast[
-                new_type, address_space=address_space, alignment=alignment
+                Scalar[new_type],
+                address_space=address_space,
+                alignment=alignment,
             ](),
             int(self.bound),
             self.runtime_layout,
