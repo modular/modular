@@ -70,7 +70,7 @@ fn is_sm_greater_equal[name: StringLiteral]() -> Bool:
     """If device SM version number is greater than or equal to the provided value.
     """
 
-    alias current = Info.from_target_name[_get_sm_name()]()
-    alias hw = Info.from_target_name[name]()
+    alias current = Info.from_name[_get_sm_name()]()
+    alias hw = Info.from_name[name]()
 
     return current >= hw

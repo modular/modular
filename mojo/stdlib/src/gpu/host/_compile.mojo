@@ -13,7 +13,12 @@ from pathlib import Path
 from sys.info import _get_arch
 from compile import Info, compile_info, get_linkage_name
 
-from .info import DEFAULT_GPU_ARCH, _get_info_from_target
+from .info import (
+    DEFAULT_GPU_ARCH,
+    Info as HardwareInfo,
+    A100,
+    _get_info_from_target,
+)
 
 # ===----------------------------------------------------------------------===#
 # Targets
@@ -25,7 +30,7 @@ fn _get_gpu_target[
     # TODO: Ideally this is an Optional[StringLiteral] but blocked by MOCO-1039
     target_arch: StringLiteral = DEFAULT_GPU_ARCH,
 ]() -> __mlir_type.`!kgen.target`:
-    alias info = _get_info_from_target[target_arch]()
+    alias info = HardwareInfo.from_name[target_arch]() if target_arch else A100
     return info.target()
 
 

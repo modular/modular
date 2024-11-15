@@ -8,8 +8,11 @@
 from math import ceildiv, floor
 from os import abort
 from sys import env_get_string
+from sys.info import _accelerator_arch
 
-alias DEFAULT_GPU_ARCH = env_get_string["DEFAULT_GPU_ARCH", "sm_80"]()
+alias DEFAULT_GPU_ARCH = _accelerator_arch()
+alias DEFAULT_GPU = Info.from_name[DEFAULT_GPU_ARCH]()
+alias DEFAULT_GPU_TARGET = DEFAULT_GPU.target()
 
 # ===----------------------------------------------------------------------===#
 # Vendor
@@ -21,6 +24,7 @@ alias DEFAULT_GPU_ARCH = env_get_string["DEFAULT_GPU_ARCH", "sm_80"]()
 struct Vendor:
     var _value: Int8
 
+    alias NO_GPU = Self(0)
     alias AMD_GPU = Self(1)
     alias NVIDIA_GPU = Self(2)
 
@@ -38,6 +42,9 @@ struct Vendor:
 
     @no_inline
     fn write_to[W: Writer](self, inout writer: W):
+        if self is Vendor.NO_GPU:
+            writer.write("no_gpu")
+            return
         if self is Vendor.AMD_GPU:
             writer.write("amd_gpu")
             return
@@ -47,6 +54,49 @@ struct Vendor:
     fn __str__(self) -> String:
         return String.write(self)
 
+
+# ===----------------------------------------------------------------------===#
+# NoGPU
+# ===----------------------------------------------------------------------===#
+
+
+fn _get_empty_target() -> __mlir_type.`!kgen.target`:
+    return __mlir_attr[
+        `#kgen.target<triple = "", `,
+        `arch = "", `,
+        `features = "", `,
+        `data_layout="",`,
+        `simd_bit_width = 0,`,
+        `index_bit_width = 0`,
+        `> : !kgen.target`,
+    ]
+
+
+alias NoGPU = Info(
+    name="NoGPU",
+    vendor=Vendor.NO_GPU,
+    arch_name="no_gpu",
+    compute=0,
+    version="",
+    sm_count=0,
+    warp_size=0,
+    threads_per_sm=0,
+    threads_per_warp=0,
+    warps_per_multiprocessor=0,
+    threads_per_multiprocessor=0,
+    thread_blocks_per_multiprocessor=0,
+    shared_memory_per_multiprocessor=0,
+    register_file_size=0,
+    register_allocation_unit_size=0,
+    allocation_granularity="none",
+    max_registers_per_thread=0,
+    max_registers_per_block=0,
+    max_blocks_per_multiprocessor=0,
+    shared_memory_allocation_unit_size=0,
+    warp_allocation_granularity=0,
+    max_thread_block_size=0,
+    flops=Flops(fp16=0, tf32=0, fp64=0, i8=0, i4=0),
+)
 
 # ===----------------------------------------------------------------------===#
 # A100
@@ -412,10 +462,12 @@ struct Info:
             return _get_h100_target[index_bit_width]()
         if self.name == "MI300X":
             return _get_mi300x_target[index_bit_width]()
+        if self.name == "":
+            return _get_empty_target()
         return _get_a100_target[index_bit_width]()
 
     @staticmethod
-    fn from_target_name[name: StringLiteral]() -> Self:
+    fn from_name[name: StringLiteral]() -> Self:
         return _get_info_from_target[name]()
 
     fn _warps_per_block(self, threads_per_block: Int) -> Int:
@@ -670,37 +722,58 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
             "sm_89",
             "sm_90",
             "sm_90a",
+            "nvidia:sm80",
+            "nvidia:sm86",
+            "nvidia:sm89",
+            "nvidia:sm90",
             "mi300x",
+            "",
         )
     ]()
 
     @parameter
-    if target_arch in ("cuda-sm_80", "sm_80"):
+    if target_arch in ("cuda-sm_80", "sm_80", "nvidia:sm80"):
         return A100
-    elif target_arch in ("cuda-sm_86", "sm_86"):
+    elif target_arch in ("cuda-sm_86", "sm_86", "nvidia:sm86"):
         return A10
-    elif target_arch in ("cuda-sm_89", "sm_89"):
+    elif target_arch in ("cuda-sm_89", "sm_89", "nvidia:sm89"):
         return L4
-    elif target_arch in ("cuda-sm_90", "cuda-sm_90a", "sm_90", "sm_90a"):
+    elif target_arch in (
+        "cuda-sm_90",
+        "cuda-sm_90a",
+        "sm_90",
+        "sm_90a",
+        "nvidia:sm90",
+    ):
         return H100
     elif target_arch in ("mi300x"):
         return MI300X
+    elif DEFAULT_GPU_ARCH == "":
+        return NoGPU
 
     return _get_info_from_target[DEFAULT_GPU_ARCH]()
 
 
 @always_inline("nodebug")
 fn _get_compute(target_arch: String) -> Float32:
-    if target_arch in ("cuda-sm_80", "sm_80"):
+    if target_arch in ("cuda-sm_80", "sm_80", "nvidia:sm80"):
         return A100.compute
-    elif target_arch in ("cuda-sm_86", "sm_86"):
+    elif target_arch in ("cuda-sm_86", "sm_86", "nvidia:sm86"):
         return A10.compute
-    elif target_arch in ("cuda-sm_89", "sm_89"):
+    elif target_arch in ("cuda-sm_89", "sm_89", "nvidia:sm89"):
         return L4.compute
-    elif target_arch in ("cuda-sm_90", "cuda-sm_90a", "sm_90", "sm_90a"):
+    elif target_arch in (
+        "cuda-sm_90",
+        "cuda-sm_90a",
+        "sm_90",
+        "sm_90a",
+        "nvidia:sm90",
+    ):
         return H100.compute
     elif target_arch in ("mi300x"):
         return MI300X.compute
+    elif DEFAULT_GPU_ARCH == "":
+        return NoGPU.compute
 
     return _get_info_from_target[DEFAULT_GPU_ARCH]().compute
 

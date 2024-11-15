@@ -5,14 +5,25 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA GPUs global constants."""
 
-from sys import warpsize
+from sys.info import is_nvidia_gpu, is_amd_gpu
+from .host.info import DEFAULT_GPU_ARCH, DEFAULT_GPU
 
 # ===----------------------------------------------------------------------===#
 # Globals
 # ===----------------------------------------------------------------------===#
 
 
-alias WARP_SIZE = 32
+alias WARP_SIZE = _resolve_warp_size()
 """The warp size of the NVIDIA hardware."""
-alias WARP_SIZE_AMD = 64
-"""The warp size of the AMD GPU compute hardware."""
+
+
+fn _resolve_warp_size() -> Int:
+    @parameter
+    if is_nvidia_gpu():
+        return 32
+    elif is_amd_gpu():
+        return 64
+    elif DEFAULT_GPU_ARCH == "":
+        return 0
+    else:
+        return DEFAULT_GPU.warp_size

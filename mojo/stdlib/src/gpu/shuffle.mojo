@@ -9,15 +9,13 @@ from sys import llvm_intrinsic, is_nvidia_gpu
 from memory import bitcast
 from gpu import lane_id
 
-from .globals import WARP_SIZE, WARP_SIZE_AMD
+from .globals import WARP_SIZE, WARP_SIZE
 
 from .tensor_ops import tc_reduce
 
 # TODO (#24457): support shuffles with width != 32
 alias _WIDTH_MASK = WARP_SIZE - 1
-alias _WIDTH_MASK_AMD = WARP_SIZE_AMD - 1
 alias FULL_MASK = 2**WARP_SIZE - 1
-alias FULL_MASK_AMD = 2**WARP_SIZE_AMD - 1
 
 # shfl.sync.up.b32 prepares this mask differently from other shuffle intrinsics
 alias _WIDTH_MASK_SHUFFLE_UP = 0
@@ -100,8 +98,7 @@ fn shuffle_idx[
     Returns:
       The value from the offset.
     """
-    alias mask = FULL_MASK if is_nvidia_gpu() else FULL_MASK_AMD
-    return shuffle_idx(mask, val, offset)
+    return shuffle_idx(FULL_MASK, val, offset)
 
 
 @always_inline
@@ -116,7 +113,7 @@ fn _shuffle_idx_amd[
     # But it's also masking out the upper two bits. Why?
     # The lane should not be > 64 so the upper 2 bits should always be zero.
     # Use -64 for now.
-    var t0 = lane & -WARP_SIZE_AMD
+    var t0 = lane & -WARP_SIZE
     var v = t0 | offset.cast[DType.int32]()
     v <<= 2
     var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
@@ -184,8 +181,7 @@ fn shuffle_up[
     Returns:
       The value at the specified offset.
     """
-    alias mask = FULL_MASK if is_nvidia_gpu() else FULL_MASK_AMD
-    return shuffle_up(mask, val, offset)
+    return shuffle_up(FULL_MASK, val, offset)
 
 
 @always_inline
@@ -246,8 +242,7 @@ fn shuffle_down[
     Returns:
       The value at the specified offset.
     """
-    alias mask = FULL_MASK if is_nvidia_gpu() else FULL_MASK_AMD
-    return shuffle_down(mask, val, offset)
+    return shuffle_down(FULL_MASK, val, offset)
 
 
 @always_inline
@@ -259,7 +254,7 @@ fn _shuffle_down_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane = lane_id()
     # set the offset to 0 if lane + offset >= WARP_SIZE
-    var v = (lane + offset > _WIDTH_MASK_AMD).select(0, offset)
+    var v = (lane + offset > _WIDTH_MASK).select(0, offset)
     v += lane
     # The address needs to be in bytes
     v <<= 2
@@ -278,7 +273,7 @@ fn _shuffle_up_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane: Int32 = lane_id()
     var t0 = lane - offset.cast[DType.int32]()
-    var t1 = lane & -WARP_SIZE_AMD
+    var t1 = lane & -WARP_SIZE
     var v = (t0 < t1).select(lane, t0)
     # The address needs to be in bytes
     v <<= 2
@@ -344,8 +339,7 @@ fn shuffle_xor[
     Returns:
       The value at the lane based on bitwise XOR of own lane id.
     """
-    alias mask = FULL_MASK if is_nvidia_gpu() else FULL_MASK_AMD
-    return shuffle_xor(mask, val, offset)
+    return shuffle_xor(FULL_MASK, val, offset)
 
 
 @always_inline
@@ -357,9 +351,9 @@ fn _shuffle_xor_amd[
     # FIXME: Set the EXECute mask register to the mask
     var lane: UInt32 = lane_id()
     var t0 = lane ^ offset
-    var t1 = lane & -WARP_SIZE_AMD
+    var t1 = lane & -WARP_SIZE
     # This needs to be "add nsw" = add no sign wrap
-    var t2 = t1 + WARP_SIZE_AMD
+    var t2 = t1 + WARP_SIZE
     var v = (t0 < t2).select(t0, lane)
     # The address needs to be in bytes
     v <<= 2
