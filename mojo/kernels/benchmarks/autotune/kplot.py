@@ -5,15 +5,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import os
+from pathlib import Path
+
 import click
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from pathlib import Path
-import os
 
 
-def draw_plot(x, y_list, y_names, x_title, y_title, extension, prefix="img"):
+def draw_plot(
+    x, y_list, y_names, x_title, y_title, extension, prefix="img", scale=1.0
+):
     layout = go.Layout(
         autosize=False,
         width=1920,
@@ -73,7 +76,7 @@ def draw_plot(x, y_list, y_names, x_title, y_title, extension, prefix="img"):
 
         # fig.show()
         # plotly.offline.plot(fig, filename='lifeExp.html')
-        fig.write_image(name, scale=1.0)
+        fig.write_image(name, scale=scale)
         print(f"- added [{name}]")
 
     def wrap(s, d=10):
@@ -106,6 +109,7 @@ def parse_and_plot(
     extension="png",
     force=False,
     prefix="img",
+    scale=1.0,
 ):
     tables = []
     for path in path_list:
@@ -161,6 +165,7 @@ def parse_and_plot(
         y_title=target_col_name,
         extension=extension,
         prefix=prefix,
+        scale=scale,
     )
 
 
@@ -203,6 +208,14 @@ def parse_and_plot(
     help="output extension",  # TODO: complete docstring
 )
 @click.option(
+    "--scale",
+    "-s",
+    "scale",
+    default=1.0,
+    type=click.FLOAT,
+    help="scale for the output, default=1, use > 1 (~6) for better quality",  # TODO: complete docstring
+)
+@click.option(
     "--force",
     "-f",
     is_flag=True,
@@ -221,6 +234,7 @@ def cli(
     plot_col,
     compare,
     extension,
+    scale,
     force,
     verbose,
 ) -> bool:
@@ -244,6 +258,7 @@ def cli(
         extension=extension,
         force=force,
         prefix=prefix,
+        scale=scale,
     )
 
 
