@@ -283,7 +283,7 @@ class ReplitPipelineOracle(PipelineOracle):
         return MaxPipelineAndTokenizer(
             # Unlike the other pipelines, replit.Replit is both a model and a
             # generator at the same time.
-            model=generator,
+            model=generator._pipeline_model,
             generator=generator,
             tokenizer=tokenizer,
         )

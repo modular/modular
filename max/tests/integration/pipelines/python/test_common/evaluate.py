@@ -11,11 +11,11 @@ from typing import Any, Iterable
 
 import numpy as np
 from max.driver import CPU
+from max.pipelines import PipelineModel
 from max.pipelines.interfaces import (
     TokenGeneratorRequest,
     PipelineTokenizer,
 )
-from max.pipelines.kv_cache import KVCacheManager
 
 NUM_STEPS = 10
 PROMPTS = (
@@ -58,7 +58,11 @@ def run_model(
         for _ in range(num_steps):
             next_token_with_logits(model, {curr_req_id: context}, values)
         results.append({"prompt": prompt, "values": values[curr_req_id]})
-        model._kv_manager.release(context.cache_seq_id)
+
+        if isinstance(model, PipelineModel):
+            model.kv_manager.release(context.cache_seq_id)
+        else:
+            model._kv_manager.release(context.cache_seq_id)
     return results
 
 
@@ -78,10 +82,37 @@ def next_token_with_logits(
         update_values: Dictionary of request ids to lists of next_token &
             logits. These lists are updated in this method.
     """
+    # Llama & Replit have been moved over to the new PipelineModel.
+    if isinstance(model, PipelineModel):
+        # Flatten our batch for consistent indexing.
+        context_batch = list(req_to_context_dict.values())
+
+        # Claim cache rows for our batch.
+        for context in context_batch:
+            if context.cache_seq_id in model.kv_manager.slots_remaining:
+                model.kv_manager.external_claim([context.cache_seq_id])
+
+        # Get cache seq ids for batch.
+        cache_seq_ids = [ctx.cache_seq_id for ctx in context_batch]
+
+        # Fetch kv inputs.
+        kv_inputs = model.kv_manager.fetch(cache_seq_ids)
+
+        # Get Model inputs
+        model_inputs = model.prepare_initial_token_inputs(context_batch)
+
+        logits = model.execute(*model_inputs, *kv_inputs).to(CPU())
+
+        model.kv_manager.step(
+            valid_lengths={
+                ctx.cache_seq_id: ctx.seq_len for ctx in context_batch
+            }
+        )
+
     # Llama3's _execute method has a different signature and set of calling
     # expectations than Replit and Mistral do.  Use the Llama3 logic only if it
     # also has the _prepare_initial_token_inputs method required by Llama.
-    if hasattr(model, "_prepare_initial_token_inputs"):
+    elif hasattr(model, "_prepare_initial_token_inputs"):
         # Flatten our batch for consistent indexing
         context_batch = list(req_to_context_dict.values())
         kv_manager = model._kv_manager
