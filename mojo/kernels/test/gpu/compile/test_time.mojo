@@ -7,7 +7,7 @@
 
 from time import now, sleep, time_function
 
-from gpu.host._compile import _compile_code_asm, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.intrinsics import *
 from testing import *
 
@@ -38,7 +38,7 @@ def test_clock_functions_sm80():
 
 def test_clock_functions_sm90():
     alias asm = _compile_code_asm[
-        clock_functions, target = _get_nvptx_target["sm_90"]()
+        clock_functions, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_clock_functions(asm)
 
@@ -63,15 +63,13 @@ fn _verify_time_functions(asm: String) raises -> None:
 
 
 def test_time_functions_sm80():
-    alias asm = _compile_code_asm[
-        time_functions, target = _get_nvptx_target()
-    ]()
+    alias asm = _compile_code_asm[time_functions, target = _get_gpu_target()]()
     _verify_time_functions(asm)
 
 
 def test_time_functions_sm90():
     alias asm = _compile_code_asm[
-        time_functions, target = _get_nvptx_target["sm_90"]()
+        time_functions, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_time_functions(asm)
 

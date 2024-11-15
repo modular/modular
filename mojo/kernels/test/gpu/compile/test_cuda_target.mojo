@@ -22,7 +22,7 @@ from gpu import (
     shuffle_xor,
 )
 from gpu.host import DeviceContext
-from gpu.host._compile import _compile_code_asm, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, memset_zero, stack_allocation
 from testing import *
@@ -55,14 +55,14 @@ fn _verify_parameterized_on_cuda(asm: String) raises -> None:
 
 def test_parameterized_on_cuda_sm80():
     alias asm = _compile_code_asm[
-        parameterized_on_cuda, target = _get_nvptx_target()
+        parameterized_on_cuda, target = _get_gpu_target()
     ]()
     _verify_parameterized_on_cuda(asm)
 
 
 def test_parameterized_on_cuda_sm90():
     alias asm = _compile_code_asm[
-        parameterized_on_cuda, target = _get_nvptx_target["sm_90"]()
+        parameterized_on_cuda, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_parameterized_on_cuda(asm)
 
@@ -83,13 +83,13 @@ fn _verify_hello(asm: String) raises -> None:
 
 
 def test_hello_mojo_sm80():
-    alias asm = _compile_code_asm[hello_mojo, target = _get_nvptx_target()]()
+    alias asm = _compile_code_asm[hello_mojo, target = _get_gpu_target()]()
     _verify_hello(asm)
 
 
 def test_hello_mojo_sm90():
     alias asm = _compile_code_asm[
-        hello_mojo, target = _get_nvptx_target["sm_90"]()
+        hello_mojo, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_hello(asm)
 
@@ -127,15 +127,13 @@ def _verify_erf_elementwise(asm: String):
 
 
 def test_erf_elementwise_sm80():
-    alias asm = _compile_code_asm[
-        erf_elementwise, target = _get_nvptx_target()
-    ]()
+    alias asm = _compile_code_asm[erf_elementwise, target = _get_gpu_target()]()
     _verify_erf_elementwise(asm)
 
 
 def test_erf_elementwise_sm90():
     alias asm = _compile_code_asm[
-        erf_elementwise, target = _get_nvptx_target["sm_90"]()
+        erf_elementwise, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_erf_elementwise(asm)
 
@@ -163,13 +161,13 @@ fn _verify_erf_kernel(asm: String) raises -> None:
 
 
 def test_erf_kernel_sm80():
-    alias asm = _compile_code_asm[erf_kernel, target = _get_nvptx_target()]()
+    alias asm = _compile_code_asm[erf_kernel, target = _get_gpu_target()]()
     _verify_erf_kernel(asm)
 
 
 def test_erf_kernel_sm90():
     alias asm = _compile_code_asm[
-        erf_kernel, target = _get_nvptx_target["sm_90"]()
+        erf_kernel, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_erf_kernel(asm)
 
@@ -193,14 +191,14 @@ fn _verify_shared_stack_allocation(asm: String) raises -> None:
 
 def test_shared_stack_allocation_sm80():
     alias asm = _compile_code_asm[
-        test_shared_stack_allocation, target = _get_nvptx_target()
+        test_shared_stack_allocation, target = _get_gpu_target()
     ]()
     _verify_shared_stack_allocation(asm)
 
 
 def test_shared_stack_allocation_sm90():
     alias asm = _compile_code_asm[
-        test_shared_stack_allocation, target = _get_nvptx_target["sm_90"]()
+        test_shared_stack_allocation, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_shared_stack_allocation(asm)
 
@@ -221,13 +219,13 @@ fn _verify_barrier(asm: String) raises -> None:
 
 
 def test_barrier_sm80():
-    alias asm = _compile_code_asm[test_barrier, target = _get_nvptx_target()]()
+    alias asm = _compile_code_asm[test_barrier, target = _get_gpu_target()]()
     _verify_barrier(asm)
 
 
 def test_barrier_sm90():
     alias asm = _compile_code_asm[
-        test_barrier, target = _get_nvptx_target["sm_90"]()
+        test_barrier, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_barrier(asm)
 
@@ -336,12 +334,12 @@ def _verify_gemm(asm: String):
 
 
 def test_gemm_sm80():
-    alias asm = _compile_code_asm[gemm, target = _get_nvptx_target()]()
+    alias asm = _compile_code_asm[gemm, target = _get_gpu_target()]()
     _verify_gemm(asm)
 
 
 def test_gemm_sm90():
-    alias asm = _compile_code_asm[gemm, target = _get_nvptx_target["sm_90"]()]()
+    alias asm = _compile_code_asm[gemm, target = _get_gpu_target["sm_90"]()]()
     _verify_gemm(asm)
 
 
@@ -378,15 +376,13 @@ fn _verify_shuffle_up(asm: String) raises -> None:
 
 
 def test_shuffle_up_sm80():
-    alias asm = _compile_code_asm[
-        test_shuffle_up, target = _get_nvptx_target()
-    ]()
+    alias asm = _compile_code_asm[test_shuffle_up, target = _get_gpu_target()]()
     _verify_shuffle_up(asm)
 
 
 def test_shuffle_up_sm90():
     alias asm = _compile_code_asm[
-        test_shuffle_up, target = _get_nvptx_target["sm_90"]()
+        test_shuffle_up, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_shuffle_up(asm)
 
@@ -410,14 +406,14 @@ fn _verify_shuffle_down(asm: String) raises -> None:
 
 def test_shuffle_down_sm80():
     alias asm = _compile_code_asm[
-        test_shuffle_down, target = _get_nvptx_target()
+        test_shuffle_down, target = _get_gpu_target()
     ]()
     _verify_shuffle_down(asm)
 
 
 def test_shuffle_down_sm90():
     alias asm = _compile_code_asm[
-        test_shuffle_down, target = _get_nvptx_target["sm_90"]()
+        test_shuffle_down, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_shuffle_down(asm)
 
@@ -445,15 +441,13 @@ fn _verify_warp_sum_reduce(asm: String) raises -> None:
 
 
 def test_warp_sum_reduce_sm80():
-    alias asm = _compile_code_asm[
-        warp_sum_reduce, target = _get_nvptx_target()
-    ]()
+    alias asm = _compile_code_asm[warp_sum_reduce, target = _get_gpu_target()]()
     _verify_warp_sum_reduce(asm)
 
 
 def test_warp_sum_reduce_sm90():
     alias asm = _compile_code_asm[
-        warp_sum_reduce, target = _get_nvptx_target["sm_90"]()
+        warp_sum_reduce, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_warp_sum_reduce(asm)
 
@@ -487,13 +481,13 @@ fn _verify_block_reduce(asm: String) raises -> None:
 
 
 def test_block_reduce_sm80():
-    alias asm = _compile_code_asm[block_reduce, target = _get_nvptx_target()]()
+    alias asm = _compile_code_asm[block_reduce, target = _get_gpu_target()]()
     _verify_block_reduce(asm)
 
 
 def test_block_reduce_sm90():
     alias asm = _compile_code_asm[
-        block_reduce, target = _get_nvptx_target["sm_90"]()
+        block_reduce, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_block_reduce(asm)
 

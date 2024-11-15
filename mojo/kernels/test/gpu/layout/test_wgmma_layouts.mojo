@@ -9,7 +9,7 @@
 from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.id import ThreadIdx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
@@ -207,7 +207,7 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext):
         b_smem_layout,
     ]
     var func = ctx.compile_function[
-        wgmma_tf32_tf32_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_tf32_tf32_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -330,7 +330,7 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x8(ctx: DeviceContext):
         b_smem_layout,
     ]
     var func = ctx.compile_function[
-        wgmma_tf32_tf32_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_tf32_tf32_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -525,7 +525,7 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext):
         b_smem_layout,
     ]
     var func = ctx.compile_function[
-        wgmma_bf16_bf16_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_bf16_bf16_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -646,7 +646,7 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
         b_smem_layout,
     ]
     var func = ctx.compile_function[
-        wgmma_bf16_bf16_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_bf16_bf16_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -841,7 +841,7 @@ def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext):
         b_smem_layout,
     ]
     var func = ctx.compile_function[
-        wgmma_f16_f16_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_f16_f16_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -963,7 +963,7 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext):
         b_smem_layout,
     ]
     var func = ctx.compile_function[
-        wgmma_f16_f16_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_f16_f16_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -1159,7 +1159,7 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext):
         b_smem_layout,
     ]
     var func = ctx.compile_function[
-        wgmma_f16_f16_f16_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_f16_f16_f16_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -1281,7 +1281,7 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext):
         b_smem_layout,
     ]
     var func = ctx.compile_function[
-        wgmma_f16_f16_f16_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_f16_f16_f16_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(

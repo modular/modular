@@ -10,7 +10,7 @@ from sys import simdwidthof
 
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
 from nn.normalization import *

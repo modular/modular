@@ -9,7 +9,7 @@
 from builtin.io import _printf
 from gpu import barrier, lane_id
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.id import ThreadIdx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
@@ -202,7 +202,7 @@ def test_wgmma_64x64x8_f32_f32_f32_fill(ctx: DeviceContext):
 
     var func = ctx.compile_function[
         wgmma_tf32_tf32_f32_fill_kernel[M, N, K],
-        target = _get_nvptx_target["sm_90"](),
+        target = _get_gpu_target["sm_90"](),
     ]()
     ctx.enqueue_function(
         func,

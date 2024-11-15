@@ -24,7 +24,7 @@ from gpu.id import BlockIdx
 
 from utils.index import Index
 from memory import stack_allocation, UnsafePointer
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from utils.static_tuple import StaticTuple
 
 from builtin.io import _printf
@@ -94,7 +94,7 @@ def test_tma_tile_copy(ctx: DeviceContext):
 
     var kernel_copy_async = ctx.compile_function[
         kernel_copy_async_tma,
-        target = _get_nvptx_target["sm_90"](),
+        target = _get_gpu_target["sm_90"](),
     ]()
     ctx.enqueue_function(
         kernel_copy_async, descriptor, grid_dim=(2, 2), block_dim=(1)

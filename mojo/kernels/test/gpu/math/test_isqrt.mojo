@@ -12,7 +12,7 @@ from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from testing import *
 
 from utils import Index
@@ -26,7 +26,7 @@ def run_elementwise[
 ](ctx: DeviceContext):
     alias length = 256
 
-    alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
+    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
 
     var in_host = NDBuffer[type, 1, DimList(length)].stack_allocation()
     var out_host = NDBuffer[type, 1, DimList(length)].stack_allocation()

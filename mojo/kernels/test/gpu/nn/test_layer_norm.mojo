@@ -12,7 +12,7 @@ from algorithm import mean, variance
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.host import DeviceContext
 from memory import UnsafePointer
 from nn.normalization import *
@@ -24,7 +24,7 @@ from utils.index import Index, IndexList
 fn run_layer_norm_block[
     type: DType,
     *,
-    simd_width: Int = simdwidthof[type, target = _get_nvptx_target()](),
+    simd_width: Int = simdwidthof[type, target = _get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
     print("== run_layer_norm_gpu block kernel")
 
@@ -203,7 +203,7 @@ fn run_layer_norm_gpu[
 fn run_layer_norm_warp_tiling[
     type: DType,
     *,
-    simd_width: Int = simdwidthof[type, target = _get_nvptx_target()](),
+    simd_width: Int = simdwidthof[type, target = _get_gpu_target()](),
 ](ctx: DeviceContext, rows: Int, cols: Int, rtol: Scalar[type] = 0.01) raises:
     print("== run_layer_norm_gpu warp tiling kernel")
 

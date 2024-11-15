@@ -19,7 +19,7 @@ from gpu.cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
     DeviceNDBuffer,
@@ -227,7 +227,7 @@ fn test[
     check_cublas_error(cublasDestroy(handle))
 
     var c_ref_tensor = c_device_ref.tensor
-    alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
+    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
 
     @always_inline
     @__copy_capture(c_ref_tensor, M, N)

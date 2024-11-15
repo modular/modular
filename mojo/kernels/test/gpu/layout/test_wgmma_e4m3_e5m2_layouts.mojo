@@ -9,7 +9,7 @@
 from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.id import ThreadIdx
 from gpu.intrinsics import threadfence
 from gpu.memory import AddressSpace
@@ -301,7 +301,7 @@ def wgmma_e4m3_e4m3_f32_64x8x32(ctx: DeviceContext):
         b_type = DType.float8e4m3,
     ]
     var func = ctx.compile_function[
-        wgmma_e4m3_e4m3_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_e4m3_e4m3_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -437,7 +437,7 @@ def wgmma_e5m2_e5m2_f32_64x8x32(ctx: DeviceContext):
         b_type = DType.float8e5m2,
     ]
     var func = ctx.compile_function[
-        wgmma_e5m2_e5m2_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_e5m2_e5m2_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -573,7 +573,7 @@ def wgmma_e4m3_e5m2_f32_64x8x32(ctx: DeviceContext):
         b_type = DType.float8e5m2,
     ]
     var func = ctx.compile_function[
-        wgmma_e4m3_e5m2_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_e4m3_e5m2_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -709,7 +709,7 @@ def wgmma_e5m2_e4m3_f32_64x8x32(ctx: DeviceContext):
         b_type = DType.float8e4m3,
     ]
     var func = ctx.compile_function[
-        wgmma_e5m2_e4m3_f32_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_e5m2_e4m3_f32_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -845,7 +845,7 @@ def wgmma_e4m3_e4m3_f16_64x8x32(ctx: DeviceContext):
         b_type = DType.float8e4m3,
     ]
     var func = ctx.compile_function[
-        wgmma_e4m3_e4m3_f16_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_e4m3_e4m3_f16_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -981,7 +981,7 @@ def wgmma_e5m2_e5m2_f16_64x8x32(ctx: DeviceContext):
         b_type = DType.float8e5m2,
     ]
     var func = ctx.compile_function[
-        wgmma_e5m2_e5m2_f16_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_e5m2_e5m2_f16_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -1117,7 +1117,7 @@ def wgmma_e4m3_e5m2_f16_64x8x32(ctx: DeviceContext):
         b_type = DType.float8e5m2,
     ]
     var func = ctx.compile_function[
-        wgmma_e4m3_e5m2_f16_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_e4m3_e5m2_f16_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -1253,7 +1253,7 @@ def wgmma_e5m2_e4m3_f16_64x8x32(ctx: DeviceContext):
         b_type = DType.float8e4m3,
     ]
     var func = ctx.compile_function[
-        wgmma_e5m2_e4m3_f16_kernel_fn, target = _get_nvptx_target["sm_90"]()
+        wgmma_e5m2_e4m3_f16_kernel_fn, target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(

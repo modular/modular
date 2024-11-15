@@ -9,7 +9,7 @@
 from gpu.host import DeviceContext
 from gpu.id import ThreadIdx
 from gpu.mma import mma
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 
 from builtin.io import _printf
 
@@ -33,7 +33,7 @@ fn mma_sync_16x8x32_E4M3():
 def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext):
     print("== test_mma_sync_16x8x32_E4M3")
     var func = ctx.compile_function[
-        mma_sync_16x8x32_E4M3, target = _get_nvptx_target["sm_90"]()
+        mma_sync_16x8x32_E4M3, target = _get_gpu_target["sm_90"]()
     ]()
     ctx.enqueue_function(
         func,
@@ -62,7 +62,7 @@ fn mma_sync_16x8x32_E4M2():
 def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
     print("== test_mma_sync_16x8x32_E5M2")
     var func = ctx.compile_function[
-        mma_sync_16x8x32_E4M2, target = _get_nvptx_target["sm_90"]()
+        mma_sync_16x8x32_E4M2, target = _get_gpu_target["sm_90"]()
     ]()
     ctx.enqueue_function(
         func,

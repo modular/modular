@@ -11,10 +11,10 @@ from sys._assembly import inlined_assembly
 from gpu import ThreadIdx, BlockDim, GridDim, barrier, lane_id
 from gpu.shuffle import shuffle_down, shuffle_up, shuffle_xor
 from gpu.host import DeviceContext
-from gpu.host._compile import _compile_code_asm, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from memory import UnsafePointer
 
-alias MI300X_TARGET = _get_nvptx_target["mi300x"]()
+alias MI300X_TARGET = _get_gpu_target["mi300x"]()
 
 
 fn kernel(x: UnsafePointer[Int]):

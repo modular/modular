@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
-from gpu.host._compile import _compile_code_asm, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from testing import assert_true
 
 
@@ -62,38 +62,38 @@ def test_mul_sm90[dtype: DType]():
         assert_true(
             "mul.rn.bf16 "
             in _compile_code_asm[
-                mul[width=1], target = _get_nvptx_target["sm_90"]()
+                mul[width=1], target = _get_gpu_target["sm_90"]()
             ]()
         )
         assert_true(
             "mul.rn.bf16x2 "
             in _compile_code_asm[
-                mul[width=2], target = _get_nvptx_target["sm_90"]()
+                mul[width=2], target = _get_gpu_target["sm_90"]()
             ]()
         )
         assert_true(
             "mul.rn.bf16x2 "
             in _compile_code_asm[
-                mul[width=8], target = _get_nvptx_target["sm_90"]()
+                mul[width=8], target = _get_gpu_target["sm_90"]()
             ]()
         )
     else:
         assert_true(
             "mul.rn.f16 "
             in _compile_code_asm[
-                mul[width=1], target = _get_nvptx_target["sm_90"]()
+                mul[width=1], target = _get_gpu_target["sm_90"]()
             ]()
         )
         assert_true(
             "mul.rn.f16x2 "
             in _compile_code_asm[
-                mul[width=2], target = _get_nvptx_target["sm_90"]()
+                mul[width=2], target = _get_gpu_target["sm_90"]()
             ]()
         )
         assert_true(
             "mul.rn.f16x2 "
             in _compile_code_asm[
-                mul[width=8], target = _get_nvptx_target["sm_90"]()
+                mul[width=8], target = _get_gpu_target["sm_90"]()
             ]()
         )
 

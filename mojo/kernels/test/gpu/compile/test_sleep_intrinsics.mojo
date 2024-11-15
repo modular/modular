@@ -7,7 +7,7 @@
 
 from time import sleep
 
-from gpu.host._compile import _compile_code_asm, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from testing import *
 
 
@@ -22,14 +22,14 @@ fn _verify_sleep_intrinsics(asm: String) raises -> None:
 
 def test_sleep_intrinsics_sm80():
     alias asm = _compile_code_asm[
-        sleep_intrinsics, target = _get_nvptx_target()
+        sleep_intrinsics, target = _get_gpu_target()
     ]()
     _verify_sleep_intrinsics(asm)
 
 
 def test_sleep_intrinsics_sm90():
     alias asm = _compile_code_asm[
-        sleep_intrinsics, target = _get_nvptx_target["sm_90"]()
+        sleep_intrinsics, target = _get_gpu_target["sm_90"]()
     ]()
     _verify_sleep_intrinsics(asm)
 

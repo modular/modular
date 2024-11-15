@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host._compile import _compile_code_asm, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from nn.mha_mask import CausalMask, TileMaskStatus
 from testing import assert_equal, assert_true
 
@@ -68,7 +68,7 @@ def test_causal_mask_asm():
 
         return vec[2]
 
-    alias asm = _compile_code_asm[kernel, target = _get_nvptx_target()]()
+    alias asm = _compile_code_asm[kernel, target = _get_gpu_target()]()
     assert_true("setp.lt.u64" not in asm)
     assert_true("setp.lt.s64" not in asm)
 

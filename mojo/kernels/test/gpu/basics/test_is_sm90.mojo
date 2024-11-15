@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host._compile import _compile_code_asm, _get_nvptx_target
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from sys.info import _is_sm_9x
 from testing import *
 
@@ -21,7 +21,7 @@ def test_is_sm_9x():
         in _compile_code_asm[
             check_sm,
             emission_kind="llvm",
-            target = _get_nvptx_target["sm_90"](),
+            target = _get_gpu_target["sm_90"](),
         ]()
     )
     assert_true(
@@ -29,7 +29,7 @@ def test_is_sm_9x():
         in _compile_code_asm[
             check_sm,
             emission_kind="llvm",
-            target = _get_nvptx_target["sm_90a"](),
+            target = _get_gpu_target["sm_90a"](),
         ]()
     )
 
