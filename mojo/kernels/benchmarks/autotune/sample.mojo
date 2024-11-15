@@ -10,6 +10,7 @@ from internal_utils import (
     env_get_dtype,
     env_get_shape,
     int_list_to_tuple,
+    arg_parse,
 )
 from benchmark import (
     BenchConfig,
@@ -50,6 +51,8 @@ fn main() raises:
     alias shape = int_list_to_tuple[shape_int_list]()
     alias stages = env_get_int["stages", 0]()
     alias verify = env_get_bool["verify", 0]()
+
+    var runtime_x = arg_parse("x", 0)
 
     var m = Bench(
         BenchConfig(max_iters=1, max_batch_size=1, min_warmuptime_secs=0)

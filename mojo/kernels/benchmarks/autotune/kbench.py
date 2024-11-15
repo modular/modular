@@ -91,6 +91,9 @@ class Param:
     value: object
 
     def define(self) -> list[str]:
+        if self.name.startswith("$"):
+            var_name = self.name.split("$")[1]
+            return [f"--{var_name}={self.value}"]
         return ["-D", f"{self.name}={self.value}"]
 
 
@@ -142,6 +145,9 @@ class KBENCH_MODE(Enum):
     BUILD = 0x4
 
 
+KBENCH_PARAM_CACHE: np.array = None
+
+
 @dataclass(frozen=True, repr=True)
 class SpecInstance:
     name: str
@@ -170,6 +176,7 @@ class SpecInstance:
         mode: KBENCH_MODE,
         dryrun: bool = False,
         verbose: bool = False,
+        check_kbench_cache: bool = False,
     ) -> ProcessOutput:
         if not output_file:
             output_file = Path(tempfile.gettempdir()) / Path(
@@ -179,28 +186,58 @@ class SpecInstance:
         # substitute env variables in the path
         file_abs_path = Path(
             string.Template(str(self.file)).substitute(os.environ)
-        )
+        ).absolute()
+
         assert file_abs_path.exists()
 
-        cmd = self.get_executor()
-        if build_opts:
-            cmd.extend(build_opts)
+        defines = []
+        vars = []
 
-        cmd.extend(DEFAULT_GPU_ARCH)
+        for param in self.params:
+            if param.name.startswith("$"):
+                vars += [param.define()]
+            else:
+                defines += [param.define()]
 
-        cmd.extend(
-            [
-                *list(
-                    np.array(
-                        [param.define() for param in self.params]
-                    ).flatten()
-                ),
-                str(file_abs_path),
-            ]
-        )
-        if not mode == KBENCH_MODE.BUILD:
-            cmd.extend(["-o", str(output_file)])
+        defines = list(np.array(defines).flatten())
+        vars = list(np.array(vars).flatten())
 
+        if not check_kbench_cache:
+            cmd = self.get_executor()
+            if build_opts:
+                cmd.extend(build_opts)
+            cmd.extend(
+                [
+                    *DEFAULT_GPU_ARCH,
+                    *defines,
+                    str(file_abs_path),
+                ]
+            )
+            if not mode == KBENCH_MODE.BUILD:
+                cmd.extend(["-o", str(output_file), *vars])
+
+        if check_kbench_cache:
+            cmd = []
+
+            global KBENCH_PARAM_CACHE
+            found_in_cache = np.array_equal(
+                np.array(defines), np.array(KBENCH_PARAM_CACHE)
+            )
+            if not found_in_cache:
+                KBENCH_PARAM_CACHE = np.array(defines)
+                cmd = self.get_executor()
+                cmd.extend(
+                    ["build", *DEFAULT_GPU_ARCH, *defines, str(file_abs_path)]
+                )
+                # TODO: how to handle the return from failing here?
+                self._run(cmd, output_file, verbose, dryrun)
+
+            # at this point the previous build is in the cache, a binary of the same name (without the extension) is created:
+            binary_name = str(file_abs_path.with_suffix(""))
+            cmd = [binary_name, "-o", str(output_file), *vars]
+
+        return self._run(cmd, output_file, verbose, dryrun)
+        # if mode == KBENCH_MODE.BUILD:
         # TODO: refactor the following into a separate function call, or invoke alias directly.
         # mojo-clear-cache
         # subprocess.call(
@@ -211,6 +248,7 @@ class SpecInstance:
         #     shell=True,
         # )
 
+    def _run(self, cmd, output_file, verbose, dryrun):
         if verbose:
             logging.info(f"[output_file: {output_file}")
         try:
@@ -544,6 +582,7 @@ def run(
     debug_level=None,
     optimization_level=None,
     dryrun=False,
+    cached=False,
     verbose=False,
     tmp_path=None,
 ):
@@ -613,6 +652,7 @@ def run(
                     mode=mode,
                     dryrun=dryrun,
                     verbose=verbose,
+                    check_kbench_cache=cached,
                 )
                 elapsed_time_list[i] = (time() - t_start_item) * 1e3
                 spec_list[i] = s
@@ -828,6 +868,9 @@ help_str = (
 )
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
+    "--cached", is_flag=True, default=False, help="Enable Kbench cache."
+)
+@click.option(
     "--dryrun",
     "-dryrun",
     is_flag=True,
@@ -848,6 +891,7 @@ def cli(
     debug_level,
     optimization_level,
     force,
+    cached,
     dryrun,
     verbose,
 ) -> bool:
@@ -875,6 +919,7 @@ def cli(
         debug_level=debug_level,
         optimization_level=optimization_level,
         dryrun=dryrun,
+        cached=cached,
         verbose=verbose,
     )
     return True
