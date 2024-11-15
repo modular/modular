@@ -1,4 +1,4 @@
-// RUN: kgen-opt -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' -mlir-print-debuginfo %s | FileCheck %s
+// RUN: kgen-opt -lower-kgen-to-llvm -mlir-print-debuginfo %s | FileCheck %s
 
 // Test proper handling of debug types.
 !pointerTest = !kgen.pointer<index>

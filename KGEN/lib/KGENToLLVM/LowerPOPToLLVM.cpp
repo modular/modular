@@ -1690,6 +1690,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   mlir::ConversionTarget target(getContext());
   target.addIllegalDialect<POPDialect>();
   target.addIllegalDialect<mlir::index::IndexDialect>();
+  target.addLegalDialect<DebugInfo::DebugInfoDialect>();
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // These ops are handled by other passes.
@@ -1719,18 +1720,8 @@ void LowerPOPToLLVMPass::runOnOperation() {
                   ConvertPOPVariadicSplat, ConvertPOPStackAllocLifetimeStart,
                   ConvertPOPStackAllocLifetimeEnd>(typeConverter, targetInfo);
 
-  DebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
-  DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
-                                            typeConverter);
-  target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
-      [&](Operation *op) { return typeConverter.isLegal(op); });
-
   if (failed(mlir::applyPartialConversion(*func, target, std::move(patterns))))
     return signalPassFailure();
-
-  // If this function has debug info, update any unresolved pop types.
-  if (DebugInfo::extractScope(*func))
-    debugTypeConverter.applyRecursively(*func);
 }
 
 namespace {
@@ -2186,6 +2177,7 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 
   // Configure dialect conversion.
   mlir::ConversionTarget target(getContext());
+  target.addLegalDialect<DebugInfo::DebugInfoDialect>();
   target.addLegalDialect<LLVM::LLVMDialect>();
 
   // Set LLVM lowering options.
@@ -2214,12 +2206,6 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
-
-  DebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
-  DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
-                                            typeConverter);
-  target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
-      [&](Operation *op) { return typeConverter.isLegal(op); });
 
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))
