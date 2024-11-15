@@ -112,6 +112,7 @@ public:
 };
 
 bool isGPUBackend(const CompilationOptions &options);
+bool isNVPTXBackend(const CompilationOptions &options);
 
 } // namespace M::KGEN
 
