@@ -105,6 +105,27 @@ fn shuffle_idx[
 
 
 @always_inline
+fn _shuffle_idx_amd[
+    type: DType, simd_width: Int, //
+](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
+    type, simd_width
+]:
+    # FIXME: Set the EXECute mask register to the mask
+    var lane: Int32 = lane_id()
+    # Godbolt uses 0x3fffffc0. It is masking out the lower 64-bits
+    # But it's also masking out the upper two bits. Why?
+    # The lane should not be > 64 so the upper 2 bits should always be zero.
+    # Use -64 for now.
+    var t0 = lane & -WARP_SIZE_AMD
+    var v = t0 | offset.cast[DType.int32]()
+    v <<= 2
+    var result_packed = llvm_intrinsic["llvm.amdgcn.ds.bpermute", Int32](
+        v, bitcast[DType.int32, 1](val)
+    )
+    return bitcast[type, simd_width](result_packed)
+
+
+@always_inline
 fn shuffle_idx[
     type: DType, simd_width: Int, //
 ](mask: UInt, val: SIMD[type, simd_width], offset: UInt32) -> SIMD[
@@ -127,10 +148,15 @@ fn shuffle_idx[
     Returns:
       The value from the offset.
     """
-    return _shuffle[
-        "idx",
-        WIDTH_MASK=_WIDTH_MASK,
-    ](mask, val, offset)
+
+    @parameter
+    if is_nvidia_gpu():
+        return _shuffle[
+            "idx",
+            WIDTH_MASK=_WIDTH_MASK,
+        ](mask, val, offset)
+    else:
+        return _shuffle_idx_amd(mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
