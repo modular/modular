@@ -13,10 +13,10 @@ from gpu.shuffle import shuffle_down, shuffle_up, shuffle_xor, shuffle_idx
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from memory import UnsafePointer
-from gpu.globals import WARP_SIZE_AMD
+from gpu.globals import WARP_SIZE
 
 alias MI300X_TARGET = _get_gpu_target["mi300x"]()
-alias FULL_MASK_AMD = 2**WARP_SIZE_AMD - 1
+alias FULL_MASK_AMD = 2**WARP_SIZE - 1
 
 
 fn kernel(x: UnsafePointer[Int]):
@@ -186,7 +186,7 @@ def test_threadid_compile():
         ]()
     )
 
-    print(_compile_code_asm[load_store, target=MI300X_TARGET]())
+    _ = _compile_code_asm[load_store, target=MI300X_TARGET]()
 
 
 def main():
