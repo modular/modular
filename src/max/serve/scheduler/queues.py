@@ -26,7 +26,6 @@ from typing import (
 )
 
 from max.serve.multiprocessing.worker import MPQueue, all_queues
-from max.serve.telemetry.tracing import tracer
 
 BatchReqId = TypeVar("BatchReqId")
 BatchReqInput = TypeVar("BatchReqInput")
@@ -46,26 +45,6 @@ BatchOutputsMapping = Mapping[BatchReqId, Union[BatchReqOutput, int]]
 
 # TODO(SI-683): Choose a better serializable sentinel.
 STOP_STREAM = -1
-
-
-class TracedAsyncioQueue(asyncio.Queue):
-    """Simple Wrapper around asyncio.Queue with otel tracing"""
-
-    async def get(self):
-        with tracer.start_as_current_span("TracedAsyncioQueue.get"):
-            return await super().get()
-
-    def get_nowait(self):
-        with tracer.start_as_current_span("TracedAsyncioQueue.get_nowait"):
-            return super().get_nowait()
-
-    async def put(self, item):
-        with tracer.start_as_current_span("TracedAsyncioQueue.put"):
-            return await super().put(item)
-
-    def put_nowait(self, item):
-        with tracer.start_as_current_span("TracedAsyncioQueue.put_nowait"):
-            return super().put_nowait(item)
 
 
 class BatchingStrategy(Enum):
@@ -145,7 +124,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
     completed_fn: BatchRequestCompletedFn
     pre_forward_fn: BatchRequestPreForwardFn = lambda x: x
 
-    in_queue: asyncio.Queue = field(default_factory=TracedAsyncioQueue)
+    in_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     out_queues: dict[BatchReqId, asyncio.Queue] = field(default_factory=dict)
     should_yield: Optional[YieldPredicate] = None
 
@@ -173,8 +152,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
                 self.in_queue.qsize(),
             )
         try:
-            state: asyncio.Queue
-            self.out_queues[req_id] = state = TracedAsyncioQueue()
+            self.out_queues[req_id] = state = asyncio.Queue()  # type: ignore
             self.in_queue.put_nowait((req_id, data))
             yield state
         finally:
@@ -283,7 +261,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
 
         return responses
 
-    async def dynamic_batching_worker(self) -> None:
+    async def dynamic_batching_worker(self):
         self.logger.info(
             "DynamicBatcher(%s): Started: %s", self.name, self.config
         )
@@ -347,7 +325,7 @@ class BatchMultiplexQueue(Generic[BatchReqId, BatchReqInput, BatchReqOutput]):
             )
             raise
 
-    async def continuous_batching_worker(self) -> None:
+    async def continuous_batching_worker(self):
         self.logger.info(
             "ContinuousBatcher(%s): Started: %s", self.name, self.config
         )
@@ -498,7 +476,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self, req_id: ReqId, data: ReqInput
     ) -> AsyncGenerator[asyncio.Queue, None]:
         try:
-            queue: asyncio.Queue = TracedAsyncioQueue()
+            queue: asyncio.Queue = asyncio.Queue()
             self.pending_out_queues[req_id] = queue
             self.queue_request.queue.put_nowait((req_id, data))
             yield queue
