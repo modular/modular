@@ -478,7 +478,7 @@ fn _load_impl[
                 cache_policy=cache_policy,
                 eviction_policy=eviction_policy,
                 alignment=alignment,
-            ](ptr.bitcast[_uint_type_of_width[type_bitwidth]()]())
+            ](ptr.bitcast[Scalar[_uint_type_of_width[type_bitwidth]()]]())
         )
 
     @parameter
@@ -493,7 +493,7 @@ fn _load_impl[
                 cache_policy=cache_policy,
                 eviction_policy=eviction_policy,
                 alignment=alignment,
-            ](ptr.bitcast[DType.uint32]())
+            ](ptr.bitcast[Scalar[DType.uint32]]())
         )
 
     alias type_mnemonic = "u" + _int_to_str[type_bitwidth]()

@@ -297,7 +297,7 @@ struct Context:
         if bitwidth == 8:
             _check_error(
                 self.cuda_dll.cuMemsetD8Async(
-                    device_dest.bitcast[DType.uint8](),
+                    device_dest.bitcast[Scalar[DType.uint8]](),
                     bitcast[DType.uint8, 1](val),
                     count * sizeof[type](),
                     stream.stream,
@@ -306,7 +306,7 @@ struct Context:
         elif bitwidth == 16:
             _check_error(
                 self.cuda_dll.cuMemsetD16Async(
-                    device_dest.bitcast[DType.uint16](),
+                    device_dest.bitcast[Scalar[DType.uint16]](),
                     bitcast[DType.uint16, 1](val),
                     count,
                     stream.stream,
@@ -315,7 +315,7 @@ struct Context:
         elif bitwidth == 32:
             _check_error(
                 self.cuda_dll.cuMemsetD32Async(
-                    device_dest.bitcast[DType.uint32](),
+                    device_dest.bitcast[Scalar[DType.uint32]](),
                     bitcast[DType.uint32, 1](val),
                     count,
                     stream.stream,

@@ -225,7 +225,7 @@ fn _memset_async[
                 "cuMemsetD8Async",
                 fn (UnsafePointer[UInt8], UInt8, Int, _StreamHandle) -> Result,
             ]()(
-                device_dest.bitcast[DType.uint8](),
+                device_dest.bitcast[Scalar[DType.uint8]](),
                 bitcast[DType.uint8, 1](val),
                 count * sizeof[type](),
                 stream.stream,
@@ -239,7 +239,7 @@ fn _memset_async[
                     UnsafePointer[UInt16], UInt16, Int, _StreamHandle
                 ) -> Result,
             ]()(
-                device_dest.bitcast[DType.uint16](),
+                device_dest.bitcast[Scalar[DType.uint16]](),
                 bitcast[DType.uint16, 1](val),
                 count,
                 stream.stream,
@@ -253,7 +253,7 @@ fn _memset_async[
                     UnsafePointer[UInt32], UInt32, Int, _StreamHandle
                 ) -> Result,
             ]()(
-                device_dest.bitcast[DType.uint32](),
+                device_dest.bitcast[Scalar[DType.uint32]](),
                 bitcast[DType.uint32, 1](val),
                 count,
                 stream.stream,
