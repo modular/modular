@@ -8,7 +8,6 @@
 from os import PathLike, abort
 from os.atomic import Atomic
 from sys import external_call
-from sys.ffi import _get_global, _get_global_or_null
 from sys.info import num_physical_cores
 from sys.param_env import is_defined
 
