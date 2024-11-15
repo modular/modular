@@ -75,6 +75,7 @@ fn _get_empty_target() -> __mlir_type.`!kgen.target`:
 alias NoGPU = Info(
     name="NoGPU",
     vendor=Vendor.NO_GPU,
+    api="none",
     arch_name="no_gpu",
     compute=0,
     version="",
@@ -137,6 +138,7 @@ fn _get_a100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 alias A100 = Info(
     name="A100",
     vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
     arch_name="ampere",
     compute=8.0,
     version="sm_80",
@@ -191,6 +193,7 @@ fn _get_a10_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 alias A10 = Info(
     name="A10",
     vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
     arch_name="ampere",
     compute=8.6,
     version="sm_86",
@@ -245,6 +248,7 @@ fn _get_l4_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 alias L4 = Info(
     name="L4",
     vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
     arch_name="ada",
     compute=8.9,
     version="sm_89",
@@ -299,6 +303,7 @@ fn _get_h100_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 alias H100 = Info(
     name="H100",
     vendor=Vendor.NVIDIA_GPU,
+    api="cuda",
     arch_name="hopper",
     compute=9.0,
     version="sm_90a",
@@ -346,6 +351,7 @@ fn _get_mi300x_target[index_bit_width: Int]() -> __mlir_type.`!kgen.target`:
 alias MI300X = Info(
     name="MI300X",
     vendor=Vendor.AMD_GPU,
+    api="hip",
     arch_name="gfx942",
     compute=9.4,
     version="CDNA3",
@@ -429,6 +435,7 @@ struct Flops:
 struct Info:
     var name: StringLiteral
     var vendor: Vendor
+    var api: StringLiteral
     var arch_name: StringLiteral
     var compute: Float32
     var version: StringLiteral
@@ -596,6 +603,7 @@ struct Info:
     fn write_to[W: Writer](self, inout writer: W):
         writer.write("name: ", self.name, "\n")
         writer.write("vendor: ", self.vendor, "\n")
+        writer.write("api: ", self.api, "\n")
         writer.write("arch_name: ", self.arch_name, "\n")
         writer.write("compute: ", self.compute, "\n")
         writer.write("version: ", self.version, "\n")
