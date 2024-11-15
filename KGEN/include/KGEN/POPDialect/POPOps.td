@@ -2139,6 +2139,30 @@ def POP_StringReplaceOp : POPOp<"string.replace", [Pure]> {
   let hasFolder = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// StringHashOp
+//===----------------------------------------------------------------------===//
+
+def POP_StringHashOp : POPOp<"string.hash", [Pure]> {
+  let summary = "Hashes the string using Blake3 hash function.";
+  let description = [{
+    The `pop.string.hash` operation hashes the input string using the Blake3
+    hash algorithm. The return is a new string which contains the hash of the
+    input.
+
+    Example:
+
+    ```mlir
+    %0 = pop.string.hash %str
+    ```
+  }];
+
+  let arguments = (ins KGEN_StringType:$str);
+  let results = (outs KGEN_StringType:$result);
+  let assemblyFormat = "$str attr-dict";
+
+  let hasFolder = 1;
+}
 
 //===----------------------------------------------------------------------===//
 // DTypeToUI8

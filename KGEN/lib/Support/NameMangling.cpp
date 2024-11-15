@@ -96,9 +96,7 @@ StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep) {
   VerboseCompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
                                            [name] { return name.str(); });
   if (name.size() > charToKeep) {
-    auto rawNameBytes =
-        ArrayRef<uint8_t>((const uint8_t *)name.data(), name.size());
-    auto hash = llvm::BLAKE3::hash<16>(rawNameBytes);
+    auto hash = llvm::BLAKE3::hash<16>(llvm::arrayRefFromStringRef(name));
     return StringAttr::get(
         name.getContext(),
         replaceInvalidCharacter(name.strref().take_front(charToKeep)) + "_" +
