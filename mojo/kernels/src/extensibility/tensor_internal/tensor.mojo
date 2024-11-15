@@ -1193,7 +1193,7 @@ struct Tensor[type: DType](
         var num_elements = byte_tensor.num_elements()
         return Self(
             num_elements // sizeof[type](),
-            byte_tensor._steal_ptr().bitcast[type](),
+            byte_tensor._steal_ptr().bitcast[Scalar[type]](),
         )
 
     fn save(self, path: Path) raises:
@@ -1256,7 +1256,7 @@ struct Tensor[type: DType](
             return tensor
         memcpy(
             tensor.unsafe_ptr(),
-            data.bitcast[type](),
+            data.bitcast[Scalar[type]](),
             spec.num_elements(),
         )
         return tensor
@@ -1348,7 +1348,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     # TODO: Avoid this copy.
     memcpy(
         bytes.unsafe_ptr() + copied,
-        tensor.unsafe_ptr().bitcast[DType.uint8](),
+        tensor.unsafe_ptr().bitcast[Scalar[DType.uint8]](),
         tensor.num_elements() * sizeof[type](),
     )
     copied += tensor.num_elements() * sizeof[type]()

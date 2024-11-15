@@ -273,9 +273,9 @@ struct ManagedTensorSlice[
 
             @parameter
             if type is DType.bool:
-                var v = self._ptr.bitcast[DType.uint8]().load[width=width](
-                    flat_index
-                )
+                var v = self._ptr.bitcast[Scalar[DType.uint8]]().load[
+                    width=width
+                ](flat_index)
                 return v.cast[type]()
             else:
                 return self._ptr.load[width=width, alignment=max_alignment](
@@ -286,7 +286,7 @@ struct ManagedTensorSlice[
             @parameter
             if type is DType.bool:
                 var v = strided_load[width](
-                    self._ptr.bitcast[DType.uint8]().offset(flat_index),
+                    self._ptr.bitcast[Scalar[DType.uint8]]().offset(flat_index),
                     stride,
                 )
                 return v.cast[type]()
@@ -345,7 +345,7 @@ struct ManagedTensorSlice[
             @parameter
             if type is DType.bool:
                 var v = val.cast[DType.uint8]()
-                self._ptr.bitcast[DType.uint8]().store(flat_index, v)
+                self._ptr.bitcast[Scalar[DType.uint8]]().store(flat_index, v)
             else:
                 self._ptr.store[alignment=max_alignment](flat_index, val)
         else:
@@ -355,7 +355,7 @@ struct ManagedTensorSlice[
                 var v = val.cast[DType.uint8]()
                 strided_store(
                     v,
-                    self._ptr.bitcast[DType.uint8]().offset(flat_index),
+                    self._ptr.bitcast[Scalar[DType.uint8]]().offset(flat_index),
                     stride,
                 )
             else:
