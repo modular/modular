@@ -96,7 +96,8 @@ void CompilationOptions::print(raw_ostream &os) const {
 
   os << ", relocModel: " << stringifyRelocationModel(relocModel);
 
-  os << ", targetAccelerator: " << targetAccelerator;
+  if (!targetAccelerator.empty())
+    os << ", targetAccelerator: " << targetAccelerator;
 
   os << ", debugInfoLang: " << debugInfoLanguage;
   os << " }";
