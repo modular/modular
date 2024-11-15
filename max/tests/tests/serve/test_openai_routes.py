@@ -20,14 +20,14 @@ from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
-    EchoTokenGeneratorTokenizer,
+    EchoPipelineTokenizer,
 )
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
 from max.serve.pipelines.performance_fake import (
-    PerformanceFakingTokenGeneratorTokenizer,
+    PerformanceFakingPipelineTokenizer,
     get_performance_fake,
 )
 from max.serve.schemas.openai import CreateChatCompletionResponse
@@ -51,7 +51,7 @@ def app(fixture_tokenizer):
             #     TokenGeneratorPipeline(
             #         pipeline_config,
             #         "tunable_app",
-            #         PerformanceFakingTokenGeneratorTokenizer(fixture_tokenizer),
+            #         PerformanceFakingPipelineTokenizer(fixture_tokenizer),
             #     ),
             #     functools.partial(get_performance_fake, "no-op"),
             # ),
@@ -59,7 +59,7 @@ def app(fixture_tokenizer):
                 TokenGeneratorPipeline(
                     pipeline_config,
                     "echo_app",
-                    EchoTokenGeneratorTokenizer(),
+                    EchoPipelineTokenizer(),
                 ),
                 EchoTokenGenerator,
             ),

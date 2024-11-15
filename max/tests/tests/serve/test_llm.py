@@ -13,7 +13,7 @@ import logging
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
-from max.pipelines import IdentityTokenGeneratorTokenizer
+from max.pipelines import IdentityPipelineTokenizer
 from max.pipelines.interfaces import (
     TokenGenerator,
     TokenGeneratorRequest,
@@ -46,7 +46,7 @@ class MockValueErrorTokenGenerator(TokenGenerator[str]):
 
 
 @dataclass(frozen=True)
-class MockTokenizer(IdentityTokenGeneratorTokenizer[str]):
+class MockTokenizer(IdentityPipelineTokenizer[str]):
     async def new_context(self, request: TokenGeneratorRequest) -> str:
         return ""
 
