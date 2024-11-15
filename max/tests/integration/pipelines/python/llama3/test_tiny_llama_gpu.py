@@ -47,6 +47,7 @@ def pipeline_config(testdata_directory, request) -> PipelineConfig:
         max_length=params.max_length,
         max_new_tokens=params.max_new_tokens,
         cache_strategy=cache_strategy,
+        max_cache_batch_size=16,
         device_spec=DeviceSpec.cuda(),
     )
 
@@ -71,7 +72,6 @@ def max_new_tokens_fixture(request):
     return request.param
 
 
-@pytest.mark.xfail(reason="TODO: fix KERN-1188")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "pipeline_config", [TestParams(512, -1)], indirect=True
