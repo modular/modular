@@ -20,7 +20,7 @@ from gpu.host import (
     DeviceAttribute,
 )
 from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.shuffle import ReductionMethod, warp_sum, warp_broadcast
 from gpu.tensor_ops import tc_reduce_gevm_4x, tc_reduce_gevm_8x
@@ -486,7 +486,7 @@ fn gemv_gpu_dispatch[
     var n = shape.N
     var k = shape.K
     alias WARPS_PER_BLOCK = 32
-    alias simd_width = simdwidthof[a.type, target = _get_nvptx_target()]()
+    alias simd_width = simdwidthof[a.type, target = _get_gpu_target()]()
 
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
         alias block_size = 128
@@ -702,7 +702,7 @@ fn gemv_gpu[
     var m = shape.M
     var n = shape.N
     var k = shape.K
-    alias simd_width = simdwidthof[a.type, target = _get_nvptx_target()]()
+    alias simd_width = simdwidthof[a.type, target = _get_gpu_target()]()
 
     # Kernel selection
     var kernel_func = GEMVAlgorithm.GEMV_KERNEL_VECTOR

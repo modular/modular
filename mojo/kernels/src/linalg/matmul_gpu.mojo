@@ -26,7 +26,7 @@ from gpu.host import (
     LaunchAttribute,
 )
 from gpu.host.info import A100, Info, _get_info_from_target
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.memory import (
     AddressSpace,
     CacheOperation,
@@ -827,7 +827,7 @@ fn split_k_reduce[
     work_space: NDBuffer[work_space_type, 3, work_space_shape],
     ctx: DeviceContext,
 ):
-    alias simd_width = simdwidthof[c_type, target = _get_nvptx_target()]()
+    alias simd_width = simdwidthof[c_type, target = _get_gpu_target()]()
     var num_partitions = work_space.dim[0]()
     var M = c.dim[0]()
     var N = c.dim[1]()
