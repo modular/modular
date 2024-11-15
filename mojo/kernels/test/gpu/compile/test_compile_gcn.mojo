@@ -9,12 +9,14 @@ from pathlib import Path
 from sys._assembly import inlined_assembly
 
 from gpu import ThreadIdx, BlockDim, GridDim, barrier, lane_id
-from gpu.shuffle import shuffle_down, shuffle_up, shuffle_xor
+from gpu.shuffle import shuffle_down, shuffle_up, shuffle_xor, shuffle_idx
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from memory import UnsafePointer
+from gpu.globals import WARP_SIZE_AMD
 
 alias MI300X_TARGET = _get_gpu_target["mi300x"]()
+alias FULL_MASK_AMD = 2**WARP_SIZE_AMD - 1
 
 
 fn kernel(x: UnsafePointer[Int]):
@@ -27,23 +29,30 @@ fn kernel_laneid(x: UnsafePointer[Int]):
 
 fn kernel_shuffle_down(x: UnsafePointer[UInt32]):
     var val = x[0]
-    var mask = UInt(0xFFFFFFFF_FFFFFFFF)
+    var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
     x[0] = shuffle_down(mask, val, offset)
 
 
 fn kernel_shuffle_up(x: UnsafePointer[UInt32]):
     var val = x[0]
-    var mask = UInt(0xFFFFFFFF_FFFFFFFF)
+    var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
     x[0] = shuffle_up(mask, val, offset)
 
 
 fn kernel_shuffle_xor(x: UnsafePointer[UInt32]):
     var val = x[0]
-    var mask = UInt(0xFFFFFFFF_FFFFFFFF)
+    var mask = UInt(FULL_MASK_AMD)
     var offset = x[0]
     x[0] = shuffle_xor(mask, val, offset)
+
+
+fn kernel_shuffle_idx(x: UnsafePointer[UInt32]):
+    var val = x[0]
+    var mask = UInt(FULL_MASK_AMD)
+    var offset = x[0]
+    x[0] = shuffle_idx(mask, val, offset)
 
 
 fn parametric[f: fn (UnsafePointer[Int]) -> None](ptr: UnsafePointer[Int]):
@@ -103,6 +112,19 @@ def test_shuffle_compile():
     print(
         _compile_code_asm[
             kernel_shuffle_xor, target=MI300X_TARGET, emission_kind="llvm-opt"
+        ]()
+    )
+
+    # CHECK: %3 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
+    # CHECK: %5 = and i32 %4, 1073741760
+    # CHECK: %6 = or i32 %5, %2
+    # CHECK: %7 = shl i32 %6, 2
+    # CHECK: %8 = tail call i32 @llvm.amdgcn.ds.bpermute(i32 %7, i32 %2)
+
+    print(
+        _compile_code_asm[
+            kernel_shuffle_idx, target=MI300X_TARGET, emission_kind="llvm-opt"
         ]()
     )
 
