@@ -477,7 +477,9 @@ fn unpack_tensor[
     if tensor_rank == 0:
         shapes[0] = 1
 
-    return NDBuffer[type, buffer_rank](buffer_ptr.bitcast[type](), shapes)
+    return NDBuffer[type, buffer_rank](
+        buffer_ptr.bitcast[Scalar[type]](), shapes
+    )
 
 
 @register_internal("builtin.unpack_tensor_spec")
@@ -553,13 +555,13 @@ fn mgp_tensor_create[
         # We promote scalar tensor to tensor<[1]>
         constrained[buffer_rank == 1]()
         return NDBuffer[type, buffer_rank](
-            buffer.data.bitcast[type](),
+            buffer.data.bitcast[Scalar[type]](),
             rebind[IndexList[buffer_rank]](IndexList[1](1)),
         )
     else:
         constrained[spec_rank == buffer_rank]()
         return NDBuffer[type, buffer_rank](
-            buffer.data.bitcast[type](),
+            buffer.data.bitcast[Scalar[type]](),
             rebind[IndexList[buffer_rank]](spec.shape),
         )
 
@@ -667,7 +669,7 @@ fn mgp_buffer_constant_external[
 fn fill_buffer[
     type: DType
 ](buf: NDBuffer[DType.uint8, 1], vals: VariadicList[Int]):
-    var ptr = buf.data.bitcast[type]()
+    var ptr = buf.data.bitcast[Scalar[type]]()
     var offset: Int = 0
     for val in vals:
         ptr.store(offset, val)

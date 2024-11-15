@@ -712,7 +712,9 @@ fn _simd_load_internal[
 ](buffer: NDBuffer, index: Int) -> SIMD[buffer.type, simd_width]:
     @parameter
     if buffer.type is DType.bool:
-        var v = buffer.data.bitcast[DType.uint8]().load[width=simd_width](index)
+        var v = buffer.data.bitcast[Scalar[DType.uint8]]().load[
+            width=simd_width
+        ](index)
         return v.cast[buffer.type]()
     return buffer.data.load[width=simd_width](index)
 
@@ -738,7 +740,7 @@ fn simd_load[
 
     if buffer.type is DType.bool:
         var v = strided_load[simd_width](
-            buffer.data.bitcast[DType.uint8]().offset(flat_index),
+            buffer.data.bitcast[Scalar[DType.uint8]]().offset(flat_index),
             stride,
         )
         return v.cast[buffer.type]()
@@ -768,7 +770,7 @@ fn simd_store[
     # We have to cast bools into their runtime storage type.
     @parameter
     if buffer.type is DType.bool:
-        buffer.data.bitcast[DType.uint8]().store(
+        buffer.data.bitcast[Scalar[DType.uint8]]().store(
             flat_index, val.cast[DType.uint8]()
         )
     else:
