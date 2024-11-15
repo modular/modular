@@ -922,14 +922,6 @@ fn mgp_tensor_spec_create[
     return StaticTensorSpec[aRawDimsRank](shape, type)
 
 
-@register_internal("mgp.tensor_spec.size")
-@always_inline
-fn mgp_tensor_spec_size[
-    spec_rank: Int
-](spec: StaticTensorSpec[spec_rank]) -> Int:
-    return spec.bytecount()
-
-
 @register_internal("mgp.tensor_spec.equal.static")
 @always_inline
 fn mgp_tensor_spec_equal_static[
