@@ -15,7 +15,7 @@ from llama3.llama3 import (
 )
 from max.pipelines import (
     PipelineConfig,
-    PreTrainedTokenGeneratorTokenizer,
+    PreTrainedPipelineTokenizer,
     TextTokenizer,
 )
 from max.pipelines.interfaces import TokenGeneratorRequest
@@ -38,7 +38,7 @@ def testdata_directory() -> Path:
     return Path(path)
 
 
-class DummyTokenizer(PreTrainedTokenGeneratorTokenizer[str]):
+class DummyTokenizer(PreTrainedPipelineTokenizer[str]):
     def __init__(self, delegate) -> None:
         super().__init__(delegate)
 

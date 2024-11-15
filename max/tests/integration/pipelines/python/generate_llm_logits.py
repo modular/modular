@@ -43,7 +43,7 @@ class MaxPipelineAndTokenizer:
 
     model: Any  # TODO(kathywu): Update to PipelineModel
     generator: interfaces.TokenGenerator
-    tokenizer: interfaces.TokenGeneratorTokenizer
+    tokenizer: interfaces.PipelineTokenizer
 
 
 @dataclass

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Utilities for evaluating models and comparing the logits."""
 
-
 import asyncio
 import uuid
 from typing import Any, Iterable
@@ -14,7 +13,7 @@ import numpy as np
 from max.driver import CPU
 from max.pipelines.interfaces import (
     TokenGeneratorRequest,
-    TokenGeneratorTokenizer,
+    PipelineTokenizer,
 )
 from max.pipelines.kv_cache import KVCacheManager
 
@@ -39,7 +38,7 @@ PROMPTS = (
 
 def run_model(
     model: Any,  # TODO(kathywu): Update to PipelineModel
-    tokenizer: TokenGeneratorTokenizer,
+    tokenizer: PipelineTokenizer,
     prompts: Iterable[str] = PROMPTS,
     num_steps: int = NUM_STEPS,
 ):
