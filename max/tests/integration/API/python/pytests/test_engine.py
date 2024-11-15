@@ -643,3 +643,9 @@ def test_unrecognized_name_call(call_inputs: Tuple, call_model: Model):
     a, b, c, d, e = call_inputs
     with pytest.raises(TypeError):
         call_model(a, b, f=e, c=c, d=d)
+
+
+def test_invalid_session_arg() -> None:
+    """Check that passing an invalid arg to InferenceSession's ctor errors."""
+    with pytest.raises(TypeError):
+        InferenceSession(device=[])
