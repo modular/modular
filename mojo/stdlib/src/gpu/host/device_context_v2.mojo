@@ -18,6 +18,7 @@ from sys import (
 )
 from utils import StringRef, Variant
 from sys.info import _get_arch
+from .info import DEFAULT_GPU
 
 from gpu.host._compile import (
     _compile_code,
@@ -660,6 +661,8 @@ struct DeviceFunctionV2[
 
 struct DeviceContextV2:
     """DeviceContext backed by a C++ implementation."""
+
+    alias device_info = DEFAULT_GPU
 
     alias SYNC = DeviceSyncMode(True)
     alias ASYNC = DeviceSyncMode(False)

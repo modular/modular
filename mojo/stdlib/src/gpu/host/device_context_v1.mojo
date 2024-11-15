@@ -10,6 +10,7 @@ from pathlib import Path
 from sys import external_call, sizeof
 from sys.ffi import c_size_t
 from utils import StringRef, Variant
+from .info import DEFAULT_GPU
 
 from gpu.host._compile import _get_gpu_target, _get_nvptx_fn_name
 from gpu.host.launch_attribute import LaunchAttribute
@@ -190,6 +191,8 @@ struct DeviceFunctionV1[
 
 @value
 struct DeviceContextV1:
+    alias device_info = DEFAULT_GPU
+
     # NOTE: The fields' declaration order matches the destruction order
     var cuda_stream: Stream
     var cuda_context: Context
