@@ -217,6 +217,17 @@ ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
   llvm::Module *oneSplitModule = nullptr;
 
   if (!hasOneSplit) {
+    if (llvm::Triple(options.targetTriple).isNVPTX()) {
+      // For NVPTX backend to avoid false hit
+      // with its stale AnnotationCache which is populated during both
+      // llvm-opt and llc pipeline passes but is only cleared at the end of
+      // codegen in AsmPrint. We need to make sure that llvm-opt and llc
+      // are using the sname llvm::Module to that the cache can be properly
+      // cleaned. We currently achieve this by keeping only one split for NVPTX
+      // compilation.
+      return Error("NVPTX compilation should have multiple splits.");
+    }
+
     // link at llvm::Module level.
     ErrorOrSuccess lmResult = linkLLVMModules(moduleName);
     if (lmResult.isError())
