@@ -279,7 +279,7 @@ struct Buffer[
             path: Path to the output file.
         """
         with open(path.__str__(), "w") as f:
-            var ptr = self.data.bitcast[DType.uint8]()
+            var ptr = self.data.bitcast[Scalar[DType.uint8]]()
             f._write(ptr, self.bytecount())
 
     @staticmethod
@@ -1248,7 +1248,7 @@ struct NDBuffer[
             path: Path to the output file.
         """
         with open(path.__str__(), "w") as f:
-            var ptr = self.data.bitcast[DType.uint8]()
+            var ptr = self.data.bitcast[Scalar[DType.uint8]]()
             f._write(ptr, self.bytecount())
 
     @always_inline
@@ -1658,7 +1658,8 @@ struct DynamicRankBuffer:
             Constructed Buffer.
         """
         return Buffer[type](
-            self.data.bitcast[type](), tuple_product(self.shape, self.rank)
+            self.data.bitcast[Scalar[type]](),
+            tuple_product(self.shape, self.rank),
         )
 
     @always_inline
@@ -1684,7 +1685,8 @@ struct DynamicRankBuffer:
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
         )
         return NDBuffer[type, rank](
-            self.data.bitcast[type](), self._shape_to_static_tuple[rank]()
+            self.data.bitcast[Scalar[type]](),
+            self._shape_to_static_tuple[rank](),
         )
 
     @always_inline
@@ -1711,7 +1713,7 @@ struct DynamicRankBuffer:
             "rank of DynamicRankBuffer must equal rank of NDBuffer",
         )
         return NDBuffer[type, rank](
-            self.data.bitcast[type](),
+            self.data.bitcast[Scalar[type]](),
             self._shape_to_static_tuple[rank](),
             stride,
         )
