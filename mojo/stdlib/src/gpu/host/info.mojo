@@ -91,6 +91,7 @@ alias A100 = Info(
     compute=8.0,
     version="sm_80",
     sm_count=108,
+    warp_size=32,
     threads_per_sm=2048,
     threads_per_warp=32,
     warps_per_multiprocessor=64,
@@ -144,6 +145,7 @@ alias A10 = Info(
     compute=8.6,
     version="sm_86",
     sm_count=72,
+    warp_size=32,
     threads_per_sm=1536,
     threads_per_warp=32,
     warps_per_multiprocessor=64,
@@ -197,6 +199,7 @@ alias L4 = Info(
     compute=8.9,
     version="sm_89",
     sm_count=58,
+    warp_size=32,
     threads_per_sm=1536,
     threads_per_warp=32,
     warps_per_multiprocessor=64,
@@ -250,6 +253,7 @@ alias H100 = Info(
     compute=9.0,
     version="sm_90a",
     sm_count=114,
+    warp_size=32,
     threads_per_sm=-1,
     threads_per_warp=32,
     warps_per_multiprocessor=64,
@@ -296,6 +300,7 @@ alias MI300X = Info(
     compute=9.4,
     version="CDNA3",
     sm_count=304,
+    warp_size=64,
     threads_per_sm=2048,
     threads_per_warp=64,
     warps_per_multiprocessor=32,  # 2048 threads per sm / 64 threads per warp = 32 warps per sm
@@ -378,6 +383,7 @@ struct Info:
     var compute: Float32
     var version: StringLiteral
     var sm_count: Int
+    var warp_size: Int
     var threads_per_sm: Int
     var threads_per_warp: Int
     var warps_per_multiprocessor: Int
@@ -542,6 +548,7 @@ struct Info:
         writer.write("compute: ", self.compute, "\n")
         writer.write("version: ", self.version, "\n")
         writer.write("sm_count: ", self.sm_count, "\n")
+        writer.write("warp_size: ", self.warp_size, "\n")
         writer.write("threads_per_sm: ", self.threads_per_sm, "\n")
         writer.write("threads_per_warp: ", self.threads_per_warp, "\n")
         writer.write(
