@@ -90,7 +90,7 @@ struct BFloat16Encoding(QuantizationEncoding):
 
         return Tensor(
             TensorShape(buff_dims^),
-            quantized._steal_ptr().bitcast[DType.uint8](),
+            quantized._steal_ptr().bitcast[Scalar[DType.uint8]](),
         )
 
     @staticmethod

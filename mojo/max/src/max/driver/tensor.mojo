@@ -71,7 +71,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self.name = device_tensor.name()
         self._spec = device_tensor.spec
         self._strides = indexing._row_major_strides(self._spec)
-        self._ptr = device_tensor.unsafe_ptr().bitcast[type]()
+        self._ptr = device_tensor.unsafe_ptr().bitcast[Scalar[type]]()
         var tmp = device_tensor._storage^
         device_tensor._storage = DeviceMemory()
         self._device_memory_impl_ptr = tmp^._steal_impl_ptr()

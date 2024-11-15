@@ -136,7 +136,7 @@ fn _read_int[type: DType](f: FileHandle) raises -> Scalar[type]:
     """Reads an int value from a file."""
     var size = sizeof[type]()
     var bytes_tensor = Tensor[DType.uint8](f.read_bytes(size))
-    return bytes_tensor.unsafe_ptr().bitcast[type]().load()
+    return bytes_tensor.unsafe_ptr().bitcast[Scalar[type]]().load()
 
 
 @always_inline
@@ -226,7 +226,9 @@ def load[PathLike: PathLike](path: PathLike) -> TensorDict:
             _ = f.seek(tensor_offsets[i])
             var ks = keys_and_specs[i]
             var bytes = f.read_bytes(ks.spec.bytecount())
-            var ptr = UnsafePointer(bytes.steal_data()).bitcast[DType.uint8]()
+            var ptr = UnsafePointer(bytes.steal_data()).bitcast[
+                Scalar[DType.uint8]
+            ]()
             var tensor = _CheckpointTensor(ptr, ks.spec)
             ret._set(ks.key, tensor)
         return ret

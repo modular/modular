@@ -89,7 +89,7 @@ struct EngineTensor(Sized):
 
     fn data[type: DType](self) raises -> UnsafePointer[Scalar[type]]:
         var ptr = self.unsafe_ptr()
-        return ptr.bitcast[type]()
+        return ptr.bitcast[Scalar[type]]()
 
     fn dtype(self) -> DType:
         return self.ptr.dtype(self.lib).to_dtype()

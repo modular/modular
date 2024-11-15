@@ -354,7 +354,8 @@ struct ContinuousBatchingKVCacheManager[
             )
         ).to_tensor[type, 6]()
         self.blocks_nd_buf = __type_of(self.blocks_nd_buf)(
-            self.blocks_buf.unsafe_ptr().bitcast[type](), block_buf_shape
+            self.blocks_buf.unsafe_ptr().bitcast[Scalar[type]](),
+            block_buf_shape,
         )
 
         self.seq_id_counter = 0
@@ -438,14 +439,14 @@ struct ContinuousBatchingKVCacheManager[
             self.other_device
         )
         var valid_lengths_ndbuffer = NDBuffer[DType.uint32, 1](
-            device_valid_lengths.unsafe_ptr().bitcast[DType.uint32](),
+            device_valid_lengths.unsafe_ptr().bitcast[Scalar[DType.uint32]](),
             (batch_size,),
         )
         var device_lookup_table = host_lookup_table^.to_device_tensor().move_to(
             self.other_device
         )
         var lookup_table_ndbuffer = NDBuffer[DType.uint32, 1](
-            device_lookup_table.unsafe_ptr().bitcast[DType.uint32](),
+            device_lookup_table.unsafe_ptr().bitcast[Scalar[DType.uint32]](),
             (batch_size,),
         )
 

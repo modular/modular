@@ -116,7 +116,7 @@ struct EngineTensorView:
         """
         if type != self._dtype:
             raise String("Expected type: ") + self._dtype.__str__()
-        return self._data_ptr.bitcast[type]()
+        return self._data_ptr.bitcast[Scalar[type]]()
 
     fn unsafe_ptr(self) -> UnsafePointer[NoneType]:
         """Returns type erased pointer to the start of tensor.

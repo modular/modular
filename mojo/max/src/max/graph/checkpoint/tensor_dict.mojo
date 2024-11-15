@@ -35,7 +35,7 @@ struct _CheckpointTensor:
         """Returns a deep copy of the Tensor data."""
         var num_elements = self.spec.num_elements()
         var spec = self.spec
-        var self_ptr = self.ptr.bitcast[T]()
+        var self_ptr = self.ptr.bitcast[Scalar[T]]()
         var ptr = UnsafePointer[Scalar[T]].alloc(num_elements)
         memcpy(ptr, self_ptr, num_elements)
         return Tensor[T](spec, ptr)
@@ -43,7 +43,7 @@ struct _CheckpointTensor:
     fn to_tensor[T: DType](owned self) -> Tensor[T]:
         """Converts this object to a Tensor."""
         var spec = self.spec^
-        var ptr = self.ptr.bitcast[T]()
+        var ptr = self.ptr.bitcast[Scalar[T]]()
         self.spec = TensorSpec()
         self.ptr = UnsafePointer[UInt8]()
         return Tensor[T](spec, ptr)
@@ -52,7 +52,7 @@ struct _CheckpointTensor:
     fn from_tensor(owned tensor: Tensor) -> Self:
         """Creates a _CheckpointTensor from a Tensor."""
         var spec = tensor.spec()
-        var ptr = tensor._steal_ptr().bitcast[DType.uint8]()
+        var ptr = tensor._steal_ptr().bitcast[Scalar[DType.uint8]]()
         return Self(ptr, spec)
 
 
