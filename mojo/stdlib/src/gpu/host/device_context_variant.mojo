@@ -28,9 +28,9 @@ from gpu.host.launch_attribute import LaunchAttribute
 # C++ backed implementation).
 # We don't have polymorphism in Mojo (yet!) so we need to wrap each method.
 
-alias DeviceFunction = DeviceFunctionVariant
-alias DeviceBuffer = DeviceBufferVariant
-alias DeviceContext = DeviceContextVariant
+alias DeviceFunction = DeviceFunctionV2
+alias DeviceBuffer = DeviceBufferV2
+alias DeviceContext = DeviceContextV2
 alias DeviceStream = DeviceStreamV2
 
 
@@ -205,12 +205,12 @@ struct DeviceContextVariant:
     fn v2(self) -> ref [__origin_of(self._impl)] Self.V2:
         return self._impl[Self.V2]
 
-    fn __init__(out self, kind: StringRef = "cuda", gpu_id: Int = 0) raises:
+    fn __init__(out self, kind: StringRef = "cuda", device_id: Int = 0) raises:
         @parameter
         if _device_ctx_v2():
-            self._impl = Self.V2(kind, gpu_id)
+            self._impl = Self.V2(kind, device_id)
         else:
-            self._impl = Self.V1(kind, gpu_id)
+            self._impl = Self.V1(kind, device_id)
 
     fn __init__(out self, handle: UnsafePointer[NoneType]) raises:
         @parameter

@@ -43,7 +43,7 @@ fn CUDA(ctx: DeviceContext) raises -> CUcontext:
             _DeviceContextPtr,
         ](
             UnsafePointer.address_of(result),
-            ctx.v2()._handle,
+            ctx._handle,
         )
     )
     return result
