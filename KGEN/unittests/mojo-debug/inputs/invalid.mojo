@@ -13,7 +13,7 @@ struct A:
 
     fn __init__(out self):
         var y = UnsafePointer[Int8].alloc(1)
-        self.x = y.bitcast[DType.invalid]()
+        self.x = y.bitcast[Scalar[DType.invalid]]()
 
 
 fn test_key_element() raises:
