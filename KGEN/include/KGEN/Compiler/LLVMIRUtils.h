@@ -33,6 +33,8 @@ public:
   llvm::Module &operator*() { return *module; }
   llvm::Module *operator->() { return module.get(); }
 
+  void reset();
+
   llvm::StringSet<> duplicatedFns;
 
 private:

@@ -45,6 +45,11 @@ ErrorOrSuccess LLVMModuleAndContext::create(
   return success();
 }
 
+void LLVMModuleAndContext::reset() {
+  module.reset();
+  ctx.reset();
+}
+
 //===----------------------------------------------------------------------===//
 // StringConstantTable
 //===----------------------------------------------------------------------===//
