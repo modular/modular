@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional
 
 from max import _graph, mlir
-from max._mlir.ir import OpView
 from max.mlir.dialects import mo
 
 from .type import (
@@ -265,7 +264,10 @@ class Graph:
         handle = self._context.attach_diagnostic_handler(handler)
         try:
             yield None
-        except Exception as e:
+        except (mlir.MLIRError, ValueError) as e:
+            # MLIRError is raised from the MLIR Python bindings on MLIR
+            # errors, however so is ValueError when operation create fails.
+            # So catch both exception types and report diagnostics here.
             diags = "\n  ".join(diagnostics)
             raise ValueError(f"Diagnostics:\n    {diags}\n{e}") from None
         finally:
@@ -306,7 +308,10 @@ class Graph:
                     # Insert op at the end of self._body, location set up by
                     # the context manager.
                     results = op(*unwrapped_args, **unwrapped_kwargs)
-            except Exception as e:
+            except (mlir.MLIRError, ValueError) as e:
+                # MLIRError is raised from the MLIR Python bindings on MLIR
+                # errors, however so is ValueError when operation create faile.
+                # So catch both exception types here.
                 try:
                     args = inspect.signature(op).bind(*args, **kwargs).arguments  # type: ignore
                 except TypeError:
@@ -318,7 +323,7 @@ class Graph:
                     # Intentionally suppress extra stack traces from max._mlir.
                 ) from None
 
-        if isinstance(results, (mlir.Operation, OpView)):
+        if isinstance(results, (mlir.Operation, mlir.OpView)):
             return []
 
         # Convert op results from  mlir.Value to instances of Value graph-api

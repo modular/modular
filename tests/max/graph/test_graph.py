@@ -16,15 +16,16 @@ from hypothesis import strategies as st
 from max import mlir
 from max.dtype import DType
 from max.graph import (
-    Dim,
-    Graph,
     Device,
     DeviceType,
+    Dim,
+    Graph,
     TensorType,
     TensorValue,
     graph,
     ops,
 )
+from max.mlir.dialects import rmo
 
 empty_graphs = st.builds(
     Graph, st.text(), input_types=st.lists(st.from_type(TensorType))
@@ -249,3 +250,17 @@ def test_unique_symbolic_dim() -> None:
     dim = graph.unique_symbolic_dim("foo")
     use_dim(dim)
     assert dim.name == "unique_foo_1"
+
+
+def test_invalid_operand() -> None:
+    """Test that passing an invalid operand raises an error."""
+    with Graph(
+        "invalid_operand",
+        input_types=[
+            TensorType(DType.int64, [2]),
+        ],
+    ) as graph:
+        input_tensor = graph.inputs[0]
+        with pytest.raises(AssertionError):
+            Graph.current._add_op(rmo.add, [2, 5], input_tensor)
+        graph.output(input_tensor)
