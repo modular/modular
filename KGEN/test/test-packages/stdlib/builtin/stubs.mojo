@@ -73,6 +73,7 @@ struct Error:
     fn __init__(out self):
         pass
 
+    @implicit
     fn __init__(out self, value: StringLiteral):
         pass
 
@@ -88,9 +89,11 @@ struct object:
     fn __init__(out self):
         pass
 
+    @implicit
     fn __init__(out self, value: NoneType):
         pass
 
+    @implicit
     fn __init__(out self, value: Int):
         pass
 
@@ -148,6 +151,7 @@ struct FloatLiteral:
 struct FloatDyn:
     var value: __mlir_type.f64
 
+    @implicit
     @always_inline("nodebug")
     fn __init__(out self, value: FloatLiteral):
         self = Self(
@@ -165,6 +169,7 @@ struct Int(Copyable):
     fn __init__(out self):
         self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
 
+    @implicit
     @always_inline("nodebug")
     fn __init__(out self, value: IntLiteral):
         self.value = __mlir_op.`kgen.int_literal.convert`[
@@ -239,6 +244,7 @@ struct String(KeyElement):
     fn __init__(out self):
         pass
 
+    @implicit
     fn __init__(out self, literal: StringLiteral):
         pass
 
@@ -571,6 +577,7 @@ struct Pointer[
 
 
 struct Tuple[*element_types: AnyType]:
+    @implicit
     fn __init__(out self, *args: *element_types):
         pass
 
@@ -719,9 +726,11 @@ struct Optional[T: CollectionElement]:
     fn __init__(out self):
         pass
 
+    @implicit
     fn __init__(out self, owned value: T):
         pass
 
+    @implicit
     fn __init__(out self, value: NoneType):
         pass
 

@@ -752,6 +752,21 @@ struct StructWithoutBody:
 struct OkayStruct:
     var begin: StructWithoutBody
 
+
+struct CheckImplicit:
+  @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
+  fn foo(inout self): pass
+  @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
+  fn __init__(inout self): pass
+  @implicit
+  fn __init__(inout self, x: Int): pass
+  @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
+  fn __init__(inout self, x: Int, y: Int): pass
+  @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
+  fn __copyinit__(inout self, other: Self): pass
+  
+
+
 ##===----------------------------------------------------------------------===##
 # Traits
 ##===----------------------------------------------------------------------===##

@@ -169,7 +169,7 @@ public:
   /// candidate that works with the specified parameter bindings on the overload
   /// set. If so, return the single entry that works.  If not, generate a
   /// diagnostic and return null.
-  PValue filterOverloadSetForParamBindings(bool allowImplicitConversions) const;
+  PValue filterOverloadSetForParamBindings() const;
 
   /// Try to resolve the overload set to a single function candidate, using the
   /// expected type if provided or using current bindings if an emitter is
@@ -211,10 +211,11 @@ public:
   /// If there were erroneous declarations, an error has been raised about a
   /// constructor that likely would have applied, which should be considered in
   /// any error reporting. This does not generate any IR.
-  static FailureOr<PValue>
-  canConstructType(ASTType requiredType, CallOperands &&operands,
-                   const ExprNode *expr, ASTDecl &declScope,
-                   bool allowImplicitConversions = true);
+  static FailureOr<PValue> canConstructType(ASTType requiredType,
+                                            CallOperands &&operands,
+                                            const ExprNode *expr,
+                                            ASTDecl &declScope,
+                                            bool isImplicitConversion);
 
   LLVM_DUMP_METHOD void dump() const;
 

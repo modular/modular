@@ -195,8 +195,7 @@ static CallKind getCallKind(CallSyntax syntax) {
 /// candidate that works with the specified parameter bindings on the overload
 /// set. If so, return the single entry that works.  If not, generate a
 /// diagnostic and return null.
-PValue OverloadSet::filterOverloadSetForParamBindings(
-    bool allowImplicitConversions) const {
+PValue OverloadSet::filterOverloadSetForParamBindings() const {
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
@@ -804,7 +803,7 @@ PValue OverloadSet::getDirectSymbol(ASTType expectedType,
   // If the overload set has parameter bindings, try to resolve the candidates
   // using them.
   if (!paramBindings.empty())
-    return filterOverloadSetForParamBindings(/*allowImplicitConversions=*/true);
+    return filterOverloadSetForParamBindings();
 
   // Otherwise, emit the "cannot form a reference to overloaded decl" error.
   return getBoundConstantAttr();
@@ -1113,13 +1112,15 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
                                                 CallOperands &&operands,
                                                 const ExprNode *expr,
                                                 ASTDecl &declScope,
-                                                bool allowImplicitConversions) {
+                                                bool isImplicitConversion) {
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
-  OverloadSet callee = OverloadSet::lookup(
-      declScope, requiredType, "__init__", expr, CallSyntax::kImplicitConvert,
-      /*no error emission on failure */ {});
+  auto syntax = isImplicitConversion ? CallSyntax::kImplicitConvert
+                                     : CallSyntax::kTypeCall;
+  OverloadSet callee =
+      OverloadSet::lookup(declScope, requiredType, "__init__", expr, syntax,
+                          /*no error emission on failure */ {});
 
   // If there are no viable candidates for the implicit conversion, we fail.
   if (!callee)
@@ -1147,9 +1148,9 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not
   // be able to allow implicit conversions.
-  PValue result =
-      callee.filterOverloadSet(operands, allowImplicitConversions,
-                               /*emitDiagnosticOnFailure=*/false, paramEmitter);
+  PValue result = callee.filterOverloadSet(
+      operands, /*allowImplicitConversions=*/!isImplicitConversion,
+      /*emitDiagnosticOnFailure=*/false, paramEmitter);
   if (callee.isErroneous())
     return FailureOr<PValue>(failure());
   return result;

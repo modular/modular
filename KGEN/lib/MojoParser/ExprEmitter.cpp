@@ -580,7 +580,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   }
 
   return emitConstructorCall(expectedType, CallOperands(initValue.get()),
-                             value.expr, CallSyntax::kImplicitConvert, dest);
+                             value.expr, CallSyntax::kTypeCall, dest);
 }
 
 /// Emit an expression providing an immutable borrowed reference to a value.
@@ -1378,7 +1378,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // one step.
   FailureOr<PValue> result = OverloadSet::canConstructType(
       requiredType, {{value}}, value.expr, declScope,
-      /*allowImplicitConversions=*/false);
+      /*isImplicitConversion=*/true);
   return cacheAndReturnVal(succeeded(result) && result.value());
 }
 
@@ -2005,14 +2005,14 @@ RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
     ValueDest boolDest(context);
     value.ir =
         emitNamedMethodCall("__bool__", {{{value.ir, value.expr}}}, boolDest,
-                            CallSyntax::kImplicitConvert, value.expr);
+                            CallSyntax::kMethodCall, value.expr);
   }
 
   // Then we use __mlir_i1__ to convert to an i1 value.
   ValueDest boolDest(context);
   CValue litBoolCall =
       emitNamedMethodCall("__mlir_i1__", {{{value.ir, value.expr}}}, boolDest,
-                          CallSyntax::kImplicitConvert, value.expr);
+                          CallSyntax::kMethodCall, value.expr);
 
   return emitRValue({litBoolCall, value.expr}, context);
 }

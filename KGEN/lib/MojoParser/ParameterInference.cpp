@@ -785,7 +785,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   if (auto initValue = operand.ir.getIfInitializer()) {
     FailureOr<PValue> initFn = OverloadSet::canConstructType(
         getPartiallySpecializedType().getWithoutParameters(shared),
-        CallOperands(initValue.get()), operand.expr, declScope);
+        CallOperands(initValue.get()), operand.expr, declScope,
+        /*isImplicitConversion=*/false);
     // If there were declaration errors, assume success to not raise
     // spurious errors due to not resolving to those erroneous
     // declarations.
@@ -874,7 +875,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       knownExpectedType.getWithUnknownParametersReplaced(emitter.shared);
   FailureOr<PValue> pValue = OverloadSet::canConstructType(
       nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
-      emitter.getDeclScope(), /*allowImplicitConversions=*/false);
+      emitter.getDeclScope(), /*isImplicitConversion=*/true);
   if (llvm::failed(pValue))
     return success(); // Issue already diagnosed.
 

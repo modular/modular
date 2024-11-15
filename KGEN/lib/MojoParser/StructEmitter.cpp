@@ -285,7 +285,7 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
       // Emit `object()` into the memory type return slot.
       ValueDest resultDest(MLValue(func.getArguments().back()), EC_ReturnValue);
       emitter.emitConstructorCall(objType, {}, SyntheticNode(funcDecl.getLoc()),
-                                  CallSyntax::kImplicitConvert, resultDest);
+                                  CallSyntax::kTypeCall, resultDest);
       return makeNoneReturn();
     }
   }
