@@ -10,6 +10,6 @@ from memory import UnsafePointer
 
 fn main():
     var base = UnsafePointer[Float32].alloc(1)
-    var ptr = base.bitcast[DType.invalid]()
+    var ptr = base.bitcast[Scalar[DType.invalid]]()
     keep_alive(ptr)  # breakpoint
     base.free()
