@@ -13,7 +13,7 @@ from algorithm import sync_parallelize, elementwise
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from memory import UnsafePointer, memcpy, memset_zero
 from nn.gather_scatter import normalize_neg_index
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
@@ -342,7 +342,7 @@ fn _index_tensor_impl[
             output_idx, data.load[width=simd_width](data_idx)
         )
 
-    alias compile_target = _current_target() if target == "cpu" else _get_nvptx_target()
+    alias compile_target = _current_target() if target == "cpu" else _get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
 
     # Only use SIMD if:

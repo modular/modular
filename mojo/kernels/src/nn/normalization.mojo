@@ -25,7 +25,7 @@ from gpu import (
     lane_id,
     syncwarp,
 )
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from gpu.shuffle import _static_log2, shuffle_down, warp_broadcast, warp_sum
@@ -414,7 +414,7 @@ fn layer_norm_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
 
-    alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
+    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
     alias max_warps_per_block = 32
 
     var grid_dim = rows
@@ -805,7 +805,7 @@ fn rms_norm_gpu[
         indices[rank - 1] = col
         return input_fn[simd_width](indices.canonicalize())
 
-    alias simd_width = simdwidthof[type, target = _get_nvptx_target()]()
+    alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
     alias max_warps_per_block = 32
 
     var grid_dim = rows
