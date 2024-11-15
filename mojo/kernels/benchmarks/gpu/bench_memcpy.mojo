@@ -210,8 +210,8 @@ def main():
     var num_devices = DeviceContext.number_of_devices("cuda")
     if num_devices > 1:
         # Create contexts for both same-device and peer device transfers
-        var ctx1 = DeviceContext(gpu_id=0)
-        var ctx2 = DeviceContext(gpu_id=1)
+        var ctx1 = DeviceContext(device_id=0)
+        var ctx2 = DeviceContext(device_id=1)
 
         var length = 1 << log2_length
         # Benchmark peer context D2D
