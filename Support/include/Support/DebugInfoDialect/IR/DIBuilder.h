@@ -116,10 +116,10 @@ public:
   }
 
   /// Create a new file.
-  DIFileAttr createFile(StringRef name, StringRef directory);
+  DIFileAttr createFile(StringRef name, StringRef directory = "");
   DIFileAttr createFile(FileLineColLoc loc);
   /// Create and push a new file scope onto the stack.
-  ScopeGuard pushFile(StringRef name, StringRef directory) {
+  ScopeGuard pushFile(StringRef name, StringRef directory = "") {
     return pushScopeGuard(createFile(name, directory));
   }
 

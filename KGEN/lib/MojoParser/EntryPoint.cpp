@@ -319,7 +319,7 @@ importMojoFileImpl(AsyncRT::Runtime &runtime, SourceMgr &sourceMgr,
         // If we are emitting debug info, create a file entry for this file.
         if (sharedState.diBuilder)
           fileGuard = sharedState.diBuilder->pushFile(
-              sharedState.diags.getCanonicalFilename(bufName), "/");
+              sharedState.diags.getCanonicalFilename(bufName));
 
         // Grab a module name for the current input, choosing a dummy name if we
         // don't have one that's valid.
@@ -361,7 +361,7 @@ LIT::importMojoPackage(AsyncRT::Runtime &runtime, StringRef path,
         sharedState.initialize(topLevelDecl);
 
         if (sharedState.diBuilder)
-          fileGuard = sharedState.diBuilder->pushFile(path, "/");
+          fileGuard = sharedState.diBuilder->pushFile(path);
 
         // Build the package.
         return sharedState.createPackage(path, packageName);

@@ -1331,7 +1331,7 @@ ParseResult DeclResolver::resolveBody(LIT::FileModuleOp op, Lexer &lexer,
     FileLineColLoc loc =
         shared.diags.translateLocation(lexer.getToken().getLoc());
     if (loc)
-      fileGuard = shared.diBuilder->pushFile(loc.getFilename().getValue(), "/");
+      fileGuard = shared.diBuilder->pushFile(loc.getFilename().getValue());
   }
 
   return ParserBase(shared, lexer).parseSuite(decl);
