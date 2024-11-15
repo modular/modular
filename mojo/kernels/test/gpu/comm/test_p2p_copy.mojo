@@ -60,8 +60,8 @@ def main():
         return
 
     # Create contexts for both devices
-    var ctx1 = DeviceContext(gpu_id=0)
-    var ctx2 = DeviceContext(gpu_id=1)
+    var ctx1 = DeviceContext(device_id=0)
+    var ctx2 = DeviceContext(device_id=1)
     var can_access_p2p = ctx1.can_access(ctx2)
     print("ctx1 can access ctx2: ", can_access_p2p)
     if not can_access_p2p:
