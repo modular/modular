@@ -11,7 +11,7 @@ from sys import external_call, sizeof
 from sys.ffi import c_size_t
 from utils import StringRef, Variant
 
-from gpu.host._compile import _get_nvptx_target, _get_nvptx_fn_name
+from gpu.host._compile import _get_gpu_target, _get_nvptx_fn_name
 from gpu.host.launch_attribute import LaunchAttribute
 from gpu.host._utils_v1 import _check_error, _StreamHandle
 from gpu.host.context_v1 import Context
@@ -136,7 +136,7 @@ struct DeviceFunctionV1[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     *,
-    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
+    target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
@@ -250,7 +250,7 @@ struct DeviceContextV1:
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
-        target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
+        target: __mlir_type.`!kgen.target` = _get_gpu_target(),
         _is_failable: Bool = False,
         _ptxas_info_verbose: Bool = False,
     ](

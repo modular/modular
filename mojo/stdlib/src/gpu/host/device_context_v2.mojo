@@ -23,7 +23,7 @@ from gpu.host._compile import (
     _compile_code,
     _compile_code_asm,
     _get_nvptx_fn_name,
-    _get_nvptx_target,
+    _get_gpu_target,
     _ptxas_compile,
     _to_sass,
 )
@@ -342,7 +342,7 @@ struct DeviceFunctionV2[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     *,
-    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
+    target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
@@ -801,7 +801,7 @@ struct DeviceContextV2:
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
-        target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
+        target: __mlir_type.`!kgen.target` = _get_gpu_target(),
         _is_failable: Bool = False,
         _ptxas_info_verbose: Bool = False,
     ](

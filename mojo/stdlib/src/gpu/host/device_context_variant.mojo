@@ -8,7 +8,7 @@ from sys.ffi import c_size_t
 from sys.param_env import is_defined
 from utils import StringRef, Variant
 
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from gpu.host.device_attribute import DeviceAttribute
 from gpu.host.device_context_v1 import (
     DeviceBufferV1,
@@ -50,7 +50,7 @@ struct DeviceFunctionVariant[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     *,
-    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
+    target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
@@ -287,7 +287,7 @@ struct DeviceContextVariant:
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
-        target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
+        target: __mlir_type.`!kgen.target` = _get_gpu_target(),
         _is_failable: Bool = False,
         _ptxas_info_verbose: Bool = False,
     ](

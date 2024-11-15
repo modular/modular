@@ -21,7 +21,7 @@ from .info import DEFAULT_GPU_ARCH, _get_info_from_target
 
 
 @always_inline
-fn _get_nvptx_target[
+fn _get_gpu_target[
     # TODO: Ideally this is an Optional[StringLiteral] but blocked by MOCO-1039
     target_arch: StringLiteral = DEFAULT_GPU_ARCH,
 ]() -> __mlir_type.`!kgen.target`:
@@ -32,7 +32,7 @@ fn _get_nvptx_target[
 fn _get_nvptx_fn_name[
     func_type: AnyTrivialRegType, //, func: func_type
 ]() -> StringLiteral:
-    return get_linkage_name[_get_nvptx_target(), func]()
+    return get_linkage_name[_get_gpu_target(), func]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -48,7 +48,7 @@ fn _compile_code[
     *,
     emission_kind: StringLiteral = "asm",
     is_failable: Bool = False,
-    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
+    target: __mlir_type.`!kgen.target` = _get_gpu_target(),
 ]() -> Info:
     return compile_info[
         func,
@@ -66,7 +66,7 @@ fn _compile_code_asm[
     *,
     emission_kind: StringLiteral = "asm",
     is_failable: Bool = False,
-    target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
+    target: __mlir_type.`!kgen.target` = _get_gpu_target(),
 ]() -> StringLiteral:
     alias asm = compile_info[
         func,
@@ -84,7 +84,7 @@ fn _compile_code_asm[
 
 @no_inline
 fn _to_sass[
-    target: __mlir_type.`!kgen.target` = _get_nvptx_target()
+    target: __mlir_type.`!kgen.target` = _get_gpu_target()
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
     alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
     if not nvdisasm_path.exists():
@@ -110,7 +110,7 @@ fn _to_sass[
 
 @no_inline
 fn _ptxas_compile[
-    target: __mlir_type.`!kgen.target` = _get_nvptx_target()
+    target: __mlir_type.`!kgen.target` = _get_gpu_target()
 ](
     asm: String, *, options: String = "", output_file: Optional[Path] = None
 ) raises -> String:
