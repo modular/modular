@@ -8,7 +8,7 @@ import builtin
 
 from sys import exit
 from sys.info import sizeof
-from sys.ffi import OpaquePointer, c_int
+from sys.ffi import c_int
 from memory import UnsafePointer
 
 from os import abort

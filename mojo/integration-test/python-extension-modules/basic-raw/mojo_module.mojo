@@ -7,7 +7,6 @@
 import builtin
 
 from os import abort
-from sys.ffi import OpaquePointer
 
 from python import Python, PythonObject, TypedPythonObject
 from python._cpython import PyMethodDef, PyObjectPtr
