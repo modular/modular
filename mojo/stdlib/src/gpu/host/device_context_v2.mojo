@@ -413,7 +413,7 @@ struct DeviceFunctionV2[
 
         # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
-        #     const char *function_name, const void *data,
+        #     const char *module_name, const char *function_name, const void *data,
         #     int32_t max_registers, int32_t threads_per_block,
         #     int32_t cache_mode, int32_t cache_config, int32_t max_dynamic_shared_bytes,
         #     const char* debug_level, int32_t optimization_level)
@@ -426,6 +426,7 @@ struct DeviceFunctionV2[
                 _DeviceContextPtr,
                 _CharPtr,
                 _CharPtr,
+                _CharPtr,
                 Int32,
                 Int32,
                 Int32,
@@ -436,6 +437,7 @@ struct DeviceFunctionV2[
             ](
                 UnsafePointer.address_of(result),
                 ctx._handle,
+                self._func_impl.module_name.unsafe_ptr(),
                 self._func_impl.function_name.unsafe_ptr(),
                 self._func_impl.asm.unsafe_ptr(),
                 max_registers.or_else(-1),

@@ -187,7 +187,9 @@ struct Function[
 
         self.cuda_dll = cuda_dll
         self.cuda_function_cache = cuda_function_cache
-        self.info = Self._get_cached_function_info[func_type, func](
+        self.info = Self._get_cached_function_info[
+            func_type, func, module_name = Self._impl.module_name
+        ](
             device_context_ptr=device_context_ptr,
             max_registers=max_registers,
             threads_per_block=threads_per_block,
@@ -442,6 +444,7 @@ struct Function[
         cache_mode: OptionalReg[CacheMode],
     ) raises -> _CachedFunctionInfo:
         alias _impl = Self._impl
+        alias module_name = _impl.module_name
         alias fn_name = _impl.function_name
 
         # Set the current context in case this is called outside the main
@@ -487,7 +490,9 @@ struct Function[
     @staticmethod
     @always_inline
     fn _get_cached_function_info[
-        func_type: AnyTrivialRegType, func: func_type
+        func_type: AnyTrivialRegType,
+        func: func_type,
+        module_name: StringLiteral,
     ](
         device_context_ptr: UnsafePointer[DeviceContextV1],
         *,
@@ -498,7 +503,6 @@ struct Function[
         cache_mode: OptionalReg[CacheMode],
         cuda_function_cache: UnsafePointer[FunctionCache],
     ) raises -> _CachedFunctionInfo:
-        alias fn_name = _get_nvptx_fn_name[func]()
         with BlockingScopedLock(cuda_function_cache[].lock):
             # FIXME: (MSTDL-694) The following sporadically fails in commit
             # test (unhandled exception).
@@ -512,8 +516,8 @@ struct Function[
 
             # FIXME: (MSTDL-694) This code is unnecessairly expensive,
             # but it won't fail in commit tests.
-            if fn_name in cuda_function_cache[]:
-                return cuda_function_cache[].dict[fn_name]
+            if module_name in cuda_function_cache[]:
+                return cuda_function_cache[].dict[module_name]
 
         var info = Self.init_fn[func_type, func](
             device_context_ptr=device_context_ptr,
@@ -524,5 +528,5 @@ struct Function[
             cache_mode=cache_mode,
         )
         with BlockingScopedLock(cuda_function_cache[].lock):
-            cuda_function_cache[].dict[fn_name] = info
+            cuda_function_cache[].dict[module_name] = info
             return info
