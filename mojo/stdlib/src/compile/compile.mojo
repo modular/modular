@@ -42,6 +42,7 @@ struct _Info:
 struct Info:
     var asm: StringLiteral
     var function_name: StringLiteral
+    var module_name: StringLiteral
     var num_captures: Int
     var populate: fn (UnsafePointer[NoneType]) capturing -> None
     var error_msg: StringLiteral
@@ -73,6 +74,10 @@ fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
     return
 
 
+fn _hash_module_name(s: StringLiteral) -> StringLiteral:
+    return __mlir_op.`pop.string.hash`(s.value)
+
+
 @always_inline
 fn _compile_info_failable_impl[
     func_type: AnyTrivialRegType,
@@ -101,6 +106,7 @@ fn _compile_info_failable_impl[
     if Int(impl.num_captures) == -1:
         alias result = Info {
             asm: "",
+            module_name: "",
             function_name: "",
             num_captures: 0,
             populate: _noop_populate,
@@ -108,9 +114,11 @@ fn _compile_info_failable_impl[
             is_error: True,
         }
         return result
+
     alias result = Info {
         asm: impl.asm,
         function_name: get_linkage_name[target, func](),
+        module_name: _hash_module_name(impl.asm),
         num_captures: impl.num_captures,
         populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
             impl.populate
@@ -150,6 +158,7 @@ fn _compile_info_non_failable_impl[
     alias result = Info {
         asm: cls.asm,
         function_name: get_linkage_name[target, func](),
+        module_name: _hash_module_name(cls.asm),
         num_captures: cls.num_captures,
         populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
             cls.populate
