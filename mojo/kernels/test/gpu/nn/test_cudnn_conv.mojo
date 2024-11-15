@@ -7,7 +7,7 @@
 
 from math import ceildiv, isclose
 from random import rand
-from sys.info import simdwidthof
+from sys.info import simdwidthof, num_physical_cores
 from sys import sizeof
 from buffer import NDBuffer
 from buffer.dimlist import DimList
@@ -16,16 +16,23 @@ from memory import UnsafePointer
 from nn.conv import (
     Naive2dConvolution,
     conv_gpu,
+    conv_cudnn,
+    ConvDirectNHWC,
+    ConvInfoStatic,
+    conv_nhwc_direct,
+    pack_conv_filter_shape,
+    pack_filter,
 )
 from nn.conv_utils import (
     ConvShape,
+    get_conv_shape,
+    get_conv_num_partitions,
+    get_conv_num_tasks,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
-
 from utils.index import Index, IndexList
-from gpu.id import BlockDim, BlockIdx, ThreadIdx
-from testing import assert_equal
+from testing import assert_equal, assert_almost_equal
 
 
 fn print_data[type: DType](data: UnsafePointer[Scalar[type]], dim: DimList):
@@ -34,74 +41,9 @@ fn print_data[type: DType](data: UnsafePointer[Scalar[type]], dim: DimList):
     print("")
 
 
-fn conv2d_gpu_naive_nhwc_rscf[
-    input_dim: DimList,
-    filter_dim: DimList,
-    output_dim: DimList,
-    input_type: DType,
-    filter_type: DType,
-    output_type: DType,
-](
-    input: UnsafePointer[Scalar[input_type]],
-    filter: UnsafePointer[Scalar[filter_type]],
-    output: UnsafePointer[Scalar[output_type]],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    padding: IndexList[2],
-):
-    # batch index
-    var n = BlockIdx.x()
-    # output height and width indices
-    var h_out = BlockIdx.y()
-    var w_out = BlockIdx.z()
-    # output channel index
-    var c_out = ThreadIdx.x()
-
-    var out_height = output_dim.get[1]()
-    var out_width = output_dim.get[2]()
-    var N = input_dim.get[0]()
-    var H = input_dim.get[1]()
-    var W = input_dim.get[2]()
-    var C = input_dim.get[3]()  # channel_in
-    var KH = filter_dim.get[0]()
-    var KW = filter_dim.get[1]()
-    var C_out = output_dim.get[3]()  # channel_out
-    var pad_h = padding[0]
-    var pad_w = padding[1]
-    var stride_h = stride[0]
-    var stride_w = stride[1]
-    var dil_h = dilation[0]
-    var dil_w = dilation[1]
-
-    if n < N and h_out < out_height and w_out < out_width and c_out < C_out:
-        var sum = Scalar[output_type](0)
-
-        for kh in range(KH):
-            for kw in range(KW):
-                for c in range(C):
-                    var h_in = h_out * stride_h - pad_h + kh * dil_h
-                    var w_in = w_out * stride_w - pad_w + kw * dil_w
-
-                    if h_in >= 0 and h_in < H and w_in >= 0 and w_in < W:
-                        var input_val = input[
-                            n * H * W * C + h_in * W * C + w_in * C + c
-                        ].cast[output_type]()
-                        var filter_val = filter[
-                            kh * KW * C + kw * C + c * C_out + c_out
-                        ].cast[output_type]()
-                        sum += input_val * filter_val
-
-        output[
-            n * out_height * out_width * C_out
-            + h_out * out_width * C_out
-            + w_out * C_out
-            + c_out
-        ] = sum
-
-
 # input: NHWC
 # filer: RSCF
-fn test_conv[
+fn test_conv_cudnn[
     input_dim: DimList,
     filter_dim: DimList,
     output_dim: DimList,
@@ -150,32 +92,27 @@ fn test_conv[
     ctx.enqueue_copy_to_device(input_dev, input_data_host)
     ctx.enqueue_copy_to_device(filter_dev, filter_data_host)
 
-    var conv_naive = ctx.compile_function[
-        conv2d_gpu_naive_nhwc_rscf[
-            input_dim,
-            filter_dim,
-            output_dim,
-            input_type,
-            filter_type,
-            output_type,
-        ]
-    ]()
-
-    ctx.enqueue_function(
-        conv_naive,
+    conv_gpu[
+        input_dim,
+        filter_dim,
+        output_dim,
+        input_type,
+        filter_type,
+        output_type,
+    ](
         input_dev.ptr,
         filter_dev.ptr,
         output_ref_dev.ptr,
         stride_dim,
         dilation_dim,
         pad_dim,
-        grid_dim=(input_dim.get[0](), output_dim.get[1](), output_dim.get[2]()),
-        block_dim=output_dim.get[3](),
+        1,
+        ctx,
     )
 
     ctx.enqueue_copy_from_device(output_ref_host, output_ref_dev)
 
-    conv_gpu[
+    conv_cudnn[
         input_dim,
         DimList(
             filter_dim.get[3](),
@@ -204,10 +141,237 @@ fn test_conv[
     for x in range(output_dim_flattened):
         assert_equal(output_data_host[x], output_ref_host[x])
 
+    input_data_host.free()
+    filter_data_host.free()
+    output_data_host.free()
+    output_ref_host.free()
+
+
+# input: NHWC
+# filer: RSCF
+fn test_conv_gpu[
+    input_dim: DimList,
+    filter_dim: DimList,
+    type: DType,
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    pad: IndexList[2],
+    num_groups: Int = 1,
+](ctx: DeviceContext) raises:
+    print("== test_conv_gpu")
+
+    alias filter_packed = False
+    alias simd_size: Int = simdwidthof[DType.float32]()
+    alias N = input_dim.get[0]()
+    alias H = input_dim.get[1]()
+    alias W = input_dim.get[2]()
+    alias C = input_dim.get[3]()
+    alias R = filter_dim.get[0]()
+    alias S = filter_dim.get[1]()
+    alias F = filter_dim.get[3]()
+    alias pad_h = IndexList[2](pad[0], pad[0])
+    alias pad_w = IndexList[2](pad[1], pad[1])
+
+    alias HO = (H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1) // stride[
+        0
+    ] + 1
+    alias WO = (W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1) // stride[
+        1
+    ] + 1
+    alias output_dim = DimList(N, HO, WO, F)
+
+    var input_dim_flattened = input_dim.product().get()
+    var filter_dim_flattened = filter_dim.product().get()
+    var output_dim_flattened = output_dim.product().get()
+
+    var conv_shape = ConvShape[2] {
+        n: N,
+        input_dims: Index(H, W),
+        output_dims: Index(HO, WO),
+        filter_dims: Index(R, S),
+        c: C,
+        f: F,
+        stride: stride,
+        dilation: dilation,
+        pad_d: Index(0, 0),
+        pad_h: pad_h,
+        pad_w: pad_w,
+        num_groups: num_groups,
+    }
+
+    var input_ptr = UnsafePointer[Scalar[type]].alloc(input_dim_flattened)
+    var filter_ptr = UnsafePointer[Scalar[type]].alloc(filter_dim_flattened)
+    var output_cpu_ptr = UnsafePointer[Scalar[type]].alloc(output_dim_flattened)
+    var output_gpu_ptr = UnsafePointer[Scalar[type]].alloc(output_dim_flattened)
+    var output_ref_ptr = UnsafePointer[Scalar[type]].alloc(output_dim_flattened)
+
+    rand[type](input_ptr, input_dim_flattened)
+    rand[type](filter_ptr, filter_dim_flattened)
+
+    var input = NDBuffer[type, 4](input_ptr, IndexList[4](N, H, W, C))
+    var filter = NDBuffer[type, 4](
+        filter_ptr, IndexList[4](R, S, C // num_groups, F)
+    )
+    var output_cpu = NDBuffer[type, 4](
+        output_cpu_ptr, IndexList[4](N, HO, WO, F)
+    )
+    var output_gpu = NDBuffer[type, 4](
+        output_gpu_ptr, IndexList[4](N, HO, WO, F)
+    )
+    var output_ref = NDBuffer[type, 4](
+        output_ref_ptr, IndexList[4](N, HO, WO, F)
+    )
+
+    var input_dev = ctx.enqueue_create_buffer[type](input_dim_flattened)
+    var filter_dev = ctx.enqueue_create_buffer[type](filter_dim_flattened)
+    var output_dev = ctx.enqueue_create_buffer[type](output_dim_flattened)
+
+    # Reference: naive conv
+    Naive2dConvolution[
+        type,  # Data type.
+        type,
+        type,
+    ].run(
+        output_ref_ptr,
+        input_ptr,
+        filter_ptr,
+        Index(N, 1, HO, WO, F),
+        Index(N, 1, H, W, C),
+        Index(1, R, S, C // num_groups, F),
+        Index(0, 0),  #  pad_d
+        pad_h,
+        pad_w,
+        (1, stride[0], stride[1]),
+        (1, dilation[0], dilation[1]),
+        num_groups,
+    )
+
+    # Test direct conv
+    alias conv_attr = ConvInfoStatic[2]()
+
+    ConvDirectNHWC[
+        4,
+        4,
+        4,
+        DimList.create_unknown[4](),
+        DimList.create_unknown[4](),
+        DimList.create_unknown[4](),
+        type,
+        type,
+        type,
+        False,
+        conv_attr,
+    ].run(output_cpu, input, filter, conv_shape)
+
+    ctx.enqueue_copy_to_device(input_dev, input_ptr)
+    ctx.enqueue_copy_to_device(filter_dev, filter_ptr)
+
+    conv_gpu[input_dim, filter_dim, output_dim, type, type, type,](
+        input_dev.ptr,
+        filter_dev.ptr,
+        output_dev.ptr,
+        stride,
+        dilation,
+        pad,
+        num_groups,
+        ctx,
+    )
+
+    ctx.enqueue_copy_from_device(output_gpu_ptr, output_dev)
+
+    # verifying results
+    for x in range(output_dim_flattened):
+        assert_almost_equal(output_ref_ptr[x], output_gpu_ptr[x], rtol=0.01)
+        assert_equal(output_ref_ptr[x], output_cpu_ptr[x])
+
+    input_ptr.free()
+    filter_ptr.free()
+
+    output_cpu_ptr.free()
+    output_gpu_ptr.free()
+    output_ref_ptr.free()
+
 
 def main():
     with DeviceContext() as ctx:
-        test_conv[
+        test_conv_gpu[
+            DimList(1, 5, 5, 2),  # input  (NHWC)
+            DimList(
+                3, 3, 2, 2
+            ),  # filter (RSCF) (height, width, in_channels, out_channels)
+            DType.float32,
+            IndexList[2](1, 1),  # stride
+            IndexList[2](1, 1),  # dilation
+            IndexList[2](2, 2),  # pad
+        ](ctx)
+
+        test_conv_gpu[
+            DimList(1, 5, 5, 1),  # input  (NHWC)
+            DimList(
+                3, 3, 1, 1
+            ),  # filter (RSCF) (height, width, in_channels, out_channels)
+            DType.float32,
+            IndexList[2](1, 1),  # stride
+            IndexList[2](1, 1),  # dilation
+            IndexList[2](0, 0),  # pad
+        ](ctx)
+
+        test_conv_gpu[
+            DimList(1, 4, 4, 3),  # input  (NHWC)
+            DimList(
+                2, 2, 3, 1
+            ),  # filter (RSCF) (height, width, in_channels, out_channels)
+            DType.float32,
+            IndexList[2](1, 1),  # stride
+            IndexList[2](1, 1),  # dilation
+            IndexList[2](0, 0),  # pad
+        ](ctx)
+
+        test_conv_gpu[
+            DimList(1, 5, 5, 3),  # input  (NHWC)
+            DimList(
+                3, 3, 3, 1
+            ),  # filter (RSCF) (height, width, in_channels, out_channels)
+            DType.float32,
+            IndexList[2](1, 1),  # stride
+            IndexList[2](1, 1),  # dilation
+            IndexList[2](0, 0),  # pad
+        ](ctx)
+
+        test_conv_gpu[
+            DimList(5, 7, 7, 8),  # input  (NHWC)
+            DimList(
+                3, 3, 8, 64
+            ),  # filter (RSCF) (height, width, in_channels, out_channels)
+            DType.float32,
+            IndexList[2](1, 1),  # stride
+            IndexList[2](1, 1),  # dilation
+            IndexList[2](0, 0),  # pad
+        ](ctx)
+
+        test_conv_gpu[
+            DimList(1, 7, 7, 7),  # input  (NHWC)
+            DimList(
+                3, 3, 7, 256
+            ),  # filter (RSCF) (height, width, in_channels, out_channels)
+            DType.float32,
+            IndexList[2](3, 3),  # stride
+            IndexList[2](1, 1),  # dilation
+            IndexList[2](0, 0),  # pad
+        ](ctx)
+
+        test_conv_gpu[
+            DimList(2, 28, 28, 1),  # input  (NHWC)
+            DimList(
+                3, 3, 1, 8
+            ),  # filter (RSCF) (height, width, in_channels, out_channels)
+            DType.float32,
+            IndexList[2](3, 3),  # stride
+            IndexList[2](1, 1),  # dilation
+            IndexList[2](2, 2),  # pad
+        ](ctx)
+
+        test_conv_cudnn[
             DimList(1, 5, 5, 1),  # input  (NHWC)
             DimList(
                 3, 3, 1, 1
@@ -221,21 +385,7 @@ def main():
             IndexList[2](0, 0),  # pad
         ](ctx)
 
-        test_conv[
-            DimList(1, 32, 32, 3),  # input  (NHWC)
-            DimList(
-                5, 5, 3, 16
-            ),  # filter (RSCF) (height, width, in_channels, out_channels)
-            DimList(1, 32, 32, 16),  # output (NHWC)
-            DType.float32,
-            DType.float32,
-            DType.float32,
-            IndexList[2](1, 1),  # stride
-            IndexList[2](1, 1),  # dilation
-            IndexList[2](2, 2),  # pad
-        ](ctx)
-
-        test_conv[
+        test_conv_cudnn[
             DimList(2, 28, 28, 1),  # input  (NHWC)
             DimList(
                 3, 3, 1, 8
