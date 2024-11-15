@@ -228,8 +228,7 @@ def build_prompt(
         return pipeline.tokenizer.apply_chat_template(messages)
     else:
         msg = (
-            "pipeline.tokenizer must implement the TokenGeneratorTokenizer"
-            " protocol."
+            "pipeline.tokenizer must implement the PipelineTokenizer protocol."
         )
         raise ValueError(msg)
 
