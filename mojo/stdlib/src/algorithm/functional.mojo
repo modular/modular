@@ -1625,7 +1625,7 @@ fn _elementwise_impl_gpu[
 
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
 
-    alias hw_info = Info.from_target_name[target]()
+    alias hw_info = Info.from_name[target]()
 
     alias registers_per_thread = 255
     alias num_waves = 32
