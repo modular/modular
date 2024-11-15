@@ -20,7 +20,7 @@ from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from internal_utils import DeviceNDBuffer
 from memory import UnsafePointer
@@ -119,9 +119,9 @@ fn run_elementwise[
     name: String,
     ctx: DeviceContext,
 ) raises:
-    alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
+    alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
     alias align = alignof[
-        SIMD[type, pack_size], target = _get_nvptx_target()
+        SIMD[type, pack_size], target = _get_gpu_target()
     ]() if use_aligned_memory else 1
     var N = product(dims, rank)
 

@@ -10,7 +10,7 @@ from sys import alignof, simdwidthof
 from algorithm._gpu.reduction import reduce_launch
 from buffer import NDBuffer
 from gpu.host import DeviceContext
-from gpu.host._compile import _get_nvptx_target
+from gpu.host._compile import _get_gpu_target
 from testing import assert_equal
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from memory import UnsafePointer
@@ -45,7 +45,7 @@ fn run_reduce[
     var in_size = shape.flattened_length()
     var out_size = product(shape, rank - 1)
 
-    alias align = alignof_simd[type, simd_target = _get_nvptx_target()]()
+    alias align = alignof_simd[type, simd_target = _get_gpu_target()]()
     var expected_vals = UnsafePointer[Scalar[type], alignment=align].alloc(
         out_size
     )
