@@ -1,4 +1,4 @@
-// RUN: kgen-opt -pass-pipeline='builtin.module(kgen.func(lower-pop-to-llvm))' -mlir-print-debuginfo %s | FileCheck %s
+// RUN: kgen-opt -lower-kgen-to-llvm -mlir-print-debuginfo %s | FileCheck %s
 
 // CHECK-DAG: ![[COROUTINE:.*]] = !debuginfo.struct<"!co.routine"()>
 // CHECK-DAG: ![[PTR:.*]] = !debuginfo.ptr<![[COROUTINE]] {sizeInBits = 64, alignInBits = 64}>
