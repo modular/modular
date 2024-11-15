@@ -37,6 +37,15 @@ constexpr const char *kMgpModelArgumentDimNames = "argument_dims";
 /// Binds to an array of strings for model tensor result names.
 constexpr const char *kMgpModelResultNames = "result_names";
 
+/// Binds to an array of indices referring to a device in `devices` attr used by
+/// each argument.
+constexpr const char *kMgpModelArgumentDeviceIndices =
+    "argument_device_indices";
+
+/// Binds to an array of indices referring to a device in `devices` attr used by
+/// each result.
+constexpr const char *kMgpModelResultDeviceIndices = "result_device_indices";
+
 } // namespace M
 
 #endif // SUPPORT_ML_COMMONATTRIBUTES_H
