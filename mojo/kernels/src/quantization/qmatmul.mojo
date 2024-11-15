@@ -57,8 +57,8 @@ def matmul_qint4_pack_b[
         for nn in range(n_groups):
             var dst_k_ptr = dst_ptr
             for k in range(0, K, group_size):
-                var scale = src_ptr.bitcast[DType.float16]().load()
-                dst_k_ptr.bitcast[DType.float16]().store(nn, scale)
+                var scale = src_ptr.bitcast[Scalar[DType.float16]]().load()
+                dst_k_ptr.bitcast[Scalar[DType.float16]]().store(nn, scale)
                 src_ptr += sizeof[DType.float16]()
                 dst_k_ptr += sizeof[DType.float16]() * n_groups
 
@@ -199,7 +199,7 @@ fn _unpack_weights[
 
         @parameter
         for col in range(tile_n):
-            var b_scale = b_packed_ptr.bitcast[DType.float16]().load[
+            var b_scale = b_packed_ptr.bitcast[Scalar[DType.float16]]().load[
                 width=simd_width
             ](col * simd_width).cast[DType.float32]()
             b_scale_ptr.store(col * simd_width, b_scale)
@@ -494,7 +494,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         for col in range(tile_n):
             c_int32[0, col] -= b_column_sums[col]
 
-        var b_scale_ptr = b_ptr.bitcast[DType.float16]()
+        var b_scale_ptr = b_ptr.bitcast[Scalar[DType.float16]]()
 
         _scale_and_accumulate[group_size](
             a_scale_ptr, b_scale_ptr, c_int32, c_float
@@ -658,7 +658,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
             ci16 += b_column_sum_i16
             c_int32[0, col] = bitcast[DType.int32, simd_width](ci16)
 
-        var b_scale_ptr = b_ptr.bitcast[DType.float16]()
+        var b_scale_ptr = b_ptr.bitcast[Scalar[DType.float16]]()
 
         _scale_and_accumulate[group_size](
             a_scale_ptr, b_scale_ptr, c_int32, c_float
@@ -788,7 +788,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
                         c_int32[0, col], b_data_i4_hi, a_val
                     )
 
-        var b_scale_ptr = b_ptr.bitcast[DType.float16]()
+        var b_scale_ptr = b_ptr.bitcast[Scalar[DType.float16]]()
 
         _scale_and_accumulate[group_size](
             a_scale_ptr, b_scale_ptr, c_int32, c_float
@@ -989,7 +989,7 @@ fn _matmul_qint4_m_1[
         var task_n_start = block_range[0] * grain_size
         var task_n_count = block_range[1] * grain_size
 
-        var b_ptr = b.data.bitcast[DType.int8]()
+        var b_ptr = b.data.bitcast[Scalar[DType.int8]]()
 
         @parameter
         @always_inline
@@ -1000,7 +1000,7 @@ fn _matmul_qint4_m_1[
 
             c_float.init()
 
-            var ak_ptr = a_quant.data.bitcast[DType.int8]()
+            var ak_ptr = a_quant.data.bitcast[Scalar[DType.int8]]()
             var ak_scale_ptr = a_scale.data
             var bk_ptr = b_ptr + n * k_groups * bytes_per_group_int4
 
