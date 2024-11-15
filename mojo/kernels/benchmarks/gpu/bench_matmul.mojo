@@ -11,7 +11,7 @@ from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from gpu.host import DeviceBuffer, DeviceContext
 from linalg.matmul_gpu import _matmul_gpu
-from internal_utils import DeviceNDBuffer, env_get_dtype
+from internal_utils import DeviceNDBuffer, env_get_dtype, arg_parse
 from internal_utils._utils import static, dynamic, ValOrDim
 from utils import IndexList
 from sys import env_get_int, sizeof, env_get_bool
@@ -212,13 +212,13 @@ fn create_matmul_bench[
 fn main() raises:
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
-    alias M = env_get_int["M", 1]()
+    var M = int(arg_parse("M", 1))
     alias N = env_get_int["N", 1]()
     alias K = env_get_int["K", 1]()
 
-    alias cache_busting = env_get_bool["cache_busting", True]()
-    alias transpose_b = env_get_bool["transpose_b", True]()
-    alias use_cublas = env_get_bool["use_cublas", False]()
+    alias cache_busting = True
+    alias transpose_b = True
+    alias use_cublas = False
 
     var m = Bench()
     try:

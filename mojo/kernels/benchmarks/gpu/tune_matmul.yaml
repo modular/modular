@@ -10,7 +10,7 @@ file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
 params:
 
 # tune parameters for multi-stage-gemm
-- M: [1024] #, 64, 100, 200, 500, 1000, 2048, 4096, 8192]
+- $M: [1024] #, 64, 100, 200, 500, 1000, 2048, 4096, 8192]
   N: 4096
   K: 4096
   AUTOTUNING_MODE: True
