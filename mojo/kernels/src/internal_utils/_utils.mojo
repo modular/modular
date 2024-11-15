@@ -6,7 +6,7 @@
 
 from collections import InlineArray
 from random import rand
-from sys import env_get_string, is_defined
+from sys import env_get_string, is_defined, argv
 from sys.info import alignof
 
 from benchmark import (
@@ -381,3 +381,13 @@ fn static[d: Int]() -> ValOrDim[d]:
 
 fn dynamic(d: Int) -> ValOrDim:
     return ValOrDim(d)
+
+
+fn arg_parse(handle: String, default: Int) raises -> Int:
+    # TODO: add constraints on dtype of return value
+    var args = argv()
+    for i in range(len(args)):
+        if String(args[i]).startswith("--" + handle):
+            var name_val = args[i].split("=")
+            return int(name_val[1])
+    return default
