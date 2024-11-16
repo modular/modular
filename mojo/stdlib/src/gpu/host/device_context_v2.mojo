@@ -17,7 +17,7 @@ from sys import (
     env_get_string,
 )
 from utils import StringRef, Variant
-from sys.info import _get_arch
+from sys.info import _get_arch, is_triple
 from .info import DEFAULT_GPU
 
 from gpu.host._compile import (
@@ -336,7 +336,7 @@ struct DeviceStreamV2:
 
 
 fn _is_amd_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
-    return "sm_" not in _get_arch[target]()
+    return is_triple["amdgcn-amd-amdhsa", target]()
 
 
 struct DeviceFunctionV2[
@@ -805,7 +805,7 @@ struct DeviceContextV2:
         dump_asm: Variant[Bool, Path, fn () capturing -> Path] = False,
         dump_llvm: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
-        target: __mlir_type.`!kgen.target` = _get_gpu_target(),
+        _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
         _is_failable: Bool = False,
         _ptxas_info_verbose: Bool = False,
     ](
@@ -818,7 +818,7 @@ struct DeviceContextV2:
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises -> DeviceFunctionV2[
         func,
-        target=target,
+        target=_target,
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
     ] as result:
