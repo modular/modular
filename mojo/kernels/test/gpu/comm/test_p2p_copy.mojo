@@ -54,7 +54,7 @@ def main():
     constrained[log2_length > 0]()
     var length = 1 << log2_length
 
-    var num_devices = DeviceContext.number_of_devices("cuda")
+    var num_devices = DeviceContext.number_of_devices()
     if num_devices == 1:
         print("Only one device found, skipping peer-to-peer copy")
         return
