@@ -215,14 +215,14 @@ fn usePacks(x: FloatDyn, y: Int):
     pack()
 
     pack(Int(1).value, x, y)
-    pack[Int, FloatDyn, Int](Int(1).value, x, y)
+    pack[Int, FloatDyn, Int](Int(1), x, y)
 
     packBorrowed(Int(1).value, x, y)
 
     # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, !FloatDyn]>
     variadicParameter[Int, FloatDyn](1)
     # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
-    variadicParameter(Int(2).value)
+    variadicParameter(Int(2))
 
 
 # CHECK-LABEL: test_comptime_call

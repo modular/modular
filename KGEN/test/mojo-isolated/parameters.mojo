@@ -295,6 +295,7 @@ fn explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
 
 @register_passable("trivial")
 struct IndexParam[x: int]:
+    @implicit
     fn __init__(out self, p: __mlir_type.`!kgen.none`):
         pass
 
@@ -1023,6 +1024,7 @@ fn useMixedInferAndPosParam():
 
 @register_passable("trivial")
 struct Box[T: AnyType]:
+    @implicit
     fn __init__(out self, x: T):
         pass
 
@@ -1171,9 +1173,11 @@ fn test_param_default():
     param_default()
 
 struct Optional[T: AnyType]:
+    @implicit
     fn __init__(out self, none: __mlir_type.`!kgen.none`):
         pass
 
+    @implicit
     fn __init__(out self, value: T):
         pass
 
@@ -1395,11 +1399,13 @@ fn funct_partial_binding[x: T, F: fn[t: T, s: T] () -> None]():
 
 @value
 struct StructWithSpecificSelfInitTypes[size: Int]:
-   fn __init__(out self: StructWithSpecificSelfInitTypes[0]): pass
-   fn __init__(out self: StructWithSpecificSelfInitTypes[1], a: Int): pass
-   fn __init__(out self: StructWithSpecificSelfInitTypes[2], a: Int, b: Int): pass
+    fn __init__(out self: StructWithSpecificSelfInitTypes[0]): pass
+    @implicit
+    fn __init__(out self: StructWithSpecificSelfInitTypes[1], a: Int): pass
+    fn __init__(out self: StructWithSpecificSelfInitTypes[2], a: Int, b: Int): pass
 
 struct DependentSpecificInitSelf[T: AnyType]:
+    @implicit
     fn __init__[U: Movable](inout self: DependentSpecificInitSelf[U], owned value: U):
         pass
 
@@ -1429,6 +1435,7 @@ fn test_inference_from_Self_type(x: Int):
   _ = DependentSpecificInitSelf(x)
 
 struct AutoParamDefault[value: int, param: int, default: int = param]:
+    @implicit
     fn __init__(out self, ptr: ParamType[value]): pass
     fn __init__(out self, *, other: Self): pass
     fn method(self, other: ParamType[value]): pass

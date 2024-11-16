@@ -103,6 +103,7 @@ fn testSIMD(
 
 
 struct TwoParams[a: int, b: int]:
+    @implicit
     fn __init__(out self, other: TwoParams[`1`, `1`]):
         pass
 
@@ -198,11 +199,13 @@ fn unbind_variadic(x: StructWithVariadic[_]):
 
 
 struct ConvertibleFromInt:
+    @implicit
     fn __init__(out self, value: Int):
         pass
 
 
 struct AlsoConvertibleFromInt:
+    @implicit
     fn __init__(out self, value: Int):
         pass
 

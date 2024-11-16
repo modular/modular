@@ -53,6 +53,7 @@ struct WrapsMadeFromPack[*Ts: AnyType]:
 
 
 struct Constructible:
+    @implicit
     fn __init__(out self, arg: Int):
         pass
 
@@ -64,6 +65,7 @@ fn init_self_conversion():
 
 @value
 struct ConvertibleFromInt:
+    @implicit
     fn __init__(out self, arg: Int):
         pass
 
@@ -80,15 +82,18 @@ struct AmbiguousCtor:
 
 
 struct AlsoConvertibleFromInt:
+    @implicit
     fn __init__(out self, arg: Int):
         pass
 
 
 struct AmbiguousConversion:
+    @implicit
     # expected-note @below {{candidate declared here}}
     fn __init__(out self, x: ConvertibleFromInt):
         pass
 
+    @implicit
     # expected-note @below {{candidate declared here}}
     fn __init__(out self, x: AlsoConvertibleFromInt):
         pass
