@@ -322,12 +322,10 @@ fn fused_attention[
 # ===----------------------------------------------------------------------===#
 
 
-# Using 32 bits index for GPU kernel.
 fn flash_attention[
     rank: Int,
     type: DType,
     q_shape: DimList, //,
-    target: StringLiteral,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     use_warp_shuffle_decoding: Bool = False,
@@ -353,14 +351,17 @@ fn flash_attention[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    var ctx = context.get_device_context()
+
+    with Trace[TraceLevel.OP, target = ctx.device_info.api](
         "flash_attention",
-        Trace[TraceLevel.OP, target=target]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
+            description_fn
+        ](),
     ):
         return flash_attention[
             add_attn_mask=add_attn_mask,
             use_score_mod=use_score_mod,
-            target=target,
             use_warp_shuffle_decoding=use_warp_shuffle_decoding,
             config=config,
         ](
@@ -385,7 +386,6 @@ fn flash_attention[
     score_mod_t: ScoreModTrait,
     type: DType,
     q_shape: DimList, //,
-    target: StringLiteral,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     use_warp_shuffle_decoding: Bool = False,
@@ -430,9 +430,6 @@ fn flash_attention[
     padding). Such lengths are passed in valid_length argument.
     """
     constrained[
-        "cuda" in target or "sm" in target, "only valid on Nvidia GPUs"
-    ]()
-    constrained[
         ragged or rank == 4, "only support rank 4 inputs for non-ragged inputs."
     ]()
     constrained[
@@ -458,9 +455,11 @@ fn flash_attention[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target = ctx.device_info.api](
         "flash_attention",
-        Trace[TraceLevel.OP, target=target]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
+            description_fn
+        ](),
     ):
         # Runtime dimensions.
 
@@ -634,14 +633,7 @@ fn flash_attention[
                     ]
                 ](
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80
-                        * 1024  # Hardcoding for now, see KERN-1134
-                        # max shared memory per block is "maximum - ~3k" on A100
-                        # subtracting 4096 to not worry about the exact number
-                        # _get_info_from_target[
-                        #    target
-                        # ]().shared_memory_per_multiprocessor
-                        # - 4096
+                        ctx.device_info.shared_memory_per_multiprocessor - 4096
                     ),
                 )
 
@@ -715,7 +707,6 @@ fn flash_attention[
     score_mod_t: ScoreModTrait,
     type: DType,
     q_shape: DimList, //,
-    target: StringLiteral,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
     use_warp_shuffle_decoding: Bool = False,
@@ -752,9 +743,6 @@ fn flash_attention[
     This kernel also handles grouped attention optimization. In this case the shape of
     K and V are BShD where h = H / num_groups.
     """
-    constrained[
-        "cuda" in target or "sm" in target, "only valid on Nvidia GPUs"
-    ]()
     constrained[rank == 4, "only support rank 4 inputs."]()
     constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
 
@@ -770,9 +758,11 @@ fn flash_attention[
             trace_arg("output", output),
         )
 
-    with Trace[TraceLevel.OP, target=target](
+    with Trace[TraceLevel.OP, target = ctx.device_info.api](
         "flash_attention",
-        Trace[TraceLevel.OP, target=target]._get_detail_str[description_fn](),
+        Trace[TraceLevel.OP, target = ctx.device_info.api]._get_detail_str[
+            description_fn
+        ](),
     ):
         # Runtime dimensions.
         var batch_size = q.dim[0]()
@@ -902,14 +892,7 @@ fn flash_attention[
                     ]
                 ](
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                        80
-                        * 1024  # Hardcoding for now, see KERN-1134
-                        # max shared memory per block is "maximum - ~3k" on A100
-                        # subtracting 4096 to not worry about the exact number
-                        # _get_info_from_target[
-                        #    target
-                        # ]().shared_memory_per_multiprocessor
-                        # - 4096
+                        ctx.device_info.shared_memory_per_multiprocessor - 4096
                     ),
                 )
                 ctx.enqueue_function(

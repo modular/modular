@@ -185,7 +185,7 @@ fn test[
     fn kernel_launch(ctx: DeviceContext) raises:
         @parameter
         if mask_rank == 3:
-            flash_attention[target=DEFAULT_GPU_ARCH](
+            flash_attention(
                 output_device,
                 q_device,
                 k_device,
@@ -197,7 +197,7 @@ fn test[
                 ctx,
             )
         else:
-            flash_attention[target=DEFAULT_GPU_ARCH](
+            flash_attention(
                 output_device,
                 q_device,
                 k_device,
