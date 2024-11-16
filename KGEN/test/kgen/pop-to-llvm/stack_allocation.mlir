@@ -95,3 +95,19 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     kgen.return
   }
 }
+
+// -----
+
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="A5", simd_bit_width=128>} {
+  // CHECK-LABEL @allocate_with_default_addrspace
+  kgen.func @allocate_with_default_addrspace(%arg0: i64) {
+    // CHECK: %[[ALLOC:.*]] = llvm.alloca {{.*}} -> !llvm.ptr<5>
+    // CHECK: lifetime.start {{.*}} %[[ALLOC]]
+    // CHECK: %[[ALLOC_CAST:.*]] = llvm.addrspacecast %[[ALLOC]] : !llvm.ptr<5> to !llvm.ptr
+    // CHECK: llvm.store %arg0, %[[ALLOC_CAST]]
+    // CHECK: lifetime.end {{.*}} %[[ALLOC]]
+    %0 = pop.stack_allocation 1 x i64
+    pop.store %arg0, %0 : !kgen.pointer<i64>
+    kgen.return
+  }
+}

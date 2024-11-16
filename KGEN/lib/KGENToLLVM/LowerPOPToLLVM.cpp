@@ -547,9 +547,10 @@ private:
 /// Generate the LLVM IR to materialize an alloca with the given LLVM type and
 /// count. The alloca is created at the top of the given block, and lifetime
 /// markers are inserted at the end of the given operation's block.
-static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
-                                   int64_t count, Operation *op,
-                                   int64_t typeAllocSize, int64_t align) {
+static Value materializeLLVMAlloca(OpBuilder &b, TargetInfoAttr target,
+                                   Type elementType, int64_t count,
+                                   Operation *op, int64_t typeAllocSize,
+                                   int64_t align) {
   unsigned addressSpace = 0;
   auto alloca = dyn_cast<StackAllocationOp>(op);
   if (alloca) {
@@ -558,9 +559,15 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
       addressSpace = addrSpaceAttr.getInt();
   }
 
+  bool needAddrSpaceCast = false;
+  if (addressSpace == 0) {
+    addressSpace = target.getDataLayout().getAllocaAddrSpace();
+    needAddrSpaceCast = addressSpace != 0;
+  }
+
   Value countVal =
       b.create<LLVM::ConstantOp>(op->getLoc(), b.getI64IntegerAttr(count));
-  auto ptr = b.create<LLVM::AllocaOp>(
+  Value ptr = b.create<LLVM::AllocaOp>(
       op->getLoc(), LLVM::LLVMPointerType::get(b.getContext(), addressSpace),
       elementType, countVal, align);
 
@@ -575,6 +582,12 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
     b.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
     b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeAllocSize * count, ptr);
     b.setInsertionPointAfter(start);
+  }
+
+  if (needAddrSpaceCast) {
+    ptr = b.create<LLVM::AddrSpaceCastOp>(
+        op->getLoc(),
+        LLVM::LLVMPointerType::get(b.getContext(), /*addressSpace=*/0), ptr);
   }
 
   return ptr;
@@ -628,8 +641,8 @@ LogicalResult ConvertPOPStackAllocation::matchAndRewrite(
   }
 
   Value alloca = materializeLLVMAlloca(
-      rewriter, elementType, cast<IntegerAttr>(op.getCount()).getInt(), op,
-      *typeAllocSize, resolveAlignment(op.getAlignment()));
+      rewriter, target, elementType, cast<IntegerAttr>(op.getCount()).getInt(),
+      op, *typeAllocSize, resolveAlignment(op.getAlignment()));
   rewriter.replaceOp(op, alloca);
   return success();
 }
@@ -889,7 +902,7 @@ static LogicalResult convertVariadicCreate(VariadicType resultType,
     return op->emitError("failed to convert element type");
 
   size_t count = operands.size();
-  Value ptr = materializeLLVMAlloca(rewriter, elementType, count, op,
+  Value ptr = materializeLLVMAlloca(rewriter, target, elementType, count, op,
                                     *typeAllocSize, *typeABIAlign);
 
   // 2. Store elements of the sequence into the allocated space.
