@@ -22,6 +22,8 @@ from layout.swizzle import *
 
 from utils import IndexList
 
+from stdlib.builtin.simd import _has_native_f8_support
+
 
 fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
     return (dim_1 * dim_2) // WARP_SIZE
@@ -33,6 +35,7 @@ alias shape_16x8x4 = IndexList[3](16, 8, 4)
 alias shape_16x8x8 = IndexList[3](16, 8, 8)
 alias shape_16x8x16 = IndexList[3](16, 8, 16)
 alias shape_8x8x4 = IndexList[3](8, 8, 4)
+alias shape_16x8x32 = IndexList[3](16, 8, 32)
 
 
 struct TensorCore[
@@ -81,6 +84,10 @@ struct TensorCore[
             return List[IndexList[3]](shape_16x8x8, shape_16x8x16)
         elif out_type is DType.float32 and in_type is DType.float16:
             return List[IndexList[3]](shape_16x8x8, shape_8x8x4)
+        elif out_type is DType.float32 and (
+            in_type is DType.float8e4m3 or in_type is DType.float8e5m2
+        ):
+            return List[IndexList[3]](shape_16x8x32)
         else:
             constrained[False, "No valid shape of mma"]()
             return List[IndexList[3]](shape_null)
@@ -99,7 +106,14 @@ struct TensorCore[
         alias warp_layout = Layout.row_major(8, 4)
 
         constrained[
-            in_type in (DType.float32, DType.bfloat16, DType.float16),
+            in_type
+            in (
+                DType.float32,
+                DType.bfloat16,
+                DType.float16,
+                DType.float8e4m3,
+                DType.float8e5m2,
+            ),
             "No valid type to load matrix fragment a",
         ]()
 
@@ -121,6 +135,19 @@ struct TensorCore[
                 lane_id()
             )
             a_reg_tile.vectorize[1, 2]().copy_from(a_reg_frags)
+        elif in_type is DType.float8e4m3 or in_type is DType.float8e5m2:
+            constrained[
+                _has_native_f8_support(),
+                "float8 formats are only supported in SM90+",
+            ]()
+            constrained[
+                reg_per_thread in (16,),
+                "No valid mma shape to load matrix fragment a (half-float)",
+            ]()
+            var a_reg_frags = a.vectorize[1, 4]().distribute[warp_layout](
+                lane_id()
+            )
+            a_reg_tile.vectorize[1, 4]().copy_from(a_reg_frags)
         return a_reg_tile
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
@@ -158,6 +185,16 @@ struct TensorCore[
                 lane_id()
             )
             b_reg_tile.vectorize[2, 1]().copy_from(b_ram_frags)
+        elif in_type is DType.float8e4m3 or in_type is DType.float8e5m2:
+            constrained[
+                reg_per_thread in (8,),
+                "No valid mma shape to load matrix fragment b",
+            ]()
+
+            var b_ram_frags = b.vectorize[4, 1]().distribute[warp_layout](
+                lane_id()
+            )
+            b_reg_tile.vectorize[4, 1]().copy_from(b_ram_frags)
 
         else:
             constrained[False, "No valid type to load matrix fragment b"]()
