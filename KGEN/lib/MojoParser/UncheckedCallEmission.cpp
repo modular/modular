@@ -600,8 +600,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       ValueDest dictDest(ExprContext::EC_KWArgsArgument);
       auto dict = emitter.emitConstructorCall(
           cast<RefType>(expectedType).getElementType(), {}, callExpr,
-          CallSyntax::kTypeCall, dictDest,
-          /*allowImplicitConversion=*/false);
+          CallSyntax::kTypeCall, dictDest);
       kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
       argumentValues.push_back({kwargsDict, callExpr});
       continue;

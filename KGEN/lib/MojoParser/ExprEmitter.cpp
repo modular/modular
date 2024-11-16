@@ -1531,8 +1531,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       // We disable implicit conversions to prevent converting T -> S -> U in
       // one step, and to avoid infinite conversion cycles.
       return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
-                                 expr, CallSyntax::kImplicitConvert, dest,
-                                 /*allowImplicitConversion=*/false);
+                                 expr, CallSyntax::kImplicitConvert, dest);
     }
   }
 
@@ -1759,8 +1758,7 @@ CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       // temporary if the conversion constructor requires one.
       ValueDest nmConversionDest(destLV, context);
       return emitConstructorCall(nmTarget, CallOperands({value}), value.expr,
-                                 CallSyntax::kIndirectCall, nmConversionDest,
-                                 /*allowImplicitConversion=*/true);
+                                 CallSyntax::kTypeCall, nmConversionDest);
     }
   }
 

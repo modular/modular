@@ -199,9 +199,8 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
   for (ASTDecl *candidate : fnDecls) {
-    evaluations.push_back(
-        OverloadFitness::evaluate(candidate, *this, baseValue.ir.getIfPValue(),
-                                  /*allowImplicitConversions=*/true));
+    evaluations.push_back(OverloadFitness::evaluate(
+        candidate, *this, baseValue.ir.getIfPValue()));
     anyValid |= evaluations.back().isValid();
   }
 
@@ -277,9 +276,13 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
 /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
 /// return null.
 PValue OverloadSet::filterOverloadSet(CallOperands &operands,
-                                      bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure,
                                       ExprEmitter &emitter) const {
+
+  // We allow implicit conversion of the operands to this call unless it is
+  // itself an implicit conversion.  We don't want to allow A->B->C conversions.
+  bool allowImplicitConversions = syntax != CallSyntax::kImplicitConvert;
+
   CallOperands scratchOperands;
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
@@ -298,7 +301,6 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     }
 
     auto desiredSignature = func.getFullSignature();
-
     evaluations.push_back(OverloadFitness::evaluate(desiredSignature, candidate,
                                                     *this, *operandsToUse,
                                                     allowImplicitConversions));
@@ -773,7 +775,6 @@ PValue OverloadSet::lookupAndResolve(
   // null state so the client can check this.
   return ovSet.filterOverloadSet(
       callOperands,
-      /*allowImplicitConversions=*/true,
       /*emitDiagnosticOnFailure=*/shouldPrintOverloadErrors, emitter);
 }
 
@@ -884,7 +885,7 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
 
   // Check the direct callees to see if they can be unambiguously resolved
   // with the bindings list and specified arguments.
-  PValue callee = filterOverloadSet(operands, /*allowImplicitConversions=*/true,
+  PValue callee = filterOverloadSet(operands,
                                     /*emitDiagnosticOnFailure=*/true, emitter);
   if (!callee) {
     dest.resetForError();
@@ -1009,19 +1010,22 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 CValue ExprEmitter::emitConstructorCall(ASTType type,
                                         CallOperands &&callOperands,
                                         const ExprNode *expr, CallSyntax syntax,
-                                        ValueDest &dest,
-                                        bool allowImplicitConversion) {
+                                        ValueDest &dest) {
   // If the dest type is invalid, then an error has already been reported.
-  if (type.isTypeCheckErrorType())
+  if (type.isTypeCheckErrorType()) {
+    dest.resetForError();
     return {};
+  }
 
   // Check to see if we can invoke an __init__ method to convert it.
   auto callee =
       OverloadSet::lookup(getDeclScope(), type, "__init__", expr, syntax);
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
                               callOperands);
-  if (callee.isErroneous())
+  if (callee.isErroneous()) {
+    dest.resetForError();
     return {};
+  }
 
   // If there are no candidates at all, diagnose specific errors.
   if (!callee) {
@@ -1041,6 +1045,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
         emitModuleCallSubscriptDiag(diag, metaType, "call", expr->getLoc(),
                                     shared);
         diag << expr->getRange();
+        dest.resetForError();
         return {};
       }
     }
@@ -1057,6 +1062,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
       if (isa<StructType>(type)) {
         diag << "invalid implicit conversion to " << type
              << ": no constructors found";
+        dest.resetForError();
         return {};
       }
 
@@ -1077,6 +1083,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
       if (isConvertingTypeValue)
         diag << "; did you mean to instantiate " << type << "?";
       diag << expr->getRange();
+      dest.resetForError();
       return {};
     }
   }
@@ -1148,9 +1155,9 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not
   // be able to allow implicit conversions.
-  PValue result = callee.filterOverloadSet(
-      operands, /*allowImplicitConversions=*/!isImplicitConversion,
-      /*emitDiagnosticOnFailure=*/false, paramEmitter);
+  PValue result =
+      callee.filterOverloadSet(operands,
+                               /*emitDiagnosticOnFailure=*/false, paramEmitter);
   if (callee.isErroneous())
     return FailureOr<PValue>(failure());
   return result;

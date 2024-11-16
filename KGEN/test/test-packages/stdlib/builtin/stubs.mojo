@@ -97,6 +97,11 @@ struct object:
     fn __init__(out self, value: Int):
         pass
 
+    # FIXME: None literal should be of NoneType not !kgen.none.
+    @implicit
+    fn __init__(out self, x: __mlir_type.`!kgen.none`):
+        pass
+
     fn __moveinit__(out self, owned existing: Self):
         pass
 

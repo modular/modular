@@ -688,8 +688,7 @@ static LITSignatureType substituteTraitAliasesIntoSignature(
 
 OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           const OverloadSet &callable,
-                                          PValue selfPValue,
-                                          bool allowImplicitConversions) {
+                                          PValue selfPValue) {
   auto func = cast<LIT::FuncOp>(*candidate);
   LITSignatureType signature = func.getFullSignature();
 

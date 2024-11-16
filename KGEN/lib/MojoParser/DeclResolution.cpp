@@ -827,7 +827,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
 
   CValue value = exprEmitter.emitConstructorCall(
       ASTType(closureImplType), std::move(closureImplInitArgs), node,
-      CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
+      CallSyntax::kTypeCall, closureDest);
 
   // Emit the Closure Wrapper instance.
   VarDeclOp var = exprEmitter.emitVarDecl(
@@ -847,8 +847,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
 
   exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
                                   std::move(closureWrapperInitArgs), node,
-                                  CallSyntax::kTypeCall, closureWrapperDest,
-                                  /*allowImplicitConversion=*/false);
+                                  CallSyntax::kTypeCall, closureWrapperDest);
   return MLValue(var);
 }
 

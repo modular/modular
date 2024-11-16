@@ -386,8 +386,7 @@ public:
   /// to implicitly convert to the expectations of the constructor signatures.
   CValue emitConstructorCall(ASTType type, CallOperands &&operands,
                              const ExprNode *expr, CallSyntax syntax,
-                             ValueDest &dest,
-                             bool allowImplicitConversion = true);
+                             ValueDest &dest);
 
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.
