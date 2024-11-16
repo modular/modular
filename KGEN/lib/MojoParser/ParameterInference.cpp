@@ -514,8 +514,8 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
 ///
 /// Consider:
 ///    struct S[a: Int]:
-///      fn __init__(inout self): ...
-///      fn __init__(inout self: S[1], x: Int): ...
+///      fn __init__(out self): ...
+///      fn __init__(out self: S[1], x: Int): ...
 ///
 /// When constructed with no arguments, the first constructor must be used and
 /// it is impossible to infer the value of 'a', so you must use `S[1]()`.  This
@@ -574,7 +574,7 @@ LogicalResult ParameterInferenceState::inferInitSelfTypes(Type actualType,
     // this so we can come back and refine it later. This is because we could
     // have inferred a forward reference, such as in:
     //   struct Foo[T: AnyType]:
-    //     fn __init__[U: Movable](inout self: Foo[U], x: U):
+    //     fn __init__[U: Movable](out self: Foo[U], x: U):
     initSelfParams.push_back(idx);
   }
 
@@ -1048,7 +1048,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
         // type is not a reference type (and doesn't have a origin), but we
         // still want to type check it. So, passing it as if it was reg-passable
         // happens to just work, until we rectify this. Right now the reason the
-        // value type cannot be a reference type is because `Reference` does not
+        // value type cannot be a reference type is because `Pointer` does not
         // (and in fact cannot) conform to `CollectionElement`.
         if (failed(inferOneOperand(operand, refValType,
                                    ArgConvention::OwnedInMem)))
@@ -1190,10 +1190,19 @@ ParameterInferenceState::infer(LITSignatureType signature,
     evaluator.addInputValue(empty);
   }
 
-  // Make sure to rebind any initSelfParams.
+  // Make sure to rebind any initSelfParams if they've been inferred already.
+  // This is because we have to support things like:
+  //
+  //     struct Foo[T: AnyType]:
+  //         fn __init__[U: Movable](out self: Foo[U], x: U):
+  //
+  // It would be really nice if we moved InitSelf arguments to the end of the
+  // initializer list to merge them with __result__.
   for (unsigned idx : initSelfParams) {
-    TypedAttr &param = inferredParams[idx];
-    param = cast<TypedAttr>(evaluator.getReboundAttribute(param));
+    if (idx < inferredParams.size()) {
+      TypedAttr &param = inferredParams[idx];
+      param = cast<TypedAttr>(evaluator.getReboundAttribute(param));
+    }
   }
 
   // We succeed iff we inferred a value for this parameter.

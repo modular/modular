@@ -6,6 +6,8 @@
 
 # RUN: %parse-mojo-isolated %s | kgen-opt --kgen-print-inline-type-values | FileCheck %s
 
+struct Empty: pass
+
 ##===----------------------------------------------------------------------===##
 # Input parameters
 ##===----------------------------------------------------------------------===##
@@ -1382,20 +1384,17 @@ fn scalar_type[dt: DType]():
     # HECK: call {{.*}}<:!DType dt, {{.*}}, :!DType dt>(%value)
     #_ = value.cast[dt]()
 
+# CHECK-LABEL: lit.func @"funct_partial_binding{{.*}}"<x: !Empty, F:
+fn funct_partial_binding[x: Empty, F: fn[t: Empty, s: Empty] () -> None]():
+    # CHECK: !lit.signature<<"u": !Empty, "v": !Empty>() -> !kgen.none> = <rebind(
+    # CHECK-SAME: :!lit.signature<<"t": !Empty, "s": !Empty>() -> !kgen.none>
+    # CHECK-SAME: bind_signature(:!lit.signature<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, ?, ?)
 
-struct T: pass
-
-# CHECK-LABEL: lit.func @"funct_partial_binding{{.*}}"<x: !T, F:
-fn funct_partial_binding[x: T, F: fn[t: T, s: T] () -> None]():
-    # CHECK: !lit.signature<<"u": !T, "v": !T>() -> !kgen.none> = <rebind(
-    # CHECK-SAME: :!lit.signature<<"t": !T, "s": !T>() -> !kgen.none>
-    # CHECK-SAME: bind_signature(:!lit.signature<<"t": !T, "s": !T>() -> !kgen.none> F, ?, ?)
-
-    alias G: fn[u: T, v: T] () -> None = F[s=_, t=_]
-    # CHECK: !lit.signature<<"u": !T>() -> !kgen.none> = <rebind(
-    # CHECK-SAME: :!lit.signature<<"s": !T>() -> !kgen.none>
-    # CHECK-SAME: bind_signature(:!lit.signature<<"t": !T, "s": !T>() -> !kgen.none> F, x, ?))>
-    alias H: fn[u: T] () -> None = F[x]
+    alias G: fn[u: Empty, v: Empty] () -> None = F[s=_, t=_]
+    # CHECK: !lit.signature<<"u": !Empty>() -> !kgen.none> = <rebind(
+    # CHECK-SAME: :!lit.signature<<"s": !Empty>() -> !kgen.none>
+    # CHECK-SAME: bind_signature(:!lit.signature<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, x, ?))>
+    alias H: fn[u: Empty] () -> None = F[x]
 
 @value
 struct StructWithSpecificSelfInitTypes[size: Int]:
@@ -1489,3 +1488,19 @@ fn call_variadic_pack_with_function():
   # CHECK: [[FP:%.*]] = kgen.create_closure[!lit.signature<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)
+
+
+# MOCO-1065: Crash handling self conditional conformance inference.
+@value
+struct MOCO1065[
+    is_mutable: Bool, //,
+    T: CollectionElement,
+    o: Origin[is_mutable].type,
+]:
+    fn __init__(inout self: MOCO1065[UInt8, o], ref [o] string: Empty):
+        pass
+
+fn test_MOCO1065[p: Empty](t: Empty):
+    var s = MOCO1065(t)
+    alias a = MOCO1065(p)
+    
