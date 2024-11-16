@@ -49,12 +49,8 @@ fn check_compute_capability(device: Device) raises:
 
 # TODO: Make this polymorphic on Device type.
 @value
-struct CompiledDeviceKernel[
-    func_type: AnyTrivialRegType, //,
-    func: func_type,
-    target: __mlir_type.`!kgen.target` = _get_gpu_target(),
-]:
-    var _compiled_func: CUDAFunction[func, target=target]
+struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
+    var _compiled_func: CUDAFunction[func, target = _get_gpu_target()]
     alias LaunchArg = Variant[Dim, Int]
 
     @parameter
@@ -120,12 +116,9 @@ struct CUDACompiledKernelArgs:
 
 
 fn compile[
-    func_type: AnyTrivialRegType, //,
-    func: func_type,
-    # TODO: would like this to be an Optional but need to workaround MOCO-1039
-    target_arch: StringLiteral = "sm_80",
+    func_type: AnyTrivialRegType, //, func: func_type
 ](device: Device, **kwargs: CompileArg) raises -> CompiledDeviceKernel[
-    func, target = _get_gpu_target[target_arch]()
+    func
 ] as out:
     """Compiles a function which can be executed on device.
 
@@ -150,9 +143,7 @@ fn compile[
 
     var compile_args = CUDACompiledKernelArgs(kwargs)
     var cuda_func = device_context[].compile_function[
-        func,
-        target = out.target,
-        _is_failable=False,
+        func, _is_failable=False, _target = _get_gpu_target()
     ](
         max_registers=OptionalReg(
             compile_args.max_registers.value()
