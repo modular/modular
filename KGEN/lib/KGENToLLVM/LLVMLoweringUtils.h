@@ -29,6 +29,10 @@ class NoneType;
 class SignatureType;
 class StringType;
 class StructType;
+class StructInstanceType;
+class TypeConstantAttr;
+class TypeConstantRefAttr;
+class TypeValueType;
 
 namespace POP {
 class ArrayType;
@@ -303,12 +307,15 @@ Value convertParameterToLLVM(
 
 /// A specialized debug info type converter for converting from POP types to
 /// LLVM.
+/// An optional SymbolTable can be provided to lower TypeConstantRefAttrs.
 class DebugInfoTypeConverter : public DebugInfo::DebugInfoTypeConverter {
 public:
-  DebugInfoTypeConverter(POPToLLVMTypeConverter &tc, TargetInfoAttr targetInfo);
+  DebugInfoTypeConverter(POPToLLVMTypeConverter &tc, TargetInfoAttr targetInfo,
+                         SymbolTable &symtab);
 
 private:
   POPToLLVMTypeConverter &tc;
+  SymbolTable &symtab;
   TargetInfoAttr targetInfo;
 
   /// Build the debug type for a struct-like type.
@@ -337,6 +344,12 @@ private:
   DebugInfo::DIType buildDebugType(PointerType type);
   DebugInfo::DIType buildDebugType(POP::SIMDType type);
   DebugInfo::DIType buildDebugType(StructType type);
+  DebugInfo::DIType buildDebugType(StructInstanceType type);
+  DebugInfo::DIType buildDebugType(TypeValueType type);
+
+  /// Build fully resolved debug type from kgen type values.
+  DebugInfo::DIType buildDebugType(TypeConstantAttr attr);
+  DebugInfo::DIType buildDebugType(TypeConstantRefAttr attr);
 };
 
 //===----------------------------------------------------------------------===//

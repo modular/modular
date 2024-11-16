@@ -6,6 +6,8 @@
 !structTest = !kgen.struct<(index, struct<(index)>)>
 !variantTest = !pop.union<index, index>
 !signatureTest = !kgen.signature<(index) -> index>
+!typeValuePairTest = !kgen.typevalue<[typevalue<#kgen.typeref<@Pair>>, struct<(index, i1)>]>
+!typeValueRecursionTest = !kgen.typevalue<[typevalue<#kgen.typeref<@ListNode>>, struct<(pointer<none>)>]>
 
 // CHECK-DAG: ![[INDEX:.*]] = !debuginfo.basic<index {sizeInBits = 64, alignInBits = 64, encoding = DW_ATE_signed}>
 
@@ -33,7 +35,21 @@
 // CHECK-DAG: ![[DATA_MEMBER:.*]] = !debuginfo.member<data: ![[CHAR_PTR]]>
 // CHECK-DAG: ![[STRING:.*]] = !debuginfo.struct<"!kgen.string"(![[DATA_MEMBER]], ![[SIZE_MEMBER]])>
 
-// CHECK-DAG: !debuginfo.subroutine<(![[PTR]], ![[VOID_PTR]], ![[STRUCT]], ![[VARIANT]], ![[SIGNATURE]], ![[STRING]], ![[NONE]]) -> (): DW_CC_normal>
+// CHECK-DAG: ![[STRUCT_INT_MEMBER:.*]] = !debuginfo.member<value: ![[INDEX]]>
+// CHECK-DAG: ![[STRUCT_INT:.*]] = !debuginfo.struct<Int(![[STRUCT_INT_MEMBER]])>
+// CHECK-DAG: ![[I1:.*]] = !debuginfo.basic<i1 {sizeInBits = 8, alignInBits = 8, encoding = DW_ATE_unsigned}>
+// CHECK-DAG: ![[PAIR_MEMBER_0:.*]] = !debuginfo.member<first: ![[STRUCT_INT]]>
+// CHECK-DAG: ![[PAIR_MEMBER_1:.*]] = !debuginfo.member<second: ![[I1]]>
+// CHECK-DAG: ![[STRUCT_PAIR:.*]] = !debuginfo.struct<Pair(![[PAIR_MEMBER_0]], ![[PAIR_MEMBER_1]])>
+
+// CHECK-DAG: ![[STRUCT_LISTNODE_INNER:.*]] = !debuginfo.struct<ListNode()>
+// CHECK-DAG: ![[PTR_STRUCT_LISTNODE_INNER:.*]] = !debuginfo.ptr<!struct1 {sizeInBits = 64, alignInBits = 64, addressSpace = 0}>
+// CHECK-DAG: ![[POINTER_LISTNODE_MEMBER:.*]] = !debuginfo.member<address: ![[PTR_STRUCT_LISTNODE_INNER]]>
+// CHECK-DAG: ![[STRUCT_POINTER_LISTNODE:.*]] = !debuginfo.struct<Pointer(![[POINTER_LISTNODE_MEMBER]])>
+// CHECK-DAG: ![[LISTNODE_MEMBER:.*]] = !debuginfo.member<next: ![[STRUCT_POINTER_LISTNODE]]>
+// CHECK-DAG: ![[STRUCT_LISTNODE:.*]] = !debuginfo.struct<ListNode(![[LISTNODE_MEMBER]])>
+
+// CHECK-DAG: !debuginfo.subroutine<(![[PTR]], ![[VOID_PTR]], ![[STRUCT]], ![[VARIANT]], ![[SIGNATURE]], ![[STRING]], ![[NONE]], ![[STRUCT_PAIR]], ![[STRUCT_LISTNODE]]) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(
   !debuginfo.unresolved<!pointerTest>,
@@ -42,12 +58,46 @@
   !debuginfo.unresolved<!variantTest>,
   !debuginfo.unresolved<!signatureTest>,
   !debuginfo.unresolved<!kgen.string>,
-  !debuginfo.unresolved<!kgen.none>
+  !debuginfo.unresolved<!kgen.none>,
+  !debuginfo.unresolved<!typeValuePairTest>,
+  !debuginfo.unresolved<!typeValueRecursionTest>
 ) -> (): DW_CC_normal>
 
 #subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !test
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="i64:64:64", simd_bit_width=128>} {
+  kgen.struct.instance @Int : !kgen.type {
+    kgen.struct.info :type [struct_inst<"Int"(value: index)>, index]
+  }
+
+  kgen.struct.instance @Pair : !kgen.type {
+    kgen.struct.info :type [
+      struct_inst<"Pair"(
+        first: typevalue<#kgen.typeref<@Int>>,
+        second: i1
+      )>,
+      struct<(index, i1)>
+    ]
+  }
+
+  kgen.struct.instance @Pointer_ListNode : !kgen.type {
+    kgen.struct.info :type [
+      struct_inst<"Pointer"[ty]<:type [typevalue<#kgen.typeref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>(
+        address: pointer<typevalue<[typevalue<#kgen.typeref<@ListNode>>, struct<(pointer<none>) memoryOnly>]>>
+      )>,
+      pointer<none>
+    ]
+  }
+
+  kgen.struct.instance @ListNode : !kgen.type {
+    kgen.struct.info : type [
+      struct_inst<"ListNode"(
+        next: typevalue<#kgen.typeref<@Pointer_ListNode>>
+      ) memoryOnly>,
+      struct<(pointer<none>) memoryOnly>
+    ]
+  }
+
   kgen.func @foo() {
     kgen.return loc(fused<#subprogram>["foo.mlir":10:10])
   } loc(fused<#subprogram>["foo.mlir":10:10])

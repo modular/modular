@@ -595,6 +595,9 @@ LITTypeLowerer::LITTypeLowerer(MLIRContext *ctx, StructDecls &structDecls)
   debugTypeConverter.addConversion([&](RefType type) -> DebugInfo::DIType {
     return debugTypeConverter.convertDebugType(type.getAsPointerType());
   });
+  // Preserve original behavior for now. This is going away immediately.
+  debugTypeConverter.addCycleBreaker(
+      [noneType](LIT::StructType type) { return noneType; });
 
   addInferredDomainNonRecursiveReplacement([&](DebugInfo::DIType type) {
     return debugTypeConverter.convertDebugType(type);
