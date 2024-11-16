@@ -228,9 +228,7 @@ def execute_fused_qkv_matmul[
         ctx,
     )
 
-    _matmul_gpu[
-        target=DEFAULT_GPU_ARCH, use_tensor_core=True, transpose_b=True
-    ](
+    _matmul_gpu[use_tensor_core=True, transpose_b=True](
         ref_output_device.tensor,
         hidden_state_device_2d,
         weight_device.tensor,

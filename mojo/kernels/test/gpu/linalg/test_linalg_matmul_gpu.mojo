@@ -123,9 +123,7 @@ fn matmul_test_case[
     ctx.enqueue_copy_to_device(mat_a_dev[0], mat_a_host.data)
     ctx.enqueue_copy_to_device(mat_b_dev[0], mat_b_host.data)
 
-    _matmul_gpu[target=DEFAULT_GPU_ARCH](
-        mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx
-    )
+    _matmul_gpu(mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx)
 
     ctx.enqueue_copy_from_device(mat_c_host.data, mat_c_dev[0])
     ctx.synchronize()

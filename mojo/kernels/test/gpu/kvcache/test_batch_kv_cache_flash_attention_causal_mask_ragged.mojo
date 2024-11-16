@@ -224,7 +224,7 @@ def execute_ragged_flash_attention[
     )
 
     # ragged execution
-    flash_attention[target="cuda", add_attn_mask=False, ragged=True](
+    flash_attention[add_attn_mask=False, ragged=True](
         test_output_device.tensor,
         q_ragged_device.tensor,
         k_cache_device,
@@ -238,7 +238,7 @@ def execute_ragged_flash_attention[
         ctx,
     )
     # padded execution
-    flash_attention[target="cuda", add_attn_mask=False](
+    flash_attention[add_attn_mask=False](
         ref_output_device.tensor,
         q_padded_device.tensor,
         k_cache_device,

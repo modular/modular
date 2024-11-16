@@ -258,7 +258,7 @@ def execute_flash_attention[
         batch_size,
     )
 
-    flash_attention[target="cuda", add_attn_mask=False](
+    flash_attention[add_attn_mask=False](
         test_output_device.tensor,
         q_device.tensor,
         k_cache_device,
@@ -272,7 +272,7 @@ def execute_flash_attention[
         ctx,
     )
 
-    flash_attention[target="cuda", add_attn_mask=True](
+    flash_attention[add_attn_mask=True](
         ref_output_device.tensor,
         q_device.tensor,
         k_cache_device,

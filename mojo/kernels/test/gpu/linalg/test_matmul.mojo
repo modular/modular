@@ -186,7 +186,6 @@ fn test[
     @parameter
     if lambda_fn:
         _matmul_gpu[
-            target=DEFAULT_GPU_ARCH,
             use_tensor_core=True,
             transpose_b=transpose_b,
             elementwise_lambda_fn=epilogue_fn,
@@ -199,7 +198,6 @@ fn test[
         )
     else:
         _matmul_gpu[
-            target=DEFAULT_GPU_ARCH,
             use_tensor_core=True,
             transpose_b=transpose_b,
             config=config,

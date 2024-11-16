@@ -259,7 +259,7 @@ def execute_flash_attention[
         CacheType.ValueIdx,
     )
 
-    flash_attention[target="cuda"](
+    flash_attention(
         test_output_device.tensor,
         q_device.tensor,
         k_cache_device,

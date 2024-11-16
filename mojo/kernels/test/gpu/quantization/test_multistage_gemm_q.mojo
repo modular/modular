@@ -1091,12 +1091,7 @@ fn test_quantized[
 
     alias kernels_ref = MatmulKernels[a_type, a_type, a_type, True]()
     alias config_ref = kernels_ref.ampere_128x128_4
-    _matmul_gpu[
-        target=DEFAULT_GPU_ARCH,
-        use_tensor_core=True,
-        transpose_b=True,
-        config=config_ref,
-    ](
+    _matmul_gpu[use_tensor_core=True, transpose_b=True, config=config_ref](
         c_device_ref.tensor,
         a_device.tensor,
         b_device_ref.tensor,

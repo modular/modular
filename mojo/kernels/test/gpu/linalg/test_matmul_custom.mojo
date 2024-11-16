@@ -202,7 +202,7 @@ fn run_matmul[
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    _matmul_gpu[target=DEFAULT_GPU_ARCH](c_buf, a_buf, b_buf, ctx)
+    _matmul_gpu(c_buf, a_buf, b_buf, ctx)
     ctx.enqueue_copy_from_device(c_host, c_device)
 
     # running naive
@@ -322,9 +322,9 @@ fn run_matmul_transpose[
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
 
-    _matmul_gpu[
-        target=DEFAULT_GPU_ARCH, transpose_b=transpose_b, use_tensor_core=True
-    ](c_buf, a_buf, b_buf, ctx)
+    _matmul_gpu[transpose_b=transpose_b, use_tensor_core=True](
+        c_buf, a_buf, b_buf, ctx
+    )
     ctx.enqueue_copy_from_device(c_host, c_device)
 
     # running naive

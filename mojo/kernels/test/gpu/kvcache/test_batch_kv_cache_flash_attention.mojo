@@ -301,7 +301,7 @@ def execute_flash_attention[
             config_str += str(BK)
             config_str += "x" + str(nps)
             assert_equal(str(config), config_str)
-            flash_attention[target="cuda", config=config](
+            flash_attention[config=config](
                 test_output_device.tensor,
                 q_device.tensor,
                 k_cache_device,
