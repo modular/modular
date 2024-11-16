@@ -64,6 +64,8 @@ struct HostMachineInfo;
 /// identical to LLVM's data layout specification.
 class DataLayout {
 public:
+  /// Get the default alloca address space.
+  int32_t getAllocaAddrSpace() const { return allocaAddrSpace; }
   /// Get the default address space pointer bitwidth.
   int32_t getPointerBitWidth() const { return ptrWidth; }
   /// Get the default address space pointer size in bytes.
@@ -112,6 +114,8 @@ private:
   int32_t ptrWidth;
   /// The pointer ABI alignment.
   int32_t ptrAbiAlign;
+  /// The default alloca address space.
+  int32_t allocaAddrSpace = 0;
 
   /// The underlying string representation.
   std::string dlSpecStr;

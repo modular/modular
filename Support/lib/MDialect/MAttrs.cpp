@@ -911,9 +911,14 @@ ErrorOrSuccess DataLayout::parse() {
     case 'P':
       // Skip function address space.
       break;
-    case 'A':
-      // Skip default stack/alloca address space.
+    case 'A': {
+      // Default alloca address space.
+      auto allocaAddrSpaceOr = getInt(tok);
+      if (allocaAddrSpaceOr.isError())
+        return allocaAddrSpaceOr.takeError();
+      allocaAddrSpace = std::move(*allocaAddrSpaceOr);
       break;
+    }
     case 'G':
       // Skip default address space for global variables.
       break;
