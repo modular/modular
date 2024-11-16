@@ -468,11 +468,33 @@ struct ConvertPOPOffset : public ConvertPOPToLLVMPattern<OffsetOp> {
                   ConversionPatternRewriter &rewriter) const override {
     Type elementType =
         typeConverter->convertType(op.getPtr().getType().getElementType());
-    auto gep = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), /*resultType=*/adaptor.getPtr().getType(),
+
+    // Set the address space if specified.
+    unsigned addrSpace = 0;
+    if (auto addrSpaceAttr =
+            cast_or_null<IntegerAttr>(op.getPtr().getType().getAddressSpace()))
+      addrSpace = addrSpaceAttr.getInt();
+
+    // Coerce the index to the same type as the pointer which is required by the
+    // address space.
+    Type intPtrType = getIntPtrType(addrSpace);
+    size_t intPtrTypeSize = intPtrType.getIntOrFloatBitWidth();
+    size_t indexTypeSize = adaptor.getIndex().getType().getIntOrFloatBitWidth();
+
+    Value offset;
+    if (intPtrTypeSize == indexTypeSize) {
+      offset = adaptor.getIndex();
+    } else if (intPtrTypeSize < indexTypeSize) {
+      offset = rewriter.createOrFold<LLVM::TruncOp>(op.getLoc(), intPtrType,
+                                                    adaptor.getIndex());
+    } else {
+      offset = rewriter.createOrFold<LLVM::SExtOp>(op.getLoc(), intPtrType,
+                                                   adaptor.getIndex());
+    }
+    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, /*resultType=*/adaptor.getPtr().getType(),
         /*basePtrType=*/elementType,
-        /*basePtr=*/adaptor.getPtr(), adaptor.getIndex(), /*inbounds=*/true);
-    rewriter.replaceOp(op, gep);
+        /*basePtr=*/adaptor.getPtr(), offset, /*inbounds=*/true);
     return success();
   }
 };
