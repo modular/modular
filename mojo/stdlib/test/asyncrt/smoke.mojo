@@ -5,13 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cpu %s
-# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=cuda %s
+# RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu %s
 
 from asyncrt_test_utils import (
     create_test_device_context,
     expect_eq,
     is_v2_context,
-    device_kind,
 )
 
 from gpu.host import (
@@ -114,7 +113,7 @@ fn _run_peer_access(ctx: DeviceContext) raises:
     expect_eq(ctx.can_access(ctx), False, "self access is not enabled")
 
     if is_v2_context():
-        var num_gpus = DeviceContext.number_of_devices(ctx.device_kind())
+        var num_gpus = DeviceContext.number_of_devices(kind=ctx.kind())
         print("Number of GPU devices: " + str(num_gpus))
 
         if num_gpus > 1:

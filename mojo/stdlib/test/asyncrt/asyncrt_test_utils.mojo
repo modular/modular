@@ -25,12 +25,16 @@ fn is_v2_context() -> Bool:
     return is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
 
-fn device_kind() -> StringLiteral:
+fn kind() -> String:
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        return env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
-    else:
-        return "default"
+        alias kind = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+
+        @parameter
+        if kind == "gpu":
+            return DeviceContext.device_kind
+        return kind
+    return "default"
 
 
 fn create_test_device_context(device_id: Int = 0) raises -> DeviceContext:
@@ -39,9 +43,8 @@ fn create_test_device_context(device_id: Int = 0) raises -> DeviceContext:
 
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        var kind = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
-        print("Using DeviceContext: V2 - " + str(kind))
-        test_ctx = DeviceContext(kind, device_id=device_id)
+        print("Using DeviceContext: V2 - " + kind())
+        test_ctx = DeviceContext(device_id=device_id, kind=kind())
     elif is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():
         raise Error("DeviceContextV1 is unsupported")
     else:
