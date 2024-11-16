@@ -663,6 +663,7 @@ struct DeviceContextV2:
     """DeviceContext backed by a C++ implementation."""
 
     alias device_info = DEFAULT_GPU
+    alias device_kind = Self.device_info.api
 
     alias SYNC = DeviceSyncMode(True)
     alias ASYNC = DeviceSyncMode(False)
@@ -670,7 +671,7 @@ struct DeviceContextV2:
     var _handle: _DeviceContextPtr
 
     fn __init__(
-        inout self, device_kind: StringRef = "cuda", device_id: Int = 0
+        inout self, device_id: Int = 0, *, kind: String = Self.device_kind
     ) raises:
         # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *kind, int id)
         var result = _DeviceContextPtr()
@@ -683,7 +684,7 @@ struct DeviceContextV2:
                 Int32,
             ](
                 UnsafePointer.address_of(result),
-                device_kind.unsafe_ptr(),
+                kind.unsafe_ptr(),
                 device_id,
             )
         )
@@ -739,7 +740,7 @@ struct DeviceContextV2:
         external_call["free", NoneType, _CharPtr](name_ptr)
         return result
 
-    fn device_kind(self) -> StringRef:
+    fn kind(self) -> String:
         # const char *AsyncRT_DeviceContext_deviceKind(const DeviceContext *ctx)
         var kind_ptr = external_call[
             "AsyncRT_DeviceContext_deviceKind",
@@ -1284,7 +1285,7 @@ struct DeviceContextV2:
         )
 
     @staticmethod
-    fn number_of_devices(device_kind: StringRef) raises -> Int:
+    fn number_of_devices(*, kind: String = Self.device_kind) raises -> Int:
         # const char *AsyncRT_DeviceContext_numberOfDevices(int32_t *result, const char* kind)
         var num_devices: Int32 = 0
         _checked(
@@ -1295,7 +1296,7 @@ struct DeviceContextV2:
                 _CharPtr,
             ](
                 UnsafePointer.address_of(num_devices),
-                device_kind.unsafe_ptr(),
+                kind.unsafe_ptr(),
             )
         )
         return int(num_devices)
