@@ -181,8 +181,6 @@ fn swizzle_copy[
     BM: Int,
     BK: Int,
     num_threads: Int,
-    /,
-    _is_homogeneous: Bool = False,
 ](a: LayoutTensor[type, a_layout], b: LayoutTensor[type, b_layout],):
     alias simd_size = simdwidthof[type]()
 
@@ -233,7 +231,6 @@ fn test_swizzle_copy[
     num_threads: Int,
     /,
     skew_M: Int = 0,
-    _is_homogeneous: Bool = False,
 ](ctx: DeviceContext) raises:
     print("=== test_swizzle_copy")
 
@@ -268,7 +265,6 @@ fn test_swizzle_copy[
         BM,
         BK,
         num_threads,
-        _is_homogeneous=_is_homogeneous,
     ]
     var func = ctx.compile_function[copy](threads_per_block=num_threads)
 
@@ -294,21 +290,27 @@ fn masked_copy_kernel[
 ](input: LayoutTensor[DType.float32, layout]):
     alias thread_layout = Layout.row_major(4, 2)
 
+    var masked_input = LayoutTensor[DType.float32, layout, masked=True](
+        input.ptr,
+        RuntimeLayout(
+            RuntimeTuple[layout.shape, unsigned=True](num_rows, input.dim(1)),
+            input.runtime_layout.stride,
+        ),
+    )
+
     var smem_tile = LayoutTensor[
         DType.float32, layout, address_space = AddressSpace.SHARED
     ].stack_allocation().fill(-1.0)
 
-    copy_dram_to_sram_async[thread_layout=thread_layout, masked=True](
-        smem_tile.vectorize[1, 4](), input.vectorize[1, 4](), num_rows
+    copy_dram_to_sram_async[thread_layout=thread_layout](
+        smem_tile.vectorize[1, 4](), masked_input.vectorize[1, 4]()
     )
 
     async_copy_commit_group()
     async_copy_wait_all()
 
     copy_sram_to_dram[thread_layout=thread_layout](
-        input.vectorize[1, 4]().bitcast[
-            DType.float32, address_space = AddressSpace.GENERIC
-        ](),
+        input.vectorize[1, 4](),
         smem_tile.vectorize[1, 4](),
     )
 
@@ -516,7 +518,6 @@ fn main() raises:
             BM_swizz,
             BK_swizz,
             num_threads_swizz,
-            _is_homogeneous=True,
         ](ctx)
 
         # CHECK: === test_swizzle_copy
@@ -537,7 +538,6 @@ fn main() raises:
             BK_swizz,
             num_threads_swizz,
             skew_M=2,
-            _is_homogeneous=True,
         ](ctx)
 
         alias M_masked = 8

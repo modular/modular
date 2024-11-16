@@ -306,6 +306,7 @@ struct LayoutTensor[
         layout,
         address_space=address_space,
         element_layout=element_layout,
+        masked=masked,
     ] as result:
         """Bitcast the underlying pointer to a new data type.
 
@@ -2046,7 +2047,7 @@ struct LayoutTensor[
 
     @always_inline
     fn copy_from_async[
-        masked: Bool = False,
+        is_masked: Bool = False,
         swizzle: OptionalReg[Swizzle] = None,
         fill: Fill = Fill.NONE,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
@@ -2156,7 +2157,7 @@ struct LayoutTensor[
                     var dst_idx = swizzled_offset + dst_distance
 
                     @parameter
-                    if masked:
+                    if is_masked:
                         var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
                         async_copy[element_size_bytes, fill = Fill.ZERO](
                             src_ptr.bitcast[Scalar[dtype]]() + src_idx,
@@ -2197,149 +2198,6 @@ struct LayoutTensor[
                     src_ptr.bitcast[Scalar[dtype]]() + src_idx,
                     dst_ptr + dst_idx,
                 )
-
-    @always_inline
-    fn copy_from_async_masked_src[
-        src_layout: Layout,
-        src_addr_space: AddressSpace,
-        src_element_layout: Layout,
-        *,
-        fill: Fill = Fill.NONE,
-        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-        swizzle: OptionalReg[Swizzle] = None,
-    ](
-        self,
-        src: LayoutTensor[
-            dtype,
-            src_layout,
-            address_space=src_addr_space,
-            element_layout=src_element_layout, **_,
-        ],
-        offset: Int,
-        rows: Int,
-        cols: Int,
-        base_offset: Int = UNKNOWN_VALUE,
-    ):
-        constrained[
-            self.address_space == _GPUAddressSpace.SHARED,
-            "Async is only supported for destinations in shared memory",
-        ]()
-
-        alias dst_size = layout.size()
-        alias src_size = src_layout.size()
-        constrained[
-            dst_size == src_size,
-            "copy_from_async should move data of the same size",
-        ]()
-
-        alias dst_element_size = int(self.element_size)
-        alias src_element_size = int(src.element_size)
-        constrained[
-            dst_element_size == src_element_size,
-            "copy_from_async should move data of the same element size",
-        ]()
-
-        # Share memory must always have static layout.
-        alias dst_dims_known = (
-            self.layout.all_dims_known()
-            and self.element_layout.all_dims_known()
-        )
-        constrained[dst_dims_known, "dst tensor must have static layout"]()
-
-        # Eligibility for 4, 8, 16 bytes async load.
-        alias element_size_bytes = sizeof[dtype]() * src_element_size
-        constrained[
-            element_size_bytes == 4
-            or element_size_bytes == 8
-            or element_size_bytes == 16,
-            "copy_from_async only allows 4, 8, 16 bytes element",
-        ]()
-
-        var dst_ptr = self.ptr.bitcast[
-            address_space = _GPUAddressSpace.SHARED
-        ]()
-        var src_ptr = src.ptr.bitcast[address_space = _GPUAddressSpace.GLOBAL]()
-
-        # Coalesce element layouts to simplify vectorization condition.
-        alias coalesce_src_element_layout = coalesce(src_element_layout)
-        alias coalesce_dst_element_layout = coalesce(self.element_layout)
-
-        @parameter
-        if (
-            src_element_layout.all_dims_known()
-            and coalesce_src_element_layout.rank() == 1
-            and coalesce_src_element_layout.stride[0] == 1
-            and coalesce_dst_element_layout.rank() == 1
-            and coalesce_dst_element_layout.stride[0] == 1
-        ):
-            alias num_vecs_per_swizzle = ceildiv(
-                swizzle.value().size(),
-                layout.stride[0].value() // self.element_size,
-            ) if swizzle.__bool__() and layout.size() > 1 else 1
-
-            @parameter
-            for j in range(num_vecs_per_swizzle):
-                alias dst_offset = layout(j)
-                var swizzled_offset = dst_offset
-
-                # Swizzle each vector within the first 2^bits rows.
-                @parameter
-                if swizzle:
-                    alias swizzle_fn = swizzle.value()
-                    swizzled_offset = (
-                        swizzle_fn(
-                            (base_offset + dst_offset) // self.element_size
-                        )
-                        * self.element_size
-                        - base_offset
-                    )
-
-                @parameter
-                for i in range(j, dst_size, num_vecs_per_swizzle):
-                    alias src_static_idx = src_layout(i)
-                    var src_idx = 0
-
-                    @parameter
-                    if src_layout.all_dims_known():
-                        src_idx = src_static_idx
-                    else:
-                        src_idx = src.runtime_layout(i)
-
-                    alias dst_distance = layout(i) - layout(j)
-
-                    var dst_idx = swizzled_offset + dst_distance
-
-                    if offset + src_idx < rows * cols:
-                        async_copy[
-                            element_size_bytes,
-                            eviction_policy=eviction_policy,
-                        ](
-                            src_ptr + src_idx,
-                            dst_ptr + dst_idx,
-                        )
-        else:
-
-            @parameter
-            for i in range(dst_size * dst_element_size):
-                var src_idx = 0
-
-                alias src_static_idx = make_layout(
-                    src.element_layout, src_layout
-                )(i)
-                alias dst_idx = make_layout(self.element_layout, self.layout)(i)
-
-                @parameter
-                if src_layout.all_dims_known():
-                    src_idx = src_static_idx
-                else:
-                    src_idx = make_runtime_layout(
-                        src.runtime_element_layout, src.runtime_layout
-                    )(i)
-
-                if offset + src_idx < rows * cols:
-                    async_copy[4, eviction_policy=eviction_policy](
-                        src_ptr + src_idx, dst_ptr + dst_idx
-                    )
 
     @always_inline
     fn fill(self, val: Scalar[dtype]) -> Self:
@@ -2468,10 +2326,9 @@ fn copy_dram_to_sram_async[
     src_thread_layout: Layout,
     dst_thread_layout: Layout,
     swizzle: Bool = False,
-    masked: Bool = False,
     fill: Fill = Fill.NONE,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](dst: LayoutTensor, src: LayoutTensor, num_rows: Int = UNKNOWN_VALUE):
+](dst: LayoutTensor, src: LayoutTensor):
     constrained[
         src.address_space == _GPUAddressSpace.GENERIC,
         "src address space must be GENERIC.",
@@ -2511,22 +2368,16 @@ fn copy_dram_to_sram_async[
 
     var dst_frag_offset = dst_fragments.distance(dst.ptr) if swizzle else 0
 
-    @parameter
-    if not masked:
+    if not src_fragments.runtime_layout.bound_check_required():
         dst_fragments.copy_from_async[
             swizzle=swizzle_option, eviction_policy=eviction_policy
         ](src_fragments, base_offset=dst_frag_offset)
     else:
-        constrained[
-            src.layout.stride[1].value() == src.element_size
-            and src.layout.rank() == 2,
-            "Only support masking rows and 2D row major layout.",
-        ]()
         var src_frag_offset = src_fragments.distance(src.ptr)
         alias stride = src.layout.stride[0].value()
-        var src_idx_bound = num_rows * stride - src_frag_offset
+        var src_idx_bound = src.dim(0) * stride - src_frag_offset
         dst_fragments.copy_from_async[
-            masked=True,
+            is_masked=True,
             swizzle=swizzle_option,
             eviction_policy=eviction_policy,
         ](
@@ -2545,14 +2396,13 @@ fn copy_dram_to_sram_async[
     masked: Bool = False,
     fill: Fill = Fill.NONE,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](dst: LayoutTensor, src: LayoutTensor, num_rows: Int = UNKNOWN_VALUE):
+](dst: LayoutTensor, src: LayoutTensor):
     copy_dram_to_sram_async[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
         swizzle=swizzle,
-        masked=masked,
         eviction_policy=eviction_policy,
-    ](dst, src, num_rows)
+    ](dst, src)
 
 
 @always_inline
