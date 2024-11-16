@@ -237,7 +237,7 @@ def cli(
     scale,
     force,
     verbose,
-) -> bool:
+):
     csv_path_list = [Path(file).resolve() for file in csv_files]
     num_csv = len(csv_path_list)
 
@@ -263,7 +263,7 @@ def cli(
 
 
 def main():
-    cli()
+    cli()  # type: ignore
 
 
 if __name__ == "__main__":
