@@ -397,3 +397,31 @@ fn load_acquire[
         Scalar[type],
         constraints=constraints,
     ](ptr.bitcast[address_space = AddressSpace.GENERIC]())
+
+
+@always_inline
+fn store_volatile[
+    type: DType, //, memory: Bool = True
+](ptr: UnsafePointer[Scalar[type], *_, **_], value: Scalar[type]):
+    alias constraints = _get_register_constraint[
+        type
+    ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+    inlined_assembly[
+        "st.volatile.global." + _get_type_suffix[type]() + " [$1], $0;",
+        NoneType,
+        constraints=constraints,
+    ](value, ptr.bitcast[address_space = AddressSpace.GENERIC]())
+
+
+@always_inline
+fn load_volatile[
+    type: DType, //, memory: Bool = True
+](ptr: UnsafePointer[Scalar[type], *_, **_]) -> Scalar[type]:
+    alias constraints = "=" + _get_register_constraint[
+        type
+    ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
+    return inlined_assembly[
+        "ld.volatile.global." + _get_type_suffix[type]() + " $0, [$1];",
+        Scalar[type],
+        constraints=constraints,
+    ](ptr.bitcast[address_space = AddressSpace.GENERIC]())
