@@ -64,7 +64,8 @@ ErrorOrSuccess parseTargetOptions(
     MLIRContext &ctx, TargetInfoAttr &target, llvm::opt::OptSpecifier tripleId,
     llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
     llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
-    llvm::opt::OptSpecifier mtuneId);
+    llvm::opt::OptSpecifier mtuneId,
+    llvm::opt::OptSpecifier targetAcceleratorId);
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module

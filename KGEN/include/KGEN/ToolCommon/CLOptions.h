@@ -275,6 +275,12 @@ private:
       "mtune", cl::desc("CPU to tune code for"),
       llvm::cl::location(options.mtune), llvm::cl::cat(KGENOptionsCategory)};
 
+  M::cl::MOpt<std::string, true> acceleratorTarget{
+      "target-accelerator",
+      cl::desc("The target architecture for the accelerator"),
+      llvm::cl::location(options.targetAccelerator),
+      llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
+
 private:
   M::cl::MOpt<bool, true> optLevel0{"O0", cl::desc("Disable all optimizations"),
                                     llvm::cl::location(options.optLevel0),

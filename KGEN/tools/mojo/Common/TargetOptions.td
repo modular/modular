@@ -39,4 +39,8 @@ defm mtune : CommandOption<["--", "-"], "mtune", TargetOptionGroup,
   Index<6>, MetaVarName<"TUNE">,
   HelpText<"Sets the CPU for which to tune code.">>;
 
+defm target_accelerator : CommandOptionHidden<["--", "-"], "target-accelerator",
+  TargetOptionGroup, Index<6>, MetaVarName<"ACCELERATOR">,
+  HelpText<"Sets the accelerator used for computation.">>;
+
 #endif // KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD

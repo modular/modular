@@ -130,7 +130,8 @@ ErrorOrSuccess M::parseTargetOptions(
     MLIRContext &ctx, TargetInfoAttr &target, llvm::opt::OptSpecifier tripleId,
     llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
     llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
-    llvm::opt::OptSpecifier mtuneId) {
+    llvm::opt::OptSpecifier mtuneId,
+    llvm::opt::OptSpecifier targetAcceleratorId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
@@ -156,6 +157,11 @@ ErrorOrSuccess M::parseTargetOptions(
   if (args.hasMultipleArgs(mtuneId))
     return Error("too many specified tune cpus, expected exactly one");
 
+  StringRef targetAccelerator = args.getLastArgValue(targetAcceleratorId);
+  if (args.hasMultipleArgs(targetAcceleratorId))
+    return Error(
+        "too many specified target accelerators, expected exactly one");
+
   // If the user specified the triple, the target CPU, or the target feature
   // set, use those to override the defaults.
   if (!targetTriple.empty())
@@ -164,6 +170,8 @@ ErrorOrSuccess M::parseTargetOptions(
     compilationOptions.targetCpu = targetCpu.str();
   if (!targetFeatures.empty())
     compilationOptions.targetFeatures = targetFeatures.str();
+  if (!targetAccelerator.empty())
+    compilationOptions.targetAccelerator = targetAccelerator.str();
 
   // Initialize targets first - we rely on this for getTargetInfo as well as for
   // the ExecutionEngine.
