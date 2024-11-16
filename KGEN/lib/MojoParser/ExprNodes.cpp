@@ -1183,7 +1183,6 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   if (getterSet) {
     getter =
         getterSet.filterOverloadSet(operands,
-                                    /*allowImplicitConversions=*/true,
                                     /*emitDiagnosticOnFailure*/ true, emitter);
     if (!getter) // Error already emitted.
       return {};
@@ -1794,8 +1793,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   for (OpResult opResult : resultOp->getResults())
     operands.add({SRValue(opResult), &call});
   return emitter.emitConstructorCall(tupleType, std::move(operands), &call,
-                                     CallSyntax::kTypeCall, dest,
-                                     /*allowImplicitConversion=*/true);
+                                     CallSyntax::kTypeCall, dest);
 }
 
 AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

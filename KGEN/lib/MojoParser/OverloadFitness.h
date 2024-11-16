@@ -72,10 +72,8 @@ public:
 
   /// Determine whether the specified signature can be invoked with the
   /// parameter bindings specified in `callable`.
-  static OverloadFitness evaluate(ASTDecl *candidate,
-                                  const OverloadSet &callable,
-                                  PValue selfPValue,
-                                  bool allowImplicitConversions);
+  static OverloadFitness
+  evaluate(ASTDecl *candidate, const OverloadSet &callable, PValue selfPValue);
 
   enum ArgTypeMismatchKind {
     kValidType,   //< No argument type mismatch.

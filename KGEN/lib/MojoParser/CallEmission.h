@@ -160,9 +160,7 @@ public:
   ///
   /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
   /// return null.
-  PValue filterOverloadSet(CallOperands &operands,
-                           bool allowImplicitConversions,
-                           bool emitDiagnosticOnFailure,
+  PValue filterOverloadSet(CallOperands &operands, bool emitDiagnosticOnFailure,
                            ExprEmitter &emitter) const;
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
