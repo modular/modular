@@ -2057,6 +2057,11 @@ CValue ExprEmitter::emitBool(ASTExprAnd<PValue> value, ValueDest &dest) {
                              CallSyntax::kImplicitConvert, dest);
 }
 
+CValue ExprEmitter::emitBool(ASTExprAnd<PValue> value, ExprContext context) {
+  ValueDest dest(context);
+  return emitBool(value, dest);
+}
+
 /// This returns an instance of Tuple[...] with the specified element types
 /// installed.
 ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
