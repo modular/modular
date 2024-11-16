@@ -15,6 +15,7 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
+from gpu.host import DeviceContext
 
 from utils.index import Index, IndexList
 from sys import env_get_string, env_get_int, env_get_bool
@@ -244,12 +245,10 @@ struct MatmulKernels[
 
 
 fn select_config[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    transpose_b: Bool = False,
-    target: StringLiteral = DEFAULT_GPU_ARCH,
-](M: Int, N: Int, K: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+    a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
+](M: Int, N: Int, K: Int, ctx: DeviceContext) -> MatmulConfig[
+    a_type, b_type, c_type, transpose_b
+]:
     # Select an optimal matmul config by heuristic.
     # The heuristic is to choose the parameters leading to min workload per SM.
     # The work load is estimated as
@@ -263,7 +262,7 @@ fn select_config[
     # * num_waves is the maximum thread blocks that are dispatched to a SM.
     #   E.g. 128 blocks to A100's 108 SMs, one SM at most computes two blocks.
 
-    alias gpu_info = _get_info_from_target[target]()
+    alias gpu_info = ctx.device_info
 
     alias max_num_k_partitions = 8
     alias min_k_partition = 1024
@@ -283,7 +282,7 @@ fn select_config[
     # sm_80 is present in target.
     alias _256x128_3 = Index(
         128, 256, 2 * _bk_base[a_type](), 3
-    ) if "sm_80" in target else Index(1024, 1024, 1024, 1024)
+    ) if gpu_info is A100 else Index(1024, 1024, 1024, 1024)
 
     alias opt_list = List(_128x128_4, _256x64_4, _256x128_3)
 
@@ -361,7 +360,9 @@ fn get_config_from_shape[
     static_K: Int,
     transpose_b: Bool = False,
     target: StringLiteral = DEFAULT_GPU_ARCH,
-](dyn_M: Int) -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
+](dyn_M: Int, ctx: DeviceContext) -> MatmulConfig[
+    a_type, b_type, c_type, transpose_b
+]:
     # This part code may be useful when replacing alias with runtime variables.
     # Construct the config before hand and use index map to retrieve the config.
     # var block_shape_list = List[IndexList[3]]()
@@ -380,9 +381,9 @@ fn get_config_from_shape[
 
     alias warp_shape = Index(64, 64, 2 * _bk_base[a_type]())
 
-    var default_config = select_config[
-        a_type, b_type, c_type, transpose_b, target
-    ](dyn_M, static_N, static_K)
+    var default_config = select_config[a_type, b_type, c_type, transpose_b](
+        dyn_M, static_N, static_K, ctx
+    )
     # MatmulConfig for N=K=4096
     alias M128_N4096_K4096_config = MatmulConfig[
         a_type, b_type, c_type, transpose_b

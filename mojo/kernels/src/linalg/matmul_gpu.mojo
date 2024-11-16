@@ -267,7 +267,6 @@ fn _matmul_gpu[
     c_type: DType,
     a_type: DType,
     b_type: DType, //,
-    target: StringLiteral,
     use_tensor_core: Bool = False,
     transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
@@ -771,8 +770,8 @@ fn _matmul_gpu[
                         return
 
             var best_config = select_config[
-                a_type, b_type, c_type, transpose_b, target
-            ](m, n, k)
+                a_type, b_type, c_type, transpose_b
+            ](m, n, k, ctx)
 
             if best_config == kernels.ampere_256x64_4:
                 alias config = kernels.ampere_256x64_4
@@ -888,7 +887,7 @@ fn split_k_reduce[
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
 
-    elementwise[_reduce, simd_width, target=DEFAULT_GPU_ARCH](Index(M, N), ctx)
+    elementwise[_reduce, simd_width, target="cuda"](Index(M, N), ctx)
 
 
 fn multistage_gemm[

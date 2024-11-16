@@ -821,11 +821,9 @@ fn matmul[
 
         else:
             _matmul_gpu[
-                target,
                 use_tensor_core=True,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-                target=target,
             ](c, a, b, ctx.value())
 
 
