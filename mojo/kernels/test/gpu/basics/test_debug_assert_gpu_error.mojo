@@ -11,7 +11,7 @@ from gpu.host import DeviceContext
 # CHECK-FAIL-LABEL: test_fail
 def main():
     print("== test_fail")
-    # CHECK-FAIL: block: [0,0,0], thread: [0,0,0] Assertion `forcing failure` failed
+    # CHECK-FAIL: block: [0,0,0] thread: [0,0,0] Assert Error: forcing failure
     with DeviceContext() as ctx:
 
         fn fail_assert():
