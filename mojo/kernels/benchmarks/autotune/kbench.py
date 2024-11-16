@@ -42,17 +42,6 @@ CONSOLE = Console()
 CURRENT_FILE = Path(__file__).resolve()
 LINE = 80 * "-"
 
-DEFAULT_GPU_ARCH = []
-try:
-    sh = run_shell_command(
-        ["gpu-query", "--arch"], check=False, capture_output=True
-    )
-    output = sh.stdout.decode().strip()
-    if "sm_" in output or "CDNA" in output:
-        DEFAULT_GPU_ARCH = ["-D", f"DEFAULT_GPU_ARCH={output}"]
-except Exception as error:
-    pass
-
 
 def configure_logging(
     quiet: bool = False, verbose: bool = False, pretty_output: bool = True
@@ -208,7 +197,6 @@ class SpecInstance:
                 cmd.extend(build_opts)
             cmd.extend(
                 [
-                    *DEFAULT_GPU_ARCH,
                     *defines,
                     str(file_abs_path),
                 ]
@@ -226,9 +214,7 @@ class SpecInstance:
             if not found_in_cache:
                 KBENCH_PARAM_CACHE = np.array(defines)
                 cmd = self.get_executor()
-                cmd.extend(
-                    ["build", *DEFAULT_GPU_ARCH, *defines, str(file_abs_path)]
-                )
+                cmd.extend(["build", *defines, str(file_abs_path)])
                 # TODO: how to handle the return from failing here?
                 self._run(cmd, output_file, verbose, dryrun)
 
