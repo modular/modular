@@ -55,10 +55,16 @@ public:
   /// Apply the converter recursively to the given operation.
   void applyRecursively(Operation *op);
 
+  /// Add cycle breaker in the case of known recursive replacements.
+  template <typename FnT>
+  void addCycleBreaker(FnT &&callback) {
+    replacer.addCycleBreaker(callback);
+  }
+
 private:
   /// The underlying attr/type replacer, used to perform the actual
   /// conversions.
-  mlir::AttrTypeReplacer replacer;
+  mlir::CyclicAttrTypeReplacer replacer;
 };
 
 /// Populate conversion patterns for transforming debug info dialect operations

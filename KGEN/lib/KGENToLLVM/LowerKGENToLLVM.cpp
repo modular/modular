@@ -1111,6 +1111,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
   target.addLegalOp<KGEN::CallIndirectOp>();
   target.addLegalOp<KGEN::CreateClosureOp>();
+  target.addLegalOp<KGEN::StructInstanceOp, KGEN::StructInfoOp>();
 
   // Collect C exported symbols. The calling convention will have to be
   // rewritten after the lowering.
@@ -1185,7 +1186,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   InterpreterMemoryConverter imc(symtab, typeConverter);
   populateKGENToLLVMPatterns(typeConverter, patterns, symtab, imc, ids);
 
-  DebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo);
+  DebugInfoTypeConverter debugTypeConverter(typeConverter, targetInfo, symtab);
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
                                             typeConverter);
   target.addDynamicallyLegalDialect<DebugInfo::DebugInfoDialect>(
@@ -1203,4 +1204,10 @@ void LowerKGENToLLVMPass::runOnOperation() {
 
   // Convert the debug info within the IR.
   debugTypeConverter.applyRecursively(theModule);
+
+  // All type symbols should be inaccessible now (they do not yet lower to
+  // runtime). Erase them.
+  for (auto structInstance :
+       llvm::make_early_inc_range(theModule.getOps<StructInstanceOp>()))
+    structInstance.erase();
 }

@@ -6,6 +6,7 @@
 
 #include "KGEN/CODialect/COTypes.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/DebugInfoEncoding.h"
@@ -291,9 +292,44 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(StructType type) {
       StringAttr::get(type.getContext(), mlir::debugString(type)));
 }
 
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(StructInstanceType type) {
+  // Recursively translate member types.
+  SmallVector<DebugInfo::DIMemberType> memberTypes;
+  for (StructDefFieldAttr field : type.getFields()) {
+    DebugInfo::DIType fieldDIType = convertDebugType(field.getType());
+    auto memberDIType =
+        DebugInfo::DIMemberType::get(field.getName(), fieldDIType);
+    memberTypes.push_back(memberDIType);
+  }
+  return DebugInfo::DIStructType::get(type.getName(), memberTypes);
+}
+
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(TypeValueType type) {
+  TypedAttr typeValue = type.getTypeValue();
+  if (auto cst = dyn_cast<TypeConstantAttr>(typeValue))
+    return buildDebugType(cst);
+  if (auto ref = dyn_cast<TypeConstantRefAttr>(typeValue))
+    return buildDebugType(ref);
+  llvm_unreachable("illegal non-concrete type value");
+}
+
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(TypeConstantAttr attr) {
+  return convertDebugType(attr.getTypeValue());
+}
+
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(TypeConstantRefAttr attr) {
+  assert(attr.isConstant() && "illegal non-concrete type-constant reference");
+  auto structInst =
+      symtab.lookup<StructInstanceOp>(attr.getSymbol().getLeafReference());
+  auto structInfo =
+      cast<StructInfoOp>(structInst.getBody().front().getTerminator());
+  return buildDebugType(cast<TypeConstantAttr>(structInfo.getTypeConstant()));
+}
+
 KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc,
-                                                     TargetInfoAttr targetInfo)
-    : tc(tc), targetInfo(targetInfo) {
+                                                     TargetInfoAttr targetInfo,
+                                                     SymbolTable &symtab)
+    : tc(tc), symtab(symtab), targetInfo(targetInfo) {
   // Let the LLVM conversion handle a majority of the debug info generation.
   addUnresolvedConverter(tc);
 
@@ -314,4 +350,12 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc,
   addConversion([&](PointerType type) { return buildDebugType(type); });
   addConversion([&](POP::SIMDType type) { return buildDebugType(type); });
   addConversion([&](StructType type) { return buildDebugType(type); });
+  addConversion([&](StructInstanceType type) { return buildDebugType(type); });
+  addConversion([&](TypeValueType type) { return buildDebugType(type); });
+
+  // Break cyclic StructInstance types.
+  addCycleBreaker([&](StructInstanceType type) {
+    // TODO(MOCO-720): Encode recursive struct types.
+    return DebugInfo::DIStructType::get(type.getName(), /*members=*/{});
+  });
 }
