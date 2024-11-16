@@ -1700,8 +1700,7 @@ fn _elementwise_impl_gpu[
             var gpu_func = ctx.compile_function[
                 _elementwise_gpu_kernel[
                     block_size=block_size, handle_uneven_simd=False
-                ],
-                target = hw_info.target(),
+                ]
             ]()
             ctx.enqueue_function(
                 gpu_func, grid_dim=int(num_blocks), block_dim=int(block_size)
@@ -1710,8 +1709,7 @@ fn _elementwise_impl_gpu[
             var gpu_func = ctx.compile_function[
                 _elementwise_gpu_kernel[
                     block_size=block_size, handle_uneven_simd=True
-                ],
-                target = hw_info.target(),
+                ]
             ]()
             ctx.enqueue_function(
                 gpu_func, grid_dim=int(num_blocks), block_dim=int(block_size)
