@@ -316,7 +316,7 @@ struct TaskGroup:
     fn __init__(out self):
         var chain = Chain()
         _init_asyncrt_chain(UnsafePointer[Chain].address_of(chain))
-        self.counter = 1
+        self.counter = Atomic[DType.index](1)
         self.chain = chain
         self.tasks = List[_TaskGroupBox](capacity=16)
 
