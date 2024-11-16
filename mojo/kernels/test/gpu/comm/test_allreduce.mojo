@@ -153,7 +153,7 @@ def main():
     # Test with 2 GPUs
     if device_count() >= 2:
         var ctx2 = List[DeviceContext](
-            DeviceContext(gpu_id=0), DeviceContext(gpu_id=1)
+            DeviceContext(device_id=0), DeviceContext(device_id=1)
         )
         print(_get_test_str(DType.bfloat16, 2, length))
         all_reduce_test[DType.bfloat16, rank, 2](ctx2, length)
@@ -164,7 +164,7 @@ def main():
     if device_count() >= 4:
         var ctx4 = List[DeviceContext]()
         for i in range(4):
-            ctx4.append(DeviceContext(gpu_id=i))
+            ctx4.append(DeviceContext(device_id=i))
 
         print(_get_test_str(DType.bfloat16, 4, length))
         all_reduce_test[DType.bfloat16, rank, 4](ctx4, length)
@@ -175,7 +175,7 @@ def main():
     if device_count() >= 8:
         var ctx8 = List[DeviceContext]()
         for i in range(8):
-            ctx8.append(DeviceContext(gpu_id=i))
+            ctx8.append(DeviceContext(device_id=i))
         print(_get_test_str(DType.bfloat16, 8, length))
         all_reduce_test[DType.bfloat16, rank, 8](ctx8, length)
         print(_get_test_str(DType.float32, 8, length))
