@@ -913,9 +913,8 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     elementTrait =
         ParamOperatorAttr::get(POC::Rebind, elementTrait, elementTraitParamTy);
 
-  ValueDest dest(EC_Type);
   CValue isMutableCValue =
-      emitter.emitBool({refType.isMutable(), arg.typeExpr}, dest);
+      emitter.emitBool({refType.isMutable(), arg.typeExpr}, EC_Type);
 
   PValue isMutablePValue = isMutableCValue.getIfPValue();
   assert(isMutablePValue &&

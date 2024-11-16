@@ -56,12 +56,14 @@ static CValue emitVariadicPackConstructor(
 
   auto isOwned = declaredArgConvention == ArgConvention::OwnedInMem;
   auto isOwnedAttr = BoolAttr::get(emitter.getContext(), isOwned);
+  auto isOwnedVal = emitter.emitBool({isOwnedAttr, expr}, EC_PackArgument);
+  assert(isOwnedVal && "Bool emission should always work");
 
   // Emit a VariadicPack constructor call taking the #lit.ref.pack and a
   // bool indicating whether the argument is owned.
   CallOperands operands;
   operands.add({refPackValue, expr});
-  operands.add({isOwnedAttr, expr});
+  operands.add({isOwnedVal, expr});
 
   ValueDest packDest(ExprContext::EC_PackArgument);
 
