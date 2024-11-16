@@ -298,8 +298,8 @@ def M_TargetInfoAttr : MAttr<"TargetInfo", "target"> {
     Can be (partially) represented at runtime by M::TargetInfo.
 
     The `accelerator_arch` contains the vendor name of the accelerator in
-    lowercase (e.g. nvidia or amd) along with the subarch (e.g. sm_80, sm_90).
-    For example, a valid `accelerator_arch` is `nvidia:sm80` or `amdgpu:mi300x`.
+    lowercase (e.g. nvidia or amd) along with the compute capability (e.g. 80 or
+    90). For example, a valid `accelerator_arch` is `nvidia:80` or `amdgpu:94`.
   }];
 
   let parameters = (ins
