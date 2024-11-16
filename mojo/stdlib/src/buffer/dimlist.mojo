@@ -602,4 +602,4 @@ fn _make_tuple[
             index = idx.value,
         ](result._int_type(values.at[idx]().get()), array)
 
-    return array
+    return __type_of(result)(array)
