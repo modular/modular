@@ -116,7 +116,7 @@ def test_devicetensor_wrong_num_inputs(
     with pytest.raises(
         ValueError,
         match=(
-            r"Number of inputs \(2\) does not match "
+            r"Number of inputs does not match "
             r"expected number \(1\) for model"
         ),
     ):
