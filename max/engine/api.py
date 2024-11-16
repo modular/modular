@@ -165,6 +165,7 @@ class Model:
         """
         input_impls: list[Union[_Tensor, MojoValue]] = []
 
+        input_idx = 0
         for idx, arg in enumerate(args):
             # Validate that input is one of supported types and convert if
             # necessary.
@@ -194,14 +195,20 @@ class Model:
                     " implementing the dlpack protocol. We do not"
                     f" currently support inputs of the type {type(arg)}."
                 )
-            # AIPIPE-115: Need an input tensor <--> device mapping
             if copy_inputs_to_device:
-                tensor = tensor.to(self.devices[0])
+                input_devices = self.input_devices
+                if input_idx >= len(input_devices):
+                    raise ValueError(
+                        "Number of inputs does not match expected number ("
+                        f"{len(input_devices)}) for model"
+                    )
+                tensor = tensor.to(input_devices[input_idx])
+                input_idx = input_idx + 1
             input_impls.append(tensor._impl)
         results = self._impl.execute_device_tensors(input_impls)
 
         processed_results = []
-        for result in results:
+        for idx, result in enumerate(results):
             # If the output is a MojoValue, we return it directly.
             if not isinstance(result, _Tensor):
                 processed_results.append(result)
@@ -210,7 +217,7 @@ class Model:
             # If an output device is provided and it is different from the
             # device the tensor is already present on, we should copy to
             # that device.
-            if output_device and output_device != self.devices[0]:
+            if output_device and output_device != self.output_devices[idx]:
                 wrapped_tensor = wrapped_tensor.copy(output_device)
             processed_results.append(wrapped_tensor)
         return processed_results
