@@ -10,7 +10,7 @@ from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
-from gpu.host.stream_v1 import Stream
+from gpu.host.nvidia_cuda import CUstream
 
 from .dtype import DataType, Property
 from .result import Result
@@ -980,7 +980,7 @@ fn cublasGetMatrixAsync(
     lda: Int16,
     _b: UnsafePointer[NoneType],
     ldb: Int16,
-    stream: UnsafePointer[Stream],
+    stream: CUstream,
 ) -> Result:
     return _get_dylib_function[
         "cublasGetMatrixAsync",
@@ -992,7 +992,7 @@ fn cublasGetMatrixAsync(
             Int16,
             UnsafePointer[NoneType],
             Int16,
-            UnsafePointer[Stream],
+            CUstream,
         ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
@@ -1092,7 +1092,7 @@ fn cublasGetMatrixAsync(
     lda: Int64,
     _b: UnsafePointer[NoneType],
     ldb: Int64,
-    stream: UnsafePointer[Stream],
+    stream: CUstream,
 ) -> Result:
     return _get_dylib_function[
         "cublasGetMatrixAsync_64",
@@ -1104,7 +1104,7 @@ fn cublasGetMatrixAsync(
             Int64,
             UnsafePointer[NoneType],
             Int64,
-            UnsafePointer[Stream],
+            CUstream,
         ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
@@ -1469,13 +1469,11 @@ fn cublasSsyr2(
 
 fn cublasGetStream(
     handle: UnsafePointer[cublasContext],
-    stream_id: UnsafePointer[UnsafePointer[Stream]],
+    stream_id: UnsafePointer[CUstream],
 ) -> Result:
     return _get_dylib_function[
         "cublasGetStream_v2",
-        fn (
-            UnsafePointer[cublasContext], UnsafePointer[UnsafePointer[Stream]]
-        ) -> Result,
+        fn (UnsafePointer[cublasContext], UnsafePointer[CUstream]) -> Result,
     ]()(handle, stream_id)
 
 
@@ -1535,7 +1533,7 @@ fn cublasSetMatrixAsync(
     lda: Int16,
     _b: UnsafePointer[NoneType],
     ldb: Int16,
-    stream: UnsafePointer[Stream],
+    stream: CUstream,
 ) -> Result:
     return _get_dylib_function[
         "cublasSetMatrixAsync",
@@ -1547,7 +1545,7 @@ fn cublasSetMatrixAsync(
             Int16,
             UnsafePointer[NoneType],
             Int16,
-            UnsafePointer[Stream],
+            CUstream,
         ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
@@ -2534,7 +2532,7 @@ fn cublasSetMatrixAsync(
     lda: Int64,
     _b: UnsafePointer[NoneType],
     ldb: Int64,
-    stream: UnsafePointer[Stream],
+    stream: CUstream,
 ) -> Result:
     return _get_dylib_function[
         "cublasSetMatrixAsync_64",
@@ -2546,7 +2544,7 @@ fn cublasSetMatrixAsync(
             Int64,
             UnsafePointer[NoneType],
             Int64,
-            UnsafePointer[Stream],
+            CUstream,
         ) -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
@@ -2768,7 +2766,7 @@ fn cublasGetVectorAsync(
     incx: Int16,
     host_ptr: UnsafePointer[NoneType],
     incy: Int16,
-    stream: UnsafePointer[Stream],
+    stream: CUstream,
 ) -> Result:
     return _get_dylib_function[
         "cublasGetVectorAsync",
@@ -2779,7 +2777,7 @@ fn cublasGetVectorAsync(
             Int16,
             UnsafePointer[NoneType],
             Int16,
-            UnsafePointer[Stream],
+            CUstream,
         ) -> Result,
     ]()(n, elem_size, device_ptr, incx, host_ptr, incy, stream)
 
@@ -4526,7 +4524,7 @@ fn cublasSetVectorAsync(
     incx: Int16,
     device_ptr: UnsafePointer[NoneType],
     incy: Int16,
-    stream: UnsafePointer[Stream],
+    stream: CUstream,
 ) -> Result:
     return _get_dylib_function[
         "cublasSetVectorAsync",
@@ -4537,7 +4535,7 @@ fn cublasSetVectorAsync(
             Int16,
             UnsafePointer[NoneType],
             Int16,
-            UnsafePointer[Stream],
+            CUstream,
         ) -> Result,
     ]()(n, elem_size, host_ptr, incx, device_ptr, incy, stream)
 
@@ -5660,7 +5658,7 @@ fn cublasGetVectorAsync(
     incx: Int64,
     host_ptr: UnsafePointer[NoneType],
     incy: Int64,
-    stream: UnsafePointer[Stream],
+    stream: CUstream,
 ) -> Result:
     return _get_dylib_function[
         "cublasGetVectorAsync_64",
@@ -5671,7 +5669,7 @@ fn cublasGetVectorAsync(
             Int64,
             UnsafePointer[NoneType],
             Int64,
-            UnsafePointer[Stream],
+            CUstream,
         ) -> Result,
     ]()(n, elem_size, device_ptr, incx, host_ptr, incy, stream)
 
@@ -6505,7 +6503,7 @@ fn cublasSetVectorAsync(
     incx: Int64,
     device_ptr: UnsafePointer[NoneType],
     incy: Int64,
-    stream: UnsafePointer[Stream],
+    stream: CUstream,
 ) -> Result:
     return _get_dylib_function[
         "cublasSetVectorAsync_64",
@@ -6516,7 +6514,7 @@ fn cublasSetVectorAsync(
             Int64,
             UnsafePointer[NoneType],
             Int64,
-            UnsafePointer[Stream],
+            CUstream,
         ) -> Result,
     ]()(n, elem_size, host_ptr, incx, device_ptr, incy, stream)
 
@@ -6975,11 +6973,11 @@ fn cublasDsymv(
 
 
 fn cublasSetStream(
-    handle: UnsafePointer[cublasContext], stream_id: UnsafePointer[Stream]
+    handle: UnsafePointer[cublasContext], stream_id: CUstream
 ) -> Result:
     return _get_dylib_function[
         "cublasSetStream_v2",
-        fn (UnsafePointer[cublasContext], UnsafePointer[Stream]) -> Result,
+        fn (UnsafePointer[cublasContext], CUstream) -> Result,
     ]()(handle, stream_id)
 
 

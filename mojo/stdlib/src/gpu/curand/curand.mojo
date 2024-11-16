@@ -13,7 +13,7 @@ from memory import UnsafePointer
 
 from utils import StaticTuple
 
-from gpu.host.stream_v1 import Stream
+from gpu.host.nvidia_cuda import CUstream
 
 # ===----------------------------------------------------------------------===#
 # Library Load
@@ -1326,7 +1326,7 @@ fn curandSetPseudoRandomGeneratorSeed(
 
 
 fn curandSetStream(
-    generator: curandGenerator_t, stream: Stream
+    generator: curandGenerator_t, stream: CUstream
 ) -> curandStatus:
     """
     \\brief Set the current stream for CURAND kernel launches.
@@ -1335,14 +1335,14 @@ fn curandSetStream(
     will use this stream until set again.
 
     \\param generator - Generator to modify
-    \\param stream - Stream to use or ::NULL for null stream
+    \\param stream - CUstream to use or ::NULL for null stream
 
     \\return
     - CURAND_STATUS_NOT_INITIALIZED if the generator was never created \\n
     - CURAND_STATUS_SUCCESS if stream was set successfully \\n
     ."""
     return _get_dylib_function[
-        "curandSetStream", fn (curandGenerator_t, Stream) -> curandStatus
+        "curandSetStream", fn (curandGenerator_t, CUstream) -> curandStatus
     ]()(generator, stream)
 
 

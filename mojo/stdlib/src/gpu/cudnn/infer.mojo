@@ -13,7 +13,7 @@ from memory import UnsafePointer
 
 from utils import StaticTuple
 
-from gpu.host.stream_v1 import Stream
+from gpu.host.nvidia_cuda import CUstream
 from .backend import *
 
 # ===----------------------------------------------------------------------===#
@@ -1664,13 +1664,13 @@ fn cudnnPoolingForward(
 
 fn cudnnGetStream(
     handle: UnsafePointer[cudnnContext],
-    stream_id: UnsafePointer[UnsafePointer[Stream]],
+    stream_id: UnsafePointer[CUstream],
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetStream",
         fn (
             UnsafePointer[cudnnContext],
-            UnsafePointer[UnsafePointer[Stream]],
+            UnsafePointer[CUstream],
         ) -> cudnnStatus_t,
     ]()(handle, stream_id)
 
@@ -2853,7 +2853,7 @@ struct cudnnDebugStruct:
     var time_usec: Int16
     var time_delta: Int16
     var handle: UnsafePointer[cudnnContext]
-    var stream: UnsafePointer[Stream]
+    var stream: CUstream
     var pid: Int64
     var tid: Int64
     var cudaDeviceId: Int16
@@ -2962,13 +2962,11 @@ fn cudnnSetTensorTransformDescriptor(
 
 
 fn cudnnSetStream(
-    handle: UnsafePointer[cudnnContext], stream_id: UnsafePointer[Stream]
+    handle: UnsafePointer[cudnnContext], stream_id: CUstream
 ) -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetStream",
-        fn (
-            UnsafePointer[cudnnContext], UnsafePointer[Stream]
-        ) -> cudnnStatus_t,
+        fn (UnsafePointer[cudnnContext], CUstream) -> cudnnStatus_t,
     ]()(handle, stream_id)
 
 
