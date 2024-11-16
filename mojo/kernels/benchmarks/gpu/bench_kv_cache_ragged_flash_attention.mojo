@@ -213,7 +213,7 @@ def execute_kv_cache_ragged_flash_attention[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            flash_attention[target="cuda", add_attn_mask=False, ragged=True](
+            flash_attention[add_attn_mask=False, ragged=True](
                 output_device.tensor,
                 q_device.tensor,
                 k_cache_device,

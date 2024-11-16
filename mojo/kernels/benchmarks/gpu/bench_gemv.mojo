@@ -61,9 +61,9 @@ fn bench_matmul[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _matmul_gpu[
-                target=DEFAULT_GPU_ARCH, transpose_b=False, use_tensor_core=True
-            ](mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx)
+            _matmul_gpu[transpose_b=False, use_tensor_core=True](
+                mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx
+            )
 
         b.iter_custom[kernel_launch](ctx)
 
@@ -108,7 +108,6 @@ fn bench_matmul_transpose[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             _matmul_gpu[
-                target=DEFAULT_GPU_ARCH,
                 transpose_b=True,
                 use_tensor_core=True,
             ](mat_c.tensor, mat_a.tensor, mat_b.tensor, ctx)
