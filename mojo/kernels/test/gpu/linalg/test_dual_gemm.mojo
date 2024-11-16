@@ -149,7 +149,6 @@ fn multistage_dual_mma[
     num_iters: Int,
     /,
     *,
-    num_a_rows: OptionalReg[Int] = None,
     num_b_rows: OptionalReg[Int] = None,
 ):
     constrained[
@@ -183,77 +182,51 @@ fn multistage_dual_mma[
 
     @always_inline
     @parameter
-    fn _copy_dram_to_sram_async_a[
-        tile_layout: Layout, //,
-        *,
-        masked: Bool = False,
-        fill: Fill = Fill.NONE,
-        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    ](
-        a_tile: LayoutTensor[
-            a_type,
-            tile_layout,
-            address_space = AddressSpace.SHARED,
-            element_layout=_, **_,
-        ],
-        num_rows: Int = UNKNOWN_VALUE,
-    ):
-        copy_dram_to_sram_async[
-            thread_layout=async_copy_a_layout,
-            swizzle=swizzle_a,
-            masked=masked,
-            fill=fill,
-            eviction_policy=eviction_policy,
-        ](
-            a_tile.vectorize[1, simd_size](),
-            a_iter[].bitcast[a_type]().vectorize[1, simd_size](),
-            num_rows,
+    fn _mask_tensor_row(
+        tensor: LayoutTensor, num_rows: Int
+    ) -> __type_of(tensor) as result:
+        return __type_of(tensor)(
+            tensor.ptr,
+            RuntimeLayout(
+                RuntimeTuple[tensor.layout.shape, unsigned=True](
+                    num_rows, tensor.dim(1)
+                ),
+                tensor.runtime_layout.stride,
+            ),
         )
 
     @always_inline
     @parameter
-    fn _copy_dram_to_sram_async_b[
-        tile_layout: Layout, //,
-        *,
-        masked: Bool = False,
-        fill: Fill = Fill.NONE,
-        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    ](
-        b0_tile: LayoutTensor[
-            b_type,
-            tile_layout,
-            address_space = AddressSpace.SHARED,
-            element_layout=_, **_,
-        ],
-        b1_tile: LayoutTensor[
-            b_type,
-            tile_layout,
-            address_space = AddressSpace.SHARED,
-            element_layout=_, **_,
-        ],
-        num_rows: Int = UNKNOWN_VALUE,
+    fn _copy_single_tensor_to_sram(dst: LayoutTensor, src: LayoutTensor):
+        copy_dram_to_sram_async[
+            thread_layout=async_copy_a_layout,
+            swizzle=swizzle_a,
+        ](
+            dst.vectorize[1, simd_size](),
+            src.vectorize[1, simd_size](),
+        )
+
+    @always_inline
+    @parameter
+    fn _copy_dual_tensor_to_sram(
+        b0_dst: LayoutTensor,
+        b1_dst: LayoutTensor,
+        b0_src: LayoutTensor,
+        b1_src: LayoutTensor,
     ):
         copy_dram_to_sram_async[
             thread_layout=async_copy_b_layout,
             swizzle=swizzle_b,
-            masked=masked,
-            fill=fill,
-            eviction_policy=eviction_policy,
         ](
-            b0_tile.vectorize[1, simd_size](),
-            b0_iter[].bitcast[b_type]().vectorize[1, simd_size](),
-            num_rows,
+            b0_dst.vectorize[1, simd_size](),
+            b0_src.vectorize[1, simd_size](),
         )
         copy_dram_to_sram_async[
             thread_layout=async_copy_b_layout,
             swizzle=swizzle_b,
-            masked=masked,
-            fill=fill,
-            eviction_policy=eviction_policy,
         ](
-            b1_tile.vectorize[1, simd_size](),
-            b1_iter[].bitcast[b_type]().vectorize[1, simd_size](),
-            num_rows,
+            b1_dst.vectorize[1, simd_size](),
+            b1_src.vectorize[1, simd_size](),
         )
 
     # Prefetch (num_pipeline_stages - 1) stages.
@@ -261,12 +234,9 @@ fn multistage_dual_mma[
     @parameter
     for stage in range(num_pipeline_stages - 1):
         var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
-        if num_a_rows:
-            _copy_dram_to_sram_async_a[masked=True](
-                a_smem_tile, num_a_rows.value()
-            )
-        else:
-            _copy_dram_to_sram_async_a(a_smem_tile)
+
+        _copy_single_tensor_to_sram(a_smem_tile, a_iter[])
+
         a_iter._incr()
 
         var b0_smem_tile = b0_smem_iter.next_unsafe(stage)[]
@@ -275,11 +245,16 @@ fn multistage_dual_mma[
             var num_rows_bound = num_b_rows.value() if transpose_b else max(
                 0, num_b_rows.value() - stage * BK
             )
-            _copy_dram_to_sram_async_b[masked=True](
-                b0_smem_tile, b1_smem_tile, num_rows_bound
+            _copy_dual_tensor_to_sram(
+                b0_smem_tile,
+                b1_smem_tile,
+                _mask_tensor_row(b0_iter[], num_rows_bound),
+                _mask_tensor_row(b1_iter[], num_rows_bound),
             )
         else:
-            _copy_dram_to_sram_async_b(b0_smem_tile, b1_smem_tile)
+            _copy_dual_tensor_to_sram(
+                b0_smem_tile, b1_smem_tile, b0_iter[], b1_iter[]
+            )
         b0_iter._incr()
         b1_iter._incr()
 
@@ -378,12 +353,9 @@ fn multistage_dual_mma[
                         var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
                             num_pipeline_stages - 1
                         )[]
-                        if num_a_rows:
-                            _copy_dram_to_sram_async_a[masked=True](
-                                a_smem_prefetch_tile, num_a_rows.value()
-                            )
-                        else:
-                            _copy_dram_to_sram_async_a(a_smem_prefetch_tile)
+                        _copy_single_tensor_to_sram(
+                            a_smem_prefetch_tile, a_iter[]
+                        )
                         a_iter._incr()
 
                         var b0_smem_prefetch_tile = b0_smem_iter.next_unsafe(
@@ -397,14 +369,18 @@ fn multistage_dual_mma[
                                 0,
                                 num_b_rows.value() - prefetch_tile_id * BK,
                             )
-                            _copy_dram_to_sram_async_b[masked=True](
+                            _copy_dual_tensor_to_sram(
                                 b0_smem_prefetch_tile,
                                 b1_smem_prefetch_tile,
-                                num_rows_bound,
+                                _mask_tensor_row(b0_iter[], num_rows_bound),
+                                _mask_tensor_row(b1_iter[], num_rows_bound),
                             )
                         else:
-                            _copy_dram_to_sram_async_b(
-                                b0_smem_prefetch_tile, b1_smem_prefetch_tile
+                            _copy_dual_tensor_to_sram(
+                                b0_smem_prefetch_tile,
+                                b1_smem_prefetch_tile,
+                                b0_iter[],
+                                b1_iter[],
                             )
                         b0_iter._incr()
                         b1_iter._incr()
@@ -609,8 +585,6 @@ fn multistage_dual_gemm_kernel[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // (2 * MMA_N)
 
-    var num_rows = min(BM, int(M) - block_idx[1] * BM)
-
     alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
@@ -641,7 +615,6 @@ fn multistage_dual_gemm_kernel[
         b0_smem_iter,
         b1_smem_iter,
         ceildiv(K, BK),
-        num_a_rows=num_rows,
     )
 
     alias HWN = WN // 2
