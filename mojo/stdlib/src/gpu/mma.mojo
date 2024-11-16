@@ -237,8 +237,11 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d.type is DType.float32
         and d.size == 4
         and a.type is DType.float8e4m3
+        and a.size == 16
         and b.type is DType.float8e4m3
+        and b.size == 8
         and c.type is DType.float32
+        and c.size == 4
     ):
         var a0 = bitcast[DType.uint32, 4](a)
         var b0 = bitcast[DType.uint32, 2](b)
@@ -267,9 +270,15 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d.type is DType.float32
         and d.size == 4
         and a.type is DType.float8e5m2
+        and a.size == 16
         and b.type is DType.float8e5m2
+        and b.size == 8
         and c.type is DType.float32
+        and c.size == 4
     ):
+        var a0 = bitcast[DType.uint32, 4](a)
+        var b0 = bitcast[DType.uint32, 2](b)
+
         var r = inlined_assembly[
             (
                 "mma.sync.aligned.m16n8k32.row.col.f32.e5m2.e5m2.f32 {$0, $1,"
@@ -278,12 +287,12 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             _RegisterPackType[Float32, Float32, Float32, Float32],
             constraints="=f,=f,=f,=f,r,r,r,r,r,r,r,r,r,r",
         ](
-            a[0],
-            a[1],
-            a[2],
-            a[3],
-            b[0],
-            b[1],
+            a0[0],
+            a0[1],
+            a0[2],
+            a0[3],
+            b0[0],
+            b0[1],
             c[0],
             c[1],
             c[2],
