@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug --target-accelerator=nvidia:sm80 %s | FileCheck %s
+# RUN: %mojo-no-debug --target-accelerator=nvidia:80 %s | FileCheck %s
 
 from linalg.utils_gpu import select_config
 from gpu.host import DeviceContext

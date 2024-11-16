@@ -13,9 +13,9 @@ def main():
     var accelerator_arch = _accelerator_arch()
 
     assert_true(
-        accelerator_arch == "nvidia:sm80"
-        or accelerator_arch == "nvidia:sm84"
-        or accelerator_arch == "nvidia:sm86"
-        or accelerator_arch == "nvidia:sm89"
-        or accelerator_arch == "nvidia:sm90"
+        accelerator_arch == "nvidia:80"
+        or accelerator_arch == "nvidia:84"
+        or accelerator_arch == "nvidia:86"
+        or accelerator_arch == "nvidia:89"
+        or accelerator_arch == "nvidia:90"
     )
