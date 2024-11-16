@@ -9,6 +9,20 @@
 from gpu import ThreadIdx
 from gpu.host._compile import _compile_code_asm
 from gpu.memory import AddressSpace, external_memory
+from memory import UnsafePointer
+
+
+# CHECK-LABEL: test_array_offset
+fn test_array_offset():
+    print("== test_array_offset")
+
+    fn kernel(
+        p: UnsafePointer[Float32, AddressSpace.SHARED], idx: Int
+    ) -> Float32:
+        return p[idx]
+
+    # CHECK: getelementptr inbounds float, ptr addrspace(3) %0, i32 %3
+    print(_compile_code_asm[kernel, emission_kind="llvm"]())
 
 
 # CHECK-LABEL: tese_cse_thread_id
@@ -44,5 +58,6 @@ fn test_dynamic_shared_mem():
 
 
 fn main():
+    test_array_offset()
     tese_cse_thread_id()
     test_dynamic_shared_mem()
