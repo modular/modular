@@ -1372,10 +1372,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   }
 
   // We can implicitly convert to the specified type if we can construct it with
-  // the value.
-
-  // Disable implicit conversions though, to prevent converting T -> S -> U in
-  // one step.
+  // the value as an implicit conversion.
   FailureOr<PValue> result = OverloadSet::canConstructType(
       requiredType, {{value}}, value.expr, declScope,
       /*isImplicitConversion=*/true);
