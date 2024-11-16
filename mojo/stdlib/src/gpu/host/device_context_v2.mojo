@@ -659,6 +659,7 @@ struct DeviceFunctionV2[
         return int(result)
 
 
+@register_passable
 struct DeviceContextV2:
     """DeviceContext backed by a C++ implementation."""
 
@@ -709,9 +710,6 @@ struct DeviceContextV2:
     fn __copyinit__(out self, existing: Self):
         # Increment the reference count before copying the handle.
         existing._retain()
-        self._handle = existing._handle
-
-    fn __moveinit__(out self, owned existing: Self):
         self._handle = existing._handle
 
     fn __del__(owned self):
