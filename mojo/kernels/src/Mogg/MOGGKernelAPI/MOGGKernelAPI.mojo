@@ -4773,7 +4773,7 @@ struct MaskedFlashAttentionGPU:
         """
         constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
-        flash_attention[add_attn_mask=True, target=target](
+        flash_attention[add_attn_mask=True](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(q),
             managed_tensor_slice_to_ndbuffer(k),

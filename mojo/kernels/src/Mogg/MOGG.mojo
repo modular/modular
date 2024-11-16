@@ -4251,10 +4251,9 @@ fn masked_flash_attention_gpu[
 
     constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
-    flash_attention[
-        add_attn_mask=True,
-        target=target,
-    ](output, q, k, v, mask, scale[0], context=ctx)
+    flash_attention[add_attn_mask=True](
+        output, q, k, v, mask, scale[0], context=ctx
+    )
 
 
 @register_internal("no_mask_fused_attention_cpu")
