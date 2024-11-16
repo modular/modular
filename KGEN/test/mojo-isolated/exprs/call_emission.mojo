@@ -347,6 +347,7 @@ struct Struct1:
 
 
 struct Struct2:
+    @implicit
     fn __init__(out self, owned foo: Struct1):
         pass
 

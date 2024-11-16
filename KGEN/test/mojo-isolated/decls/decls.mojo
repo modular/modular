@@ -128,6 +128,7 @@ fn callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
 struct MyInt:
     var value: Int
 
+    @implicit
     @always_inline("nodebug")
     fn __init__(out self, _a: Int):
         self.value = _a

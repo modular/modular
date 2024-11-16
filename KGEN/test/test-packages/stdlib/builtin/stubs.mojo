@@ -106,6 +106,8 @@ struct object:
 
 @register_passable("trivial")
 struct NoneType:
+    # FIXME: Fix representation of None literal to remove this.
+    @implicit
     fn __init__(out self, x: __mlir_type.`!kgen.none`):
         pass
 
@@ -732,6 +734,11 @@ struct Optional[T: CollectionElement]:
 
     @implicit
     fn __init__(out self, value: NoneType):
+        pass
+
+    # FIXME: None literal should be of NoneType not !kgen.none.
+    @implicit
+    fn __init__(out self, x: __mlir_type.`!kgen.none`):
         pass
 
     fn __copyinit__(out self, other: Self):

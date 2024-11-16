@@ -71,7 +71,8 @@ fn empty_name():
 
 # COM: Issue #957 https://github.com/modularml/mojo/issues/957
 struct MemoryStruct:
-  fn __init__(out self, s: Int): pass
+    @implicit
+    fn __init__(out self, s: Int): pass
 
 fn take_variadic(*elements: MemoryStruct): pass
 

@@ -369,6 +369,7 @@ fn test_missing_args():
 
 
 struct ConvertibleFromInt:
+  @implicit
   fn __init__(out self, value: Int):
     pass
 

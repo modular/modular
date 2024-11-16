@@ -392,8 +392,10 @@ fn badSelf(a: Self):
 
 # Structs convertible to each other.
 struct Conv1:
+  @implicit
   fn __init__(out self, value: Conv2): pass
 struct Conv2:
+  @implicit
   fn __init__(out self, value: Conv1): pass
 
 @register_passable
@@ -489,6 +491,7 @@ def doIsNot(a: Int, b: Int):
 
 struct ConvertFromInt:
     fn __init__(out self): pass
+    @implicit
     fn __init__(out self, value: Int): pass
 
 struct IncompatElementTypes:
