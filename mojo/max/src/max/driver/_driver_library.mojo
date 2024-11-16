@@ -101,7 +101,7 @@ struct DriverLibrary:
             Self.copy_device_memory_fn_sig
         ]("M_copyDeviceMemory")
         self.get_data_fn = lib.get_function[Self.get_data_fn_sig]("M_getData")
-        self.lib = lib
+        self.lib = Arc[ManagedDLHandle](lib)
 
     fn get_handle(self) -> DLHandle:
         return self.lib[].get_handle()
