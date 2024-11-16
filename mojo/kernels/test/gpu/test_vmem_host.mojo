@@ -41,5 +41,4 @@ fn test_mem_get_allocation_granularity() raises:
 
 
 def main():
-    with DeviceContext():
-        test_mem_get_allocation_granularity()
+    test_mem_get_allocation_granularity()
