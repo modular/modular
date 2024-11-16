@@ -32,7 +32,7 @@ def test_cuda_device():
     gpu = cuda_device(gpu_id=0)
     assert_equal(
         str(gpu),
-        _to_device_str(0, DeviceContext("cuda", 0).compute_capability()),
+        _to_device_str(0, DeviceContext(0).compute_capability()),
     )
 
 
