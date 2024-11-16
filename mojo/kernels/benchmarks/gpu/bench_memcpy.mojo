@@ -207,7 +207,7 @@ def main():
         )
         bench_memcpy[Config.DEVICE_TO_DEVICE](m, length=length, context=ctx)
 
-    var num_devices = DeviceContext.number_of_devices("cuda")
+    var num_devices = DeviceContext.number_of_devices()
     if num_devices > 1:
         # Create contexts for both same-device and peer device transfers
         var ctx1 = DeviceContext(device_id=0)
