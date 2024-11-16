@@ -235,7 +235,7 @@ fn multi_gpu_barrier[
         # Technically we only need one counter, but we use
         # multiple per block to eliminate the need to share the counter via smem.
         var internal_counter_ptr = self_sg.bitcast[
-            flag_t
+            Scalar[flag_t]
         ]() + bid * MAX_GPUS + my_gpu
         var val = internal_counter_ptr[] + 1
         internal_counter_ptr[] = val
@@ -247,7 +247,7 @@ fn multi_gpu_barrier[
 
         # this line should compute &rank_sigs[my_gpu]->peer_counter[val % 2][bid][my_rank]
         var peer_counter_ptr = (
-            rank_sigs[my_gpu].bitcast[flag_t]()
+            rank_sigs[my_gpu].bitcast[Scalar[flag_t]]()
             + peer_counter_offset
             + (val % 2) * (MAX_BLOCK * MAX_GPUS)
             + bid * MAX_GPUS
@@ -255,7 +255,7 @@ fn multi_gpu_barrier[
         )
         # this line should compute &self_sg->peer_counter[val % 2][bid][my_gpu]
         var self_counter_ptr = (
-            self_sg.bitcast[flag_t]()
+            self_sg.bitcast[Scalar[flag_t]]()
             + peer_counter_offset
             + (val % 2) * (MAX_BLOCK * MAX_GPUS)
             + bid * MAX_GPUS
