@@ -369,9 +369,25 @@ class Model:
     @property
     def devices(self) -> list[Device]:
         """
-        Returns the device object that the session is configured for.
+        Returns the device objects used in the Model.
         """
         return [Device(device) for device in self._impl.devices]
+
+    @property
+    def input_devices(self) -> List[Device]:
+        """
+        Device of the model's input tensors, as a list of
+        :obj:`Device` objects.
+        """
+        return [Device(device) for device in self._impl.input_devices]
+
+    @property
+    def output_devices(self) -> List[Device]:
+        """
+        Device of the model's output tensors, as a list of
+        :obj:`Device` objects.
+        """
+        return [Device(device) for device in self._impl.output_devices]
 
 
 class TensorSpec:
