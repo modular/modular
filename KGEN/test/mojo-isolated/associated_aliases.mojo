@@ -30,7 +30,7 @@ struct StructWithMatchingAlias(TraitWithAlias):
 # CHECK-LABEL: getNFromTraitWithAlias
 fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> Int:
     # CHECK-NEXT: lit.alias.decl [[X:.*]]: !Int = <get_type_method(:!TraitWithAlias T, "N")>
-    # CHECK-NEXT: {{.*}} = kgen.param.constant: !Int = <[[X]]>
+    # CHECK-NEXT: kgen.param.constant: !Int = <get_type_method(:!TraitWithAlias T, "N")>
     alias X = T.N
     return X
 

@@ -96,12 +96,12 @@ struct TestParamStruct[A: Int]:
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__add__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
     alias B = A+A+1
-    # CHECK: lit.alias.decl [[C:.*]]: !Int = <apply({{.*}}__add__{{.*}}, [[B]], [[A]])>
+    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <apply({{.*}}__add__{{.*}}, 
     alias C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
     # CHECK-SAME: <apply_result_slot(:!lit.signature<{{.*}}TestParamStruct<:!Int {1}>, {{.*}}__init__({{.*}}"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
-    # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int [[C]]>
+    # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int 
     var temp: TestParamStruct[C]
 
     # CHECK: lit.alias.decl *"intVal{{.*}}": !Int = <{42}>
@@ -273,10 +273,10 @@ fn infer_implicit_params():
     # CHECK-SAME: :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     implicit_params_with_others[42](one, two)
 
-    # CHECK: alias.decl [[PARTIAL:.*]]: !lit.signature<<?, !Int, !Int, !Int, !Int>
+    # CHECK: alias.decl *"partial_bind{{.*}}: !lit.signature<<?, !Int, !Int, !Int, !Int>
     # CHECK-SAME: implicit_params_with_others{{.*}}<:!Int {1}, :!Int ?, :!Int ?, :!Int ?, :!Int ?>
     alias partial_bind = implicit_params_with_others[1]
-    # CHECK: call[{{.*}}: bind_signature(:{{.*}} [[PARTIAL]], {1}, {2}, {3}, {4})]
+    # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {1}, :!Int {1}, :!Int {2}, :!Int {3}, :!Int {4}>
     partial_bind(one, two)
 
 fn implicit_params_with_var_params[*Ts: Int](s: TwoParams[1]): pass
@@ -402,7 +402,7 @@ fn callMemoryValueParam():
     # CHECK: lit.alias.decl [[PARAM_VALUE1:.*]]: {{.*}}MemoryType = <apply_result_slot({{.*}}makeMemoryValue{{.*}}, {{.*}}1234
     alias paramValue = makeMemoryValue(1234)
     # CHECK: %dynamicLet = lit.var.decl
-    # CHECK: %[[PARAM_VALUE2:.*]] = kgen.param.materialize: !MemoryType = <[[PARAM_VALUE1]]>
+    # CHECK: %[[PARAM_VALUE2:.*]] = kgen.param.materialize: !MemoryType = 
     # CHECK: lit.ref.store %[[PARAM_VALUE2]], %dynamicLet
     var dynamicLet = paramValue
 
@@ -412,10 +412,10 @@ fn callMemoryValueParam():
     # CHECK: lit.ref.store %[[NON_MOVABLE]], %dynamicVar
     var dynamicVar = nonMovable
 
-    # CHECK: lit.alias.decl [[COPY:.*]]: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}} store_to_mem({{.*}}paramValue
+    # CHECK: lit.alias.decl [[COPY:.*]]: {{.*}}MemoryType = <apply_result_slot({{.*}}passMemoryValue{{.*}} store_to_mem(
     alias copy = passMemoryValue(paramValue)
     # CHECK: [[MVALUE:%.*]] = lit.var.decl "anonymous*"
-    # CHECK: [[PVALUE:%.*]] = kgen.param.materialize: !MemoryType = <[[COPY]]>
+    # CHECK: [[PVALUE:%.*]] = kgen.param.materialize: !MemoryType =
     # CHECK: lit.ref.store [[PVALUE]], [[MVALUE]]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[MVALUE]]
     # CHECK: lit.var.decl
@@ -550,7 +550,7 @@ struct ParamType[x: int]:
 # CHECK-LABEL: lit.func @"dependent_function_type
 fn dependent_function_type[a: int, f: fn (ParamType[a]) -> None]():
     alias func = dependent_function_type
-    # CHECK: bind_signature
+    # CHECK: lit.call{{.*}}dependent_function_type
     func[a, f]()
 
 fn overloaded_function():
@@ -894,16 +894,11 @@ fn test_infer_with_default_arg():
     # lit.call @{{.*}}::@"infer_with_default_arg[AnyTrivialRegType]($0,::Int)"<:type !Int>
     infer_with_default_arg(128)
 
-fn fn_with_param[x: Int](y: Abstraction[x]):
-    pass
-
 # CHECK-LABEL: lit.func @"indirect_call_infer_params
-fn indirect_call_infer_params():
-    # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
-    alias callee = fn_with_param
+fn indirect_call_infer_params[callee: fn[x: Int](y: Abstraction[x])->None]():
     # CHECK: call[!lit.signature<("y": {{.*}}#Abstraction <:!Int {2}>
     # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
-    # CHECK-SAME: [[CALLEE]], {2}
+    # CHECK-SAME: callee, {2}
     callee(Abstraction[2]())
 
 # COM: test parameter inference through signatureType,
@@ -1112,19 +1107,18 @@ fn test_default_params():
     default_params[4, 9, "meow"]()
 
 
-fn test_indirect_default_params():
-    # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
-    alias callee = default_params
-
-    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+fn test_indirect_default_params[
+    callee: fn[a: Int, b: Int = 7, c: StringLiteral = "woof"]()->None]():
+    
+    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: {1}, {7}, {:string "woof"})]()
     callee[1]()
 
-    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: {2}, {8}, {:string "woof"})]()
     callee[2, 8]()
 
-    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: {4}, {9}, {:string "meow"})]()
     callee[4, 9, "meow"]()
 

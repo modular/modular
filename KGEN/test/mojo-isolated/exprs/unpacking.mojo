@@ -60,7 +60,7 @@ fn test_unbound_pack():
     # CHECK: lit.alias.decl *"unpack_variadic`{{.*}}": !lit.signature<<"a": variadic<index> var>() -> !kgen.none> = <{{.*}}variadic_params{{.*}}<:variadic<index> ?>>
     alias unpack_variadic = variadic_params[*_]
 
-    # CHECK: bind_signature(:{{.*}} *"unpack_variadic{{.*}}", [])
+    # CHECK: lit.call {{.*}}variadic_params{{.*}}<:variadic<index> []>()
     unpack_variadic()
 
     # CHECK: call {{.*}}variadic_params{{.*}}<:variadic<index> []>
