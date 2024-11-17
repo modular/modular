@@ -162,6 +162,8 @@ fn test_split_k_multistage_gemm[
     ctx.enqueue_copy_to_device(a_device, a_host.tensor.data)
     ctx.enqueue_copy_to_device(b_device, b_host.tensor.data)
 
+    print("copied to device")
+
     var multistage_func = ctx.compile_function[mgemm](
         threads_per_block=int(config.num_threads()),
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -180,6 +182,8 @@ fn test_split_k_multistage_gemm[
 
     ctx.enqueue_copy_from_device(c_host.tensor.data, c_device)
 
+    print("copied from device")
+
     var handle = UnsafePointer[cublasContext]()
     check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
     check_cublas_error(
@@ -194,9 +198,15 @@ fn test_split_k_multistage_gemm[
     )
     check_cublas_error(cublasDestroy(handle))
 
+    print("cublas'd")
+
     ctx.enqueue_copy_from_device(c_host_ref.tensor.data, c_dev_list[0].buffer)
 
+    print("copy from")
+
     ctx.synchronize()
+
+    print("synchronized")
 
     assert_almost_equal(
         c_host.tensor,
@@ -204,16 +214,32 @@ fn test_split_k_multistage_gemm[
         atol=0.0001,
         rtol=0.01,
     )
+    print("1")
+    _ = a_submat^
+    print("2")
+    _ = b_submat^
+    print("3")
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_device
-    _ = b_device
+    _ = c_device^
+    print("4")
 
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_ref
+    _ = c_device_ref^
+    print("5")
+    _ = a_device^
+    print("6")
+    _ = b_device^
+    print("7")
+
+    _ = a_host^
+    print("8")
+
+    _ = b_host^
+    print("9")
+
+    _ = c_host^
+    print("10")
+    _ = c_host_ref^
+    print("done")
 
 
 def main():
@@ -221,7 +247,8 @@ def main():
         test_split_k_multistage_gemm[
             DType.bfloat16, dim= (128, 128, 1024), transpose_b=True
         ](ctx, 8)
-
+        print("-----")
         test_split_k_multistage_gemm[
             DType.float32, dim= (128, 128, 1024), transpose_b=True
         ](ctx, 8)
+        print("-----")

@@ -137,7 +137,7 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
 
     # Create the actual KV cache type.
     cache_lengths = DeviceNDBuffer[
-        DType.uint32, 1, shape = DimList(start_positions.size)
+        DType.uint32, 1, shape = DimList(batch_size)
     ](ctx=ctx)
     ctx.copy_to_device_sync(cache_lengths.buffer, start_positions.data)
 
