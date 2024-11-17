@@ -178,18 +178,24 @@ void ParserBase::skipUntilIndentation(
   }
 }
 
-/// If the current token is looking at 'ref [exprlist]' production, parse it
-/// into expr, otherwise leave it as null and return success.  If we see a
-/// 'ref' token and have a parse error, return failure and return null.
-ParseResult ParserBase::parseRefSpecifier(ExprNode *&expr) {
+/// Parse a 'ref [exprlist]' production into expr, with the expression set to
+/// the exprlist if specified, otherwise set to null if absent.  This returns
+/// failure on a parse error.
+ParseResult ParserBase::parseRefSpecifier(ExprNode *&expr,
+                                          bool isOriginRequired) {
   expr = nullptr;
-  if (!consumeIf(Token::kw_ref))
-    return success();
-
-  if (parseToken(Token::l_square, "expected '[' in result reference") ||
-      parseExpressionList(expr, {}) ||
-      parseToken(Token::r_square, "expected ']' in result reference"))
+  SMLoc loc;
+  if (parseToken(Token::kw_ref, "expected 'ref' in ref specifier", &loc))
     return failure();
+
+  // Parse the [a, b, c] specification if present.
+  if (consumeIf(Token::l_square)) {
+    if (parseExpressionList(expr, {}) ||
+        parseToken(Token::r_square, "expected ']' in ref specifier"))
+      return failure();
+  } else if (isOriginRequired) {
+    emitError(loc, "'ref' result requires an origin specifier");
+  }
 
   return success();
 }

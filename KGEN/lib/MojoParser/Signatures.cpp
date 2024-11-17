@@ -44,7 +44,7 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
                                  /*isMut*/ true);
   };
 
-  // Propagate already disgnosed errors.
+  // Propagate already diagnosed errors.
   if (isa<TypeCheckErrorType>(type))
     return hadError();
 
@@ -53,7 +53,7 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
   // If the origin expression is syntactically a 2-element tuple, then
   // take it apart into a origin and address space.
   ExprNode *addrSpaceExpr = nullptr;
-  if (auto *tuple = dyn_cast<TupleNode>(originExpr)) {
+  if (auto *tuple = dyn_cast_if_present<TupleNode>(originExpr)) {
     if (tuple->exprs.size() != 2) {
       emitter.emitError(tuple->getLoc())
           << "expected specifier with one origin or a origin and an "
@@ -68,7 +68,7 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
 
   // Emit the origin expression if it is a normal expression.
   PValue origin;
-  if (originExpr->kind != ExprNode::kDiscardLiteral) {
+  if (originExpr && originExpr->kind != ExprNode::kDiscardLiteral) {
     // The origin expression may either be a MValue or a value of
     // !lit.origin type.  In the former case, we want to evaluate the
     // expression without evaluating it, because it may involve complex nested
@@ -88,8 +88,9 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
           }
         });
   } else {
-    // We need to add two parameters to this function, one for the mutability
-    // of type Bool and one for the origin.
+    // If no origin is specified, then it is inferred from the callsite. Add two
+    // parameters to this function: one for the mutability of type Bool and one
+    // for the origin.
     auto addParam = [&](const Twine &name, Type type) -> TypedAttr {
       auto paramDecl =
           ParamDeclAttr::get(paramList.declScope.mangleParamName(name), type);
@@ -136,9 +137,9 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
         emitter.emitPValue({addrSpaceCValue, addrSpaceExpr}, EC_Origin).get();
 
     if (addrSpace && !isa<IndexType>(addrSpace.getType())) {
-      emitter.emitError(originExpr->getLoc())
+      emitter.emitError(addrSpaceExpr->getLoc())
           << "INTERNAL ERROR: __mlir_index didn't return a value of index type"
-          << addrSpace.getType() << originExpr->getRange();
+          << addrSpace.getType() << addrSpaceExpr->getRange();
       return hadError();
     }
   }
@@ -166,8 +167,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   else if (p.consumeIf(Token::kw_inout))
     convention = kConventionInOut;
   else if (p.getToken().is(Token::kw_ref)) {
-    if (succeeded(p.parseRefSpecifier(refOriginExpr)))
-      convention = kConventionRef;
+    (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
+    convention = kConventionRef;
   } else if (p.consumeIfSoftIdentifier("out")) {
     // Handle "out foo:" as a name, not an argument convention.
     if (p.getToken().isNot(Token::colon, Token::equal, Token::r_paren,
@@ -1041,7 +1042,6 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     arg.kgenConvention = ArgConvention::OwnedInMem;
     break;
   case ParsedArgument::kConventionRef: {
-    assert(arg.refOriginExpr && "No origin expr for convention!");
     if (arg.vararg != VarArgKind::None) {
       // There should be no reason this isn't supportable.
       shared.emitError(

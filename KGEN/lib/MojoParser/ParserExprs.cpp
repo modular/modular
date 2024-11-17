@@ -1015,8 +1015,11 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
       return failure();
 
     // Parse a result reference if present.
-    if (parseRefSpecifier(resultArg.refOriginExpr) ||
-        ParserBase::parseExpression(resultArg.typeExpr, stmtIndent))
+    if (getToken().is(Token::kw_ref))
+      (void)parseRefSpecifier(resultArg.refOriginExpr, /*originRequired*/ true);
+
+    // Parse the result type.
+    if (ParserBase::parseExpression(resultArg.typeExpr, stmtIndent))
       return failure();
 
     // Parse a result name binding if present.

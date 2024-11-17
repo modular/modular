@@ -1357,7 +1357,7 @@ fn thing_taking_ref[
   origin: Origin[is_mutable].type,
 ](ref [origin] arg: type): pass
 
-fn thing_taking_ref2[type: AnyType](ref [_] arg: type): pass
+fn thing_taking_ref2[type: AnyType](ref arg: type): pass
 
 fn thing_taking_pointer2[type: AnyType](arg: Pointer[type, _]): pass
 
@@ -1398,7 +1398,7 @@ fn infer_address_space[
 # https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context
 # [References] We cannot bind !lit.ref in parameter context
 struct ThingWithMethodReferenceSelf:
-    fn method(ref [_] a: Self):
+    fn method(ref a: Self):
       pass
 
 # CHECK-LABEL: lit.func @"testThingWithMethodReferenceSelf

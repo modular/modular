@@ -908,7 +908,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   resultArg.loc = p.getToken().getLoc();
   if (p.consumeIf(Token::minus_greater)) {
     // Parse a result reference if present.
-    (void)p.parseRefSpecifier(resultArg.refOriginExpr);
+    if (p.getToken().is(Token::kw_ref)) {
+      (void)p.parseRefSpecifier(resultArg.refOriginExpr,
+                                /*originRequired*/ true);
+    }
 
     // Parse the result type expression.
     // If this result parsing fails, then we just continue on as if none was

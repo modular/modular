@@ -594,9 +594,7 @@ struct Tuple[*element_types: AnyType]:
     fn __moveinit__(out self, owned existing: Self):
         pass
 
-    fn __getitem__[
-        i: Int
-    ](ref [_]self: Self) -> ref [self] element_types[i.value]:
+    fn __getitem__[i: Int](ref self: Self) -> ref [self] element_types[i.value]:
         while __mlir_attr.true:
             pass
 
@@ -752,6 +750,6 @@ struct Optional[T: CollectionElement]:
     fn __moveinit__(out self, owned other: Self):
         pass
 
-    fn value(ref [_]self: Self) -> ref [self] T:
+    fn value(ref self: Self) -> ref [self] T:
         while True:
             pass
