@@ -363,7 +363,7 @@ struct Device(Writable):
         self.idx = idx
         self.device = device
 
-    fn __copyinit__(out self: Self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.idx = existing.idx
         self.device = existing.device
 
