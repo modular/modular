@@ -252,7 +252,7 @@ struct _Matmul[
                     var val = input_b_fn[simd_width=transpose_width](n + i, k)
                     transpose_buffer.store(Index(i, 0), val)
 
-                transpose_inplace(transpose_buffer)
+                transpose_inplace[4, 4](transpose_buffer)
 
                 @parameter
                 for i in range(transpose_width):
