@@ -1275,9 +1275,7 @@ alias _SERIALIZATION_HEADER = StaticTuple[UInt8, 6](
 )
 
 
-fn _serialize_as_tensor[
-    type: AnyType
-](ref [_]object: type) -> Tensor[DType.uint8]:
+fn _serialize_as_tensor[type: AnyType](ref object: type) -> Tensor[DType.uint8]:
     """Serialize the given object into a Tensor of bytes.
 
     Args:
