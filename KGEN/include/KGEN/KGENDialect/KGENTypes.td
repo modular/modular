@@ -588,6 +588,8 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
   ];
 
   let extraClassDeclaration = [{
+    /// Return true if the specified type is a NoneType or an empty struct.
+    static bool isNoneOrEmpty(Type type);
     /// Get the number of struct elements.
     unsigned getNumElements() const { return getElementTypes().size(); }
   }];

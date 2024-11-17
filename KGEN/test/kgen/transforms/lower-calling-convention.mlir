@@ -274,3 +274,17 @@ kgen.func @lower_variants(%arg0: i64) {
 kgen.func @empty_variant(%arg0: !kgen.variant<[[]]>) {
   kgen.return
 }
+
+// CHECK-LABEL: @return_empty() { 
+kgen.func @return_empty() -> !kgen.struct<()> {
+  %struct = kgen.param.constant: struct<()> = <{  }>
+  kgen.return %struct : !kgen.struct<()>
+}
+
+// CHECK-LABEL: @call_empty_thing
+// CHECK-SAME: (%arg0: !kgen.signature<() -> ()>) {
+kgen.func @call_empty_thing(%arg0: !kgen.signature<() -> !kgen.struct<()>>) -> !kgen.struct<()> {
+  // CHECK-NEXT: kgen.call_indirect %arg0() : () -> () 
+  %0 = kgen.call_indirect %arg0() : () -> !kgen.struct<()>
+  kgen.return %0 : !kgen.struct<()>
+}
