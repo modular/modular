@@ -1047,6 +1047,17 @@ ErrorOr<TypedAttr> VariadicType::readFrom(int64_t addr,
 // StructType
 //===----------------------------------------------------------------------===//
 
+/// Return true if the specified type is a NoneType or an empty struct.
+bool StructType::isNoneOrEmpty(Type type) {
+  if (::isa<NoneType>(type))
+    return true;
+  if (auto structTy = ::dyn_cast<StructType>(type)) {
+    if (structTy.getElementTypes().empty() && !structTy.getIsMemoryOnly())
+      return true;
+  }
+  return false;
+}
+
 /// Try to narrow all the given type expressions to MLIR types.
 static LogicalResult resolveTypes(ArrayRef<TypedAttr> types,
                                   SmallVectorImpl<Type> &resolvedTypes) {

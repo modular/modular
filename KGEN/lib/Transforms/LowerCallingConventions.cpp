@@ -35,7 +35,7 @@ struct LowerCallingConventionsPass
 static std::pair<bool, SmallVector<Type>> removeNoneTypes(TypeRange types) {
   SmallVector<Type> newTypes;
   for (Type type : types)
-    if (!isa<KGEN::NoneType>(type))
+    if (!StructType::isNoneOrEmpty(type))
       newTypes.push_back(type);
   return {newTypes.size() != types.size(), std::move(newTypes)};
 }
@@ -61,7 +61,7 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
   SmallVector<DebugInfo::DIType> newTypes;
   for (DebugInfo::DIType type : type.getResultTypes()) {
     auto unresolved = dyn_cast<DebugInfo::DIUnresolvedMLIRType>(type);
-    if (!unresolved || !isa<KGEN::NoneType>(unresolved.getType()))
+    if (!unresolved || !StructType::isNoneOrEmpty(unresolved.getType()))
       newTypes.push_back(type);
   }
   if (newTypes.size() == type.getResultTypes().size())
@@ -194,7 +194,7 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     // Remove none results.
     SmallVector<Value> newOperands;
     for (Value operand : op->getOperands())
-      if (!isa<KGEN::NoneType>(operand.getType()))
+      if (!StructType::isNoneOrEmpty(operand.getType()))
         newOperands.push_back(operand);
     op->setOperands(newOperands);
     return;
@@ -218,20 +218,24 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
 
     // Lazily construct a none constant only when needed.
     Value noneImpl;
-    auto getNone = [&] {
-      if (!noneImpl) {
-        noneImpl = OpBuilder(op).create<ParamConstantOp>(
-            op->getLoc(), NoneAttr::get(op->getContext()));
+    auto getNone = [&](Type type) {
+      if (!noneImpl || noneImpl.getType() != type) {
+        TypedAttr attr;
+        if (isa<KGEN::NoneType>(type))
+          attr = NoneAttr::get(op->getContext());
+        else // empty register-passable struct.
+          attr = StructAttr::get({}, cast<StructType>(type));
+        noneImpl = OpBuilder(op).create<ParamConstantOp>(op->getLoc(), attr);
       }
       return noneImpl;
     };
 
     unsigned newResultIdx = 0;
     for (Value result : op->getResults()) {
-      if (!isa<KGEN::NoneType>(result.getType()))
+      if (!StructType::isNoneOrEmpty(result.getType()))
         result.replaceAllUsesWith(newOp->getResult(newResultIdx++));
       else if (!result.use_empty())
-        result.replaceAllUsesWith(getNone());
+        result.replaceAllUsesWith(getNone(result.getType()));
     }
     assert(newResultIdx == newOp->getNumResults());
     op->erase();
