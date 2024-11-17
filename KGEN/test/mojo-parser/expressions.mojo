@@ -198,7 +198,7 @@ struct RegPassable:
   fn __neg__(self) -> Self: pass
   fn __add__(self, rhs: Self) -> Self: pass
   fn __matmul__(self, rhs: Self) -> Self: pass
-  fn __rmatmul__(lhs, self: Self) -> Self: pass
+  fn __rmatmul__(lhs, rhs: Self) -> Self: pass
 
 # CHECK-LABEL: lit.struct.decl @StructWithFuncParam<comparator: !lit.signature
 # CHECK-SAME: <"T": type>(!kgen.paramref<*(0,0)>, |)

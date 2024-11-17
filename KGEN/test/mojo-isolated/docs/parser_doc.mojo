@@ -54,6 +54,6 @@ trait AnyType:
 trait Trait:
   """This is a trait doc."""
 
-  fn f(self: Self):
+  fn f(self):
     """This is a trait function doc."""
     ...

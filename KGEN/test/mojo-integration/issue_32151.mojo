@@ -20,20 +20,20 @@ struct MTuple[T: CollectionElement](
     var elts: List[Self.Element]
 
     @always_inline
-    fn __init__(out self: Self):
+    fn __init__(out self):
         self.elts = List[Self.Element]()
 
     @always_inline
-    fn __init__(out self: Self, value: Self.Element):
+    fn __init__(out self, value: Self.Element):
         self.elts = List[Self.Element]()
         self.elts.append(value)
 
     @always_inline
-    fn __moveinit__(out self: Self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.elts = existing.elts^
 
     @always_inline
-    fn __copyinit__(out self: Self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self.elts = existing.elts
 
     @always_inline

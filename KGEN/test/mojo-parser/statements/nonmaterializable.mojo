@@ -23,7 +23,7 @@ struct NmTarget:
     fn __init__(out self, nms: NmStruct):
         self.x = True if (nms.x == 77) else False
 
-    fn __bool__(self: Self) -> Bool:
+    fn __bool__(self) -> Bool:
         return self.x
 
 
@@ -34,7 +34,7 @@ struct NmStruct:
     var x: Int
 
     @always_inline("nodebug")
-    fn __add__(self: Self, rhs: Self) -> Self:
+    fn __add__(self, rhs: Self) -> Self:
         return NmStruct(self.x + rhs.x)
 
 

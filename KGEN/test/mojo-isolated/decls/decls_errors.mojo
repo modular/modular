@@ -775,10 +775,10 @@ struct CheckImplicit:
 trait EverythingIsWrongTrait:
     var value: Int # expected-error {{fields in traits are not supported yet}}
 
-    fn trait_fn_has_body(self: Self): # expected-error {{unexpected function body in trait function declaration, use `...`}}
+    fn trait_fn_has_body(self): # expected-error {{unexpected function body in trait function declaration, use `...`}}
         var t = 1
 
-    fn trait_fn_no_dot_dot_dot(self: Self): # expected-error {{expected body statements; use 'pass' if none is required}}
+    fn trait_fn_no_dot_dot_dot(self): # expected-error {{expected body statements; use 'pass' if none is required}}
 
     trait NestedTrait: # expected-error {{nested trait not supported here}}
         ...
@@ -812,7 +812,7 @@ struct ShapeContainer:
 trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
     # expected-note @below {{no 'f1' candidates have type 'fn(self: CFMStructFail) -> None'}}
     # expected-note @below {{required function 'f1' is not implemented}}
-    fn f1(self: Self):
+    fn f1(self):
         pass
 
     @staticmethod
