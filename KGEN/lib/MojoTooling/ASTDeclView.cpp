@@ -90,15 +90,31 @@ static std::string generatePValueString(SharedState &shared, PValue value) {
 /// Unpack a origin into a printable name when it is uttered in a signature
 /// position.
 static std::string getSignatureLifetime(SharedState &shared, TypedAttr origin,
-                                        LITSignatureType signature) {
+                                        LITSignatureType signature,
+                                        bool isRefResult) {
+
   // Check to see if the origin is a parameter on this signature.  If so, it
   // will have a depth of zero.
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(origin);
       indexRef && indexRef.getDepth() == 0 && signature) {
     PogListAttr paramListMetadata = signature.getParamListAttrs();
+
+    // Handle uses of implicit origins.
     if (paramListMetadata.getPassingKind(indexRef.getIndex()) ==
-        PassingKind::Implicit)
-      return "_";
+        PassingKind::Implicit) {
+      // If this is a "ref [_]" argument, don't print the []'s.
+      if (!isRefResult)
+        return "";
+      // If this is a result, figure out which argument infers this and use its
+      // name.
+      for (auto [idx, type] : llvm::enumerate(signature.getArguments())) {
+        if (auto refType = dyn_cast<RefType>(type)) {
+          if (refType.getOrigin() == origin)
+            return signature.getArgName(idx).str();
+        }
+      }
+    }
+
     return paramListMetadata.getName(indexRef.getIndex()).str();
   }
 
@@ -109,9 +125,19 @@ static std::string getSignatureLifetime(SharedState &shared, TypedAttr origin,
 /// Unpack a "ref" argument or result type into a string that can be shown to
 /// the user.
 static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
-                                        LITSignatureType signature) {
-  std::string result =
-      "[" + getSignatureLifetime(shared, refType.getOrigin(), signature);
+                                        LITSignatureType signature,
+                                        bool isRefResult) {
+  std::string signatureLifetime =
+      getSignatureLifetime(shared, refType.getOrigin(), signature, isRefResult);
+
+  // If the lifetime is inferred, don't print a [_] specifier unless there is an
+  // address space.
+  if (signatureLifetime.empty()) {
+    if (refType.isDefaultAddrSpace())
+      return "";
+    // Print as _ with an address space.
+    signatureLifetime = "_";
+  }
 
   // Include the address space if it is non-default.
   if (!refType.isDefaultAddrSpace()) {
@@ -124,10 +150,10 @@ static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
         addrSpace = extractAttr2.getStructValue();
       }
     }
-    result += ", " + generatePValueString(shared, addrSpace);
+    signatureLifetime += ", " + generatePValueString(shared, addrSpace);
   }
-  result += "] ";
-  return result;
+
+  return "[" + signatureLifetime + "] ";
 }
 
 /// Generate a user-readable representation of the given type and variadic kind,
@@ -194,9 +220,10 @@ static Twine prependVariadicIdentifiers(const Twine &identifier,
 // type. It also takes care of varargs that need to encode * in the name.
 static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
                                    StringRef type,
-                                   VariadicKind varKind = VariadicKind::kNone) {
+                                   VariadicKind varKind = VariadicKind::kNone,
+                                   bool elideType = false) {
   os << prependVariadicIdentifiers(identifier, varKind);
-  if (!type.empty())
+  if (!type.empty() && !elideType)
     os << ": " << type;
 }
 
@@ -517,7 +544,8 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
   // Include the prefix if any (eg for a ref argument).
   os << prefix;
 
-  dumpIdentifierWithType(os, getName(), type, variadicKind);
+  bool elideType = isSelf && type == "Self";
+  dumpIdentifierWithType(os, getName(), type, variadicKind, elideType);
   if (defaultValue)
     os << " = " << *defaultValue;
   return buff;
@@ -784,6 +812,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
   isAsyncFlag = signature.isAsync();
 
   ArrayRef<PogMetadataAttr> argPogs = signature.getArgListAttrs().getPogs();
+  ArrayRef<Type> sigTypes = signature.getArguments();
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
   ArrayRef<Type> paramTypes = signature.getInputParamTypes();
 
@@ -793,12 +822,14 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
   if (!argConventions.empty() &&
       argConventions.back() == ArgConvention::ByRefResult) {
     argTypes = argTypes.drop_back();
+    sigTypes = sigTypes.drop_back();
     argPogs = argPogs.drop_back();
     argConventions = argConventions.drop_back();
   }
   if (!argConventions.empty() &&
       argConventions.back() == ArgConvention::ByRefError) {
     argTypes = argTypes.drop_back();
+    sigTypes = sigTypes.drop_back();
     argPogs = argPogs.drop_back();
     argConventions = argConventions.drop_back();
   }
@@ -810,8 +841,8 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
 
   // Grab the types of the arguments to the function.
   DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());
-  for (auto [argIdx, type, conventionX, pogAttr] :
-       llvm::enumerate(argTypes, argConventions, argPogs)) {
+  for (auto [argIdx, type, sigType, conventionX, pogAttr] :
+       llvm::enumerate(argTypes, sigTypes, argConventions, argPogs)) {
     ArgConvention convention = refineConventionForType(type, conventionX);
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultArgHandler.getDefault(argIdx))
@@ -825,17 +856,19 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
     else if (convention == ArgConvention::Ref ||
              convention == ArgConvention::MutRef) {
       declConvention = ArgumentDeclView::Convention::kRef;
-      prefix = getRefPrefixAsString(shared, cast<RefType>(type), signature);
+      prefix = getRefPrefixAsString(shared, cast<RefType>(sigType), signature,
+                                    /*isRefResult*/ false);
     } else if (convention == ArgConvention::OwnedInMem ||
                convention == ArgConvention::OwnedInReg)
       declConvention = ArgumentDeclView::Convention::kOwned;
     VariadicKind variadicKind =
         getVariadicKind(signature.getArgListAttrs(), argIdx);
+    bool isSelf = selfType && argIdx == 0;
     args.push_back(ArgumentDeclView(
         pogAttr.getName(), std::move(prefix),
         generateTypeString(shared, type, variadicKind, selfType, convention),
         pogAttr.getPassingKind(), variadicKind, std::move(defaultValue),
-        declConvention));
+        declConvention, isSelf));
   }
 
   // Grab the types of the parameters to the function.
@@ -869,8 +902,8 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
     // prefix to the specifier.
     if (signature.isRefResult()) {
       convention = ArgConvention::Ref;
-      str = "ref " +
-            getRefPrefixAsString(shared, cast<RefType>(resultType), signature);
+      str = "ref " + getRefPrefixAsString(shared, cast<RefType>(resultType),
+                                          signature, /*isRefResult*/ true);
     }
     str += generateTypeString(shared, resultType, VariadicKind::kNone, selfType,
                               convention);
