@@ -143,12 +143,16 @@ fn ref_result_invalid5[T: AnyType](a: T) -> ref [a] T:
 fn ref_result_invalid6(inout a: MemoryType, inout b: Int) -> ref [b] Int:
     pass
 
-# expected-error @+1 {{cannot infer origin for a function result}}
-fn ref_result_invalid7() -> ref [_] MemoryType:
+# expected-error @+1 {{'ref' result requires an origin specifier}}
+fn ref_result_invalid7() -> ref MemoryType:
     pass
 
 # expected-error @+1 {{value of type 'Int' doesn't have a memory origin}}
 fn ref_result_invalid8(a: Int) -> ref [a] MemoryType:
+    pass
+
+# expected-error @+1 {{cannot infer origin for a function result}}
+fn ref_result_invalid9() -> ref [_] MemoryType:
     pass
 
 fn valid_ref_result(x: MemoryType) -> ref [x] MemoryType: return x

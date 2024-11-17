@@ -539,7 +539,7 @@ struct BigRegExample:
   # CHECK-NEXT: kgen.return
 
 
-fn take_regexample_ref(ref [_] r: RegExample): pass
+fn take_regexample_ref(ref r: RegExample): pass
 fn ret_big_reg() -> BigRegExample:
   return BigRegExample()
 

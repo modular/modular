@@ -788,7 +788,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // All argument conventions take things in the default address space, so any
     // use of references in other address spaces need to do a copyinit.  Right
     // now __copyinit__ requires the source to be borrowed (it doesn't allow a
-    // `ref [_]` existing so there is no way to define a
+    // `ref ` existing so there is no way to define a
     // non-@register_passable("trivial") type in another address space. Diagnose
     // this error with a specific message, and copy RPTrivial types into address
     // space 0 implicitly.

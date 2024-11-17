@@ -155,7 +155,7 @@ def defTests(
 
 
 struct TypeWithParametricSelf:
-    fn method(ref [_]self: Self):
+    fn method(ref self: Self):
         pass
 
 

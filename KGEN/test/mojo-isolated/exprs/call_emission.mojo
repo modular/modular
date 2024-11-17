@@ -390,7 +390,7 @@ fn test_byref_slot_closure_capture(owned x: String):
     # CHECK-NEXT: lit.call {{.*}}@String::@"__moveinit__{{.*}}(%x, %__call_result_tmp__)
 
 
-fn test_int_ref(ref [_]x: Int) -> ref [x] Int:
+fn test_int_ref(ref x: Int) -> ref [x] Int:
     return x
 
 
