@@ -47,7 +47,7 @@ struct _NestedLoopIter[n_loops: Int]:
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
-    fn __init__(out self: Self, loop_bounds: Self.LoopBoundSpec):
+    fn __init__(out self, loop_bounds: Self.LoopBoundSpec):
         debug_assert(
             len(loop_bounds) == n_loops,
             (
@@ -76,12 +76,12 @@ struct _NestedLoopIter[n_loops: Int]:
     fn _ub_loop(self, axis: Int) -> Int:
         return self.loop_bounds[axis][1]
 
-    fn __copyinit__(out self: Self, other: Self):
+    fn __copyinit__(out self, other: Self):
         self.cur = other.cur
         self.loop_bounds = InlinedFixedVector(other.loop_bounds)
         self.early_stop = other.early_stop
 
-    fn __iter__(inout self: Self) -> Self:
+    fn __iter__(inout self) -> Self:
         return self
 
     fn __next__(inout self) -> IndexList[n_loops]:
@@ -330,7 +330,7 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
 
     @always_inline
     fn __init__(
-        inout self: Self,
+        out self,
         axis: Int,
         paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: IndexList[rank],
@@ -351,7 +351,7 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
 
     @always_inline
     fn init_offsets(
-        inout self: Self,
+        inout self,
         output_offset: Int,
         input_offset: Int,
         pad_with_constant: Bool,
@@ -361,7 +361,7 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
         self.pad_with_constant = pad_with_constant
 
     @always_inline
-    fn pre_check(inout self: Self, i: Int):
+    fn pre_check(inout self, i: Int):
         self.is_within_padding = (i < self.pre_pad) or (
             self.pre_pad + self.non_pad <= i
         )
@@ -370,16 +370,14 @@ struct _AxisParams[rank: Int, type: DType, paddings_type: DType](
         )
 
     @always_inline
-    fn post_check(
-        inout self: Self, output_axis_stride: Int, input_axis_stride: Int
-    ):
+    fn post_check(inout self, output_axis_stride: Int, input_axis_stride: Int):
         if not self.is_within_padding:
             self.input_offset += input_axis_stride
         self.output_offset += output_axis_stride
 
     @always_inline
     fn base(
-        inout self: Self,
+        inout self,
         output: UnsafePointer[Scalar[type]],
         input: UnsafePointer[Scalar[type]],
         constant: Scalar[type],
@@ -563,7 +561,7 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
 
     @always_inline
     fn __init__(
-        inout self: Self,
+        out self,
         axis: Int,
         paddings: UnsafePointer[Scalar[paddings_type]],
         output_shape: IndexList[rank],
@@ -582,7 +580,7 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
 
     @always_inline
     fn init_offsets(
-        inout self: Self,
+        inout self,
         output_offset: Int,
         input_offset: Int,
         output_axis_stride: Int,
@@ -595,14 +593,14 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
 
     @always_inline
     fn update_next_offsets(
-        inout self: Self, output_axis_stride: Int, input_axis_stride: Int
+        inout self, output_axis_stride: Int, input_axis_stride: Int
     ):
         self.next_output_offset += output_axis_stride
         self.next_input_offset += input_axis_stride
 
     @always_inline
     fn base(
-        inout self: Self,
+        inout self,
         output_offset: Int,
         input_offset: Int,
         output: UnsafePointer[Scalar[type]],
@@ -615,7 +613,7 @@ struct _AxisParamsReflect[rank: Int, type: DType, paddings_type: DType](
 
     @always_inline
     fn memcpy_regions(
-        inout self: Self,
+        inout self,
         output_axis_stride: Int,
         output_offset: Int,
         output: UnsafePointer[Scalar[type]],
