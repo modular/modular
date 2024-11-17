@@ -46,25 +46,25 @@ struct DynamicTupleBase[
     var _elements: List[Self.Element]
 
     @always_inline
-    fn __init__(out self: Self):
+    fn __init__(out self):
         self._elements = List[Self.Element]()
 
     @always_inline
-    fn __init__(out self: Self, *v: Self.Element):
+    fn __init__(out self, *v: Self.Element):
         self._elements = List[Self.Element](capacity=len(v))
         for e in v:
             self._elements.append(e[])
 
     @always_inline
-    fn __moveinit__(out self: Self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self._elements = existing._elements^
 
     @always_inline
-    fn __copyinit__(out self: Self, existing: Self):
+    fn __copyinit__(out self, existing: Self):
         self._elements = existing._elements
 
     @always_inline
-    fn append(inout self: Self, value: Self.Element):
+    fn append(inout self, value: Self.Element):
         self._elements.append(value)
 
     @always_inline
@@ -179,30 +179,30 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     var _value: Self.Element
 
     @always_inline
-    fn __init__(out self: Self):
+    fn __init__(out self):
         self._value = Self.BaseType()
 
     # FIXME: This constructor shouldn't be necessary
     @always_inline
-    fn __init__(out self: Self, value: T):
+    fn __init__(out self, value: T):
         self._value = value
 
     # FIXME: This constructor is never called
     @always_inline
-    fn __init__(out self: Self, value: Self.Element):
+    fn __init__(out self, value: Self.Element):
         self._value = value
 
     @always_inline
-    fn __copyinit__(out self: Self, value: Self):
+    fn __copyinit__(out self, value: Self):
         self._value = value._value
 
     @always_inline
-    fn __moveinit__(out self: Self, owned value: Self):
+    fn __moveinit__(out self, owned value: Self):
         self._value = value._value^
 
     # FIXME: We should have a single variadic constructor (https://github.com/modularml/modular/issues/32000)
     # @always_inline
-    # fn __init__(out self: Self, *values: Self):
+    # fn __init__(out self, *values: Self):
     #     var value = Self.BaseType()
     #     value._elements.reserve(len(values))
     #     for e in values:
@@ -210,25 +210,23 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     #     self._value = value
 
     @always_inline
-    fn __init__(out self: Self, v1: Self):
+    fn __init__(out self, v1: Self):
         self._value = Self.BaseType(v1._value)
 
     @always_inline
-    fn __init__(out self: Self, v1: Self, v2: Self):
+    fn __init__(out self, v1: Self, v2: Self):
         self._value = Self.BaseType(v1._value, v2._value)
 
     @always_inline
-    fn __init__(out self: Self, v1: Self, v2: Self, v3: Self):
+    fn __init__(out self, v1: Self, v2: Self, v3: Self):
         self._value = Self.BaseType(v1._value, v2._value, v3._value)
 
     @always_inline
-    fn __init__(out self: Self, v1: Self, v2: Self, v3: Self, v4: Self):
+    fn __init__(out self, v1: Self, v2: Self, v3: Self, v4: Self):
         self._value = Self.BaseType(v1._value, v2._value, v3._value, v4._value)
 
     @always_inline
-    fn __init__(
-        inout self: Self, v1: Self, v2: Self, v3: Self, v4: Self, v5: Self
-    ):
+    fn __init__(inout self, v1: Self, v2: Self, v3: Self, v4: Self, v5: Self):
         self._value = Self.BaseType(
             v1._value, v2._value, v3._value, v4._value, v5._value
         )

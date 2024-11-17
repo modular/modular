@@ -224,7 +224,7 @@ struct Layout(
             return Layout(shape_with_unknown, self.stride)
 
     @always_inline
-    fn __moveinit__(out self: Self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.shape = existing.shape^
         self.stride = existing.stride^
 
