@@ -127,9 +127,9 @@ SomeStruct()
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 1);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn __init__(inout self: Self)");
+                                 "fn __init__(inout self)");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn __init__(inout self: Self, a_field: Int)");
+                                 "fn __init__(inout self, a_field: Int)");
                      })
       .execute();
 }

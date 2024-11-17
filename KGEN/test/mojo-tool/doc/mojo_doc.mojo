@@ -508,7 +508,7 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
 # CHECK-NEXT:       "convention": "ref",
 
 
-# CHECK:     "signature": "fn_with_anon_refs(ref [ref_arg1_is_origin] ref_arg1: AnyTrivialRegType) -> ref [_] AnyTrivialRegType",
+# CHECK:     "signature": "fn_with_anon_refs(ref ref_arg1: AnyTrivialRegType) -> ref [ref_arg1] AnyTrivialRegType",
 fn fn_with_anon_refs(
     ref ref_arg1: AnyTrivialRegType,
 ) -> ref [ref_arg1] AnyTrivialRegType:
@@ -546,20 +546,20 @@ struct HMyUnsafePointer[
     T: AnyType,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
-    # CHECK: "signature": "__getitem__(self: Self) -> ref [MutableAnyOrigin, address_space] T",
+    # CHECK: "signature": "__getitem__(self) -> ref [MutableAnyOrigin, address_space] T",
     fn __getitem__(
         self,
     ) -> ref [MutableAnyOrigin, address_space._value.value] T:
         pass
 
-    # CHECK: "signature": "address_of(ref [arg_is_origin, address_space] arg: T) -> Self",
+    # CHECK: "signature": "address_of(ref [_, address_space] arg: T) -> Self",
     @staticmethod
     fn address_of(ref [_, address_space._value.value]arg: T) -> Self:
         pass
 
 
 struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
-    # CHECK: "signature": "__getitem__(ref [self_is_origin] self: Self, idx: Int) -> ref [_] T",
+    # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref [self] T",
     fn __getitem__(ref self, idx: Int) -> ref [self] T:
         pass
 
@@ -577,7 +577,7 @@ struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
 
 # CHECK: "name": "__add__",
 # CHECK: "overloads":
-# CHECK:      "signature": "__add__(self: Self, other: Self) -> Self"
+# CHECK:      "signature": "__add__(self, other: Self) -> Self"
 
 # CHECK:  "name": "__len__",
 
@@ -598,7 +598,7 @@ struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
 # CHECK:      "constraints": "This describes the method's constraints.",
 # CHECK:      "description": ""
 # CHECK:      "returnsDoc": "This is a by-ref return value.",
-# CHECK:      "signature": "fn_with_by_conventions(inout self: Self, inout arg: Self, inout *args: Self) -> Self",
+# CHECK:      "signature": "fn_with_by_conventions(inout self, inout arg: Self, inout *args: Self) -> Self",
 # CHECK:      "summary": "This is a function summary."
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "InMemoryStruct",
@@ -649,7 +649,7 @@ struct InMemoryStruct(Sized):
 # CHECK:              "description": "This is a Self parameter."
 # CHECK:              "name": "param"
 # CHECK:              "type": "Self"
-# CHECK:          "signature": "fn_with_self_param[param: Self](self: Self)"
+# CHECK:          "signature": "fn_with_self_param[param: Self](self)"
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "ParameterClass",
 # CHECK:  "parameters": [

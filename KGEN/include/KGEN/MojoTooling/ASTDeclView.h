@@ -212,11 +212,12 @@ public:
                    KGEN::LIT::PassingKind passingKind,
                    VariadicKind variadicKind,
                    std::optional<std::string> defaultValue,
-                   Convention convention)
+                   Convention convention, bool isSelf)
       : DeclView(DeclViewKind::DK_ArgumentDeclView, name),
         prefix(std::move(prefix)), type(std::move(type)),
         passingKind(passingKind), variadicKind(variadicKind),
-        defaultValue(std::move(defaultValue)), convention(convention) {}
+        defaultValue(std::move(defaultValue)), convention(convention),
+        isSelf(isSelf) {}
 
   std::string getDeclarationSnippet() const override;
 
@@ -270,6 +271,7 @@ private:
   VariadicKind variadicKind;
   std::optional<std::string> defaultValue;
   Convention convention;
+  bool isSelf; // self argument of a method.
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
