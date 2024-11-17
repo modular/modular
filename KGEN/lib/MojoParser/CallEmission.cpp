@@ -874,10 +874,6 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 /// values.  This emits an error and returns null on failure.
 CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
                              ExprEmitter &emitter) {
-
-  // Used in some cases below, origin needs to exist for this whole method.
-  SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
-
   // If we have a bound self, add it to the operand list to simplify the logic
   // below.
   if (baseValue)
