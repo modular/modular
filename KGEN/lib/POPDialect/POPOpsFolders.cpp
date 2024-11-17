@@ -14,7 +14,8 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/BLAKE3.h"
+#include "llvm/ADT/bit.h"
+#include "llvm/Support/xxhash.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1899,9 +1900,10 @@ OpFoldResult StringHashOp::fold(FoldAdaptor adaptor) {
   if (!str)
     return {};
 
-  auto hash =
-      llvm::BLAKE3::hash<16>(llvm::arrayRefFromStringRef(str.getValue()));
-  return StringAttr::get(llvm::toHex(hash, true),
+  llvm::XXH128_hash_t hash =
+      llvm::xxh3_128bits(arrayRefFromStringRef(str.getValue()));
+  StringRef hashStr(llvm::bit_cast<char *>(&hash), sizeof(llvm::XXH128_hash_t));
+  return StringAttr::get(llvm::toHex(hashStr, true),
                          StringType::get(getContext()));
 }
 
