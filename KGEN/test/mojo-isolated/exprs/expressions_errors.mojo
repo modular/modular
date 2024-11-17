@@ -525,7 +525,7 @@ struct GetSettable:
 
 struct NoSelfCtor:
   var x: Int
-  fn __init__(out self: Self, x: Int):
+  fn __init__(out self, x: Int):
     self.x = x
 
 fn test_int_to_int_error(a: Int, b: NoSelfCtor):

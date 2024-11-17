@@ -173,7 +173,7 @@ struct ParametricMutability:
         # This is ok
         self.take_parametric()
 
-    fn take_parametric(ref self: Self):
+    fn take_parametric(ref self):
         # expected-error @+1 {{invalid call to 'take_inout': invalid use of mutating method on rvalue of type 'ParametricMutability'}}
         self.take_inout()
 

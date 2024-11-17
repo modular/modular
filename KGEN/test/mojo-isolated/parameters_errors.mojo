@@ -519,7 +519,7 @@ fn substitution_edge_case[p: Int, //, f: fn[a: Int] () [_] -> ParamType[a]]():
 # MOCO-846: bad message when types don't match due to parameter expressions
 # that can't be evaluated at overload resolution time.
 struct HasSize[size: Int]:
-    fn __init__(out self: Self):
+    fn __init__(out self):
         pass
 
 # expected-note @below {{function declared here}}

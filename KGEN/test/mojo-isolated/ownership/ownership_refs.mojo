@@ -213,7 +213,7 @@ struct SelfRefTest:
 
   # CHECK-LABEL: lit.func @"method
   # CHECK-SAME: (%self: !lit.ref<!SelfRefTest
-  fn method(ref self: Self) -> Pointer[Self, __origin_of(self)]:
+  fn method(ref self) -> Pointer[Self, __origin_of(self)]:
       return Pointer.address_of(self)
 
 # CHECK-LABEL: lit.func @"testSelfRef
@@ -338,7 +338,7 @@ fn parametric_mut_mbvalue[
 # Pointer directly with inferred params.
 struct SomeStructWithReferenceSelfArgument:
     fn __init__(out self): pass
-    fn hello(ref self: Self):
+    fn hello(ref self):
         pass
 
 # CHECK-LABEL: lit.func @"testMethodRef

@@ -12,27 +12,27 @@
 trait Trait:
     # CHECK: lit.func @"f0{{.*}}(%self: !lit.ref<:!Trait [[T]], imm {{.*}}> borrow_in_mem) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
-    fn f0(self: Self):
+    fn f0(self):
         ...
 
     # CHECK: lit.func @"f1{{.*}}(%self: !lit.ref<{{.*}}> inout) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
-    fn f1(inout self: Self):
+    fn f1(inout self):
         ...
 
     # CHECK: lit.func @"f2{{.*}}(%self: !lit.ref<{{.*}}> inout) -> !kgen.none attributes
     # CHECK-NEXT: lit.trait_func
-    fn f2(inout self: Self):
+    fn f2(inout self):
         pass
 
     # CHECK: lit.func @"f3{{.*}}(%self: !lit.ref<{{.*}}> borrow_in_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: lit.trait_func
-    def f3(self: Self):
+    def f3(self):
         pass
 
     # CHECK: lit.func @"f4{{.*}}(%self: !lit.ref<{{.*}}> inout, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: lit.trait_func
-    def f4(inout self: Self):
+    def f4(inout self):
         pass
 
     fn overloaded(self):
@@ -58,26 +58,26 @@ trait EmptyTrait:
 # CHECK-SAME: <?, [[T:.*]]: !Trait1_>
 trait Trait1:
     # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<{{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<:!Trait1_ [[T]], mut {{.*}}> byref_result) -> !kgen.none
-    fn f(self: Self) -> Self:
+    fn f(self) -> Self:
         ...
 
 
 trait Trait2:
-    fn f(self: Self) -> Self:
+    fn f(self) -> Self:
         ...
 
 
 # CHECK-LABEL: lit.struct.decl @StructWithTraits(!Trait1_, {{.*}}, !Trait2_)
 struct StructWithTraits(Trait1, Trait2):
     # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<!StructWithTraits, imm {{.*}}> borrow_in_mem, ?, %{{.*}}: !lit.ref<!StructWithTraits, mut {{.*}}> byref_result) -> !kgen.none
-    fn f(self: Self) -> Self:
+    fn f(self) -> Self:
         ...
 
 
 # CHECK-LABEL: lit.trait.decl @CFMTrait
 trait CFMTrait:
     # CHECK: lit.func @"f1{{.*}}(%self: !lit.ref<{{.*}}> borrow_in_mem) -> !kgen.none
-    fn f1(self: Self):
+    fn f1(self):
         pass
 
     # CHECK: lit.func @"f2()"() -> !kgen.none
@@ -89,7 +89,7 @@ trait CFMTrait:
 # CHECK-LABEL: lit.struct.decl @CFMStruct(!CFMTrait
 struct CFMStruct(CFMTrait):
     # CHECK: lit.func @"f1({{.*}})"[{{.*}}](%self: !lit.ref<!CFMStruct, imm {{.*}}> borrow_in_mem) -> !kgen.none
-    fn f1(self: Self):
+    fn f1(self):
         pass
 
     # CHECK: lit.func @"f2()"() -> !kgen.none

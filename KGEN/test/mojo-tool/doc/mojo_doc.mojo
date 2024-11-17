@@ -725,7 +725,7 @@ trait Trait:
     The is some kind of description.
     """
 
-    fn f(self: Self):
+    fn f(self):
         """This is a trait function doc."""
         ...
 

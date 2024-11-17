@@ -827,7 +827,7 @@ fn nameOutsideStruct(x: Int, y: Int):
 
 
 struct ShadowsOuterName:
-    fn nameOutsideStruct(self: Self):
+    fn nameOutsideStruct(self):
         nameOutsideStruct(1, 2)
 
 struct LegacyInOutInit:
@@ -1548,14 +1548,14 @@ trait BarTrait:
 
 
 struct Bar[T: BarTrait]:
-    fn __init__(out self: Self):
+    fn __init__(out self):
         pass
 
 
 struct BarSelf(BarTrait):
     var bar: Bar[Self]
 
-    fn __init__(out self: Self):
+    fn __init__(out self):
         # CHECK: [[V0:%.*]] = lit.ref.struct.ger %self
         # CHECK: lit.call{{.*}}__init__{{.*}}([[V0]])
         self.bar = Bar[Self]()
