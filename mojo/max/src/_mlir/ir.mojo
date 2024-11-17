@@ -399,7 +399,7 @@ struct Operation(CollectionElement, Stringable, Writable):
 
     @staticmethod
     fn _init_op_state(
-        ref [_]state: _c.IR.MlirOperationState,
+        ref state: _c.IR.MlirOperationState,
         attributes: List[NamedAttribute],
         operands: List[Value],
         results: List[Type],

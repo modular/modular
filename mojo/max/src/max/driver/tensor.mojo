@@ -178,7 +178,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
 
     @always_inline
     fn __getitem__(
-        ref [_]self: Self, *slices: Slice
+        ref self, *slices: Slice
     ) raises -> TensorSlice[type, rank, __origin_of(self)]:
         """Returns a view of the tensor conforming to given slices. If given
         a single slice `:` the view would point to the entire tensor. The

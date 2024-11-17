@@ -19,7 +19,7 @@ from max.graph.checkpoint.metadata import (
 
 
 @always_inline
-fn _write_int[type: Intable](ref [_]object: type, f: FileHandle) raises:
+fn _write_int[type: Intable](ref object: type, f: FileHandle) raises:
     """Writes an int value to a file."""
     var ptr = UnsafePointer.address_of(object).bitcast[UInt8]()
     f._write(ptr, sizeof[type]())
