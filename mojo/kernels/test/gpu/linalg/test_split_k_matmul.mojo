@@ -214,32 +214,21 @@ fn test_split_k_multistage_gemm[
         atol=0.0001,
         rtol=0.01,
     )
-    print("1")
     _ = a_submat^
-    print("2")
     _ = b_submat^
-    print("3")
 
     _ = c_device^
-    print("4")
 
     _ = c_device_ref^
-    print("5")
     _ = a_device^
-    print("6")
     _ = b_device^
-    print("7")
 
     _ = a_host^
-    print("8")
 
     _ = b_host^
-    print("9")
 
     _ = c_host^
-    print("10")
     _ = c_host_ref^
-    print("done")
 
 
 def main():
