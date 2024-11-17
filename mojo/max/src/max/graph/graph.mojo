@@ -253,7 +253,7 @@ struct Graph(CollectionElement, Stringable, Writable):
 
         self._graph = Arc(_OwnedGraph(ctx, op, in_types))
 
-    fn __init__(out self: Self, path: Path) raises:
+    fn __init__(out self, path: Path) raises:
         """Constructs a new `Graph` from a MLIR file.
 
         Experimental. Recreates a graph from an MLIR file.
