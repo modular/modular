@@ -513,3 +513,20 @@ fn invalid_params[f: fn (ParamType) -> None]():
 fn substitution_edge_case[p: Int, //, f: fn[a: Int] () [_] -> ParamType[a]]():
     # expected-error @below {{'substitution_edge_case' parameter #2 has 'fn[Int]() -> ParamType[$0]' type, but value has type 'index'}}
     substitution_edge_case[`0`]
+
+
+
+# MOCO-846: bad message when types don't match due to parameter expressions
+# that can't be evaluated at overload resolution time.
+struct HasSize[size: Int]:
+    fn __init__(out self: Self):
+        pass
+
+# expected-note @below {{function declared here}}
+fn has_expr_for_elaborator[width: Int](x: HasSize[width + 4]):
+    pass
+
+fn use_take_args[width: Int]():
+    # expected-error @below {{cannot be converted}}
+    # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
+    _ = has_expr_for_elaborator[width](HasSize[size=width + 5]())

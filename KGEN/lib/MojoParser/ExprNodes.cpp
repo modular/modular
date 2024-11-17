@@ -261,8 +261,8 @@ resolveAliasDeclareValue(AliasDeclOp param,
   // If the param is declared in a function, then just directly use it.
   Operation *parent = param->getParentOp();
   while (true) {
-    // If this reference is within a function or trait then keep it symbolic.
-    if (parent && isa<LIT::FuncOp, TraitDeclOp>(parent))
+    // If this reference is within a trait then keep it symbolic.
+    if (parent && isa<TraitDeclOp>(parent))
       return ParamDeclRefAttr::get(param.getName(), param.getType());
 
     // If this is at file scope, inline it.

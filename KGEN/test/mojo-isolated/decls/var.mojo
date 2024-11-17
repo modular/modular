@@ -146,5 +146,5 @@ fn addrSpaces[lt1: MutableOrigin, lt2: ImmutableOrigin, as1: AddressSpace]():
   # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}
   alias as2: AddressSpace = AddressSpace(42)
 
-  # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2,{{.*}}!AddressSpace [[AS2]], "_value">
-  var ref2 : __mlir_type[`!lit.ref<`, MemExample, `, `, lt2, `, `, as2._value.value, `>`]
+  # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, 42>
+  var ref2 : __mlir_type[`!lit.ref<`, MemExample, `, `, lt2, `, `, +as2._value.value, `>`]

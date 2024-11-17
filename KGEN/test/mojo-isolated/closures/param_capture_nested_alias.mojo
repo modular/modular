@@ -13,10 +13,8 @@ fn use[x: int]():
 fn param[x: int]():
     # CHECK: lit.func *"param_closure
     @parameter
-    fn param_closure():
-        # CHECK: lit.alias.decl [[y:.*]] =
-        alias y = x
+    fn param_closure[y: int]():
 
-        # CHECK: !lit.ref<{{.*}}_CI_{{.*}}escaping0"<[[y]]>
+        # CHECK: !lit.ref<{{.*}}_CI_{{.*}}escaping0"<y>
         fn closure() escaping:
             use[y]()

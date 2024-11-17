@@ -67,7 +67,7 @@ fn unbound_alias():
 
     # COM: Test fully unbound alias can be fully bound.
     # CHECK: BoundFromUnbound{{.*}}: anystruct<#Param <1>> =
-    # CHECK-SAME: #lit.bind_type<:anystruct<#Param <?>, <"x": index>> {{.*}}[[UNBOUND]], [1]>
+    # CHECK-SAME: <@metatypes_param::@Param<1>>
     alias BoundFromUnbound = Unbound[`1`]
 
 
@@ -80,12 +80,12 @@ fn partially_bound_alias():
     # COM: Test taking a function from a partially bound type.
     # CHECK: [[PBOUND_FN:\*"PartiallyBoundFn.*]]: !lit.signature<<index, |>() -> !kgen.none> = <{{.*}}@TwoParam::@"foo()"<1, ?>>
     alias PartiallyBoundFn = PartiallyBound.foo
-    # CHECK: FullyBoundFn{{.*}}: {{.*}} = <bind_signature({{.*}}[[PBOUND_FN]], 2)>
+    # CHECK: FullyBoundFn{{.*}}: {{.*}} =   <@metatypes_param::@TwoParam::@"foo()"<1, 2>>
     alias FullyBoundFn = PartiallyBoundFn[`2`]
 
     # COM: Test fully binding a partially bound type.
     # CHECK: *"BoundFromPartial`3": anystruct<#TwoParam <1, 2>> =
-    # CHECK-SAME: #lit.bind_type<:anystruct<#TwoParam <1, ?>, <"y": index>> {{.*}}[[PBOUND]], [2]>
+    # CHECK-SAME: <@metatypes_param::@TwoParam<1, 2>>
     alias BoundFromPartial = PartiallyBound[`2`]
     # CHECK: first{{.*}} = <1>
     alias first = BoundFromPartial.first
@@ -104,7 +104,7 @@ fn partially_bound_kw():
     alias FullyBound = PartiallyBound[x=`2`]
 
     # COM: Test emission of fully bound type.
-    # CHECK: :anystruct<#TwoParam <2, 1>> {{.*}}FullyBound
+    # CHECK: expr_type{{.*}}@TwoParam<2, 1>
     var expr_type: FullyBound
 
 
@@ -166,11 +166,11 @@ fn indirect_binding():
     # CHECK: alias.decl [[a:\*"a.*"]]: anystruct
     alias a = DependentParam
     # Test indirect binds.
-    # CHECK: alias.decl [[b:\*"b.*"]]: anystruct<[[DEP]]<1, ?, :[[PT]]<?> ?>, <"b": index, "c": [[PT]]<*(0,0)>{{.*}} = <#lit.bind_type<{{.*}} [[a]], [1, ?, ?]>>
+    # CHECK: alias.decl [[b:\*"b.*"]]: anystruct<[[DEP]]<1, ?, :[[PT]]<?> ?>, <"b": index, "c": [[PT]]<*(0,0)>{{.*}} = <@metatypes_param::@DependentParam<1, ?, :@metatypes_param::@ParamType<?> ?>>
     alias b = a[__mlir_attr.`1:index`]
-    # CHECK: alias.decl [[c:\*"c.*"]]: anystruct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>{{.*}} = <#lit.bind_type<{{.*}} [[b]], [2, ?]>>
+    # CHECK: alias.decl [[c:\*"c.*"]]: anystruct<[[DEP]]<1, 2, :[[PT]]<2> ?>, <"c": [[PT]]<2>{{.*}} = <@metatypes_param::@DependentParam<1, 2, :@metatypes_param::@ParamType<2> ?>>
     alias c = b[__mlir_attr.`2:index`]
-    # CHECK: alias.decl [[d:\*"d.*"]]: anystruct<[[DEP]]<1, 2, :[[PT]]<2> *?>> = <#lit.bind_type<{{.*}} [[c]], [*?]>>
+    # CHECK: alias.decl [[d:\*"d.*"]]: anystruct<[[DEP]]<1, 2, :[[PT]]<2> *?>> = <@metatypes_param::@DependentParam<1, 2, :@metatypes_param::@ParamType<2> *?>>
     alias d = c[
         __mlir_attr[`#kgen.unknown : `, ParamType[__mlir_attr.`2:index`]]
     ]

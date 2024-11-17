@@ -38,7 +38,7 @@ fn param_func[T: Trait](value: T) -> Int:
 
 # CHECK-LABEL: lit.func @"top
 fn top[pvalue: SomeStruct[`2`]]():
-    # CHECK: alias.decl [[alias_decl:.*]]: @
+    # CHECK: alias.decl [[alias_decl:.*]]: @{{.*}} = <pvalue>
     alias alias_decl = pvalue
-    # CHECK: result{{.*}} = <apply{{.*}}store_to_mem([[alias_decl]]))
+    # CHECK: result{{.*}} = <apply{{.*}}store_to_mem(pvalue))
     alias result = param_func(alias_decl)

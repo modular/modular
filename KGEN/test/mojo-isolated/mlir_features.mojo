@@ -39,15 +39,13 @@ fn mlirMagicTest(
     # CHECK: [[TMP2:%.*]] = index.castu [[TMP:%.*]] : index to i1
     var i1Cast = __mlir_op.`index.castu`[_type = __mlir_type.i1](idxConstant)
 
-    # CHECK: lit.alias.decl [[NEW_LOWER:.*]] = <max([[A]], 42)>
+    # CHECK: lit.alias.decl *"new_lower{{.*}} = <42>
     alias new_lower = __mlir_attr[
         `#kgen.param.expr<max, `, a, `, `, (`42`), `> : index`
     ]
 
-    # CHECK: [[TMP1:%.*]] = kgen.param.constant = <[[NEW_LOWER]]>
-    # CHECK: [[TMP2:%.*]] = kgen.param.constant = <1>
-    # CHECK: [[SHRU:%.*]] = index.shru [[TMP1]], [[TMP2]]
-    # CHECK: lit.return [[SHRU]] : index
+    # CHECK: %index21 = kgen.param.constant = <21>
+    # CHECK: lit.return %index21 : index
     return __mlir_op.`index.shru`(new_lower, `1`)
 
 
@@ -80,7 +78,7 @@ fn fancierSubstitutions():
 
     # CHECK: lit.alias.decl [[A:.*]] = <1>
     alias a: __mlir_type.index = `1`
-    # CHECK: lit.alias.decl *"new_lower{{.*}}" = <max([[A]], 42)>
+    # CHECK: lit.alias.decl *"new_lower{{.*}}" = <42>
     alias new_lower = __mlir_attr[
         `#kgen.param.expr<max,`, a, `, `, (`42`), `> : index`
     ]

@@ -797,7 +797,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       if (!sig.getParamTypes().empty()) {
         auto printFn = [&](auto p) {
           auto [i, type] = p;
-          if (sig.hasParamVarArgs() && i == sig.getNumParams() - 1) {
+          if (sig.isParamVarArg(i)) {
             os << '*';
             ASTType(cast<VariadicType>(type).getElementType())
                 .print(os, diagShared, demangleParams);

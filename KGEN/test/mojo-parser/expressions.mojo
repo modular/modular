@@ -592,7 +592,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.float_literal #kgen.float_literal<2|1>}, {:!kgen.float_literal #kgen.float_literal<3|1>})>
   alias j = 2.0 if cond else 3
 
-  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
+  # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral
   return i
 
 # CHECK-LABEL: lit.func @"callable_mv[fn(::Int, /) -> ::Int](::Int)"
@@ -698,7 +698,7 @@ fn lvaluesAndRValues() -> __mlir_type.index:
 fn mvalueStructField():
   # CHECK: lit.alias.decl [[INT:.*]]: !Int = <{4}>
   alias int = Int(4)
-  # CHECK: lit.alias.decl *"value{{.*}}" = <#lit.struct.extract<:!Int [[INT]], "value">>
+  # CHECK: lit.alias.decl *"value{{.*}}" = <4>
   alias value = int.value
   alias foldToValue = Int(5).value
 
@@ -1298,7 +1298,7 @@ fn setitemParamToDLValue():
   alias x = 3
   var coords = IndexList[3](0)
   # The main check is just that it's not erroring.
-  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <apply{{.*}}__neg__
+  # CHECK: [[VAR:%.*]] = kgen.param.constant: !Int = <{-3}>
   # CHECK: lit.call {{.*}}IndexList{{.*}}__setitem__{{.*}}[[VAR]]
   coords[1] = -x
 
