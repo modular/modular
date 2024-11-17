@@ -242,7 +242,7 @@ struct ManagedTensorSlice[
             return self._simd_load_internal[width, alignment](ridx)
 
     @always_inline
-    fn _compute_offset(self: Self, index: IndexList[rank]) -> Int:
+    fn _compute_offset(self, index: IndexList[rank]) -> Int:
         # TODO(GRA-1017): Add address space cases.
         @parameter
         if rank == 0:
