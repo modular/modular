@@ -85,7 +85,7 @@ struct FunctionCache:
         self.dict = Dict[String, _CachedFunctionInfo]()
         self.lock = BlockingSpinLock()
 
-    fn __moveinit__(out self: Self, owned existing: Self):
+    fn __moveinit__(out self, owned existing: Self):
         self.dict = existing.dict^
         self.lock = BlockingSpinLock()
 
