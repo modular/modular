@@ -432,3 +432,26 @@ fn test_cond_conformance(exclude: Bool):
     alias local_alias = 42
     var ptr : UnsafePointer[ThingWithParam[local_alias]]
     ptr[] = exclude
+
+
+# MOCO-1442: Unnecessary copies being generated from owned values in constructors
+@value  # This is copyable, but we don't want to.
+struct Heavy:
+  pass
+
+# This is intended to be a lightweight view of Heavy.
+struct ViewOfHeavy:
+  @implicit
+  fn __init__(out self, h: Heavy): pass
+
+fn takeOwnedValue(owned view: ViewOfHeavy): pass
+
+# CHECK-LABEL: lit.func @"testUnneededCopy
+fn testUnneededCopy(heavy: Heavy):
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl 
+  # CHECK-NEXT: lit.call {{.*}}ViewOfHeavy::@"__init__{{.*}}([[TMP]], %heavy)
+  # CHECK-NEXT: lit.call {{.*}}takeOwnedValue
+  takeOwnedValue(heavy)
+  # CHECK-NEXT: kgen.param.constant: none
+
+

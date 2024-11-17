@@ -514,6 +514,16 @@ CValue ExprEmitter::emitRValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   if (auto rvRep = cValue.getIfRValue())
     return emitCResult(rvRep, value.expr, dest);
 
+  // If the value dest expects a different result type than the lvalue or bvalue
+  // that we have, then we'll need to do a conversion, and that conversion will
+  // return an rvalue. Use it first which may avoid a copy of a value.
+  if (auto knownDestType = dest.getExpectedTypeIfSpecified()) {
+    if (!cValue.getRValueType().isEqualCanon(knownDestType)) {
+      return emitConstructorCall(knownDestType, CallOperands(value), value.expr,
+                                 CallSyntax::kImplicitConvert, dest);
+    }
+  }
+
   // Otherwise, this is an LValue or BValue, emit a copy.
   return emitCopyOfValue({cValue, value.expr}, dest);
 }
