@@ -2144,9 +2144,9 @@ def POP_StringReplaceOp : POPOp<"string.replace", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def POP_StringHashOp : POPOp<"string.hash", [Pure]> {
-  let summary = "Hashes the string using Blake3 hash function.";
+  let summary = "Hashes the string using XXH3 128-bit hash function.";
   let description = [{
-    The `pop.string.hash` operation hashes the input string using the Blake3
+    The `pop.string.hash` operation hashes the input string using the XXH3
     hash algorithm. The return is a new string which contains the hash of the
     input.
 

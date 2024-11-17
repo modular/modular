@@ -1156,7 +1156,7 @@ kgen.func @string_ops() -> (index, !kgen.string, !kgen.string, !kgen.string) {
   %empty_str = kgen.param.constant: string = <"">
   // CHECK-DAG: kgen.param.constant: string = <"hello">
   %2 = pop.string.replace %hello_world, %world, %empty_str
-  // CHECK-DAG: kgen.param.constant: string = <"d74981efa70a0c880b8d8c1985d075db">
+  // CHECK-DAG: kgen.param.constant: string = <"c7b615cc75879ba90049873fe9098ddf">
   %3 = pop.string.hash %hello_world
   kgen.return %0, %1, %2, %3 : index, !kgen.string, !kgen.string, !kgen.string
 }
