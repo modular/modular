@@ -444,7 +444,7 @@ struct DeviceFunctionV2[
                 self._func_impl.asm.unsafe_ptr(),
                 max_registers.or_else(-1),
                 threads_per_block.or_else(-1),
-                cache_mode.or_else(-1)._value,
+                int(cache_mode.or_else(-1)),
                 cache_config.or_else(CacheConfig(-1)).code,
                 max_dynamic_shared_size_bytes,
                 debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
