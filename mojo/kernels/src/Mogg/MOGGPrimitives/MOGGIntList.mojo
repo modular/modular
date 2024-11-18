@@ -36,6 +36,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
     # Should not be copy constructable, i.e passed by value, but can be cloned.
     @always_inline
+    @implicit
     fn __init__(out self, other: IntList):
         var num_elements = len(other)
         self.length = Self._length
@@ -63,6 +64,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.stack_alloc_data = IndexList[Self._safe_len]()
 
     @always_inline
+    @implicit
     fn __init__(out self, *elems: Int):
         var num_elements = len(elems)
 

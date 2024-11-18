@@ -471,6 +471,7 @@ fn print_tensor_shape[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
 struct MyCustomInt(Movable):
     var val: Int
 
+    @implicit
     fn __init__(out self, val: Int):
         self.val = val
 
@@ -494,6 +495,7 @@ fn basic_target[
 struct MyCustomSIMD[type: DType, len: Int](Movable):
     var val: SIMD[type, len]
 
+    @implicit
     fn __init__(out self, val: Int):
         self.val = val
 
@@ -513,6 +515,7 @@ fn supports_scalar_kernel[
 struct MyCustomScalar[type: DType](Movable):
     var val: Scalar[type]
 
+    @implicit
     fn __init__(out self, val: Scalar[type]):
         print("MyCustomScalar.__init__", val)
         self.val = val
@@ -574,6 +577,7 @@ fn invalid_kernel_owned_arg(
 struct MyCustomScalarReg[type: DType]:
     var val: Scalar[type]
 
+    @implicit
     fn __init__(out self, val: Scalar[type]):
         print("MyCustomScalarReg.__init__", val)
         self.val = val
