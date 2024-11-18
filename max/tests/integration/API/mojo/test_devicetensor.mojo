@@ -18,7 +18,7 @@ from pathlib import Path
 from max.engine import InferenceSession, SessionOptions
 from max.graph import Graph, Symbol, TensorType, Type
 from max.tensor import TensorSpec
-from max.driver import cpu_device
+from max.driver import cpu_device, AnyTensor
 
 
 fn test_model_device_tensor() raises:
@@ -39,7 +39,7 @@ fn test_model_device_tensor() raises:
     for i in range(5):
         input_tensor[i] = 1.0
 
-    var outputs = model.execute(input_tensor^)
+    var outputs = model.execute(AnyTensor(input_tensor^))
 
     assert_equal(len(outputs), 1)
     var dm_back = outputs[0].take().to_device_tensor()
@@ -70,7 +70,7 @@ fn test_device_graph() raises:
     var input_tensor = dt^.to_tensor[DType.float32, 1]()
     input_tensor[0] = 1.0
 
-    var outputs = model.execute(input_tensor^)
+    var outputs = model.execute(AnyTensor(input_tensor^))
 
     assert_equal(len(outputs), 1)
     var dm_back = outputs[0].take().to_device_tensor()
