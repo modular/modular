@@ -118,15 +118,15 @@ def generate_test_vision_model() -> VisionModel:
     # self.post_init()  # TODO: Needed?
     return VisionModel(
         params=params,
-        patch_embedding=patch_embedding,
-        class_embedding=class_embedding,
-        gated_positional_embedding=gated_positional_embedding,
-        pre_tile_positional_embedding=pre_tile_positional_embedding,
-        post_tile_positional_embedding=post_tile_positional_embedding,
-        layernorm_pre=layernorm_pre,
-        layernorm_post=layernorm_post,
-        transformer=transformer,
-        global_transformer=global_transformer,
+        patch_embedding=patch_embedding,  # type: ignore
+        class_embedding=class_embedding,  # type: ignore
+        gated_positional_embedding=gated_positional_embedding,  # type: ignore
+        pre_tile_positional_embedding=pre_tile_positional_embedding,  # type: ignore
+        post_tile_positional_embedding=post_tile_positional_embedding,  # type: ignore
+        layernorm_pre=layernorm_pre,  # type: ignore
+        layernorm_post=layernorm_post,  # type: ignore
+        transformer=transformer,  # type: ignore
+        global_transformer=global_transformer,  # type: ignore
     )
 
 

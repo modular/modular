@@ -126,7 +126,7 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
 
     graph = Graph(
         "attn",
-        input_types=attn_input_types + weight_types,
+        input_types=attn_input_types + weight_types,  # type: ignore
     )
 
     layer_index = 0
@@ -137,10 +137,10 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
                 n_heads,
                 kv_params=kv_params,
                 dim=dim,
-                wq=Linear(wq),
-                wk=Linear(wk),
-                wv=Linear(wv),
-                wo=Linear(wo),
+                wq=Linear(wq),  # type: ignore
+                wk=Linear(wk),  # type: ignore
+                wv=Linear(wv),  # type: ignore
+                wo=Linear(wo),  # type: ignore
                 rope=RotaryEmbedding(
                     dim=dim,
                     n_heads=n_heads,
@@ -149,10 +149,10 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
                     rope_scaling=None,
                 ),
             )(
-                x,
-                attn_mask,
-                k_cache,
-                v_cache,
+                x,  # type: ignore
+                attn_mask,  # type: ignore
+                k_cache,  # type: ignore
+                v_cache,  # type: ignore
                 ops.constant(start_pos, DType.int64),
                 layer_index,
             )

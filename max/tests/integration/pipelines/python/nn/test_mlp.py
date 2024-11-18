@@ -50,8 +50,8 @@ def test_mlp(session, input_type: TensorType):
         "mlp", input_types=[input_type, w1_type, w2_type, w3_type]
     ) as graph:
         x, w1, w2, w3 = graph.inputs
-        mlp = MLP(Linear(w1), Linear(w2), Linear(w3))
-        graph.output(mlp(x))
+        mlp = MLP(Linear(w1), Linear(w2), Linear(w3))  # type: ignore
+        graph.output(mlp(x))  # type: ignore
 
         # This is set so it fits a float type with width of 32.
         @modular_graph_test(session, graph, max_magnitude=1 / 64)

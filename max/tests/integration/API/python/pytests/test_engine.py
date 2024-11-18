@@ -93,10 +93,10 @@ def mo_listio_model_path(modular_path: Path) -> Path:
 
 def test_execute_success(session: InferenceSession, mo_model_path: Path):
     model = session.load(mo_model_path)
-    output = model.execute(np.ones(5, dtype=np.float32))
+    output = model.execute(np.ones(5, dtype=np.float32))  # type: ignore
     assert len(output) == 1
     assert np.allclose(
-        output[0].to_numpy(),
+        output[0].to_numpy(),  # type: ignore
         np.array([4.0, 2.0, -5.0, 3.0, 6.0], dtype=np.float32),
     )
 
@@ -195,7 +195,7 @@ def test_execute_device_tensor(session: InferenceSession, mo_model_path: Path):
     assert len(output) == 1
     output_tensor = output[0]
     for idx in range(5):
-        assert isclose(output_tensor[idx].item(), expected[idx])
+        assert isclose(output_tensor[idx].item(), expected[idx])  # type: ignore
 
 
 def test_execute_noncontiguous_tensor(
@@ -221,7 +221,7 @@ def test_execute_noncontiguous_tensor(
     assert len(output) == 1
     output_tensor = output[0]
     for idx in range(5):
-        assert isclose(output_tensor[idx].item(), expected[idx])
+        assert isclose(output_tensor[idx].item(), expected[idx])  # type: ignore
 
 
 def test_execute_devicetensor_dynamic_shape(
@@ -241,7 +241,7 @@ def test_execute_devicetensor_dynamic_shape(
     assert len(outputs) == 1
     output_tensor = outputs[0]
     for x in range(5):
-        assert output_tensor[x].item() == 3 * x
+        assert output_tensor[x].item() == 3 * x  # type: ignore
 
 
 def test_execute_devicetensor_numpy_stays_alive(
@@ -259,7 +259,7 @@ def test_execute_devicetensor_numpy_stays_alive(
     assert len(output) == 1
     output_tensor = output[0]
     for idx in range(5):
-        assert isclose(output_tensor[idx].item(), expected[idx])
+        assert isclose(output_tensor[idx].item(), expected[idx])  # type: ignore
 
     for idx in range(5):
         assert isclose(arr[idx].item(), 1.0)
@@ -277,7 +277,7 @@ def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
     assert len(output) == 1
     output_tensor = output[0]
     for idx in range(5):
-        assert isclose(output_tensor[idx].item(), expected[idx])
+        assert isclose(output_tensor[idx].item(), expected[idx])  # type: ignore
 
     # Let's ensure that execution doesn't delete the underlying numpy array.
     np.array_equal(arr, np.ones((2, 10), dtype=np.float32))
@@ -291,7 +291,7 @@ def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
     presliced_output_tensor = presliced_output[0]
     for idx in range(5):
         assert isclose(
-            presliced_output_tensor[idx].item(), presliced_expected[idx]
+            presliced_output_tensor[idx].item(), presliced_expected[idx]  # type: ignore
         )
 
 
@@ -302,7 +302,7 @@ def test_no_devicetensor_inputs(session: InferenceSession, no_input_path: Path):
     outputs = model.execute()
     assert len(outputs) == 1
     tensor_output = outputs[0]
-    output = tensor_output.to_numpy()
+    output = tensor_output.to_numpy()  # type: ignore
     expected = np.arange(1, 6, dtype=np.int32)
     assert np.array_equal(output, expected)
 
@@ -313,16 +313,16 @@ def test_scalar_inputs(session: InferenceSession, scalar_input_path: Path):
     scalar = Tensor.scalar(3, dtype=DType.int32)
     vector = np.arange(1, 6, dtype=np.int32)
 
-    output = model.execute(scalar, vector)[0]
-    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
+    output = model.execute(scalar, vector)[0]  # type: ignore
+    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))  # type: ignore
 
     # We should also be able to execute with raw Python scalars.
-    output = model.execute(3, vector)[0]
-    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
+    output = model.execute(3, vector)[0]  # type: ignore
+    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))  # type: ignore
 
     # We should also be able to execute with numpy scalars.
-    output = model.execute(np.int32(3), vector)[0]
-    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
+    output = model.execute(np.int32(3), vector)[0]  # type: ignore
+    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))  # type: ignore
 
 
 def test_aliasing_output(
@@ -337,16 +337,16 @@ def test_aliasing_output(
     assert len(outputs) == 2
 
     tensor_output0 = outputs[0]
-    array_output0 = tensor_output0.to_numpy()
+    array_output0 = tensor_output0.to_numpy()  # type: ignore
     expected = np.arange(0, 10, 2, dtype=np.int32)
     assert np.array_equal(array_output0, expected)
 
     tensor_output1 = outputs[1]
-    array_output1 = tensor_output1.to_numpy()
+    array_output1 = tensor_output1.to_numpy()  # type: ignore
     assert np.array_equal(array_output1, expected)
 
     # Check if the outputs really alias.
-    tensor_output0[0] = 7
+    tensor_output0[0] = 7  # type: ignore
     assert array_output1[0] == 7
 
 
@@ -379,9 +379,9 @@ def test_execute_multi_framework(
     )
     np_input = np.ones((1, 3, 100, 100))
     np_input[:, 1, :, :] *= -1
-    onnx_output = onnx_model.execute(np_input)[0]
-    trch_output = trch_model.execute(np_input)[0]
-    assert np.allclose(onnx_output.to_numpy(), trch_output.to_numpy())
+    onnx_output = onnx_model.execute(np_input)[0]  # type: ignore
+    trch_output = trch_model.execute(np_input)[0]  # type: ignore
+    assert np.allclose(onnx_output.to_numpy(), trch_output.to_numpy())  # type: ignore
 
 
 def test_custom_ops(
@@ -391,10 +391,10 @@ def test_custom_ops(
 ):
     model = session.load(mo_custom_ops_model_path)
     inputs = np.array([4.0], dtype=np.float32)
-    output = model.execute(inputs)
+    output = model.execute(inputs)  # type: ignore
     assert len(output) == 1
     assert np.allclose(
-        output[0].to_numpy(),
+        output[0].to_numpy(),  # type: ignore
         np.array([2.0], dtype=np.float32),
     )
 
@@ -402,10 +402,10 @@ def test_custom_ops(
         mo_custom_ops_model_path, custom_ops_path=str(custom_ops_package_path)
     )
     inputs = np.array([4.0], dtype=np.float32)
-    output = model_with_custom_op.execute(inputs)
+    output = model_with_custom_op.execute(inputs)  # type: ignore
     assert len(output) == 1
     assert np.allclose(
-        output[0].to_numpy(),
+        output[0].to_numpy(),  # type: ignore
         np.array([4.0], dtype=np.float32),
     )
 
@@ -517,7 +517,7 @@ def external_weights_size() -> int:
 def external_weights_graph(external_weights_size: int) -> Graph:
     graph = Graph(
         "external_weights",
-        Model(external_weights_size),
+        Model(external_weights_size),  # type: ignore
         input_types=(TensorType(DType.float32, (external_weights_size,)),),
     )
     graph._mlir_op.verify()
@@ -535,8 +535,8 @@ def test_execute_external_weights_numpy(
     )
 
     input = np.random.randn(external_weights_size).astype(np.float32)
-    output = compiled.execute(input)
-    assert np.allclose(output[0].to_numpy(), input + weights)
+    output = compiled.execute(input)  # type: ignore
+    assert np.allclose(output[0].to_numpy(), input + weights)  # type: ignore
 
 
 def test_execute_external_weights_torch(
@@ -594,7 +594,7 @@ def test_positional_call(
     # Calling a model with strictly positional inputs should work.
     a, b, c, d, e = call_inputs
     output = call_model(a, b, c, d, e)[0]
-    assert np.array_equal(call_output, output.to_numpy())
+    assert np.array_equal(call_output, output.to_numpy())  # type: ignore
 
 
 def test_named_call(
@@ -603,7 +603,7 @@ def test_named_call(
     # Calling a model with strictly named inputs should work.
     a, b, c, d, e = call_inputs
     output = call_model(b=b, a=a, e=e, c=c, d=d)[0]
-    assert np.array_equal(call_output, output.to_numpy())
+    assert np.array_equal(call_output, output.to_numpy())  # type: ignore
 
 
 def test_mixed_positional_named_call(
@@ -613,7 +613,7 @@ def test_mixed_positional_named_call(
     # inputs are not ordered).
     a, b, c, d, e = call_inputs
     output = call_model(a, b, e=e, c=c, d=d)[0]
-    assert np.array_equal(call_output, output.to_numpy())
+    assert np.array_equal(call_output, output.to_numpy())  # type: ignore
 
 
 def test_too_few_inputs_call(call_inputs: Tuple, call_model: Model):
@@ -648,4 +648,4 @@ def test_unrecognized_name_call(call_inputs: Tuple, call_model: Model):
 def test_invalid_session_arg() -> None:
     """Check that passing an invalid arg to InferenceSession's ctor errors."""
     with pytest.raises(TypeError):
-        InferenceSession(device=[])
+        InferenceSession(device=[])  # type: ignore

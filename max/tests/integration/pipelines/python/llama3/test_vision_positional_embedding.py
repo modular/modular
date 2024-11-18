@@ -148,11 +148,11 @@ def test_vision_precomputed_position_embedding(
 
         embedding = PrecomputedPositionEmbedding(
             params=VisionHyperparameters(),
-            gate=gate_weight,
-            embedding=embedding_weight,
-            tile_embedding=Embedding(tile_embedding_weight),
+            gate=gate_weight,  # type: ignore
+            embedding=embedding_weight,  # type: ignore
+            tile_embedding=Embedding(tile_embedding_weight),  # type: ignore
         )
-        graph.output(embedding(x, max_aspect_ratio_ids))
+        graph.output(embedding(x, max_aspect_ratio_ids))  # type: ignore
 
         # @modular_graph_test(session, graph)
         # def test_correctness(execute, inputs, torch_inputs):
@@ -218,11 +218,11 @@ def test_vision_precomputed_aspect_ratio_embedding(
 
         embedding = PrecomputedAspectRatioEmbedding(
             params=VisionHyperparameters(),
-            gate=gate_weight,
-            embedding=Embedding(embedding_weight),
+            gate=gate_weight,  # type: ignore
+            embedding=Embedding(embedding_weight),  # type: ignore
             is_gated=True,
         )
-        graph.output(embedding(x, max_aspect_ratio_ids))
+        graph.output(embedding(x, max_aspect_ratio_ids))  # type: ignore
 
         # @modular_graph_test(session, graph)
         # def test_correctness(execute, inputs, torch_inputs):

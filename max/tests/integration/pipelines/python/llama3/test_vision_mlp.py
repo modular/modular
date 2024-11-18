@@ -36,8 +36,8 @@ def test_mlp(session: InferenceSession, input_type: TensorType) -> None:
     w2_type = TensorType(input_type.dtype, [dim, "hidden_dim"])
     with Graph("mlp", input_types=[input_type, w1_type, w2_type]) as graph:
         x, w1, w2 = graph.inputs
-        mlp = MLP(Linear(w1), Linear(w2))
-        graph.output(mlp(x))
+        mlp = MLP(Linear(w1), Linear(w2))  # type: ignore
+        graph.output(mlp(x))  # type: ignore
 
         # This is set so it fits a float type with width of 32.
         @modular_graph_test(session, graph, max_magnitude=1 / 64)

@@ -18,7 +18,7 @@ def test_api_source(mo_model_path: Path):
     os.environ["MODULAR_TELEMETRY_EXPORTERS_LOGS_FILE_PATH"] = filepath
     session = InferenceSession()
     model = session.load(mo_model_path)
-    _ = model.execute(np.ones(5, dtype=np.float32))
+    _ = model.execute(np.ones(5, dtype=np.float32))  # type: ignore
     expected_line = "max.engine.api.language: python"
 
     with open(filepath, "r") as file:

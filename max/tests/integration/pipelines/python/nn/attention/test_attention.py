@@ -104,14 +104,14 @@ def _attention_layer(
             cache_lengths,
             lookup_table,
             is_cache_empty,
-        ) = graph.inputs
+        ) = graph.inputs  # type: ignore
 
         # Concat wq, wk, wv into wqkv
-        wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)
+        wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)  # type: ignore
 
         # Get KV Collection
         kv_collection = fetch_op(
-            blocks, cache_lengths, lookup_table, is_cache_empty
+            blocks, cache_lengths, lookup_table, is_cache_empty  # type: ignore
         )
 
         # Update this if provided
@@ -122,19 +122,19 @@ def _attention_layer(
             kv_params=kv_params,
             layer_idx=ops.constant(LAYER_IDX, DType.uint32),
             wqkv=wqkv,
-            wo=Linear(wo),
+            wo=Linear(wo),  # type: ignore
         )
 
         attn_out, _ = attn_fn(
-            x,
-            kv_collection,
+            x,  # type: ignore
+            kv_collection,  # type: ignore
             valid_lengths=cache_lengths,
             attention_mask=attn_mask,
         )
 
         graph.output(attn_out)
 
-        return graph, kv_params, kv_manager
+        return graph, kv_params, kv_manager  # type: ignore
 
 
 def test_attention__wrong_mask_dtype():

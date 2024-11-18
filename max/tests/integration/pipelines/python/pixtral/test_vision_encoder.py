@@ -90,8 +90,8 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
         return Linear(
             Weight(
                 name=name,
-                dtype=DType.from_numpy(array.numpy().dtype),
-                shape=array.shape,
+                dtype=DType.from_numpy(array.numpy().dtype),  # type: ignore
+                shape=array.shape,  # type: ignore
             )
         )
 

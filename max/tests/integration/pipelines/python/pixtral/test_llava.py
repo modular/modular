@@ -84,15 +84,15 @@ def graph_api_connector(pytorch_connector: LlavaMultiModalProjector):
     linear_1 = Linear(
         Weight(
             name="linear_1",
-            dtype=DType.from_numpy(weights_registry["linear_1"].numpy().dtype),
-            shape=weights_registry["linear_1"].shape,
+            dtype=DType.from_numpy(weights_registry["linear_1"].numpy().dtype),  # type: ignore
+            shape=weights_registry["linear_1"].shape,  # type: ignore
         )
     )
     linear_2 = Linear(
         Weight(
             name="linear_2",
-            dtype=DType.from_numpy(weights_registry["linear_2"].numpy().dtype),
-            shape=weights_registry["linear_2"].shape,
+            dtype=DType.from_numpy(weights_registry["linear_2"].numpy().dtype),  # type: ignore
+            shape=weights_registry["linear_2"].shape,  # type: ignore
         )
     )
     connector = LlavaMultiModalConnector(linear_1, linear_2)
@@ -133,7 +133,7 @@ def test_connector(
 
     compiled = session.load(graph, weights_registry=weights_registry)
 
-    output = compiled.execute(img_features)[0].to_numpy()
+    output = compiled.execute(img_features)[0].to_numpy()  # type: ignore
     pytorch_output = pytorch_connector(img_features).detach().numpy()
 
     np.testing.assert_allclose(

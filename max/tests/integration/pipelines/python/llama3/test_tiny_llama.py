@@ -96,7 +96,7 @@ def test_tiny_llama_naive_kv_cache(
     assert tinyllama_model.config.cache_strategy == KVCacheStrategy.NAIVE
 
     _ = run_model(
-        tinyllama_model.model,
+        tinyllama_model.model,  # type: ignore
         pipeline_tokenizer,
         prompts=PROMPTS[:1],
     )
@@ -266,20 +266,20 @@ async def test_tinyllama_multistep_execution(
     single_step_tokens = []
     single_step_request_id = str(uuid4())
     for i in range(num_steps):
-        response = tinyllama_model.next_token(
+        response = tinyllama_model.next_token(  # type: ignore
             {single_step_request_id: single_step_context}
         )[0]
         assert single_step_request_id in response
         token = response[single_step_request_id]
         single_step_tokens.append(token)
 
-    tinyllama_model.release(single_step_context)
+    tinyllama_model.release(single_step_context)  # type: ignore
 
     multistep_request_id = str(uuid4())
-    response = tinyllama_model.next_token(
+    response = tinyllama_model.next_token(  # type: ignore
         {multistep_request_id: multistep_context}, num_steps=num_steps
     )
-    tinyllama_model.release(multistep_context)
+    tinyllama_model.release(multistep_context)  # type: ignore
 
     assert len(response) == num_steps
 

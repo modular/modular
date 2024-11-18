@@ -234,7 +234,7 @@ async def run_batch_scenario(
                             batch_id, prompt, max_new_tokens = (
                                 context_encoding_queue.pop(0)
                             )
-                            context = model.new_context(prompt, max_new_tokens)
+                            context = model.new_context(prompt, max_new_tokens)  # type: ignore
                             context_encoding_batch[batch_id] = context
                             batch_out_file = get_batch_output_file(batch_id)
                             if batch_out_file:
@@ -331,7 +331,7 @@ async def run_batch_scenario(
                         "Completed: [%s]", ",".join(completed_batch_ids)
                     )
                     for batch_id in completed_batch_ids:
-                        await model.release(token_gen_batch[batch_id])
+                        await model.release(token_gen_batch[batch_id])  # type: ignore
                         del token_gen_batch[batch_id]
 
             step_current += step_duration  # assumes that token generation takes one time step.
@@ -450,7 +450,7 @@ def main(
     # By default, use the Modular HF repository as a reference for tokenizer
     # configuration, etc. when no repository is specified.
     hf_file = get_llama_huggingface_file(
-        config.version, config.quantization_encoding
+        config.version, config.quantization_encoding  # type: ignore
     )
     config.weight_path = hf_file.download()
 
@@ -459,7 +459,7 @@ def main(
         model = EchoTokenGenerator()
     elif model_name == "llama3":
         session = InferenceSession(devices=[config.device])
-        model, _ = load_llama3_and_kv_manager(config, session)
+        model, _ = load_llama3_and_kv_manager(config, session)  # type: ignore
     else:
         raise ValueError("invalid model name")
 
@@ -470,7 +470,7 @@ def main(
         config.device,
     )
     logger.info(
-        "- Using weights %s, %s", config.weight_path, config.huggingface_weights
+        "- Using weights %s, %s", config.weight_path, config.huggingface_weights  # type: ignore
     )
     logger.info(
         "- MaxLength %d, MaxNewTokens %d",

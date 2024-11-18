@@ -73,19 +73,19 @@ def test_vision_encoder_layer(
             self_attn=Attention(
                 n_heads=ATTENTION_HEADS,
                 head_dim=HIDDEN_SIZE // ATTENTION_HEADS,
-                wk=Linear(attn_weight),
-                wv=Linear(attn_weight),
-                wq=Linear(attn_weight),
-                wo=Linear(attn_weight),
+                wk=Linear(attn_weight),  # type: ignore
+                wv=Linear(attn_weight),  # type: ignore
+                wq=Linear(attn_weight),  # type: ignore
+                wo=Linear(attn_weight),  # type: ignore
             ),
-            mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),
-            input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),
-            post_attention_layernorm=LPLayerNorm(encoder_layernorm_w2, eps),
+            mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),  # type: ignore
+            input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),  # type: ignore
+            post_attention_layernorm=LPLayerNorm(encoder_layernorm_w2, eps),  # type: ignore
             is_gated=is_gated,
             gate_attn=gate_attn,
             gate_ffn=gate_ffn,
         )
-        graph.output(vision_encoder_layer(hidden_state, attn_mask)[0])
+        graph.output(vision_encoder_layer(hidden_state, attn_mask)[0])  # type: ignore
 
         @modular_graph_test(session, graph, max_magnitude=1 / 128)
         def test_correctness(execute, inputs, torch_inputs):
@@ -159,10 +159,10 @@ def test_vision_encoder(
         )
 
         layers = [
-            VisionEncoderLayer(
-                mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),
-                input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),
-                post_attention_layernorm=LPLayerNorm(encoder_layernorm_w2, eps),
+            VisionEncoderLayer(  # type: ignore
+                mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),  # type: ignore
+                input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),  # type: ignore
+                post_attention_layernorm=LPLayerNorm(encoder_layernorm_w2, eps),  # type: ignore
                 is_gated=is_gated,
                 gate_attn=gate_attn,
                 gate_ffn=gate_ffn,
@@ -170,7 +170,7 @@ def test_vision_encoder(
             for _ in range(num_layers)
         ]
         vision_encoder = VisionEncoder(layers)
-        graph.output(vision_encoder(hidden_states))
+        graph.output(vision_encoder(hidden_states))  # type: ignore
 
         @modular_graph_test(session, graph, max_magnitude=1 / 256)
         def test_correctness(execute, inputs, torch_inputs):

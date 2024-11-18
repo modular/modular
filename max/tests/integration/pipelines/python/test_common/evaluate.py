@@ -101,7 +101,7 @@ def next_token_with_logits(
         # Get Model inputs
         model_inputs = model.prepare_initial_token_inputs(context_batch)
 
-        logits = model.execute(*model_inputs, *kv_inputs).to(CPU())
+        logits = model.execute(*model_inputs, *kv_inputs).to(CPU())  # type: ignore
 
         model.kv_manager.step(
             valid_lengths={

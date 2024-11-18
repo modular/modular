@@ -130,11 +130,11 @@ def test_rope(session, input_type: TensorType, start_pos: Dim):
         "rope", input_types=[input_type, freqs_cis_type, cachelike]
     ) as graph:
         x, freqs_cis, cache = graph.inputs
-        freqs_cis = freqs_cis.reshape((MAX_SEQ_LEN, -1, 2))  # as complex
-        start_pos = TensorValue(cache.shape[0])
-        seq_len = x.shape[1]
-        rope = CannedRotaryEmbedding(freqs_cis)
-        graph.output(rope(x, start_pos, seq_len))
+        freqs_cis = freqs_cis.reshape((MAX_SEQ_LEN, -1, 2))  # type: ignore # as complex
+        start_pos = TensorValue(cache.shape[0])  # type: ignore
+        seq_len = x.shape[1]  # type: ignore
+        rope = CannedRotaryEmbedding(freqs_cis)  # type: ignore
+        graph.output(rope(x, start_pos, seq_len))  # type: ignore
 
         @modular_graph_test(session, graph, max_magnitude=1.0)
         def test_correctness(execute, inputs, torch_inputs):
