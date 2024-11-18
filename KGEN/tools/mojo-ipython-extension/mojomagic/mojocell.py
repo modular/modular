@@ -13,7 +13,7 @@ import sys
 import uuid
 from typing import Callable
 
-import IPython
+import IPython  # type: ignore
 
 
 # https://ipython.readthedocs.io/en/8.27.0/config/extensions/index.html#writing-extensions

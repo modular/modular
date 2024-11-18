@@ -55,7 +55,7 @@ def get_libtorchvision_path() -> Optional[Path]:
         Path to the torchvision library.
     """
     try:
-        import torchvision
+        import torchvision  # type: ignore
     except ImportError:
         return None
 
