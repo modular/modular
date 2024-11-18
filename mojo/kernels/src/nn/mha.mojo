@@ -583,27 +583,15 @@ fn flash_attention[
                 # num warps in M and N, multipled by warp size.
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-                alias accum_type = get_accum_type[q.type]()
-                alias num_pipeline_stages = 4
-                # smem for q + k (and shared by v)
-                var shared_mem_bytes = BM * depth * sizeof[
-                    q.type
-                ]() + num_pipeline_stages * BN * BK * sizeof[
-                    cache_t.get_type()
-                ]()
-                alias num_warps = ceildiv(num_threads, WARP_SIZE)
-
-                # smem for p and warp_scratch
-                shared_mem_bytes += (
-                    BM * BN * sizeof[cache_t.get_type()]()
-                    + 2 * num_warps * BM * sizeof[accum_type]()
-                )
+                var shared_mem_bytes = 80 * 1024
                 alias num_blocks_y = num_heads // group
 
                 alias block_size_warp_shuffle = 16
 
                 @parameter
                 if (not add_attn_mask) and use_warp_shuffle_decoding:
+                    alias accum_type = get_accum_type[q.type]()
+                    alias num_warps = num_threads // WARP_SIZE
                     shared_mem_bytes = (
                         max(
                             # shared memory to store number of logits
@@ -635,7 +623,7 @@ fn flash_attention[
                         depth=depth,
                         num_heads=num_heads,
                         num_threads=num_threads,
-                        num_pipeline_stages=num_pipeline_stages,
+                        num_pipeline_stages=4,
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_score_mod=use_score_mod,
@@ -857,26 +845,15 @@ fn flash_attention[
                 # num warps in M and N, multipled by warp size.
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-                alias accum_type = get_accum_type[q.type]()
-                alias num_pipeline_stages = 4
-                # smem for q + k (and shared by v)
-                var shared_mem_bytes = BM * depth * sizeof[
-                    q.type
-                ]() + num_pipeline_stages * BN * BK * sizeof[k.type]()
-                alias num_warps = ceildiv(num_threads, WARP_SIZE)
-
-                # smem for p and warp_scratch
-                shared_mem_bytes += (
-                    BM * BN * sizeof[v.type]()
-                    + 2 * num_warps * BM * sizeof[accum_type]()
-                )
-
+                var shared_mem_bytes = 80 * 1024
                 alias num_blocks_y = num_heads // group
 
                 alias block_size_warp_shuffle = 16
 
                 @parameter
                 if (not add_attn_mask) and use_warp_shuffle_decoding:
+                    alias accum_type = get_accum_type[q.type]()
+                    alias num_warps = num_threads // WARP_SIZE
                     shared_mem_bytes = (
                         max(
                             # shared memory to store number of logits
@@ -906,7 +883,7 @@ fn flash_attention[
                         depth=depth,
                         num_heads=num_heads,
                         num_threads=num_threads,
-                        num_pipeline_stages=num_pipeline_stages,
+                        num_pipeline_stages=4,
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_score_mod=use_score_mod,
