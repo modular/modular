@@ -337,3 +337,19 @@ def test_slice_int_dims(
         )
         if isinstance(expected_dim, int)
     )
+
+
+def test_slice_invalid_start_stop() -> None:
+    """Checks that slicing with invalid start/stop/step raises an error."""
+    with pytest.raises(
+        ValueError,
+        match=(
+            "start and stop should be increasing for positive step and "
+            "decreasing for negative step, but got start 2, stop 1 for step 1"
+        ),
+    ):
+        Graph(
+            "slice_invalid",
+            forward=operator.itemgetter((slice(2, 1),)),
+            input_types=[TensorType(DType.float32, shape=["dim0"])],
+        )
