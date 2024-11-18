@@ -6,7 +6,7 @@
 # RUN: %mojo %s
 
 from max.graph import Graph, TensorType
-from max.driver import Tensor, AnyTensor
+from max.driver import Tensor
 from testing import assert_equal
 from max.tensor import TensorShape
 from max import engine
@@ -23,6 +23,6 @@ def main():
         )
     )
     input[0] = 1
-    ret = model.execute(AnyTensor(input^))
+    ret = model.execute(input^)
     output = ret[0].take_tensor().to_tensor[DType.int32, rank=1]()
     assert_equal(output[0], 1)
