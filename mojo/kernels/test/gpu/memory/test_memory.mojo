@@ -8,7 +8,7 @@
 from math import iota
 
 from gpu.host import DeviceContext
-from gpu.host.memory_v1 import _free, _malloc_managed, _memset, _memset_async
+from gpu.host.memory_v1 import _free, _malloc_managed, _memset
 from memory import UnsafePointer
 
 

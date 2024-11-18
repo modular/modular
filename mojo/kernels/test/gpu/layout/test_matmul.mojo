@@ -6,40 +6,23 @@
 # RUN: %mojo-no-debug %s
 
 import time
-from collections.optional import OptionalReg
-from math import ceildiv
 
-from algorithm.functional import _elementwise_impl_gpu
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer.dimlist import DimList, _make_tuple
-from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.cublas.cublas import (
-    check_cublas_error,
-    cublasContext,
-    cublasCreate,
-    cublasDestroy,
-)
-from gpu.host._compile import _get_gpu_target
+from benchmark import Bench
+from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import (
-    DeviceNDBuffer,
     HostNDBuffer,
     assert_almost_equal,
     assert_equal,
-    fill,
-    linspace,
     random,
     zero,
 )
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import (
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
 )
-from linalg.cublas import cublas_matmul
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from matmul_kernels import (
     run_cublas,
     run_gemm_kernel_1,
@@ -51,14 +34,6 @@ from matmul_kernels import (
     run_gemm_kernel_tc,
 )
 from memory import UnsafePointer
-
-# from memory import memset_zero, stack_allocation
-from memory.pointer import _GPUAddressSpace as GPUAddressSpace
-from testing import assert_equal as assert_equal_val
-
-from utils import IndexList
-from utils.index import Index
-from utils.numerics import FlushDenormals
 
 alias run_gemm_kernel_type = fn (
     inout m: Bench,

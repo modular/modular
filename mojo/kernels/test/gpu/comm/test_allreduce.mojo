@@ -13,7 +13,6 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer
 from internal_utils import TestTensor, HostNDBuffer, DeviceNDBuffer
 from gpu.host import DeviceContext, DeviceBuffer
-from gpu.host.device_v1 import device_count
 from testing import assert_almost_equal
 from utils.index import IndexList, StaticTuple
 from gpu.all_reduce import all_reduce, Signal, MAX_GPUS
@@ -151,7 +150,8 @@ def main():
     alias rank = 1
 
     # Test with 2 GPUs
-    if device_count() >= 2:
+    var device_count = DeviceContext.number_of_devices()
+    if device_count >= 2:
         var ctx2 = List[DeviceContext](
             DeviceContext(device_id=0), DeviceContext(device_id=1)
         )
@@ -161,7 +161,7 @@ def main():
         all_reduce_test[DType.float32, rank, 2](ctx2, length)
 
     # Test with 4 GPUs if available
-    if device_count() >= 4:
+    if device_count >= 4:
         var ctx4 = List[DeviceContext]()
         for i in range(4):
             ctx4.append(DeviceContext(device_id=i))
@@ -172,7 +172,7 @@ def main():
         all_reduce_test[DType.float32, rank, 4](ctx4, length)
 
     # Test with 8 GPUs if available
-    if device_count() >= 8:
+    if device_count >= 8:
         var ctx8 = List[DeviceContext]()
         for i in range(8):
             ctx8.append(DeviceContext(device_id=i))
