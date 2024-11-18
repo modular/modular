@@ -19,6 +19,7 @@ struct my_iter:
         self.end = existing.end
         self.list = existing.list
 
+    @implicit
     fn __init__(out self, list: MyList):
         self.start = 0
         self.end = list.size

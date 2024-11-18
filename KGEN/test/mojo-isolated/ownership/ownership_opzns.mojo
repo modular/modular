@@ -201,6 +201,7 @@ fn passFieldToOwnedInt(owned a: MemExample):
 struct MyGenericType[Type: AnyTrivialRegType]:
     var value: Type
 
+    @implicit
     fn __init__(out self, v: Type):
         self.value = v
 

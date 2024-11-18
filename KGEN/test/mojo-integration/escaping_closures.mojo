@@ -12,6 +12,10 @@ from sys import argv
 struct MemType:
     var member: Int
 
+    @implicit
+    fn __init__(out self, member: Int):
+        self.member = member
+
     fn __add__(self, other: MemType) -> MemType:
         return MemType(self.member + other.member)
 

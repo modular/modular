@@ -364,6 +364,7 @@ struct TestLoopWithWholeObjectBit:
     var field: MemExample
 
     # CHECK: lit.func @"__init__
+    @implicit
     fn __init__(out self, cond: __mlir_type.i1):
         # CHECK-NEXT: %buf = lit.var.decl "buf"
         # CHECK-NEXT: lifetime.start %buf

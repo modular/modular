@@ -373,6 +373,7 @@ fn issue15404():
 struct StructWithNoDel:
     var x: Int
 
+    @implicit
     fn __init__(out self, a: Int):
         self.x = a
 

@@ -107,6 +107,7 @@ struct MyPointer[elType: __mlir_type.`!kgen.type`]:
     # CHECK: lit.struct.field value : !kgen.pointer<elType>
     var value: Self.StorageTy
 
+    @implicit
     fn __init__(out self, value: Self.StorageTy):
         self.value = value
 

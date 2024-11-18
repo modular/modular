@@ -16,6 +16,7 @@ struct OptionalReg[T: AnyTrivialRegType]:
     fn __init__(out self):
         self = Self(None)
 
+    @implicit
     fn __init__(out self, value: NoneType):
         self._value = __mlir_op.`kgen.variant.create`[
             _type = Self._mlir_type, index = Int(1).value

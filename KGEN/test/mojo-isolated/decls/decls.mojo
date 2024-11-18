@@ -130,6 +130,7 @@ struct MyInt:
 
     @implicit
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, _a: Int):
         self.value = _a
 
@@ -497,6 +498,7 @@ def defaultArgumentUntyped(a=1):
 struct MemoryType:
     var value: Int
 
+    @implicit
     fn __init__(out self, value: Int):
         self.value = value
 
@@ -546,6 +548,7 @@ fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T):
 
 
 struct ParameterizedStruct[T: __mlir_type.`!kgen.type`]:
+    @implicit
     fn __init__(out self, *args: T):
         pass
 
@@ -721,6 +724,7 @@ struct StructWithInit:
 
     # CHECK: lit.func @"__init__(decls::StructWithInit=&,{{.*}}Int)"
     # CHECK-SAME: (%self: !lit.ref<!StructWithInit, mut {{.*}}> init_self,
+    @implicit
     fn __init__(out self, a: Int):
         # CHECK: %0 = lit.ref.struct.ger %self[x]
         # CHECK: lit.ref.store %a, %0
@@ -813,10 +817,12 @@ struct DelegatingInitMem:
     var value: Int
 
     # CHECK: lit.func @"__init__{{.*}}(%self
+    @implicit
     fn __init__(out self, value: Bool):
         # CHECK: lit.call @{{.*}}__init__{{.*}}(%self, %0)
         self.__init__(42)
 
+    @implicit
     fn __init__(out self, value: Int):
         self.value = value
 
@@ -1010,6 +1016,7 @@ struct VarArgInit:
 
     # CHECK: lit.func @"__init__(decls::VarArgInit=&,decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> var)
     # The argument is intentionally memory-only.
+    @implicit
     fn __init__(out self, *values: ValueMem):
         self.a = 42
 

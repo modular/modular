@@ -12,6 +12,7 @@ struct MyInt:
     var value: int
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, v: int):
         self.value = v
 
@@ -112,6 +113,7 @@ struct MyElement(Copyable):
 
 
 struct ConvertibleFromInt:
+    @implicit
     fn __init__(out self, a: int):
         pass
 

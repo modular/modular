@@ -160,6 +160,7 @@ struct FloatDyn:
 
     @implicit
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, value: FloatLiteral):
         self = Self(
             __mlir_op.`kgen.float_literal.convert`[_type = __mlir_type.f64](
@@ -178,6 +179,7 @@ struct Int(Copyable):
 
     @implicit
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, value: IntLiteral):
         self.value = __mlir_op.`kgen.int_literal.convert`[
             _type = __mlir_type.index
@@ -284,6 +286,7 @@ struct Bool(AnyType):
         self.value = __mlir_attr.`0 : i1`
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, value: __mlir_type.i1):
         self.value = value
 
@@ -302,6 +305,7 @@ struct Bool(AnyType):
 
 @register_passable("trivial")
 struct Slice:
+    @implicit
     fn __init__(out self, end: int):
         pass
 
@@ -343,6 +347,7 @@ trait AnyType:
 struct VariadicList[type: AnyTrivialRegType]:
     alias _mlir_type = __mlir_type[`!kgen.variadic<`, type, `>`]
 
+    @implicit
     fn __init__(out self, value: Self._mlir_type):
         return
 
@@ -613,6 +618,7 @@ struct UnsafePointer[
     fn __init__(out self):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
+    @implicit
     fn __init__(out self, value: Self._mlir_type):
         self.address = value
 

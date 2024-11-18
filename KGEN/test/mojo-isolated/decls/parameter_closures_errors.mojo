@@ -49,6 +49,7 @@ struct MemType:
 struct NoCopyType:
     var a: int
 
+    @implicit
     fn __init__(out self, aa: int):
         self.a = aa
 

@@ -18,6 +18,7 @@ struct MemoryOnlyInt:
   var x: Int
 
   # CHECK-LABEL: lit.func @"__init__
+  @implicit
   fn __init__(out self, a: Int = 42):
     # CHECK: %0 = lit.ref.struct.ger %self[x]
     # CHECK: %1 = {{.*}}constant: !Int = <{1}>
@@ -38,6 +39,7 @@ fn consume(owned a: MemoryOnlyInt): pass
 # This type is used to test implicit conversion from MemoryOnlyInt
 struct MemoryOnlyFloat64:
   var x: Float64
+  @implicit
   fn __init__(out self, value: MemoryOnlyInt):
     self.x = 1.0
 
@@ -165,6 +167,7 @@ fn direct_call_init():
   value.__init__()
 
 struct DummyFunc:
+    @implicit
     fn __init__(out self, f: def(Int)):
         pass
 
@@ -190,6 +193,7 @@ fn implicit_func_conversion():
 struct RegPassable:
   var value: Int
   # CHECK-LABEL: lit.func @"__init__
+  @implicit
   fn __init__(out self, value: Int):
     self.value = value
 
@@ -396,6 +400,7 @@ struct Boolish:
   fn __bool__(self) -> Bool: return True
 
 struct MemBoolish:
+  @implicit
   fn __init__(out self, value: Boolish): pass
   fn __copyinit__(out self, other: Self): pass
   fn __bool__(self) -> Bool: return True
@@ -909,6 +914,7 @@ struct MyInlineIntInit:
     var value: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__(expressions::MyInlineIntInit=&,expressions::MemoryOnlyInt)"
     # CHECK-SAME: (%self: !lit.ref<!MyInlineIntInit, mut {{.*}}> init_self, %value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    @implicit
     fn __init__(out self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.ref.struct.ger %self[value]
         # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%0, %value)
@@ -1090,6 +1096,7 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
 struct CallableStruct:
     var value: Int
 
+    @implicit
     fn __init__(out self, value: Int):
         self.value = value
 
@@ -1287,6 +1294,7 @@ fn useBigNumber() -> Int:
 @value
 @register_passable("trivial")
 struct IndexList[size: Int]:
+    @implicit
     fn __init__(out self, *elements: Int):
         pass
 
