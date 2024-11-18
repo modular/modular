@@ -246,6 +246,7 @@ fn move_me[T: Movable](owned value: T) -> T:
 
 # COM: Just check that conformance checking succeeds.
 trait TraitForReg:
+    @implicit
     fn __init__(out self, x: int):
         ...
 
@@ -270,6 +271,7 @@ trait TraitForReg:
 struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.func @"__init__
     # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, %x: index)
+    @implicit
     fn __init__(out self, x: int):
         pass
 

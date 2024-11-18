@@ -9,6 +9,7 @@
 
 # COM: Just check that conformance checking succeeds.
 trait TraitForReg:
+    @implicit
     fn __init__(out self, x: Int):
         ...
 
@@ -22,6 +23,7 @@ trait TraitForReg:
 
 @register_passable("trivial")
 struct RegTypeTrivial(TraitForReg):
+    @implicit
     fn __init__(out self, x: Int):
         pass
 

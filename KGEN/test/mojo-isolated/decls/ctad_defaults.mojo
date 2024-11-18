@@ -26,6 +26,7 @@ struct MyUnsafePointer[
     var address: Self._mlir_type
 
     @always_inline
+    @implicit
     fn __init__(out self, value: Self._mlir_type):
         self.address = value
 

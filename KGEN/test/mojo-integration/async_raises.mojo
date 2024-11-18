@@ -13,6 +13,10 @@ from runtime.asyncrt import run
 struct MemType:
     var value: Int
 
+    @implicit
+    fn __init__(out self, value: Int):
+        self.value = value
+
 
 async fn might_raise(value: MemType, c: Bool) raises -> MemType:
     if c:

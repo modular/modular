@@ -13,6 +13,7 @@
 @value
 @register_passable("trivial")
 struct Thing:
+    @implicit
     fn __init__(out self, x: NMType):
         return
 

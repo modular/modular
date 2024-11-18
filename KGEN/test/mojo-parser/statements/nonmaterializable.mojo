@@ -16,10 +16,12 @@
 struct NmTarget:
     var x: Bool
 
+    @implicit
     fn __init__(out self, x: Bool):
         self.x = x
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, nms: NmStruct):
         self.x = True if (nms.x == 77) else False
 

@@ -12,6 +12,7 @@ from utils import StringRef
 struct S:
     var v: Int
 
+    @implicit
     fn __init__(out self, x: Int):
         print("init", x)
         self.v = x

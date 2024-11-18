@@ -167,6 +167,7 @@ struct Pair[dt: DType]:
   var b : Int
 
   # CHECK: lit.func @"__init__{{.*}}@parameters::@Pair<:!DType dt>
+  @implicit
   fn __init__(out self, a: SIMD[dt, 42]):
     self.a = a
     self.b = 4
@@ -384,6 +385,7 @@ struct NonMovableMemoryType:
     var value: Int
 
     @always_inline
+    @implicit
     fn __init__(out self, value: Int):
         self.value = value
 
@@ -437,6 +439,7 @@ struct InitSelfCtor:
     var x: Int
 
     @always_inline
+    @implicit
     fn __init__(out self, x: Int):
         self.x = x
 
@@ -479,6 +482,7 @@ fn refine_memory_only_results[a: InitSelfCtor, b: InitSelfCtor]() -> InitSelfPar
 
 
 struct ConvertFromIntLiteral:
+    @implicit
     fn __init__(out self, x: IntLiteral):
         pass
 
@@ -615,6 +619,7 @@ struct MyDType:
   fn __copyinit__(out self, existing: Self):
     self.state = self.state
 
+  @implicit
   fn __init__(out self, value: int):
      self.state = value
 
@@ -654,6 +659,7 @@ fn fnWithVariadics[*b: Int]():
 
 # CHECK-LABEL: lit.struct.decl @StructWithVariadics<b: variadic<!Int> var>
 struct StructWithVariadics[*b: Int]:
+    @implicit
     fn __init__(out self, i: Int):
         pass
 
@@ -728,6 +734,7 @@ fn init_self_memory_variadics():
     alias x = MyList[Int](1, 2)
 
 struct MyList[T: Copyable]:
+    @implicit
     fn __init__(out self, *values: T): pass
 
 
@@ -800,6 +807,7 @@ fn testParamInference[size: Int](a: StaticVec[4], b: StaticVec[size],
 struct Abstraction[a: Int]:
   alias val = a.value
 
+  @implicit
   fn __init__(out self, arg: Int):
     pass
 
@@ -1289,6 +1297,7 @@ fn test_struct_kw_params():
 struct Thing[v: Int]: pass
 
 struct CtadStruct[a: Int, b: Int]:
+    @implicit
     fn __init__(out self, x: Thing[a]): pass
 
     fn __init__(out self, x: Thing[a], y: Thing[b]): pass
@@ -1300,6 +1309,7 @@ struct CtadStruct[a: Int, b: Int]:
     fn foo(x: Thing[a], y: Thing[b]): pass
 
 struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8]:
+    @implicit
     fn __init__(out self, x: Thing[a]): pass
 
     fn __init__(out self, x: Thing[a], y: Thing[b]): pass
@@ -1312,6 +1322,7 @@ struct CtadStructWithDefault[a: Int, b: Int, c: Int = 8]:
 
 
 struct CtadStructWithMultiDefault[a: Int, b: Int = 6, c: Int = 8, d: Int = 10]:
+    @implicit
     fn __init__(out self, x: CtadStructWithMultiDefault[a]): pass
 
 

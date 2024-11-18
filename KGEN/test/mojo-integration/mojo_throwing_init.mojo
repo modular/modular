@@ -11,6 +11,7 @@
 struct MemType1:
     var value: Int
 
+    @implicit
     fn __init__(out self, v: Int):
         self.value = v
 

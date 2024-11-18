@@ -168,6 +168,7 @@ fn rethrowsToRethrow():
 struct S:
     var v: Int
 
+    @implicit
     fn __init__(out self, x: Int):
         self.v = x
 

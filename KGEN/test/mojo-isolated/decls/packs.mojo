@@ -153,6 +153,7 @@ fn test_inout():
 
 
 struct not_nested_struct[*Ts: AnyType]:
+    @implicit
     fn __init__(out self, inout *args: *Ts):
         pass
 
@@ -172,6 +173,7 @@ fn test_empty_pack():
 # CHECK-LABEL: lit.struct.decl @MyTuple
 # CHECK-SAME: <Ts: variadic<!AnyType> var>
 struct MyTuple[*Ts: AnyType]:
+    @implicit
     fn __init__(out self, *args: *Ts):
         pass
 

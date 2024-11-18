@@ -11,6 +11,7 @@
 struct BoxedInt:
     var value: int
 
+    @implicit
     fn __init__(out self, value: int):
         self.value = value
 

@@ -608,6 +608,7 @@ struct WrongSelfType[a: Int]:
 
 # Issue #6587: [Lit] Recursive constructors crash kgen
 struct BadInit[size: __mlir_type.index]:
+  @implicit
   fn __init__(out self, elem: BadInit[Int(1).value]):
     var x : __mlir_type[`!pop.simd<`, size, `, FloatDyn>`]
     # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatDyn>' value to 'BadInit[size]'}}
@@ -698,6 +699,7 @@ struct CantSynthesize:
 @value # expected-error {{'@value' cannot synthesize members of struct 'ResolveErrorIsBubbled'}}
 struct ResolveErrorIsBubbled:
    var x: Int
+   @implicit
    fn __init__(out self, x: unknown): # expected-error {{use of unknown declaration 'unknown'}}
       pass
 
@@ -707,11 +709,13 @@ fn function_with_struct():
 
 # https://github.com/modularml/modular/issues/12598
 struct not_nested_struct[*Ts: AnyType]:
+    @implicit
     fn __init__(out self, *args: *Ts):
         pass
 fn function_with_struct2():
     var s1 = not_nested_struct()  # ok
     struct S2[*Ts: AnyType]: # expected-error {{struct inside a function not supported here}}
+        @implicit
         fn __init__(out self, *args: *Ts):
             pass
     var s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
@@ -740,7 +744,7 @@ struct Outer34551: # expected-error {{all members of '@register_passable' struct
         self._inner = NotRegisterPassable()
     # The key point of this test is that these errors break an invariant needed
     # for emission, so previously it would crash while emitting this __del__.
-    fn __del__(owned self): 
+    fn __del__(owned self):
         _ = self._inner ^
 
 @register_passable
@@ -765,7 +769,7 @@ struct CheckImplicit:
   fn __init__(inout self, x: Int, y: Int): pass
   @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
   fn __copyinit__(inout self, other: Self): pass
-  
+
 
 
 ##===----------------------------------------------------------------------===##
@@ -1019,5 +1023,3 @@ top_level_func_param[a]()
 var y = 7
 # expected-error @below {{TODO: expressions are not yet supported at the file scope level}}
 y += 1
-
-

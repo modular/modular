@@ -12,6 +12,7 @@
 struct TalkativeMem(Stringable, Writable):
     var state: Int
 
+    @implicit
     fn __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
@@ -31,6 +32,7 @@ struct TalkativeMem(Stringable, Writable):
 struct TalkativeReg(Stringable, Writable):
     var state: Int
 
+    @implicit
     fn __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
@@ -50,6 +52,7 @@ struct TalkativeReg(Stringable, Writable):
 struct TalkativeCopableReg(Stringable, Writable):
     var state: Int
 
+    @implicit
     fn __init__(out self, state: Int):
         self.state = state
         print("initializing", state)
@@ -72,6 +75,7 @@ struct TalkativeCopableReg(Stringable, Writable):
 struct TalkativeCopableMovableMem(Stringable, Writable, CollectionElement):
     var state: Int
 
+    @implicit
     fn __init__(out self, state: Int):
         self.state = state
         print("initializing", state)

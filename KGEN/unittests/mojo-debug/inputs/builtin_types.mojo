@@ -48,6 +48,7 @@ struct AStruct:
 struct ParamStruct[T: AnyTrivialRegType]:
     var t: T
 
+    @implicit
     fn __init__(out self, t: T):
         self.t = t
 
