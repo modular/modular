@@ -108,10 +108,10 @@ TEST(NotebookTest, testSignatureHelp) {
 struct SomeStruct:
     var a_field: Int
 
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
-    fn __init__(inout self, a_field: Int):
+    fn __init__(out self, a_field: Int):
         pass
 )",
                                                           R"(
@@ -127,9 +127,9 @@ SomeStruct()
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 1);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn __init__(inout self)");
+                                 "fn __init__(out self)");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn __init__(inout self, a_field: Int)");
+                                 "fn __init__(out self, a_field: Int)");
                      })
       .execute();
 }

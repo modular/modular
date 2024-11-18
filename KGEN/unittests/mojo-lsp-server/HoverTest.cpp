@@ -67,7 +67,7 @@ TEST(HoverTest, testHoverFunctionDecls) {
                EXPECT_EQ(hover.range, rangeInit);
                EXPECT_EQ(hover.contents.value,
                          R"(```mojo
-(function) fn __init__(inout self, borrowed_input: Int, init_arg: Int, owned owned_input: Int, *init_kargs: Int)
+(function) fn __init__(out self, borrowed_input: Int, init_arg: Int, owned owned_input: Int, *init_kargs: Int)
 ```
 ---
 
@@ -275,7 +275,7 @@ struct SomeStruct:
     var a_field: Int
     """Summary of a_field."""
 
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
@@ -322,7 +322,7 @@ TEST(HoverTest, testHoverArgument) {
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeSelfField);
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(argument) inout self
+(argument) out self
 ```)");
              })
       .hover(doc, rangeBorrowedInput.start,
@@ -602,7 +602,7 @@ trait ATrait:
 
 
 struct Foo(ATrait):
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
     fn print(owned self, x: StringRef):
@@ -699,7 +699,7 @@ struct SomeStruct:
     var a_field: Int
     """Summary of a_field."""
 
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 
 
