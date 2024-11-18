@@ -229,6 +229,7 @@ struct TensorSpec(
 struct RuntimeTensorSpec[type: DType, rank: Int]:
     var shape: IndexList[rank]
 
+    @implicit
     fn __init__(out self, spec: TensorSpec):
         """Construct from TensorSpec.
 

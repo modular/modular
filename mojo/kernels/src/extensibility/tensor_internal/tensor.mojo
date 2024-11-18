@@ -216,6 +216,7 @@ struct Tensor[type: DType](
         self._ptr = UnsafePointer[Scalar[type]]()
 
     @always_inline
+    @implicit
     fn __init__(out self, other: Self):
         """Creates a deep copy of an existing tensor.
 
@@ -228,6 +229,7 @@ struct Tensor[type: DType](
         memcpy(self._ptr, other._ptr, num_elements)
 
     @always_inline
+    @implicit
     fn __init__(out self, *dims: Int):
         """Allocates a tensor using the shape provided.
 
@@ -237,6 +239,7 @@ struct Tensor[type: DType](
         self = Self(TensorSpec(type, dims))
 
     @always_inline
+    @implicit
     fn __init__(out self, owned shape: TensorShape):
         """Allocates a tensor using the shape provided.
 
@@ -246,6 +249,7 @@ struct Tensor[type: DType](
         self = Self(TensorSpec(type, shape^))
 
     @always_inline
+    @implicit
     fn __init__(out self, owned spec: TensorSpec):
         """Allocates a tensor using the spec provided.
 
@@ -258,6 +262,7 @@ struct Tensor[type: DType](
         memset_zero(self._ptr, num_elements)
 
     @always_inline
+    @implicit
     fn __init__(out self, shape: Tuple):
         """Allocates a tensor using the shape provided.
 
@@ -348,6 +353,7 @@ struct Tensor[type: DType](
         self = Self(shape, data_anyptr)
 
     @always_inline
+    @implicit
     fn __init__(out self, owned list: List[Scalar[type], *_]):
         """Initializes a 1-dimensional Tensor from the provided list.
 

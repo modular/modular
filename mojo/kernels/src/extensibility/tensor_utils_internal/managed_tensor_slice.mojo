@@ -111,6 +111,7 @@ struct ManagedTensorSlice[
             strides,
         )
 
+    @implicit
     fn __init__(out self, ndbuffer: NDBuffer[type, rank]):
         """Initializes a ManagedTensorSlice from an NDBuffer.
 

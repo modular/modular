@@ -67,6 +67,7 @@ struct _RepKind(EqualityComparable):
     var kind: UInt8
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, value: Int):
         self.kind = value
 
@@ -518,6 +519,7 @@ struct _TensorShapeStorage:
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
     @always_inline
+    @implicit
     fn __init__(out self, rep: _Rep16):
         """Initializes the _TensorShapeStorage from a _Rep16.
 
@@ -529,6 +531,7 @@ struct _TensorShapeStorage:
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
     @always_inline
+    @implicit
     fn __init__(out self, rep: _Rep32):
         """Initializes the _TensorShapeStorage from a _Rep32.
 
@@ -540,6 +543,7 @@ struct _TensorShapeStorage:
         self = rep_ptr.bitcast[_TensorShapeStorage]()[]
 
     @always_inline
+    @implicit
     fn __init__(out self, rep: _RepOutOfLine):
         """Initializes the _TensorShapeStorage from a _Rep32.
 
@@ -696,6 +700,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         self._rep = _TensorShapeStorage()
 
     @always_inline
+    @implicit
     fn __init__[*Ts: CollectionElement](inout self, shapes: Tuple[*Ts]):
         """Initializes a TensorShape from the values provided.
 
@@ -726,6 +731,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         self = Self(tuple)
 
     @always_inline
+    @implicit
     fn __init__(out self, *shapes: Int):
         """Initializes a TensorShape from the values provided.
 
@@ -735,6 +741,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         self = TensorShape(shapes)
 
     @always_inline
+    @implicit
     fn __init__(out self, shapes: VariadicList[Int]):
         """Initializes a TensorShape from the values provided.
 
@@ -783,6 +790,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         self._rep = rep
 
     @always_inline
+    @implicit
     fn __init__(out self, shapes: List[Int, *_]):
         """Initializes a TensorShape from the list provided.
 
@@ -831,6 +839,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
         self._rep = rep
 
     @always_inline
+    @implicit
     fn __init__[rank: Int](inout self, shapes: IndexList[rank]):
         """Initializes a TensorShape from the values provided.
 
