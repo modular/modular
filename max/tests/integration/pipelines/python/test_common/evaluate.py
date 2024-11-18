@@ -41,10 +41,11 @@ def run_model(
     tokenizer: PipelineTokenizer,
     prompts: Iterable[str] = PROMPTS,
     num_steps: int = NUM_STEPS,
-):
+) -> list[dict[str, Any]]:
     """Runs the model for N steps on each prompt provide."""
     results = []
     # Evaluate prompts individually (not batched).
+    # TODO: add batched version of run_model.
     for prompt in prompts:
         curr_req_id = str(uuid.uuid4())
         context = asyncio.run(
