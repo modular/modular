@@ -24,6 +24,8 @@ modular_py_test(
     tags = ["requires-network"],
     deps = [
         ":support",
+        requirement("ruamel.yaml"),
+        requirement("torch"),
     ],
 )
 
