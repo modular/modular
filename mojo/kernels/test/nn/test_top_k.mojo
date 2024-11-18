@@ -23,6 +23,7 @@ struct TestTensor[rank: Int, type: DType]:
     var storage: List[Scalar[type]]
     var shape: IndexList[rank]
 
+    @implicit
     fn __init__(out self, shape: IndexList[rank]):
         self.storage = List[Scalar[type]](capacity=shape.flattened_length())
         self.storage.resize(shape.flattened_length(), 0)

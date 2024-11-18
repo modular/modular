@@ -64,6 +64,11 @@ struct Axis(Intable, Indexer):
     var axis: Int
 
     @always_inline
+    @implicit
+    fn __init__(out self, axis: Int):
+        self.axis = axis
+
+    @always_inline
     fn __init__[
         type: DType
     ](inout self, axis_unnormalized: Scalar[type], rank: Int):

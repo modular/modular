@@ -72,6 +72,7 @@ struct ImageData[
         self.data = data
         self.dynamic_layout = layout
 
+    @implicit
     fn __init__(out self, data: NDBuffer[type, 4, shape]):
         constrained[static_layout != Image2DLayout.UNKNOWN]()
         self.data = data

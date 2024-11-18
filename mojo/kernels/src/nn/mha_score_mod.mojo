@@ -47,6 +47,7 @@ struct AlibiScoreMod(ScoreModTrait):
     var num_heads: UInt32
 
     @always_inline
+    @implicit
     fn __init__(out self, num_heads: Int):
         self.num_heads = num_heads
 

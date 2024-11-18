@@ -30,27 +30,33 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
     var storage: Self.StorageType
 
     @always_inline
+    @implicit
     fn __init__(out self, num_inputs: Int):
         self.storage = Self.StorageType(num_inputs)
 
     @always_inline
+    @implicit
     fn __init__(out self, *inputs: DynamicRankBuffer):
         self.__init__(inputs)
 
+    @implicit
     fn __init__(out self, input_list: VariadicList[DynamicRankBuffer]):
         self.storage = Self.StorageType(len(input_list))
         for i in range(len(input_list)):
             self.storage.append(input_list[i].to_ndbuffer[type, rank]())
 
     @always_inline
+    @implicit
     fn __init__(out self, *inputs: Self.BufferType):
         self.__init__(inputs)
 
+    @implicit
     fn __init__(out self, input_list: VariadicList[Self.BufferType]):
         self.storage = Self.StorageType(len(input_list))
         for i in range(len(input_list)):
             self.storage.append(input_list[i])
 
+    @implicit
     fn __init__(out self, inputs: StaticTuple[NDBuffer[type, rank]]):
         self.storage = Self.StorageType(inputs.size)
 
