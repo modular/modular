@@ -96,12 +96,14 @@ private:
   /// multiple object files per function (parLLC = true).
   AsyncRT::AsyncValueRef<SymbolAndMCInfo> lowerLLVMModuleToObjects(
       llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
-      bool parLLC, std::optional<size_t> moduleIdx, unsigned numFunctionsBase);
+      llvm::TargetMachine &targetMachine, bool parLLC,
+      std::optional<size_t> moduleIdx, unsigned numFunctionsBase);
 
   /// Split llvm module and compile them in parallel towards the end of codegen
   /// but stop before AsmPrint. Return the MC compilation results.
   SmallVector<AsyncRT::AnyAsyncValueRef> emitArchiveParallelCompilation(
       LLVMModuleAndContext llvmModule, Location opLoc,
+      llvm::TargetMachine &targetMachine,
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
 
   /// Link parallel compilation results and call AsmPrint to generate one object
@@ -141,6 +143,10 @@ private:
 
   /// StringSet to deduplicate functions among parallel splits.
   llvm::StringSet<> seenCodeGenFns;
+
+  /// Mutex to protect deduplicating TargetMachine to save peak memory
+  /// footprint.
+  std::mutex tmMutex;
 };
 
 /// Setup the machine properties from the provided target.

@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLVMAccessorHelper.h"
-
+#include "llvm/MC/MCSubtargetInfo.h"
 namespace {
 
 // Helpers to access private field of llvm::MachineModuleInfo::MachineFunctions.
@@ -30,6 +30,15 @@ struct RobberMFNumberFromMachineFunction {
 template struct RobberMFNumberFromMachineFunction<
     &llvm::MachineFunction::FunctionNumber>;
 
+// Helpers to access private field of llvm::MachineFunction::STI.
+using STIAccessor = const llvm::TargetSubtargetInfo *llvm::MachineFunction::*;
+STIAccessor getSTIAccessor();
+template <STIAccessor Instance>
+struct RobberSTIFromMachineFunction {
+  friend STIAccessor getSTIAccessor() { return Instance; }
+};
+template struct RobberSTIFromMachineFunction<&llvm::MachineFunction::STI>;
+
 // Helpers to access private field of llvm::MachineModuleInfo::NextFnNum.
 using NextFnNumAccessor = unsigned llvm::MachineModuleInfo::*;
 NextFnNumAccessor getNextFnNumAccessor();
@@ -39,6 +48,17 @@ struct RobberNextFnNumFromMachineModuleInfo {
 };
 template struct RobberNextFnNumFromMachineModuleInfo<
     &llvm::MachineModuleInfo::NextFnNum>;
+
+// Helpers to access private field of llvm::TargetMachine::STI.
+using MCSubtargetInfoAccessor =
+    std::unique_ptr<const llvm::MCSubtargetInfo> llvm::TargetMachine::*;
+MCSubtargetInfoAccessor getMCSubtargetInfo();
+template <MCSubtargetInfoAccessor Instance>
+struct RobberMCSubtargetInfoFromTargetMachine {
+  friend MCSubtargetInfoAccessor getMCSubtargetInfo() { return Instance; }
+};
+template struct RobberMCSubtargetInfoFromTargetMachine<
+    &llvm::TargetMachine::STI>;
 
 // Helpers to access private functions
 template <typename Tag>
@@ -74,6 +94,13 @@ struct MCContextGetSymbolEntryAccessor {
 template struct LLVMPrivateFnAccessorRob<MCContextGetSymbolEntryAccessor,
                                          &llvm::MCContext::getSymbolTableEntry>;
 
+// Helpers to access private field of llvm::LLVMTargetMachine::reset.
+struct TargetMachineClearSubtargetMapAccessor {
+  using type = void (llvm::LLVMTargetMachine::*)();
+};
+template struct LLVMPrivateFnAccessorRob<TargetMachineClearSubtargetMapAccessor,
+                                         &llvm::LLVMTargetMachine::reset>;
+
 } // namespace
 
 llvm::DenseMap<const llvm::Function *, std::unique_ptr<llvm::MachineFunction>> &
@@ -98,4 +125,28 @@ M::KGEN::getMCContextSymbolTableEntry(llvm::StringRef name,
                                       llvm::MCContext &mcContext) {
   return (mcContext.*
           LLVMPrivateFnAccessor<MCContextGetSymbolEntryAccessor>::ptr)(name);
+}
+
+void M::KGEN::releaseTargetMachineConstants(llvm::TargetMachine &tm) {
+  std::unique_ptr<const llvm::MCSubtargetInfo> &mcSubtargetInfo =
+      std::invoke(getMCSubtargetInfo(), tm);
+  mcSubtargetInfo.reset();
+
+  llvm::LLVMTargetMachine &llvmTargetMachine =
+      static_cast<llvm::LLVMTargetMachine &>(tm);
+  (llvmTargetMachine.*
+   LLVMPrivateFnAccessor<TargetMachineClearSubtargetMapAccessor>::ptr)();
+}
+
+void M::KGEN::resetSubtargetInfo(llvm::TargetMachine &dst,
+                                 llvm::MachineModuleInfo &mmi) {
+
+  llvm::DenseMap<const llvm::Function *, std::unique_ptr<llvm::MachineFunction>>
+      &mfs = getMachineFunctionsFromMachineModuleInfo(mmi);
+
+  for (auto &[fn, mf] : mfs) {
+    const llvm::TargetSubtargetInfo *newSti = dst.getSubtargetImpl(*fn);
+    const llvm::TargetSubtargetInfo *&sti = std::invoke(getSTIAccessor(), mf);
+    sti = newSti;
+  }
 }

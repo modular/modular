@@ -13,6 +13,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSymbolTableEntry.h"
+#include "llvm/Target/TargetMachine.h"
 
 namespace M::KGEN {
 // A few helper functions to access LLVM private class/struct members:
@@ -44,6 +45,12 @@ void setNextFnNum(llvm::MachineModuleInfo &mmi, unsigned value);
 /// from llvm::MCContext.
 llvm::MCSymbolTableEntry &getMCContextSymbolTableEntry(llvm::StringRef name,
                                                        llvm::MCContext &);
+
+/// Release MCSubTargetInfo.
+void releaseTargetMachineConstants(llvm::TargetMachine &tm);
+
+/// Clear SubtargetMap in SubtargetInfo.
+void resetSubtargetInfo(llvm::TargetMachine &dst, llvm::MachineModuleInfo &mmi);
 
 } // namespace M::KGEN
 

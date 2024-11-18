@@ -19,6 +19,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGENToLLVMPipeline.h"
+#include "LLVMAccessorHelper.h"
 #include "LLVMPassesPipeline.h"
 #include "MCLinker.h"
 #include "Support/Context.h"
@@ -212,6 +213,7 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
              std::unique_ptr<llvm::MCContext> &mcContext,
              llvm::CodeGenFileType fileType, bool stopBeforeAsmPrint,
              unsigned numFunctionsBase = 0,
+             llvm::TargetMachine *sharedTargetMachine = nullptr,
              M::Telemetry::TelemetryContext *telemetryCtx = nullptr) {
   CompilerTimeTraceScope traceScope("llvm-codegen", module.getName());
   std::optional<M::Telemetry::Timer<uint64_t, std::chrono::milliseconds>>
@@ -244,11 +246,21 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
   MachineModuleInfoWrapperPass *machineModInfoPass;
 
   if (stopBeforeAsmPrint) {
-    mcContext = std::make_unique<llvm::MCContext>(
-        llvmTargetMachine.getTargetTriple(), llvmTargetMachine.getMCAsmInfo(),
-        llvmTargetMachine.getMCRegisterInfo(),
-        llvmTargetMachine.getMCSubtargetInfo(), nullptr,
-        &llvmTargetMachine.Options.MCOptions, false);
+    if (sharedTargetMachine) {
+      mcContext = std::make_unique<llvm::MCContext>(
+          sharedTargetMachine->getTargetTriple(),
+          sharedTargetMachine->getMCAsmInfo(),
+          sharedTargetMachine->getMCRegisterInfo(),
+          sharedTargetMachine->getMCSubtargetInfo(), nullptr,
+          &sharedTargetMachine->Options.MCOptions, false);
+
+    } else {
+      mcContext = std::make_unique<llvm::MCContext>(
+          llvmTargetMachine.getTargetTriple(), llvmTargetMachine.getMCAsmInfo(),
+          llvmTargetMachine.getMCRegisterInfo(),
+          llvmTargetMachine.getMCSubtargetInfo(), nullptr,
+          &llvmTargetMachine.Options.MCOptions, false);
+    }
 
     machineModInfoPass =
         new MachineModuleInfoWrapperPass(&llvmTargetMachine, &(*mcContext));
@@ -296,9 +308,10 @@ static LogicalResult writeTempModule(const std::string &phase,
 /// Compile optimized llvm::Module module to object through the llc pipeline
 /// asynchronously and cache the transformation.
 static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
-    LLVMModuleAndContext module, Location loc, AsyncRT::Runtime &runtime,
-    bool isJIT, bool isParLLC, CompilationOptions options,
-    RCRef<Cache::TransformCache> transformCache,
+    LLVMModuleAndContext module, Location loc,
+    llvm::TargetMachine &targetMachine, std::mutex &tmMutex,
+    AsyncRT::Runtime &runtime, bool isJIT, bool isParLLC,
+    CompilationOptions options, RCRef<Cache::TransformCache> transformCache,
     std::optional<size_t> moduleIdx, std::optional<size_t> splitIdx,
     unsigned numFunctionBase) {
   WriteableBufferRef keyBuf;
@@ -327,7 +340,8 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
   runtime.getWorkQueue()->addTask(
       [nonBitcodeKeySize, loc, &runtime, keyBuf = keyBuf.copy(),
        output = output.copy(), options, isJIT, isParLLC, moduleIdx, splitIdx,
-       numFunctionBase, inputModule = std::move(module)]() mutable {
+       numFunctionBase, inputModule = std::move(module), &targetMachine,
+       &tmMutex]() mutable {
         if (isNVPTXBackend(options) && isParLLC) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "cannot do per function codegen for NVPTX backedn.", loc));
@@ -396,7 +410,7 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
         if (failed(runLlcPasses(
                 *moduleAndContext, options, **machineOr, *buf,
                 machineModuleInfo, mcContext, llvm::CodeGenFileType::ObjectFile,
-                /*stopBeforeAsmPrint=*/true, numFunctionBase,
+                /*stopBeforeAsmPrint=*/true, numFunctionBase, &targetMachine,
                 runtime.context->get<M::Telemetry::TelemetryContext>()))) {
           return std::move(output).setToError(AsyncRT::getMLIRDiagnostic(
               "llc failed to codegen LLVM IR to object code", loc));
@@ -417,6 +431,18 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
           fnNameToFnPtr.insert({fn.getName().str(), &fn});
 
         llvm::WriteBitcodeToFile(*moduleAndContext, *wbuf);
+
+        // Move and reset SubtargetInfo for MachineFunctions to
+        // shared TargetMachine so as to reduce memory footprint
+        // as soon as possible before reaching the mclinking barrier.
+        {
+          // Need to use a mutex here while modifying the shared targetMachine.
+          std::lock_guard<std::mutex> lock(tmMutex);
+          resetSubtargetInfo(targetMachine, *machineModuleInfo);
+        }
+
+        // Release more memory before reaching the mclinking barrier.
+        releaseTargetMachineConstants(**machineOr);
 
         std::move(output).emplace(
             wbuf, std::move(machineModuleInfo),
@@ -460,6 +486,7 @@ static LogicalResult optimizeLLVMModule(llvm::Module &module,
 /// isParLLC is false: compile module without splitting into one object file.
 static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
     LLVMModuleAndContext module, mlir::Location loc,
+    llvm::TargetMachine &targetMachine, std::mutex &tmMutex,
     CompilationOptions &options, AsyncRT::Runtime &runtime,
     RCRef<Cache::TransformCache> transformCache, bool isParLLC, bool isJIT,
     std::optional<size_t> moduleIdx, SymbolAndMCInfo &symbolAndMirInfo,
@@ -468,34 +495,32 @@ static SmallVector<AsyncRT::AnyAsyncValueRef> compileOptimizedLLVMToObjects(
                                     module->getName());
 
   // Perform module materialization in another task.
-  auto launchCompilation =
-      [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
-          std::optional<int64_t> idx, unsigned numFunctions, bool isParLLC) {
-        auto result = AsyncRT::AsyncValueRef<MCInfo>::allocate(runtime);
+  auto launchCompilation = [&](llvm::unique_function<LLVMModuleAndContext()>
+                                   produceModule,
+                               std::optional<int64_t> idx,
+                               unsigned numFunctions, bool isParLLC) {
+    auto result = AsyncRT::AsyncValueRef<MCInfo>::allocate(runtime);
 
-        runtime.getWorkQueue()->addTask(
-            [produceModule = std::move(produceModule), loc, &runtime, isJIT,
-             isParLLC, &options, cache = transformCache.copy(), moduleIdx, idx,
-             result = result.copy(), numFunctions]() mutable {
-              AsyncRT::AnyAsyncValueRef output =
-                  compileOptimizedLLVMModuleToObject(
-                      produceModule(), loc, runtime, isJIT, isParLLC, options,
-                      cache, moduleIdx, idx, numFunctions);
-              andThenSyncMoving(
-                  output,
-                  [result = std::move(result)](
+    runtime.getWorkQueue()->addTask([produceModule = std::move(produceModule),
+                                     loc, &runtime, isJIT, isParLLC, &options,
+                                     cache = transformCache.copy(), moduleIdx,
+                                     idx, result = result.copy(), numFunctions,
+                                     &targetMachine, &tmMutex]() mutable {
+      AsyncRT::AnyAsyncValueRef output = compileOptimizedLLVMModuleToObject(
+          produceModule(), loc, targetMachine, tmMutex, runtime, isJIT,
+          isParLLC, options, cache, moduleIdx, idx, numFunctions);
+      andThenSyncMoving(
+          output, [result = std::move(result)](
                       MutableArrayRef<AnyAsyncValueRef> outputs) mutable {
-                    for (auto &out : outputs) {
-                      if (out.isError())
-                        return std::move(result).setToError(
-                            out.takeDiagnostic());
-                    }
-                    std::move(result).emplace(
-                        std::move(outputs.front().get<MCInfo>()));
-                  });
-            });
-        return result;
-      };
+            for (auto &out : outputs) {
+              if (out.isError())
+                return std::move(result).setToError(out.takeDiagnostic());
+            }
+            std::move(result).emplace(std::move(outputs.front().get<MCInfo>()));
+          });
+    });
+    return result;
+  };
 
   SmallVector<AsyncRT::AnyAsyncValueRef> cacheResults;
   if (!isParLLC) {
@@ -665,6 +690,7 @@ static LogicalResult writeBufToTemp(const std::string &saveTempsPrefix,
 SmallVector<AsyncRT::AnyAsyncValueRef>
 ObjectCompiler::emitArchiveParallelCompilation(
     LLVMModuleAndContext llvmModule, Location opLoc,
+    llvm::TargetMachine &targetMachine,
     llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes) {
   CompilerTimeTraceScope traceScope("split-input-module");
 
@@ -683,8 +709,8 @@ ObjectCompiler::emitArchiveParallelCompilation(
 
   if (noSplitting) {
     cacheResults.push_back(lowerLLVMModuleToObjects(
-        forwardModule(std::move(llvmModule)), opLoc, parLLC, std::nullopt,
-        /*numFunctionsBase=*/0));
+        forwardModule(std::move(llvmModule)), opLoc, targetMachine, parLLC,
+        std::nullopt, /*numFunctionsBase=*/0));
   } else {
     (void)writeTempModule("pre-split", options.saveTempsPrefix, *llvmModule);
 
@@ -692,7 +718,7 @@ ObjectCompiler::emitArchiveParallelCompilation(
         [&](llvm::unique_function<LLVMModuleAndContext()> produceModule,
             std::optional<int64_t> idx, unsigned numFunctionsBase) {
           cacheResults.push_back(lowerLLVMModuleToObjects(
-              std::move(produceModule), opLoc,
+              std::move(produceModule), opLoc, targetMachine,
               !options.enableLLVMPerFunctionSplitting && parLLC, idx,
               numFunctionsBase));
         };
@@ -758,12 +784,17 @@ ErrorOrSuccess ObjectCompiler::emitArchiveSaveTemps(ModuleOp module,
         Twine("failed to lower module to LLVM IR for archive compilation, ") +
         err.getError());
   }
+  auto tmOr = createTargetMachine(options, isJIT);
+  if (failed(tmOr))
+    return tmOr.takeError();
+
+  llvm::TargetMachine &tm = **tmOr;
 
   llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
 
   SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
       emitArchiveParallelCompilation(std::move(llvmModule), module->getLoc(),
-                                     symbolLinkageTypes);
+                                     tm, symbolLinkageTypes);
 
   andThenSyncMoving(
       cachedResults,
@@ -820,6 +851,12 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
                                                bool emitAssembly) {
   CompilerTimeTraceScope traceScope("produce-archive");
 
+  auto tmOr = createTargetMachine(options, isJIT);
+  if (failed(tmOr))
+    return tmOr.takeError();
+
+  llvm::TargetMachine &tm = **tmOr;
+
   // Perform a cache aware transformation to translate the module to an archive
   // file.
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
@@ -830,7 +867,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
         loadContext(op->getContext()))
         .recordCacheMiss("ObjectCompiler::emitArchive");
 #endif
-    chain.andThenSync([this, op, output = output.copy(), buf = buf.copy(),
+    chain.andThenSync([this, op, output = output.copy(), buf = buf.copy(), &tm,
                        emitAssembly]() mutable {
 
 #ifdef MODULAR_ENABLE_TELEMETRY
@@ -885,7 +922,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
       // Split the module into multiple slices and compile each in parallel.
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> symbolLinkageTypes;
       SmallVector<AsyncRT::AnyAsyncValueRef> cachedResults =
-          emitArchiveParallelCompilation(std::move(llvmModule), moduleLoc,
+          emitArchiveParallelCompilation(std::move(llvmModule), moduleLoc, tm,
                                          symbolLinkageTypes);
 
       andThenSyncMoving(
@@ -983,14 +1020,15 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 AsyncRT::AsyncValueRef<SymbolAndMCInfo>
 ObjectCompiler::lowerLLVMModuleToObjects(
     llvm::unique_function<LLVMModuleAndContext()> produceModule, Location loc,
-    bool parLLC, std::optional<size_t> moduleIdx, unsigned numFunctionsBase) {
+    llvm::TargetMachine &targetMachine, bool parLLC,
+    std::optional<size_t> moduleIdx, unsigned numFunctionsBase) {
 
   auto result = AsyncRT::AsyncValueRef<SymbolAndMCInfo>::allocate(runtime);
 
   runtime.getWorkQueue()->addTask([this, result = result.copy(),
                                    produceModule = std::move(produceModule),
-                                   loc, moduleIdx, parLLC,
-                                   numFunctionsBase]() mutable {
+                                   loc, moduleIdx, parLLC, numFunctionsBase,
+                                   &targetMachine]() mutable {
     CompilerTimeTraceScope traceScope("optimizeLLVMTask");
 
     // Create the target machine.
@@ -1024,8 +1062,9 @@ ObjectCompiler::lowerLLVMModuleToObjects(
 
     SymbolAndMCInfo symbolAndMirInfo;
     SmallVector<AnyAsyncValueRef> buffers = compileOptimizedLLVMToObjects(
-        std::move(module), loc, options, runtime, transformCache, parLLC, isJIT,
-        moduleIdx, symbolAndMirInfo, numFunctionsBase);
+        std::move(module), loc, targetMachine, tmMutex, options, runtime,
+        transformCache, parLLC, isJIT, moduleIdx, symbolAndMirInfo,
+        numFunctionsBase);
 
     andThenAsyncMoving(
         buffers, [result = std::move(result),
