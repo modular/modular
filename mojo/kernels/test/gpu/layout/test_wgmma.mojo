@@ -202,7 +202,7 @@ def test_wgmma_64x64x8_f32_f32_f32_fill(ctx: DeviceContext):
 
     var func = ctx.compile_function[
         wgmma_tf32_tf32_f32_fill_kernel[M, N, K],
-        target = _get_gpu_target["sm_90"](),
+        _target = _get_gpu_target["sm_90"](),
     ]()
     ctx.enqueue_function(
         func,

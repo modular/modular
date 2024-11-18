@@ -103,7 +103,7 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
 
     var func = ctx.compile_function[
         load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn,
-        target = _get_gpu_target["sm_90"](),
+        _target = _get_gpu_target["sm_90"](),
     ]()
     ctx.enqueue_function(
         func,
@@ -165,7 +165,7 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
 
     var func = ctx.compile_function[
         load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn,
-        target = _get_gpu_target["sm_90"](),
+        _target = _get_gpu_target["sm_90"](),
     ]()
     ctx.enqueue_function(
         func,

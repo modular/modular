@@ -218,7 +218,7 @@ def wgmma_s8_s8_s32_64x8x32(ctx: DeviceContext):
         b_type=b_type,
     ]
     var func = ctx.compile_function[
-        wgmma_kernel_fn, target = _get_gpu_target["sm_90"]()
+        wgmma_kernel_fn, _target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -347,7 +347,7 @@ def wgmma_u8_u8_s32_64x8x32(ctx: DeviceContext):
         b_type=b_type,
     ]
     var func = ctx.compile_function[
-        wgmma_kernel_fn, target = _get_gpu_target["sm_90"]()
+        wgmma_kernel_fn, _target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -476,7 +476,7 @@ def wgmma_s8_u8_s32_64x8x32(ctx: DeviceContext):
         b_type=b_type,
     ]
     var func = ctx.compile_function[
-        wgmma_kernel_fn, target = _get_gpu_target["sm_90"]()
+        wgmma_kernel_fn, _target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
@@ -605,7 +605,7 @@ def wgmma_u8_s8_s32_64x8x32(ctx: DeviceContext):
         b_type=b_type,
     ]
     var func = ctx.compile_function[
-        wgmma_kernel_fn, target = _get_gpu_target["sm_90"]()
+        wgmma_kernel_fn, _target = _get_gpu_target["sm_90"]()
     ]()
 
     ctx.enqueue_function(
