@@ -501,6 +501,18 @@ fn parameter_memoryonly_call():
     var y = nonmaterializable_arg(4)
 
 
+struct IntBoxParam[b: IntBox]: pass
+fn takeIntBoxParam[size: IntBox](a: IntBoxParam[size]): pass
+fn selectIntBoxFromVariadic(*values: IntBox) -> IntBox: pass
+
+
+# CHECK-LABEL: lit.func @"parameter_call_drop_dangling_implicit_origins
+fn parameter_call_drop_dangling_implicit_origins[b: IntBox]():
+    alias res = selectIntBoxFromVariadic(b)
+    var wrapper : IntBoxParam[res]
+    takeIntBoxParam[res](wrapper)
+
+
 ##===----------------------------------------------------------------------===##
 # First-class functions as parameters.
 ##===----------------------------------------------------------------------===##
@@ -730,7 +742,7 @@ fn pass_variadic[elems: __mlir_type.`!kgen.variadic<index>`]():
 fn init_self_memory_variadics():
     # 1 and 2 need to be passed through memory in the variadics.
     # CHECK-NEXT: lit.alias.decl *"x`":
-    # CHECK-SAME:  [store_to_mem({1}), store_to_mem({2})]))>
+    # CHECK-SAME:  [store_to_mem({1}), store_to_mem({2})]
     alias x = MyList[Int](1, 2)
 
 struct MyList[T: Copyable]:

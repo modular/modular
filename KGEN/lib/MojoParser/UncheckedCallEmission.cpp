@@ -1015,6 +1015,29 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
   return emitter.emitCResult(resultValue, callExpr, dest);
 }
 
+namespace {
+/// Replace all dangling ("free") implicit origin references with the empty
+/// origin union. This is used for emitting calls in the param context.
+struct DanglingImplicitOriginRefEraser
+    : IndexParameterReplacer<DanglingImplicitOriginRefEraser> {
+  Type tryReplace(Type, size_t) { return {}; }
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
+    if (!ref || ref.getDepth() < depth)
+      return nullptr;
+    return OriginUnionAttr::get({}, ref.getType());
+  }
+
+  /// Get this signature with all the implicit origins bound to the empty union.
+  LITSignatureType replaceSignature(LITSignatureType sig) {
+    FunctionType newFnType = replace(sig.getValues());
+    return LITSignatureType::get(newFnType, sig.getParamTypes(),
+                                 sig.getArgConventions(), sig.getFnEffects(),
+                                 sig.getMetadata());
+  }
+};
+} // namespace
+
 TypedAttr CallEmitter::emitCallInParamContext(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   assert(!emitter.builder && "not in parameter context");
@@ -1037,8 +1060,10 @@ TypedAttr CallEmitter::emitCallInParamContext(
   // If the callee has implicit origins, we need to bind them to immortal
   // references and rebind the callee.
   LITSignatureType boundSigType = calleeSig;
+  std::optional<DanglingImplicitOriginRefEraser> implicitOriginRefEraser;
   if (calleeSig.getNumImplicitOriginDecls()) {
-    boundSigType = calleeSig.getWithImplicitOriginsBoundNothing();
+    implicitOriginRefEraser.emplace();
+    boundSigType = implicitOriginRefEraser->replaceSignature(calleeSig);
     operands[0] =
         ParamOperatorAttr::get(POC::Rebind, operands[0], boundSigType);
   }
@@ -1060,6 +1085,9 @@ TypedAttr CallEmitter::emitCallInParamContext(
     if (!pValue)
       return emitter.emitErrorForDynamicValueInParameter(argValAndExpr.expr);
     TypedAttr arg = pValue.get();
+    if (implicitOriginRefEraser)
+      arg = implicitOriginRefEraser->replace(arg);
+
     // Put memory-only arguments into memory ("PRValue" to "PLValue"
     // conversion).
     if (SignatureType::hasAddress(convention)) {
