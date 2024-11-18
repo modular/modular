@@ -138,7 +138,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         self.stats = TokenGeneratorStats()
         self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 
-        self.engine_queue = EngineQueue()
+        self.engine_queue: EngineQueue = EngineQueue()
         self.max_queue_size = config.token_generation.size
         self.request_semaphore = asyncio.BoundedSemaphore(
             self.max_queue_size * 2
