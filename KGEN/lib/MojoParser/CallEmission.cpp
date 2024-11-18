@@ -1125,7 +1125,6 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
       OverloadSet::lookup(declScope, requiredType, "__init__", expr, syntax,
                           /*no error emission on failure */ {});
 
-#if 0
   // If this is an implicit conversion, then filter out any candidates that are
   // not declared as @implicit.
   if (isImplicitConversion) {
@@ -1133,7 +1132,6 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
       return !cast<LIT::FuncOp>(decl).getIsImplicitConversion();
     });
   }
-#endif
 
   // If there are no viable candidates for the construction, we fail.
   if (!callee)
