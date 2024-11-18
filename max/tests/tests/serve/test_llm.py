@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 class MockValueErrorTokenGenerator(TokenGenerator[str]):
     """A mock generator that throws a value error when used."""
 
-    def next_token(
+    def next_token(  # type: ignore
         self, batch: dict[str, str], num_steps: int = 1
     ) -> dict[str, str]:
         raise ValueError()
@@ -53,7 +53,7 @@ class MockTokenizer(IdentityPipelineTokenizer[str]):
 
 @dataclass(frozen=True)
 class MockTokenGenerator(TokenGenerator[str]):
-    def next_token(
+    def next_token(  # type: ignore
         self, batch: dict[str, str], num_steps: int = 1
     ) -> dict[str, str]:
         return batch

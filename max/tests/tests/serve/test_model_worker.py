@@ -36,7 +36,7 @@ class MockInvalidTokenGenerator(TokenGenerator[str]):
     def __init__(self):
         raise ValueError(MockInvalidTokenGenerator.ERROR_MESSAGE)
 
-    def next_token(self, batch: dict[str, str]) -> dict[str, str]:
+    def next_token(self, batch: dict[str, str]) -> dict[str, str]:  # type: ignore
         raise ValueError()
 
     def release(self, context: str):
@@ -64,7 +64,7 @@ class MockSlowTokenGenerator(TokenGenerator[str]):
     def __init__(self):
         time.sleep(0.2)
 
-    def next_token(self, batch: dict[str, str]) -> dict[str, str]:
+    def next_token(self, batch: dict[str, str]) -> dict[str, str]:  # type: ignore
         raise ValueError()
 
     def release(self, context: str):

@@ -96,11 +96,11 @@ async def test_continuous_batch_cancelled_requests(
     queue_config = BatchQueueConfig(
         strategy=BatchingStrategy.CONTINUOUS, size=queue_size
     )
-    queue = BatchMultiplexQueue(
+    queue = BatchMultiplexQueue(  # type: ignore
         name="test_queue",
         model_name="test",
         config=queue_config,
-        completed_fn=_batch_get_completed,
+        completed_fn=_batch_get_completed,  # type: ignore
     )
 
     model_tasks = start_model_testing_tasks(queue, _batch_execute)

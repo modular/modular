@@ -27,7 +27,7 @@ def test_profiling() -> None:
     foo()
     bar()
 
-    Trace("I'm here").mark()
+    Trace("I'm here").mark()  # type: ignore
 
 
 @pytest.mark.asyncio

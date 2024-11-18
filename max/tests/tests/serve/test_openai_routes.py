@@ -30,7 +30,7 @@ from max.serve.pipelines.performance_fake import (
     PerformanceFakingPipelineTokenizer,
     get_performance_fake,
 )
-from max.serve.schemas.openai import CreateChatCompletionResponse
+from max.serve.schemas.openai import CreateChatCompletionResponse  # type: ignore
 
 logger = logging.getLogger(__name__)
 
