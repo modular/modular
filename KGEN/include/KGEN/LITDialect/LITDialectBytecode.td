@@ -173,7 +173,6 @@ def WrappedOriginFieldAttr : DialectAttribute<(attr
 
 def WrappedIndirectOriginAttr : DialectAttribute<(attr
   TypedAttr:$baseOrigin,
-  Bool:$isUnique,
   ConcreteType<"OriginType">:$type
 )>;
 

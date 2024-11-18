@@ -685,25 +685,20 @@ def IndirectOriginAttr : LITTypedAttr<"IndirectOrigin", "indirect.origin"> {
     etc).
   }];
 
-  let parameters = (ins "TypedAttr":$base, "bool":$isUnique,
+  let parameters = (ins "TypedAttr":$base,
                         AttributeSelfTypeParameter<"", "OriginType">:$type);
 
-  let assemblyFormat = "`<` $base `,` $isUnique `>`";
+  let assemblyFormat = "`<` $base `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
     // These builders fold the request automatically.
     AttrBuilderWithInferredContext<(ins
-      "TypedAttr":$base, "bool":$isUnique), "", "TypedAttr">,
-    AttrBuilder<(ins "TypedAttr":$base, "bool":$isUnique,
-                "OriginType":$type), [{
-      return get(base, isUnique);
+      "TypedAttr":$base), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$base, "OriginType":$type), [{
+      return get(base);
     }], "TypedAttr">,
   ];
-
-  let extraClassDeclaration = [{
-     bool isUnique() const { return getIsUnique(); }
-  }];
 }
 
 //===----------------------------------------------------------------------===//
