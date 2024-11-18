@@ -540,6 +540,7 @@ fn deprecated_function():
 
 
 # MOTO-516: [doc generation] Print 'ref' arguments and results in docgen
+# CHECK:  "convention": "register_passable_trivial",
 @register_passable("trivial")
 struct HMyUnsafePointer[
     T: AnyType,
@@ -643,6 +644,7 @@ struct InMemoryStruct(Sized):
 
 
 # CHECK:  "constraints": "This describes the struct's constraints.",
+# CHECK:  "convention": "register_passable",
 # CHECK:  "description": "The is some kind of description.\n",
 # CHECK:      "kind": "function",
 # CHECK:      "name": "fn_with_self_param",
