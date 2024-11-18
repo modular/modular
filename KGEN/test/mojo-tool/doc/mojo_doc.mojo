@@ -101,7 +101,7 @@ fn fn_hidden() -> Int:
     return 33
 
 
-# CHECK:  "name": "fn_that_async",
+# CHECK-LABEL:  "name": "fn_that_async",
 # CHECK:  "overloads":
 # CHECK:      "async": true
 # CHECK:      "returnsDoc": "An Int."
@@ -186,8 +186,7 @@ fn fn_with_args(
     return
 
 
-# CHECK:  "kind": "function",
-# CHECK:  "name": "fn_with_overload",
+# CHECK-LABEL:  "name": "fn_with_overload",
 # CHECK:  "overloads": [
 # CHECK:      "signature": "fn_with_overload()",
 # CHECK:      "signature": "fn_with_overload(arg: Int)",
@@ -288,7 +287,7 @@ struct MyStruct[x: Int]:
     pass
 
 
-# CHECK: "name": "fn_with_implicit_params",
+# CHECK-LABEL: "name": "fn_with_implicit_params",
 # CHECK: "args":
 # CHECK: {
 # CHECK:     "name": "arg",
@@ -572,6 +571,8 @@ struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
 # prioritization (i.e. not just name based).
 # CHECK:  "kind": "function",
 # CHECK:  "name": "__init__",
+# CHECK:     "convention": "out",
+# CHECK:     "signature": "__init__(out self)",
 # CHECK:  "name": "__copyinit__",
 # CHECK:  "name": "__del__",
 

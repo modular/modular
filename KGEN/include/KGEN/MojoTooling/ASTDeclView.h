@@ -207,6 +207,7 @@ public:
     kInOut,
     kOwned,
     kRef,
+    kOut,
   };
   ArgumentDeclView(StringRef name, std::string prefix, std::string type,
                    KGEN::LIT::PassingKind passingKind,
@@ -227,10 +228,7 @@ public:
 
   std::string getMarkdownDocString() const override;
 
-  bool isBorrowed() const { return convention == Convention::kBorrowed; }
-  bool isInout() const { return convention == Convention::kInOut; }
-  bool isOwned() const { return convention == Convention::kOwned; }
-  bool isRef() const { return convention == Convention::kRef; }
+  Convention getConvention() const { return convention; }
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
 

@@ -19,7 +19,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
     """
 
     fn __init__(
-        inout self,
+        out self,
         borrowed borrowed_input: Int,
         init_arg: Int,
         owned owned_input: Int,

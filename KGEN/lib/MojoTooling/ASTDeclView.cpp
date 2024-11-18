@@ -528,19 +528,22 @@ llvm::json::Object ParameterDeclView::toJSON(MojoParserContext &ctx) const {
 // ArgumentDeclView
 //===----------------------------------------------------------------------===//
 
+static StringRef getConventionString(ArgumentDeclView::Convention conv) {
+  StringRef conventions[] = {"borrowed", "inout", "owned", "ref", "out"};
+  auto convIdx = static_cast<size_t>(conv);
+  assert(convIdx < sizeof(conventions) / sizeof(conventions[0]) &&
+         "enums added");
+  return conventions[convIdx];
+}
+
 std::string ArgumentDeclView::getDeclarationSnippet() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
-  // Print the convention of the argument, eliding the defaults. In `fn`,
-  // borrowed is the default convention. In `def`, owned is the default
-  // convention.
-  if (isInout())
-    os << "inout ";
-  if (isOwned())
-    os << "owned ";
-  if (isRef())
-    os << "ref ";
+  // Print the convention of the argument, eliding the default.
+  if (convention != Convention::kBorrowed)
+    os << getConventionString(convention) << ' ';
+
   // Include the prefix if any (eg for a ref argument).
   os << prefix;
 
@@ -559,14 +562,14 @@ std::string ArgumentDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object ArgumentDeclView::toJSON(MojoParserContext &ctx) const {
-  StringRef conventions[] = {"borrowed", "inout", "owned", "ref"};
+  StringRef conventions[] = {"borrowed", "inout", "owned", "ref", "out"};
   assert(static_cast<size_t>(convention) <
              sizeof(conventions) / sizeof(conventions[0]) &&
          "enums added");
 
   llvm::json::Object object{
       {"description", description},
-      {"convention", conventions[static_cast<size_t>(convention)]},
+      {"convention", getConventionString(convention)},
       {"kind", getKindAsString()},
       {"name", prependVariadicIdentifiers(getName(), variadicKind).str()},
       {"type", type},
@@ -850,17 +853,29 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
 
     std::string prefix;
     auto declConvention = ArgumentDeclView::Convention::kBorrowed;
-    if (convention == ArgConvention::InOut ||
-        convention == ArgConvention::InitSelf)
+    switch (convention) {
+    case ArgConvention::BorrowedInReg:
+    case ArgConvention::BorrowedInMem:
+    case ArgConvention::ByRefResult:
+    case ArgConvention::ByRefError:
+      break; // already handled.
+    case ArgConvention::InOut:
       declConvention = ArgumentDeclView::Convention::kInOut;
-    else if (convention == ArgConvention::Ref ||
-             convention == ArgConvention::MutRef) {
+      break;
+    case ArgConvention::InitSelf:
+      declConvention = ArgumentDeclView::Convention::kOut;
+      break;
+    case ArgConvention::Ref:
+    case ArgConvention::MutRef:
       declConvention = ArgumentDeclView::Convention::kRef;
       prefix = getRefPrefixAsString(shared, cast<RefType>(sigType), signature,
                                     /*isRefResult*/ false);
-    } else if (convention == ArgConvention::OwnedInMem ||
-               convention == ArgConvention::OwnedInReg)
+      break;
+    case ArgConvention::OwnedInMem:
+    case ArgConvention::OwnedInReg:
       declConvention = ArgumentDeclView::Convention::kOwned;
+      break;
+    }
     VariadicKind variadicKind =
         getVariadicKind(signature.getArgListAttrs(), argIdx);
     bool isSelf = selfType && argIdx == 0;
