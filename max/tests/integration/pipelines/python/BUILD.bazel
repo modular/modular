@@ -25,6 +25,7 @@ modular_py_binary(
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/utils",
         requirement("click"),
+        requirement("huggingface_hub"),
     ],
 )
 
@@ -37,7 +38,6 @@ modular_py_binary(
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3:verify",
         "@llvm-project//compiler-rt:orc_rt",
-        "@rules_python//python/runfiles",
         "@torch_llama_golden",
         "@torch_mistral_golden",
         "@torch_replit_golden",
@@ -55,6 +55,7 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         requirement("click"),
+        "@rules_python//python/runfiles",
     ],
 )
 

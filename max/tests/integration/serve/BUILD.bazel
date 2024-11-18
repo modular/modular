@@ -4,6 +4,9 @@ modular_py_library(
     name = "params",
     testonly = True,
     srcs = ["params.py"],
+    deps = [
+        "//SDK/lib/API/python/max/driver",
+    ],
 )
 
 modular_py_test(
@@ -33,9 +36,11 @@ modular_py_test(
         ":params",
         "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
         "//SDK/lib/API/python/max/serve",
+        "//SDK/lib/API/python/max/serve/schemas",
         "//SDK/public/max-repo/pipelines/python/llama3",
-        requirement("pytest-asyncio"),
         requirement("async-asgi-testclient"),
+        requirement("pytest-asyncio"),
+        requirement("transformers"),
     ],
 )
 

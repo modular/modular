@@ -46,5 +46,6 @@ modular_py_library(
     imports = [".."],
     deps = [
         "//SDK/public/max-repo/pipelines/python/llama3",
+        "@rules_python//python/runfiles",
     ],
 )
