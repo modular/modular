@@ -81,6 +81,7 @@ struct Buffer[
         self.dtype = type
 
     @always_inline
+    @implicit
     fn __init__(out self, ptr: UnsafePointer[Scalar[type], address_space]):
         """Constructs a Buffer with statically known size and type.
 
@@ -527,6 +528,7 @@ struct NDBuffer[
         self.dynamic_stride = __type_of(self.dynamic_stride)()
 
     @always_inline
+    @implicit
     fn __init__(
         inout self,
         ptr: UnsafePointer[Scalar[type], address_space, *_],

@@ -39,6 +39,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
     """The dimension value to use or `_sentinel` if the dimension is dynamic."""
 
     @always_inline("nodebug")
+    @implicit
     fn __init__[type: Intable](inout self, value: type):
         """Creates a statically-known dimension.
 
@@ -51,6 +52,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         self._value_or_missing = int(value)
 
     @always_inline("nodebug")
+    @implicit
     fn __init__[type: IntLike](inout self, value: type):
         """Creates a statically-known dimension.
 
@@ -63,6 +65,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         self = Dim(value.__mlir_index__())
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, value: __mlir_type.index):
         """Creates a statically-known dimension.
 
@@ -70,6 +73,16 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
             value: The static dimension value.
         """
         self._value_or_missing = Int(value)
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Int):
+        """Creates a statically-known dimension.
+
+        Args:
+            value: The static dimension value.
+        """
+        self._value_or_missing = value
 
     @always_inline("nodebug")
     fn __init__(out self):
@@ -289,6 +302,7 @@ struct DimList(
     """The underlying storage for the list of dimensions."""
 
     @always_inline("nodebug")
+    @implicit
     fn __init__[Intable: Intable](inout self, values: (Intable,)):
         """Creates a dimension list from the given list of values.
 
@@ -329,6 +343,7 @@ struct DimList(
         )
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, values: VariadicList[Dim]):
         """Creates a dimension list from the given list of values.
 
@@ -338,6 +353,7 @@ struct DimList(
         self.value = values
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, *values: Dim):
         """Creates a dimension list from the given Dim values.
 
