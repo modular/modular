@@ -745,7 +745,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   processRawOrigin(cast<RefType>(destBuffer.getType()).getOrigin(),
                    [&](TypedAttr origin) {
                      while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
-                       origin = fieldAttr.getStructOrigin();
+                       origin = fieldAttr.getBase();
                      destOrigins.insert(origin);
                    });
 
@@ -759,7 +759,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     // the way.  Look through it and any field sensitivity.
     origin = OriginMutCastAttr::strip(origin);
     while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
-      origin = fieldAttr.getStructOrigin();
+      origin = fieldAttr.getBase();
 
     // If the destination set includes this origin, then we can't use the
     // destination.
@@ -1281,7 +1281,7 @@ void ExclusivityChecker::checkOriginAccess(
   // Ok, there is no direct conflict: scan up the parent structs to see if there
   // are conflicts for them.
   while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin)) {
-    origin = fieldAttr.getStructOrigin();
+    origin = fieldAttr.getBase();
     auto [it, isNew] =
         originAccesses.insert({origin, {argIdx, isImmut, /*isLeaf=*/false}});
 

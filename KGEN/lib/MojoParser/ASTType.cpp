@@ -611,7 +611,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
   }
 
   if (auto originField = dyn_cast<OriginFieldAttr>(param)) {
-    if (isa<StaticOriginAttr>(originField.getStructOrigin())) {
+    if (isa<StaticOriginAttr>(originField.getBase())) {
       if (originField.getField().str() == "__constants__" &&
           originField.getType().isMutableKnown(false)) {
         os << "StaticConstantOrigin";
@@ -619,8 +619,14 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
       }
     }
 
-    printDemangledParam(os, originField.getStructOrigin(), diagShared);
+    printDemangledParam(os, originField.getBase(), diagShared);
     os << '.' << originField.getField().str();
+    return;
+  }
+
+  if (auto indirect = dyn_cast<IndirectOriginAttr>(param)) {
+    printDemangledParam(os, indirect.getBase(), diagShared);
+    os << '[' << (indirect.isUnique() ? "unique" : "shared") << ']';
     return;
   }
 
