@@ -1240,33 +1240,6 @@ FunctionType LITSignatureType::substituteImplicitOriginsIntoValues(
   return substitutor.hadError ? FunctionType() : result;
 }
 
-/// Get this signature with all the implicit origins bound to the empty union
-/// and dropped from the signature.
-LITSignatureType LITSignatureType::getWithImplicitOriginsBoundNothing() {
-  // Avoid work if there is nothing to do.
-  if (getNumImplicitOriginDecls() == 0)
-    return *this;
-
-  // Replace the origins with attrs of the right mutability.  We just scan
-  // through the type to find the references to update.  We get implicit
-  // origins in a range of places (e.g. buried in pack and variadic types etc)
-  // that make it difficult to "just know" the mutability of each one.
-  struct Substitutor : IndexParameterReplacer<Substitutor> {
-    Type tryReplace(Type, size_t) { return {}; }
-    Attribute tryReplace(Attribute attr, size_t depth) {
-      // If we are substituting the signature directly, subtract 1.
-      auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
-      if (!ref || ref.getDepth() != depth)
-        return nullptr;
-      return OriginUnionAttr::get({}, ref.getType());
-    }
-  };
-
-  FunctionType newFnType = Substitutor().replace(getValues());
-  return LITSignatureType::get(newFnType, getParamTypes(), getArgConventions(),
-                               getFnEffects(), getMetadata());
-}
-
 /// This method replaces direct uses of NAMED implicit origin declarations
 /// with index-based references.  originDecls specifies the names of the
 /// implicit origin decls to replace.

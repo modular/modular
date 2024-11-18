@@ -151,10 +151,6 @@ public:
   LITSignatureType
   replaceImplicitOriginsWithIndexes(ArrayRef<ParamDeclAttr> lifetimeDecls);
 
-  /// Get this signature with all the implicit lifetimes bound to #lit.origin
-  /// and dropped from the signature.
-  LITSignatureType getWithImplicitOriginsBoundNothing();
-
   /// This method replaces direct uses of NAMED implicit origin declarations
   /// with index-based references.  lifetimeDecls specifies the names of the
   /// implicit origin decls to replace.
