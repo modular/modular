@@ -45,7 +45,6 @@ modular_py_test(
     srcs = [
         "__init__.py",
         "conftest.py",
-        "params.py",
         "test_tiny_llama_serving_gpu.py",
     ],
     data = [
