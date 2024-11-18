@@ -22,7 +22,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorRequest,
 )
 from max.serve.pipelines.deps import BatchedTokenGeneratorState
-from max.serve.schemas.openai import (
+from max.serve.schemas.openai import (  # type: ignore
     ChatCompletionRequestMessage,
     ChatCompletionRequestMessageContentPartText,
     ChatCompletionResponseMessage,

@@ -16,7 +16,7 @@ from functools import lru_cache
 from multiprocessing.synchronize import Event as MPEvent
 from typing import Any, Callable, Union
 
-from faster_fifo import Queue
+from faster_fifo import Queue  # type: ignore
 
 
 @dataclass
