@@ -771,10 +771,18 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
         auto expectedRefType = cast<RefType>(userResultType);
         auto diag = emitter.emitError(operandExpr->getLoc())
                     << "cannot return reference with incompatible ";
-        if (argType.getOrigin() != expectedRefType.getOrigin())
-          diag << "origin: " << argType.getOrigin() << " vs "
-               << expectedRefType.getOrigin();
-        else {
+        if (argType.getOrigin() != expectedRefType.getOrigin()) {
+          // See if the origins agree with mutability stripped.  If not,
+          // complain about the base to avoid the mutcast in the diagnostic.
+          auto argO = OriginMutCastAttr::strip(argType.getOrigin());
+          auto expO = OriginMutCastAttr::strip(expectedRefType.getOrigin());
+          if (argO != expO) {
+            diag << "origin: " << argO << " vs " << expO;
+          } else {
+            diag << "origin mutability: " << argType.isMutable() << " vs "
+                 << expectedRefType.isMutable();
+          }
+        } else {
           assert(argType.getAddressSpace() !=
                      expectedRefType.getAddressSpace() &&
                  "Only origin and address space can disagree given the "
