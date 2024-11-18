@@ -89,6 +89,7 @@ struct AnyTensor:
         self._data = existing._data
         self._device_memory_impl_ptr = existing._device_memory_impl_ptr
 
+    @implicit
     fn __init__[
         type: DType, rank: Int
     ](inout self, owned tensor: Tensor[type, rank]) raises:
@@ -398,6 +399,7 @@ struct AnyMemory:
         """
         self._value = AnyTensor(device_tensor^)
 
+    @implicit
     fn __init__[
         type: DType, rank: Int
     ](inout self, owned tensor: Tensor[type, rank]) raises:
