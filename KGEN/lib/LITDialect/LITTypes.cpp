@@ -517,14 +517,9 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
         continue;
       }
       if (succeeded(p.parseOptionalLSquare())) {
-        StringRef keyword;
-        auto loc = p.getCurrentLocation();
-        if (p.parseKeyword(&keyword) || p.parseRSquare())
+        if (p.parseRSquare())
           return failure();
-        if (keyword != "u" && keyword != "s")
-          return p.emitError(loc,
-                             "expected 'u' or 's' in indirect origin attr");
-        result = IndirectOriginAttr::get(result, keyword == "u");
+        result = IndirectOriginAttr::get(result);
         continue;
       }
       // Otherwise, not a postfix thing.
@@ -688,11 +683,11 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
     return success();
   }
 
-  // Print field access with x.y[u] notation.
+  // Print field access with x.y[] notation.
   if (auto indirect = ::dyn_cast<IndirectOriginAttr>(value)) {
     if (failed(printValue(p, indirect.getBase())))
       return failure();
-    p << '[' << (indirect.isUnique() ? 'u' : 's') << ']';
+    p << "[]";
     return success();
   }
 

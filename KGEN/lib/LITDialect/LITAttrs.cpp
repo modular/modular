@@ -933,7 +933,7 @@ OriginFieldAttr OriginFieldAttr::getFromBytecode(TypedAttr structOrigin,
 // IndirectOriginAttr
 //===----------------------------------------------------------------------===//
 
-TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin, bool isUnique) {
+TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin) {
   // Check to see if there are any permutations we can fold.
 
   // If we have the global mutable origin, treat it conservatively by
@@ -945,7 +945,7 @@ TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin, bool isUnique) {
   // We push any mutability casts outside of ourselves.
   //     mutcast(x)[] => mutcast(x[])
   if (auto mutCast = ::dyn_cast<OriginMutCastAttr>(baseOrigin)) {
-    auto inner = IndirectOriginAttr::get(mutCast.getOperand(), isUnique);
+    auto inner = IndirectOriginAttr::get(mutCast.getOperand());
     return OriginMutCastAttr::get(inner, mutCast.getType());
   }
 
@@ -954,7 +954,7 @@ TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin, bool isUnique) {
   if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(baseOrigin)) {
     SmallVector<TypedAttr> elts;
     for (auto elt : unionAttr.getOperands())
-      elts.push_back(IndirectOriginAttr::get(elt, isUnique));
+      elts.push_back(IndirectOriginAttr::get(elt));
     // Field accesses don't affect mutability, so we use the same type.
     return OriginUnionAttr::get(elts, unionAttr.getType());
   }
@@ -962,7 +962,7 @@ TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin, bool isUnique) {
   // The result type is the same as baseOrigin's.
   auto baseType = ::cast<OriginType>(baseOrigin.getType());
   return IndirectOriginAttr::Base::get(baseOrigin.getContext(), baseOrigin,
-                                       isUnique, baseType);
+                                       baseType);
 }
 
 //===----------------------------------------------------------------------===//

@@ -626,7 +626,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
 
   if (auto indirect = dyn_cast<IndirectOriginAttr>(param)) {
     printDemangledParam(os, indirect.getBase(), diagShared);
-    os << '[' << (indirect.isUnique() ? "unique" : "shared") << ']';
+    os << "[]";
     return;
   }
 
