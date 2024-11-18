@@ -5,16 +5,104 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA memory operations."""
 
-from sys import bitwidthof, sizeof
-
+from builtin._location import __call_location, _SourceLocation
 from memory import UnsafePointer, stack_allocation
 from memory.unsafe import bitcast
-
+from os.path import isdir
+from pathlib import Path
+from sys import sizeof
+from sys.ffi import DLHandle, _get_dylib_function
 from utils import StaticTuple
 
-from gpu.host._utils_v1 import _check_error, _get_dylib_function
 from gpu.host.result_v1 import Result
-from gpu.host.stream_v1 import Stream, _StreamHandle
+
+# ===----------------------------------------------------------------------===#
+# Utilities
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn _check_error(
+    err: Result,
+    *,
+    msg: StringLiteral = "",
+    location: OptionalReg[_SourceLocation] = None,
+) raises:
+    _check_error_impl(err, msg, location.or_else(__call_location()))
+
+
+@no_inline
+fn _check_error_impl(
+    err: Result,
+    msg: StringLiteral,
+    location: _SourceLocation,
+) raises:
+    """We do not want to inline this code since we want to make sure that the
+    stringification of the error is not duplicated many times."""
+    if err != Result.SUCCESS:
+        raise Error(location.prefix(str(err) + " " + msg))
+
+
+# ===----------------------------------------------------------------------===#
+# Library Load
+# ===----------------------------------------------------------------------===#
+
+
+fn _get_cuda_driver_path() raises -> Path:
+    alias _CUDA_DRIVER_LIB_NAME = "libcuda.so"
+    var _DEFAULT_CUDA_DRIVER_BASE_PATHS = List[Path](
+        Path("/usr/lib/x86_64-linux-gnu"),  # Ubuntu like
+        Path("/usr/lib64/nvidia"),  # Redhat like
+        Path("/usr/lib/wsl/lib"),  # WSL
+    )
+
+    # Quick lookup for libcuda.so assuming it's symlinked.
+    for loc in _DEFAULT_CUDA_DRIVER_BASE_PATHS:
+        var lib_path = loc[] / _CUDA_DRIVER_LIB_NAME
+        if lib_path.exists():
+            return lib_path
+
+    # If we cannot find libcuda.so, then search harder.
+    for loc in _DEFAULT_CUDA_DRIVER_BASE_PATHS:
+        if isdir(loc[]):
+            for file in loc[].listdir():
+                var lib_path = loc[] / file[]
+                if not lib_path.is_file():
+                    continue
+                if _CUDA_DRIVER_LIB_NAME in str(file[]):
+                    return lib_path
+
+    raise "the CUDA library was not found"
+
+
+fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+    try:
+        var driver_path = _get_cuda_driver_path()
+        var ptr = UnsafePointer[DLHandle].alloc(1)
+        ptr.init_pointee_move(DLHandle(str(driver_path)))
+        _ = ptr[].get_function[fn (UInt32) -> Result]("cuInit")(0)
+        return ptr.bitcast[NoneType]()
+    except e:
+        return abort[UnsafePointer[NoneType]](e)
+
+
+fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
+    ptr.bitcast[DLHandle]()[].close()
+    ptr.free()
+
+
+@always_inline
+fn _get_cuda_dylib_function[
+    func_name: StringLiteral, result_type: AnyTrivialRegType
+]() -> result_type:
+    return _get_dylib_function[
+        "CUDA_DRIVER_LIBRARY",
+        func_name,
+        _init_dylib,
+        _destroy_dylib,
+        result_type,
+    ]()
+
 
 # ===----------------------------------------------------------------------===#
 # Memory
@@ -26,7 +114,7 @@ fn _malloc[type: AnyType](count: Int) raises -> UnsafePointer[type]:
 
     var ptr = UnsafePointer[Int]()
     _check_error(
-        _get_dylib_function[
+        _get_cuda_dylib_function[
             "cuMemAlloc_v2",
             fn (UnsafePointer[UnsafePointer[Int]], Int) -> Result,
         ]()(UnsafePointer.address_of(ptr), count * sizeof[type]())
@@ -44,7 +132,7 @@ fn _malloc_managed[type: AnyType](count: Int) raises -> UnsafePointer[type]:
     alias CU_MEM_ATTACH_GLOBAL = UInt32(1)
     var ptr = UnsafePointer[Int]()
     _check_error(
-        _get_dylib_function[
+        _get_cuda_dylib_function[
             "cuMemAllocManaged",
             fn (UnsafePointer[UnsafePointer[Int]], Int, UInt32) -> Result,
         ]()(
@@ -66,122 +154,9 @@ fn _free[type: AnyType](ptr: UnsafePointer[type]) raises:
     """Frees allocated GPU device memory."""
 
     _check_error(
-        _get_dylib_function[
+        _get_cuda_dylib_function[
             "cuMemFree_v2", fn (UnsafePointer[Int]) -> Result
         ]()(ptr.bitcast[Int]())
-    )
-
-
-fn _copy_host_to_device[
-    type: AnyType
-](
-    device_dest: UnsafePointer[type], host_src: UnsafePointer[type], count: Int
-) raises:
-    """Copies memory from host to device."""
-
-    _check_error(
-        _get_dylib_function[
-            "cuMemcpyHtoD_v2",
-            fn (UnsafePointer[Int], UnsafePointer[NoneType], Int) -> Result,
-        ]()(
-            device_dest.bitcast[Int](),
-            host_src.bitcast[NoneType](),
-            count * sizeof[type](),
-        )
-    )
-
-
-fn _copy_host_to_device_async[
-    type: AnyType
-](
-    device_dst: UnsafePointer[type],
-    host_src: UnsafePointer[type],
-    count: Int,
-    stream: Stream,
-) raises:
-    """Copies memory from host to device asynchronously."""
-
-    _check_error(
-        _get_dylib_function[
-            "cuMemcpyHtoDAsync_v2",
-            fn (
-                UnsafePointer[NoneType], UnsafePointer[Int], Int, _StreamHandle
-            ) -> Result,
-        ]()(
-            device_dst.bitcast[NoneType](),
-            host_src.bitcast[Int](),
-            count * sizeof[type](),
-            stream.stream,
-        )
-    )
-
-
-fn _copy_device_to_host[
-    type: AnyType
-](
-    host_dest: UnsafePointer[type], device_src: UnsafePointer[type], count: Int
-) raises:
-    """Copies memory from device to host."""
-
-    _check_error(
-        _get_dylib_function[
-            "cuMemcpyDtoH_v2",
-            fn (UnsafePointer[NoneType], UnsafePointer[Int], Int) -> Result,
-        ]()(
-            host_dest.bitcast[NoneType](),
-            device_src.bitcast[Int](),
-            count * sizeof[type](),
-        )
-    )
-
-
-fn _copy_device_to_host_async[
-    type: AnyType
-](
-    host_dest: UnsafePointer[type],
-    device_src: UnsafePointer[type],
-    count: Int,
-    stream: Stream,
-) raises:
-    """Copies memory from device to host asynchronously."""
-
-    _check_error(
-        _get_dylib_function[
-            "cuMemcpyDtoHAsync_v2",
-            fn (
-                UnsafePointer[NoneType], UnsafePointer[Int], Int, _StreamHandle
-            ) -> Result,
-        ]()(
-            host_dest.bitcast[NoneType](),
-            device_src.bitcast[Int](),
-            count * sizeof[type](),
-            stream.stream,
-        )
-    )
-
-
-fn _copy_device_to_device_async[
-    type: AnyType
-](
-    dst: UnsafePointer[type],
-    src: UnsafePointer[type],
-    count: Int,
-    stream: Stream,
-) raises:
-    """Copies memory from device to device asynchronously."""
-
-    _check_error(
-        _get_dylib_function[
-            "cuMemcpyDtoDAsync_v2",
-            fn (
-                UnsafePointer[NoneType], UnsafePointer[Int], Int, _StreamHandle
-            ) -> Result,
-        ]()(
-            dst.bitcast[NoneType](),
-            src.bitcast[Int](),
-            count * sizeof[type](),
-            stream.stream,
-        )
     )
 
 
@@ -191,128 +166,13 @@ fn _memset[
     """Sets the memory range of N 8-bit values to a specified value."""
 
     _check_error(
-        _get_dylib_function[
+        _get_cuda_dylib_function[
             "cuMemsetD8_v2", fn (UnsafePointer[Int], UInt8, Int) -> Result
         ]()(
             device_dest.bitcast[Int](),
             val,
             count * sizeof[type](),
         )
-    )
-
-
-fn _memset_async[
-    type: DType
-](
-    device_dest: UnsafePointer[Scalar[type]],
-    val: Scalar[type],
-    count: Int,
-    stream: Stream,
-) raises:
-    """Sets the memory range of N 8-bit, 16-bit and 32-bit values to a specified value asynchronously.
-    """
-
-    alias bitwidth = bitwidthof[type]()
-    constrained[
-        bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
-        "bitwidth of memset type must be one of [8,16,32]",
-    ]()
-
-    @parameter
-    if bitwidth == 8:
-        _check_error(
-            _get_dylib_function[
-                "cuMemsetD8Async",
-                fn (UnsafePointer[UInt8], UInt8, Int, _StreamHandle) -> Result,
-            ]()(
-                device_dest.bitcast[Scalar[DType.uint8]](),
-                bitcast[DType.uint8, 1](val),
-                count * sizeof[type](),
-                stream.stream,
-            )
-        )
-    elif bitwidth == 16:
-        _check_error(
-            _get_dylib_function[
-                "cuMemsetD16Async",
-                fn (
-                    UnsafePointer[UInt16], UInt16, Int, _StreamHandle
-                ) -> Result,
-            ]()(
-                device_dest.bitcast[Scalar[DType.uint16]](),
-                bitcast[DType.uint16, 1](val),
-                count,
-                stream.stream,
-            )
-        )
-    elif bitwidth == 32:
-        _check_error(
-            _get_dylib_function[
-                "cuMemsetD32Async",
-                fn (
-                    UnsafePointer[UInt32], UInt32, Int, _StreamHandle
-                ) -> Result,
-            ]()(
-                device_dest.bitcast[Scalar[DType.uint32]](),
-                bitcast[DType.uint32, 1](val),
-                count,
-                stream.stream,
-            )
-        )
-
-
-@always_inline
-fn _copy_device_to_device[
-    type: AnyType
-](
-    device_dest: UnsafePointer[type],
-    device_src: UnsafePointer[type],
-    count: Int,
-) raises:
-    """Copies memory from device to device."""
-
-    _check_error(
-        _get_dylib_function[
-            "cuMemcpyDtoD_v2",
-            fn (
-                UnsafePointer[Int],
-                UnsafePointer[Int],
-                Int,
-            ) -> Result,
-        ]()(
-            device_dest.bitcast[Int](),
-            device_src.bitcast[Int](),
-            count * sizeof[type](),
-        )
-    )
-
-
-fn _malloc_async[
-    type: AnyType
-](count: Int, stream: Stream) raises -> UnsafePointer[type]:
-    """Allocates memory with stream ordered semantics."""
-
-    var ptr = UnsafePointer[Int]()
-    _check_error(
-        _get_dylib_function[
-            "cuMemAllocAsync",
-            fn (
-                UnsafePointer[UnsafePointer[Int]], Int, _StreamHandle
-            ) -> Result,
-        ]()(
-            UnsafePointer.address_of(ptr), count * sizeof[type](), stream.stream
-        )
-    )
-    return ptr.bitcast[type]()
-
-
-fn _free_async[type: AnyType](ptr: UnsafePointer[type], stream: Stream) raises:
-    """Frees memory with stream ordered semantics."""
-
-    _check_error(
-        _get_dylib_function[
-            "cuMemFreeAsync", fn (UnsafePointer[Int], _StreamHandle) -> Result
-        ]()(ptr.bitcast[Int](), stream.stream)
     )
 
 
@@ -457,7 +317,7 @@ fn create_tma_descriptor[
     for i in range(rank - 1):
         global_strides_arg[i] = global_strides[rank - i - 2] * sizeof[dtype]()
     _check_error(
-        _get_dylib_function[
+        _get_cuda_dylib_function[
             "cuTensorMapEncodeTiled",
             fn (
                 UnsafePointer[NoneType],  # tensorMap
@@ -489,214 +349,3 @@ fn create_tma_descriptor[
         )
     )
     return tma_descriptor
-
-
-# ===----------------------------------------------------------------------===#
-# Virtual Memory Management
-# ===----------------------------------------------------------------------===#
-
-
-@value
-@register_passable
-struct MemLocationType:
-    var _value: Int32
-
-    alias INVALID = Self(0)
-    alias DEVICE = Self(1)
-    alias HOST = Self(2)
-    alias HOST_NUMA = Self(3)
-    alias HOST_NUMA_CURRENT = Self(4)
-    alias MAX = Self(0x7FFFFFFF)
-
-    @implicit
-    fn __init__(out self, value: Int32):
-        self._value = value
-
-    fn __eq__(self, other: MemLocationType) -> Bool:
-        return self._value == other._value
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
-        writer.write("(MemLocationType = ")
-        if self == Self.INVALID:
-            writer.write("INVALID")
-        elif self == Self.DEVICE:
-            writer.write("DEVICE")
-        elif self == Self.HOST:
-            writer.write("HOST")
-        elif self == Self.HOST_NUMA:
-            writer.write("HOST_NUMA")
-        elif self == Self.HOST_NUMA_CURRENT:
-            writer.write("HOST_NUMA_CURRENT")
-        else:
-            writer.write("MAX")
-        writer.write(")")
-
-
-@value
-@register_passable
-struct MemAllocationType:
-    var _value: Int32
-
-    alias INVALID = Self(0)
-    alias PINNED = Self(1)
-    alias MAX = Self(0x7FFFFFFF)
-
-    @implicit
-    fn __init__(out self, value: Int32):
-        self._value = value
-
-    fn __eq__(self, other: MemAllocationType) -> Bool:
-        return self._value == other._value
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
-        writer.write("(MemAllocationType = ")
-        if self == Self.INVALID:
-            writer.write("INVALID")
-        elif self == Self.PINNED:
-            writer.write("PINNED")
-        else:
-            writer.write("MAX")
-        writer.write(")")
-
-
-@value
-@register_passable
-struct MemAllocationHandleType:
-    var _value: Int32
-
-    alias NONE = Self(0)
-    alias POSIX_FILE_DESCRIPTOR = Self(1)
-    alias WIN32 = Self(2)
-    alias WIN32_KMT = Self(4)
-    alias FABRIC = Self(8)
-    alias MAX = Self(0x7FFFFFFF)
-
-    @implicit
-    fn __init__(out self, value: Int32):
-        self._value = value
-
-    fn __eq__(self, other: MemAllocationHandleType) -> Bool:
-        return self._value == other._value
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
-        writer.write("(MemAllocationHandleType = ")
-        if self == Self.NONE:
-            writer.write("NONE")
-        elif self == Self.POSIX_FILE_DESCRIPTOR:
-            writer.write("POSIX_FILE_DESCRIPTOR")
-        elif self == Self.WIN32:
-            writer.write("WIN32")
-        elif self == Self.WIN32_KMT:
-            writer.write("WIN32_KMT")
-        elif self == Self.FABRIC:
-            writer.write("FABRIC")
-        else:
-            writer.write("MAX")
-        writer.write(")")
-
-
-@value
-struct MemLocation:
-    var type: MemLocationType
-    var id: Int32
-
-    fn __init__(out self, type: MemLocationType, id: Int32):
-        self.type = type
-        self.id = id
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
-        writer.write("[MemLocation = ")
-        writer.write(self.type.__str__())
-        writer.write(", id=")
-        writer.write(self.id)
-        writer.write("]")
-
-
-@value
-struct MemAllocationProp:
-    var type: MemAllocationType
-    var requested_handle_types: MemAllocationHandleType
-    var location: MemLocation
-    var win32_handle_meta_data: UnsafePointer[NoneType]
-    # alloc_flags reserved bytes sizeof(CUmemAllocationProp::allocFlags)
-    var alloc_flags: StaticTuple[UInt8, 8]
-
-    fn __init__(
-        inout self,
-        type: MemAllocationType,
-        location: MemLocation,
-    ):
-        self.type = type
-        self.location = location
-        self.requested_handle_types = MemAllocationHandleType.NONE
-        self.win32_handle_meta_data = UnsafePointer[NoneType]()
-        self.alloc_flags = StaticTuple[UInt8, 8]()
-
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
-        writer.write("[type = ")
-        writer.write(self.type)
-        writer.write(", requested_handle_types = ")
-        writer.write(self.requested_handle_types)
-        writer.write(", location = ")
-        writer.write(self.location)
-        writer.write("]")
-
-
-@value
-@register_passable
-struct MemAllocationGranularityFlags:
-    var _value: Int32
-
-    alias MINIMUM = Self(0)
-    alias RECOMMENDED = Self(1)
-
-    @implicit
-    fn __init__(out self, value: Int32):
-        self._value = value
-
-
-fn _mem_get_allocation_granularity(
-    prop: MemAllocationProp, options: MemAllocationGranularityFlags
-) raises -> Int32:
-    """Calculates either the minimal or recommended granularity."""
-
-    var granularity = stack_allocation[1, Int32]()
-
-    var _prop = stack_allocation[1, MemAllocationProp]()
-    _prop[0] = prop
-
-    _check_error(
-        _get_dylib_function[
-            "cuMemGetAllocationGranularity",
-            fn (
-                UnsafePointer[Int32], UnsafePointer[MemAllocationProp], Int32
-            ) -> Result,
-        ]()(granularity, _prop, options._value)
-    )
-
-    return granularity[0]
