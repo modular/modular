@@ -542,6 +542,7 @@ struct Result(Stringable, EqualityComparable, KeyElement, ExplicitlyCopyable):
     """
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, code: Int32):
         self.code = code
 

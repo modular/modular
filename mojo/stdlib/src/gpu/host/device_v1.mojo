@@ -36,6 +36,7 @@ struct DeviceV1:
     var id: Int32
     var cuda_dll: CudaDLL
 
+    @implicit
     fn __init__(out self, id: Int = 0):
         self.id = id
         self.cuda_dll = CudaDLL()

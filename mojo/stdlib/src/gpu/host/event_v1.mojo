@@ -37,6 +37,7 @@ struct Flag:
     set."""
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, value: UInt32):
         self._value = value
 

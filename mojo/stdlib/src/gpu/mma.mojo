@@ -418,6 +418,7 @@ struct WGMMADescriptor[dtype: DType]:
 
     var desc: Int64
 
+    @implicit
     fn __init__(out self, val: Int64):
         self.desc = val
 

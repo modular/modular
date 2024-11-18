@@ -285,6 +285,7 @@ struct JitOptions:
     fn __init__(out self):
         self._value = 0
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -299,9 +300,11 @@ struct Module:
     var module: _ModuleHandle
     var cuda_dll: CudaDLL
 
+    @implicit
     fn __init__(out self, ctx: Context):
         self.__init__(ctx.cuda_dll)
 
+    @implicit
     fn __init__(out self, cuda_dll: CudaDLL):
         self.module = _ModuleHandle()
         self.cuda_dll = cuda_dll

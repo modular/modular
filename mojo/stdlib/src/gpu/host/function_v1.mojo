@@ -61,6 +61,7 @@ struct _CachedFunctionInfo(Boolable):
         self.func_handle = _FunctionHandle()
         self.error = Error()
 
+    @implicit
     fn __init__(out self, error: Error):
         self.mod_handle = _ModuleHandle()
         self.func_handle = _FunctionHandle()

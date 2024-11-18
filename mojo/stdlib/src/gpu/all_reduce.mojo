@@ -12,6 +12,7 @@ from gpu.host import (
 from buffer import Buffer, NDBuffer
 from utils.index import IndexList, StaticTuple
 from gpu import BlockIdx, GridDim, ThreadIdx, BlockDim, barrier
+from gpu.host import Dim
 from gpu.intrinsics import (
     store_release,
     load_acquire,

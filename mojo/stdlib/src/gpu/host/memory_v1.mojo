@@ -340,6 +340,7 @@ struct TensorMapDataType:
     alias TFLOAT32 = Self(11)
     alias TFLOAT32_FTZ = Self(12)
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value
 
@@ -365,6 +366,7 @@ struct TensornsorMapInterleave:
     alias INTERLEAVE_16B = Self(1)
     alias INTERLEAVE_32B = Self(2)
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value
 
@@ -379,6 +381,7 @@ struct TensorMapSwizzle:
     alias SWIZZLE_64B = Self(2)
     alias SWIZZLE_128B = Self(3)
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value
 
@@ -393,6 +396,7 @@ struct TensorMapL2Promotion:
     alias L2_128B = Self(2)
     alias L2_256B = Self(3)
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value
 
@@ -405,6 +409,7 @@ struct TensorMapFloatOOBFill:
     alias NONE = Self(0)
     alias NAN_REQUEST_ZERO_FMA = Self(1)
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value
 
@@ -503,6 +508,7 @@ struct MemLocationType:
     alias HOST_NUMA_CURRENT = Self(4)
     alias MAX = Self(0x7FFFFFFF)
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value
 
@@ -540,6 +546,7 @@ struct MemAllocationType:
     alias PINNED = Self(1)
     alias MAX = Self(0x7FFFFFFF)
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value
 
@@ -574,6 +581,7 @@ struct MemAllocationHandleType:
     alias FABRIC = Self(8)
     alias MAX = Self(0x7FFFFFFF)
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value
 
@@ -667,6 +675,7 @@ struct MemAllocationGranularityFlags:
     alias MINIMUM = Self(0)
     alias RECOMMENDED = Self(1)
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value
 

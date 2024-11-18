@@ -22,6 +22,11 @@ struct CacheMode:
     """Compile with L1 cache enabled."""
 
     @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 

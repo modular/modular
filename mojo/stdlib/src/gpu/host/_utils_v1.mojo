@@ -139,6 +139,7 @@ struct CudaHandle(Boolable, Stringable):
     fn __init__(out self):
         self.handle = UnsafePointer[NoneType]()
 
+    @implicit
     fn __init__(out self, handle: UnsafePointer[NoneType]):
         self.handle = handle
 

@@ -161,11 +161,13 @@ struct LaunchAttributeValue:
     fn __init__(out self):
         self._storage = StaticTuple[UInt8, 64](0)
 
+    @implicit
     fn __init__(out self, policy: AccessPolicyWindow):
         var tmp = policy
         var ptr = UnsafePointer.address_of(tmp)
         self._storage = ptr.bitcast[Self._storage_type]()[]
 
+    @implicit
     fn __init__(out self, dim: Dim):
         var tmp = StaticTuple[UInt32, 3](dim.x(), dim.y(), dim.z())
         var ptr = UnsafePointer.address_of(tmp)
@@ -234,6 +236,7 @@ struct LaunchAttribute:
         self.__pad = __type_of(self.__pad)()
         self.value = LaunchAttributeValue()
 
+    @implicit
     fn __init__(out self, policy: AccessPolicyWindow):
         self = Self()
         self.id = LaunchAttributeID.ACCESS_POLICY_WINDOW

@@ -352,6 +352,7 @@ struct cudnnFusedOpsConstParamLabel_t:
     alias CUDNN_PARAM_BN_DSCALE_PLACEHOLDER = Self(37)
     alias CUDNN_PARAM_BN_DBIAS_PLACEHOLDER = Self(38)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -480,6 +481,7 @@ struct cudnnReorderType_t:
     alias CUDNN_DEFAULT_REORDER = Self(0)
     alias CUDNN_NO_REORDER = Self(1)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -626,6 +628,7 @@ struct cudnnFusedOps_t:
     alias CUDNN_FUSED_SCALE_BIAS_ADD_ACTIVATION_GEN_BITMASK = Self(5)
     alias CUDNN_FUSED_DACTIVATION_FORK_DBATCHNORM = Self(6)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -701,6 +704,7 @@ struct cudnnFusedOpsPointerPlaceHolder_t:
     alias CUDNN_PTR_ELEM_ALIGNED = Self(1)
     alias CUDNN_PTR_16B_ALIGNED = Self(2)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -838,6 +842,7 @@ struct cudnnFusedOpsVariantParamLabel_t:
     alias CUDNN_SCALAR_DOUBLE_BN_EXP_AVG_FACTOR = Self(26)
     alias CUDNN_SCALAR_DOUBLE_BN_EPSILON = Self(27)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1326,6 +1331,7 @@ struct cudnnConvolutionMode_t:
     alias CUDNN_CONVOLUTION = Self(0)
     alias CUDNN_CROSS_CORRELATION = Self(1)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

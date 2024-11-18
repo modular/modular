@@ -578,5 +578,6 @@ struct DeviceAttribute:
     """Device supports switch multicast and reduction operations.
     """
 
+    @implicit
     fn __init__(out self, value: Int32):
         self._value = value

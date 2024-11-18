@@ -15,6 +15,7 @@ struct Property:
     alias MINOR_VERSION = Self(1)
     alias PATCH_LEVEL = Self(2)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -73,6 +74,7 @@ struct DataType:
     alias R_64U = Self(26)
     alias C_64U = Self(27)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

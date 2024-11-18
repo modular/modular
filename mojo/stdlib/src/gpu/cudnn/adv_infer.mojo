@@ -207,6 +207,7 @@ struct cudnnForwardMode_t:
     alias CUDNN_FWD_MODE_INFERENCE = Self(0)
     alias CUDNN_FWD_MODE_TRAINING = Self(1)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -769,6 +770,7 @@ struct cudnnSeqDataAxis_t:
     alias CUDNN_SEQDATA_BEAM_DIM = Self(2)
     alias CUDNN_SEQDATA_VECT_DIM = Self(3)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

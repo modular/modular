@@ -17,6 +17,7 @@ struct ProfileBlock[enabled: Bool = False]:
     var start_time: UInt
 
     @always_inline
+    @implicit
     fn __init__(out self, name: StringLiteral):
         self.start_time = 0
 

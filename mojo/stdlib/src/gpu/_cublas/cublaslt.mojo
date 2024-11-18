@@ -153,6 +153,7 @@ struct Order:
     32-wide group of columns. E.g. if matrix has 33 columns and 1 row, ld must be at least (32*32)*1 = 1024.
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -374,6 +375,7 @@ struct ClusterShape:
     """Let library pick cluster shape automatically.
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -620,6 +622,7 @@ struct MatmulAlgorithmCapability:
     int32_t.
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -704,6 +707,7 @@ struct PointerMode:
     """alpha pointer targets an array in device memory, beta is a single value in host memory.
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -850,6 +854,7 @@ struct Search:
     """reserved for future use.
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -903,6 +908,7 @@ struct ReductionScheme:
     """Intermediate results are stored in output type in the workspace and reduced in a separate step.
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1287,6 +1293,7 @@ struct cublasLtMatmulDescAttributes_t:
     int32_t *, default: NULL.
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1678,6 +1685,7 @@ struct Preference:
     uint64_t, default: uint64_t(-1) (allow everything).
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1789,6 +1797,7 @@ struct AlgorithmConfig:
     uint16_t, default: 0 (SHAPE_AUTO).
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -1915,6 +1924,7 @@ struct InnerShape:
     alias MMA16816 = Self(4)
     alias END = Self(5)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2014,6 +2024,7 @@ struct LayoutAttribute:
     in memory in each element).
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2191,6 +2202,7 @@ struct Stages:
     alias STAGES_128xAUTO = Self(34)
     alias STAGES_END = Self(35)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2491,6 +2503,7 @@ struct Epilogue:
     (see CUBLASLT_MATMUL_DESC_BIAS_POINTER).
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2589,6 +2602,7 @@ struct PointerModeMask:
     alias ALPHA_DEVICE_VECTOR_BETA_HOST = Self(4)
     """see ALPHA_DEVICE_VECTOR_BETA_HOST."""
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -2690,6 +2704,7 @@ struct Tile:
     alias TILE_256x32 = Self(35)
     alias TILE_END = Self(36)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 
@@ -3039,6 +3054,7 @@ struct TransformDescriptor:
     int32_t, default: CUBLAS_OP_N.
     """
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

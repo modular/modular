@@ -22,6 +22,7 @@ struct Result(Writable):
     alias NOT_SUPPORTED = Self(15)
     alias LICENSE_ERROR = Self(16)
 
+    @implicit
     fn __init__(out self, value: Int):
         self._value = value
 

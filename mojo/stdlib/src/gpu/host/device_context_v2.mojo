@@ -84,6 +84,7 @@ fn _checked(err_msg: _CharPtr) raises:
 struct _DeviceTimer:
     var _handle: _DeviceTimerPtr
 
+    @implicit
     fn __init__(out self, ptr: _DeviceTimerPtr):
         self._handle = ptr
 
@@ -443,7 +444,7 @@ struct DeviceFunctionV2[
                 self._func_impl.asm.unsafe_ptr(),
                 max_registers.or_else(-1),
                 threads_per_block.or_else(-1),
-                int(cache_mode.or_else(-1)),
+                cache_mode.or_else(-1)._value,
                 cache_config.or_else(CacheConfig(-1)).code,
                 max_dynamic_shared_size_bytes,
                 debug_level.unsafe_cstr_ptr().bitcast[UInt8](),
@@ -701,6 +702,7 @@ struct DeviceContextV2:
             _DeviceContextPtr,
         ](self._handle)
 
+    @implicit
     fn __init__(out self, handle: UnsafePointer[NoneType]):
         """Create a Mojo DeviceContext from a pointer to an existing C++ object.
         """
