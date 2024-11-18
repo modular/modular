@@ -55,6 +55,32 @@ alias StaticConstantOrigin = __mlir_attr[
     `, "__constants__"> : !lit.origin<0>`,
 ]
 
+
+struct _lit_indirect_origin[
+    is_mutable: Bool, //, base: Origin[is_mutable].type
+]:
+    alias result = __mlir_attr[
+        `#lit.indirect.origin<`,
+        Self.base,
+        `> : `,
+        __type_of(Self.base),
+    ]
+
+
+struct _lit_mut_cast[
+    is_mutable: Bool, //,
+    operand: Origin[is_mutable].type,
+    result_mutable: Bool,
+]:
+    alias result = __mlir_attr[
+        `#lit.origin.mutcast<`,
+        operand,
+        `> : !lit.origin<`,
+        +result_mutable.value,
+        `>`,
+    ]
+
+
 # ===----------------------------------------------------------------------=== #
 # Builtin Types
 # ===----------------------------------------------------------------------=== #
@@ -370,20 +396,6 @@ struct _lit_origin_union[
     ]
 
 
-struct _lit_mut_cast[
-    is_mutable: Bool, //,
-    operand: Origin[is_mutable].type,
-    result_mutable: Bool,
-]:
-    alias result = __mlir_attr[
-        `#lit.origin.mutcast<`,
-        operand,
-        `> : !lit.origin<`,
-        +result_mutable.value,
-        `>`,
-    ]
-
-
 @value
 struct _VariadicListMemIter[
     elt_is_mutable: Bool, //,
@@ -635,6 +647,18 @@ struct UnsafePointer[
     fn __getitem__(
         self, offset: Int
     ) -> ref [Self.origin, address_space._value.value] T:
+        while __mlir_attr.true:
+            pass
+
+    # This returns a reference to an element with an origin specified by as a
+    # unique reference from this pointer.  The returned reference is always
+    # mutable.
+    fn get_unique_item_ref[
+        self_origin: ImmutableOrigin
+    ](ref [self_origin]self, offset: Int = 0) -> ref [
+        _lit_mut_cast[_lit_indirect_origin[self_origin].result, True].result,
+        address_space._value.value,
+    ] T:
         while __mlir_attr.true:
             pass
 

@@ -630,6 +630,16 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (auto mutcast = dyn_cast<OriginMutCastAttr>(param)) {
+    if (mutcast.getType().isMutableKnown(false))
+      os << "(muttoimm ";
+    else
+      os << "(mutcast ";
+    printDemangledParam(os, mutcast.getOperand(), diagShared);
+    os << ")";
+    return;
+  }
+
   if (auto anyLife = dyn_cast<AnyOriginAttr>(param)) {
     if (anyLife.getType().isMutableKnown(true))
       os << "MutableAnyOrigin";

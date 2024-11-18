@@ -190,7 +190,7 @@ ParseResult ParserBase::parseRefSpecifier(ExprNode *&expr,
 
   // Parse the [a, b, c] specification if present.
   if (consumeIf(Token::l_square)) {
-    if (parseExpressionList(expr, {}) ||
+    if (parseExpressionList(expr, /*stmtIndent=*/{}, Token::r_square) ||
         parseToken(Token::r_square, "expected ']' in ref specifier"))
       return failure();
   } else if (isOriginRequired) {

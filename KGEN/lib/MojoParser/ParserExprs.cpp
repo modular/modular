@@ -1122,7 +1122,8 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
 /// Parse an expression_list production, returning a single expression or a
 /// tuple expression if there are commas.
 ParseResult ParserBase::parseExpressionList(ExprNode *&result,
-                                            std::optional<size_t> stmtIndent) {
+                                            std::optional<size_t> stmtIndent,
+                                            ArrayRef<Token::Kind> terminators) {
   ExprParser parser(shared, getLexer(), stmtIndent);
   SmallVector<ExprNode *> exprs;
   auto parseItem = [&]() -> ParseResult {
@@ -1131,7 +1132,7 @@ ParseResult ParserBase::parseExpressionList(ExprNode *&result,
   };
 
   SMLoc firstCommaLoc;
-  if (parser.parseCommaSeparatedList(parseItem, /*terminators=*/{}, stmtIndent,
+  if (parser.parseCommaSeparatedList(parseItem, terminators, stmtIndent,
                                      &firstCommaLoc))
     return failure();
 

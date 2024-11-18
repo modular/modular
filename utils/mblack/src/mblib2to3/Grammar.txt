@@ -34,7 +34,7 @@ async_funcdef: ASYNC funcdef
 funcdef: ('def' | FN | MLIR_REGION) NAME [metaparams] parameters [NAME*] ['->' result_type] ['as' NAME] ':' suite
 metaparams: '[' [typedargslist] ['->' typedargslist] ']'
 parameters: '(' [typedargslist] ')'
-result_type: [REF '[' test [',' test ] ']'] test
+result_type: [REF '[' test [',' test [',']] ']'] test
 
 # The following definition for typedarglist is equivalent to this set of rules:
 #
@@ -50,7 +50,7 @@ result_type: [REF '[' test [',' test ] ']'] test
 #
 # It needs to be fully expanded to allow our LL(1) parser to work on it.
 
-convention: OWNED | BORROWED | INOUT | OUT | (REF ['[' test [',' test] ']'])
+convention: OWNED | BORROWED | INOUT | OUT | (REF ['[' test [',' test [',']] ']'])
 #tname: NAME [metaparams] [':' test]
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*

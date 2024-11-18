@@ -239,7 +239,8 @@ public:
   /// Parse an expression_list production, returning a single expression or a
   /// tuple expression if there are commas.
   ParseResult parseExpressionList(ExprNode *&result,
-                                  std::optional<size_t> stmtIndent);
+                                  std::optional<size_t> stmtIndent,
+                                  ArrayRef<Token::Kind> terminators = {});
 
   ParseResult parseStarredItem(ExprNode *&result);
 
