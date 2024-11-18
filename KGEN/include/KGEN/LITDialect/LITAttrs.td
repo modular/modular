@@ -645,28 +645,64 @@ def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field"> {
     subfield is known to alias the larger origin, but not other sibling origins.
   }];
 
-  let parameters = (ins "TypedAttr":$structOrigin,
-                        "StringAttr":$field,
+  let parameters = (ins "TypedAttr":$base, "StringAttr":$field,
                         AttributeSelfTypeParameter<"", "OriginType">:$type);
 
-  let assemblyFormat = "`<` $structOrigin `,` $field `>`";
+  let assemblyFormat = "`<` $base `,` $field `>`";
 
   let skipDefaultBuilders = 1;
   let builders = [
     // These builders fold the request automatically.
     AttrBuilderWithInferredContext<(ins
-      "TypedAttr":$structOrigin, "StringAttr":$field), "", "TypedAttr">,
-    AttrBuilder<(ins "TypedAttr":$structOrigin, "StringAttr":$field,
+      "TypedAttr":$base, "StringAttr":$field), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$base, "StringAttr":$field,
                 "OriginType":$type), [{
-      return get(structOrigin, field);
+      return get(base, field);
     }], "TypedAttr">,
   ];
 
   let extraClassDeclaration = [{
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
-    static OriginFieldAttr getFromBytecode(TypedAttr structOrigin,
+    static OriginFieldAttr getFromBytecode(TypedAttr base,
         StringAttr field, OriginType type);
+  }];
+}
+
+
+//===----------------------------------------------------------------------===//
+// IndirectOriginAttr
+//===----------------------------------------------------------------------===//
+
+def IndirectOriginAttr : LITTypedAttr<"IndirectOrigin", "indirect.origin"> {
+  let summary = "Access an indirectly defined origin";
+  let description = [{
+    This attribute specifies an indirectly accessed memory location that is
+    usually (but not necessarily) a pointer indirection away from the base.  The
+    base origin controls invalidation of the indirect origin, and may either be
+    a "shared" base (which is used to model Mojo concepts like ArcPointer or
+    a "unique" base (used to model things like OwnedPointer, Variant, List,
+    etc).
+  }];
+
+  let parameters = (ins "TypedAttr":$base, "bool":$isUnique,
+                        AttributeSelfTypeParameter<"", "OriginType">:$type);
+
+  let assemblyFormat = "`<` $base `,` $isUnique `>`";
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    // These builders fold the request automatically.
+    AttrBuilderWithInferredContext<(ins
+      "TypedAttr":$base, "bool":$isUnique), "", "TypedAttr">,
+    AttrBuilder<(ins "TypedAttr":$base, "bool":$isUnique,
+                "OriginType":$type), [{
+      return get(base, isUnique);
+    }], "TypedAttr">,
+  ];
+
+  let extraClassDeclaration = [{
+     bool isUnique() const { return getIsUnique(); }
   }];
 }
 

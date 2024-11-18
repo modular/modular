@@ -918,15 +918,51 @@ TypedAttr OriginFieldAttr::get(TypedAttr structOrigin, StringAttr field) {
   }
 
   // The structOriginRef must have a OriginType, which we propagate.
-  auto structLife = ::cast<OriginType>(structOrigin.getType());
+  auto structType = ::cast<OriginType>(structOrigin.getType());
   return OriginFieldAttr::Base::get(structOrigin.getContext(), structOrigin,
-                                    field, structLife);
+                                    field, structType);
 }
 
 OriginFieldAttr OriginFieldAttr::getFromBytecode(TypedAttr structOrigin,
                                                  StringAttr field,
                                                  OriginType type) {
   return Base::get(type.getContext(), structOrigin, field, type);
+}
+
+//===----------------------------------------------------------------------===//
+// IndirectOriginAttr
+//===----------------------------------------------------------------------===//
+
+TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin, bool isUnique) {
+  // Check to see if there are any permutations we can fold.
+
+  // If we have the global mutable origin, treat it conservatively by
+  // returning the global mutable origin.  It isn't wise to try to derive
+  // information from something where origins have been casted away.
+  if (::isa<AnyOriginAttr>(baseOrigin))
+    return baseOrigin;
+
+  // We push any mutability casts outside of ourselves.
+  //     mutcast(x)[] => mutcast(x[])
+  if (auto mutCast = ::dyn_cast<OriginMutCastAttr>(baseOrigin)) {
+    auto inner = IndirectOriginAttr::get(mutCast.getOperand(), isUnique);
+    return OriginMutCastAttr::get(inner, mutCast.getType());
+  }
+
+  // We push this inside a origin.union as well, so we get the union on the
+  // outside.
+  if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(baseOrigin)) {
+    SmallVector<TypedAttr> elts;
+    for (auto elt : unionAttr.getOperands())
+      elts.push_back(IndirectOriginAttr::get(elt, isUnique));
+    // Field accesses don't affect mutability, so we use the same type.
+    return OriginUnionAttr::get(elts, unionAttr.getType());
+  }
+
+  // The result type is the same as baseOrigin's.
+  auto baseType = ::cast<OriginType>(baseOrigin.getType());
+  return IndirectOriginAttr::Base::get(baseOrigin.getContext(), baseOrigin,
+                                       isUnique, baseType);
 }
 
 //===----------------------------------------------------------------------===//

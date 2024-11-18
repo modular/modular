@@ -166,8 +166,14 @@ def WrappedOriginMutCastAttr : DialectAttribute<(attr
 )>;
 
 def WrappedOriginFieldAttr : DialectAttribute<(attr
-  TypedAttr:$structOrigin,
+  TypedAttr:$base,
   StringAttr:$field,
+  ConcreteType<"OriginType">:$type
+)>;
+
+def WrappedIndirectOriginAttr : DialectAttribute<(attr
+  TypedAttr:$baseOrigin,
+  Bool:$isUnique,
   ConcreteType<"OriginType">:$type
 )>;
 

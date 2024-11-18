@@ -507,12 +507,28 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
   auto processPostFix = [&]() -> OptionalParseResult {
     if (!result)
       return failure();
-    while (succeeded(p.parseOptionalArrow())) {
-      StringRef fieldName;
-      if (failed(p.parseKeyword(&fieldName)))
-        return failure();
-      result = OriginFieldAttr::get(result,
-                                    StringAttr::get(p.getContext(), fieldName));
+    while (true) {
+      if (succeeded(p.parseOptionalArrow())) {
+        StringRef fieldName;
+        if (failed(p.parseKeyword(&fieldName)))
+          return failure();
+        result = OriginFieldAttr::get(
+            result, StringAttr::get(p.getContext(), fieldName));
+        continue;
+      }
+      if (succeeded(p.parseOptionalLSquare())) {
+        StringRef keyword;
+        auto loc = p.getCurrentLocation();
+        if (p.parseKeyword(&keyword) || p.parseRSquare())
+          return failure();
+        if (keyword != "u" && keyword != "s")
+          return p.emitError(loc,
+                             "expected 'u' or 's' in indirect origin attr");
+        result = IndirectOriginAttr::get(result, keyword == "u");
+        continue;
+      }
+      // Otherwise, not a postfix thing.
+      break;
     }
     return mlir::success();
   };
@@ -663,12 +679,20 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
 
   // Print field access with dot notation.
   if (auto field = ::dyn_cast<OriginFieldAttr>(value)) {
-    if (failed(printValue(p, field.getStructOrigin())))
+    if (failed(printValue(p, field.getBase())))
       return failure();
     // FIXME: This should use ".field" instead of "->field" but MLIR doesn't
     // make it easy to parse a dot.
     p << "->";
     printParamName(p, field.getField(), /*isRef*/ false);
+    return success();
+  }
+
+  // Print field access with x.y[u] notation.
+  if (auto indirect = ::dyn_cast<IndirectOriginAttr>(value)) {
+    if (failed(printValue(p, indirect.getBase())))
+      return failure();
+    p << '[' << (indirect.isUnique() ? 'u' : 's') << ']';
     return success();
   }
 

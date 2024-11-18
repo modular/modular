@@ -101,6 +101,19 @@ kgen.generator @field_attr<life: !lit.origin<0>>
   kgen.return
 }
 
+// CHECK-LABEL: kgen.generator @indirect_origin_attr<orig: origin<0>>(
+// CHECK-SAME: %arg0: !lit.ref<@Foo, imm orig[u]->field>
+// CHECK-SAME: %arg1: !lit.ref<@Foo, imm orig[s]->a[u]>)
+kgen.generator @indirect_origin_attr<orig: !lit.origin<0>>
+(%arg0: !lit.ref<@Foo, imm orig[u]->field>,
+ %arg1: !lit.ref<@Foo, imm orig[s]->a[u]>) {
+
+  // CHECK-NEXT: "verbose_attr"() {attr = #lit.indirect.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<0>, true> : !lit.origin<0>} : () -> ()
+  "verbose_attr"() {attr = #lit.indirect.origin<#kgen.param.decl.ref<"orig"> : !lit.origin<0>, true> : !lit.origin<0>} : () -> ()
+  kgen.return
+}
+
+
 
 
 // CHECK-LABEL: kgen.generator @anystruct

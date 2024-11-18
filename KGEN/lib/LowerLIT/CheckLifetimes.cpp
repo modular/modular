@@ -782,8 +782,7 @@ ValueSet::getValueRefAndTypeForOrigin(TypedAttr origin) const {
   // If the origin has one or more field specifiers like 'a.x.y.z', find
   // the ValueRef for the base and then refine it.
   if (auto field = dyn_cast<OriginFieldAttr>(origin)) {
-    auto [valueRef, type] =
-        getValueRefAndTypeForOrigin(field.getStructOrigin());
+    auto [valueRef, type] = getValueRefAndTypeForOrigin(field.getBase());
     // If we don't have field sensitive information then we cannot refine the
     // origin.  This also handles the null valueRef case.
     if (!type)
@@ -1270,7 +1269,7 @@ void UninitializedValueScan::handleAnyOriginUse(
       // Ignore field sensitivity of the use: if we have a def of a subfield of
       // the value then we treat it as defining the value.
       while (auto field = dyn_cast<OriginFieldAttr>(raw))
-        raw = field.getStructOrigin();
+        raw = field.getBase();
       definedOriginSet.insert(raw);
     });
   }
