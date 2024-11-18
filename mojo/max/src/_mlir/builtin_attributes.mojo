@@ -35,6 +35,10 @@ struct BoolAttr(DialectAttribute):
 struct TypeAttr(DialectAttribute):
     var type: Type
 
+    @implicit
+    fn __init__(out self, type: Type):
+        self.type = type
+
     fn to_mlir(self) -> Attribute:
         return _c.BuiltinAttributes.mlirTypeAttrGet(self.type.c)
 

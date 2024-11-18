@@ -27,6 +27,7 @@ struct _OwningPointer(Movable):
 
     var ptr: UnsafePointer[NoneType]
 
+    @implicit
     fn __init__(out self, ptr: UnsafePointer[NoneType]):
         self.ptr = ptr
 

@@ -72,7 +72,12 @@ def test_implicit_conversion():
     )
 
     # FIXME (40568) should remove str
-    assert_equal(str(_function_that_takes_anytensor(tensor^, dt2^)), str(4))
+    assert_equal(
+        str(
+            _function_that_takes_anytensor(AnyTensor(tensor^), AnyTensor(dt2^))
+        ),
+        str(4),
+    )
 
 
 @value

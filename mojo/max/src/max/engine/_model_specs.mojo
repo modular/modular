@@ -25,6 +25,10 @@ struct CTensorNameArray:
     alias FreeTensorNameArrayFnName = "M_freeTensorNameArray"
     alias GetTensorNameAtFnName = "M_getTensorNameAt"
 
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
+
     fn get_name_at(self, idx: Int, lib: DLHandle) raises -> String:
         if not self.ptr:
             raise "failed to get tensor name"

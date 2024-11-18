@@ -14,6 +14,7 @@ from ._status import _CStatus
 struct ManagedDLHandle:
     var lib: DLHandle
 
+    @implicit
     fn __init__(out self, lib: DLHandle):
         self.lib = lib
 

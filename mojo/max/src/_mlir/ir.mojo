@@ -108,6 +108,7 @@ struct Context:
     fn __init__(out self):
         self.c = _c.IR.mlirContextCreateWithThreading(False)
 
+    @implicit
     fn __init__(out self, threading_enabled: Bool):
         self.c = _c.IR.mlirContextCreateWithThreading(threading_enabled)
 
@@ -240,6 +241,7 @@ struct Module(Stringable, Writable):
     alias cType = _c.IR.MlirModule
     var c: Self.cType
 
+    @implicit
     fn __init__(out self, location: Location):
         self.c = _c.IR.mlirModuleCreateEmpty(location.c)
 
@@ -291,12 +293,15 @@ struct _OpBuilderList[T: CollectionElement]:
     fn __init__(out self):
         self.elements = List[T]()
 
+    @implicit
     fn __init__(out self, empty: ListLiteral[]):
         self.elements = List[T]()
 
+    @implicit
     fn __init__(out self, owned elements: List[T]):
         self.elements = elements^
 
+    @implicit
     fn __init__(out self, element: T):
         self.elements = List[T]()
         self.elements.append(element)
@@ -311,6 +316,7 @@ struct NamedAttribute(CollectionElement):
     var name: Identifier
     var attr: Attribute
 
+    @implicit
     fn __init__(out self, attr: Self.cType):
         self.name = Identifier(attr.name)
         self.attr = Attribute(attr.attribute)
@@ -334,6 +340,7 @@ struct Operation(CollectionElement, Stringable, Writable):
     alias cType = _c.IR.MlirOperation
     var c: Self.cType
 
+    @implicit
     fn __init__(out self, op: Self.cType):
         self.c = op
 
@@ -604,6 +611,10 @@ struct Identifier(CollectionElement, Stringable):
     alias cType = _c.IR.MlirIdentifier
     var c: Self.cType
 
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
+
     fn __init__(out self, ctx: Context, identifier: String):
         self.c = _c.IR.mlirIdentifierGet(
             ctx.c, StringRef(ptr=identifier.unsafe_ptr())
@@ -619,8 +630,13 @@ struct Type(CollectionElement, Stringable, Writable):
     alias cType = _c.IR.MlirType
     var c: Self.cType
 
+    @implicit
     fn __init__[T: DialectType](inout self, type: T):
         self = type.to_mlir()
+
+    @implicit
+    fn __init__(inout self, type: Self.cType):
+        self.c = type
 
     @staticmethod
     fn parse(ctx: Context, s: String) raises -> Self:
@@ -695,6 +711,7 @@ struct Attribute(CollectionElement, Stringable):
     alias cType = _c.IR.MlirAttribute
     var c: Self.cType
 
+    @implicit
     fn __init__[T: DialectAttribute](inout self, attr: T):
         self = attr.to_mlir()
 
@@ -720,6 +737,7 @@ struct Block(CollectionElement, Stringable):
     alias cType = _c.IR.MlirBlock
     var c: Self.cType
 
+    @implicit
     fn __init__(out self, args: List[Type]):
         var locations = List[Location]()
         for i in range(len(args)):

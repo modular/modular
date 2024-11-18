@@ -42,6 +42,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
     var _static: Int64
     var _name: String
 
+    @implicit
     fn __init__(out self, static: Int):
         """Create a static shape element with the given static dimension value.
 
@@ -50,6 +51,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         """
         self.__init__(Int64(static))
 
+    @implicit
     fn __init__(out self, static: Int64):
         """Create a static shape element with the given static dimension value.
 
@@ -63,6 +65,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
     # TODO(MSTDL-715):
     #   This initializer should not be necessary, we should need
     #   only the initilaizer from a `NoneType`.
+    @implicit
     fn __init__(out self, unnamed: NoneType._mlir_type):
         """Create an unnamed dynamic shape element.
 
@@ -71,6 +74,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         """
         self = Self(NoneType(unnamed))
 
+    @implicit
     fn __init__(out self, unnamed: NoneType):
         """Create an unnamed dynamic shape element.
 
@@ -81,6 +85,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         self._static = 0
         self._name = String()
 
+    @implicit
     fn __init__(out self, owned name: String):
         """Create a dynamic shape element with the given name.
 
@@ -94,6 +99,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         self._static = 0
         self._name = name^
 
+    @implicit
     fn __init__(out self, name: StringRef):
         """Create a dynamic shape element with the given name.
 
@@ -105,6 +111,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         """
         self.__init__(String(name))
 
+    @implicit
     fn __init__(out self, name: StringLiteral):
         """Create a dynamic shape element with the given name.
 

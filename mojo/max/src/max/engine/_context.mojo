@@ -39,6 +39,10 @@ struct CRuntimeConfig:
     alias SetMaxContextFnName = "M_setMaxContext"
     alias SetAPILanguageFnName = "M_setAPILanguage"
 
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
+
     fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
 
@@ -111,6 +115,10 @@ struct RuntimeConfig:
 @register_passable("trivial")
 struct CRuntimeContext:
     var ptr: UnsafePointer[NoneType]
+
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
 
     alias FreeRuntimeContextFnName = "M_freeRuntimeContext"
 

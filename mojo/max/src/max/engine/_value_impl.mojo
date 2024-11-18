@@ -25,6 +25,10 @@ struct CValue:
     alias _TakeMojoValueFnName = "M_takeMojoValueFromValue"
     alias _FreeValueFnName = "M_freeValue"
 
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
+
     fn get_c_tensor(self, lib: DLHandle) -> CTensor:
         """Get CTensor within value."""
         return call_dylib_func[CTensor](lib, Self._GetTensorFnName, self)
@@ -57,6 +61,10 @@ struct CList:
     alias _GetValueFnName = "M_getListValue"
     alias _AppendFnName = "M_appendToList"
     alias _FreeFnName = "M_freeList"
+
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
 
     fn get_size(self, lib: DLHandle) -> Int:
         """Get number of elements in list."""

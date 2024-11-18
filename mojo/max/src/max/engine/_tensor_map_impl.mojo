@@ -35,6 +35,10 @@ struct CTensorMap:
     alias GetTensorMapSizeFnName = "M_getTensorMapSize"
     alias KeysFnName = "M_tensorMapKeys"
 
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
+
     fn get_tensor_by_name(self, name: CString, lib: DLHandle) raises -> CTensor:
         var status = Status(lib)
         var tensor = call_dylib_func[CTensor](

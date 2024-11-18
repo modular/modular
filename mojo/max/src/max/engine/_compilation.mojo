@@ -226,6 +226,7 @@ struct CompileConfig:
 
     alias NewCompileConfigFnName = "M_newCompileConfig"
 
+    @implicit
     fn __init__(out self, lib: DLHandle):
         self._ptr = OwnedPointer(
             call_dylib_func[CCompileConfig](lib, Self.NewCompileConfigFnName)
@@ -337,6 +338,10 @@ struct CCompiledModel:
     alias GetNumInputsFnName = "M_getNumModelInputs"
     alias GetNumOutputsFnName = "M_getNumModelOutputs"
     alias ExportModelFnName = "M_exportCompiledModel"
+
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
 
     fn num_model_inputs(self, lib: DLHandle) raises -> Int:
         """Gets the number of inputs of the model."""

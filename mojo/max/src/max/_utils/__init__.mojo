@@ -20,6 +20,7 @@ struct CString:
 
     var ptr: UnsafePointer[c_char]
 
+    @implicit
     fn __init__(out self, ptr: UnsafePointer[c_char]):
         """
         Construct a `CString` from a C string data pointer.

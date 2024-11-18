@@ -24,6 +24,10 @@ struct CModel:
     alias FreeModelFnName = "M_freeModel"
     alias WaitForModelFnName = "M_waitForModel"
 
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
+
     fn await_model(self, lib: DLHandle) raises:
         var status = Status(lib)
         call_dylib_func(

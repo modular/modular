@@ -259,6 +259,7 @@ struct InputSpec(CollectionElement):
     var _dynamic: Self._dynamic_type
     var _dtype: DType
 
+    @implicit
     fn __init__(out self, spec: TensorSpec):
         """
         Create input specifications for one input tensor, as a
@@ -421,6 +422,7 @@ struct SessionOptions:
         """Creates a new SessionOptions object."""
         self._device = None
 
+    @implicit
     fn __init__(out self, device: Device):
         """Creates a new SessionOptions object with a device set."""
         self._device = device

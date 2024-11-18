@@ -33,6 +33,10 @@ struct CTensor:
     alias GetTensorSpecFnName = "M_getTensorSpec"
     alias FreeTensorFnName = "M_freeTensor"
 
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
+
     fn size(self, lib: DLHandle) -> Int:
         return call_dylib_func[Int](lib, Self.GetTensorNumElementsFnName, self)
 

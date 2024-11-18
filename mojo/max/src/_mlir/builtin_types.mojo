@@ -16,6 +16,7 @@ struct FunctionType(DialectType):
     var inputs: List[Type]
     var results: List[Type]
 
+    @implicit
     fn __init__(out self, ctx: Context):
         self.__init__(ctx, List[Type](), List[Type]())
 

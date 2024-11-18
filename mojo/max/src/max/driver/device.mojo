@@ -45,6 +45,10 @@ fn _get_driver_path() raises -> String:
 struct _CDevice:
     var _ptr: UnsafePointer[NoneType]
 
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self._ptr = ptr
+
     fn copy(self, lib: Optional[DriverLibrary]) -> Self:
         if not lib:
             return self

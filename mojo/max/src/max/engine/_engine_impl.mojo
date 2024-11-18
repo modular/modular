@@ -24,6 +24,7 @@ struct _EngineImpl:
 
     alias VersionFnName = "M_version"
 
+    @implicit
     fn __init__(out self, path: String):
         self.lib = DLHandle(path)
         self.can_close_lib = True

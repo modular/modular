@@ -32,6 +32,10 @@ struct DiagnosticSeverity:
     alias NOTE = _c.Diagnostics.MlirDiagnosticNote
     alias REMARK = _c.Diagnostics.MlirDiagnosticRemark
 
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
+
     fn __eq__(self, other: Self) -> Bool:
         return self.c.value == other.c.value
 
@@ -43,6 +47,10 @@ struct Diagnostic(Stringable, Writable):
 
     alias cType = _c.Diagnostics.MlirDiagnostic
     var c: Self.cType
+
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
 
     fn __str__(self) -> String:
         return _to_string[Self.cType, _c.Diagnostics.mlirDiagnosticPrint](
@@ -152,6 +160,7 @@ struct ErrorCapturingDiagnosticHandler:
     var handler: Optional[Self.Handler]
     var error: String
 
+    @implicit
     fn __init__(out self, ctx: Context):
         self.error = "MLIR raised but didn't set an error"
         self.ctx = ctx

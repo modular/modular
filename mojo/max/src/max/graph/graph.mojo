@@ -171,6 +171,7 @@ struct Graph(CollectionElement, Stringable, Writable):
 
     var _graph: _GraphRef
 
+    @implicit
     fn __init__(out self, in_type: Type):
         """Constructs a new `Graph` with a single input type.
 

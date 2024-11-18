@@ -52,6 +52,7 @@ struct AnyTensor:
         self._data = UnsafePointer[UInt8]()
         self._device_memory_impl_ptr = UnsafePointer[NoneType]()
 
+    @implicit
     fn __init__(out self, owned device_tensor: DeviceTensor):
         """Creates AnyTensor from a DeviceTensor.
 
@@ -314,6 +315,7 @@ struct AnyMojoValue:
         self._impl = _CMojoValue()
 
     @doc_private
+    @implicit
     fn __init__(out self, impl: _CMojoValue):
         self._impl = impl
 
@@ -387,6 +389,7 @@ struct AnyMemory:
         "Default constructor for AnyMemory."
         self._value = AnyMojoValue()
 
+    @implicit
     fn __init__(out self, owned device_tensor: DeviceTensor):
         """Creates AnyMemory from a DeviceTensor.
 
@@ -405,6 +408,7 @@ struct AnyMemory:
         """
         self._value = AnyTensor(tensor^)
 
+    @implicit
     fn __init__(out self, owned tensor: AnyTensor):
         """Creates AnyMemory from a AnyTensor.
 
@@ -413,6 +417,7 @@ struct AnyMemory:
         """
         self._value = tensor^
 
+    @implicit
     fn __init__(out self, owned value: AnyMojoValue):
         """Creates AnyMemory from AnyMojoValue.
 

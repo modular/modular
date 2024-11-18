@@ -19,6 +19,10 @@ struct CStatus:
     alias GetErrorFnName = "M_getError"
     alias FreeStatusFnName = "M_freeStatus"
 
+    @implicit
+    fn __init__(out self, ptr: UnsafePointer[NoneType]):
+        self.ptr = ptr
+
     fn is_error(self, lib: DLHandle) -> Bool:
         """
         Check if status is error.
@@ -48,6 +52,7 @@ struct Status:
 
     alias NewStatusFnName = "M_newStatus"
 
+    @implicit
     fn __init__(out self, lib: DLHandle):
         self.ptr = call_dylib_func[CStatus](lib, self.NewStatusFnName)
         self.lib = lib

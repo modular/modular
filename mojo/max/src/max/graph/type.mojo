@@ -89,6 +89,7 @@ struct StaticDim(CollectionElement):
     var dim: Int64
     """The size of the static dimension."""
 
+    @implicit
     fn __init__(out self, dim: Int):
         """Int conversion constructor.
 
@@ -151,6 +152,7 @@ struct Dim(CollectionElement):
     var value: Variant[DynamicDim, StaticDim, SymbolicDim]
     """The dimension data."""
 
+    @implicit
     fn __init__(out self, dim: Int):
         """Int static dimension conversion constructor.
 
@@ -159,6 +161,7 @@ struct Dim(CollectionElement):
         """
         self.value = StaticDim(dim)
 
+    @implicit
     fn __init__(out self, name: StringLiteral):
         """StringLiteral symbolic dimension conversion constructor.
 
@@ -374,6 +377,7 @@ struct TensorType(CollectionElement):
     # Constructors
     # ===------------------------------------------------------------------=== #
 
+    @implicit
     fn __init__(out self, dtype: DType):
         """Constructs a 0-d tensor type.
 
@@ -411,6 +415,7 @@ struct TensorType(CollectionElement):
     # Auxiliary factories
     # ===------------------------------------------------------------------=== #
 
+    @implicit
     fn __init__(out self, spec: TensorSpec):
         """Constructs a tensor type from a TensorSpec.
 
@@ -643,6 +648,7 @@ struct Type(CollectionElement):
     var type: Variant[TensorType, ListType, _OpaqueType]
     """The type data."""
 
+    @implicit
     fn __init__(out self, t: TensorType):
         """Constructs a type from a tensor type.
 
@@ -651,6 +657,7 @@ struct Type(CollectionElement):
         """
         self.type = t
 
+    @implicit
     fn __init__(out self, t: ListType):
         """Constructs a type from a list type.
 
@@ -659,6 +666,7 @@ struct Type(CollectionElement):
         """
         self.type = t
 
+    @implicit
     fn __init__(out self, t: _OpaqueType):
         """Constructs a type from an opaque typ.
 

@@ -36,6 +36,7 @@ struct Status:
     var impl: _CStatus
     var lib: DriverLibrary
 
+    @implicit
     fn __init__(out self, lib: DriverLibrary):
         self.impl = call_dylib_func[_CStatus](lib.get_handle(), "M_newStatus")
         self.lib = lib
