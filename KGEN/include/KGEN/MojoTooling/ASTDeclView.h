@@ -653,6 +653,8 @@ private:
 
   SmallVector<ParameterDeclView> parameters;
 
+  KGEN::LIT::TypeConvention convention;
+
   //===----------------------------------------------------------------------===//
   // Parsed DocString
   //===----------------------------------------------------------------------===//

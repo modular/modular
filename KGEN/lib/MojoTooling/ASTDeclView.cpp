@@ -1123,6 +1123,17 @@ std::string StructDeclView::getMarkdownDocString() const {
   return markdown;
 }
 
+static StringRef toString(TypeConvention convention) {
+  switch (convention) {
+  case TypeConvention::MemoryOnly:
+    return "memory_only";
+  case TypeConvention::RegisterPassable:
+    return "register_passable";
+  case TypeConvention::RegisterPassableTrivial:
+    return "register_passable_trivial";
+  }
+}
+
 llvm::json::Object StructDeclView::toJSON(MojoParserContext &ctx) const {
   auto aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(*decl);
   auto fields = extractChildDecls<StructFieldDeclView, StructFieldOp>(*decl);
@@ -1143,6 +1154,7 @@ llvm::json::Object StructDeclView::toJSON(MojoParserContext &ctx) const {
       {"parameters", toJSONArray(ctx, parameters)},
       {"parentTraits", llvm::json::Array(parentTraits)},
       {"summary", summary},
+      {"convention", toString(convention)},
   };
 }
 
@@ -1153,6 +1165,7 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
       decl(declRef) {
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
   TypeSignatureType signature = structOp.getSignature();
+  convention = structOp.getConvention();
 
   auto &shared = *declRef.getShared();
 
