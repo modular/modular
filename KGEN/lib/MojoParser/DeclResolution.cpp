@@ -473,8 +473,14 @@ void FnSigDecorators::applyStaticMethod(const DeclRefNode &node) {
 }
 
 void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
+  // Drop any error and result slots.
+  ArrayRef<ParsedArgument> args = tcSignature.argList.parsedArgs;
+  while (!args.empty() &&
+         args.back().convention == ParsedArgument::kConventionByRefResult)
+    args = args.drop_back();
+
   if (SpecialFunctionInfo::get(baseName).kind != SpecialFunctionKind::kInit ||
-      tcSignature.argList.parsedArgs.size() != 2) {
+      args.size() != 2) {
     emitError(node.getLoc())
         << "'@implicit' may only be applied to single-argument '__init__' "
            "methods";

@@ -502,6 +502,11 @@ struct MemoryType:
     fn __init__(out self, value: Int):
         self.value = value
 
+    # MOCO-1445: throwing implicit conversions.
+    @implicit
+    fn __init__(out self, value: String) raises:
+        self.value = 4
+
 
 # CHECK-LABEL: lit.func @"defaultArgumentNonRegisterType
 # CHECK-SAME: borrow_in_mem = apply_result_slot({{.*}}__init__
