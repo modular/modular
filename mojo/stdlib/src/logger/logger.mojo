@@ -105,6 +105,7 @@ struct Level:
 struct Logger[level: Level = DEFAULT_LEVEL]:
     var _fd: FileDescriptor
 
+    @implicit
     fn __init__(out self, fd: FileDescriptor = sys.stdout):
         self._fd = fd
 
