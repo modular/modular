@@ -224,6 +224,7 @@ struct LayoutTensor[
     # ===------------------------------------------------------------------=== #
 
     @always_inline
+    @implicit
     fn __init__(out self, ptr: UnsafePointer[Scalar[dtype], address_space]):
         """Create a LayoutTensor with an UnsafePointer. Expect layout to be
         fully static.

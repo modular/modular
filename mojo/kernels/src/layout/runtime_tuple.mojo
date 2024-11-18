@@ -67,6 +67,7 @@ struct RuntimeTuple[
                 self.value[i] = UNKNOWN_VALUE
 
     @always_inline
+    @implicit
     fn __init__(out self, *values: Int):
         """Initialize a RuntimeTuple with the provided values.
 
@@ -76,6 +77,7 @@ struct RuntimeTuple[
         self.value = values
 
     @always_inline
+    @implicit
     fn __init__[l: Int](inout self, values: IndexList[l, **_]):
         """Initialize a RuntimeTuple from an IndexList.
 

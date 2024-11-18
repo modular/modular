@@ -184,12 +184,14 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     # FIXME: This constructor shouldn't be necessary
     @always_inline
-    fn __init__(out self, value: T):
+    @implicit
+    fn __init__(out self: Self, value: T):
         self._value = value
 
     # FIXME: This constructor is never called
     @always_inline
-    fn __init__(out self, value: Self.Element):
+    @implicit
+    fn __init__(out self: Self, value: Self.Element):
         self._value = value
 
     @always_inline
@@ -231,6 +233,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
             v1._value, v2._value, v3._value, v4._value, v5._value
         )
 
+    @implicit
     fn __init__(out self, zipper: _zip2[T, D]):
         self._value = Self.BaseType()
         for z in zipper:
@@ -584,6 +587,7 @@ struct _ProductIterN[
     var tuples: List[DynamicTuple[T, D]]
     var tuples_shape: List[Int, hint_trivial_type=True]
 
+    @implicit
     fn __init__(out self, tuples: List[DynamicTuple[T, D]]):
         self.offset = 0
         self.tuples = tuples
@@ -617,11 +621,13 @@ struct _productN[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     alias IterType = _ProductIterN[T, D]
 
+    @implicit
     fn __init__(out self, *tuples: DynamicTuple[T, D]):
         self.tuples = List[DynamicTuple[T, D]](capacity=len(tuples))
         for tup in tuples:
             self.tuples.append(tup[])
 
+    @implicit
     fn __init__(out self, tuples: List[DynamicTuple[T, D]]):
         self.tuples = tuples
 

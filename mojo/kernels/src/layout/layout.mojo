@@ -144,7 +144,13 @@ struct Layout(
         self.stride = IntTuple()
 
     @always_inline
-    fn __init__(out self, shape: IntTuple, stride: IntTuple = IntTuple()):
+    @implicit
+    fn __init__(out self, shape: IntTuple):
+        self.shape = shape
+        self.stride = prefix_product(self.shape)
+
+    @always_inline
+    fn __init__(out self, shape: IntTuple, stride: IntTuple):
         self.shape = shape
         if len(stride) == 0:
             self.stride = prefix_product(self.shape)

@@ -25,6 +25,7 @@ struct ValueOrUnknown[dim: Int = UNKNOWN_VALUE]:
         ]()
         self.value = dim
 
+    @implicit
     fn __init__(out self, v: Int):
         self.value = v
 
