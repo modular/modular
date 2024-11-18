@@ -113,6 +113,11 @@ struct TraceLevel(EqualityComparable):
 
     var value: Int
 
+    @always_inline
+    @implicit
+    fn __init__(out self, value: Int):
+        self.value = value
+
     @always_inline("nodebug")
     fn __eq__(self, rhs: Self) -> Bool:
         """Compares for equality.

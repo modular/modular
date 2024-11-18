@@ -116,6 +116,7 @@ struct ChainPromise:
         self.chain = Chain()
         _init_asyncrt_chain(UnsafePointer.address_of(self.chain))
 
+    @implicit
     fn __init__(out self, owned chain: Chain):
         self.chain = chain
 
@@ -219,6 +220,7 @@ struct Task[type: AnyType, origins: OriginSet]:
     var _handle: Coroutine[type, origins]
     var _result: type
 
+    @implicit
     fn __init__(out self, owned handle: Coroutine[type, origins]):
         self._handle = handle^
         __mlir_op.`lit.ownership.mark_initialized`(
@@ -400,6 +402,7 @@ struct MojoCallContextPtr:
         self.ptr = UnsafePointer[NoneType]()
 
     @always_inline
+    @implicit
     fn __init__(out self, ptr: Self.ptr_type):
         """Casts a raw pointer to our MojoCallContextPtr."""
         self.ptr = ptr
