@@ -326,6 +326,7 @@ struct BenchId:
         self.func_name = func_name
         self.input_id = input_id
 
+    @implicit
     fn __init__(out self, func_name: String):
         """Constructs a Benchmark Id object from input function name.
 
@@ -923,6 +924,7 @@ struct Bencher:
     var elapsed: Int
     """ The total time elpased when running the target function."""
 
+    @implicit
     fn __init__(out self, num_iters: Int):
         """Constructs a Bencher object to run and time a function.
 

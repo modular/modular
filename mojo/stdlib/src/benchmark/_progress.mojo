@@ -70,6 +70,7 @@ struct Progress:
     var _term_dims: Tuple[Int, Int]
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, end: Int):
         self = Self(0, end)
 
