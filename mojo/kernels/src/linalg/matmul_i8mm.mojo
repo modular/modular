@@ -36,6 +36,7 @@ struct LoadStore_i8mm[
     var skip_boundary_check: Bool
 
     @always_inline
+    @implicit
     fn __init__(out self, skip_boundary_check: Bool):
         self.output_tile = _Accumulator[
             type, tile_rows, Self.num_simd_cols, simd_size

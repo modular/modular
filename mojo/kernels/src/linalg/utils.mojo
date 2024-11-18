@@ -145,6 +145,7 @@ struct GemmShape:
             self.K = value
             return
 
+    @implicit
     fn __init__(out self, index: IndexList[3]):
         """Constructor of a gemm shape record from a index tuple.
 
