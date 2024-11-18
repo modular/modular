@@ -17,7 +17,7 @@ import numpy.typing as npt
 
 # Only import gguf when used.
 try:
-    import gguf
+    import gguf  # type: ignore
 except ImportError:
     gguf = None
 

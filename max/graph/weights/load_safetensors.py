@@ -19,12 +19,12 @@ from ..weight import Weight
 from .safetensor_gguf_map import GGUF_TENSOR_MAPPING
 
 try:
-    from safetensors import safe_open
+    from safetensors import safe_open  # type: ignore
 except ImportError:
     safe_open = None
 
 try:
-    import torch
+    import torch  # type: ignore
 except ImportError:
     torch = None
 

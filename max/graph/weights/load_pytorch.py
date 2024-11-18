@@ -18,7 +18,7 @@ import numpy as np
 import numpy.typing as npt
 
 try:
-    import torch
+    import torch  # type: ignore
 except ImportError:
     torch = None
 

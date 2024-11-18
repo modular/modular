@@ -220,7 +220,7 @@ class Graph:
         )
         self._mlir_op.attributes["inputParams"] = param_decl
 
-        self.inputs = tuple(Value(arg) for arg in self._body.arguments)
+        self.inputs = tuple(Value(arg) for arg in self._body.arguments)  # type: ignore
         self.weights = {}
 
         self._current_chain = self._add_op(mo.chain_create, [])[0]  # type: ignore
@@ -308,7 +308,7 @@ class Graph:
                     # Insert op at the end of self._body, location set up by
                     # the context manager.
                     results = op(*unwrapped_args, **unwrapped_kwargs)
-            except (mlir.MLIRError, ValueError) as e:
+            except (mlir.MLIRError, ValueError) as e:  # type: ignore
                 # MLIRError is raised from the MLIR Python bindings on MLIR
                 # errors, however so is ValueError when operation create faile.
                 # So catch both exception types here.
@@ -423,7 +423,7 @@ class Graph:
                 with mlir.InsertionPoint(self._module.body):
                     self._module = self._module.parse(f.read(), self._context)
                     self._mlir_op = (
-                        self._module.body.operations[0].regions[0].blocks[0]
+                        self._module.body.operations[0].regions[0].blocks[0]  # type: ignore
                     )
 
     def add_weight(self, weight: Weight) -> TensorValue:

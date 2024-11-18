@@ -23,9 +23,9 @@ def create_multi_device_graph_with_cpu_io() -> Graph:
     with Graph(
         "add", input_types=(input_type, input_type, input_type)
     ) as graph:
-        gpu0_input0 = graph.inputs[0].to(Device.CUDA(0))
-        gpu1_input1 = graph.inputs[1].to(Device.CUDA(1))
-        gpu0_input2 = graph.inputs[2].to(Device.CUDA(0))
+        gpu0_input0 = graph.inputs[0].to(Device.CUDA(0))  # type: ignore
+        gpu1_input1 = graph.inputs[1].to(Device.CUDA(1))  # type: ignore
+        gpu0_input2 = graph.inputs[2].to(Device.CUDA(0))  # type: ignore
         gpu0_input1 = gpu1_input1.to(Device.CUDA(0))
         sum = ops.add(gpu0_input0, gpu0_input2)
         sum2 = ops.add(sum, gpu0_input1)
@@ -48,7 +48,7 @@ def create_multi_device_graph_with_gpu_io() -> Graph:
     with Graph(
         "add", input_types=(input_type0, input_type1, input_type0)
     ) as graph:
-        gpu0_input1 = graph.inputs[1].to(Device.CUDA(0))
+        gpu0_input1 = graph.inputs[1].to(Device.CUDA(0))  # type: ignore
         sum = ops.add(graph.inputs[0], graph.inputs[2])
         sum2 = ops.add(sum, gpu0_input1)
         graph.output(sum2)
@@ -79,7 +79,7 @@ def test_cpu_io_graph_execution() -> None:
     c = Tensor.from_numpy(b_np)
     output = compiled.execute(a, b, c)
     # Check Executed Graph
-    assert np.allclose((a_np + b_np + c_np), output[0].to_numpy())
+    assert np.allclose((a_np + b_np + c_np), output[0].to_numpy())  # type: ignore
 
 
 def test_gpu_io_graph_execution() -> None:
@@ -105,4 +105,4 @@ def test_gpu_io_graph_execution() -> None:
     c = Tensor.from_numpy(b_np).to(device0)
     output = compiled.execute(a, b, c)
     # Check Executed Graph
-    assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())
+    assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())  # type: ignore
