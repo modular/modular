@@ -378,7 +378,7 @@ class Model:
         """
         Returns the device objects used in the Model.
         """
-        return [Device(device) for device in self._impl.devices]
+        return [Device(device) for device in self._impl.devices]  # type: ignore
 
     @property
     def input_devices(self) -> List[Device]:
@@ -568,7 +568,7 @@ def _is_max_graph(obj: Any) -> bool:
 
 def _remove_static_info_from_torch_jit_graph(graph: Any):
     """Removes any static tensor type information from a torch.jit graph."""
-    import torch
+    import torch  # type: ignore
 
     def _remove_static_info_from_value(value):
         if value.type().isSubtypeOf(torch._C.TensorType.get()):
@@ -815,7 +815,7 @@ class InferenceSession:
                 output tensors.
         """
         if isinstance(style, str):
-            style = getattr(PrintStyle, style, None)
+            style = getattr(PrintStyle, style, None)  # type: ignore
         if not isinstance(style, PrintStyle):
             raise TypeError(
                 "Invalid debug print style. Please use one of 'COMPACT',"
