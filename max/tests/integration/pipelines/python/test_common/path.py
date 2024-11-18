@@ -44,6 +44,7 @@ def find_runtime_path(
         return _find_local_path(fname, local_dir)
 
     r = runfiles.Create()
+    assert r
     path = r.Rlocation(str(bazel_dir / fname))
 
     if path is None:
