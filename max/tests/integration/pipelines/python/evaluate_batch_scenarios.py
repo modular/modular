@@ -26,7 +26,8 @@ from max.pipelines import (
 )
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 
-from utils import DevicesOptionType, config_to_flag
+from utils import DevicesOptionType
+from utils.cli import config_to_flag
 
 logger = logging.getLogger(__name__)
 
@@ -449,8 +450,10 @@ def main(
     config = PipelineConfig(**config_kwargs)
     # By default, use the Modular HF repository as a reference for tokenizer
     # configuration, etc. when no repository is specified.
+    assert config.version is not None
     hf_file = get_llama_huggingface_file(
-        config.version, config.quantization_encoding  # type: ignore
+        config.version,
+        config.quantization_encoding,  # type: ignore
     )
     config.weight_path = hf_file.download()
 
@@ -470,7 +473,8 @@ def main(
         config.device,
     )
     logger.info(
-        "- Using weights %s, %s", config.weight_path, config.huggingface_weights  # type: ignore
+        "- Using weights %s",
+        config.weight_path,
     )
     logger.info(
         "- MaxLength %d, MaxNewTokens %d",
