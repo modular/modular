@@ -10,6 +10,8 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFASTParser.h"
 #include "llvm-project/lldb/source/Plugins/SymbolFile/DWARF/DWARFDIE.h"
+#include "llvm-project/llvm/include/llvm/ADT/AddressRanges.h"
+#include "llvm-project/llvm/include/llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
 
 namespace lldb_private::plugin::dwarf {
 class DWARFDebugInfoEntry;
@@ -56,7 +58,7 @@ public:
   lldb_private::Function *
   ParseFunctionFromDWARF(lldb_private::CompileUnit &comp_unit,
                          const lldb_private::plugin::dwarf::DWARFDIE &die,
-                         const lldb_private::AddressRange &funcRange) override;
+                         lldb_private::AddressRanges funcRange) override;
 
   /// Parse recursively all the children of the given die that is a forward
   /// declaration type.

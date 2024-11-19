@@ -633,10 +633,9 @@ MojoDWARFParser::extractSourceName(const DWARFDIE &die) {
   return DebugInfo::SourceNameAttr();
 }
 
-Function *
-MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
-                                        const DWARFDIE &die,
-                                        const AddressRange &funcRange) {
+Function *MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
+                                                  const DWARFDIE &die,
+                                                  AddressRanges funcRange) {
   Log *log = GetLog(DWARFLog::TypeCompletion | DWARFLog::Lookups);
   SymbolFileDWARF *dwarf = die.GetDWARF();
 
@@ -649,7 +648,7 @@ MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
   }
 
   auto doWork = [&]() -> Function * {
-    assert(funcRange.GetBaseAddress().IsValid());
+    assert(funcRange.front().GetBaseAddress().IsValid());
 
     DWARFRangeList funcRanges;
     const char *name = nullptr;
