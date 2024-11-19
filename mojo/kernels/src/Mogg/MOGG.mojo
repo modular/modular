@@ -3340,6 +3340,8 @@ fn conv[
         var cuda_ctx = ctx.get_device_context()
 
         conv_gpu[
+            input_rank,
+            filter_rank,
             input_0_static_shape,  # input shape
             input_1_static_shape,  # filter shape
             input_6_static_shape,  # output shape
@@ -3347,9 +3349,9 @@ fn conv[
             filter_type,
             output_type,
         ](
-            input.data,
-            filter.data,
-            output.data,
+            input,
+            filter,
+            output,
             IndexList[2](stride_tuple[0], stride_tuple[1]),
             IndexList[2](dilation_tuple[0], dilation_tuple[1]),
             IndexList[2](pad_h_tuple[0], pad_w_tuple[0]),
