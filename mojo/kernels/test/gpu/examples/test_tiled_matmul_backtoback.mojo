@@ -345,6 +345,7 @@ fn b2b_gemm[
                 a_smem_iter,
                 b_smem_iter,
                 ceildiv(K, BK),
+                num_a_rows=num_rows_a,
                 num_b_rows=num_rows_b,
                 next_op_b_iter=c_gmem_iter.bitcast[in_type](),
             )
@@ -371,6 +372,7 @@ fn b2b_gemm[
                 a_smem_iter,
                 b_smem_iter,
                 ceildiv(K, BK),
+                num_a_rows=num_rows_a,
                 num_b_rows=num_rows_b,
                 next_op_b_iter=c_gmem_iter.bitcast[in_type](),
             )
