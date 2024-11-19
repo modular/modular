@@ -144,9 +144,9 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
             constraints="=r,r,n,n,n",
             has_side_effect=False,
         ](a, b, c, Int32(lut))
-    else:
-        constrained[False, "The lop function is not supported by AMD GPUs."]()
-        return abort[Int32]("function not available")
+
+    constrained[False, "The lop function is not supported by AMD GPUs."]()
+    return abort[Int32]("function not available")
 
 
 # ===----------------------------------------------------------------------===#
@@ -176,10 +176,10 @@ fn mulhi(a: UInt16, b: UInt16) -> UInt32:
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
         ](a, b)
-    else:
-        var au32 = a.cast[DType.uint32]()
-        var bu32 = b.cast[DType.uint32]()
-        return au32 * bu32
+
+    var au32 = a.cast[DType.uint32]()
+    var bu32 = b.cast[DType.uint32]()
+    return au32 * bu32
 
 
 @always_inline
@@ -192,10 +192,10 @@ fn mulhi(a: Int16, b: Int16) -> Int32:
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
         ](a, b)
-    else:
-        var ai32 = a.cast[DType.int32]()
-        var bi32 = b.cast[DType.int32]()
-        return ai32 * bi32
+
+    var ai32 = a.cast[DType.int32]()
+    var bi32 = b.cast[DType.int32]()
+    return ai32 * bi32
 
 
 @always_inline
@@ -208,10 +208,10 @@ fn mulhi(a: UInt32, b: UInt32) -> UInt32:
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
         ](a, b)
-    else:
-        var au64 = a.cast[DType.uint64]()
-        var bu64 = b.cast[DType.uint64]()
-        return ((au64 * bu64) >> 32).cast[DType.uint32]()
+
+    var au64 = a.cast[DType.uint64]()
+    var bu64 = b.cast[DType.uint64]()
+    return ((au64 * bu64) >> 32).cast[DType.uint32]()
 
 
 @always_inline
@@ -223,10 +223,10 @@ fn mulhi(a: Int32, b: Int32) -> Int32:
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
         ](a, b)
-    else:
-        var ai64 = a.cast[DType.int64]()
-        var bi64 = b.cast[DType.int64]()
-        return ((ai64 * bi64) >> 32).cast[DType.int32]()
+
+    var ai64 = a.cast[DType.int64]()
+    var bi64 = b.cast[DType.int64]()
+    return ((ai64 * bi64) >> 32).cast[DType.int32]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -247,10 +247,10 @@ fn mulwide(a: UInt32, b: UInt32) -> UInt64:
             constraints="=l,r,r",
             has_side_effect=False,
         ](a, b)
-    else:
-        var au64 = a.cast[DType.uint64]()
-        var bu64 = b.cast[DType.uint64]()
-        return au64 * bu64
+
+    var au64 = a.cast[DType.uint64]()
+    var bu64 = b.cast[DType.uint64]()
+    return au64 * bu64
 
 
 @always_inline
@@ -265,10 +265,10 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
             constraints="=l,r,r",
             has_side_effect=False,
         ](a, b)
-    else:
-        var ai64 = a.cast[DType.int64]()
-        var bi64 = b.cast[DType.int64]()
-        return ai64 * bi64
+
+    var ai64 = a.cast[DType.int64]()
+    var bi64 = b.cast[DType.int64]()
+    return ai64 * bi64
 
 
 # ===----------------------------------------------------------------------===#
