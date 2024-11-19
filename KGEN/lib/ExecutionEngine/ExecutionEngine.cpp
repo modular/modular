@@ -32,6 +32,7 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/include/llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
 
 using namespace M;
 using namespace KGEN;

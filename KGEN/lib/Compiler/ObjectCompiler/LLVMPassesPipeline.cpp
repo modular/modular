@@ -538,7 +538,7 @@ M::KGEN::buildLLVMOptimizationPipeline(PassBuilder &passBuilder,
 }
 
 static TargetPassConfig *
-buildPassesToGenerateGPUCode(LLVMTargetMachine &tm, PassManagerBase &pm,
+buildPassesToGenerateGPUCode(TargetMachine &tm, PassManagerBase &pm,
                              bool disableVerify,
                              MachineModuleInfoWrapperPass &mmiwp) {
   // Targets may override createPassConfig to provide a target-specific
@@ -560,7 +560,7 @@ buildPassesToGenerateGPUCode(LLVMTargetMachine &tm, PassManagerBase &pm,
   return passConfig;
 }
 
-static bool buildGPULLcPipeline(LLVMTargetMachine &targetMachine,
+static bool buildGPULLcPipeline(TargetMachine &targetMachine,
                                 llvm::legacy::PassManagerBase &pm,
                                 raw_pwrite_stream &out,
                                 raw_pwrite_stream *dwoOut,
@@ -587,7 +587,7 @@ static bool buildGPULLcPipeline(LLVMTargetMachine &targetMachine,
 }
 
 bool M::KGEN::addPassesToEmitFile(CompilationOptions &options,
-                                  LLVMTargetMachine &targetMachine,
+                                  TargetMachine &targetMachine,
                                   llvm::legacy::PassManagerBase &pm,
                                   raw_pwrite_stream &out,
                                   raw_pwrite_stream *dwoOut,
@@ -640,7 +640,7 @@ bool SetMachineFunctionBasePass::doFinalization(llvm::Module &) {
 /// Build a pipeline that does machine specific codgen but stops before
 /// AsmPrint. Returns true if failed.
 bool M::KGEN::addPassesToEmitMC(CompilationOptions &options,
-                                llvm::LLVMTargetMachine &targetMachine,
+                                llvm::TargetMachine &targetMachine,
                                 llvm::legacy::PassManagerBase &pm,
                                 llvm::raw_pwrite_stream &out,
                                 bool disableVerify,
@@ -724,7 +724,7 @@ bool SyncX86SymbolTables::runOnMachineFunction(MachineFunction &MF) {
 /// Build a pipeline that does AsmPrint only.
 /// Returns true if failed.
 bool M::KGEN::addPassesToAsmPrint(CompilationOptions &options,
-                                  llvm::LLVMTargetMachine &targetMachine,
+                                  llvm::TargetMachine &targetMachine,
                                   llvm::legacy::PassManagerBase &pm,
                                   llvm::raw_pwrite_stream &out,
                                   llvm::CodeGenFileType fileType,

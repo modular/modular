@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLVMAccessorHelper.h"
+#include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 namespace {
 
@@ -96,10 +97,11 @@ template struct LLVMPrivateFnAccessorRob<MCContextGetSymbolEntryAccessor,
 
 // Helpers to access private field of llvm::LLVMTargetMachine::reset.
 struct TargetMachineClearSubtargetMapAccessor {
-  using type = void (llvm::LLVMTargetMachine::*)();
+  using type = void (llvm::CodeGenTargetMachineImpl::*)();
 };
-template struct LLVMPrivateFnAccessorRob<TargetMachineClearSubtargetMapAccessor,
-                                         &llvm::LLVMTargetMachine::reset>;
+template struct LLVMPrivateFnAccessorRob<
+    TargetMachineClearSubtargetMapAccessor,
+    &llvm::CodeGenTargetMachineImpl::reset>;
 
 } // namespace
 
@@ -132,8 +134,8 @@ void M::KGEN::releaseTargetMachineConstants(llvm::TargetMachine &tm) {
       std::invoke(getMCSubtargetInfo(), tm);
   mcSubtargetInfo.reset();
 
-  llvm::LLVMTargetMachine &llvmTargetMachine =
-      static_cast<llvm::LLVMTargetMachine &>(tm);
+  llvm::CodeGenTargetMachineImpl &llvmTargetMachine =
+      static_cast<llvm::CodeGenTargetMachineImpl &>(tm);
   (llvmTargetMachine.*
    LLVMPrivateFnAccessor<TargetMachineClearSubtargetMapAccessor>::ptr)();
 }

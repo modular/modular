@@ -21,7 +21,7 @@ buildLLVMOptimizationPipeline(llvm::PassBuilder &passBuilder,
                               const CompilationOptions &options);
 
 bool addPassesToEmitFile(CompilationOptions &options,
-                         llvm::LLVMTargetMachine &targetMachine,
+                         llvm::TargetMachine &targetMachine,
                          llvm::legacy::PassManagerBase &pm,
                          llvm::raw_pwrite_stream &out,
                          llvm::raw_pwrite_stream *dwoOut,
@@ -31,7 +31,7 @@ bool addPassesToEmitFile(CompilationOptions &options,
 /// Build a pipeline that does machine specific codgen but stops before
 /// AsmPrint.
 bool addPassesToEmitMC(CompilationOptions &options,
-                       llvm::LLVMTargetMachine &targetMachine,
+                       llvm::TargetMachine &targetMachine,
                        llvm::legacy::PassManagerBase &pm,
                        llvm::raw_pwrite_stream &out, bool disableVerify,
                        llvm::MachineModuleInfoWrapperPass *mmiwp,
@@ -39,7 +39,7 @@ bool addPassesToEmitMC(CompilationOptions &options,
 
 /// Build a pipeline that does AsmPrint only.
 bool addPassesToAsmPrint(CompilationOptions &options,
-                         llvm::LLVMTargetMachine &targetMachine,
+                         llvm::TargetMachine &targetMachine,
                          llvm::legacy::PassManagerBase &pm,
                          llvm::raw_pwrite_stream &out,
                          llvm::CodeGenFileType fileType, bool disableVerify,

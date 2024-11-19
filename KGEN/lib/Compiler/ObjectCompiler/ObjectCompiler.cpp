@@ -240,8 +240,8 @@ runLlcPasses(llvm::Module &module, CompilationOptions &options,
     return failure();
 #endif
 
-  LLVMTargetMachine &llvmTargetMachine =
-      static_cast<LLVMTargetMachine &>(targetMachine);
+  TargetMachine &llvmTargetMachine =
+      static_cast<TargetMachine &>(targetMachine);
 
   MachineModuleInfoWrapperPass *machineModInfoPass;
 
@@ -382,8 +382,8 @@ static AsyncRT::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
               "failed to create TargetMachine", loc));
         }
 
-        llvm::LLVMTargetMachine &llvmTargetMachine =
-            static_cast<llvm::LLVMTargetMachine &>(**machineOr);
+        llvm::TargetMachine &llvmTargetMachine =
+            static_cast<llvm::TargetMachine &>(**machineOr);
         llvmTargetMachine.Options.MCOptions.AsmVerbose = options.verboseOutput;
         llvmTargetMachine.Options.MCOptions.PreserveAsmComments =
             options.verboseOutput;

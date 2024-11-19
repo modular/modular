@@ -124,10 +124,10 @@ private:
   /// Get llvm::Module and prepare MachineModuleInfoWrapperPass to print if
   /// there is only one split.
   llvm::Module *
-  getModuleToPrintOneSplit(llvm::LLVMTargetMachine &llvmTargetMachine);
+  getModuleToPrintOneSplit(llvm::TargetMachine &llvmTargetMachine);
 
   /// Prepare MachineModuleInfo before AsmPrinting.
-  void prepareMachineModuleInfo(llvm::LLVMTargetMachine &llvmTargetMachine);
+  void prepareMachineModuleInfo(llvm::TargetMachine &llvmTargetMachine);
 };
 
 } // namespace M::KGEN

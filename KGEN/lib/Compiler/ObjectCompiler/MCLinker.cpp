@@ -34,8 +34,8 @@ MCLinker::MCLinker(
       symbolLinkageTypes(std::move(symbolLinkageTypes)),
       originalFnOrdering(std::move(originalFnOrdering)) {
 
-  llvm::LLVMTargetMachine &llvmTargetMachine =
-      static_cast<llvm::LLVMTargetMachine &>(targetMachine);
+  llvm::TargetMachine &llvmTargetMachine =
+      static_cast<llvm::TargetMachine &>(targetMachine);
 
   machineModInfoPass =
       new llvm::MachineModuleInfoWrapperPass(&llvmTargetMachine);
@@ -105,7 +105,7 @@ ErrorOrSuccess MCLinker::linkLLVMModules(StringRef moduleName) {
 }
 
 void MCLinker::prepareMachineModuleInfo(
-    llvm::LLVMTargetMachine &llvmTargetMachine) {
+    llvm::TargetMachine &llvmTargetMachine) {
   for (auto [i, smcInfos] : llvm::enumerate(symbolAndMCInfos)) {
     for (auto [j, mcInfo] : llvm::enumerate(smcInfos->mcInfos)) {
       // Move MachineFunctions from each split's codegen result
@@ -171,7 +171,7 @@ void MCLinker::prepareMachineModuleInfo(
 }
 
 llvm::Module *
-MCLinker::getModuleToPrintOneSplit(llvm::LLVMTargetMachine &llvmTargetMachine) {
+MCLinker::getModuleToPrintOneSplit(llvm::TargetMachine &llvmTargetMachine) {
   auto &mcInfo = symbolAndMCInfos[0]->mcInfos[0];
 
   llvm::DenseMap<const llvm::Function *, std::unique_ptr<llvm::MachineFunction>>
@@ -204,8 +204,8 @@ MCLinker::getModuleToPrintOneSplit(llvm::LLVMTargetMachine &llvmTargetMachine) {
 ErrorOr<WriteableBufferRef> MCLinker::linkAndPrint(StringRef moduleName,
                                                    bool emitAssembly) {
 
-  llvm::LLVMTargetMachine &llvmTargetMachine =
-      static_cast<llvm::LLVMTargetMachine &>(targetMachine);
+  llvm::TargetMachine &llvmTargetMachine =
+      static_cast<llvm::TargetMachine &>(targetMachine);
 
   llvmTargetMachine.Options.MCOptions.AsmVerbose = options.verboseOutput;
   llvmTargetMachine.Options.MCOptions.PreserveAsmComments =
