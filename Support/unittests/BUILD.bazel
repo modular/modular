@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_cc_test")
+load("//bazel:api.bzl", "modular_cc_test", "modular_pybind_library_test")
 
 modular_cc_test(
     name = "ASN1Test",
@@ -216,4 +216,13 @@ modular_cc_test(
     name = "DiagnosticsTests",
     srcs = glob(["Diagnostics/*.cpp"]),
     deps = ["//Support:Diagnostics"],
+)
+
+modular_pybind_library_test(
+    name = "CPythonUtilTest",
+    srcs = ["CPython/UtilTest.cpp"],
+    py_deps = [],
+    deps = [
+        "//Support:CPython",
+    ],
 )

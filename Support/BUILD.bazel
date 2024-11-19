@@ -920,3 +920,14 @@ modular_cc_library(
     hdrs = glob(["include/Support/Diagnostics/**/*.h"]),
     deps = ["@llvm-project//mlir:IR"],
 )
+
+modular_cc_library(
+    name = "CPython",
+    srcs = glob(["lib/CPython/*.cpp"]),
+    hdrs = glob(["include/Support/CPython/*.h"]),
+    local_defines = ["Py_LIMITED_API=0x030A0000"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@python_3_9//:python_headers",
+    ],
+)
