@@ -90,9 +90,7 @@ DTypeValue::DTypeValue(APInt data, KGENDType dtype)
 }
 
 DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
-    : DTypeValue(APInt(std::move(value)), dtype) {
-  assert(dtype.isInt());
-}
+    : DTypeValue(APInt(std::move(value)), dtype) {}
 
 DTypeValue::DTypeValue(APFloat value, KGENDType dtype)
     : DTypeValue(value.bitcastToAPInt(), dtype) {
@@ -105,9 +103,7 @@ DTypeValue::DTypeValue(bool value, KGENDType dtype)
 }
 
 DTypeValue::DTypeValue(int64_t value, KGENDType dtype)
-    : DTypeValue(APInt(64, value), dtype) {
-  assert(dtype.isIndex() || dtype.isAddress());
-}
+    : DTypeValue(APInt(64, value), dtype) {}
 
 APSInt DTypeValue::getIntVal() const {
   assert(dtype.isInt());

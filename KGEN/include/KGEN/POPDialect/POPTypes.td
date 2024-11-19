@@ -169,7 +169,7 @@ class UnboundOr<DTypeConstraint pred> : OrDType<[UnboundDType, pred]>;
 /// A SIMD type whose dtype conforms to a constraint.
 class SIMDOfDType<DTypeConstraint constraint, string desc> :
   ConfinedType<POP_SIMDType,
-    [CPred<!subst("$_self", "llvm::cast<POP::SIMDType>($_self).getResolvedDType()",
+    [CPred<!subst("$_self", "llvm::cast<KGEN::POP::SIMDType>($_self).getResolvedDType()",
                  constraint.pred)>], desc> {
   let cppType = "::M::KGEN::POP::SIMDType";
 }
@@ -217,8 +217,8 @@ def UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
 
 /// A "scalar" type is a SIMD of size 1.
 def ScalarType : ConfinedType<POP_SIMDType,
-    [CPred<"llvm::cast<POP::SIMDType>($_self).getResolvedSize() && "
-           "*llvm::cast<POP::SIMDType>($_self).getResolvedSize() == 1">],
+    [CPred<"llvm::cast<KGEN::POP::SIMDType>($_self).getResolvedSize() && "
+           "*llvm::cast<KGEN::POP::SIMDType>($_self).getResolvedSize() == 1">],
     "SIMD with size 1">;
 
 /// A scalar type whose dtype conforms to a constraint.
