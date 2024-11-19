@@ -24,6 +24,8 @@ PassManagerConfigOptions::configurePassManager(mlir::PassManager &pm) const {
 
   if constexpr (KGEN::kIsTracingEnabled)
     pm.enableTiming(std::make_unique<TimeProfilerTimingManager>());
+  else if (enableTiming)
+    pm.enableTiming();
 
   if (crashReproducerOptions.enable) {
     pm.enableCrashReproducerGeneration(
