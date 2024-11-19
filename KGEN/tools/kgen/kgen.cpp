@@ -227,7 +227,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   PassManagerConfigOptions pmOptions;
   pmOptions.applyPassManagerCLOptions = true;
-  pmOptions.enableTiming = true;
+  pmOptions.enableTiming = false;
   pmOptions.timingScope = &timing;
   pmOptions.crashReproducerOptions.enable = clOptions.enableMLIRCrashReproducer;
   pmOptions.crashReproducerOptions.inputFileName = clOptions.inputFilename;
