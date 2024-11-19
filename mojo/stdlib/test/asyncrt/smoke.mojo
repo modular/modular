@@ -10,7 +10,6 @@
 from asyncrt_test_utils import (
     create_test_device_context,
     expect_eq,
-    is_v2_context,
 )
 
 from gpu.host import (
@@ -96,10 +95,6 @@ fn _run_get_stream(ctx: DeviceContext) raises:
     print("-")
     print("_run_get_stream()")
 
-    if not is_v2_context():
-        print("Skipping test.")
-        return
-
     print("Getting the stream.")
     var stream = ctx.stream()
     print("Synchronizing on `stream`.")
@@ -112,17 +107,16 @@ fn _run_peer_access(ctx: DeviceContext) raises:
 
     expect_eq(ctx.can_access(ctx), False, "self access is not enabled")
 
-    if is_v2_context():
-        var num_gpus = DeviceContext.number_of_devices(kind=ctx.kind())
-        print("Number of GPU devices: " + str(num_gpus))
+    var num_gpus = DeviceContext.number_of_devices(kind=ctx.kind())
+    print("Number of GPU devices: " + str(num_gpus))
 
-        if num_gpus > 1:
-            var peer = create_test_device_context(device_id=1)
-            print("peer context on GPU[1]")
+    if num_gpus > 1:
+        var peer = create_test_device_context(device_id=1)
+        print("peer context on GPU[1]")
 
-            if ctx.can_access(peer):
-                ctx.enable_peer_access(peer)
-                print("Enabled peer access.")
+        if ctx.can_access(peer):
+            ctx.enable_peer_access(peer)
+            print("Enabled peer access.")
 
 
 fn main() raises:
@@ -134,7 +128,11 @@ fn main() raises:
     _run_device_info(ctx)
     _run_compute_capability(ctx)
     _run_get_attribute(ctx)
-    _run_get_stream(ctx)
-    _run_peer_access(ctx)
+    if "AMD" in ctx.name():
+        # TODO: GEX-1293 and GEX-1294
+        print("WARNING: Skipping get_stream and peer_access tests for AMD")
+    else:
+        _run_get_stream(ctx)
+        _run_peer_access(ctx)
 
     print("Done.")
