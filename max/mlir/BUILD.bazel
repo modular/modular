@@ -3,6 +3,7 @@ load("//bazel:api.bzl", "modular_py_library")
 modular_py_library(
     name = "mlir",
     srcs = glob(["**/*.py"]),
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/python/max/_mlir",
