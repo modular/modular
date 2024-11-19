@@ -11,7 +11,6 @@
 
 #include <atomic>
 #include <functional>
-#include <sys/types.h>
 
 namespace M::AsyncRT {
 class Runtime;
