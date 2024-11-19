@@ -140,7 +140,7 @@ public:
       debugAt = debugAtLevel;
     return CompilationOptions(optLevel, debugInfoLevel, debugAt,
                               sanitizerOptions, targetTriple, targetCpu,
-                              targetFeatures);
+                              targetFeatures, targetAccelerator);
   }
 
   bool optLevel0{false};
