@@ -725,7 +725,7 @@ fn _concat_gpu_elementwise[
     # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
-    elementwise[per_output_elem, 1, target="cuda"](output.get_shape(), ctx)
+    elementwise[per_output_elem, 1, target="gpu"](output.get_shape(), ctx)
 
 
 @always_inline
@@ -936,7 +936,7 @@ fn _fused_concat_gpu_elementwise[
     # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
-    elementwise[per_output_elem, 1, target="cuda"](output.get_shape(), ctx)
+    elementwise[per_output_elem, 1, target="gpu"](output.get_shape(), ctx)
 
 
 @always_inline

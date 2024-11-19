@@ -88,7 +88,7 @@ fn test_gather(ctx: DeviceContext) raises:
             DimList(num_indices, row_size),
         ](output_device_ptr.ptr)
 
-        gather[axis=0, target="cuda"](
+        gather[axis=0, target="gpu"](
             output_device.make_dims_unknown(),
             input_device.make_dims_unknown(),
             indices_device.make_dims_unknown(),
