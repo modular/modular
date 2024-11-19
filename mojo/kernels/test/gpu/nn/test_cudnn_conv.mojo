@@ -93,6 +93,8 @@ fn test_conv_cudnn[
     ctx.enqueue_copy_to_device(filter_dev, filter_data_host)
 
     conv_gpu[
+        4,
+        4,
         input_dim,
         filter_dim,
         output_dim,
@@ -226,6 +228,10 @@ fn test_conv_gpu[
     var filter_dev = ctx.enqueue_create_buffer[type](filter_dim_flattened)
     var output_dev = ctx.enqueue_create_buffer[type](output_dim_flattened)
 
+    var input_buf = NDBuffer[type, 4, input_dim](input_dev.ptr, input_dim)
+    var filter_buf = NDBuffer[type, 4, filter_dim](filter_dev.ptr, filter_dim)
+    var output_buf = NDBuffer[type, 4, output_dim](output_dev.ptr, output_dim)
+
     # Reference: naive conv
     Naive2dConvolution[
         type,  # Data type.
@@ -266,10 +272,10 @@ fn test_conv_gpu[
     ctx.enqueue_copy_to_device(input_dev, input_ptr)
     ctx.enqueue_copy_to_device(filter_dev, filter_ptr)
 
-    conv_gpu[input_dim, filter_dim, output_dim, type, type, type,](
-        input_dev.ptr,
-        filter_dev.ptr,
-        output_dev.ptr,
+    conv_gpu[4, 4, input_dim, filter_dim, output_dim, type, type, type,](
+        input_buf,
+        filter_buf,
+        output_buf,
         stride,
         dilation,
         pad,
