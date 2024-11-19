@@ -4586,7 +4586,7 @@ fn pytorch_test_custom[
 ######
 
 
-@register_internal_override("vroom_q4_0_matmul", 1)
+@register_internal("vroom_q4_0_matmul")
 @always_inline
 fn vroom_q4_0_matmul(
     a: NDBuffer[DType.float32, 2],
@@ -4618,7 +4618,7 @@ fn vroom_q4_0_matmul_shape_func[
     return IndexList[2](a.dim[0](), b.dim[0]())
 
 
-@register_internal_override("vroom_q4_0_repack_weights", 1)
+@register_internal("vroom_q4_0_repack_weights")
 @always_inline
 fn vroom_q4_0_repack_weights(
     b: NDBuffer[DType.uint8, 2],
@@ -4636,7 +4636,7 @@ fn vroom_q4_0_repack_weights_shape_func[
     return b.get_shape()
 
 
-@register_internal_override("ggml_q4_0_dequantize", 1)
+@register_internal("ggml_q4_0_dequantize")
 @always_inline
 fn ggml_q4_0_dequantize(
     input: NDBuffer[DType.uint8, 2],
@@ -4669,7 +4669,7 @@ fn ggml_q4_0_dequantize_shape_func[
 ######
 
 
-@register_internal_override("vroom_q4_k_matmul", 1)
+@register_internal("vroom_q4_k_matmul")
 @always_inline
 fn vroom_q4_k_matmul(
     a: NDBuffer[DType.float32, 2],
@@ -4689,7 +4689,7 @@ fn vroom_q4_k_matmul_shape_func[
     return IndexList[2](a.dim[0](), b.dim[0]())
 
 
-@register_internal_override("vroom_q4_k_repack_weights", 1)
+@register_internal("vroom_q4_k_repack_weights")
 @always_inline
 fn vroom_q4_k_repack_weights(
     b: NDBuffer[DType.uint8, 2],
@@ -4707,7 +4707,7 @@ fn vroom_q4_k_repack_weights_shape_func[
     return b.get_shape()
 
 
-@register_internal_override("ggml_q4_k_dequantize", 1)
+@register_internal("ggml_q4_k_dequantize")
 @always_inline
 fn ggml_q4_k_dequantize(
     input: NDBuffer[DType.uint8, 2],
@@ -4738,7 +4738,7 @@ fn ggml_q4_k_dequantize_shape_func[
 ######
 
 
-@register_internal_override("vroom_q6_k_matmul", 1)
+@register_internal("vroom_q6_k_matmul")
 @always_inline
 fn vroom_q6_k_matmul(
     a: NDBuffer[DType.float32, 2],
@@ -4758,7 +4758,7 @@ fn vroom_q6_k_matmul_shape_func[
     return IndexList[2](a.dim[0](), b.dim[0]())
 
 
-@register_internal_override("vroom_q6_k_repack_weights", 1)
+@register_internal("vroom_q6_k_repack_weights")
 @always_inline
 fn vroom_q6_k_repack_weights(
     b: NDBuffer[DType.uint8, 2],
@@ -4776,7 +4776,7 @@ fn vroom_q6_k_repack_weights_shape_func[
     return b.get_shape()
 
 
-@register_internal_override("ggml_q6_k_dequantize", 1)
+@register_internal("ggml_q6_k_dequantize")
 @always_inline
 fn ggml_q6_k_dequantize(
     input: NDBuffer[DType.uint8, 2],
