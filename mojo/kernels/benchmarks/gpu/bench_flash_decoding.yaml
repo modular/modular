@@ -1,0 +1,331 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+name: bench_mha
+file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_mha.mojo
+
+params:
+
+# Llama3 shapes with increasing batch size and sequence length.
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 32
+  batch_size: 32
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 64
+  batch_size: 32
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 128
+  batch_size: 32
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 256
+  batch_size: 32
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 512
+  batch_size: 32
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 1024
+  batch_size: 32
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 1536
+  batch_size: 32
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 2048
+  batch_size: 32
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 32
+  batch_size: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 64
+  batch_size: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 128
+  batch_size: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 256
+  batch_size: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 512
+  batch_size: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 1024
+  batch_size: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 1536
+  batch_size: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 2048
+  batch_size: 64
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 32
+  batch_size: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 64
+  batch_size: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 128
+  batch_size: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 256
+  batch_size: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 512
+  batch_size: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 1024
+  batch_size: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 1536
+  batch_size: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 2048
+  batch_size: 128
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 32
+  batch_size: 256
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 64
+  batch_size: 256
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 128
+  batch_size: 256
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 256
+  batch_size: 256
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 512
+  batch_size: 256
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 1024
+  batch_size: 256
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 1536
+  batch_size: 256
+
+- mask_rank: 4
+  qkv_type: DType.bfloat16
+  mask_type: DType.bfloat16
+  depth: 128
+  num_heads: 32
+  group: 4
+  seq_len: 1
+  num_keys: 2048
+  batch_size: 256
