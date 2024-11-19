@@ -731,6 +731,7 @@ td_library(
     name = "POPDialectTdFiles",
     srcs = glob(["include/KGEN/POPDialect/*.td"]),
     includes = ["include"],
+    visibility = ["//visibility:public"],
     deps = [
         ":CODialectTdFiles",
         ":InterpreterTdFiles",
