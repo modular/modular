@@ -824,6 +824,14 @@ struct DeviceContextV2:
         _is_failable=_is_failable,
         _ptxas_info_verbose=_ptxas_info_verbose,
     ] as result:
+        debug_assert(
+            not func_attribute
+            or func_attribute.value().attribute
+            != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+            or func_attribute.value().value
+            <= self.device_info.shared_memory_per_multiprocessor,
+            "Requested more than available shared memory.",
+        )
         alias result_type = __type_of(result)
         result_type.dump_rep[
             dump_asm=dump_asm, dump_llvm=dump_llvm, _dump_sass=_dump_sass
