@@ -68,7 +68,7 @@ def _attention_layer(
         max_cache_batch_size=16,
         max_seq_len=MAX_SEQ_LEN,
         num_layers=NUM_LAYERS,
-        device=device,
+        devices=[device],
         session=session,
     )
 
@@ -238,7 +238,7 @@ def test_kv_cache_ragged_attention(session):
         max_cache_batch_size=2,
         max_seq_len=100,
         num_layers=1,
-        device=CPU(),
+        devices=[CPU()],
         session=session,
     )
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)

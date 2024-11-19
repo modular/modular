@@ -79,7 +79,7 @@ class DummyPipelineModel(PipelineModel):
             max_cache_batch_size=self.pipeline_config.max_cache_batch_size,
             max_seq_len=self.pipeline_config.huggingface_config.max_seq_len,
             num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
-            device=self.pipeline_config.device,
+            devices=[self.pipeline_config.device],
             session=session,
         )
 

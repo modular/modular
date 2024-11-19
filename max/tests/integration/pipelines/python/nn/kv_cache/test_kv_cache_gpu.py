@@ -33,7 +33,7 @@ async def _test_kv_cache_gpu():
         max_cache_batch_size=1,
         max_seq_len=512,
         num_layers=32,
-        device=device,
+        devices=[device],
         session=InferenceSession(devices=[device]),
     )
     seq_id = kv_manager.claim(n=1)

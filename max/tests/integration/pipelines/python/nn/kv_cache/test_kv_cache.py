@@ -32,7 +32,7 @@ async def test_kv_collection_constructor_continuous() -> None:
         max_cache_batch_size=1,
         max_seq_len=512,
         num_layers=32,
-        device=CPU(),
+        devices=[CPU()],
         session=session,
     )
 

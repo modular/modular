@@ -27,7 +27,7 @@ async def test_step():
         max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
-        device=device,
+        devices=[device],
         session=InferenceSession(devices=[device]),
     )
 
@@ -64,7 +64,7 @@ async def test_claim_and_release():
         max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
-        device=device,
+        devices=[device],
         session=InferenceSession(devices=[device]),
     )
 
@@ -106,7 +106,7 @@ async def test_fetch_continuous():
         max_cache_batch_size=16,
         max_seq_len=100,
         num_layers=10,
-        device=device,
+        devices=[device],
         session=InferenceSession(devices=[device]),
     )
 
