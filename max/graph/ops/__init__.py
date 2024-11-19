@@ -19,7 +19,7 @@ convenience methods such as
 [`reshape()`](/max/api/python/graph/value/TensorValue#reshape) and
 [`swapaxes()`](/max/api/python/graph/value/TensorValue#swapaxes).
 """
-
+from . import allreduce
 from .band_part import band_part
 from .broadcast_to import broadcast_to
 from .buffer import buffer_load, buffer_store, buffer_store_slice

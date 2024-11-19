@@ -1,0 +1,165 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Test the max.graph Python bindings."""
+import pytest
+from conftest import axes, tensor_types
+from hypothesis import assume, given
+from hypothesis import strategies as st
+from max.dtype import DType
+from max.graph import ops, Device, DeviceType, Graph, TensorType
+
+
+shared_types = st.shared(tensor_types())
+
+
+def test_allreduce_no_device() -> None:
+    """Test no device error for allreduce."""
+    devices = [
+        Device.CUDA(id=0),
+        Device.CUDA(id=1),
+        Device.CUDA(id=2),
+        Device.CUDA(id=3),
+    ]
+    with pytest.raises(
+        ValueError,
+        match="needs to have an explicit device.",
+    ):
+        with Graph(
+            "allreduce",
+            input_types=[
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[0]
+                ),
+                TensorType(
+                    dtype=DType.float32,
+                    shape=[6, 5],
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[2]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[3]
+                ),
+            ],
+        ) as graph:
+            allreduce_outputs = ops.allreduce.sum(graph.inputs)
+            graph.output(
+                allreduce_outputs[0],
+                allreduce_outputs[1],
+                allreduce_outputs[2],
+                allreduce_outputs[3],
+            )
+
+
+def test_allreduce_rep_device() -> None:
+    """Test unique device error for allreduce."""
+    devices = [
+        Device.CUDA(id=0),
+        Device.CUDA(id=0),
+        Device.CUDA(id=2),
+        Device.CUDA(id=3),
+    ]
+    with pytest.raises(
+        ValueError,
+        match=(
+            "allreduce.sum operation must have unique devices across it's input"
+            " tensors."
+        ),
+    ):
+        with Graph(
+            "allreduce",
+            input_types=[
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[0]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[1]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[2]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[3]
+                ),
+            ],
+        ) as graph:
+            allreduce_outputs = ops.allreduce.sum(graph.inputs)
+            graph.output(
+                allreduce_outputs[0],
+                allreduce_outputs[1],
+                allreduce_outputs[2],
+                allreduce_outputs[3],
+            )
+
+
+def test_allreduce_wrong_shape() -> None:
+    """Test wrong shape error for allreduce."""
+    devices = [
+        Device.CUDA(id=0),
+        Device.CUDA(id=1),
+        Device.CUDA(id=2),
+        Device.CUDA(id=3),
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "allreduce.sum operation must have the same shape across all input"
+            " tensors."
+        ),
+    ):
+        with Graph(
+            "allreduce",
+            input_types=[
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[0]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 2], device=devices[1]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[2]
+                ),
+                TensorType(
+                    dtype=DType.float32, shape=[6, 5], device=devices[3]
+                ),
+            ],
+        ) as graph:
+            allreduce_outputs = ops.allreduce.sum(graph.inputs)
+            graph.output(
+                allreduce_outputs[0],
+                allreduce_outputs[1],
+                allreduce_outputs[2],
+                allreduce_outputs[3],
+            )
+
+
+def test_allreduce_basic() -> None:
+    """Test basic allreduce use case."""
+    devices = [
+        Device.CUDA(id=0),
+        Device.CUDA(id=1),
+        Device.CUDA(id=2),
+        Device.CUDA(id=3),
+    ]
+    with Graph(
+        "allreduce",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=[6, 5], device=devices[0]),
+            TensorType(dtype=DType.float32, shape=[6, 5], device=devices[1]),
+            TensorType(dtype=DType.float32, shape=[6, 5], device=devices[2]),
+            TensorType(dtype=DType.float32, shape=[6, 5], device=devices[3]),
+        ],
+    ) as graph:
+        allreduce_outputs = ops.allreduce.sum(graph.inputs)
+        graph.output(
+            allreduce_outputs[0],
+            allreduce_outputs[1],
+            allreduce_outputs[2],
+            allreduce_outputs[3],
+        )
+        for output, device in zip(allreduce_outputs, devices):
+            assert device == output.device
