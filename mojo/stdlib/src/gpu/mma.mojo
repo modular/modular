@@ -16,10 +16,81 @@ from utils import StaticTuple
 
 
 @always_inline
-fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    """Performs warp sync Tensor Core based Matrix-multiply and accumulate(MMA) operation.
-    """
+fn _mma_amd(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    # ===------------------------------------------------------------------===#
+    # F16 = F16 * F16 + F16
+    # ===------------------------------------------------------------------===#
+    @parameter
+    if (
+        d.type is DType.float16
+        and a.type is DType.float16
+        and b.type is DType.float16
+        and c.type is DType.float16
+    ):
+        constrained[
+            False, "Function mma F16 * F16 + F16 is unsupported by AMD GPUs."
+        ]()
+    # ===------------------------------------------------------------------===#
+    # F32 = F16 * F16 + F32
+    # ===------------------------------------------------------------------===#
+    elif (
+        d.type is DType.float32
+        and d.size == 4
+        and a.type is DType.float16
+        and a.size == 4
+        and b.type is DType.float16
+        and b.size == 4
+        and c.type is DType.float32
+        and c.size == 4
+    ):
+        alias zero: UInt32 = 0
+        var r = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[c.type, c.size]
+        ](a, b, c, zero, zero, zero)
+        d = rebind[__type_of(d)](r)
 
+    # ===------------------------------------------------------------------===#
+    # F32 = BF16 * BF16 + F32
+    # ===------------------------------------------------------------------===#
+    elif (
+        d.type is DType.float32
+        and d.size == 4
+        and a.type is DType.bfloat16
+        and a.size == 4
+        and b.type is DType.bfloat16
+        and b.size == 4
+        and c.type is DType.float32
+        and c.size == 4
+    ):
+        alias zero: UInt32 = 0
+        var r = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x8bf16", SIMD[c.type, c.size]
+        ](a, b, c, zero, zero, zero)
+        d = rebind[__type_of(d)](r)
+    # ===------------------------------------------------------------------===#
+    # F32 = FP32 * FP32 + FP32
+    # ===------------------------------------------------------------------===#
+    elif (
+        d.type is DType.float32
+        and d.size == 4
+        and a.type is DType.float32
+        and a.size == 1
+        and b.type is DType.float32
+        and b.size == 1
+        and c.type is DType.float32
+        and c.size == 4
+    ):
+        alias zero: UInt32 = 0
+        var r = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x4f32", SIMD[c.type, c.size]
+        ](a, b, c, zero, zero, zero)
+        d = rebind[__type_of(d)](r)
+    else:
+        constrained[False, "no valid implementation of mma"]()
+
+
+@always_inline
+fn _mma_nvidia(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
@@ -302,6 +373,18 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
     else:
         constrained[False, "no valid implementation of mma"]()
+
+
+@always_inline
+fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    """Performs warp sync Tensor Core based Matrix-multiply and accumulate(MMA) operation.
+    """
+
+    @parameter
+    if is_nvidia_gpu():
+        _mma_nvidia(d, a, b, c)
+    else:
+        _mma_amd(d, a, b, c)
 
 
 # ===------------------------------------------------------------------===#
