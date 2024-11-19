@@ -61,7 +61,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
             in_buffer.load[width=simd_width](idx) + 42,
         )
 
-    elementwise[func, pack_size, target="cuda"](
+    elementwise[func, pack_size, target="gpu"](
         IndexList[2](2, 8),
         ctx,
     )
