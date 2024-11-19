@@ -3,6 +3,9 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+# type: ignore
+
 """Test the max.engine Python bindings with Max Graph when using explicit device."""
 
 import os
