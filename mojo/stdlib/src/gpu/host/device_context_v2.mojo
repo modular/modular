@@ -749,7 +749,7 @@ struct DeviceContextV2:
         ](
             self._handle,
         )
-        return StringRef(ptr=kind_ptr)
+        return String(StringRef(ptr=kind_ptr))
 
     fn malloc_host[
         type: AnyType
