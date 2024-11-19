@@ -57,7 +57,7 @@ def run_elementwise[type: DType](ctx: DeviceContext):
             for i in range(simd_width):
                 out_buffer[idx + i] = rng[i % len(rng)].cast[type]()
 
-    elementwise[func, 4, target="cuda"](Index(length), ctx)
+    elementwise[func, 4, target="gpu"](Index(length), ctx)
 
     ctx.enqueue_copy_from_device(out_host.data, out_device)
 

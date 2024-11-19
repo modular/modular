@@ -58,7 +58,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int, ctx: DeviceContext):
             result = val**exponent
         out_buffer.store[width=simd_width](idx, result.cast[DType.float32]())
 
-    elementwise[func, pack_size, target="cuda"](IndexList[1](length), ctx)
+    elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
 
     ctx.enqueue_copy_from_device(out_host.data, out_device)
     ctx.synchronize()

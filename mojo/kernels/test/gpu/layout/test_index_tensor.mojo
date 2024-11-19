@@ -54,7 +54,7 @@ def execute_index_tensor_test[
     ctx.enqueue_copy_to_device(indices_device.buffer, indices_host.tensor.data)
 
     # execute the kernel
-    _index_tensor_impl[batch_dims, target="cuda"](
+    _index_tensor_impl[batch_dims, target="gpu"](
         data_device.tensor.make_dims_unknown(),
         indices_device.tensor.make_dims_unknown(),
         actual_output_device.tensor.make_dims_unknown(),

@@ -114,7 +114,7 @@ fn erf_elementwise(buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext):
             return
         buf[offset] = erf(buf[offset])
 
-    elementwise[func, simd_width = simdwidthof[DType.float32](), target="cuda"](
+    elementwise[func, simd_width = simdwidthof[DType.float32](), target="gpu"](
         granularity, ctx
     )
 

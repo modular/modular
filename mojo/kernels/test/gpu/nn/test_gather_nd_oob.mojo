@@ -61,7 +61,7 @@ def execute_gather_nd_test[
     ctx.enqueue_copy_to_device(indices_device.buffer, indices_host.tensor.data)
 
     # execute the kernel
-    _gather_nd_impl[batch_dims, target="cuda"](
+    _gather_nd_impl[batch_dims, target="gpu"](
         data_device.tensor.make_dims_unknown(),
         indices_device.tensor.make_dims_unknown(),
         actual_output_device.tensor.make_dims_unknown(),

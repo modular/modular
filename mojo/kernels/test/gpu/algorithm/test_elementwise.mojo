@@ -47,7 +47,7 @@ fn run_elementwise[type: DType](ctx: DeviceContext) raises:
             in_buffer.load[width=simd_width](idx) + 42,
         )
 
-    elementwise[func, pack_size, target="cuda"](
+    elementwise[func, pack_size, target="gpu"](
         IndexList[2](2, 8),
         ctx,
     )
@@ -114,7 +114,7 @@ fn run_elementwise_uneven_simd[type: DType](ctx: DeviceContext) raises:
             in_buffer.load[width=simd_width](idx) + 42,
         )
 
-    elementwise[func, pack_size, target="cuda"](
+    elementwise[func, pack_size, target="gpu"](
         IndexList[2](3, 3),
         ctx,
     )
@@ -168,7 +168,7 @@ fn run_elementwise_transpose_copy[type: DType](ctx: DeviceContext) raises:
             idx, in_buffer_transposed.load[width=simd_width, alignment=1](idx)
         )
 
-    elementwise[func, 1, target="cuda"](
+    elementwise[func, 1, target="gpu"](
         IndexList[3](4, 2, 5),
         ctx,
     )

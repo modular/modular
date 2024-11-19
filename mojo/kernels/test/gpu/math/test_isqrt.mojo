@@ -53,7 +53,7 @@ def run_elementwise[
             idx, isqrt(in_buffer.load[width=simd_width](idx))
         )
 
-    elementwise[func, pack_size, target="cuda"](IndexList[1](length), ctx)
+    elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
 
     ctx.enqueue_copy_from_device(out_host.data, out_device)
 

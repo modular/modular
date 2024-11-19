@@ -193,7 +193,7 @@ def execute_flash_attention[
 
     scale = isqrt(Float32(kv_params.head_size))
 
-    _flash_attention_kv_cache_impl[kv_cache_device.CacheType, target="cuda"](
+    _flash_attention_kv_cache_impl[kv_cache_device.CacheType, target="gpu"](
         q_device.tensor,
         kv_cache_device,
         UInt32(0),

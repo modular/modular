@@ -249,7 +249,7 @@ fn test[
 
     @parameter
     if lambda_fn:
-        elementwise[func, pack_size, target="cuda"](
+        elementwise[func, pack_size, target="gpu"](
             IndexList[2](M, int(N)),
             ctx,
         )

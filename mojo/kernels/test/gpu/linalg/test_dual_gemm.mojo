@@ -925,7 +925,7 @@ fn naive_dual_gemm[
             ]()[m, (N + n) // simd_width]
 
         ctx.synchronize()
-        elementwise[binary, simd_width, target="cuda"](IndexList[2](M, N), ctx)
+        elementwise[binary, simd_width, target="gpu"](IndexList[2](M, N), ctx)
         ctx.synchronize()
     except e:
         abort(e)
