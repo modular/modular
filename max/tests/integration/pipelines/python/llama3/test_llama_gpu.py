@@ -80,13 +80,15 @@ def kl_divergence_verifier(
 
 
 @pytest.mark.parametrize(
-    "model,encoding",
+    "model_name,encoding",
     [
         ("llama3_1", "bfloat16"),
     ],
 )
-def test_llama(model: str, encoding: str, testdata_directory: Path) -> None:
-    test_model = SupportedTestModels.get(model, encoding)
+def test_llama(
+    model_name: str, encoding: str, testdata_directory: Path
+) -> None:
+    test_model = SupportedTestModels.get(model_name, encoding)
     config = test_model.build_config(max_length=512)
     tokenizer = TextTokenizer(config)
     session = InferenceSession(devices=[config.device])

@@ -25,7 +25,7 @@ def create_test_graph_with_transfer() -> Graph:
         "add", input_types=(input_type, input_type, input_type)
     ) as graph:
         sum = ops.add(graph.inputs[0], graph.inputs[1])
-        cuda_input = graph.inputs[2].to(Device.CUDA(0))
+        cuda_input = graph.inputs[2].to(Device.CUDA(0))  # type: ignore
         sum2 = ops.add(sum, cuda_input)
         graph.output(sum2)
     return graph
@@ -47,8 +47,8 @@ def create_test_graph_io_devices() -> Graph:
             cuda_input_type,
         ),
     ) as graph:
-        cuda_input1 = graph.inputs[1].to(Device.CUDA(0))
-        cuda_input2 = graph.inputs[2].to(Device.CUDA(0))
+        cuda_input1 = graph.inputs[1].to(Device.CUDA(0))  # type: ignore
+        cuda_input2 = graph.inputs[2].to(Device.CUDA(0))  # type: ignore
         sum = ops.add(graph.inputs[0], cuda_input1)
         sum2 = ops.add(sum, cuda_input2)
         graph.output(sum2)
@@ -126,4 +126,4 @@ def test_explicit_device_execution() -> None:
     b = Tensor.from_numpy(b_np).to(device)
     c = Tensor.from_numpy(b_np)
     output = compiled.execute(a, b, c)
-    assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())
+    assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())  # type: ignore

@@ -191,8 +191,9 @@ modular_py_test(
         "//SDK/public/max-repo/pipelines/python/utils",
         "//Support/python:support",
         requirement("hypothesis"),
-        requirement("transformers"),
         requirement("py-cpuinfo"),
         requirement("pytest-asyncio"),
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )

@@ -129,12 +129,12 @@ async def test_tinyllama_multistep_execution_gpu(
         random.shuffle(single_step_contexts)
         single_step_context_dict = dict(single_step_contexts)
 
-        response = tinyllama_model.next_token(single_step_context_dict)[0]
+        response = tinyllama_model.next_token(single_step_context_dict)[0]  # type: ignore
         for k, v in response.items():
             single_step_tokens[k].append(v)
 
     for _, v in single_step_contexts:
-        tinyllama_model.release(v)
+        tinyllama_model.release(v)  # type: ignore
 
     multistep_tokens: dict[str, list[int]] = {
         k: [] for k, v in multistep_contexts
@@ -143,7 +143,7 @@ async def test_tinyllama_multistep_execution_gpu(
         # randomize the order of the contexts to test continuous batch reordering
         random.shuffle(multistep_contexts)
         multistep_context_dict = dict(multistep_contexts)
-        response = tinyllama_model.next_token(
+        response = tinyllama_model.next_token(  # type: ignore
             multistep_context_dict, num_steps=num_multisteps
         )
 
@@ -152,7 +152,7 @@ async def test_tinyllama_multistep_execution_gpu(
                 multistep_tokens[k].append(v)
 
     for _, v in multistep_contexts:
-        tinyllama_model.release(v)
+        tinyllama_model.release(v)  # type: ignore
 
     for id in multistep_tokens.keys():
         assert multistep_tokens[id] == single_step_tokens[id]

@@ -12,7 +12,7 @@
 
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 from evaluate_llama import SupportedTestModels
@@ -113,7 +113,7 @@ async def test_pipeline_heterogeneous_batch_logits(
     prompt_b = PROMPTS[1]
     prompt_c = PROMPTS[2]
 
-    stored_logits: dict[str, TextContext] = {"A": [], "B": [], "C": []}
+    stored_logits: dict[str, list[Any]] = {"A": [], "B": [], "C": []}
 
     # Send in A for context encoding.
     context_a = await pipeline_tokenizer.new_context(
