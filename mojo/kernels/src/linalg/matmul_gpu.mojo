@@ -887,7 +887,7 @@ fn split_k_reduce[
                 rebind[IndexList[2]](c_coord), vec.cast[c_type]()
             )
 
-    elementwise[_reduce, simd_width, target="cuda"](Index(M, N), ctx)
+    elementwise[_reduce, simd_width, target="gpu"](Index(M, N), ctx)
 
 
 fn multistage_gemm[
