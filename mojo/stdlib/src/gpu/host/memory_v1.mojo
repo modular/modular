@@ -288,7 +288,9 @@ struct TMADescriptor:
 fn create_tma_descriptor[
     dtype: DType, rank: Int
 ](
-    global_ptr: UnsafePointer[Scalar[dtype]],
+    global_ptr: UnsafePointer[
+        Scalar[dtype], address_space = AddressSpace.GENERIC
+    ],
     global_shape: IndexList[rank],
     global_strides: IndexList[rank],
     shared_mem_shape: IndexList[rank],
