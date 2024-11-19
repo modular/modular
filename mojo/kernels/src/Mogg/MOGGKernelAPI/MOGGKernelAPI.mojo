@@ -20,7 +20,7 @@ from math import (
     sqrt,
     tanh,
 )
-from nn.concat import _concat_cpu, test_concat_fusion
+from nn.concat import concat, _concat_cpu
 from random import randn, seed
 from sys import llvm_intrinsic
 from sys.info import simdwidthof
@@ -3192,7 +3192,8 @@ struct GatherND:
 
 @compiler.register("mo.gather")
 struct Gather:
-    @compiler.enable_fusion_for("input", "indices", "output")
+    # TODO(GRA-1298): Re-enable fusion
+    # @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         synchronous: Bool,
@@ -3580,6 +3581,8 @@ struct Matmul:
         var b_buffer = managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b)
         var c_buffer = managed_tensor_slice_to_ndbuffer[static_shape=c_shape](c)
 
+        alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
+
         @parameter
         @always_inline
         fn output_fn[
@@ -3624,6 +3627,8 @@ struct BatchMatmul:
         var a_buffer = managed_tensor_slice_to_ndbuffer(a)
         var b_buffer = managed_tensor_slice_to_ndbuffer(b)
         var c_buffer = managed_tensor_slice_to_ndbuffer(c)
+
+        alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
 
         @parameter
         @always_inline
@@ -4150,13 +4155,15 @@ fn get_inputs_lambdas[
 
 @compiler.register("mo.concat")
 struct Concat:
-    @compiler.enable_fusion_for("inputs", "output")
+    # TODO(GRA-1299): Re-enable concat fusion
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         synchronous: Bool,
         target: StringLiteral,
+        # TODO(GRA-1116): Support input fusion for concat
+        # lambdas_have_fusion: Bool,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         axis: ManagedTensorSlice[rank=1],
@@ -4165,41 +4172,18 @@ struct Concat:
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
         var axis_val = axis._ptr.load(0)
-        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+        var input_bufs = StaticTuple[NDBuffer[type, rank], inputs.size]()
 
         @parameter
         for i in range(inputs.size):
-            input_shapes[i] = inputs[i]._spec.shape
+            input_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
 
-        alias inputs_lambdas = get_inputs_lambdas[
-            type,
-            rank,
-            inputs.size,
-            compiler.specsof[type, rank, inputs.size]("inputs"),
-        ]()
-
-        @always_inline
-        @parameter
-        fn epilogue_wrapper[
-            _type: DType, _rank: Int, width: Int, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_type, width]):
-            output._fused_store[width=width](
-                rebind[IndexList[output.rank]](indices),
-                rebind[SIMD[output.type, width]](value),
-            )
-
-        test_concat_fusion[
-            type,
-            rank,
-            synchronous,
-            inputs_lambdas,
-            epilogue_wrapper,
-            target,
-        ](
-            int(normalize_neg_index(axis_val, rank)),
-            input_shapes,
+        alias fusion = None
+        concat[rank, type, synchronous, target, fusion](
             output_buf,
-            ctx,
+            int(normalize_neg_index(axis_val, rank)),
+            input_bufs,
+            context=ctx,
         )
 
     @staticmethod
