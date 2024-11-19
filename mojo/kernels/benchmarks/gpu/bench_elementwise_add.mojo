@@ -55,7 +55,7 @@ fn bench_add[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            elementwise[add, simd_width=unroll_by, target="cuda"](shape, ctx)
+            elementwise[add, simd_width=unroll_by, target="gpu"](shape, ctx)
 
         b.iter_custom[kernel_launch](ctx)
 

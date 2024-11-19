@@ -191,7 +191,7 @@ fn run_elementwise[
                         ),
                     )
 
-            elementwise[func, pack_size, target="cuda"](
+            elementwise[func, pack_size, target="gpu"](
                 dims,
                 ctx,
             )
