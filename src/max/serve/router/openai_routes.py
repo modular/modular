@@ -353,26 +353,30 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
     async def complete(
         self, request: TokenGeneratorRequest
     ) -> CreateCompletionResponse:
-        completed_tokens = await self.pipeline.all_tokens(request)
+        try:
+            completed_tokens = await self.pipeline.all_tokens(request)
 
-        response_message = "".join(completed_tokens)
-        response_choices = [
-            Choice(
-                index=0,
-                text=response_message,
-                finish_reason="stop",
-                logprobs=Logprobs(),
+            response_message = "".join(completed_tokens)
+            response_choices = [
+                Choice(
+                    index=0,
+                    text=response_message,
+                    finish_reason="stop",
+                    logprobs=Logprobs(),
+                )
+            ]
+            response = CreateCompletionResponse(
+                id=request.id,
+                choices=response_choices,
+                created=int(datetime.now().timestamp()),
+                model="",
+                object="text_completion",
+                system_fingerprint=None,
             )
-        ]
-        response = CreateCompletionResponse(
-            id=request.id,
-            choices=response_choices,
-            created=int(datetime.now().timestamp()),
-            model="",
-            object="text_completion",
-            system_fingerprint=None,
-        )
-        return response
+            return response
+        finally:
+            if self.request_limiter:
+                self.request_limiter.release()
 
 
 def openai_get_prompt_from_completion_request(
