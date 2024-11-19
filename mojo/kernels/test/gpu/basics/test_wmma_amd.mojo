@@ -135,6 +135,10 @@ fn run_mma_fp32_fp32(
         _ = c_host
         _ = c_host_ref
         _ = func_mma^
+        a_host.free()
+        b_host.free()
+        c_host.free()
+        c_host_ref.free()
 
     # CHECK: Success
     if errors == 0:
@@ -143,7 +147,7 @@ fn run_mma_fp32_fp32(
         print("Failed ❌: results mismatch.")
 
 
-# FP32-FP32 Matrix core Matmul with shape m16n16k4
+# FP32-FP16 Matrix core Matmul with shape m16n16k4
 fn mma_kernel_fp32_fp16(
     a_ptr: UnsafePointer[Float16],
     b_ptr: UnsafePointer[Float16],
@@ -225,6 +229,7 @@ fn run_mma_fp32_fp16(
         for i in range(M * N):
             if c_host[i] != c_host_ref[i]:
                 errors += 1
+
         _ = a_device
         _ = b_device
         _ = c_device
@@ -233,6 +238,113 @@ fn run_mma_fp32_fp16(
         _ = c_host
         _ = c_host_ref
         _ = func_mma^
+        a_host.free()
+        b_host.free()
+        c_host.free()
+        c_host_ref.free()
+
+    # CHECK: Success
+    if errors == 0:
+        print("Success 🎉: Results match.")
+    else:
+        print("Failed ❌: results mismatch.")
+
+
+# FP32-BF16 Matrix core Matmul with shape m16n16k4
+fn mma_kernel_fp32_bf16(
+    a_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[BFloat16],
+    c_ptr: UnsafePointer[Float32],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    var a_reg: SIMD[DType.bfloat16, 4] = 0
+    var b_reg: SIMD[DType.bfloat16, 4] = 0
+    var d_reg: SIMD[DType.float32, 4] = 0
+    for i in range(4):
+        var a_idx = LDA * ThreadIdx.x() + i + 4 * ThreadIdx.y()
+        var b_idx = ThreadIdx.x() + LDB * i + 4 * LDB * ThreadIdx.y()
+        a_reg[i] = a_ptr[a_idx]
+        b_reg[i] = b_ptr[b_idx]
+    mma(d_reg, a_reg, b_reg, d_reg)
+    for i in range(4):
+        var d_idx = ThreadIdx.x() + i * LDD + 4 * LDD * ThreadIdx.y()
+        c_ptr[d_idx] = d_reg[i]
+
+
+fn run_mma_fp32_bf16(
+    M: Int,
+    N: Int,
+    K: Int,
+    rand_min: Int64,
+    rand_max: Int64,
+    ctx: DeviceContext,
+) raises:
+    print("== run_matmul fp32.bf16 matrix core kernel")
+
+    var errors = 0
+
+    @parameter
+    if is_amd_gpu():
+        var a_host = UnsafePointer[BFloat16].alloc(M * K)
+        var b_host = UnsafePointer[BFloat16].alloc(K * N)
+        var c_host = UnsafePointer[Float32].alloc(M * N)
+        var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+
+        for i in range(M * K):
+            var val = random_si64(rand_min, rand_max)
+            a_host[i] = val.cast[DType.bfloat16]()
+
+        for i in range(K * N):
+            var val = random_si64(rand_min, rand_max)
+            b_host[i] = val.cast[DType.bfloat16]()
+
+        for i in range(M * N):
+            c_host[i] = 0
+            c_host_ref[i] = 0
+
+        var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
+        var b_device = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
+        var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+
+        ctx.enqueue_copy_to_device(a_device, a_host)
+        ctx.enqueue_copy_to_device(b_device, b_host)
+
+        var func_mma = ctx.compile_function[mma_kernel_fp32_bf16]()
+
+        ctx.enqueue_function(
+            func_mma,
+            a_device,
+            b_device,
+            c_device,
+            M,
+            N,
+            K,
+            grid_dim=1,
+            block_dim=(16, 4),
+        )
+
+        ctx.enqueue_copy_from_device(c_host, c_device)
+
+        matmul_naive(a_host, b_host, c_host_ref, M, N, K)
+
+        for i in range(M * N):
+            if c_host[i] != c_host_ref[i]:
+                errors += 1
+
+        _ = a_device
+        _ = b_device
+        _ = c_device
+        _ = a_host
+        _ = b_host
+        _ = c_host
+        _ = c_host_ref
+        _ = func_mma^
+        a_host.free()
+        b_host.free()
+        c_host.free()
+        c_host_ref.free()
 
     # CHECK: Success
     if errors == 0:
@@ -245,3 +357,4 @@ def main():
     with DeviceContext() as ctx:
         run_mma_fp32_fp32(16, 16, 16, -100, 100, ctx)
         run_mma_fp32_fp16(16, 16, 16, -100, 100, ctx)
+        run_mma_fp32_bf16(16, 16, 16, -100, 100, ctx)
