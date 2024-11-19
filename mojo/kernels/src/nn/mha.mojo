@@ -30,7 +30,6 @@ from gpu.shuffle import warp_broadcast
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams, KVCacheT
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
@@ -1289,25 +1288,17 @@ fn mha_single_batch[
     var q_tile_idx: UInt32 = BlockIdx.x()
 
     # Query global memory iterator
-    alias q_gmem_layout = Layout(
-        IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
-    )
-    var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
     var q_offset = depth * (head_idx + num_heads * q_tile_idx * BM)
-    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True,](
-        q_ptr + int(q_offset),
-        RuntimeLayout(
-            RuntimeTuple[q_gmem_layout.shape, unsigned=True](
-                int(q_tile_num_rows), depth
-            ),
-            RuntimeTuple[q_gmem_layout.stride, unsigned=True](
-                num_heads * depth, 1
-            ),
+    var q_gmem_block = LayoutTensor[
+        q_type,
+        Layout(
+            IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
         ),
-    )
+    ](q_ptr + int(q_offset))
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
     # q tile has valid shape q_tile_num_rows x depth
     # q_tile_num_rows could be less than BM when seqlen % BM != 0
+    var q_tile_num_rows = min(BM, UInt(seq_len) - q_tile_idx * BM)
 
     alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
     alias MMA_M = mma_shape[0]
@@ -1403,45 +1394,28 @@ fn mha_single_batch[
         ):
             return
 
-        alias kv_gmem_layout = Layout(
-            IntTuple(Int(BN), Int(depth)),
-            IntTuple(Int(kv_num_heads * depth), 1),
-        )
-        var kv_tile_num_rows = min(int(tile_size), seq_len - kv_tile_start_row)
-
-        # kv cache gmem has to clip num rows as runtime layout
-        var kv_runtime_layout = RuntimeLayout(
-            RuntimeTuple[kv_gmem_layout.shape, unsigned=True](
-                kv_tile_num_rows, depth
-            ),
-            RuntimeTuple[kv_gmem_layout.stride, unsigned=True](
-                kv_num_heads * depth, 1
-            ),
-        )
-
         var k_gmem_block = LayoutTensor[
             k_type,
-            kv_gmem_layout,
-            masked = not not_last_iter,
-        ](
-            k_ptr + int(kv_offset + kv_tile_start_row * kv_num_heads * depth),
-            kv_runtime_layout,
-        )
+            Layout(
+                IntTuple(Int(BN), Int(depth)),
+                IntTuple(Int(kv_num_heads * depth), 1),
+            ),
+        ](k_ptr + int(kv_offset + kv_tile_start_row * kv_num_heads * depth))
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
         var v_gmem_block = LayoutTensor[
             v_type,
-            kv_gmem_layout,
-            masked = not not_last_iter,
-        ](
-            v_ptr + int(kv_offset + kv_tile_start_row * kv_num_heads * depth),
-            kv_runtime_layout,
-        )
+            Layout(
+                IntTuple(Int(BN), Int(depth)),
+                IntTuple(Int(kv_num_heads * depth), 1),
+            ),
+        ](v_ptr + int(kv_offset + kv_tile_start_row * kv_num_heads * depth))
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
         # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
 
+        var kv_tile_num_rows = min(int(tile_size), seq_len - kv_tile_start_row)
         var num_b_rows = None if not_last_iter else OptionalReg[Int](
             kv_tile_num_rows
         )
@@ -1469,6 +1443,7 @@ fn mha_single_batch[
                 k_smem_iter,
                 depth // BK,
                 next_op_b_iter=v_gmem_iter.bitcast[k_type](),
+                num_a_rows=int(q_tile_num_rows),
                 num_b_rows=num_b_rows,
             )
         # Subsequent iterations just use q in share memory.
@@ -2367,7 +2342,6 @@ fn mha_decoding_single_batch[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-            masked=True,
         ](k_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
@@ -2392,6 +2366,7 @@ fn mha_decoding_single_batch[
                 q_smem_iter,
                 k_smem_iter,
                 depth // BK,
+                num_a_rows=int(q_tile_num_rows),
                 num_b_rows=Int(kv_tile_num_rows),
             )
         else:
@@ -2412,6 +2387,7 @@ fn mha_decoding_single_batch[
                 q_smem_iter,
                 k_smem_iter,
                 depth // BK,
+                num_a_rows=None,
                 num_b_rows=Int(kv_tile_num_rows),
             )
 
@@ -2456,7 +2432,6 @@ fn mha_decoding_single_batch[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-            masked=True,
         ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
@@ -2483,6 +2458,7 @@ fn mha_decoding_single_batch[
             p_smem_iter,
             v_smem_iter,
             BN // BK,
+            num_a_rows=None,
             num_b_rows=Int(kv_tile_num_rows),
         )
 
