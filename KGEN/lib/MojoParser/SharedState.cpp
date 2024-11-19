@@ -334,6 +334,8 @@ static std::string canonicalizeFileCompilationDir(StringRef stripFilePrefix) {
     return {};
 
   SmallString<256> workingFileCompilationDir = stripFilePrefix;
+  llvm::sys::path::remove_dots(workingFileCompilationDir,
+                               /*remove_dot_dot=*/true);
   llvm::sys::fs::make_absolute(workingFileCompilationDir);
   if (!llvm::sys::path::is_separator(workingFileCompilationDir.back()))
     workingFileCompilationDir.append(llvm::sys::path::get_separator());

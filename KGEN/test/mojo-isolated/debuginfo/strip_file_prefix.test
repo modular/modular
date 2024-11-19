@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %S/inputs/strip_file_prefix_input.mojo -strip-file-prefix=%S -mlir-print-debuginfo 2>&1 | FileCheck %s -check-prefix=PARENT --implicit-check-not='/inputs'
+# RUN: %parse-mojo-isolated %S/inputs/strip_file_prefix_input.mojo -strip-file-prefix=. -mlir-print-debuginfo 2>&1 | FileCheck %s -check-prefix=PARENT --implicit-check-not='/inputs'
 # PARENT: "inputs/strip_file_prefix_input.mojo"
 # PARENT: "inputs/local_import.mojo"
 
