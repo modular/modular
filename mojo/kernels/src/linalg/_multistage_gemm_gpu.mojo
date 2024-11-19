@@ -111,6 +111,7 @@ fn multistage_mma[
     num_iters: Int,
     /,
     *,
+    num_a_rows: OptionalReg[Int] = None,
     num_b_rows: OptionalReg[Int] = None,
     next_op_b_iter: LayoutTensorIter[
         b_type,
@@ -139,7 +140,6 @@ fn multistage_mma[
     var a_smem_iter = a_smem_iter_arg
     # work around inout argument can't have default value.
     var next_b_iter = next_op_b_iter
-    var b_rows = num_b_rows.value() if num_b_rows else b_iter[].dim(0)
 
     alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
@@ -153,27 +153,60 @@ fn multistage_mma[
 
     @always_inline
     @parameter
-    fn _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int
-    ) -> __type_of(tensor) as result:
-        return __type_of(tensor)(
-            tensor.ptr,
-            RuntimeLayout(
-                RuntimeTuple[tensor.layout.shape, unsigned=True](
-                    num_rows, tensor.dim(1)
-                ),
-                tensor.runtime_layout.stride,
-            ),
+    fn _copy_dram_to_sram_async_a[
+        tile_layout: Layout, //,
+        *,
+        masked: Bool = False,
+        fill: Fill = Fill.NONE,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        a_tile: LayoutTensor[
+            a_type,
+            tile_layout,
+            address_space = AddressSpace.SHARED,
+            element_layout=_, **_,
+        ],
+        num_rows: Int = UNKNOWN_VALUE,
+    ):
+        copy_dram_to_sram_async[
+            thread_layout=async_copy_a_layout,
+            swizzle=swizzle_a,
+            masked=masked,
+            fill=fill,
+            eviction_policy=eviction_policy,
+        ](
+            a_tile.vectorize[1, simd_size](),
+            a_iter[].bitcast[a_type]().vectorize[1, simd_size](),
+            num_rows,
         )
 
     @always_inline
     @parameter
-    fn _copy_tensor_to_sram[
-        thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor, src: LayoutTensor,):
-        copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle,](
-            dst.vectorize[1, simd_size](),
-            src.vectorize[1, simd_size](),
+    fn _copy_dram_to_sram_async_b[
+        tile_layout: Layout, //,
+        *,
+        masked: Bool = False,
+        fill: Fill = Fill.NONE,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        b_tile: LayoutTensor[
+            b_type,
+            tile_layout,
+            address_space = AddressSpace.SHARED,
+            element_layout=_, **_,
+        ],
+        num_rows: Int = UNKNOWN_VALUE,
+    ):
+        copy_dram_to_sram_async[
+            thread_layout=async_copy_b_layout,
+            swizzle=swizzle_b,
+            masked=masked,
+            fill=fill,
+            eviction_policy=eviction_policy,
+        ](
+            b_tile.vectorize[1, simd_size](),
+            b_iter[].bitcast[b_type]().vectorize[1, simd_size](),
+            num_rows,
         )
 
     # Prefetch (num_pipeline_stages - 1) stages.
@@ -186,9 +219,13 @@ fn multistage_mma[
             @parameter
             if a_iter.address_space == AddressSpace.GENERIC:
                 var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
-                _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
-                    a_smem_tile, a_iter[]
-                )
+
+                if num_a_rows:
+                    _copy_dram_to_sram_async_a[masked=True](
+                        a_smem_tile, num_a_rows.value()
+                    )
+                else:
+                    _copy_dram_to_sram_async_a(a_smem_tile)
 
                 a_iter._incr()
 
@@ -197,17 +234,14 @@ fn multistage_mma[
                 var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
 
                 if num_b_rows:
-                    var num_rows_bound = b_rows if transpose_b else max(
-                        0, b_rows - stage * BK
+                    var num_rows_bound = num_b_rows.value() if transpose_b else max(
+                        0, num_b_rows.value() - stage * BK
                     )
-                    var b_tensor = _mask_tensor_row(b_iter[], num_rows_bound)
-                    _copy_tensor_to_sram[async_copy_b_layout, swizzle_b](
-                        b_smem_tile, b_tensor
+                    _copy_dram_to_sram_async_b[masked=True](
+                        b_smem_tile, num_rows_bound
                     )
                 else:
-                    _copy_tensor_to_sram[async_copy_b_layout, swizzle_b](
-                        b_smem_tile, b_iter[]
-                    )
+                    _copy_dram_to_sram_async_b(b_smem_tile)
 
                 b_iter._incr()
 
@@ -316,20 +350,18 @@ fn multistage_mma[
                                 )[]
 
                                 if num_b_rows:
-                                    var num_rows_bound = b_rows if transpose_b else max(
+                                    var num_rows_bound = num_b_rows.value() if transpose_b else max(
                                         0,
-                                        b_rows - prefetch_tile_id * BK,
+                                        num_b_rows.value()
+                                        - prefetch_tile_id * BK,
                                     )
-                                    var b_tensor = _mask_tensor_row(
-                                        b_iter[], num_rows_bound
+                                    _copy_dram_to_sram_async_b[masked=True](
+                                        b_smem_prefetch_tile, num_rows_bound
                                     )
-                                    _copy_tensor_to_sram[
-                                        async_copy_b_layout, swizzle_b
-                                    ](b_smem_prefetch_tile, b_tensor)
                                 else:
-                                    _copy_tensor_to_sram[
-                                        async_copy_b_layout, swizzle_b
-                                    ](b_smem_prefetch_tile, b_iter[])
+                                    _copy_dram_to_sram_async_b(
+                                        b_smem_prefetch_tile
+                                    )
 
                                 b_iter._incr()
 
@@ -402,9 +434,13 @@ fn multistage_mma[
                             var a_smem_prefetch_tile = a_smem_iter.next_unsafe(
                                 num_pipeline_stages - 1
                             )[]
-                            _copy_tensor_to_sram[
-                                async_copy_a_layout, swizzle_a
-                            ](a_smem_prefetch_tile, a_iter[])
+
+                            if num_a_rows:
+                                _copy_dram_to_sram_async_a[masked=True](
+                                    a_smem_prefetch_tile, num_a_rows.value()
+                                )
+                            else:
+                                _copy_dram_to_sram_async_a(a_smem_prefetch_tile)
 
                             a_iter._incr()
 
@@ -415,20 +451,15 @@ fn multistage_mma[
                             )[]
 
                             if num_b_rows:
-                                var num_rows_bound = b_rows if transpose_b else max(
+                                var num_rows_bound = num_b_rows.value() if transpose_b else max(
                                     0,
-                                    b_rows - prefetch_tile_id * BK,
+                                    num_b_rows.value() - prefetch_tile_id * BK,
                                 )
-                                var b_tensor = _mask_tensor_row(
-                                    b_iter[], num_rows_bound
+                                _copy_dram_to_sram_async_b[masked=True](
+                                    b_smem_prefetch_tile, num_rows_bound
                                 )
-                                _copy_tensor_to_sram[
-                                    async_copy_b_layout, swizzle_b
-                                ](b_smem_prefetch_tile, b_tensor)
                             else:
-                                _copy_tensor_to_sram[
-                                    async_copy_b_layout, swizzle_b
-                                ](b_smem_prefetch_tile, b_iter[])
+                                _copy_dram_to_sram_async_b(b_smem_prefetch_tile)
 
                             b_iter._incr()
                     else:
@@ -443,31 +474,48 @@ fn multistage_mma[
                                 0
                             ].value()
 
-                            alias b_prefetch_thread_layout = Layout.row_major(
-                                num_threads * simd_size // row_size,
-                                row_size // simd_size,
-                            )
-                            alias swizzle_prefetch_b = transpose_b_next or b_type.is_half_float()
+                            if not num_b_rows:
+                                copy_dram_to_sram_async[
+                                    thread_layout = Layout.row_major(
+                                        num_threads * simd_size // row_size,
+                                        row_size // simd_size,
+                                    ),
+                                    swizzle = transpose_b_next
+                                    or b_type.is_half_float(),
+                                ](
+                                    b_smem_prefetch_tile.vectorize[
+                                        1, simd_size
+                                    ](),
+                                    next_b_iter[]
+                                    .bitcast[b_type]()
+                                    .vectorize[1, simd_size](),
+                                )
 
-                            if num_b_rows:
+                            else:
                                 # TODO: can we guard at compile time num_b_rows is set here?
-                                var num_rows_bound = b_rows if transpose_b_next else max(
+                                var num_rows_bound = num_b_rows.value() if transpose_b_next else max(
                                     0,
-                                    b_rows
+                                    num_b_rows.value()
                                     - (prefetch_tile_id - num_iters) * BK,
                                 )
 
-                                var b_tensor = _mask_tensor_row(
-                                    next_b_iter[], num_rows_bound
+                                copy_dram_to_sram_async[
+                                    thread_layout = Layout.row_major(
+                                        num_threads * simd_size // row_size,
+                                        row_size // simd_size,
+                                    ),
+                                    swizzle = transpose_b_next
+                                    or b_type.is_half_float(),
+                                    masked=True,
+                                ](
+                                    b_smem_prefetch_tile.vectorize[
+                                        1, simd_size
+                                    ](),
+                                    next_b_iter[]
+                                    .bitcast[b_type]()
+                                    .vectorize[1, simd_size](),
+                                    num_rows_bound,
                                 )
-                                _copy_tensor_to_sram[
-                                    b_prefetch_thread_layout, swizzle_prefetch_b
-                                ](b_smem_prefetch_tile, b_tensor)
-
-                            else:
-                                _copy_tensor_to_sram[
-                                    b_prefetch_thread_layout, swizzle_prefetch_b
-                                ](b_smem_prefetch_tile, next_b_iter[])
 
                             next_b_iter._incr()
 
@@ -627,6 +675,8 @@ fn multistage_gemm_kernel[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
+    var num_rows = min(BM, int(M) - block_idx[1] * BM)
+
     alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
@@ -651,6 +701,7 @@ fn multistage_gemm_kernel[
         a_smem_iter,
         b_smem_iter,
         ceildiv(K, BK),
+        num_a_rows=num_rows,
     )
 
     # Map global memory tile down to thread.
@@ -790,19 +841,13 @@ fn multistage_gemm_kernel[
                     epilogue[alignment=alignment]((m, n), vec)
 
         else:
-            if M % BM == 0:
-                copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
-                    c_gmem_warp_tile.vectorize[1, 2](),
-                    c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
-                )
-            else:
-                copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
-                    c_gmem_warp_tile.vectorize[1, 2](),
-                    c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
-                    c_gmem_warp_tile.distance(c.ptr),
-                    M,
-                    N,
-                )
+            copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+                c_gmem_warp_tile.vectorize[1, 2](),
+                c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
+                c_gmem_warp_tile.distance(c.ptr),
+                M,
+                N,
+            )
 
 
 fn multistage_gemm_split_k_kernel[
