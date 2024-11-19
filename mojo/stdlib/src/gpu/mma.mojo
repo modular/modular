@@ -64,8 +64,15 @@ fn _mma_amd(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ):
         alias zero: UInt32 = 0
         var r = llvm_intrinsic[
-            "llvm.amdgcn.mfma.f32.16x16x8bf16", SIMD[c.type, c.size]
-        ](a, b, c, zero, zero, zero)
+            "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[c.type, c.size]
+        ](
+            bitcast[DType.int16, 4](a),
+            bitcast[DType.int16, 4](b),
+            c,
+            zero,
+            zero,
+            zero,
+        )
         d = rebind[__type_of(d)](r)
     # ===------------------------------------------------------------------===#
     # F32 = FP32 * FP32 + FP32
