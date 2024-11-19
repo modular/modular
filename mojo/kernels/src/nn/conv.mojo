@@ -2980,13 +2980,6 @@ fn conv_nhwc_direct[
 # ===----------------------------------------------------------------------=== #
 
 
-fn flat_index_4d(index: IndexList[4], shape: IndexList[4]) -> Int:
-    var flat_index = index[0] * shape[1] * shape[2] * shape[3] + index[
-        1
-    ] * shape[2] * shape[3] + index[2] * shape[3] + index[3]
-    return flat_index
-
-
 fn conv2d_gpu_naive_nhwc_rscf[
     input_dim: DimList,
     filter_dim: DimList,
@@ -2996,22 +2989,22 @@ fn conv2d_gpu_naive_nhwc_rscf[
     output_type: DType,
     block_size: Int,
 ](
-    input: UnsafePointer[Scalar[input_type]],
-    filter: UnsafePointer[Scalar[filter_type]],
-    output: UnsafePointer[Scalar[output_type]],
+    input: NDBuffer[input_type, 4, input_dim],
+    filter: NDBuffer[filter_type, 4, filter_dim],
+    output: NDBuffer[output_type, 4, output_dim],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[2],
 ):
-    var N = input_dim.get[0]()
-    var H = input_dim.get[1]()
-    var W = input_dim.get[2]()
-    var C = input_dim.get[3]()  # channel_in
-    var R = filter_dim.get[0]()
-    var S = filter_dim.get[1]()
-    var H_out = output_dim.get[1]()
-    var W_out = output_dim.get[2]()
-    var F = output_dim.get[3]()  # channel_out
+    var N = input.dim[0]()
+    var H = input.dim[1]()
+    var W = input.dim[2]()
+    var C = input.dim[3]()  # channel_in
+    var R = filter.dim[0]()
+    var S = filter.dim[1]()
+    var H_out = output.dim[1]()
+    var W_out = output.dim[2]()
+    var F = output.dim[3]()  # channel_out
     var pad_h = padding[0]
     var pad_w = padding[1]
     var stride_h = stride[0]
@@ -3035,24 +3028,15 @@ fn conv2d_gpu_naive_nhwc_rscf[
                 var w_in = w * stride_w - pad_w + s * dil_w
 
                 if 0 <= h_in < H and 0 <= w_in < W:
-                    var input_idx = flat_index_4d(
-                        IndexList[4](n, h_in, w_in, c),
-                        IndexList[4](N, H, W, C),
-                    )
-                    var filter_idx = flat_index_4d(
-                        IndexList[4](r, s, c, f),
-                        IndexList[4](R, S, C, F),
-                    )
                     value += (
-                        input[input_idx].cast[output_type]()
-                        * filter[filter_idx].cast[output_type]()
+                        input.load(IndexList[4](n, h_in, w_in, c)).cast[
+                            output_type
+                        ]()
+                        * filter.load(IndexList[4](r, s, c, f)).cast[
+                            output_type
+                        ]()
                     )
-
-    var output_idx = flat_index_4d(
-        IndexList[4](n, h, w, f),
-        IndexList[4](N, H_out, W_out, F),
-    )
-    output[output_idx] = value
+    output.store(IndexList[4](n, h, w, f), value)
 
 
 @always_inline
@@ -3176,6 +3160,8 @@ fn conv_cudnn[
 
 
 fn conv_gpu[
+    input_rank: Int,
+    filter_rank: Int,
     input_dim: DimList,
     filter_dim: DimList,
     output_dim: DimList,
@@ -3183,9 +3169,9 @@ fn conv_gpu[
     filter_type: DType,
     output_type: DType,
 ](
-    input: UnsafePointer[Scalar[input_type]],
-    filter: UnsafePointer[Scalar[filter_type]],
-    output: UnsafePointer[Scalar[output_type]],
+    input: NDBuffer[input_type, input_rank, input_dim],
+    filter: NDBuffer[filter_type, filter_rank, filter_dim],
+    output: NDBuffer[output_type, input_rank, output_dim],
     stride: IndexList[2],
     dilation: IndexList[2],
     pading: IndexList[2],
