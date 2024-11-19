@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import ceildiv

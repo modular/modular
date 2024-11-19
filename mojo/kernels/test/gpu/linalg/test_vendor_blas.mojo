@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # TODO(#31429): Restore `--debug-level full` here
+# REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv
