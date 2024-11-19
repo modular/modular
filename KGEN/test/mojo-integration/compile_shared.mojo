@@ -35,9 +35,8 @@ def main():
             break
 
     # write the shared object binary to a file for checking
-    f = FileHandle(args[idx], "w")
-    f.write(myShared)
-    f.close()
+    with open(args[idx], "w") as f:
+        f.write(myShared)
 
 
 # CHECK: dynamic
