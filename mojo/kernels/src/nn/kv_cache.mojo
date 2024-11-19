@@ -45,6 +45,7 @@ alias kv_params_h6_d48_bshd = KVCacheStaticParams(num_heads=6, head_size=48)
 alias kv_params_h8_d128_bshd = KVCacheStaticParams(num_heads=8, head_size=128)
 alias kv_params_h8_d32_bshd = KVCacheStaticParams(num_heads=8, head_size=32)
 alias kv_params_h8_d64_bshd = KVCacheStaticParams(num_heads=8, head_size=64)
+alias kv_params_h32_d128_bshd = KVCacheStaticParams(num_heads=32, head_size=128)
 
 
 @always_inline
@@ -631,6 +632,29 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h8_d64_bshd,
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, output_shape],
+    ctx: MojoCallContextPtr,
+) raises:
+    return generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
+        target=target
+    ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch")
+fn fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch[
+    type: DType,
+    hidden_state_shape: DimList,
+    weight_shape: DimList,
+    output_shape: DimList,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 3, hidden_state_shape],
+    weight: NDBuffer[type, 2, weight_shape],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        kv_params_h32_d128_bshd,
     ],
     layer_idx: UInt32,
     output: NDBuffer[type, 3, output_shape],
@@ -1459,6 +1483,28 @@ fn flash_attention_kv_cache_h8_d64_bshd_continuous_batch[
     )
 
 
+@register_internal("flash_attention_kv_cache_h32_d128_bshd_continuous_batch")
+fn flash_attention_kv_cache_h32_d128_bshd_continuous_batch[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        kv_params_h32_d128_bshd,
+    ],
+    layer_idx: UInt32,
+    mask: NDBuffer[type, *_],
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_continuous_batch[target](
+        q, kv_collection, layer_idx, mask, valid_lengths, scale, output, context
+    )
+
+
 @always_inline
 fn _flash_attention_kv_cache[
     type: DType,
@@ -2141,5 +2187,22 @@ fn continuous_batching_kv_cache_collection_h1_d16_bshd[
     kv_params_h1_d16_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h1_d16_bshd](
+        blocks, cache_lengths, lookup_table, is_cache_empty
+    )
+
+
+@register_internal("continuous_batching_kv_cache_collection_h32_d128_bshd")
+fn continuous_batching_kv_cache_collection_h32_d128_bshd[
+    type: DType, //, target: StringLiteral
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 1],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> ContinuousBatchingKVCacheCollection[
+    type,
+    kv_params_h32_d128_bshd,
+]:
+    return generic_get_continuous_cache[kv_params=kv_params_h32_d128_bshd](
         blocks, cache_lengths, lookup_table, is_cache_empty
     )
