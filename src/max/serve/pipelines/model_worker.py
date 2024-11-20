@@ -33,8 +33,6 @@ from max.serve.scheduler.queues import (
     Batch,
     BatchEntry,
     BatchInputs,
-    BatchMultiplexQueue,
-    BatchOutputs,
 )
 
 logger = logging.getLogger(__name__)
@@ -413,31 +411,3 @@ def handle_terminated_responses(
                 del batch_executed[req_id]
                 batch_response[req_id] = STOP_STREAM
                 already_terminated.add(req_id)
-
-
-# TESTING
-
-
-def start_model_testing_tasks(
-    bmq: BatchMultiplexQueue,
-    batch_execute: Callable[[Batch], Awaitable[BatchOutputs]],
-    fanout_worker: bool = False,
-):
-    queues = all_queues()
-    model_in_q = queues["MODEL_IN"]
-    model_out_q = queues["MODEL_OUT"]
-
-    async def start_model_producer():
-        while True:
-            try:
-                for entry in model_in_q.queue.get_many_nowait():
-                    responses = await batch_execute(entry.batch)
-                    model_out_q.queue.put_nowait((entry.batch_key, responses))
-            except queue.Empty:
-                await asyncio.sleep(0)
-
-    tasks = [asyncio.create_task(start_model_producer())]
-    if fanout_worker:
-        tasks.append(asyncio.create_task(bmq.response_fanout_worker()))
-
-    return tasks

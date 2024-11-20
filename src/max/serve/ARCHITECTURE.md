@@ -41,9 +41,3 @@ used for context encoding and token generation. Each pipeline can be configured
 
 The pipeline then acts as a producer to the queues, while the workers act as
 consumers offloading to the underlying LLM model.
-
-#### BatchMultiplexQueue
-
-The underlying data structure which batches requests via workers and feeds them
-to the model. Queues can be configured via **BatchQueueConfig** which can be
-used to define their batching strategy.
