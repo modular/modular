@@ -26,7 +26,6 @@
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Telemetry/Telemetry.h"
-#include "lld/Common/Driver.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/Pass/PassManager.h"
@@ -1161,16 +1160,6 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
   return success();
 }
 
-namespace lld::elf {
-bool link(ArrayRef<const char *> args, llvm::raw_ostream &stdoutOS,
-          llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput);
-} // namespace lld::elf
-
-namespace lld::macho {
-bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
-          llvm::raw_ostream &stderrOS, bool exitEarly, bool disableOutput);
-}
-
 //===----------------------------------------------------------------------===//
 // emitSharedObject
 //===----------------------------------------------------------------------===//
@@ -1230,10 +1219,21 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
   // For MACHO (on MacOS)
   //  ld64.lld -platform_version macos 16.0 16.0 -arch arm64
   //           -dylib tmp.o -o tmp.so -undefined dynamic_lookup
-  SmallVector<const char *> lldArgs = [&]() -> SmallVector<const char *> {
+  StringRef linkerFileName = "ld.lld";
+  if (llvm::Triple(options.targetTriple).getObjectFormat() ==
+      llvm::Triple::MachO) {
+    linkerFileName = "ld64.lld";
+  }
+  llvm::ErrorOr<std::string> linker =
+      llvm::sys::findProgramByName(linkerFileName);
+  if (!linker) {
+    return Error("unable to find linker for linking");
+  }
+
+  SmallVector<StringRef> lldArgs = [&]() -> SmallVector<StringRef> {
     if (llvm::Triple(options.targetTriple).getObjectFormat() ==
         llvm::Triple::MachO) {
-      return {"ld64.lld",
+      return {*linker,
               "-platform_version",
               "macos",
               version.c_str(),
@@ -1247,19 +1247,20 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
               "-o",
               sharedObjPath.c_str()};
     }
-    return {"ld.lld", "-shared", objFilePath.c_str(), "-o",
+    return {*linker, "-shared", objFilePath.c_str(), "-o",
             sharedObjPath.c_str()};
   }();
 
-  llvm::cl::ResetCommandLineParser();
-  std::string linkErrs;
-  llvm::raw_string_ostream errStream(linkErrs);
-  lld::Result r = lld::lldMain(
-      lldArgs, llvm::nulls(), errStream,
-      {{lld::Gnu, lld::elf::link}, {lld::Darwin, lld::macho::link}});
-  if (r.retCode != 0 || !r.canRunAgain)
-    return Error(Twine("failed to generate shared object binary: ") +
-                 linkErrs.c_str());
+  std::string errorMsg;
+  int linkExitCode = llvm::sys::ExecuteAndWait(
+      lldArgs[0], lldArgs, /*Env=*/std::nullopt, /*Redirects=*/{},
+      /*SecondsToWait=*/0, /*MemoryLimit=*/0, /*ErrMsg=*/&errorMsg);
+
+  if (linkExitCode) {
+    if (!errorMsg.empty())
+      errorMsg.insert(0, ": ");
+    return Error(Twine("failed to generate shared object binary: ") + errorMsg);
+  }
 
   // Read linked dynamic library in to memory.
   ErrorOr<BufferRef> sharedObjBufOr =
