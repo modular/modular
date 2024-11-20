@@ -9,6 +9,7 @@ from typing import Any
 
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.pipelines import IdentityPipelineTokenizer
+from max.pipelines.response import TextResponse
 
 
 @dataclass
@@ -51,7 +52,7 @@ class EchoTokenGenerator(TokenGenerator[EchoTokenGeneratorContext]):
             if ctx.index <= len(ctx.prompt) and ctx.index <= ctx.max_tokens:
                 ctx.tokens += ctx.prompt[-ctx.index]
         return {
-            rid: ctx.prompt[-ctx.index]
+            rid: TextResponse(next_token=ctx.prompt[-ctx.index])
             for rid, ctx in batch.items()
             if ctx.index <= len(ctx.prompt) and ctx.index <= ctx.max_tokens
         }

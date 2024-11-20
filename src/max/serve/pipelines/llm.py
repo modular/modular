@@ -176,13 +176,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
             if hasattr(context, "seq_len"):
                 METRICS.inputTokens(context.seq_len)
 
-            async for encoded_token in self.engine_queue.stream(
-                request.id, context
-            ):
+            async for response in self.engine_queue.stream(request.id, context):
                 if token_idx == 0:
                     METRICS.ttft(timers.ttft.elapsed_ms)
                 token_idx += 1
-                yield await self.tokenizer.decode(context, encoded_token)
+                yield await self.tokenizer.decode(context, response.next_token)
         finally:
             self._complete_request(request)
             if self.debug_logging:
