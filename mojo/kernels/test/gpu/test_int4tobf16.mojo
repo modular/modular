@@ -12,6 +12,7 @@
 
 from memory.unsafe import bitcast
 from sys import has_neon
+from sys.info import is_amd_gpu
 from testing import assert_equal
 from gpu.host import DeviceContext
 from buffer import Buffer
@@ -38,9 +39,19 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
 
     @parameter
     for i in range(0, 4):
-        var t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM if no_lop else lop[lut](
-            i4s, MASK, I4s_TO_BF16s_MAGIC_NUM
-        )
+        # The ternary operator isnot working.
+        # The conditional is_amd_gpu() or no_lop appears to not be constant
+        # var t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM if (is_amd_gpu() or no_lop) else lop[
+        #    lut
+        # ](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
+        var t: Int32 = 0
+
+        @parameter
+        if is_amd_gpu() or no_lop:
+            t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM
+        else:
+            t = lop[lut](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
+
         v[i] = bitcast[DType.int32, 1](
             bitcast[DType.bfloat16, 2](t).fma(BF16_ONE, BF16_BIAS)
         )
