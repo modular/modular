@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Sequence, overload, Union
+from typing import Any, Sequence, Union, overload
 
 _IdxElType = Union[int, slice]
 IndexType = Union[Sequence[_IdxElType], _IdxElType]
@@ -54,5 +54,6 @@ class Tensor:
 
 def cpu_device(device_id: int) -> Device: ...
 def cuda_device(device_id: int) -> Device: ...
+def cuda_device_count() -> int: ...
 
 __version__: str = ...

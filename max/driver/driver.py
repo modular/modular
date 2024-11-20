@@ -8,11 +8,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from json import loads
-from typing import Any, Mapping, Literal
+from typing import Any, Literal, Mapping
 
 from max._driver import Device as _Device
 from max._driver import cpu_device as _cpu_device
 from max._driver import cuda_device as _cuda_device
+from max._driver import cuda_device_count as _cuda_device_count
 
 
 @dataclass
@@ -63,6 +64,11 @@ def CPU(id: int = -1) -> Device:
 def CUDA(id: int = -1) -> Device:
     """Creates a CUDA device with the provided id."""
     return Device.cuda(id)
+
+
+def cuda_device_count() -> int:
+    """Returns number of CUDA devices available."""
+    return _cuda_device_count()
 
 
 @dataclass(frozen=True)
