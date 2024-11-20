@@ -21,10 +21,12 @@ the checkpoint.
 """
 import os
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional, List, Union
 
 import click
 import torch
+from PIL import Image
+import requests
 from evaluate_llama import (
     ALL_SUPPORTED_ENCODINGS,
     ALL_SUPPORTED_MODELS,
@@ -39,6 +41,8 @@ from transformers import (
     LogitsProcessorList,
     PreTrainedModel,
     PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+    MllamaProcessor,
 )
 
 
@@ -55,11 +59,22 @@ def create_tokenizer(tokenizer_directory: Path):
     return AutoTokenizer.from_pretrained(tokenizer_directory)
 
 
+def process_images(images: Iterable[str]) -> List[Image.Image]:
+    return [
+        Image.open(requests.get(image, stream=True).raw) for image in images
+    ]
+
+
 def run_torch_llama3(
-    llama3: PreTrainedModel,
-    tokenizer: PreTrainedTokenizer,
+    model: PreTrainedModel,
+    data_processor: Union[
+        PreTrainedTokenizer,
+        PreTrainedTokenizerFast,
+        MllamaProcessor,
+    ],
     device: torch.device,
     prompts: Iterable[str],
+    images: Optional[Iterable[str]] = None,
     num_steps=10,
 ):
     saved_logits = []
@@ -79,21 +94,40 @@ def run_torch_llama3(
         return scores
 
     results = []
-    for prompt in prompts:
-        encoded_prompt = tokenizer.encode(prompt, return_tensors="pt").to(
-            device
-        )
-        mask = torch.ones_like(encoded_prompt)
-        llama3.generate(
-            input_ids=encoded_prompt,
-            attention_mask=mask,
-            max_new_tokens=num_steps,
-            do_sample=False,
-            logits_processor=LogitsProcessorList([store_logits]),
-            num_return_sequences=1,
-        )
-        results.append({"prompt": prompt, "values": saved_logits[:]})
-        saved_logits.clear()
+    if images:
+        processed_images = process_images(images)
+
+        for image, prompt in zip(processed_images, prompts):
+            inputs = data_processor(image, prompt, return_tensors="pt").to(
+                device
+            )
+            model.generate(
+                **inputs,
+                max_new_tokens=num_steps,
+                do_sample=False,
+                logits_processor=LogitsProcessorList([store_logits]),
+                num_return_sequences=1,
+            )
+
+            # TODO: We likely want to track input image here too.
+            results.append({"prompt": prompt, "values": saved_logits[:]})
+            saved_logits.clear()
+    else:
+        for prompt in prompts:
+            encoded_prompt = data_processor.encode(
+                prompt, return_tensors="pt"
+            ).to(device)
+            mask = torch.ones_like(encoded_prompt)
+            model.generate(
+                input_ids=encoded_prompt,
+                attention_mask=mask,
+                max_new_tokens=num_steps,
+                do_sample=False,
+                logits_processor=LogitsProcessorList([store_logits]),
+                num_return_sequences=1,
+            )
+            results.append({"prompt": prompt, "values": saved_logits[:]})
+            saved_logits.clear()
 
     return results
 

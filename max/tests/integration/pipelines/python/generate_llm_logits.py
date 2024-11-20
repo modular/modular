@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, Union, Optional
 
 # 3rd-party
 import click
@@ -34,6 +34,7 @@ import llama3
 import replit.config
 from replit import ReplitModel
 import mistral
+import llama3.vision as llama3_vision
 
 # Tests
 import replit_compat
@@ -52,11 +53,15 @@ class MaxPipelineAndTokenizer:
 
 
 @dataclass
-class TorchModelAndTokenizer:
-    """An instantiated Torch LLM model and pieces necessary to run it."""
+class TorchModelAndDataProcessor:
+    """An instantiated Torch model and pieces necessary to run it."""
 
     model: transformers.PreTrainedModel
-    tokenizer: transformers.PreTrainedTokenizer
+    data_processor: Union[
+        transformers.PreTrainedTokenizer,
+        transformers.PreTrainedTokenizerFast,
+        transformers.MllamaProcessor,
+    ]
 
 
 class PipelineOracle:
@@ -107,7 +112,7 @@ class PipelineOracle:
 
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device
-    ) -> TorchModelAndTokenizer:
+    ) -> TorchModelAndDataProcessor:
         """Instantiate a Torch pipeline for the given version/encoding/device.
         """
         raise NotImplementedError
@@ -120,6 +125,24 @@ class PipelineOracle:
         defaults are inappropriate.
         """
         return evaluate.PROMPTS
+
+
+class MultiModalPipelineOracle(PipelineOracle):
+    """Knows about a kind of pipeline.
+
+    Can provide information about that pipeline, and create other objects
+    necessary to run the model.
+    """
+
+    @property
+    def prompts(self) -> Sequence[str]:
+        """Prompts to run a multi-modal model on."""
+        return [evaluate.PROMPTS_MULTI_MODAL]
+
+    @property
+    def images(self) -> Optional[Sequence[str]]:
+        """Images to run a multi-modal model on."""
+        return [evaluate.IMAGES_MULTI_MODEL]
 
 
 class LlamaPipelineOracle(PipelineOracle):
@@ -221,7 +244,7 @@ class LlamaPipelineOracle(PipelineOracle):
 
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device
-    ) -> TorchModelAndTokenizer:
+    ) -> TorchModelAndDataProcessor:
         # Tokenizer from testdata is used even for non-tiny Llama.
         tokenizer = transformers.AutoTokenizer.from_pretrained(
             Path(os.environ["PIPELINES_TESTDATA"])
@@ -232,7 +255,66 @@ class LlamaPipelineOracle(PipelineOracle):
         model = transformers.AutoModelForCausalLM.from_pretrained(
             "UNUSED", config=config, gguf_file=weight_path, device_map=device
         )
-        return TorchModelAndTokenizer(model=model, tokenizer=tokenizer)
+        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
+
+
+class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
+    @property
+    def supported_versions(self) -> Sequence[str]:
+        return ["llama3_2"]
+
+    @property
+    def supported_encodings(self) -> Sequence[str]:
+        return list(pipelines.SupportedEncoding)
+
+    def is_supported(
+        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+    ) -> bool:
+        assert version in self.supported_versions
+        assert encoding in self.supported_encodings
+        return device_spec.device_type == "cuda"
+
+    def create_max_pipeline(
+        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+    ) -> MaxPipelineAndTokenizer:
+        # TODO (AIPIPE-202): Implement MAX pipeline generation for Llama Vision.
+        raise NotImplementedError
+        assert self.is_supported(
+            version=version, encoding=encoding, device_spec=device_spec
+        )
+        config = pipelines.PipelineConfig(
+            architecture="mllama",
+            device_spec=device_spec,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            cache_strategy=kv_cache.KVCacheStrategy.CONTINUOUS,
+            huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision",
+            trust_remote_code=True,
+        )
+        tokenizer = TextTokenizer(config)
+        generator = TextGenerationPipeline(
+            pipeline_config=config,
+            pipeline_model=ReplitModel,
+            eos_token_id=tokenizer.eos,
+        )
+        return MaxPipelineAndTokenizer(
+            model=generator._pipeline_model,
+            generator=generator,
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, version: str, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        hf_repo_id = "meta-llama/Llama-3.2-11B-Vision"
+        processor = transformers.AutoProcessor.from_pretrained(hf_repo_id)
+        config = transformers.AutoConfig.from_pretrained(hf_repo_id)
+        model = transformers.MllamaForConditionalGeneration.from_pretrained(
+            hf_repo_id,
+            config=config,
+            device_map=device,
+            torch_dtype=torch.bfloat16,
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
 class ReplitPipelineOracle(PipelineOracle):
@@ -295,7 +377,7 @@ class ReplitPipelineOracle(PipelineOracle):
 
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device
-    ) -> TorchModelAndTokenizer:
+    ) -> TorchModelAndDataProcessor:
         # Need to use upstream instead of modularai/replit-code-1.5, because
         # the modularai version does not have the custom Python code needed
         # (also why trust_remote_code is needed).  Without this, we get:
@@ -326,7 +408,7 @@ class ReplitPipelineOracle(PipelineOracle):
         model = transformers.AutoModelForCausalLM.from_pretrained(
             hf_repo_id, config=config, device_map=device, trust_remote_code=True
         )
-        return TorchModelAndTokenizer(model=model, tokenizer=tokenizer)
+        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
 
     @property
     def prompts(self) -> Sequence[str]:
@@ -378,7 +460,7 @@ class MistralPipelineOracle(PipelineOracle):
 
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device
-    ) -> TorchModelAndTokenizer:
+    ) -> TorchModelAndDataProcessor:
         hf_repo_id = "mistralai/Mistral-Nemo-Instruct-2407"
         tokenizer = transformers.AutoTokenizer.from_pretrained(hf_repo_id)
         config = transformers.AutoConfig.from_pretrained(hf_repo_id)
@@ -388,13 +470,14 @@ class MistralPipelineOracle(PipelineOracle):
             device_map=device,
             torch_dtype=torch.bfloat16,
         )
-        return TorchModelAndTokenizer(model=model, tokenizer=tokenizer)
+        return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "llama": LlamaPipelineOracle(),
     "replit": ReplitPipelineOracle(),
     "mistral": MistralPipelineOracle(),
+    "llama3-vision": LlamaVisionPipelineOracle(),
 }
 
 
@@ -519,9 +602,12 @@ def main(
         # just Llama.
         results = run_torch_llama.run_torch_llama3(
             torch_pipeline_and_tokenizer.model,
-            torch_pipeline_and_tokenizer.tokenizer,
+            torch_pipeline_and_tokenizer.data_processor,
             torch_device,
             pipeline_oracle.prompts,
+            pipeline_oracle.images if isinstance(
+                pipeline_oracle, MultiModalPipelineOracle
+            ) else None,
         )
     else:
         raise NotImplementedError(

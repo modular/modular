@@ -150,6 +150,8 @@ modular_py_binary(
         "//SDK/public/max-repo/pipelines/python/replit",
         requirement("click"),
         requirement("einops"),  # Req'd by replit
+        requirement("pillow"),
+        requirement("requests"),
         requirement("transformers"),
     ],
 )
@@ -177,6 +179,8 @@ modular_py_binary(
         requirement("lm-eval"),
         requirement("scipy"),
         requirement("numpy"),
+        requirement("pillow"),
+        requirement("requests"),
         ":generate_llm_logits",
         "//SDK/integration-test/pipelines/python/test_common",
     ],

@@ -28,6 +28,7 @@ modular_py_binary(
         requirement("sentencepiece"),
         requirement("numpy"),
         requirement("click"),
+        requirement("pillow"),
         requirement("tokenizers"),
         requirement("transformers"),
         "//SDK/integration-test/pipelines/python:accelerate",  # Required transformers integration.
@@ -60,6 +61,7 @@ modular_py_binary(
         requirement("sentencepiece"),
         requirement("numpy"),
         requirement("click"),
+        requirement("pillow"),
         requirement("tokenizers"),
         requirement("transformers"),
         "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",

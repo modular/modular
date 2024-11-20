@@ -35,6 +35,13 @@ PROMPTS = (
     Translation:""",
 )
 
+# TODO: Improve the set of verification inputs for multi-model models.
+PROMPTS_MULTI_MODAL = (
+    "<|image|><|begin_of_text|>If I had to write a haiku for this one"
+)
+
+IMAGES_MULTI_MODEL = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+
 
 def run_model(
     model: Any,  # TODO(kathywu): Update to PipelineModel
