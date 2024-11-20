@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Runs Llama3.2 vision model layer.
+"""Runs Llama3.2 vision model tests by comparing it against the transformers
+package reference implementation.
 """
 
 import numpy as np

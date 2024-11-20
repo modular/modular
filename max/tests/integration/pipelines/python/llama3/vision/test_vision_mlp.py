@@ -3,8 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Runs Llama3.2 vision MLP and compares it against the transformers package
-reference implementation.
+"""Runs Llama3.2 vision MLP tests by comparing it against the transformers
+package reference implementation.
 """
 
 import numpy as np
