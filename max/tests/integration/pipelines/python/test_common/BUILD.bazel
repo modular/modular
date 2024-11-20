@@ -14,6 +14,7 @@ modular_py_library(
     imports = ["."],
     deps = [
         requirement("numpy"),
+        ":distance_metrics",
         ":evaluate",
         ":numpy_encoder",
         ":path",
@@ -26,6 +27,16 @@ modular_py_library(
     imports = [".."],
     deps = [
         requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "distance_metrics",
+    srcs = ["distance_metrics.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
