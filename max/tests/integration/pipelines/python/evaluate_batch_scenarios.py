@@ -26,8 +26,7 @@ from max.pipelines import (
 )
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 
-from utils import DevicesOptionType
-from utils.cli import config_to_flag
+from utils.cli import DevicesOptionType, config_to_flag
 
 logger = logging.getLogger(__name__)
 
