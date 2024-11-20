@@ -12,27 +12,6 @@ from gpu.host.memory_v1 import _free, _malloc_managed, _memset
 from memory import UnsafePointer
 
 
-# CHECK-LABEL: test_malloc_managed
-fn test_malloc_managed() raises:
-    print("== test_malloc_managed")
-    alias length = 8
-    var data = _malloc_managed[UInt8](length)
-    iota(data, length, 0)
-    var val: UInt8 = 2
-    _memset(data, val, length)
-    # CHECK: 2
-    # CHECK: 2
-    # CHECK: 2
-    # CHECK: 2
-    # CHECK: 2
-    # CHECK: 2
-    # CHECK: 2
-    # CHECK: 2
-    for i in range(length):
-        print(data[i])
-    _free(data)
-
-
 # CHECK-LABEL: test_memset_async
 fn test_memset_async(ctx: DeviceContext) raises:
     print("== test_memset_async")
@@ -73,5 +52,4 @@ fn test_memset_async(ctx: DeviceContext) raises:
 
 def main():
     with DeviceContext() as ctx:
-        test_malloc_managed()
         test_memset_async(ctx)

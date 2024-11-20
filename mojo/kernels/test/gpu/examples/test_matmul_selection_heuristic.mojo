@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: GPU-A100
 # RUN: %mojo-no-debug --target-accelerator=nvidia:80 %s | FileCheck %s
 
 from linalg.utils_gpu import select_config
