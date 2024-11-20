@@ -140,17 +140,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
 
         self.engine_queue: EngineQueue = EngineQueue()
         self.max_queue_size = config.token_generation.size
-        self.request_semaphore = asyncio.BoundedSemaphore(
-            self.max_queue_size * 2
-        )
 
         self._timers: dict[str, TokenGeneratorTimers] = {}
         self._background_tasks: set[asyncio.Task] = set()
 
     async def create_request(self, id: str, **kwargs) -> TokenGeneratorRequest:
-        METRICS.reqsQueued(1)
-        await self.request_semaphore.acquire()
-        METRICS.reqsQueued(-1)
         METRICS.reqsRunning(1)
         request = TokenGeneratorRequest(id=id, index=0, **kwargs)
         self._timers[id] = TokenGeneratorTimers()
@@ -159,7 +153,6 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
     def _complete_request(self, request: TokenGeneratorRequest):
         del self._timers[request.id]
         METRICS.reqsRunning(-1)
-        self.request_semaphore.release()
 
     async def next_token(
         self,

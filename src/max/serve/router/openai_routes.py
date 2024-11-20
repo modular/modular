@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -15,7 +14,7 @@ from typing import AsyncGenerator, List, Literal, Optional, cast
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.applications import State
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from max.pipelines import PipelineTokenizer
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
@@ -52,18 +51,14 @@ class OpenAIResponseGenerator(ABC):
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
-        request_limiter: Optional[asyncio.BoundedSemaphore] = None,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.pipeline = pipeline
-        self.request_limiter = request_limiter
 
     async def create_request(
         self,
         **kwargs,
     ):
-        if self.request_limiter:
-            await self.request_limiter.acquire()
         return await self.pipeline.create_request(**kwargs)
 
     @abstractmethod
@@ -147,9 +142,6 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 error=Error(code="500", message=str(e), param="", type="")
             )
             yield error_response
-        finally:
-            if self.request_limiter:
-                self.request_limiter.release()
 
     async def complete(
         self, request: TokenGeneratorRequest
@@ -185,10 +177,6 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             logger.exception("ValueError in %s", request.id)
             # TODO (SI-722) how to handle error in a stream response via ChatCompletion API.
             return json.dumps({"result": "error", "message": str(e)})
-        finally:
-            if self.request_limiter:
-                logger.debug("Releasing rate limiter semaphore")
-                self.request_limiter.release()
 
 
 def openai_get_content_from_message(message: ChatCompletionRequestMessage):
@@ -254,9 +242,7 @@ async def openai_create_chat_completion(
             completion_request.model,
         )
 
-        response_generator = OpenAIChatResponseGenerator(
-            pipeline, request_limiter=request.app.state.request_limiter
-        )
+        response_generator = OpenAIChatResponseGenerator(pipeline)
         token_request = await response_generator.create_request(
             id=request_id,
             prompt=request_prompt,
@@ -346,37 +332,30 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             logger.exception("ValueError in request %s", request.id)
             # TODO (SI-722) - propagate better errors back.
             yield json.dumps({"result": "error", "message": str(e)})
-        finally:
-            if self.request_limiter:
-                self.request_limiter.release()
 
     async def complete(
         self, request: TokenGeneratorRequest
     ) -> CreateCompletionResponse:
-        try:
-            completed_tokens = await self.pipeline.all_tokens(request)
+        completed_tokens = await self.pipeline.all_tokens(request)
 
-            response_message = "".join(completed_tokens)
-            response_choices = [
-                Choice(
-                    index=0,
-                    text=response_message,
-                    finish_reason="stop",
-                    logprobs=Logprobs(),
-                )
-            ]
-            response = CreateCompletionResponse(
-                id=request.id,
-                choices=response_choices,
-                created=int(datetime.now().timestamp()),
-                model="",
-                object="text_completion",
-                system_fingerprint=None,
+        response_message = "".join(completed_tokens)
+        response_choices = [
+            Choice(
+                index=0,
+                text=response_message,
+                finish_reason="stop",
+                logprobs=Logprobs(),
             )
-            return response
-        finally:
-            if self.request_limiter:
-                self.request_limiter.release()
+        ]
+        response = CreateCompletionResponse(
+            id=request.id,
+            choices=response_choices,
+            created=int(datetime.now().timestamp()),
+            model="",
+            object="text_completion",
+            system_fingerprint=None,
+        )
+        return response
 
 
 def openai_get_prompt_from_completion_request(
@@ -420,9 +399,7 @@ async def openai_create_completion(
         request_prompt = openai_get_prompt_from_completion_request(
             completion_request
         )
-        response_generator = OpenAICompletionResponseGenerator(
-            pipeline, request_limiter=request.app.state.request_limiter
-        )
+        response_generator = OpenAICompletionResponseGenerator(pipeline)
         token_request = await response_generator.create_request(
             id=request_id,
             prompt=request_prompt,
