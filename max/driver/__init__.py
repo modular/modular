@@ -6,7 +6,7 @@
 
 from max._driver.core import __version__
 
-from .driver import CPU, CUDA, Device, DeviceSpec
+from .driver import CPU, CUDA, Device, DeviceSpec, cuda_device_count
 from .tensor import DLPackArray, MemMapTensor, Tensor
 
 del driver  # type: ignore
