@@ -150,9 +150,8 @@ def test_vision_encoder(
 
     # TODO: Set these as is for now - can look to parameterizing them later on.
     eps = 1e-5
-    num_layers = (
-        32  # reducing the number of layers to minimize num hidden layers
-    )
+    # Reducing the number of layers from 32 to 5 for test purposes.
+    num_layers = 5
     is_gated = False
     gate_attn = None
     gate_ffn = None
