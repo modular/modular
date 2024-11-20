@@ -273,12 +273,12 @@ def test_unsafe_slice():
 
 
 def test_unsafe_slice_from_tensor():
-    var shape = (10, 1)
+    var shape = (10, 2)
     var tensor = Tensor[DType.float32, 2](TensorShape(shape))
 
     var val = 1
-    for i in range(10):
-        for j in range(2):
+    for i in range(shape[0]):
+        for j in range(shape[1]):
             tensor[i, j] = val
             val += 1
 
