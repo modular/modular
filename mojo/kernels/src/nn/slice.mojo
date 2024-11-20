@@ -9,6 +9,7 @@ from math import clamp
 from algorithm import elementwise
 from buffer import NDBuffer
 from register import register_internal_shape_func
+from runtime.asyncrt import MojoCallContextPtr
 
 from utils._select import _select_register_value as select
 from utils.index import IndexList
@@ -130,12 +131,14 @@ fn copy_to_slice[
     end_type: DType,
     step_type: DType,
     in_rank: Int,
+    target: StringLiteral = "cpu",
 ](
     buffer: NDBuffer[type, in_rank],
     in_slice: NDBuffer[type, in_rank],
     start: NDBuffer[start_type, 1],
     end: NDBuffer[end_type, 1],
     step: NDBuffer[step_type, 1],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     var expected_shape = slice_shape[single_thread_blocking_override=True](
         buffer, start, end, step
@@ -153,7 +156,7 @@ fn copy_to_slice[
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
 
     @always_inline
-    @__copy_capture(in_slice)
+    @__copy_capture(in_slice, buffer_slice_view)
     @parameter
     fn copy[simd_width: Int, rank: Int](idx: IndexList[rank]):
         var index = rebind[IndexList[in_rank]](idx)
@@ -161,7 +164,7 @@ fn copy_to_slice[
             index, in_slice.load[width=simd_width](index)
         )
 
-    elementwise[copy, 1](buffer_slice_view.get_shape())
+    elementwise[copy, 1, target=target](buffer_slice_view.get_shape(), context)
 
 
 # ===----------------------------------------------------------------------===#
