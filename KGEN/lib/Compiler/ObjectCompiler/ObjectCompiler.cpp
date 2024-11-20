@@ -968,6 +968,9 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
 
             // Print assembly for saveTemps if needed.
             if (!options.saveTempsPrefix.empty()) {
+              // Clear seenCodeGenFns since we are going to do the whole codegen
+              // step all over again for printing saveTemps.
+              seenCodeGenFns.clear();
               ErrorOrSuccess saveTempsResult =
                   emitArchiveSaveTemps(cast<ModuleOp>(op), moduleName);
               op->erase();
