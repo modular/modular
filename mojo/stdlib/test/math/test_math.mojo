@@ -429,6 +429,11 @@ def test_ceildiv():
     assert_equal(ceildiv(UInt(1), UInt(7)), UInt(1))
     assert_equal(ceildiv(UInt(546), UInt(7)), UInt(78))
 
+    # Test the SIMD overload.
+    assert_equal(ceildiv(Float32(5), 2), ceildiv(5, 2))
+    assert_equal((UInt32(5) + 1) // 2, ceildiv(5, 2))
+    assert_equal(ceildiv(UInt32(5), UInt32(2)), ceildiv(5, 2))
+
 
 def test_align_down():
     assert_equal(align_down(1, 7), 0)
