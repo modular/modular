@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 import torch
 import torch.nn as nn
-from llama3.vision.hyperparameters import VisionHyperparameters
-from llama3.vision.positional_embedding import (
+from llama_vision.hyperparameters import VisionHyperparameters
+from llama_vision.positional_embedding import (
     PrecomputedAspectRatioEmbedding,
     PrecomputedPositionEmbedding,
 )

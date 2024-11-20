@@ -9,11 +9,11 @@ package reference implementation.
 
 import numpy as np
 import pytest
-from llama3.vision.encoder import VisionEncoder, VisionEncoderLayer
-from llama3.vision.hyperparameters import VisionHyperparameters
-from llama3.vision.mlp import MLP
-from llama3.vision.vision_model import VisionModel
-from llama3.vision.positional_embedding import (
+from llama_vision.encoder import VisionEncoder, VisionEncoderLayer
+from llama_vision.hyperparameters import VisionHyperparameters
+from llama_vision.mlp import MLP
+from llama_vision.vision_model import VisionModel
+from llama_vision.positional_embedding import (
     PrecomputedAspectRatioEmbedding,
     PrecomputedPositionEmbedding,
 )

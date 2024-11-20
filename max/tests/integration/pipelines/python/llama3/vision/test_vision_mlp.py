@@ -16,7 +16,7 @@ from max.graph import Graph, TensorType
 from modular_graph_test import modular_graph_test
 from nn import Linear
 from torch_utils import TorchVisionEncoderMLP
-from llama3.vision.mlp import MLP
+from llama_vision.mlp import MLP
 
 
 @pytest.mark.parametrize(
