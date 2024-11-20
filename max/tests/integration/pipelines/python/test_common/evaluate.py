@@ -7,7 +7,7 @@
 
 import asyncio
 import uuid
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 import numpy as np
 from max.driver import CPU
@@ -57,7 +57,11 @@ def run_model(
         )
         values: dict[str, list[Any]] = {curr_req_id: []}
         for _ in range(num_steps):
-            next_token_with_logits(model, {curr_req_id: context}, values)
+            is_eos = next_token_with_logits(
+                model, {curr_req_id: context}, values, tokenizer.eos
+            )
+            if is_eos:
+                break
         results.append({"prompt": prompt, "values": values[curr_req_id]})
 
         if isinstance(model, PipelineModel):
@@ -71,7 +75,8 @@ def next_token_with_logits(
     model: Any,  # TODO(kathywu): Update to PipelineModel
     req_to_context_dict: dict[str, Any],
     update_values: dict[str, list[Any]],
-):
+    eos_token: Optional[int] = None,
+) -> bool:
     """Generates the next token and stores the logits.
 
     This method runs llama3.execute, stores the logits, and updates the context
@@ -82,6 +87,10 @@ def next_token_with_logits(
         req_to_context_dict: Dictionary of request ids to Llama3Context.
         update_values: Dictionary of request ids to lists of next_token &
             logits. These lists are updated in this method.
+        eos_token: Encoded end-of-sequence token used to signal the early stopping of token generation. If not provided, generation may continue past EOS token.
+
+    Returns:
+        bool: True if the token is an end-of-sentence token, otherwise False.
     """
     # Llama & Replit have been moved over to the new PipelineModel.
     if isinstance(model, PipelineModel):
@@ -148,6 +157,9 @@ def next_token_with_logits(
         )
         # Update the context for the next input.
         req_to_context_dict[req_id].next_tokens = next_token.reshape(-1)
+        if next_token == eos_token:
+            return True
+    return False
 
 
 def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
@@ -189,6 +201,7 @@ def compare_values(actual, expected, *, rtol=1e-2, atol=1e-5, compare_fn=None):
         expected_values = expected_prompts[prompt]
         actual_steps = len(values)
         expected_steps = len(expected_values)
+
         assert actual_steps <= expected_steps
 
         for step in range(actual_steps):

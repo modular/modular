@@ -21,7 +21,12 @@ import transformers
 # MAX
 from max import driver
 from max import pipelines
-from max.pipelines import interfaces, TextTokenizer, TextGenerationPipeline
+from max.pipelines import (
+    interfaces,
+    TextTokenizer,
+    TextGenerationPipeline,
+    HuggingFaceFile,
+)
 from max.pipelines import kv_cache
 
 # Pipelines
@@ -353,18 +358,22 @@ class MistralPipelineOracle(PipelineOracle):
         assert self.is_supported(
             version=version, encoding=encoding, device_spec=device_spec
         )
-        config = mistral.InferenceConfig(
-            weight_path=huggingface_hub.hf_hub_download(
-                repo_id="mistralai/Mistral-Nemo-Instruct-2407",
-                filename="consolidated.safetensors",
-            ),
+        config = pipelines.PipelineConfig(
+            architecture="mistral",
             device_spec=device_spec,
-            max_new_tokens=10,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            cache_strategy=kv_cache.KVCacheStrategy.CONTINUOUS,
+            huggingface_repo_id="mistralai/Mistral-Nemo-Instruct-2407",
+            weight_path=HuggingFaceFile(
+                "mistralai/Mistral-Nemo-Instruct-2407",
+                "consolidated.safetensors",
+            ).download(),
         )
-        tokenizer = mistral.MistralTokenizer(config)
-        generator = mistral.MistralTokenGenerator(config, tokenizer.eos)
+        generator = mistral.Mistral(config)
+        tokenizer = TextTokenizer(config)
+
         return MaxPipelineAndTokenizer(
-            model=generator.model, generator=generator, tokenizer=tokenizer
+            model=generator, generator=generator, tokenizer=tokenizer
         )
 
     def create_torch_pipeline(
@@ -374,7 +383,10 @@ class MistralPipelineOracle(PipelineOracle):
         tokenizer = transformers.AutoTokenizer.from_pretrained(hf_repo_id)
         config = transformers.AutoConfig.from_pretrained(hf_repo_id)
         model = transformers.AutoModelForCausalLM.from_pretrained(
-            hf_repo_id, config=config, device_map=device
+            hf_repo_id,
+            config=config,
+            device_map=device,
+            torch_dtype=torch.bfloat16,
         )
         return TorchModelAndTokenizer(model=model, tokenizer=tokenizer)
 

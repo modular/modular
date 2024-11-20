@@ -259,25 +259,20 @@ PIPELINES = {
             relative_tolerance=2.5,
         ),
     ),
-    # TODO(AIPIPE-165): Mistral is currently broken in main, so this won't work
-    # right now.  Re-enable (after dinding appropriate thresholds) once Mistral
-    # is fixed.
+    # TODO(AIPIPE-198): Re-enable Mistral when new workflow is working.
     # "mistral-nemo-instruct-2407-bfloat16": PipelineDef(
-    #     compatible_with=[DeviceType.GPU],
-    #     run=lambda device_type: run_llm_verification(
-    #         device_type=device_type,
-    #         pipeline="mistral",
-    #         version="nemo-instruct-2407",
-    #         encoding="bfloat16",
-    #         pregenerated_torch_goldens_rlocation=(
-    #             "torch_mistral_golden/torch_nemo-instruct-2407_bfloat16_golden.json"
-    #         ),
-    #         # TODO(akirchhoff): Find appropriate thresholds
-    #         kl_div_threshold=0,
-    #         cos_dist_threshold=0,
-    #         absolute_tolerance=0,
-    #         relative_tolerance=0,
-    #     ),
+    # compatible_with=[DeviceType.GPU],
+    # run=lambda device_type: run_llm_verification(
+    # device_type=device_type,
+    # pipeline="mistral",
+    # version="nemo-instruct-2407",
+    # encoding="bfloat16",
+    # pregenerated_torch_goldens_rlocation="torch_mistral_golden/torch_nemo-instruct-2407_bfloat16_golden.json",
+    # kl_div_threshold=0.002,
+    # cos_dist_threshold=0.0025,
+    # absolute_tolerance=1.5,
+    # relative_tolerance=2.0,
+    # ),
     # ),
 }
 
