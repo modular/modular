@@ -10,22 +10,18 @@ import contextlib
 import queue
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, AsyncGenerator, Generic, Mapping, Optional, TypeVar
+from typing import AsyncGenerator, Generic, Optional, TypeVar
 
 from max.serve.multiprocessing.worker import MPQueue, all_queues
 
 BatchReqId = TypeVar("BatchReqId")
 BatchReqInput = TypeVar("BatchReqInput")
-BatchReqOutput = TypeVar("BatchReqOutput")
 
 ReqId = TypeVar("ReqId")
 ReqInput = TypeVar("ReqInput")
 ReqOutput = TypeVar("ReqOutput")
 
 BatchInputs = dict[BatchReqId, BatchReqInput]
-BatchInputsMapping = Mapping[BatchReqId, BatchReqInput]
-
-Batch = dict[BatchReqId, Any]
 
 # TODO(SI-683): Choose a better serializable sentinel.
 STOP_STREAM = -1
@@ -61,14 +57,6 @@ class BatchQueueConfig:
 
     target_sum_seq_len: Optional[int] = None
     """Target sum of the sequence lengths in the batch."""
-
-
-@dataclass
-class BatchEntry:
-    model_name: str
-    batch_key: int
-    batch: dict[Any, Any]
-    num_steps: int = 1
 
 
 class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
