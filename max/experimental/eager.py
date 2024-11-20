@@ -34,12 +34,12 @@ class Graph:
     async def compute(self):
         leaves = list(self.leaves)
         with self.graph as graph:
-            graph.output(*(leaf.value for leaf in leaves))
+            graph.output(*(leaf._value for leaf in leaves))
 
         session = me.InferenceSession()
         model = session.load(graph)
-        assert all(source.storage for source in self.sources)
-        results = model(*(source.storage for source in self.sources))
+        assert all(source._storage for source in self.sources)
+        results = model(*(source._storage for source in self.sources))
 
         for leaf, result in zip(leaves, results):
             assert isinstance(result, md.Tensor)
@@ -99,7 +99,7 @@ class Graph:
 
         with mg.Graph(
             "_",
-            input_types=[source.value.type for source in sources],
+            input_types=[source._value.type for source in sources],
             context=_CONTEXT,
         ) as graph:
             clone_into(graph, self)
@@ -108,20 +108,20 @@ class Graph:
         new_graph = Graph(sources, leaves, graph)
 
         for node, value in zip(sources, graph.inputs):
-            node.graph = new_graph
-            node.value = value.tensor
+            node._graph = new_graph
+            node._value = value.tensor
 
         for node in leaves:
-            node.graph = new_graph
-            node.value = mg.Value(value_map[node.value._mlir_value]).tensor
+            node._graph = new_graph
+            node._value = mg.Value(value_map[node._value._mlir_value]).tensor
 
         return new_graph
 
 
 class Tensor:
-    graph: Graph
-    value: mg.TensorValue
-    storage: Optional[md.Tensor] = None
+    _graph: Graph
+    _value: mg.TensorValue
+    _storage: Optional[md.Tensor] = None
 
     def __init__(
         self,
@@ -132,43 +132,53 @@ class Tensor:
         if data is None:
             assert graph
             assert value
-            self.graph = graph
-            self.value = value
+            self._graph = graph
+            self._value = value
         else:
-            self.storage = data
+            self._storage = data
             max_graph = mg.Graph(
                 "_",
                 input_types=[mg.TensorType(data.dtype, data.shape)],
                 context=_CONTEXT,
             )
-            self.value = max_graph.inputs[0].tensor
-            self.graph = Graph({self}, weakref.WeakSet(), max_graph)
+            self._value = max_graph.inputs[0].tensor
+            self._graph = Graph({self}, weakref.WeakSet(), max_graph)
+
+    @property
+    def shape(self):
+        return self._value.shape
+
+    @property
+    def dtype(self):
+        return self._value.dtype
 
     @classmethod
     def from_numpy(cls, array: np.ndarray):
         return cls(md.Tensor.from_numpy(array))
 
     def to_numpy(self):
-        if not self.storage:
+        if not self._storage:
             raise ValueError(
                 "to_numpy: Must `await` this partial result first."
             )
-        return self.storage.to_numpy()
+        return self._storage.to_numpy()
 
     def __repr__(self):
+        if not self._storage:
+            return f"Tensor(<deferred>, dtype={self.dtype}, shape={self.shape})"
         return repr(self.to_numpy())
 
     def __await__(self):
-        if not self.storage:
-            yield from asyncio.create_task(self.graph.compute())
-        assert self.storage
+        if not self._storage:
+            yield from asyncio.create_task(self._graph.compute())
+        assert self._storage
         return self
 
     def _binop(self, other: Tensor, op):
         # This mutates all relevant nodes to be part of the new graph.
-        merged = self.graph.merge(other.graph)
+        merged = self._graph.merge(other._graph)
         with merged.graph:
-            new_node = Tensor(graph=merged, value=op(self.value, other.value))
+            new_node = Tensor(graph=merged, value=op(self._value, other._value))
         merged.leaves.add(new_node)
         return new_node
 
