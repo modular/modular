@@ -130,7 +130,7 @@ class MllamaVisionEncoder(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        # attention_mask: torch.Tensor | None = None,
+        attention_mask: torch.Tensor | None = None,
         output_attentions: bool | None = None,
         output_hidden_states: bool | None = None,
         # return_dict: bool | None = None,
@@ -159,10 +159,9 @@ class MllamaVisionEncoder(nn.Module):
         for encoder_layer in self.layers:
             layer_outputs = encoder_layer(
                 hidden_state=hidden_states,
-                # attention_mask=attention_mask,
+                attention_mask=attention_mask,
             )
 
             hidden_states = layer_outputs[0]
 
-        # Always return like that for now.
-        return hidden_states
+        return (hidden_states,)
