@@ -63,9 +63,8 @@ fn syncwarp(mask: Int = -1):
             __mlir_op.`index.casts`[_type = __mlir_type.i32](mask.value)
         )
     else:
-        constrained[
-            False, "The syncwarp function is not support on AMD GPUs."
-        ]()
+        # In AMD GPU this is a nop (everything executed in lock-step).
+        return
 
 
 # ===----------------------------------------------------------------------===#
