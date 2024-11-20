@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import enum
 import os
 from pathlib import Path
@@ -56,8 +56,55 @@ def resolve_rlocation(rloc: str) -> Path:
 def dump_results(
     verdicts: Mapping[str, VerificationVerdict], *, to: TextIO = sys.stdout
 ) -> None:
+    # Even if verdicts is empty, we want to make sure to call write.  When we
+    # call this from 'main', click passes us a LazyFile, and if we don't write
+    # anything, we won't create the output file, which breaks downstream
+    # workflows.
+    to.write("")
     for pipeline, verdict in verdicts.items():
         print(f"  {verdict.emoji} {pipeline}", file=to)
+
+
+@dataclass
+class TagFilter:
+    """User-provided filters on a tag list."""
+
+    must_have: Sequence[str] = field(default_factory=list)
+    must_not_have: Sequence[str] = field(default_factory=list)
+
+    def satisfied_by(self, tags: Sequence[str]) -> bool:
+        """Determines if this filter is satisfied by a tag list."""
+        if not all(required_tag in tags for required_tag in self.must_have):
+            return False
+        if any(forbidden_tag in tags for forbidden_tag in self.must_not_have):
+            return False
+        return True
+
+
+class TagFilterParamType(click.ParamType):
+    name = "tag filter"
+
+    def convert(
+        self,
+        value: str,
+        param: Optional[click.Parameter],
+        ctx: Optional[click.Context],
+    ) -> TagFilter:
+        if not value:
+            return TagFilter()
+        parts = value.split(",")
+        required = []
+        forbidden = []
+        for part in parts:
+            if part.startswith("+"):
+                required.append(part[1:])
+            elif part.startswith("-"):
+                forbidden.append(part[1:])
+            else:
+                raise ValueError(
+                    f"Tag filter part {part!r} does not start with '+' or '-'"
+                )
+        return TagFilter(must_have=required, must_not_have=forbidden)
 
 
 def generate_llm_logits(
@@ -155,6 +202,7 @@ def run_llm_verification(
     return VerificationVerdict.OK
 
 
+# TODO(akirchhoff): Make this kw_only when we drop support for Python 3.9.
 @dataclass
 class PipelineDef:
     """Definition of the requirements and method of running a pipeline.
@@ -167,6 +215,7 @@ class PipelineDef:
 
     compatible_with: Sequence[DeviceType]
     run: Callable[[DeviceType], VerificationVerdict]
+    tags: Sequence[str] = field(default_factory=list)
 
     def run_protected(self, device_type: DeviceType) -> VerificationVerdict:
         try:
@@ -262,6 +311,7 @@ PIPELINES = {
     # TODO(AIPIPE-198): Re-enable Mistral when new workflow is working.
     # "mistral-nemo-instruct-2407-bfloat16": PipelineDef(
     # compatible_with=[DeviceType.GPU],
+    # tags=["big"],
     # run=lambda device_type: run_llm_verification(
     # device_type=device_type,
     # pipeline="mistral",
@@ -285,10 +335,18 @@ PIPELINES = {
 )
 @click.option("--devices", "devices_str", help="Devices to run pipeline on")
 @click.option("--pipeline", help="Run only a specified pipeline")
+@click.option(
+    "--tags",
+    "tag_filter",
+    type=TagFilterParamType(),
+    help="Tags to filter to (+) or exclude (-), comma-separated",
+    default=TagFilter(),
+)
 def main(
     report: Optional[TextIO],
     devices_str: Optional[str],
     pipeline: Optional[str],
+    tag_filter: TagFilter,
 ) -> None:
     """Run logit-level comparisons of a Modular pipeline against a reference."""
 
@@ -306,6 +364,8 @@ def main(
         for pipeline_name, pipeline_def in PIPELINES.items():
             if device_type not in pipeline_def.compatible_with:
                 continue
+            if not tag_filter.satisfied_by(pipeline_def.tags):
+                continue
             print(f"Running {pipeline_name}...", flush=True)
             verdicts[pipeline_name] = pipeline_def.run_protected(device_type)
     else:
@@ -315,6 +375,10 @@ def main(
         if device_type not in pipeline_def.compatible_with:
             raise click.ClickException(
                 f"Pipeline {pipeline!r} not compatible with {device_type!r}"
+            )
+        if not tag_filter.satisfied_by(pipeline_def.tags):
+            raise click.ClickException(
+                f"Pipeline {pipeline!r} doesn't match tag filter {tag_filter}"
             )
         verdicts[pipeline] = pipeline_def.run_protected(device_type)
 
