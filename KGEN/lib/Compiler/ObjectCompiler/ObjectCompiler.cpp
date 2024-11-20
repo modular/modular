@@ -1201,12 +1201,6 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
   llvm::StringRef libInExt = ".o";
   llvm::StringRef libOutExt = ".so";
   std::string objName = moduleName.str() + "-%%%%%%%" + libInExt.str();
-  std::string sharedObjName = moduleName.str() + "-%%%%%%%" + libOutExt.str();
-
-  std::error_code ec;
-  std::filesystem::path sharedObjPath =
-      std::filesystem::temp_directory_path(ec);
-  sharedObjPath = sharedObjPath / sharedObjName;
 
   // Write .o to a file.
   auto objFileOr = writeTempFile(objName, (*bufOr)->getBuffer());
@@ -1215,6 +1209,12 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
     return Error("failed to write object binary into a file");
 
   std::string objFilePath = objFileOr->getPath().string();
+  std::string sharedObjName =
+      objFileOr->getPath().stem().string() + libOutExt.str();
+  std::error_code ec;
+  std::filesystem::path sharedObjPath =
+      std::filesystem::temp_directory_path(ec);
+  sharedObjPath = sharedObjPath / sharedObjName;
 
   auto triple = llvm::Triple(options.targetTriple);
   std::string version = triple.getOSVersion().getAsString();
