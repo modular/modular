@@ -9,7 +9,6 @@
 from math import ceildiv
 from random import random_si64
 
-from sys.info import is_amd_gpu
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import DeviceContext
 from gpu.mma import mma
@@ -78,68 +77,65 @@ fn run_mma_fp32_fp32(
 ) raises:
     print("== run_matmul fp32.fp32 matrix core kernel")
 
+    var a_host = UnsafePointer[Float32].alloc(M * K)
+    var b_host = UnsafePointer[Float32].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+
+    for i in range(M * K):
+        var val = random_si64(rand_min, rand_max)
+        a_host[i] = val.cast[DType.float32]()
+
+    for i in range(K * N):
+        var val = random_si64(rand_min, rand_max)
+        b_host[i] = val.cast[DType.float32]()
+
+    for i in range(M * N):
+        c_host[i] = 0
+        c_host_ref[i] = 0
+
+    var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
+    var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
+    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
+
+    var func_mma = ctx.compile_function[mma_kernel_fp32_fp32]()
+
+    ctx.enqueue_function(
+        func_mma,
+        a_device,
+        b_device,
+        c_device,
+        M,
+        N,
+        K,
+        grid_dim=1,
+        block_dim=(16, 4),
+    )
+
+    ctx.enqueue_copy_from_device(c_host, c_device)
+
+    matmul_naive(a_host, b_host, c_host_ref, M, N, K)
+
     var errors = 0
+    for i in range(M * N):
+        if c_host[i] != c_host_ref[i]:
+            errors += 1
 
-    @parameter
-    if is_amd_gpu():
-        var a_host = UnsafePointer[Float32].alloc(M * K)
-        var b_host = UnsafePointer[Float32].alloc(K * N)
-        var c_host = UnsafePointer[Float32].alloc(M * N)
-        var c_host_ref = UnsafePointer[Float32].alloc(M * N)
-
-        for i in range(M * K):
-            var val = random_si64(rand_min, rand_max)
-            a_host[i] = val.cast[DType.float32]()
-
-        for i in range(K * N):
-            var val = random_si64(rand_min, rand_max)
-            b_host[i] = val.cast[DType.float32]()
-
-        for i in range(M * N):
-            c_host[i] = 0
-            c_host_ref[i] = 0
-
-        var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
-        var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
-        var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-
-        ctx.enqueue_copy_to_device(a_device, a_host)
-        ctx.enqueue_copy_to_device(b_device, b_host)
-
-        var func_mma = ctx.compile_function[mma_kernel_fp32_fp32]()
-
-        ctx.enqueue_function(
-            func_mma,
-            a_device,
-            b_device,
-            c_device,
-            M,
-            N,
-            K,
-            grid_dim=1,
-            block_dim=(16, 4),
-        )
-
-        ctx.enqueue_copy_from_device(c_host, c_device)
-
-        matmul_naive(a_host, b_host, c_host_ref, M, N, K)
-
-        for i in range(M * N):
-            if c_host[i] != c_host_ref[i]:
-                errors += 1
-
-        _ = a_device
-        _ = b_device
-        _ = c_device
-        _ = a_host
-        _ = b_host
-        _ = c_host
-        _ = c_host_ref
-        _ = func_mma^
-        a_host.free()
-        b_host.free()
-        c_host.free()
-        c_host_ref.free()
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = a_host
+    _ = b_host
+    _ = c_host
+    _ = c_host_ref
+    _ = func_mma^
+    a_host.free()
+    b_host.free()
+    c_host.free()
+    c_host_ref.free()
 
     # CHECK: Success
     if errors == 0:
@@ -181,68 +177,65 @@ fn run_mma_fp32_fp16(
 ) raises:
     print("== run_matmul fp32.fp16 matrix core kernel")
 
+    var a_host = UnsafePointer[Float16].alloc(M * K)
+    var b_host = UnsafePointer[Float16].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+
+    for i in range(M * K):
+        var val = random_si64(rand_min, rand_max)
+        a_host[i] = val.cast[DType.float16]()
+
+    for i in range(K * N):
+        var val = random_si64(rand_min, rand_max)
+        b_host[i] = val.cast[DType.float16]()
+
+    for i in range(M * N):
+        c_host[i] = 0
+        c_host_ref[i] = 0
+
+    var a_device = ctx.enqueue_create_buffer[DType.float16](M * K)
+    var b_device = ctx.enqueue_create_buffer[DType.float16](K * N)
+    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
+
+    var func_mma = ctx.compile_function[mma_kernel_fp32_fp16]()
+
+    ctx.enqueue_function(
+        func_mma,
+        a_device,
+        b_device,
+        c_device,
+        M,
+        N,
+        K,
+        grid_dim=1,
+        block_dim=(16, 4),
+    )
+
+    ctx.enqueue_copy_from_device(c_host, c_device)
+
+    matmul_naive(a_host, b_host, c_host_ref, M, N, K)
+
     var errors = 0
+    for i in range(M * N):
+        if c_host[i] != c_host_ref[i]:
+            errors += 1
 
-    @parameter
-    if is_amd_gpu():
-        var a_host = UnsafePointer[Float16].alloc(M * K)
-        var b_host = UnsafePointer[Float16].alloc(K * N)
-        var c_host = UnsafePointer[Float32].alloc(M * N)
-        var c_host_ref = UnsafePointer[Float32].alloc(M * N)
-
-        for i in range(M * K):
-            var val = random_si64(rand_min, rand_max)
-            a_host[i] = val.cast[DType.float16]()
-
-        for i in range(K * N):
-            var val = random_si64(rand_min, rand_max)
-            b_host[i] = val.cast[DType.float16]()
-
-        for i in range(M * N):
-            c_host[i] = 0
-            c_host_ref[i] = 0
-
-        var a_device = ctx.enqueue_create_buffer[DType.float16](M * K)
-        var b_device = ctx.enqueue_create_buffer[DType.float16](K * N)
-        var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-
-        ctx.enqueue_copy_to_device(a_device, a_host)
-        ctx.enqueue_copy_to_device(b_device, b_host)
-
-        var func_mma = ctx.compile_function[mma_kernel_fp32_fp16]()
-
-        ctx.enqueue_function(
-            func_mma,
-            a_device,
-            b_device,
-            c_device,
-            M,
-            N,
-            K,
-            grid_dim=1,
-            block_dim=(16, 4),
-        )
-
-        ctx.enqueue_copy_from_device(c_host, c_device)
-
-        matmul_naive(a_host, b_host, c_host_ref, M, N, K)
-
-        for i in range(M * N):
-            if c_host[i] != c_host_ref[i]:
-                errors += 1
-
-        _ = a_device
-        _ = b_device
-        _ = c_device
-        _ = a_host
-        _ = b_host
-        _ = c_host
-        _ = c_host_ref
-        _ = func_mma^
-        a_host.free()
-        b_host.free()
-        c_host.free()
-        c_host_ref.free()
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = a_host
+    _ = b_host
+    _ = c_host
+    _ = c_host_ref
+    _ = func_mma^
+    a_host.free()
+    b_host.free()
+    c_host.free()
+    c_host_ref.free()
 
     # CHECK: Success
     if errors == 0:
@@ -284,68 +277,65 @@ fn run_mma_fp32_bf16(
 ) raises:
     print("== run_matmul fp32.bf16 matrix core kernel")
 
+    var a_host = UnsafePointer[BFloat16].alloc(M * K)
+    var b_host = UnsafePointer[BFloat16].alloc(K * N)
+    var c_host = UnsafePointer[Float32].alloc(M * N)
+    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+
+    for i in range(M * K):
+        var val = random_si64(rand_min, rand_max)
+        a_host[i] = val.cast[DType.bfloat16]()
+
+    for i in range(K * N):
+        var val = random_si64(rand_min, rand_max)
+        b_host[i] = val.cast[DType.bfloat16]()
+
+    for i in range(M * N):
+        c_host[i] = 0
+        c_host_ref[i] = 0
+
+    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
+    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
+    var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
+
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
+
+    var func_mma = ctx.compile_function[mma_kernel_fp32_bf16]()
+
+    ctx.enqueue_function(
+        func_mma,
+        a_device,
+        b_device,
+        c_device,
+        M,
+        N,
+        K,
+        grid_dim=1,
+        block_dim=(16, 4),
+    )
+
+    ctx.enqueue_copy_from_device(c_host, c_device)
+
+    matmul_naive(a_host, b_host, c_host_ref, M, N, K)
+
     var errors = 0
+    for i in range(M * N):
+        if c_host[i] != c_host_ref[i]:
+            errors += 1
 
-    @parameter
-    if is_amd_gpu():
-        var a_host = UnsafePointer[BFloat16].alloc(M * K)
-        var b_host = UnsafePointer[BFloat16].alloc(K * N)
-        var c_host = UnsafePointer[Float32].alloc(M * N)
-        var c_host_ref = UnsafePointer[Float32].alloc(M * N)
-
-        for i in range(M * K):
-            var val = random_si64(rand_min, rand_max)
-            a_host[i] = val.cast[DType.bfloat16]()
-
-        for i in range(K * N):
-            var val = random_si64(rand_min, rand_max)
-            b_host[i] = val.cast[DType.bfloat16]()
-
-        for i in range(M * N):
-            c_host[i] = 0
-            c_host_ref[i] = 0
-
-        var a_device = ctx.enqueue_create_buffer[DType.bfloat16](M * K)
-        var b_device = ctx.enqueue_create_buffer[DType.bfloat16](K * N)
-        var c_device = ctx.enqueue_create_buffer[DType.float32](M * N)
-
-        ctx.enqueue_copy_to_device(a_device, a_host)
-        ctx.enqueue_copy_to_device(b_device, b_host)
-
-        var func_mma = ctx.compile_function[mma_kernel_fp32_bf16]()
-
-        ctx.enqueue_function(
-            func_mma,
-            a_device,
-            b_device,
-            c_device,
-            M,
-            N,
-            K,
-            grid_dim=1,
-            block_dim=(16, 4),
-        )
-
-        ctx.enqueue_copy_from_device(c_host, c_device)
-
-        matmul_naive(a_host, b_host, c_host_ref, M, N, K)
-
-        for i in range(M * N):
-            if c_host[i] != c_host_ref[i]:
-                errors += 1
-
-        _ = a_device
-        _ = b_device
-        _ = c_device
-        _ = a_host
-        _ = b_host
-        _ = c_host
-        _ = c_host_ref
-        _ = func_mma^
-        a_host.free()
-        b_host.free()
-        c_host.free()
-        c_host_ref.free()
+    _ = a_device
+    _ = b_device
+    _ = c_device
+    _ = a_host
+    _ = b_host
+    _ = c_host
+    _ = c_host_ref
+    _ = func_mma^
+    a_host.free()
+    b_host.free()
+    c_host.free()
+    c_host_ref.free()
 
     # CHECK: Success
     if errors == 0:
