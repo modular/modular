@@ -274,12 +274,18 @@ async def model_worker_run_v2(
 
         cache_indices = set(range(max_batch_size_tg))
         batch_continuous: BatchInputs = {}
+        # it's a list to pass it by "reference" and mutate inside should_schedule_ce
+        start_time: list = [None]
         i = 0
         while i % 100 or not shutdown.is_set():
             i += 1
 
             if should_schedule_ce(
-                batch_continuous, request_queue, max_batch_size_tg
+                batch_continuous,
+                request_queue,
+                max_batch_size_tg,
+                start_time,
+                batch_timeout,
             ):
                 max_batch_size_to_execute = min(
                     max_batch_size_ce, max_batch_size_tg - len(batch_continuous)
@@ -290,7 +296,6 @@ async def model_worker_run_v2(
                         max_batch_size_to_execute,
                         cache_indices,
                         target_sum_seq_len,
-                        batch_timeout,
                     )
                 ):
                     logger.debug(
@@ -307,6 +312,7 @@ async def model_worker_run_v2(
                         batch_continuous[req_id] = batch_to_execute[req_id]
 
                     response_queue.queue.put_many_nowait(batch_responses)
+                    start_time[0] = None
 
             elif batch_continuous:
                 logger.debug("Scheduling TG with BS: %d", len(batch_continuous))
@@ -350,12 +356,38 @@ def should_schedule_ce(
     batch_continuous: BatchInputs,
     request_queue: MPQueue,
     max_batch_size_tg: int,
+    start_time: list,
+    batch_timeout_s: Optional[float],
 ):
+    # The incoming request queue is empty; no CE to schedule
     if request_queue.queue.empty():
         return False
 
+    # At this point there are incoming requests, we start the batch clock if not yet
+    if not start_time[0]:
+        start_time[0] = time.monotonic()
+
+    # If TG batch is full then no reason to schedule CE
     if len(batch_continuous) >= max_batch_size_tg:
         return False
+
+    # If TG batch is empty then schedule CE
+    if len(batch_continuous) == 0:
+        return True
+
+    # If batch timeout is set
+    if batch_timeout_s:
+        # If batch timeout is reached then schedule CE
+        if time.monotonic() >= start_time[0] + batch_timeout_s:
+            return True
+        else:
+            messages_needed = max_batch_size_tg - len(batch_continuous)
+            if request_queue.queue.qsize() >= messages_needed:
+                # If there are enough request to fill the TG batch then schedule CE
+                return True
+            else:
+                # If not enough requests then wait with CE and continue with TG
+                return False
 
     return True
 
@@ -365,9 +397,7 @@ async def create_batch(
     max_batch_size: int,
     request_indices: set,
     target_sum_seq_len: Optional[int],
-    timeout_s: Optional[float],
 ) -> BatchInputs:
-    start_time = time.monotonic()
     batch: BatchInputs = {}
     sum_seq_len = 0
     while len(batch) < max_batch_size:
@@ -388,13 +418,7 @@ async def create_batch(
                 ):
                     break
         except queue.Empty:
-            if timeout_s:
-                if time.monotonic() >= start_time + timeout_s:
-                    break
-                else:
-                    await asyncio.sleep(0)
-            else:
-                break
+            break
     return batch
 
 
