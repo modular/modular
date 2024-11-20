@@ -22,7 +22,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 console_level: int = logging.INFO
 file_path: str = ""
 file_level: Optional[int] = None
-otlp_level: Optional[int] = None
+otlp_level: Optional[int] = logging.INFO
 if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
     console_level = logging.getLevelName(
         os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"]
@@ -34,6 +34,8 @@ if "MAX_SERVE_LOGS_FILE_PATH" in os.environ:
     file_level = logging.getLevelName(
         os.environ.get("MAX_SERVE_LOGS_FILE_LEVEL", "DEBUG")
     )
+if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
+    otlp_level = None
 configureLogging(console_level, file_path, file_level, otlp_level)
 
 from fastapi import FastAPI
