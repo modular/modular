@@ -14,9 +14,7 @@ from max.serve.pipelines.echo_gen import (
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
-    TokenGeneratorRequest,
 )
-from max.serve.pipelines.model_worker import start_model_testing_tasks
 
 
 @pytest.fixture(params=[4, 8, 16, 32])
@@ -43,9 +41,9 @@ async def test_batched_requests_pipeline(num_requests):
         async def _batch_execute(batch):
             return echo_gen.next_token(batch)[0]
 
-        model_tasks = start_model_testing_tasks(
-            pipeline.token_gen_queue, _batch_execute, False
-        )
+        # model_tasks = start_model_testing_tasks(
+        #     pipeline.token_gen_queue, _batch_execute, False
+        # )
 
         for i in range(num_requests):
             request_id = str(i)
