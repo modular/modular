@@ -2327,12 +2327,13 @@ struct MutableStoreSlice:
         steps: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        copy_to_slice(
+        copy_to_slice[target=target](
             managed_tensor_slice_to_ndbuffer(to_buffer),
             managed_tensor_slice_to_ndbuffer(in_slice),
             managed_tensor_slice_to_ndbuffer(starts),
             managed_tensor_slice_to_ndbuffer(stops),
             managed_tensor_slice_to_ndbuffer(steps),
+            ctx,
         )
 
     # No shape function as we just directly embed the logic to check the shape

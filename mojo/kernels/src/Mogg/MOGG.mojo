@@ -2063,8 +2063,9 @@ fn store_slice[
     start: NDBuffer[start_type, 1],
     end: NDBuffer[end_type, 1],
     step: NDBuffer[step_type, 1],
+    ctx: MojoCallContextPtr,
 ) raises:
-    copy_to_slice(buffer, in_slice, start, end, step)
+    copy_to_slice[target=target](buffer, in_slice, start, end, step, ctx)
 
 
 @register_internal("mo.slice_dim")
