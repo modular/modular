@@ -8,13 +8,19 @@
 
 from gpu.host._compile import _compile_code_asm
 from gpu.intrinsics import *
+from math import exp2
+from gpu.host.info import A100
 
 
 fn kernel[
     type: DType, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type]], val: Scalar[type]) -> Scalar[type]:
+](
+    output: UnsafePointer[Scalar[type]],
+    ptr: UnsafePointer[Scalar[type]],
+    val: Scalar[type],
+):
     store_release[memory=memory](ptr, val)
-    return load_acquire[memory=memory](ptr)
+    output[] = load_acquire[memory=memory](ptr)
 
 
 # CHECK-LABEL: test_compile_code
@@ -23,34 +29,63 @@ def test_compile_code():
 
     # CHECK: st.release.sys.global.u32 [%rd1], %r1;
     # CHECK: ld.acquire.sys.global.u32 %r2, [%rd1];
-    print(_compile_code_asm[kernel[DType.int32]]())
+    print(_compile_code_asm[kernel[DType.int32], target = A100.target()]())
 
     # CHECK: st.release.sys.global.u16 [%rd1], %rs1;
     # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
-    print(_compile_code_asm[kernel[DType.bfloat16]]())
+    print(_compile_code_asm[kernel[DType.bfloat16], target = A100.target()]())
 
     # CHECK: st.release.sys.global.u32 [%rd1], %r1;
     # CHECK: ld.acquire.sys.global.u32 %r2, [%rd1];
-    print(_compile_code_asm[kernel[DType.int32, memory=False]]())
-
-    # CHECK: st.release.sys.global.u16 [%rd1], %rs1;
-    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
-    print(_compile_code_asm[kernel[DType.bfloat16, memory=False]]())
-
-    # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$1], $0;", "h,l,~{memory}"(bfloat %1, ptr %0)
-    # CHECK: tail call bfloat asm sideeffect "ld.acquire.sys.global.u16 $0, [$1];", "=h,l,~{memory}"(ptr %0)
     print(
         _compile_code_asm[
-            kernel[DType.bfloat16, memory=True], emission_kind="llvm-opt"
+            kernel[DType.int32, memory=False], target = A100.target()
         ]()
     )
 
-    # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$1], $0;", "h,l"(bfloat %1, ptr %0)
-    # CHECK: tail call bfloat asm sideeffect "ld.acquire.sys.global.u16 $0, [$1];", "=h,l"(ptr %0)
+    # CHECK: st.release.sys.global.u16 [%rd1], %rs1;
+    # CHECK: ld.acquire.sys.global.u16 %rs2, [%rd1];
     print(
         _compile_code_asm[
-            kernel[DType.bfloat16, memory=False], emission_kind="llvm-opt"
+            kernel[DType.bfloat16, memory=False], target = A100.target()
         ]()
+    )
+
+    # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$1], $0;", "h,l,~{memory}"(bfloat %2, ptr %1)
+    # CHECK: tail call bfloat asm sideeffect "ld.acquire.sys.global.u16 $0, [$1];", "=h,l,~{memory}"(ptr %1)
+    print(
+        _compile_code_asm[
+            kernel[DType.bfloat16, memory=True],
+            target = A100.target(),
+            emission_kind="llvm-opt",
+        ]()
+    )
+
+    # CHECK: tail call void asm sideeffect "st.release.sys.global.u16 [$1], $0;", "h,l"(bfloat %2, ptr %1)
+    # CHECK: tail call bfloat asm sideeffect "ld.acquire.sys.global.u16 $0, [$1];", "=h,l"(ptr %1)
+    print(
+        _compile_code_asm[
+            kernel[DType.bfloat16, memory=False],
+            target = A100.target(),
+            emission_kind="llvm-opt",
+        ]()
+    )
+
+    # https://godbolt.org/z/j9ecfjjP1
+    fn exp_op(output: UnsafePointer[Float32], max_scaled: Int32):
+        output[] = exp2(
+            output[] * 1.44269504088896340736 - max_scaled.cast[DType.float32]()
+        )
+
+    # CHECK: "target-cpu"="sm_80" "target-features"="+ptx81,+sm_80" "tune-cpu"="sm_80"
+    print(
+        _compile_code_asm[
+            exp_op, target = A100.target(), emission_kind="llvm-opt"
+        ]()
+    )
+    # CHECK: fma.rn.f32      %f2, %f3, 0f3FB8AA3B, %f5;
+    print(
+        _compile_code_asm[exp_op, target = A100.target(), emission_kind="asm"]()
     )
 
 
