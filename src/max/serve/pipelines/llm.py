@@ -127,7 +127,6 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
         config: TokenGeneratorPipelineConfig,
         model_name: str,
         tokenizer: PipelineTokenizer,
-        tg_yield_to_ce: bool = True,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info("%s: Constructed", model_name)
