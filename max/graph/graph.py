@@ -98,6 +98,17 @@ class _GraphWeight:
     value: TensorValue
 
 
+def _new_context() -> mlir.Context:
+    registry = mlir.DialectRegistry()
+    _graph.load_modular_dialects(registry)
+
+    context = mlir.Context()
+    context.append_dialect_registry(registry)
+    context.load_all_available_dialects()
+
+    return context
+
+
 class Graph:
     """Represents a single MAX graph.
 
@@ -172,6 +183,7 @@ class Graph:
         input_types: Iterable[Type] = (),
         path: Optional[Path] = None,
         *args,
+        context: Optional[mlir.Context] = None,
         **kwargs,
     ) -> None:
         self.name = name
@@ -189,13 +201,7 @@ class Graph:
         )
         self._unique_symbolic_dim_counter = 0
         self._context_state = []
-
-        registry = mlir.DialectRegistry()
-        _graph.load_modular_dialects(registry)
-
-        self._context = mlir.Context()
-        self._context.append_dialect_registry(registry)
-        self._context.load_all_available_dialects()
+        self._context = context or _new_context()
 
         with self._context, _location() as loc:
             # Create the top level module op.
