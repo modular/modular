@@ -503,18 +503,30 @@ struct DeviceFunctionV2[
 
         @parameter
         if Self._dump_q[dump_asm]():
-            alias ptx = Self._cleanup_asm(Self._func_impl.asm)
+
+            fn get_asm() -> StringLiteral:
+                @parameter
+                if Self.emission_kind == "asm":
+                    return Self._func_impl.asm
+                return _compile_code_asm[
+                    func,
+                    is_failable=_is_failable,
+                    emission_kind="asm",
+                    target=target,
+                ]()
+
+            alias asm = Self._cleanup_asm(get_asm())
 
             @parameter
             if dump_asm.isa[fn () capturing -> Path]():
                 alias dump_asm_fn = dump_asm.unsafe_get[
                     fn () capturing -> Path
                 ]()
-                dump_asm_fn().write_text(ptx)
+                dump_asm_fn().write_text(asm)
             elif dump_asm.isa[Path]():
-                dump_asm.unsafe_get[Path]().write_text(ptx)
+                dump_asm.unsafe_get[Path]().write_text(asm)
             else:
-                print(ptx)
+                print(asm)
 
         @parameter
         if Self._dump_q[_dump_sass]():
