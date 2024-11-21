@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from sys.ffi import DLHandle
-from memory import Arc, UnsafePointer
+from memory import ArcPointer, UnsafePointer
 from max._utils import call_dylib_func, get_lib_path_from_cfg
 from max.tensor import TensorSpec
 from ._status import _CStatus
@@ -31,7 +31,7 @@ struct ManagedDLHandle:
 
 @value
 struct DriverLibrary:
-    var lib: Arc[ManagedDLHandle]
+    var lib: ArcPointer[ManagedDLHandle]
 
     alias device_type = UnsafePointer[NoneType]
     alias device_memory_type = UnsafePointer[NoneType]
@@ -102,7 +102,7 @@ struct DriverLibrary:
             Self.copy_device_memory_fn_sig
         ]("M_copyDeviceMemory")
         self.get_data_fn = lib.get_function[Self.get_data_fn_sig]("M_getData")
-        self.lib = Arc[ManagedDLHandle](lib)
+        self.lib = ArcPointer[ManagedDLHandle](lib)
 
     fn get_handle(self) -> DLHandle:
         return self.lib[].get_handle()

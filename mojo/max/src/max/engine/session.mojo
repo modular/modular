@@ -13,7 +13,7 @@ from collections.optional import Optional
 from os.atomic import Atomic
 from pathlib import Path
 from sys.ffi import _get_global_or_null
-from memory import Arc, UnsafePointer
+from memory import ArcPointer, UnsafePointer
 from max._utils import call_dylib_func
 from max.driver import cpu_device, Device
 from max.driver._cuda import check_compute_capability
@@ -444,7 +444,7 @@ struct InferenceSession:
     ```
     """
 
-    var _ptr: Arc[_InferenceSessionImpl]
+    var _ptr: ArcPointer[_InferenceSessionImpl]
 
     fn __init__(out self, options: SessionOptions = SessionOptions()) raises:
         """Creates a new inference session.
@@ -459,7 +459,7 @@ struct InferenceSession:
             # avoid having `session.mojo` depend on CUDA.
             check_compute_capability(device)
         var path = _get_engine_path()
-        self._ptr = Arc(_InferenceSessionImpl(path, device))
+        self._ptr = ArcPointer(_InferenceSessionImpl(path, device))
 
     fn load(
         self,

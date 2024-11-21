@@ -13,7 +13,7 @@ You can pass each of the types shown here to
 from collections import List
 from memory import UnsafePointer
 from memory.unsafe import bitcast
-from memory import Arc
+from memory import ArcPointer
 from python import Python, PythonObject
 
 from .tensor_spec import TensorSpec
@@ -44,7 +44,7 @@ struct NamedTensor:
 
     var name: String
     """Name of the tensor."""
-    var _tensor_data: Arc[_OwningPointer]
+    var _tensor_data: ArcPointer[_OwningPointer]
     """Reference-counted pointer keeping the tensor data alive."""
     var _view: EngineTensorView
 
@@ -67,10 +67,10 @@ struct NamedTensor:
         self._view = EngineTensorView(tensor)
 
         # We want NamedTensor to be copyable but it needs to keep the underlying
-        # buffer alive.  Use an Arc[OwningPointer] to keep the underlying data
+        # buffer alive.  Use an ArcPointer[OwningPointer] to keep the underlying data
         # alive and us copyable.  We don't care what `dtype` is, and don't want
         # NamedTensor to have to be generic on `dtype`.
-        self._tensor_data = Arc(
+        self._tensor_data = ArcPointer(
             _OwningPointer(tensor._take_data_ptr().bitcast[NoneType]())
         )
 

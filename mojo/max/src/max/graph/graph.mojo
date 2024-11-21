@@ -7,7 +7,7 @@
 
 from builtin._location import __call_location, _SourceLocation
 from collections import Set, Optional
-from memory import Arc
+from memory import ArcPointer
 from sys.info import has_neon
 from os import abort
 from pathlib import Path
@@ -112,7 +112,7 @@ struct _OwnedGraph(Movable):
         self.ctx.__exit__()
 
 
-alias _GraphRef = Arc[_OwnedGraph]
+alias _GraphRef = ArcPointer[_OwnedGraph]
 
 
 @value
@@ -252,7 +252,7 @@ struct Graph(CollectionElement, Stringable, Writable):
             ),
         )
 
-        self._graph = Arc(_OwnedGraph(ctx, op, in_types))
+        self._graph = ArcPointer(_OwnedGraph(ctx, op, in_types))
 
     fn __init__(out self, path: Path) raises:
         """Constructs a new `Graph` from a MLIR file.
