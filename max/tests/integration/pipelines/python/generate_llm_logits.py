@@ -208,9 +208,9 @@ class LlamaPipelineOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_new_tokens=10,
             huggingface_repo_id=f"modularai/llama-{internal_version}",
-            weight_path=self._weight_path_for(
-                version=version, encoding=encoding
-            ),
+            weight_path=[
+                self._weight_path_for(version=version, encoding=encoding)
+            ],
             device_spec=device_spec,
             cache_strategy=(
                 kv_cache.KVCacheStrategy.CONTINUOUS if encoding
@@ -218,8 +218,11 @@ class LlamaPipelineOracle(PipelineOracle):
             ),
         )
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
-            model=pipeline.model, generator=pipeline, tokenizer=tokenizer
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
         )
 
     def _config_path_for(self, version: str, encoding: str) -> Path:
@@ -354,9 +357,11 @@ class ReplitPipelineOracle(PipelineOracle):
                 in ["bfloat16", "float32"] else kv_cache.KVCacheStrategy.NAIVE
             ),
             huggingface_repo_id="modularai/replit-code-1.5",
-            weight_path=replit.config.get_replit_huggingface_file(
-                pipelines.SupportedEncoding[encoding]
-            ).download(),
+            weight_path=[
+                replit.config.get_replit_huggingface_file(
+                    pipelines.SupportedEncoding[encoding]
+                ).download()
+            ],
             trust_remote_code=True,
         )
         tokenizer = TextTokenizer(config)
@@ -444,10 +449,12 @@ class MistralPipelineOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=kv_cache.KVCacheStrategy.CONTINUOUS,
             huggingface_repo_id="mistralai/Mistral-Nemo-Instruct-2407",
-            weight_path=HuggingFaceFile(
-                "mistralai/Mistral-Nemo-Instruct-2407",
-                "consolidated.safetensors",
-            ).download(),
+            weight_path=[
+                HuggingFaceFile(
+                    "mistralai/Mistral-Nemo-Instruct-2407",
+                    "consolidated.safetensors",
+                ).download()
+            ],
         )
         generator = mistral.Mistral(config)
         tokenizer = TextTokenizer(config)

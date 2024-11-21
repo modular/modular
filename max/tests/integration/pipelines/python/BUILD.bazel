@@ -139,7 +139,6 @@ modular_py_binary(
     },
     imports = ["."],
     main = "generate_llm_logits.py",
-    tags = ["no-mypy"],  # TODO(SDLC-1401): Currently spuriously fails (picks up llama3 directory in here instead of pipelines llama3) -- remove once SDLC-1401 is fixed.
     visibility = ["//visibility:public"],
     deps = [
         ":torch",
