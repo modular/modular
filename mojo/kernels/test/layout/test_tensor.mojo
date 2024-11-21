@@ -1526,6 +1526,87 @@ fn test_layout_tensor_iterator():
     print(iter3x2[])
 
 
+# CHECK-LABEL: test_nested_layout_tensor_iterator
+fn test_nested_layout_tensor_iterator():
+    print("== test_nested_layout_tensor_iterator")
+    alias N = 128
+    alias K = 8
+
+    alias size = N * K
+    alias type = DType.float32
+
+    var ptr = stack_allocation[size, type]()
+    for i in range(size):
+        ptr[i] = i
+
+    # Here we define a float32 tensor (64 * TN, 2 * TK):
+    #              K
+    #     0       2      4
+    #     0+------+------+-----+
+    #      | 64x2 | 64x2 | ... |
+    #      | tile | tile |     |
+    # N  64+------+------+-----+    float32 Matrix
+    #      | 64x2 | 64x2 | ... |
+    #      | tile | tile |     |
+    #   128+------+------+-----+
+    #
+    # Elements within each tile are stored continuously
+    #                  K
+    #      0     1     2     3     4
+    #     0+-----+-----+-----+-----+
+    #      |  0  |  1  | 128 | 129 |
+    #     1+-----+-----+-----+-----+
+    #      |  2  |  3  | 130 | 131 |
+    #     2+-----+-----+-----+-----+
+    #      |  4  |  5  | 132 | 133 |
+    # N   3+-----+-----+-----+-----+
+    #      | ... | ... | ... | ... |
+    #    64+-----+-----+-----+-----+
+    #      |TK*  |TK*  | ... | ... |
+    #      |128  |128+1| ... | ... |
+    #    65+-----+-----+-----+-----+
+    #      |TK*  |TK*  | ... | ... |
+    #      |128+2|128+3| ... | ... |
+    #    65+-----+-----+-----+-----+
+    # This data layout can be expressed by UInt32 LayoutTensor
+    # with shape = IntTuple(IntTuple(64, TN),IntTuple(2, TK))
+    # and stride = IntTuple(IntTuple(2, TK * 128),IntTuple(1, 128))
+
+    alias nested_layout = Layout(
+        IntTuple(
+            IntTuple(64, N // 64),
+            IntTuple(2, K // 2),
+        ),
+        IntTuple(
+            IntTuple(2, 128 * K // 2),
+            IntTuple(1, 128),
+        ),
+    )
+
+    # View a row in plain_tensor as an array of [64, 2] tiles.
+    var nested_tensor = LayoutTensor[
+        DType.float32,
+        nested_layout,
+    ](ptr)
+
+    var tiled_nested_tensor_iter = nested_tensor.tiled_iterator[64, 2, axis=1](
+        0, 0
+    )
+
+    # CHECK: 0.0 1.0
+    print(tiled_nested_tensor_iter[][0, 0], tiled_nested_tensor_iter[][0, 1])
+    # CHECK: 2.0 3.0
+    print(tiled_nested_tensor_iter[][1, 0], tiled_nested_tensor_iter[][1, 1])
+
+    # each tile are stored continuously
+    tiled_nested_tensor_iter._incr()
+
+    # CHECK: 128.0 129.0
+    print(tiled_nested_tensor_iter[][0, 0], tiled_nested_tensor_iter[][0, 1])
+    # CHECK: 130.0 131.0
+    print(tiled_nested_tensor_iter[][1, 0], tiled_nested_tensor_iter[][1, 1])
+
+
 # DISABLED-CHECK-LABEL: test_copy_from_bigger_tensor
 # fn test_copy_from_bigger_tensor():
 #    print("== test_copy_from_bigger_tensor")
@@ -1847,6 +1928,7 @@ fn main():
     # # test_copy_subtiles_scalars_back()
     test_slice_with_offsets()
     test_layout_tensor_iterator()
+    test_nested_layout_tensor_iterator()
     # test_element_coords_vectorized()
     # test_element_coords_tile_and_distribute()
     # test_element_coords_tiles_do_not_div()

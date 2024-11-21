@@ -145,7 +145,7 @@ fn _tile_is_masked[layout: Layout, *tile_sizes: Int]() -> Bool:
 
     @parameter
     for axis in range(layout.rank()):
-        alias dim = to_int(layout.shape[axis])
+        alias dim = product(layout.shape[axis])
         if dim % tile_sizes[axis] != 0:
             return True
     return False
@@ -1222,11 +1222,6 @@ struct LayoutTensor[
             "Number of tiles should match the rank",
         ]()
 
-        constrained[
-            layout.shape[axis].is_value(),
-            "The layout in the input axis can't be a tuple",
-        ]()
-
         var ptr_offset = 0
 
         @parameter
@@ -1246,7 +1241,17 @@ struct LayoutTensor[
                 ptr_offset += tile_coords[i] * stride
 
             # fmt: off
-            alias bound = layout.shape[axis].value() * layout.stride[axis].value()
+
+            # A nested LayoutTensor may have shape=(16, 64) and stride=(1, 16)
+            # In order to calculate the bound we only need to use the last
+            # element in the IntTuple.
+            alias is_axis_val = layout.shape[axis].is_value()
+            alias bound = layout.shape[axis].value() * layout.stride[axis].value() \
+                if is_axis_val \
+                else layout.shape[axis][-1].value() * layout.stride[axis][-1].value()
+            alias dim_bound = Self.shape[axis]() \
+                if is_axis_val \
+                else product(Self.layout.shape[axis])
             alias stride = __tiled_layout[1].stride[axis].value()
             # fmt: on
 
@@ -1265,7 +1270,7 @@ struct LayoutTensor[
                     RuntimeLayout(runtime_shape, runtime_stride),
                     stride=stride,
                     offset=0,
-                    dimension_bound=self.dim(axis),
+                    dimension_bound=dim_bound,
                     idx=tile_coords[axis],
                 )
             else:
