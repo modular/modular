@@ -54,13 +54,15 @@ class SupportedTestModels:
         """Initialize with type cast."""
         return cls(model, SupportedEncoding[encoding])
 
-    def _tiny_llama_weights(self, testdata_directory: Optional[Path]) -> Path:
+    def _tiny_llama_weights(
+        self, testdata_directory: Optional[Path]
+    ) -> list[Path]:
         if not testdata_directory:
             raise ValueError("Please pass `testdata_directory`")
         if self.encoding == SupportedEncoding.float32:
-            return testdata_directory / "tiny_llama.gguf"
+            return [Path(testdata_directory / "tiny_llama.gguf")]
         elif self.encoding == SupportedEncoding.bfloat16:
-            return testdata_directory / "tiny_llama_bf16.gguf"
+            return [Path(testdata_directory / "tiny_llama_bf16.gguf")]
         else:
             raise ValueError(
                 f"Could not find tiny llama checkpoint for {self.encoding=}."
@@ -98,7 +100,7 @@ class SupportedTestModels:
                 hf_file = get_llama_huggingface_file(
                     self.version, self.encoding
                 )
-                kwargs["weight_path"] = hf_file.download()
+                kwargs["weight_path"] = [hf_file.download()]
                 kwargs["huggingface_repo_id"] = hf_file.repo_id
 
         if "device_spec" not in kwargs:

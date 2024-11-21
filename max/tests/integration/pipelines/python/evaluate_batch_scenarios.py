@@ -454,7 +454,7 @@ def main(
         config.version,
         config.quantization_encoding,  # type: ignore
     )
-    config.weight_path = hf_file.download()
+    config.weight_path = [hf_file.download()]
 
     batch_max_size = 4
     if model_name == "rev-echo":

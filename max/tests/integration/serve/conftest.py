@@ -89,7 +89,7 @@ def tinyllama_model(testdata_directory, request, session):
     https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
     """
     config = PipelineConfig(
-        weight_path=testdata_directory / request.param.weight_path,
+        weight_path=[Path(testdata_directory / request.param.weight_path)],
         version="3.1",
         max_length=request.param.max_length,
         max_new_tokens=request.param.max_new_tokens,

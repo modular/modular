@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
+from pathlib import Path
 from max.pipelines.config import WeightsFormat, PipelineConfig
 
 
 def test_config_weights_format__raises_with_no_weights_path():
-    config = PipelineConfig(architecture="test", weight_path=None)
+    config = PipelineConfig(architecture="test", weight_path=[])
 
     with pytest.raises(ValueError):
         config.weights_format
@@ -18,7 +19,20 @@ def test_config_weights_format__raises_with_no_weights_path():
 def test_config_weights_format__raises_with_bad_weights_path():
     config = PipelineConfig(
         architecture="test",
-        weight_path="this_is_a_random_weight_path_without_extension",
+        weight_path=[Path("this_is_a_random_weight_path_without_extension")],
+    )
+
+    with pytest.raises(ValueError):
+        config.weights_format
+
+
+def test_config_weights_format__raises_with_conflicting_weights_path():
+    config = PipelineConfig(
+        architecture="test",
+        weight_path=[
+            Path("this_is_a_random_weight_path_without_extension"),
+            Path("this_is_a_gguf_file.gguf"),
+        ],
     )
 
     with pytest.raises(ValueError):
@@ -28,12 +42,15 @@ def test_config_weights_format__raises_with_bad_weights_path():
 def test_config_weights_format__correct_weights_format():
     config = PipelineConfig(
         architecture="test",
-        weight_path="model_a.gguf",
+        weight_path=[Path("model_a.gguf")],
     )
 
     assert config.weights_format == WeightsFormat.gguf
 
-    config.weight_path = "model_b.safetensors"
+    config.weight_path = [
+        Path("model_b.safetensors"),
+        Path("model_c.safetensors"),
+    ]
     assert config.weights_format == WeightsFormat.safetensors
 
 
