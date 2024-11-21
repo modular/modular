@@ -14,6 +14,8 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Mapping, Optional
 
+from max.serve.telemetry.stopwatch import StopWatch
+from max.serve.telemetry.metrics import METRICS
 from max.pipelines.interfaces import TokenGeneratorFactoryMap
 from max.serve.multiprocessing.worker import (
     MPQueue,
@@ -146,7 +148,9 @@ async def model_worker_run_v2(
             len(factories) == 1 and len(configs) == 1
         ), "We can host only one Pipeline right now"
         ((_, model_factory),) = factories.items()
-        model = model_factory()
+        with StopWatch() as timer:
+            model = model_factory()
+            METRICS.modelLoadTime(timer.elapsed_ms)
         ((_, config),) = configs.items()
         max_batch_size_tg = config.token_generation.size
         max_forward_steps_tg = config.token_generation.max_forward_steps

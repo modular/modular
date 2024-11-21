@@ -23,10 +23,10 @@ from opentelemetry.sdk.resources import Resource
 class _NoOpMetric:
     """No op metric to support tests etc."""
 
-    def add(self, *args, **kwargs):
+    def add(self, *args, **kwargs) -> None:
         pass
 
-    def record(self, *args, **kwargs):
+    def record(self, *args, **kwargs) -> None:
         pass
 
 
@@ -44,6 +44,7 @@ class _Metrics:
         self._output_tokens = _NoOpMetric()
         self._reqs_queued = _NoOpMetric()
         self._reqs_running = _NoOpMetric()
+        self._model_load_time = _NoOpMetric()
 
     def configure(self, otlp_level: Union[int, str, None] = None):
         meterProviders = [PrometheusMetricReader("metrics")]  # type: ignore
@@ -85,33 +86,41 @@ class _Metrics:
             "maxserve.num_requests_running",
             description="Count of requests currently being processed",
         )
+        self._model_load_time = _meter.create_histogram(
+            "maxserve.model_load_time",
+            unit="ms",
+            description="Time to load a model",
+        )
 
-    def requestCount(self, responseCode: int, urlPath: str):
-        self._req_count.add(1, {"code": responseCode, "path": urlPath})  # type: ignore
+    def requestCount(self, responseCode: int, urlPath: str) -> None:
+        self._req_count.add(1, {"code": responseCode, "path": urlPath})
 
-    def requestTime(self, value: float, urlPath: str):
-        self._req_time.record(value, {"path": urlPath})  # type: ignore
+    def requestTime(self, value: float, urlPath: str) -> None:
+        self._req_time.record(value, {"path": urlPath})
 
-    def inputTime(self, value: float):
-        self._input_time.record(value)  # type: ignore
+    def inputTime(self, value: float) -> None:
+        self._input_time.record(value)
 
-    def outputTime(self, value: float):
-        self._output_time.record(value)  # type: ignore
+    def outputTime(self, value: float) -> None:
+        self._output_time.record(value)
 
-    def ttft(self, value: float):
-        self._ttft.record(value)  # type: ignore
+    def ttft(self, value: float) -> None:
+        self._ttft.record(value)
 
-    def inputTokens(self, value: int):
-        self._input_tokens.add(value)  # type: ignore
+    def inputTokens(self, value: int) -> None:
+        self._input_tokens.add(value)
 
-    def outputTokens(self, value: int):
-        self._output_tokens.add(value)  # type: ignore
+    def outputTokens(self, value: int) -> None:
+        self._output_tokens.add(value)
 
-    def reqsQueued(self, value: int):
-        self._reqs_queued.add(value)  # type: ignore
+    def reqsQueued(self, value: int) -> None:
+        self._reqs_queued.add(value)
 
-    def reqsRunning(self, value: int):
-        self._reqs_running.add(value)  # type: ignore
+    def reqsRunning(self, value: int) -> None:
+        self._reqs_running.add(value)
+
+    def modelLoadTime(self, ms: int) -> None:
+        self._model_load_time.record(ms)
 
 
 METRICS = _Metrics()
