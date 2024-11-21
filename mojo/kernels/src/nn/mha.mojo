@@ -24,7 +24,7 @@ from gpu import (
     warp_reduce,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import _get_info_from_target
+from gpu.host.info import _get_info_from_target, has_nvidia_gpu
 from gpu.memory import AddressSpace, external_memory
 from gpu.shuffle import warp_broadcast
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams, KVCacheT
@@ -505,7 +505,7 @@ fn flash_attention[
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]() and k.get_block_static_shape().has_value[1]()
         # Current impl has only been verified for depth = 128.
-        alias flash_attention_applicable = head_depth_known and q.shape.get[rank-1]() == 128
+        alias flash_attention_applicable = has_nvidia_gpu() and head_depth_known and q.shape.get[rank-1]() == 128
         alias q_half_float = q.type in (DType.float16, DType.bfloat16)
         # fmt: on
 
