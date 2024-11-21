@@ -228,6 +228,10 @@ class BufferValue(Value):
 class TensorValue(Value):
     """Represents a value semantic tensor within a `Graph`."""
 
+    # Disallow special methods that would fall back to __getitem__ and hang.
+    __contains__ = None
+    __iter__ = None
+
     def __init__(self, value: TensorValueLike) -> None:
         if isinstance(value, mlir.Value) and _graph.type_is_tensor(value.type):
             self._mlir_value = value
