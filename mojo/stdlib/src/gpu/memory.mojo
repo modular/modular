@@ -6,7 +6,7 @@
 """This module includes NVIDIA GPUs memory operations."""
 
 from collections import OptionalReg
-from sys import alignof, bitwidthof, sizeof, is_nvidia_gpu
+from sys import alignof, bitwidthof, sizeof, is_nvidia_gpu, is_amd_gpu, is_gpu
 from sys._assembly import inlined_assembly
 from sys.intrinsics import _RegisterPackType
 
@@ -450,13 +450,19 @@ fn _load_impl[
     prefetch_size: OptionalReg[Int] = None,
     cache_policy: CacheOperation = CacheOperation.ALWAYS,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-    alignment: Int = alignof[Scalar[type]]() if is_nvidia_gpu() else 1,
+    alignment: Int = alignof[Scalar[type]]() if is_gpu() else 1,
 ](ptr: UnsafePointer[Scalar[type]]) -> SIMD[type, width]:
     constrained[
         ptr.address_space == _GPUAddressSpace.GENERIC,
         "must be global address space",
     ]()
     constrained[type.is_numeric(), "type must be numeric"]()
+
+    @parameter
+    if is_amd_gpu():
+        # TODO: KERN-1230
+        constrained[read_only == False]()
+        return ptr.load[width=width]()
 
     @parameter
     if prefetch_size:
