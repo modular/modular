@@ -11,6 +11,7 @@ from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
+from gpu.host.info import has_nvidia_gpu
 from memory import UnsafePointer, memset_zero
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg

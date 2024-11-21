@@ -25,7 +25,7 @@ from gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from gpu.host.info import A100
+from gpu.host.info import A100, has_nvidia_gpu
 from gpu.host._compile import _get_gpu_target
 from gpu.memory import (
     AddressSpace,
@@ -307,6 +307,7 @@ fn _matmul_gpu[
     @parameter
     if (
         matmul_supported_format
+        and has_nvidia_gpu()
         and use_tensor_core
         and multistage_gemm_supported_shape
     ):
