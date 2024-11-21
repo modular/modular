@@ -583,15 +583,27 @@ fn flash_attention[
                 # num warps in M and N, multipled by warp size.
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-                var shared_mem_bytes = 80 * 1024
+                alias accum_type = get_accum_type[q.type]()
+                alias num_pipeline_stages = 4
+                # smem for q + k (and shared by v)
+                var shared_mem_bytes = BM * depth * sizeof[
+                    q.type
+                ]() + num_pipeline_stages * BN * BK * sizeof[
+                    cache_t.get_type()
+                ]()
+                alias num_warps = ceildiv(num_threads, WARP_SIZE)
+
+                # smem for p and warp_scratch
+                shared_mem_bytes += (
+                    BM * BN * sizeof[cache_t.get_type()]()
+                    + 2 * num_warps * BM * sizeof[accum_type]()
+                )
                 alias num_blocks_y = num_heads // group
 
                 alias block_size_warp_shuffle = 16
 
                 @parameter
                 if (not add_attn_mask) and use_warp_shuffle_decoding:
-                    alias accum_type = get_accum_type[q.type]()
-                    alias num_warps = num_threads // WARP_SIZE
                     shared_mem_bytes = (
                         max(
                             # shared memory to store number of logits
@@ -623,7 +635,7 @@ fn flash_attention[
                         depth=depth,
                         num_heads=num_heads,
                         num_threads=num_threads,
-                        num_pipeline_stages=4,
+                        num_pipeline_stages=num_pipeline_stages,
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_score_mod=use_score_mod,
@@ -845,15 +857,26 @@ fn flash_attention[
                 # num warps in M and N, multipled by warp size.
                 alias num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
 
-                var shared_mem_bytes = 80 * 1024
+                alias accum_type = get_accum_type[q.type]()
+                alias num_pipeline_stages = 4
+                # smem for q + k (and shared by v)
+                var shared_mem_bytes = BM * depth * sizeof[
+                    q.type
+                ]() + num_pipeline_stages * BN * BK * sizeof[k.type]()
+                alias num_warps = ceildiv(num_threads, WARP_SIZE)
+
+                # smem for p and warp_scratch
+                shared_mem_bytes += (
+                    BM * BN * sizeof[v.type]()
+                    + 2 * num_warps * BM * sizeof[accum_type]()
+                )
+
                 alias num_blocks_y = num_heads // group
 
                 alias block_size_warp_shuffle = 16
 
                 @parameter
                 if (not add_attn_mask) and use_warp_shuffle_decoding:
-                    alias accum_type = get_accum_type[q.type]()
-                    alias num_warps = num_threads // WARP_SIZE
                     shared_mem_bytes = (
                         max(
                             # shared memory to store number of logits
@@ -883,7 +906,7 @@ fn flash_attention[
                         depth=depth,
                         num_heads=num_heads,
                         num_threads=num_threads,
-                        num_pipeline_stages=4,
+                        num_pipeline_stages=num_pipeline_stages,
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_score_mod=use_score_mod,
@@ -2332,30 +2355,26 @@ fn mha_decoding_single_batch[
     ](q_ptr + int(q_offset))
     var q_gmem_iter = q_gmem_block.tiled_iterator[group, BK, axis=1](0, 0)
 
-    # load q for group = 1 here because it does not work
-    # inside mma for reasons I don't quite understand
-    # TODO: Check why this is required.
-    @parameter
-    if group == 1:
-        for i in range(tid * simd_size, BM * depth, BlockDim.x() * simd_size):
-            var vec = SIMD[q_type, simd_size](0.0)
-            if i < depth:
-                vec = q_ptr.load[
-                    width=simd_size,
-                    alignment = alignof[SIMD[q_type, simd_size]](),
-                ](q_offset + i)
-            row, col = divmod(i, depth)
-            chunk_id, in_chunk_id = divmod(col, BK)
-            if i < BM * depth:
-                UnsafePointer[
-                    Scalar[q_type],
-                    address_space = AddressSpace.SHARED,
-                    alignment = alignof[SIMD[q_type, simd_size]](),
-                ](q_smem.address).store[alignment = alignof[__type_of(vec)]()](
-                    chunk_id * BM * BK + row * BK + in_chunk_id,
-                    vec,
-                )
-
+    # Preload q for all groups as loading in mma causes race condition
+    for i in range(tid * simd_size, BM * depth, BlockDim.x() * simd_size):
+        var vec = SIMD[q_type, simd_size](0.0)
+        if i < depth * group:
+            vec = q_ptr.load[
+                width=simd_size,
+                alignment = alignof[SIMD[q_type, simd_size]](),
+            ](q_offset + i)
+        row, col = divmod(i, depth)
+        chunk_id, in_chunk_id = divmod(col, BK)
+        if i < BM * depth:
+            UnsafePointer[
+                Scalar[q_type],
+                address_space = AddressSpace.SHARED,
+                alignment = alignof[SIMD[q_type, simd_size]](),
+            ](q_smem.address).store[alignment = alignof[__type_of(vec)]()](
+                chunk_id * BM * BK + row * BK + in_chunk_id,
+                vec,
+            )
+    barrier()
     # Loop over Key and Value tiles
     for kv_tile_start_row in range(0, num_keys, BN):
         var k_gmem_block = LayoutTensor[
@@ -2371,46 +2390,26 @@ fn mha_decoding_single_batch[
         var kv_tile_num_rows = min(BN, num_keys - kv_tile_start_row)
 
         _ = p_reg_tile.fill(0)
-        if kv_tile_start_row == 0 and group != 1:
-            multistage_mma[
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                num_threads,
-                num_pipeline_stages,
-                True,  # transpose_b
-            ](
-                p_reg_tile,
-                # Pass shared memory iterator to hint not loading from global memory.
-                q_gmem_iter,
-                k_gmem_iter,
-                q_smem_iter,
-                k_smem_iter,
-                depth // BK,
-                num_b_rows=Int(kv_tile_num_rows),
-            )
-        else:
-            multistage_mma[
-                BM,
-                BN,
-                BK,
-                WM,
-                WN,
-                num_threads,
-                num_pipeline_stages,
-                True,  # transpose_b
-            ](
-                p_reg_tile,
-                # Pass shared memory iterator to hint not loading from global memory.
-                q_smem_iter,
-                k_gmem_iter,
-                q_smem_iter,
-                k_smem_iter,
-                depth // BK,
-                num_b_rows=Int(kv_tile_num_rows),
-            )
+        multistage_mma[
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            num_threads,
+            num_pipeline_stages,
+            True,  # transpose_b
+            swizzle_a=False,
+        ](
+            p_reg_tile,
+            # Pass shared memory iterator to hint not loading from global memory.
+            q_smem_iter,
+            k_gmem_iter,
+            q_smem_iter,
+            k_smem_iter,
+            depth // BK,
+            num_b_rows=Int(kv_tile_num_rows),
+        )
 
         scale_and_mask_helper[
             num_n_mmas=num_n_mmas,
