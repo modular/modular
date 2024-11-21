@@ -37,7 +37,7 @@ def buffer_load(
     output = Graph.current._add_op(
         rmo.mo_mutable_load,
         _ChainType().to_mlir(),
-        TensorType(x.dtype, x.shape).to_mlir(),
+        TensorType(x.dtype, x.shape, x.device).to_mlir(),
         in_chain,
         x,
     )

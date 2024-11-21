@@ -653,10 +653,8 @@ class TensorType(Type):
         shape = [
             Dim.from_mlir(_graph.tensor_type_get_dim(t, i)) for i in range(rank)
         ]
-        device = None
         mlir_device = _graph.tensor_type_get_device(t)
-        if mlir_device:
-            device = Device.from_mlir(_graph.tensor_type_get_device(t))
+        device = Device.from_mlir(mlir_device) if mlir_device else None
         return TensorType(DType(dtype), shape, device)
 
     # ===------------------------------------------------------------------=== #
@@ -753,8 +751,15 @@ class BufferType(Type):
     """The element type of the buffer value."""
     shape: Shape
     """The dimensions of the buffer value."""
+    device: Optional[Device]
+    """The device of the tensor value."""
 
-    def __init__(self, dtype: DType, shape: ShapeLike) -> None:
+    def __init__(
+        self,
+        dtype: DType,
+        shape: ShapeLike,
+        device: Optional[Device] = None,
+    ) -> None:
         """Constructs a buffer type.
 
         Args:
@@ -764,6 +769,7 @@ class BufferType(Type):
         """
         self.dtype = dtype
         self.shape = Shape(shape)
+        self.device = device
 
     def to_mlir(self) -> mlir.Type:
         """Converts to an ``mlir.Type`` instance.
@@ -773,11 +779,19 @@ class BufferType(Type):
         """
         if not mlir.Context.current:
             raise RuntimeError("No active mlir Context.")
-        return _graph.buffer_type(
-            mlir.Context.current,
-            _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
-            [dim.to_mlir() for dim in self.shape],
-        )
+        if self.device:
+            return _graph.buffer_type_with_device(
+                mlir.Context.current,
+                _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
+                [dim.to_mlir() for dim in self.shape],
+                self.device.to_mlir(),
+            )
+        else:
+            return _graph.buffer_type(
+                mlir.Context.current,
+                _graph.dtype_type(mlir.Context.current, self.dtype._mlir),
+                [dim.to_mlir() for dim in self.shape],
+            )
 
     @staticmethod
     def from_mlir(t: mlir.Type) -> BufferType:
@@ -797,8 +811,10 @@ class BufferType(Type):
         shape = [
             Dim.from_mlir(_graph.buffer_type_get_dim(t, i)) for i in range(rank)
         ]
+        mlir_device = _graph.buffer_type_get_device(t)
+        device = Device.from_mlir(mlir_device) if mlir_device else None
 
-        return BufferType(DType(dtype), shape)
+        return BufferType(DType(dtype), shape, device)
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors

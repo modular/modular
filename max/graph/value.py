@@ -168,6 +168,11 @@ class BufferValue(Value):
         """Returns the shape of the BufferValue."""
         return self.type.shape
 
+    @property
+    def device(self) -> Optional[Device]:
+        """Returns the device of the BufferValue."""
+        return self.type.device
+
     # dtype and rank are implemented like TensorValue implementation.
     # They use _graph directly to avoid loading the shape dimension if they
     # aren't needed.
@@ -194,7 +199,8 @@ class BufferValue(Value):
     def __repr__(self):
         dtype = self.dtype
         shape = self.shape
-        return f"{type(self).__name__}({dtype=}, {shape=})"
+        device = self.device
+        return f"{type(self).__name__}({dtype=}, {shape=}, {device=})"
 
     def __getitem__(self, index) -> TensorValue:
         x = ops.buffer_load(self)
