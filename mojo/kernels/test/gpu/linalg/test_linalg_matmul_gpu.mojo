@@ -15,6 +15,7 @@ from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
+from sys import is_nvidia_gpu
 
 from utils import IndexList
 from gpu.host.info import DEFAULT_GPU_ARCH
@@ -123,7 +124,10 @@ fn matmul_test_case[
     ctx.enqueue_copy_to_device(mat_a_dev[0], mat_a_host.data)
     ctx.enqueue_copy_to_device(mat_b_dev[0], mat_b_host.data)
 
-    _matmul_gpu(mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx)
+    alias has_tensor_core = is_nvidia_gpu()
+    _matmul_gpu[use_tensor_core=has_tensor_core](
+        mat_c_dev[1], mat_a_dev[1], mat_b_dev[1], ctx
+    )
 
     ctx.enqueue_copy_from_device(mat_c_host.data, mat_c_dev[0])
     ctx.synchronize()
