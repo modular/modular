@@ -1401,7 +1401,7 @@ fn elementwise[
 
         @parameter
         if "cuda" in target:
-            _elementwise_impl_gpu[func, simd_width=simd_width, target=target](
+            _elementwise_impl_gpu[func, simd_width=simd_width](
                 shape, context.get_device_context()
             )
         else:
@@ -1426,7 +1426,7 @@ fn _elementwise_impl[
             func, simd_width, use_blocking_impl=use_blocking_impl
         ](shape)
     else:
-        _elementwise_impl_gpu[func, simd_width, target=target](
+        _elementwise_impl_gpu[func, simd_width](
             shape,
             context,
         )
@@ -1606,8 +1606,6 @@ fn _elementwise_impl_gpu[
     rank: Int, //,
     func: fn[width: Int, rank: Int] (IndexList[rank]) capturing [_] -> None,
     simd_width: UInt,
-    *,
-    target: StringLiteral,
 ](shape: IndexList[rank, **_], ctx: DeviceContext):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
@@ -1616,7 +1614,6 @@ fn _elementwise_impl_gpu[
         rank: The rank of the buffer.
         func: The body function.
         simd_width: The SIMD vector width to use.
-        target: The target to run on.
 
     Args:
         shape: The shape of the buffer.
