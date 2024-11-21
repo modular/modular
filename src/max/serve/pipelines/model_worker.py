@@ -236,6 +236,10 @@ async def model_worker_run_v2(
 
             await asyncio.sleep(0)
 
+    except Exception as e:
+        logger.exception("Failed worker process %d", pid)
+        raise e
+
     finally:
         stopped.set()
         logger.info("Stopped model worker at process %d!", pid)

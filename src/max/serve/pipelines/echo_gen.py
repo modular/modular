@@ -5,9 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
-from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.pipelines.interfaces import (
+    TokenGenerator,
+    TokenGeneratorRequest,
+    TokenGeneratorRequestMessage,
+)
 from max.pipelines import IdentityPipelineTokenizer
 from max.pipelines.response import TextResponse
 
@@ -28,13 +32,32 @@ class EchoPipelineTokenizer(
     async def new_context(
         self, request: TokenGeneratorRequest
     ) -> EchoTokenGeneratorContext:
+        # TODO: This all need attention.
+        # 1. Context creation can use the tokenizer but it doesn't need to be a part of it.
+        # 2. EchoTokenGeneratorContext should be a TextContext
+        # 3. TokenGeneratorRequestMessages will be more strongly typed soon.
+        prompt: str
+        if request.prompt is not None:
+            prompt = request.prompt
+        elif request.messages is not None:
+            prompt = "\n".join(
+                [
+                    str(message["content"])
+                    for message in cast(
+                        list[TokenGeneratorRequestMessage], request.messages
+                    )
+                ]
+            )
+        else:
+            raise ValueError(f"{request} does not provide messages or prompt.")
+
         return EchoTokenGeneratorContext(
-            prompt=request.prompt,
+            prompt=prompt,
             index=0,
             max_tokens=request.max_new_tokens if request.max_new_tokens else len(
-                request.prompt
+                prompt
             ),
-            seq_len=len(request.prompt),
+            seq_len=len(prompt),
         )
 
 

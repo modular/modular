@@ -15,10 +15,13 @@ from typing import AsyncGenerator, List, Literal, Optional, cast
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.applications import State
 from fastapi.responses import Response
-from max.pipelines import PipelineTokenizer
+from max.pipelines import (
+    PipelineTokenizer,
+    TokenGeneratorRequest,
+    TokenGeneratorRequestMessage,
+)
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
-    TokenGeneratorRequest,
 )
 from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.schemas.openai import (  # type: ignore
@@ -200,20 +203,21 @@ def openai_get_content_from_message(message: ChatCompletionRequestMessage):
     )
 
 
-def build_prompt(
+def openai_get_request_messages(
     pipeline: TokenGeneratorPipeline,
     completion_request: CreateChatCompletionRequest,
-) -> str:
-    """Build the chat completion prompt."""
+) -> list[TokenGeneratorRequestMessage]:
+    """Parse (and eventually materialize) TokenGeneratorRequestMessage from
+    the OpenAI ChatCompletionRequest."""
     if isinstance(pipeline.tokenizer, PipelineTokenizer):
-        messages = [
+        messages: list[TokenGeneratorRequestMessage] = [
             {
                 "role": message.root.role,
                 "content": openai_get_content_from_message(message),
             }
             for message in completion_request.messages
         ]
-        return pipeline.tokenizer.apply_chat_template(messages)
+        return messages
     else:
         msg = (
             "pipeline.tokenizer must implement the PipelineTokenizer protocol."
@@ -232,7 +236,6 @@ async def openai_create_chat_completion(
             request_json
         )
         pipeline = get_pipeline(request, completion_request.model)
-        request_prompt = build_prompt(pipeline, completion_request)
 
         logger.info(
             "Processing path, %s, req-id,%s%s, for model, %s.",
@@ -242,10 +245,13 @@ async def openai_create_chat_completion(
             completion_request.model,
         )
 
+        request_messages = openai_get_request_messages(
+            pipeline, completion_request
+        )
         response_generator = OpenAIChatResponseGenerator(pipeline)
         token_request = await response_generator.create_request(
             id=request_id,
-            prompt=request_prompt,
+            messages=request_messages,
             model_name=completion_request.model,
             req_recv_time_ns=request.state.recv_time_ns,
             max_new_tokens=completion_request.max_tokens,
@@ -396,13 +402,13 @@ async def openai_create_completion(
             completion_request.model,
         )
 
-        request_prompt = openai_get_prompt_from_completion_request(
+        response_generator = OpenAICompletionResponseGenerator(pipeline)
+        request_content = openai_get_prompt_from_completion_request(
             completion_request
         )
-        response_generator = OpenAICompletionResponseGenerator(pipeline)
         token_request = await response_generator.create_request(
             id=request_id,
-            prompt=request_prompt,
+            content=request_content,
             model_name=completion_request.model,
             req_recv_time_ns=request.state.recv_time_ns,
             max_new_tokens=completion_request.max_tokens,

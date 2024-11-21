@@ -59,7 +59,14 @@ class PerformanceFakingPipelineTokenizer(
     async def new_context(
         self, request: TokenGeneratorRequest
     ) -> PerformanceFakingContext:
-        encoded_prompt = await self.encode(request.prompt)
+        prompt: str
+        if request.prompt is not None:
+            prompt = request.prompt
+        elif request.messages is not None:
+            prompt = self.apply_chat_template(request.messages)
+        else:
+            raise ValueError(f"{request} does not provide messages or prompt.")
+        encoded_prompt = await self.encode(prompt)
         prompt_length = len(encoded_prompt)
         num_tokens = request.max_new_tokens or prompt_length
         return PerformanceFakingContext(
@@ -67,7 +74,7 @@ class PerformanceFakingPipelineTokenizer(
             0,
             prompt_length,
             num_tokens,
-            request.prompt,
+            prompt,
             np.array(encoded_prompt),
         )
 
