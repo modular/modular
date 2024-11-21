@@ -945,10 +945,10 @@ fn mgp_tensor_spec_equal_static[
 fn mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
 ](spec: StaticTensorSpec[spec_rank]) -> Int:
-    debug_assert(
-        axis < len(spec),
+    constrained[
+        axis < spec_rank,
         "axis for get_dim must be less than rank of TensorSpec",
-    )
+    ]()
     return spec.shape[int(axis)]
 
 
