@@ -510,6 +510,7 @@ private:
     /// Map each global value to its index in the module. We will use this to
     /// materialize global values from bitcode.
     unsigned gvIdx;
+    bool userEmpty = true;
   };
 
   /// Collect all of the immediate global value users of `value`.
@@ -603,7 +604,8 @@ void LLVMModulePerFunctionSplitterImpl::split(
         splitDeps.insert(globalVal);
         return true;
       }
-      if ((info.canBeSplit || info.users.empty()) &&
+
+      if ((info.canBeSplit || info.userEmpty) &&
           isa_and_nonnull<llvm::Function>(globalVal))
         return false;
 
@@ -661,16 +663,13 @@ void LLVMModulePerFunctionSplitterImpl::split(
       continue;
 
     ValueInfo &info = valueInfos[&fn];
-    bool userEmpty = info.users.empty() ||
-                     (info.users.size() == 1 && info.users.contains(&fn));
-
     if (fn.hasInternalLinkage() || fn.hasPrivateLinkage()) {
       // Avoid renaming when linking in MCLink.
       symbolLinkageTypes.insert({fn.getName().str(), fn.getLinkage()});
       fn.setLinkage(llvm::Function::LinkageTypes::WeakAnyLinkage);
     }
 
-    if (info.canBeSplit || userEmpty) {
+    if (info.canBeSplit || info.userEmpty) {
       LLVM_DEBUG(llvm::dbgs()
                      << (count++) << ": split fn: " << fn.getName() << "\n";);
       toSplit.emplace_back(&fn);
@@ -820,5 +819,10 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
         worklist.push_back(&depInfo);
       }
     }
+  }
+
+  for (auto &[value, info] : valueInfos) {
+    info.userEmpty = info.users.empty() ||
+                     (info.users.size() == 1 && info.users.contains(value));
   }
 }
