@@ -2260,9 +2260,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   }
 
   // Insert the implicit trait parameter:
-  // - T: a value of this trait type - the struct conforming to this trait.
+  // - _Self: a value of this trait type - the struct conforming to this trait.
   TraitType traitType = traitOp.bindReference();
-  auto actualType = ParamDeclAttr::get(decl.mangleParamName("T"), traitType);
+  auto actualType =
+      ParamDeclAttr::get(decl.mangleParamName("_Self"), traitType);
 
   MLIRContext *ctx = getContext();
   auto paramArray = ParamDeclArrayAttr::get(ctx, {actualType});
