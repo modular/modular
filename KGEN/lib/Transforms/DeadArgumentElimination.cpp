@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/Runtime/Allocator.h"
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -279,10 +280,13 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
       // Value passed to a normal call. It's only live when the corresponding
       // argument to the called function turns out live.
       RetOrArg Use = createArg(calleeNode->func, use.getOperandNumber());
-      return markIfNotLive(Use, maybeLiveUses);
+      Liveness result = markIfNotLive(Use, maybeLiveUses);
+      if (worklist.empty())
+        return result;
     }
 
-    if (!mlir::isPure((use.getOwner())) ||
+    if ((!mlir::isPure(use.getOwner()) &&
+         !isa<KGENCallOpInterface>(use.getOwner())) ||
         use.getOwner()->mightHaveTrait<OpTrait::IsTerminator>())
       return Live;
 
@@ -469,7 +473,6 @@ static void getOpsToErase(BlockArgument arg,
       continue;
 
     opsToErase.insert(curr);
-
     for (OpResult res : curr->getResults()) {
       for (Operation *user : res.getUsers())
         workList.emplace_back(user);
@@ -488,6 +491,7 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
   SmallVector<ArgConvention> argConventions;
 
   SignatureType currSig = func.getSignature();
+
   for (BlockArgument arg : func.getArguments()) {
     if (liveValues.count(createArg(func, arg.getArgNumber())) == 0) {
       getOpsToErase(arg, opsToErase);
