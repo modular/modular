@@ -732,29 +732,15 @@ fn multistage_gemm_kernel[
                         ](swizzled_idx).cast[c_type](),
                     )
         else:
-            if M % BM == 0:
-                copy_sram_to_dram[
-                    thread_layout = Layout.row_major(
-                        WARP_SIZE * simd_size // WN, WN // simd_size
-                    ),
-                    swizzle=swizzle,
-                ](
-                    c_gmem_warp_tile.vectorize[1, simd_size](),
-                    accum_smem_warp_tile.vectorize[1, simd_size](),
-                )
-            else:
-                copy_sram_to_dram[
-                    thread_layout = Layout.row_major(
-                        WARP_SIZE * simd_size // WN, WN // simd_size
-                    ),
-                    swizzle=swizzle,
-                ](
-                    c_gmem_warp_tile.vectorize[1, simd_size](),
-                    accum_smem_warp_tile.vectorize[1, simd_size](),
-                    c_gmem_warp_tile.distance(c.ptr),
-                    M,
-                    N,
-                )
+            copy_sram_to_dram[
+                thread_layout = Layout.row_major(
+                    WARP_SIZE * simd_size // WN, WN // simd_size
+                ),
+                swizzle=swizzle,
+            ](
+                c_gmem_warp_tile.vectorize[1, simd_size](),
+                accum_smem_warp_tile.vectorize[1, simd_size](),
+            )
 
     # Store FP32 results to FP32 buffer in global memory.
     else:
@@ -790,19 +776,10 @@ fn multistage_gemm_kernel[
                     epilogue[alignment=alignment]((m, n), vec)
 
         else:
-            if M % BM == 0:
-                copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
-                    c_gmem_warp_tile.vectorize[1, 2](),
-                    c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
-                )
-            else:
-                copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
-                    c_gmem_warp_tile.vectorize[1, 2](),
-                    c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
-                    c_gmem_warp_tile.distance(c.ptr),
-                    M,
-                    N,
-                )
+            copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+                c_gmem_warp_tile.vectorize[1, 2](),
+                c_reg_tile.vectorize[1, 2]().transpose(),
+            )
 
 
 fn multistage_gemm_split_k_kernel[
