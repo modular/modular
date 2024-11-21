@@ -266,8 +266,7 @@ void KGEN::buildLateOptPipeline(mlir::PassManager &pm,
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
   pm.addPass(createLowerAsyncFunctions());
-  // TODO (MOCO-805): re-enable dead-arg elimination
-  // if (options.optimizationLevel >= 2)
-  //   pm.addPass(createDeadArgumentElimination());
+  if (options.optimizationLevel >= 2)
+    pm.addPass(createDeadArgumentElimination());
   pm.addPass(createEliminateDeadSymbols());
 }
