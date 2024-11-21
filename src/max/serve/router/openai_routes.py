@@ -408,7 +408,7 @@ async def openai_create_completion(
         )
         token_request = await response_generator.create_request(
             id=request_id,
-            content=request_content,
+            prompt=request_content,
             model_name=completion_request.model,
             req_recv_time_ns=request.state.recv_time_ns,
             max_new_tokens=completion_request.max_tokens,
