@@ -822,7 +822,6 @@ fn _quantized_floor(a: Float64, b: Int) -> Int:
 fn has_amd_gpu() -> Bool:
     """Returns True if the host system has an AMD GPU.
     False otherwise.
-
     Returns:
         True if the host system has an AMD GPU.
     """
@@ -833,7 +832,6 @@ fn has_amd_gpu() -> Bool:
 fn has_nvidia_gpu() -> Bool:
     """Returns True if the host system has an NVIDIA GPU.
     False otherwise.
-
     Returns:
         True if the host system has an NVIDIA GPU.
     """
