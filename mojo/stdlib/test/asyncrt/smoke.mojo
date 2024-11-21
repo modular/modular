@@ -128,11 +128,7 @@ fn main() raises:
     _run_device_info(ctx)
     _run_compute_capability(ctx)
     _run_get_attribute(ctx)
-    if "AMD" in ctx.name():
-        # TODO: GEX-1293 and GEX-1294
-        print("WARNING: Skipping get_stream and peer_access tests for AMD")
-    else:
-        _run_get_stream(ctx)
-        _run_peer_access(ctx)
+    _run_get_stream(ctx)
+    _run_peer_access(ctx)
 
     print("Done.")

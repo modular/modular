@@ -21,10 +21,6 @@ fn expect_eq(val: Bool, expected: Bool, msg: String = "") raises:
         raise Error("expect_eq failed: " + msg)
 
 
-fn is_v2_context() -> Bool:
-    return is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
-
-
 fn kind() -> String:
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
