@@ -362,15 +362,16 @@ fn main() raises:
         if args[i] == "--benchmark" or args[i] == "--benchmark=yes":
             do_benchmark = True
     with DeviceContext() as ctx:
-        # test_dual_matmul[transpose_b=False](ctx, do_benchmark=do_benchmark)
-        # test_dual_matmul[transpose_b=True](ctx, do_benchmark=do_benchmark)
+        test_dual_matmul[transpose_b=False](ctx, do_benchmark=do_benchmark)
+        test_dual_matmul[transpose_b=True](ctx, do_benchmark=do_benchmark)
         alias Ms = StaticTuple[Int, 3](128, 256, 1024)
         alias N = 14336
         alias K = 4096
         for m_idx in range(len(Ms)):
             var M = Ms[m_idx]
-            # print("m_idx=", m_idx, "M=", M)
-            # test_dual_matmul[transpose_b=False, N=N, K=K](ctx, M=M, do_benchmark=do_benchmark)
+            test_dual_matmul[transpose_b=False, N=N, K=K](
+                ctx, M=M, do_benchmark=do_benchmark
+            )
             test_dual_matmul[transpose_b=True, N=N, K=K](
                 ctx, M=M, do_benchmark=do_benchmark
             )
