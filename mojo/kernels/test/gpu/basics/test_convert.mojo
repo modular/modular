@@ -13,20 +13,44 @@ from testing import *
 
 def test_convert_asm():
     @parameter
-    fn my_cast[frm: DType, to: DType](x: Scalar[frm]) -> Scalar[to]:
-        return x.cast[to]()
+    fn my_cast[
+        frm: DType, to: DType
+    ](output: UnsafePointer[Scalar[to]], x: Scalar[frm]):
+        output[] = x.cast[to]()
 
     assert_true(
         "cvt.rn.f16.f32"
         in _compile_code_asm[
-            my_cast[DType.float32, DType.float16], emission_kind="asm"
+            my_cast[DType.float32, DType.float16],
+            emission_kind="asm",
+            target = _get_gpu_target["sm_80"](),
+        ]()
+    )
+
+    assert_true(
+        "v_cvt_f16_f32_e32"
+        in _compile_code_asm[
+            my_cast[DType.float32, DType.float16],
+            emission_kind="asm",
+            target = _get_gpu_target["mi300x"](),
         ]()
     )
 
     assert_true(
         "cvt.f32.f16"
         in _compile_code_asm[
-            my_cast[DType.float16, DType.float32], emission_kind="asm"
+            my_cast[DType.float16, DType.float32],
+            emission_kind="asm",
+            target = _get_gpu_target["sm_80"](),
+        ]()
+    )
+
+    assert_true(
+        "v_cvt_f32_f16_e32"
+        in _compile_code_asm[
+            my_cast[DType.float16, DType.float32],
+            emission_kind="asm",
+            target = _get_gpu_target["mi300x"](),
         ]()
     )
 
