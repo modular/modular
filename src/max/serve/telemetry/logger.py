@@ -9,9 +9,9 @@ import logging
 import os
 import platform
 import uuid
-from typing import Optional
+from typing import Optional, Union
 
-from max.serve.telemetry.common import otelBaseUrl, resource
+from max.serve.telemetry.common import otelBaseUrl, logs_resource
 
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -40,10 +40,10 @@ def _getCloudProvider() -> str:
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
 def configureLogging(
-    console_level: int,
+    console_level: Union[int, str],
     file_path: str,
-    file_level: Optional[int] = None,
-    otlp_level: Optional[int] = None,
+    file_level: Union[int, str, None] = None,
+    otlp_level: Union[int, str, None] = None,
 ):
     logging_handlers: list[logging.Handler] = []
 
@@ -84,7 +84,7 @@ def configureLogging(
 
     if otlp_level is not None:
         # Create an OTEL handler
-        logger_provider = LoggerProvider(resource)
+        logger_provider = LoggerProvider(logs_resource)
         set_logger_provider(logger_provider)
         exporter = OTLPLogExporter(endpoint=otelBaseUrl + "/v1/logs")
         logger_provider.add_log_record_processor(

@@ -8,21 +8,17 @@
 
 from __future__ import annotations
 
-import argparse
-import asyncio
 import logging
 import os
-from contextlib import AsyncExitStack, asynccontextmanager
-from functools import partial
-from typing import Mapping, Optional
+from typing import Mapping, Optional, Union
 
 from max.serve.telemetry.logger import configureLogging
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from max.serve.telemetry.metrics import METRICS
 
-console_level: int = logging.INFO
+console_level: Union[int, str] = logging.INFO
 file_path: str = ""
-file_level: Optional[int] = None
-otlp_level: Optional[int] = logging.INFO
+file_level: Union[int, str, None] = None
+otlp_level: Union[int, str, None] = logging.INFO
 if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
     console_level = logging.getLevelName(
         os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"]
@@ -37,8 +33,19 @@ if "MAX_SERVE_LOGS_FILE_PATH" in os.environ:
 if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
     otlp_level = None
 configureLogging(console_level, file_path, file_level, otlp_level)
+METRICS.configure(otlp_level)
+
+import argparse
+import asyncio
+from contextlib import AsyncExitStack, asynccontextmanager
+from functools import partial
 
 from fastapi import FastAPI
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from prometheus_client import disable_created_metrics, make_asgi_app
+from pydantic_settings import CliSettingsSource
+from uvicorn import Config, Server
+
 from max.serve.config import APIType, Settings, api_prefix
 from max.serve.debug import DebugSettings, register_debug
 from max.serve.pipelines.deps import (
@@ -48,10 +55,6 @@ from max.serve.pipelines.deps import (
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
-from max.serve.telemetry.metrics import METRICS
-from prometheus_client import disable_created_metrics, make_asgi_app
-from pydantic_settings import CliSettingsSource
-from uvicorn import Config, Server
 
 ROUTES = {
     APIType.KSERVE: kserve_routes,
@@ -131,7 +134,6 @@ def parse_debug_settings(parser: argparse.ArgumentParser) -> DebugSettings:
 
 
 def make_metrics_app():
-    METRICS.configure(otlp_level)
     disable_created_metrics()
     return make_asgi_app()
 

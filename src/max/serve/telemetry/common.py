@@ -31,16 +31,23 @@ def _getCloudProvider() -> str:
     return ""
 
 
-resource = Resource.create(
+logs_resource = Resource.create(
     {
         "event.domain": "serve",
         "telemetry.session": uuid.uuid4().hex,
-        "enduser.id": "",
+        "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
         "os.type": platform.system(),
         "os.version": platform.release(),
         "cpu.description": platform.processor(),
         "cpu.arch": platform.architecture()[0],
         "system.cloud": _getCloudProvider(),
+        "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
+    }
+)
+
+metrics_resource = Resource.create(
+    {
+        "enduser.id": os.environ.get("MODULAR_USER_ID", ""),
         "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
     }
 )
