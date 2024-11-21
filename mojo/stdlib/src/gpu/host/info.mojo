@@ -811,3 +811,30 @@ fn _quantized_ceil(a: Float64, b: Int) -> Int:
 
 fn _quantized_floor(a: Float64, b: Int) -> Int:
     return int(floor(a / b) * b)
+
+
+# ===----------------------------------------------------------------------===#
+# Detect GPU on host side
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+fn has_amd_gpu() -> Bool:
+    """Returns True if the host system has an AMD GPU.
+    False otherwise.
+
+    Returns:
+        True if the host system has an AMD GPU.
+    """
+    return DEFAULT_GPU.vendor is Vendor.AMD_GPU
+
+
+@always_inline("nodebug")
+fn has_nvidia_gpu() -> Bool:
+    """Returns True if the host system has an NVIDIA GPU.
+    False otherwise.
+
+    Returns:
+        True if the host system has an NVIDIA GPU.
+    """
+    return DEFAULT_GPU.vendor is Vendor.NVIDIA_GPU
