@@ -31,6 +31,7 @@ from compiler_internal import StaticTensorSpec
 from gpu.host._compile import _get_gpu_target
 from linalg.bmm import batched_matmul as _batched_matmul
 from linalg.bmm import batched_matmul_shape
+from linalg.dual_gemm import swishGLU
 from linalg.matmul import matmul as _matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
@@ -284,6 +285,7 @@ fn MOGGExport():
     alias _top_k_shape = top_k_shape
     alias _tile = tile
     alias _tile_shape = tile_shape
+    alias _swishGLU = swishGLU
 
     # kv-cache
     alias _kv_cache_length_h8_d128_bshd_bf16 = kv_cache_length_h8_d128_bshd_bf16
