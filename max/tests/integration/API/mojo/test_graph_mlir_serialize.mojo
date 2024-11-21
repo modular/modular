@@ -15,7 +15,6 @@ from _mlir.ir import Module, Operation
 import _mlir
 from max.graph.type import Type
 from max.graph.graph import _OwnedGraph
-from memory import Arc
 
 
 fn create_graph() raises -> Graph:
