@@ -5,6 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from ._multistage_gemm_gpu import multistage_gemm_kernel
+from .utils import GemmShape, elementwise_epilogue_type
+from .utils_gpu import (
+    MatmulConfig,
+    MatmulKernels,
+    block_swizzle,
+    select_config,
+    _bk_base,
+)
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from collections import OptionalReg
@@ -18,6 +26,7 @@ from gpu import (
     warp_broadcast,
 )
 from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.info import A100
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
@@ -45,16 +54,13 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import (
-    MatmulConfig,
-    block_swizzle,
-)
 from math import ceildiv, exp
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
+from register import register_internal
+from runtime.asyncrt import MojoCallContextPtr
 from os import abort
-from sys import alignof, simdwidthof
+from sys import alignof, simdwidthof, is_defined
 from utils.index import Index
 
 
@@ -215,7 +221,8 @@ fn multistage_dual_mma[
     async_copy_wait_group(num_pipeline_stages - 2)
     barrier()
 
-    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
+    alias accum_type = get_accum_type[a_type, preferred_accum_type=c_type]()
+    alias mma_shape = get_mma_shape[a_type, accum_type]()
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
@@ -229,7 +236,6 @@ fn multistage_dual_mma[
     ]()
     constrained[num_n_mmas % 2 == 0]()
 
-    alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias a_frag_size = frag_size[0]
     alias b_frag_size = frag_size[1]
@@ -414,8 +420,9 @@ fn multistage_dual_gemm_kernel[
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
-        a_type in (DType.float32, DType.bfloat16) and a_type == b_type,
-        "Pipeline gemm only supports tf32 or BF16 mma",
+        a_type in (DType.float32, DType.bfloat16, DType.float16)
+        and a_type == b_type,
+        "Pipeline gemm only supports tf32, BF16 mma, or fp16",
     ]()
 
     alias simd_size = simdwidthof[c_type]()
@@ -516,7 +523,8 @@ fn multistage_dual_gemm_kernel[
     )
 
     # Compute MMA config
-    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
+    alias accum_type = get_accum_type[a_type, preferred_accum_type=c_type]()
+    alias mma_shape = get_mma_shape[a_type, accum_type]()
     alias MMA_M = mma_shape[0]
     alias MMA_N = mma_shape[1]
     alias MMA_K = mma_shape[2]
@@ -524,7 +532,6 @@ fn multistage_dual_gemm_kernel[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // (2 * MMA_N)
 
-    alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias c_frag_size = frag_size[2]
     var c0_reg_tile = tb[accum_type]().row_major[
@@ -744,6 +751,11 @@ fn multistage_dual_gemm[
     var N = c.dim(1)
 
     try:
+        alias smem_usage = config.shared_mem_usage()
+        constrained[
+            smem_usage <= ctx.device_info.shared_memory_per_multiprocessor,
+            "using too much shared memory",
+        ]()
         alias gemm_kernel_type = multistage_dual_gemm_kernel[
             c_type,
             c_layout,
@@ -760,7 +772,7 @@ fn multistage_dual_gemm[
         var gemm_kernel = ctx.compile_function[gemm_kernel_type,](
             threads_per_block=int(config.num_threads()),
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                config.shared_mem_usage()
+                smem_usage
             ),
         )
 
@@ -772,7 +784,7 @@ fn multistage_dual_gemm[
             b1,
             grid_dim=config.grid_dim(M, 2 * N),
             block_dim=config.block_dim(),
-            shared_mem_bytes=config.shared_mem_usage(),
+            shared_mem_bytes=smem_usage,
         )
         ctx.synchronize()
     except e:
@@ -791,14 +803,14 @@ fn multistage_dual_gemm[
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     binary_lambda_fn: binary_fn_type = swilu,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    num_k_partitions: Int = 1,
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
     b0: NDBuffer[b_type, 2, b_shape],
     b1: NDBuffer[b_type, 2, b_shape],
-    runtime_config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     ctx: DeviceContext,
-) raises:
+):
     var tensor_c = from_ndbuffer_row_major(c)
     var tensor_a = from_ndbuffer_row_major(a)
     var tensor_b0 = from_ndbuffer_row_major(b0)
@@ -808,3 +820,305 @@ fn multistage_dual_gemm[
         config=config,
         binary_lambda_fn=binary_lambda_fn,
     ](tensor_c, tensor_a, tensor_b0, tensor_b1, ctx)
+
+
+fn config_in_smem[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_b: Bool, //,
+    max_smem: Int,
+](
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+) -> MatmulConfig[
+    a_type, b_type, c_type, transpose_b
+] as res:
+    var c: __type_of(res) = config
+    var i = 0
+    while c.shared_mem_usage() > max_smem:
+        if c.block_tile_shape[1] >= 256:
+            c = __type_of(res)(
+                block_tile_shape=Index(
+                    c.block_tile_shape[0],
+                    c.block_tile_shape[1] // 2,
+                    c.block_tile_shape[2],
+                ),
+                warp_tile_shape=Index(
+                    c.warp_tile_shape[0],
+                    c.warp_tile_shape[1] if c.warp_tile_shape[1]
+                    >= c.block_tile_shape[1]
+                    // 2 else c.block_tile_shape[1]
+                    // 2,
+                    c.warp_tile_shape[2],
+                ),
+                num_pipeline_stages=c.num_pipeline_stages,
+                num_k_partitions=c.num_k_partitions,
+            )
+        else:
+            c = __type_of(res)(
+                block_tile_shape=Index(
+                    c.block_tile_shape[0] // 2,
+                    c.block_tile_shape[1],
+                    c.block_tile_shape[2],
+                ),
+                warp_tile_shape=Index(
+                    c.warp_tile_shape[0] if c.warp_tile_shape[0]
+                    >= c.block_tile_shape[0]
+                    // 2 else c.block_tile_shape[0]
+                    // 2,
+                    c.warp_tile_shape[1],
+                    c.warp_tile_shape[2],
+                ),
+                num_pipeline_stages=c.num_pipeline_stages,
+                num_k_partitions=c.num_k_partitions,
+            )
+        i += 1
+        if i > 8:
+            abort("too many iterations")
+    return c
+
+
+fn dual_gemm[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList, //,
+    *,
+    transpose_b: Bool,
+    binary_lambda_fn: binary_fn_type = swilu,
+    config: OptionalReg[
+        MatmulConfig[a_type, b_type, c_type, transpose_b]
+    ] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b0: NDBuffer[b_type, 2, b_shape],
+    b1: NDBuffer[b_type, 2, b_shape],
+    ctx: DeviceContext,
+):
+    # TODO: Autotune. Currently, these are a copy+paste of `_matmul_gpu`.
+    #       These should be roughly optimal, as the dual gemm is sort of
+    #       like one gemm where `B` has twice as many columns, but it
+    #       isn't precisely that. Thus, autotuning is reasonable.
+    #       In particular, we will still want to coalesce loads from
+    #       `B0` and `B1`, which means we want
+    #       BN*sizeof[b_type]() >= 128
+    #       although all existing configs from `_matmul_gpu` currently
+    #       satisfy that.
+    var shape = GemmShape.get[transpose_b=transpose_b](c, a, b0)
+    var M = shape.M
+    var N = 2 * shape.N
+    var K = shape.K
+    var multi_gemm_cond = (M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128)
+    alias multistage_gemm_supported_shape = b_shape.all_known[
+        2
+    ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
+    alias matmul_supported_format = (
+        a_type in (DType.float32, DType.bfloat16, DType.float16)
+        and b_type in (DType.float32, DType.bfloat16, DType.float16)
+        and c_type in (DType.float32, DType.bfloat16, DType.float16)
+    )
+    alias max_smem = ctx.device_info.shared_memory_per_multiprocessor
+
+    constrained[matmul_supported_format and multistage_gemm_supported_shape]()
+    if multi_gemm_cond:
+        alias kernels = MatmulKernels[a_type, b_type, c_type, transpose_b]()
+
+        @parameter
+        if is_defined["AUTOTUNING_MODE"]():
+            multistage_dual_gemm[
+                transpose_b=transpose_b,
+                config = kernels.tuning_config,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[b_type, 2, b_shape]](b0),
+                rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                ctx,
+            )
+            return
+
+        # Allow caller to overwrite dispatch heuristic with their own config.
+        @parameter
+        if config:
+            multistage_dual_gemm[
+                transpose_b=transpose_b,
+                config = config.value(),
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                rebind[NDBuffer[c_type, 2, c_shape]](c),
+                rebind[NDBuffer[a_type, 2, a_shape]](a),
+                rebind[NDBuffer[b_type, 2, b_shape]](b0),
+                rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                ctx,
+            )
+            return
+
+        @parameter
+        if (
+            a_type == b_type
+            and a_type.is_half_float()
+            and ctx.device_info is A100
+            and transpose_b
+        ):
+            alias static_K = a_shape.get[1]()
+            alias static_N = c_shape.get[1]()
+            alias warp_shape = Index(64, 64, _bk_base[a_type]())
+
+            @parameter
+            if static_N == 28672 and static_K == 4096:
+                if M <= 128:
+                    alias M128_N28672_K4096_config = config_in_smem[max_smem](
+                        MatmulConfig[a_type, b_type, c_type, transpose_b](
+                            block_tile_shape=Index(128, 128, 32),
+                            warp_tile_shape=warp_shape,
+                            num_pipeline_stages=4,
+                            num_k_partitions=1,
+                        )
+                    )
+                    multistage_dual_gemm[
+                        transpose_b=transpose_b,
+                        config=M128_N28672_K4096_config,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        ctx,
+                    )
+                    return
+                if M <= 256:
+                    alias M256_N28672_K4096_config = config_in_smem[max_smem](
+                        MatmulConfig[a_type, b_type, c_type, transpose_b](
+                            block_tile_shape=Index(64, 256, 64),
+                            warp_tile_shape=warp_shape,
+                            num_pipeline_stages=4,
+                            num_k_partitions=1,
+                        )
+                    )
+                    multistage_dual_gemm[
+                        transpose_b=transpose_b,
+                        config=M256_N28672_K4096_config,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        ctx,
+                    )
+                    return
+                if M <= 512:
+                    alias M512_N28672_K4096_config = config_in_smem[max_smem](
+                        MatmulConfig[a_type, b_type, c_type, transpose_b](
+                            block_tile_shape=Index(128, 128, 32),
+                            warp_tile_shape=warp_shape,
+                            num_pipeline_stages=4,
+                            num_k_partitions=1,
+                        )
+                    )
+                    multistage_dual_gemm[
+                        transpose_b=transpose_b,
+                        config=M512_N28672_K4096_config,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        ctx,
+                    )
+                    return
+                if M <= 1606:
+                    alias M1606_N28672_K4096_config = config_in_smem[max_smem](
+                        MatmulConfig[a_type, b_type, c_type, transpose_b](
+                            block_tile_shape=Index(128, 256, 64),
+                            warp_tile_shape=warp_shape,
+                            num_pipeline_stages=3,
+                            num_k_partitions=1,
+                        )
+                    )
+                    multistage_dual_gemm[
+                        transpose_b=transpose_b,
+                        config=M1606_N28672_K4096_config,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        ctx,
+                    )
+                    return
+                if M <= 2048:
+                    alias M2048_N28672_K4096_config = config_in_smem[max_smem](
+                        MatmulConfig[a_type, b_type, c_type, transpose_b](
+                            block_tile_shape=Index(256, 128, 64),
+                            warp_tile_shape=warp_shape,
+                            num_pipeline_stages=3,
+                            num_k_partitions=1,
+                        )
+                    )
+                    multistage_dual_gemm[
+                        transpose_b=transpose_b,
+                        config=M2048_N28672_K4096_config,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ](
+                        rebind[NDBuffer[c_type, 2, c_shape]](c),
+                        rebind[NDBuffer[a_type, 2, a_shape]](a),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b0),
+                        rebind[NDBuffer[b_type, 2, b_shape]](b1),
+                        ctx,
+                    )
+                    return
+
+        multistage_dual_gemm[
+            transpose_b=transpose_b,
+            config = config_in_smem[max_smem](
+                MatmulConfig[a_type, b_type, c_type, transpose_b]()
+            ),
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](
+            rebind[NDBuffer[c_type, 2, c_shape]](c),
+            rebind[NDBuffer[a_type, 2, a_shape]](a),
+            rebind[NDBuffer[b_type, 2, b_shape]](b0),
+            rebind[NDBuffer[b_type, 2, b_shape]](b1),
+            ctx,
+        )
+        return
+    abort("dual gemm size unsupported.")
+
+
+@register_internal("swishGLU")
+@always_inline
+fn swishGLU[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList, //,
+    target: StringLiteral = "cpu",
+](
+    a: NDBuffer[a_type, 2, a_shape],
+    b0: NDBuffer[b_type, 2, b_shape],
+    b1: NDBuffer[b_type, 2, b_shape],
+    output: NDBuffer[c_type, 2, c_shape],
+    ctx: MojoCallContextPtr,
+):
+    """
+    Reference:
+        GLU Variants Improve Transformer
+        by Noam Shazeer
+        https://arxiv.org/pdf/2002.05202v1
+    The implementation follows cutlass, using one kernel invocation
+    and writing to the destination once.
+    """
+
+    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+    dual_gemm[transpose_b=True](output, a, b0, b1, ctx=ctx.get_device_context())
