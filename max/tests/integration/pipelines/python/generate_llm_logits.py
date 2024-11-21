@@ -34,7 +34,6 @@ import llama3
 import replit.config
 from replit import ReplitModel
 import mistral
-import llama3.vision as llama3_vision
 
 # Tests
 import replit_compat
