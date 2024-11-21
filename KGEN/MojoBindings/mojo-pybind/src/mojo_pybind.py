@@ -172,7 +172,7 @@ def link_mojo_archive_to_dylib(
     if workspace := os.environ.get("BUILD_WORKSPACE_DIRECTORY"):
         ext = "dylib" if platform.system() == "Darwin" else "so"
         mojo_libs = os.path.join(
-            workspace, f".derived/build-debug/bin/libKGENCompilerRT.{ext}"
+            workspace, f".derived/build-debug/lib/libKGENCompilerRTShared.{ext}"
         )
     elif static := os.environ.get("MODULAR_MOJO_MAX_COMPILERRT_PATH"):
         mojo_libs = static
