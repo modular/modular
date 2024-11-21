@@ -2038,6 +2038,29 @@ def POP_FenceOp : POPOp<"fence"> {
 }
 
 //===----------------------------------------------------------------------===//
+// StringCreateOp
+//===----------------------------------------------------------------------===//
+
+def POP_StringCreateOp : POPOp<"string.create", [Pure]> {
+  let summary = "Creates a new String from the provided argument.";
+  let description = [{
+    The `pop.string.create` operation creates a new string value by serializing
+    the input argument.
+
+    Example:
+
+    ```mlir
+    %0 = pop.string.create %val
+    ```
+  }];
+
+  let arguments = (ins AnyType:$value);
+  let results = (outs KGEN_StringType:$result);
+  let assemblyFormat = "$value attr-dict `:` type($value)";
+
+  let hasFolder = 1;
+}
+//===----------------------------------------------------------------------===//
 // StringAddressOp
 //===----------------------------------------------------------------------===//
 

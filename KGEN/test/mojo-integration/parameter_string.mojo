@@ -30,6 +30,14 @@ fn instantiateElsewhere():
     stringInputParam["thrice"]()
 
 
+fn to_string_literal(i: Int) -> StringLiteral:
+    return __mlir_op.`pop.string.create`(i)
+
+
+fn to_string_literal(i: SIMD) -> StringLiteral:
+    return __mlir_op.`pop.string.create`(i)
+
+
 fn main():
     # CHECK: hello world
     StringParam[String("hello") + " " + "world"]().print_it()
@@ -43,3 +51,13 @@ fn main():
     # ELABORATE-COUNT-2: kgen.param.materialize: struct<(struct<(pointer<
     stringInputParamInline[strValue]()
     print(strValue)
+
+    alias s = to_string_literal(33)
+
+    # Check: 33
+    print(s)
+
+    alias t = to_string_literal(Int64(42))
+
+    # Check: #pop<simd 42> : !pop.scalar<si64>
+    print(t)

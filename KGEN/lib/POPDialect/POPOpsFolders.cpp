@@ -1815,6 +1815,25 @@ OpFoldResult VariadicSizeOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// StringCreateOp
+//===----------------------------------------------------------------------===//
+
+OpFoldResult StringCreateOp::fold(FoldAdaptor adaptor) {
+  if (auto val = dyn_cast_if_present<IntegerAttr>(adaptor.getValue())) {
+    return StringAttr::get(Twine(val.getInt()), StringType::get(getContext()));
+  }
+
+  if (auto val = dyn_cast_if_present<SIMDAttr>(adaptor.getValue())) {
+    std::string str;
+    llvm::raw_string_ostream os(str);
+    os << val;
+    return StringAttr::get(str, StringType::get(getContext()));
+  }
+
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // StringAddressOp
 //===----------------------------------------------------------------------===//
 
