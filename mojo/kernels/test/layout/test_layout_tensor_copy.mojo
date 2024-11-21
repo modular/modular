@@ -31,6 +31,10 @@ from layout.layout_tensor import (
     LayoutTensor,
     copy_dram_to_sram_async,
     copy_sram_to_dram,
+    copy_sram_to_local,
+    copy_local_to_sram,
+    copy_local_to_local,
+    copy_local_to_dram,
 )
 from memory import UnsafePointer
 from testing import assert_almost_equal
@@ -38,6 +42,9 @@ from testing import assert_almost_equal
 from utils import IndexList
 
 
+# ======================================================================
+# Kernels
+# ======================================================================
 fn async_copy_kernel[
     input_layout: Layout,
     BM: Int,
@@ -102,11 +109,22 @@ fn async_dynamic_copy_kernel[
     output_layout: Layout,
     BM: Int,
     BN: Int,
+    num_rows: Int,
 ](
     input: LayoutTensor[DType.float32, input_layout],
     output: LayoutTensor[DType.float32, output_layout],
 ):
-    var input_tile = input.tile[BM, BN](BlockIdx.x(), BlockIdx.y())
+    masked_input = LayoutTensor[DType.float32, input_layout, masked=True](
+        input.ptr,
+        RuntimeLayout(
+            RuntimeTuple[input_layout.shape, unsigned=True](
+                num_rows, input.dim(1)
+            ),
+            input.runtime_layout.stride,
+        ),
+    )
+
+    var input_tile = masked_input.tile[BM, BN](BlockIdx.x(), BlockIdx.y())
     var output_tile = output.tile[BM, BN](BlockIdx.x(), BlockIdx.y())
 
     var smem_tile = LayoutTensor[
@@ -115,14 +133,179 @@ fn async_dynamic_copy_kernel[
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
-    smem_tile.copy_from_async(input_tile)
+    smem_tile.copy_from_async[is_masked=True](input_tile)
     async_copy_wait_all()
 
     output_tile.copy_from(smem_tile)
 
 
+fn swizzle_copy[
+    type: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    BM: Int,
+    BK: Int,
+    num_threads: Int,
+](a: LayoutTensor[type, a_layout], b: LayoutTensor[type, b_layout],):
+    alias simd_size = simdwidthof[type]()
+
+    # Double buffer in shared memory.
+    var a_smem_tile = LayoutTensor[
+        type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation().fill(0)
+
+    alias thread_layout = Layout.row_major(
+        num_threads * simd_size // BK, BK // simd_size
+    )
+
+    copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=True,](
+        a_smem_tile.vectorize[1, simd_size](),
+        a.tile[BM, BK](BlockIdx.x(), 0).vectorize[1, simd_size](),
+    )
+
+    async_copy_wait_all()
+    barrier()
+
+    # Write current stage to global memory.
+    var b_gmem_tile = b.tile[BM, BK](BlockIdx.x(), 0)
+    var b_gmem_frag = b_gmem_tile.vectorize[1, simd_size]().distribute[
+        thread_layout
+    ](ThreadIdx.x())
+    var a_smem_frag = a_smem_tile.vectorize[1, simd_size]().distribute[
+        thread_layout
+    ](ThreadIdx.x())
+    b_gmem_frag.copy_from(a_smem_frag)
+
+
+@always_inline
+fn masked_copy_kernel[
+    layout: Layout, num_rows: Int
+](input: LayoutTensor[DType.float32, layout]):
+    alias thread_layout = Layout.row_major(4, 2)
+
+    var masked_input = LayoutTensor[DType.float32, layout, masked=True](
+        input.ptr,
+        RuntimeLayout(
+            RuntimeTuple[layout.shape, unsigned=True](num_rows, input.dim(1)),
+            input.runtime_layout.stride,
+        ),
+    )
+
+    var smem_tile = LayoutTensor[
+        DType.float32, layout, address_space = AddressSpace.SHARED
+    ].stack_allocation().fill(-1.0)
+
+    copy_dram_to_sram_async[thread_layout=thread_layout](
+        smem_tile.vectorize[1, 4](), masked_input.vectorize[1, 4]()
+    )
+
+    async_copy_commit_group()
+    async_copy_wait_all()
+
+    copy_sram_to_dram[thread_layout=thread_layout](
+        input.vectorize[1, 4](),
+        smem_tile.vectorize[1, 4](),
+    )
+
+
+@always_inline
+fn copy_sram_to_dram_kernel[
+    type: DType,
+    layout: Layout,
+    M: Int,
+    N: Int,
+](input: LayoutTensor[type, layout]):
+    alias simd_size = simdwidthof[type]()
+    alias thread_layout = Layout.row_major(simd_size, N // simd_size)
+
+    var smem_tile = LayoutTensor[
+        DType.float32,
+        Layout.row_major(M, N),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+    arange(smem_tile)
+
+    copy_sram_to_dram[thread_layout=thread_layout](
+        input.vectorize[1, simd_size](),
+        smem_tile.vectorize[1, simd_size](),
+    )
+
+
+@always_inline
+fn copy_local_to_local_kernel[
+    type: DType, layout: Layout, WM: Int, WN: Int, MMA_M: Int, MMA_N: Int
+](output: LayoutTensor[type, layout]):
+    alias simd_size = 2
+
+    var reg_tile0 = LayoutTensor[
+        DType.float32,
+        Layout.row_major(MMA_M, MMA_N * simd_size),
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+    arange(reg_tile0)
+
+    var reg_tile1 = LayoutTensor[
+        DType.bfloat16,
+        Layout.row_major(MMA_M, MMA_N * simd_size),
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation().fill(0)
+
+    copy_local_to_local(
+        reg_tile1,
+        reg_tile0,
+    )
+
+    copy_local_to_dram[
+        dst_thread_layout = Layout.row_major(
+            WM // MMA_M, WN // simd_size // MMA_N
+        )
+    ](
+        output.vectorize[1, simd_size](),
+        reg_tile1.vectorize[1, simd_size](),
+    )
+
+
+@always_inline
+fn copy_local_to_sram_kernel[
+    type: DType, layout: Layout, WM: Int, WN: Int, MMA_M: Int, MMA_N: Int
+](output: LayoutTensor[type, layout]):
+    alias simd_size = 2
+
+    var reg_tile0 = LayoutTensor[
+        DType.float32,
+        Layout.row_major(MMA_M, MMA_N * simd_size),
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+    arange(reg_tile0)
+
+    var smem_warp_tile = LayoutTensor[
+        DType.float32,
+        Layout.row_major(WM, WN),
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation().fill(0)
+
+    copy_local_to_sram[
+        thread_layout = Layout.row_major(WM // MMA_M, WN // simd_size // MMA_N)
+    ](
+        smem_warp_tile.vectorize[1, simd_size](),
+        reg_tile0.vectorize[1, simd_size](),
+    )
+
+    copy_sram_to_dram[
+        thread_layout = Layout.row_major(WM // MMA_M, WN // simd_size // MMA_N)
+    ](
+        output.vectorize[1, simd_size](),
+        smem_warp_tile.vectorize[1, simd_size](),
+    )
+
+
+# ======================================================================
+# Tests
+# ======================================================================
 fn test_dynamic_async_copy[
-    M: Int, N: Int, BM: Int, BN: Int, /, skew_M: Int = 0, skew_N: Int = 0
+    M: Int, N: Int, BM: Int, BN: Int, num_rows: Int
 ](ctx: DeviceContext) raises:
     print("=== test_dynamic_async_copy")
 
@@ -133,7 +316,7 @@ fn test_dynamic_async_copy[
     )
 
     alias output_runtime_layout = RuntimeLayout[unknown_layout].row_major(
-        IndexList[2](M - skew_M, N - skew_N)
+        IndexList[2](num_rows, N)
     )
 
     var input = ManagedLayoutTensor[
@@ -154,7 +337,11 @@ fn test_dynamic_async_copy[
     ](output_runtime_layout)
 
     alias kernel_type = async_dynamic_copy_kernel[
-        unknown_layout, unknown_layout, BM, BN
+        unknown_layout,
+        unknown_layout,
+        BM,
+        BN,
+        num_rows,
     ]
 
     var kernel = ctx.compile_function[kernel_type]()
@@ -174,53 +361,6 @@ fn test_dynamic_async_copy[
     _ = output^
 
 
-fn swizzle_copy[
-    type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    BM: Int,
-    BK: Int,
-    num_threads: Int,
-](a: LayoutTensor[type, a_layout], b: LayoutTensor[type, b_layout],):
-    alias simd_size = simdwidthof[type]()
-
-    var M = a.shape[0]()
-    var K = a.shape[1]()
-
-    # Double buffer in shared memory.
-    var a_smem_tile = LayoutTensor[
-        type,
-        Layout.row_major(BM, BK),
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation().fill(0)
-
-    alias thread_layout = Layout.row_major(
-        num_threads * simd_size // BK, BK // simd_size
-    )
-
-    copy_dram_to_sram_async[
-        src_thread_layout=thread_layout,
-        dst_thread_layout=thread_layout,
-        swizzle=True,
-    ](
-        a_smem_tile.vectorize[1, simd_size](),
-        a.tile[BM, BK](BlockIdx.x(), 0).vectorize[1, simd_size](),
-    )
-
-    async_copy_wait_all()
-    barrier()
-
-    # Write current stage to global memory.
-    var b_gmem_tile = b.tile[BM, BK](BlockIdx.x(), 0)
-    var b_gmem_frag = b_gmem_tile.vectorize[1, simd_size]().distribute[
-        thread_layout
-    ](ThreadIdx.x())
-    var a_smem_frag = a_smem_tile.vectorize[1, simd_size]().distribute[
-        thread_layout
-    ](ThreadIdx.x())
-    b_gmem_frag.copy_from(a_smem_frag)
-
-
 fn test_swizzle_copy[
     a_layout: Layout,
     b_layout: Layout,
@@ -229,7 +369,6 @@ fn test_swizzle_copy[
     BM: Int,
     BK: Int,
     num_threads: Int,
-    /,
     skew_M: Int = 0,
 ](ctx: DeviceContext) raises:
     print("=== test_swizzle_copy")
@@ -284,43 +423,10 @@ fn test_swizzle_copy[
     _ = b_tensor^
 
 
-@always_inline
-fn masked_copy_kernel[
-    layout: Layout, num_rows: Int
-](input: LayoutTensor[DType.float32, layout]):
-    alias thread_layout = Layout.row_major(4, 2)
-
-    masked_input = LayoutTensor[DType.float32, layout, masked=True](
-        input.ptr,
-        RuntimeLayout(
-            RuntimeTuple[layout.shape, unsigned=True](num_rows, input.dim(1)),
-            input.runtime_layout.stride,
-        ),
-    )
-
-    var smem_tile = LayoutTensor[
-        DType.float32, layout, address_space = AddressSpace.SHARED
-    ].stack_allocation().fill(-1.0)
-
-    copy_dram_to_sram_async[thread_layout=thread_layout](
-        smem_tile.vectorize[1, 4](), masked_input.vectorize[1, 4]()
-    )
-
-    async_copy_commit_group()
-    async_copy_wait_all()
-
-    copy_sram_to_dram[thread_layout=thread_layout](
-        input.vectorize[1, 4](),
-        smem_tile.vectorize[1, 4](),
-    )
-
-
 fn test_masked_async_copy[
-    layout: Layout, M: Int, N: Int, num_rows: Int
+    layout: Layout, M: Int, N: Int, skew_rows: Int
 ](ctx: DeviceContext) raises:
     print("=== test_masked_async_copy")
-
-    # alias num_threads = thread_layout.size()
 
     alias runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](M, N))
 
@@ -334,7 +440,9 @@ fn test_masked_async_copy[
 
     arange(input.tensor)
 
-    alias kernel_type = masked_copy_kernel[Layout.row_major(M, N), num_rows]
+    alias kernel_type = masked_copy_kernel[
+        Layout.row_major(M, N), M - skew_rows
+    ]
     var kernel = ctx.compile_function[kernel_type]()
 
     ctx.enqueue_function(
@@ -350,43 +458,17 @@ fn test_masked_async_copy[
     _ = input^
 
 
-@always_inline
-fn copy_sram_to_dram_kernel[
-    type: DType,
-    layout: Layout,
-    M: Int,
-    N: Int,
-](input: LayoutTensor[type, layout]):
-    alias simd_size = simdwidthof[type]()
-    alias thread_layout = Layout.row_major(simd_size, N // simd_size)
-
-    var smem_tile = LayoutTensor[
-        DType.float32,
-        Layout.row_major(M, N),
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation()
-    arange(smem_tile)
-
-    copy_sram_to_dram[thread_layout=thread_layout](
-        input.vectorize[1, simd_size](),
-        smem_tile.vectorize[1, simd_size](),
-    )
-
-
 fn test_copy_sram_to_dram[
     type: DType,
     layout: Layout,
     M: Int,
     N: Int,
-    /,
-    *,
     skew_M: Int = 0,
-    skew_N: Int = 0,
 ](ctx: DeviceContext) raises:
     print("=== test_copy_sram_to_dram")
 
     alias runtime_layout = RuntimeLayout[layout].row_major(
-        IndexList[2](M - skew_M, N - skew_N)
+        IndexList[2](M - skew_M, N)
     )
 
     var input = ManagedLayoutTensor[
@@ -397,9 +479,9 @@ fn test_copy_sram_to_dram[
         gpu_managed_alloc_runtime,
     ](runtime_layout)
 
-    alias tile_layout = Layout.row_major(M - skew_M, N - skew_N)
+    alias tile_layout = Layout.row_major(M - skew_M, N)
 
-    var tile_tensor = input.tensor.tile[M - skew_M, N - skew_N](0, 0)
+    var tile_tensor = input.tensor.tile[M - skew_M, N](0, 0)
 
     alias kernel_type = copy_sram_to_dram_kernel[type, tile_layout, M, N]
     var kernel = ctx.compile_function[kernel_type]()
@@ -417,17 +499,80 @@ fn test_copy_sram_to_dram[
     _ = input^
 
 
-fn main() raises:
-    alias unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
+fn test_copy_local_to_local[
+    type: DType,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+](ctx: DeviceContext) raises:
+    print("=== test_copy_local_to_local")
 
-    # TODO: clean up these tests
+    alias layout = Layout.row_major(WM, WN)
+    var output = ManagedLayoutTensor[
+        type,
+        layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+    ]()
+
+    alias kernel_type = copy_local_to_local_kernel[
+        type, layout, WM, WN, MMA_M, MMA_N
+    ]
+    var kernel = ctx.compile_function[kernel_type]()
+
+    ctx.enqueue_function(
+        kernel,
+        output.tensor,
+        grid_dim=(1, 1),
+        block_dim=(8, 1),
+    )
+
+    ctx.synchronize()
+    print(output.tensor)
+
+    _ = output^
+
+
+fn test_copy_local_to_sram[
+    type: DType,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+](ctx: DeviceContext) raises:
+    print("=== test_copy_local_to_sram")
+
+    alias layout = Layout.row_major(WM, WN)
+    var output = ManagedLayoutTensor[
+        type,
+        layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+    ]()
+
+    alias kernel_type = copy_local_to_local_kernel[
+        type, layout, WM, WN, MMA_M, MMA_N
+    ]
+    var kernel = ctx.compile_function[kernel_type]()
+
+    ctx.enqueue_function(
+        kernel,
+        output.tensor,
+        grid_dim=(1, 1),
+        block_dim=(8, 1),
+    )
+
+    ctx.synchronize()
+    print(output.tensor)
+
+    _ = output^
+
+
+fn main() raises:
     with DeviceContext() as ctx:
-        # Matrix dimension
-        alias M = 6
-        alias N = 6
-        # Block dimension
-        alias BM = 2
-        alias BN = 3
         # CHECK: === test_async_copy
         # CHECK: 0.0   2.0   4.0   3.0   5.0   7.0
         # CHECK: 6.0   8.0   10.0   9.0   11.0   13.0
@@ -436,7 +581,13 @@ fn main() raises:
         # CHECK: 24.0   26.0   28.0   27.0   28.0   29.0
         # CHECK: 30.0   31.0   32.0   33.0   34.0   35.0
         alias layout = Layout.row_major(M, N)
-        test_async_copy[layout, M, N, BM, BN](ctx)
+        test_async_copy[
+            Layout.row_major(6, 6),
+            M=6,
+            N=6,
+            BM=2,
+            BN=3,
+        ](ctx)
 
         # CHECK: === test_async_copy
         # CHECK: 0.0   2.0   4.0   3.0   5.0   7.0
@@ -445,22 +596,28 @@ fn main() raises:
         # CHECK: 18.0   20.0   22.0   21.0   23.0   25.0
         # CHECK: 24.0   26.0   28.0   27.0   28.0   29.0
         # CHECK: 30.0   31.0   32.0   33.0   34.0   35.0
-        test_async_copy[unknown_layout, M, N, BM, BN](ctx)
+        test_async_copy[
+            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+            M=6,
+            N=6,
+            BM=2,
+            BN=3,
+        ](ctx)
 
-        # FIXME(KERN-1135)
-        # DISABLED-CHECK: === test_dynamic_async_copy
-        # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0
-        # DISABLED-CHECK: 6.0 7.0 8.0 9.0 10.0 11.0
-        # DISABLED-CHECK: 12.0 13.0 14.0 15.0 16.0 17.0
-        # DISABLED-CHECK: 18.0 19.0 20.0 21.0 22.0 23.0
-        # DISABLED-CHECK: 24.0 25.0 26.0 27.0 28.0 29.0
-        # test_dynamic_async_copy[M, N, BM, BN, skew_M=1, skew_N=0](ctx)
+        # CHECK: === test_dynamic_async_copy
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0
+        # CHECK: 6.0 7.0 8.0 9.0 10.0 11.0
+        # CHECK: 12.0 13.0 14.0 15.0 16.0 17.0
+        # CHECK: 18.0 19.0 20.0 21.0 22.0 23.0
+        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0
+        test_dynamic_async_copy[
+            M=6,
+            N=6,
+            BM=2,
+            BN=3,
+            num_rows=5,
+        ](ctx)
 
-        alias num_threads_swizz = 32
-        alias M_swizz = 8
-        alias K_swizz = 16
-        alias BM_swizz = 8
-        alias BK_swizz = 16
         # CHECK: === test_swizzle_copy
         # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
         # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
@@ -470,16 +627,14 @@ fn main() raises:
         # CHECK: 88.0 89.0 90.0 91.0 92.0 93.0 94.0 95.0 80.0 81.0 82.0 83.0 84.0 85.0 86.0 87.0
         # CHECK: 108.0 109.0 110.0 111.0 104.0 105.0 106.0 107.0 100.0 101.0 102.0 103.0 96.0 97.0 98.0 99.0
         # CHECK: 124.0 125.0 126.0 127.0 120.0 121.0 122.0 123.0 116.0 117.0 118.0 119.0 112.0 113.0 114.0 115.0
-        alias a_layout_swizz = Layout.row_major(M_swizz, K_swizz)
-        alias b_layout_swizz = Layout.row_major(M_swizz, K_swizz)
         test_swizzle_copy[
-            a_layout_swizz,
-            b_layout_swizz,
-            M_swizz,
-            K_swizz,
-            BM_swizz,
-            BK_swizz,
-            num_threads_swizz,
+            Layout.row_major(8, 16),
+            Layout.row_major(8, 16),
+            M=8,
+            K=16,
+            BM=8,
+            BK=16,
+            num_threads=32,
         ](ctx)
 
         # CHECK: == test_swizzle_copy
@@ -492,13 +647,13 @@ fn main() raises:
         # CHECK: 108.0 109.0 110.0 111.0 104.0 105.0 106.0 107.0 100.0 101.0 102.0 103.0 96.0 97.0 98.0 99.0
         # CHECK: 124.0 125.0 126.0 127.0 120.0 121.0 122.0 123.0 116.0 117.0 118.0 119.0 112.0 113.0 114.0 115.0
         test_swizzle_copy[
-            unknown_layout,
-            unknown_layout,
-            M_swizz,
-            K_swizz,
-            BM_swizz,
-            BK_swizz,
-            num_threads_swizz,
+            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+            M=8,
+            K=16,
+            BM=8,
+            BK=16,
+            num_threads=32,
         ](ctx)
 
         # CHECK: === test_swizzle_copy
@@ -511,13 +666,13 @@ fn main() raises:
         # CHECK: 108.0 109.0 110.0 111.0 104.0 105.0 106.0 107.0 100.0 101.0 102.0 103.0 96.0 97.0 98.0 99.0
         # CHECK: 124.0 125.0 126.0 127.0 120.0 121.0 122.0 123.0 116.0 117.0 118.0 119.0 112.0 113.0 114.0 115.0
         test_swizzle_copy[
-            Layout.row_major(UNKNOWN_VALUE, K_swizz),
-            Layout.row_major(UNKNOWN_VALUE, K_swizz),
-            M_swizz,
-            K_swizz,
-            BM_swizz,
-            BK_swizz,
-            num_threads_swizz,
+            Layout.row_major(UNKNOWN_VALUE, 16),
+            Layout.row_major(UNKNOWN_VALUE, 16),
+            M=8,
+            K=16,
+            BM=8,
+            BK=16,
+            num_threads=32,
         ](ctx)
 
         # CHECK: === test_swizzle_copy
@@ -530,19 +685,16 @@ fn main() raises:
         # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
         # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
         test_swizzle_copy[
-            Layout.row_major(UNKNOWN_VALUE, K_swizz),
-            Layout.row_major(UNKNOWN_VALUE, K_swizz),
-            M_swizz,
-            K_swizz,
-            BM_swizz,
-            BK_swizz,
-            num_threads_swizz,
+            Layout.row_major(UNKNOWN_VALUE, 16),
+            Layout.row_major(UNKNOWN_VALUE, 16),
+            M=8,
+            K=16,
+            BM=8,
+            BK=16,
+            num_threads=32,
             skew_M=2,
         ](ctx)
 
-        alias M_masked = 8
-        alias N_masked = 8
-        alias num_rows = 7
         # CHECK: === test_masked_async_copy
         # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
         # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
@@ -552,8 +704,12 @@ fn main() raises:
         # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
         # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
         # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-        alias layout_masked = Layout.row_major(M_masked, N_masked)
-        test_masked_async_copy[layout_masked, M_masked, N_masked, num_rows](ctx)
+        test_masked_async_copy[
+            Layout.row_major(8, 8),
+            M=8,
+            N=8,
+            skew_rows=1,
+        ](ctx)
 
         # CHECK: === test_masked_async_copy
         # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
@@ -564,21 +720,11 @@ fn main() raises:
         # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
         # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
         # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
-        test_masked_async_copy[unknown_layout, M_masked, N_masked, num_rows](
-            ctx
-        )
-
-        # CHECK: == test_copy_sram_to_dram
-        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
-        # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-        # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
-        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-        # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
-        # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-        # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
-        # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-        test_copy_sram_to_dram[
-            DType.float32, layout_masked, M_masked, N_masked
+        test_masked_async_copy[
+            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+            M=8,
+            N=8,
+            skew_rows=1,
         ](ctx)
 
         # CHECK: == test_copy_sram_to_dram
@@ -591,22 +737,74 @@ fn main() raises:
         # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
         # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
         test_copy_sram_to_dram[
-            DType.bfloat16, unknown_layout, M_masked, N_masked
+            DType.float32,
+            Layout.row_major(8, 8),
+            M=8,
+            N=8,
         ](ctx)
 
-        # === test_copy_sram_to_dram
-        # 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
-        # 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-        # 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
-        # 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-        # 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
-        # 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-        # 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+        # CHECK: == test_copy_sram_to_dram
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+        # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+        # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+        # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+        # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+        # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+        # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+        test_copy_sram_to_dram[
+            DType.bfloat16,
+            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+            M=8,
+            N=8,
+        ](ctx)
+
+        # CHECK: === test_copy_sram_to_dram
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+        # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+        # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+        # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+        # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+        # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
         test_copy_sram_to_dram[
             DType.bfloat16,
             Layout.row_major(UNKNOWN_VALUE, 8),
-            8,
-            8,
+            M=8,
+            N=8,
             skew_M=1,
-            skew_N=0,
+        ](ctx)
+
+        # CHECK: === test_copy_local_to_local
+        # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+        # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+        # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+        # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+        # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+        # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+        # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+        # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+        test_copy_local_to_local[
+            DType.bfloat16,
+            WM=8,
+            WN=16,
+            MMA_M=4,
+            MMA_N=4,
+        ](ctx)
+
+        # CHECK: === test_copy_local_to_sram
+        # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+        # CHECK: 0.0 1.0 0.0 1.0 2.0 3.0 2.0 3.0 4.0 5.0 4.0 5.0 6.0 7.0 6.0 7.0
+        # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+        # CHECK: 16.0 17.0 16.0 17.0 18.0 19.0 18.0 19.0 20.0 21.0 20.0 21.0 22.0 23.0 22.0 23.0
+        # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+        # CHECK: 8.0 9.0 8.0 9.0 10.0 11.0 10.0 11.0 12.0 13.0 12.0 13.0 14.0 15.0 14.0 15.0
+        # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+        # CHECK: 24.0 25.0 24.0 25.0 26.0 27.0 26.0 27.0 28.0 29.0 28.0 29.0 30.0 31.0 30.0 31.0
+        test_copy_local_to_sram[
+            DType.bfloat16,
+            WM=8,
+            WN=16,
+            MMA_M=4,
+            MMA_N=4,
         ](ctx)
