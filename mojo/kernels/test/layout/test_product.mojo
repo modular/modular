@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: asan
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout.dynamic_tuple import *
