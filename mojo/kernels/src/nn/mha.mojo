@@ -1740,12 +1740,22 @@ fn mha_single_batch[
                     n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
                 ] *= rowsum_inv1
 
+    alias output_gmem_layout = Layout(
+        IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
+    )
     var output_gmem_tile = LayoutTensor[
-        output_type,
-        Layout(
-            IntTuple(Int(BM), Int(depth)), IntTuple(Int(num_heads * depth), 1)
+        output_type, output_gmem_layout, masked=True
+    ](
+        output_ptr + int(q_offset),
+        RuntimeLayout(
+            RuntimeTuple[output_gmem_layout.shape, unsigned=True](
+                int(q_tile_num_rows), depth
+            ),
+            RuntimeTuple[output_gmem_layout.stride, unsigned=True](
+                num_heads * depth, 1
+            ),
         ),
-    ](output_ptr + int(q_offset))
+    )
     var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
         int(warp_y), int(warp_x)
     )
@@ -1787,20 +1797,11 @@ fn mha_single_batch[
         ](
             output_gmem_tile.vectorize[1, simd_size](),
             accum_smem_tile.vectorize[1, simd_size](),
-            int(q_offset),
-            # Equivalent as storing to seq_len x (num_heads * depth) matrix.
-            seq_len,
-            num_heads * depth,
         )
     else:
         copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
             output_gmem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.bitcast[output_type]()
-            .vectorize[1, 2]()
-            .transpose(),
-            output_gmem_warp_tile.distance(output_ptr),
-            seq_len,
-            num_heads * depth,
+            output_reg_tile.vectorize[1, 2]().transpose(),
         )
 
 
@@ -2330,10 +2331,6 @@ fn mha_decoding_single_batch[
         Layout.row_major(group, depth),
     ](q_ptr + int(q_offset))
     var q_gmem_iter = q_gmem_block.tiled_iterator[group, BK, axis=1](0, 0)
-
-    # q tile has valid shape q_tile_num_rows x depth
-    # q_tile_num_rows could be less than BM when seqlen % BM != 0
-    var q_tile_num_rows = group
 
     # load q for group = 1 here because it does not work
     # inside mma for reasons I don't quite understand
