@@ -695,18 +695,12 @@ fn multistage_gemm_q[
             ](
                 c_gmem_warp_tile.vectorize[1, simd_size](),
                 accum_smem_warp_tile.vectorize[1, simd_size](),
-                c_gmem_warp_tile.distance(c.ptr),
-                M,
-                N,
             )
 
     else:
         copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
             c_gmem_warp_tile.vectorize[1, 2](),
-            c_reg_tile.bitcast[c_type]().vectorize[1, 2]().transpose(),
-            c_gmem_warp_tile.distance(c.ptr),
-            M,
-            N,
+            c_reg_tile.vectorize[1, 2]().transpose(),
         )
 
 

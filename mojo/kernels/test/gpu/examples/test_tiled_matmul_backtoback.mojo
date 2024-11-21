@@ -287,8 +287,6 @@ fn b2b_gemm[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
-    var num_rows_a = min(BM, int(M) - block_idx[1] * BM)
-
     alias accum_type = get_accum_type[in_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias a_frag_size = frag_size[0]
@@ -514,29 +512,15 @@ fn b2b_gemm[
                         ](swizzled_idx).cast[d_type](),
                     )
         else:
-            if M % BM == 0:
-                copy_sram_to_dram[
-                    thread_layout = Layout.row_major(
-                        WARP_SIZE * simd_size // WN, WN // simd_size
-                    ),
-                    swizzle=swizzle,
-                ](
-                    d_gmem_warp_tile.vectorize[1, simd_size](),
-                    accum_smem_warp_tile.vectorize[1, simd_size](),
-                )
-            else:
-                copy_sram_to_dram[
-                    thread_layout = Layout.row_major(
-                        WARP_SIZE * simd_size // WN, WN // simd_size
-                    ),
-                    swizzle=swizzle,
-                ](
-                    d_gmem_warp_tile.vectorize[1, simd_size](),
-                    accum_smem_warp_tile.vectorize[1, simd_size](),
-                    d_gmem_warp_tile.distance(D.ptr),
-                    M,
-                    N,
-                )
+            copy_sram_to_dram[
+                thread_layout = Layout.row_major(
+                    WARP_SIZE * simd_size // WN, WN // simd_size
+                ),
+                swizzle=swizzle,
+            ](
+                d_gmem_warp_tile.vectorize[1, simd_size](),
+                accum_smem_warp_tile.vectorize[1, simd_size](),
+            )
 
     # Store FP32 results to FP32 buffer in global memory.
     else:
@@ -573,10 +557,7 @@ fn b2b_gemm[
         else:
             copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
                 d_gmem_warp_tile.vectorize[1, 2](),
-                d_reg_tile.bitcast[d_type]().vectorize[1, 2]().transpose(),
-                d_gmem_warp_tile.distance(D.ptr),
-                M,
-                N,
+                d_reg_tile.vectorize[1, 2]().transpose(),
             )
 
 
