@@ -35,7 +35,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   SmallVector<TypedAttr> params;
   ArrayRef<Type> paramTypes = signature.getParamTypes();
 
-  // Add trait's T replacement.
+  // Add trait's _Self param replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, trait));
   ParserParamEvaluator evaluator(emitter.getDeclResolver(), params);
   auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
