@@ -1991,62 +1991,6 @@ struct LayoutTensor[
             dst_element.transfer(src_element)
 
     @always_inline
-    fn copy_from(
-        self,
-        other: LayoutTensor,
-        offset: Int,
-        rows: Int,
-        cols: Int,
-    ):
-        alias other_layout = other.layout
-
-        alias dst_size = layout.size()
-        alias src_size = other_layout.size()
-
-        alias dst_element_size = int(self.element_size)
-        alias src_element_size = int(other.element_size)
-
-        constrained[
-            layout.known_shape() and other_layout.known_shape(),
-            "copy_from must move data of statically known shape",
-        ]()
-
-        constrained[
-            dst_size == src_size, "copy_from should move data of the same size"
-        ]()
-
-        constrained[
-            dst_element_size == src_element_size, "copy_from should move"
-        ]()
-
-        @parameter
-        for i in range(dst_size):
-            alias src_idx = other_layout(i)
-            alias dst_static_idx = self.layout(i)
-
-            var dst_idx = 0
-
-            @parameter
-            if self.layout.all_dims_known():
-                dst_idx = dst_static_idx
-            else:
-                dst_idx = self.runtime_layout(i)
-
-            if offset + dst_idx < rows * cols:
-                var src_element = Element[dtype, other.element_layout].load(
-                    rebind[UnsafePointer[Scalar[dtype], other.address_space]](
-                        other.ptr
-                    ).offset(src_idx),
-                    other.runtime_element_layout,
-                )
-                alias dst_element_type = Element[dtype, self.element_layout]
-                dst_element_type(
-                    rebind[dst_element_type.element_data_type](
-                        src_element.element_data
-                    )
-                ).store(self.ptr.offset(dst_idx))
-
-    @always_inline
     fn copy_from_async[
         is_masked: Bool = False,
         swizzle: OptionalReg[Swizzle] = None,
@@ -2462,114 +2406,78 @@ fn copy_sram_to_dram[
         alias num_stores_per_thread = dst_fragments.layout.size()
 
         @parameter
-        for i in range(num_stores_per_thread):
-            var dst_idx = 0
-            alias src_idx = src_fragments.layout(i)
-            alias dst_static_idx = dst_fragments.layout(i)
+        if not dst_fragments.masked:
 
             @parameter
-            if dst_fragments.layout.all_dims_known():
-                dst_idx = dst_static_idx
-            else:
-                dst_idx = dst_fragments.runtime_layout(i)
-            var swizzled_idx = src_frag_offset + src_idx
+            for i in range(num_stores_per_thread):
+                alias src_idx = src_fragments.layout(i)
+                alias dst_idx = dst_fragments.layout(i)
+                var swizzled_idx = src_frag_offset + src_idx
 
-            @parameter
-            if swizzle:
-                alias swizzle_fn = swizzle.value()
-                alias src_idx_base = src_idx % swizzle_fn.size()
-                alias src_idx_diff = src_idx - src_idx_base
-                # `src_frag_offset + src_idx_base` should be a value already seen
-                # in the unrolled loop. Hopefully compiler can eleminate the duplicated
-                # xor computation.
-                swizzled_idx = (
-                    swizzle_fn(src_frag_offset + src_idx_base) + src_idx_diff
-                )
-            var src_vec = src.ptr.load[width=simd_size, alignment=src_align](
-                swizzled_idx
-            )
-            dst_fragments.ptr.store[alignment=dst_align](
-                dst_idx, src_vec.cast[dst.dtype]()
-            )
-
-
-@always_inline
-fn copy_sram_to_dram[
-    thread_layout: Layout,
-    swizzle: OptionalReg[Swizzle] = None,
-](dst: LayoutTensor, src: LayoutTensor, offset: Int, rows: Int, cols: Int):
-    constrained[
-        dst.address_space == _GPUAddressSpace.GENERIC,
-        "dst address space must be GENERIC.",
-    ]()
-
-    constrained[
-        src.address_space == _GPUAddressSpace.SHARED,
-        "src address space must be SHARED.",
-    ]()
-
-    var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[thread_layout](ThreadIdx.x())
-    var thread_offset = offset + dst_fragments.distance(dst.ptr)
-
-    @parameter
-    if src.dtype == dst.dtype and not swizzle:
-        dst_fragments.copy_from(src_fragments)
-    else:
-        constrained[
-            src.dtype == dst.dtype
-            or (src.dtype == DType.float32 and dst.dtype.is_half_float()),
-            "Only support FP32 -> half precision downcast during copy.",
-        ]()
-
-        alias simd_size = simdwidthof[dst.dtype]()
-        # TODO: generalize the copy to non-scalar case if possible.
-        constrained[
-            src.element_layout.size() == simd_size
-            and dst.element_layout.size() == simd_size,
-            "Only FP32 -> half precision downcast for vectorized copy.",
-        ]()
-
-        alias num_stores_per_thread = dst_fragments.layout.size()
-        alias src_align = alignof[SIMD[src.dtype, simdwidthof[src.dtype]()]]()
-        alias dst_align = alignof[SIMD[dst.dtype, simd_size]]()
-
-        var src_frag_offset = src_fragments.distance(src.ptr)
-
-        @parameter
-        for i in range(num_stores_per_thread):
-            alias src_idx = src_fragments.layout(i)
-            alias dst_static_idx = dst_fragments.layout(i)
-
-            var dst_idx = 0
-
-            @parameter
-            if dst.layout.all_dims_known():
-                dst_idx = dst_static_idx
-            else:
-                dst_idx = dst_fragments.runtime_layout(i)
-
-            var swizzled_idx = src_frag_offset + src_idx
-
-            @parameter
-            if swizzle:
-                alias swizzle_fn = swizzle.value()
-                alias src_idx_base = src_idx % swizzle_fn.size()
-                alias src_idx_diff = src_idx - src_idx_base
-                # `src_frag_offset + src_idx_base` should be a value already seen
-                # in the unrolled loop. Hopefully compiler can eleminate the duplicated
-                # xor computation.
-                swizzled_idx = (
-                    swizzle_fn(src_frag_offset + src_idx_base) + src_idx_diff
-                )
-
-            if thread_offset + dst_idx < rows * cols:
-                var src_vec = (src.ptr).load[
+                @parameter
+                if swizzle:
+                    alias swizzle_fn = swizzle.value()
+                    alias src_idx_base = src_idx % swizzle_fn.size()
+                    alias src_idx_diff = src_idx - src_idx_base
+                    # `src_frag_offset + src_idx_base` should be a value already seen
+                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # xor computation.
+                    swizzled_idx = (
+                        swizzle_fn(src_frag_offset + src_idx_base)
+                        + src_idx_diff
+                    )
+                var src_vec = src.ptr.load[
                     width=simd_size, alignment=src_align
                 ](swizzled_idx)
                 dst_fragments.ptr.store[alignment=dst_align](
                     dst_idx, src_vec.cast[dst.dtype]()
                 )
+        else:
+            alias static_stride = dst.layout.stride[0].value()
+
+            @parameter
+            if dst.layout.all_dims_known():
+                stride = static_stride
+            else:
+                stride = dst.runtime_layout.stride.value[0]
+            var dst_frag_offset = dst_fragments.distance(dst.ptr)
+            var dst_idx_bound = dst.dim(0) * stride - dst_frag_offset
+
+            @parameter
+            for i in range(num_stores_per_thread):
+                alias src_idx = src_fragments.layout(i)
+                alias dst_static_idx = dst_fragments.layout(i)
+
+                var dst_idx = 0
+
+                @parameter
+                if dst.layout.all_dims_known():
+                    dst_idx = dst_static_idx
+                else:
+                    dst_idx = dst_fragments.runtime_layout(i)
+
+                var swizzled_idx = src_frag_offset + src_idx
+
+                @parameter
+                if swizzle:
+                    alias swizzle_fn = swizzle.value()
+                    alias src_idx_base = src_idx % swizzle_fn.size()
+                    alias src_idx_diff = src_idx - src_idx_base
+                    # `src_frag_offset + src_idx_base` should be a value already seen
+                    # in the unrolled loop. Hopefully compiler can eleminate the duplicated
+                    # xor computation.
+                    swizzled_idx = (
+                        swizzle_fn(src_frag_offset + src_idx_base)
+                        + src_idx_diff
+                    )
+
+                if dst_idx < dst_idx_bound:
+                    var src_vec = (src.ptr).load[
+                        width=simd_size, alignment=src_align
+                    ](swizzled_idx)
+                    dst_fragments.ptr.store[alignment=dst_align](
+                        dst_idx, src_vec.cast[dst.dtype]()
+                    )
 
 
 # Copy from SRAM to local memory.
@@ -2625,32 +2533,49 @@ fn copy_local_to_dram[
     ]()
 
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
-    dst_fragments.copy_from(src)
 
+    @parameter
+    if not dst_fragments.masked:
+        dst_fragments.copy_from(src)
+    else:
+        var dst_frag_offset = dst_fragments.distance(dst.ptr)
+        alias static_stride = dst.layout.stride[0].value()
 
-# Copy local memory to DRAM, thread affinity is needed only for dst fragments.
-#
-@always_inline
-fn copy_local_to_dram[
-    dst_thread_layout: Layout,
-](dst: LayoutTensor, src: LayoutTensor, offset: Int, rows: Int, cols: Int):
-    constrained[
-        dst.dtype == src.dtype, "dst dtype must be the same as src dtype."
-    ]()
+        @parameter
+        if dst.layout.all_dims_known():
+            stride = static_stride
+        else:
+            stride = dst.runtime_layout.stride.value[0]
+        var dst_idx_bound = dst.dim(0) * stride - dst_frag_offset
 
-    constrained[
-        src.address_space == _GPUAddressSpace.LOCAL,
-        "src address space must be LOCAL.",
-    ]()
+        alias num_stores_per_thread = dst_fragments.layout.size()
 
-    constrained[
-        dst.address_space == _GPUAddressSpace.GENERIC,
-        "dst address space must be GENERIC.",
-    ]()
+        @parameter
+        for i in range(num_stores_per_thread):
+            alias src_idx = src.layout(i)
+            alias dst_static_idx = dst_fragments.layout(i)
 
-    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
-    var thread_offset = dst_fragments.distance(dst.ptr) + offset
-    dst_fragments.copy_from(src, thread_offset, rows, cols)
+            var dst_idx = 0
+
+            @parameter
+            if dst_fragments.layout.all_dims_known():
+                dst_idx = dst_static_idx
+            else:
+                dst_idx = dst_fragments.runtime_layout(i)
+
+            if dst_idx < dst_idx_bound:
+                var src_element = Element[dst.dtype, src.element_layout].load(
+                    rebind[UnsafePointer[Scalar[dst.dtype], src.address_space]](
+                        src.ptr
+                    ).offset(src_idx),
+                    src.runtime_element_layout,
+                )
+                alias dst_element_type = Element[dst.dtype, dst.element_layout]
+                dst_element_type(
+                    rebind[dst_element_type.element_data_type](
+                        src_element.element_data
+                    )
+                ).store(dst_fragments.ptr.offset(dst_idx))
 
 
 @always_inline
