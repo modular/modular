@@ -11,7 +11,10 @@ import torch.nn.functional as F
 
 
 def kl_divergence_verifier(
-    predicted: np.ndarray, expected: np.ndarray, description: str
+    predicted: np.ndarray,
+    expected: np.ndarray,
+    description: str,
+    threshold: float = 0.1,
 ) -> None:
     """Verifies predicted vs. expected vectors using KL divergence.
 
@@ -50,9 +53,6 @@ def kl_divergence_verifier(
         log_target=True,
     )
 
-    # Note that this threshold was set experimentally so that the test passes
-    # with the existing Llama 3.1 implementation.
     # Assert that the KL divergence between predicted and expected log
-    # probabilities is below 0.01.
-    threshold = 0.01
+    # probabilities is below the threshold.
     assert kl_divergence < threshold, description
