@@ -27,7 +27,7 @@ from max.pipelines import (
     TextGenerationPipeline,
     HuggingFaceFile,
 )
-from max.pipelines import kv_cache
+from max.pipelines import kv_cache, PIPELINE_REGISTRY
 
 # Pipelines
 import llama3
@@ -218,10 +218,9 @@ class LlamaPipelineOracle(PipelineOracle):
                 in ["bfloat16", "float32"] else kv_cache.KVCacheStrategy.NAIVE
             ),
         )
-        tokenizer = TextTokenizer(config)
-        generator = llama3.Llama3TokenGenerator(config, tokenizer.eos)
+        tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
         return MaxPipelineAndTokenizer(
-            model=generator.model, generator=generator, tokenizer=tokenizer
+            model=pipeline.model, generator=pipeline, tokenizer=tokenizer
         )
 
     def _config_path_for(self, version: str, encoding: str) -> Path:
