@@ -148,7 +148,7 @@ class SafetensorWeights:
         else:
             full_path = str(attr)
         if not any(name.startswith(full_path) for name in self._tensors):
-            raise AttributeError(f"No weight {full_path} found")
+            raise KeyError(f"No weight {full_path} found")
         return SafetensorWeights(
             self._filepaths,
             self._tensors,
