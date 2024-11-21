@@ -245,7 +245,10 @@ def model_worker_run_v2_sync(
     factories: TokenGeneratorFactoryMap,
     configs: Mapping[str, TokenGeneratorPipelineConfig],
 ):
-    asyncio.run(model_worker_run_v2(factories, configs))
+    try:
+        asyncio.run(model_worker_run_v2(factories, configs))
+    except KeyboardInterrupt:
+        pass
 
 
 def should_schedule_ce(
