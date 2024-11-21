@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# UNSUPPORTED: asan
 # RUN: %mojo %s | FileCheck %s
 
 from runtime.asyncrt import run
