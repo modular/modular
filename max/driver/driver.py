@@ -22,7 +22,6 @@ class Device:
 
     # Note: External users should never initialize these fields themselves.
     _device: _Device
-    id: int = -1
 
     def __str__(self) -> str:
         return str(self._device)
@@ -45,15 +44,25 @@ class Device:
         stat["timestamp"] = datetime.now().isoformat()
         return stat
 
+    @property
+    def label(self) -> str:
+        """Returns device label."""
+        return self._device.label
+
+    @property
+    def id(self) -> int:
+        """Returns device id."""
+        return self._device.id
+
     @classmethod
     def cpu(cls, id: int = -1) -> Device:
         """Creates a CPU device with the provided numa id."""
-        return cls(_cpu_device(id), id)
+        return cls(_cpu_device(id))
 
     @classmethod
     def cuda(cls, id: int = -1) -> Device:
         """Creates a CUDA device with the provided id."""
-        return cls(_cuda_device(id), id)
+        return cls(_cuda_device(id))
 
 
 def CPU(id: int = -1) -> Device:
