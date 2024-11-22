@@ -6,6 +6,7 @@
 
 import pytest
 from functools import wraps
+from typing import Sequence
 
 from max.dtype import DType
 from max.driver import Tensor
@@ -19,6 +20,7 @@ from max.pipelines import (
     PipelineModel,
     PipelineConfig,
     HuggingFaceFile,
+    ModelOutputs,
 )
 from max.pipelines.context import InputContext
 from max.pipelines.kv_cache import (
@@ -44,12 +46,12 @@ def prepare_registry(func):
 class DummyPipelineModel(PipelineModel):
     """A pipeline model with setup, input preparation and execution methods."""
 
-    def execute(self, *model_inputs: Tensor) -> tuple[Tensor, ...]:
+    def execute(self, *model_inputs: Tensor) -> ModelOutputs:
         """Runs the graph."""
-        return model_inputs[0]  # type: ignore
+        return ModelOutputs(next_token_logits=model_inputs[0])
 
     def prepare_initial_token_inputs(
-        self, context_batch: list[InputContext]
+        self, context_batch: Sequence[InputContext]
     ) -> tuple[Tensor, ...]:
         """Prepares the initial inputs to be passed to `.execute()`.
 

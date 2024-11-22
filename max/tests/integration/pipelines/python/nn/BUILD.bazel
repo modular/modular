@@ -90,6 +90,7 @@ modular_py_test(
         requirement("gguf"),
         requirement("pytest-mock"),
         requirement("pytest-asyncio"),
+        requirement("scipy"),
     ],
 )
 
