@@ -22,7 +22,8 @@ def LIT_TypeConvention : I32EnumAttr<"TypeConvention",
   I32EnumAttrCase<"MemoryOnly", 0, "memory_only">,
   I32EnumAttrCase<"RegisterPassable", 1, "register_passable">,
   // TODO(#14086): Trivial should be a separate thing.
-  I32EnumAttrCase<"RegisterPassableTrivial", 2, "register_passable_trivial">
+  I32EnumAttrCase<"RegisterPassableTrivial", 2, "register_passable_trivial">,
+  I32EnumAttrCase<"Unspecified", 3, "unspecified">
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;

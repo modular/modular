@@ -987,7 +987,8 @@ static ParseResult parseTypeConvention(AsmParser &p, TypeConvention &value) {
   if (succeeded(p.parseOptionalKeyword(
           &str, {stringifyEnum(TypeConvention::MemoryOnly),
                  stringifyEnum(TypeConvention::RegisterPassable),
-                 stringifyEnum(TypeConvention::RegisterPassableTrivial)})))
+                 stringifyEnum(TypeConvention::RegisterPassableTrivial),
+                 stringifyEnum(TypeConvention::Unspecified)})))
     value = *symbolizeTypeConvention(str);
   return success();
 }
@@ -1614,6 +1615,7 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), TypeLineageArrayAttr::get(ctx, {}),
+        /*convention=*/TypeConvention::Unspecified,
         /*dtorSig=*/{}, /*docString=*/{}, /*deprecationWarning=*/{},
         /*linearTypeErrorMsg*/ {});
   result.regions[0]->push_back(new Block());

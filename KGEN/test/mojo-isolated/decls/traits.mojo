@@ -962,3 +962,13 @@ struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
 @register_passable("trivial")
 struct ParamType[x: int]:
     pass
+
+# CHECK: lit.trait.decl @RGTrait{{.*}} register_passable
+@register_passable
+trait RGTrait:
+    pass
+
+# CHECK-LABEL: lit.trait.decl @RGTrivialTrait{{.*}} register_passable_trivial
+@register_passable("trivial")
+trait RGTrivialTrait:
+    pass

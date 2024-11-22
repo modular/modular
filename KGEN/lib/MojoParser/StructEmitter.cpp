@@ -634,6 +634,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       ArgConvention conv;
       switch (fieldType.getRegisterPassability(structDecl.getLoc(), shared)) {
       case TypeConvention::MemoryOnly:
+      case TypeConvention::Unspecified:
       case TypeConvention::RegisterPassable:
         fieldType = fieldType.getRefForArgument(fieldOp.getName().str(),
                                                 /*isMut=*/true);
