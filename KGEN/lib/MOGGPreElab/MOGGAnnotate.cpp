@@ -527,9 +527,12 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
         StringRef decorator_name =
             enableFusionOperand ? "enable_fusion_for" : "mutable";
 
-        emitError(structDeclOp->getLoc(),
-                  llvm::formatv("{0} decorator: invalid argument name: {1}",
-                                decorator_name, argName));
+        emitError(func->getLoc(),
+                  llvm::formatv("{0} decorator: '{1}' does not name any of the "
+                                "arguments of {2}::{3}",
+                                decorator_name, argName,
+                                structDeclOp.getDeclName(),
+                                func.getDeclName()));
         return false;
       }
 
