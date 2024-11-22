@@ -886,6 +886,12 @@ fn mgp_buffer_get_cached(
     )
 
 
+@register_internal("mgp.buffer.get_size")
+@always_inline
+fn mgp_buffer_get_size(dummy_chain: Int, buf: NDBuffer[DType.uint8, 1]) -> Int:
+    return buf.num_elements()
+
+
 @register_internal("destruct_async_refs")
 @always_inline
 fn destruct_async_refs[
