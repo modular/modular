@@ -30,6 +30,8 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
   // These passes doesn't touch parameters, no need to re-verify them after it.
   // Insert calls to destructors, reject use before free, and borrow check.
   pm.addPass(createCheckLifetimes());
+
+  pm.addPass(MOGGPreElab::createMOGGAnnotate());
 }
 
 /// This populates the early pipeline passes of the KGEN compiler that lowers
@@ -37,8 +39,6 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
 static void buildLowerLITPipeline(mlir::PassManager &pm,
                                   const CompilationOptions &options) {
   buildCheckLITPipeline(pm, options);
-
-  pm.addPass(MOGGPreElab::createMOGGAnnotate());
 
   pm.addPass(createLowerLIT(
       {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
