@@ -67,9 +67,15 @@ def test_vision_encoder_layer(
             encoder_layernorm_w2_type,
         ],
     ) as graph:
-        hidden_state, attn_mask, attn_weight, mlp_fc1, mlp_fc2, encoder_layernorm_w1, encoder_layernorm_w2 = (
-            graph.inputs
-        )
+        (
+            hidden_state,
+            attn_mask,
+            attn_weight,
+            mlp_fc1,
+            mlp_fc2,
+            encoder_layernorm_w1,
+            encoder_layernorm_w2,
+        ) = graph.inputs
 
         vision_encoder_layer = VisionEncoderLayer(
             self_attn=Attention(
@@ -92,9 +98,15 @@ def test_vision_encoder_layer(
         @modular_graph_test(session, graph, max_magnitude=1 / 128)
         def test_correctness(execute, inputs, torch_inputs):
             result = execute(inputs)
-            hidden_state, attn_mask, attn_weight, mlp_fc1, mlp_fc2, encoder_layernorm_w1, encoder_layernorm_w2 = (
-                torch_inputs
-            )
+            (
+                hidden_state,
+                attn_mask,
+                attn_weight,
+                mlp_fc1,
+                mlp_fc2,
+                encoder_layernorm_w1,
+                encoder_layernorm_w2,
+            ) = torch_inputs
 
             # Transpose weights to match our Linear semantics.
             expected = (
@@ -170,9 +182,15 @@ def test_vision_encoder(
             encoder_layernorm_w2_type,
         ],
     ) as graph:
-        hidden_states, attention_mask, attn_weight, mlp_fc1, mlp_fc2, encoder_layernorm_w1, encoder_layernorm_w2 = (
-            graph.inputs
-        )
+        (
+            hidden_states,
+            attention_mask,
+            attn_weight,
+            mlp_fc1,
+            mlp_fc2,
+            encoder_layernorm_w1,
+            encoder_layernorm_w2,
+        ) = graph.inputs
         # attention_mask: shape=[1, 1, 4128, 4128], dtype=torch.bfloat16
         layers = [
             VisionEncoderLayer(
@@ -205,9 +223,15 @@ def test_vision_encoder(
         @modular_graph_test(session, graph, max_magnitude=1 / 256)
         def test_correctness(execute, inputs, torch_inputs):
             result = execute(inputs)
-            hidden_states, attention_mask, attn_weight, mlp_fc1, mlp_fc2, encoder_layernorm_w1, encoder_layernorm_w2 = (
-                torch_inputs
-            )
+            (
+                hidden_states,
+                attention_mask,
+                attn_weight,
+                mlp_fc1,
+                mlp_fc2,
+                encoder_layernorm_w1,
+                encoder_layernorm_w2,
+            ) = torch_inputs
 
             # Transpose weights to match our Linear semantics.
             expected = (
