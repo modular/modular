@@ -100,9 +100,7 @@ def represent_as_string(
         return tag.represent_str(str(mapping))
 
     for cls in classes:
-        representer.add_representer(  # type: ignore [reportGeneralTypeIssues]
-            cls, _represent_as_string
-        )
+        representer.add_representer(cls, _represent_as_string)
 
 
 represent_as_string([PosixPath, WindowsPath])
