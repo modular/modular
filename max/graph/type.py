@@ -503,8 +503,11 @@ class Device:
         """Static Method for creating a CUDA device."""
         return Device(DeviceType.CUDA, id)
 
-    def __init__(self, device_type: DeviceType, id: int = 0):
-        self.device_type = device_type
+    def __init__(self, device_type: Union[DeviceType, str], id: int = 0):
+        if isinstance(device_type, DeviceType):
+            self.device_type = device_type
+        else:
+            self.device_type = DeviceType(device_type)
         self.id = id
 
     def __str__(self) -> str:
