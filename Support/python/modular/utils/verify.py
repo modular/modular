@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import numpy.typing
-import yaml  # type: ignore
+import yaml
 
 from modular.utils.misc import modular_dtype_to_np_dtype
 
