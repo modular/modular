@@ -4,24 +4,41 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pytest
+from functools import wraps
+
 from max.dtype import DType
 from max.driver import Tensor
 from max.graph import Graph, TensorType
 from max.pipelines import (
     PIPELINE_REGISTRY,
-    IdentityPipelineTokenizer,
+    TextTokenizer,
     SupportedArchitecture,
     SupportedVersion,
     SupportedEncoding,
     PipelineModel,
+    PipelineConfig,
+    HuggingFaceFile,
 )
 from max.pipelines.context import InputContext
 from max.pipelines.kv_cache import (
     KVCacheManager,
+    KVCacheStrategy,
     KVCacheParams,
     load_kv_manager,
 )
 from max.engine import InferenceSession, Model
+
+
+def prepare_registry(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        PIPELINE_REGISTRY.reset()
+        result = func(*args, **kwargs)
+
+        return result
+
+    return wrapper
 
 
 class DummyPipelineModel(PipelineModel):
@@ -102,24 +119,94 @@ class DummyPipelineModel(PipelineModel):
             return session.load(graph)
 
 
-def test_registry():
-    arch = SupportedArchitecture(
-        name="llama",
-        versions=[
-            SupportedVersion(
-                name="1",
-                encodings=[
-                    SupportedEncoding.float32,
-                    SupportedEncoding.bfloat16,
-                ],
-                default_encoding=SupportedEncoding.float32,
-            )
-        ],
-        default_version="1",
-        pipeline_model=DummyPipelineModel,
-        tokenizer=IdentityPipelineTokenizer,
+DUMMY_ARCH = SupportedArchitecture(
+    name="LlamaForCausalLM",
+    versions=[
+        SupportedVersion(
+            name="1",
+            encodings={
+                SupportedEncoding.float32: (
+                    [
+                        HuggingFaceFile(
+                            "modularai/llama-3.1",
+                            "llama-3.1-8b-instruct-f32.gguf",
+                        )
+                    ],
+                    [KVCacheStrategy.CONTINUOUS],
+                )
+            },
+            default_encoding=SupportedEncoding.float32,
+        )
+    ],
+    default_version="1",
+    pipeline_model=DummyPipelineModel,
+    tokenizer=TextTokenizer,
+)
+
+
+@prepare_registry
+def test_registry__test_register():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    assert "LlamaForCausalLM" in PIPELINE_REGISTRY.architectures
+
+    # This should fail when registering the architecture for a second time.
+    with pytest.raises(ValueError):
+        PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+
+@prepare_registry
+def test_registry__test_retrieve_with_unknown_architecture():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        architecture="not_registered",
     )
 
-    PIPELINE_REGISTRY.register(arch)
+    with pytest.raises(ValueError):
+        PIPELINE_REGISTRY.retrieve(config)
 
-    assert "llama" in PIPELINE_REGISTRY.architectures
+
+@prepare_registry
+def test_registry__test_retrieve_factory_with_known_architecture():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        architecture="LlamaForCausalLM",
+    )
+
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+
+
+@prepare_registry
+def test_registry__test_retrieve_factory_with_unsupported_huggingface_repo_id():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/replit-code-1.5",
+    )
+
+    with pytest.raises(ValueError):
+        PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+
+
+@prepare_registry
+def test_registry__test_load_factory_with_known_architecture_and_hf_repo_id():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+
+
+@prepare_registry
+def test_registry__test_load_factory_with_good_arch_and_no_weight_path():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="bumblebee-testing/tiny-random-LlamaForCausalLM",
+    )
+
+    with pytest.raises(ValueError):
+        _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
