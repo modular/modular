@@ -5,12 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import asyncio
+import base64
 import json
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
+from httpx import AsyncClient
 from json.decoder import JSONDecodeError
-from typing import AsyncGenerator, List, Literal, Optional, cast
+from typing import Any, AsyncGenerator, List, Literal, Optional, cast
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.applications import State
@@ -43,7 +46,7 @@ from max.serve.schemas.openai import (  # type: ignore
     Logprobs,
     Logprobs2,
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 
 router = APIRouter(prefix="/v1")
@@ -182,47 +185,65 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             return json.dumps({"result": "error", "message": str(e)})
 
 
-def openai_get_content_from_message(message: ChatCompletionRequestMessage):
-    """
-    The content property of each ChatCompletionRequestMessages can be a
-    string or be a list of partial messages.
-    """
-    if isinstance(message.root.content, str):
-        return message.root.content
-    if message.root.content is None:
-        return ""
-    return "".join(
-        [
-            part.root.text
-            for part in message.root.content
-            if isinstance(
-                part.root,
-                ChatCompletionRequestMessageContentPartText,
-            )
-        ]
-    )
-
-
-def openai_get_request_messages(
+def openai_parse_chat_completion_request(
     pipeline: TokenGeneratorPipeline,
     completion_request: CreateChatCompletionRequest,
-) -> list[TokenGeneratorRequestMessage]:
-    """Parse (and eventually materialize) TokenGeneratorRequestMessage from
-    the OpenAI ChatCompletionRequest."""
+) -> tuple[list[TokenGeneratorRequestMessage], list[AnyUrl]]:
+    """Parse the OpenAI ChatCompletionRequest to build TokenGeneratorRequestMessages.
+    These will be used as inputs to the chat template to build the prompt.
+    Also extract the list of image references while we are here so they can be
+    downloaded and bundled alongside the request for preprocessing by pipelines.
+    """
     if isinstance(pipeline.tokenizer, PipelineTokenizer):
-        messages: list[TokenGeneratorRequestMessage] = [
-            {
-                "role": message.root.role,
-                "content": openai_get_content_from_message(message),
-            }
-            for message in completion_request.messages
-        ]
-        return messages
+        messages: list[TokenGeneratorRequestMessage] = []
+        image_refs: list[AnyUrl] = []
+        for m in completion_request.messages:
+            if isinstance(m.root.content, list):
+                message_content: list[dict[str, Any]] = []
+                for content_part in m.root.content:
+                    if content_part.root.type == "image_url":
+                        image_refs.append(content_part.root.image_url.url)
+                        message_content.append(content_part.model_dump())
+                    elif content_part.root.type == "text":
+                        message_content.append(content_part.model_dump())
+                messages.append(
+                    {"role": m.root.role, "content": message_content}
+                )
+            else:
+                messages.append(
+                    {
+                        "role": m.root.role,
+                        "content": m.root.content if m.root.content else "",
+                    }
+                )
+        return messages, image_refs
     else:
         msg = (
             "pipeline.tokenizer must implement the PipelineTokenizer protocol."
         )
         raise ValueError(msg)
+
+
+async def resolve_image_from_url(image_ref: AnyUrl) -> bytes:
+    if image_ref.scheme == "http" or image_ref.scheme == "https":
+        # TODO: Evaluate creating a single AsyncClient for the app.
+        async with AsyncClient() as client:
+            response = await client.get(str(image_ref))
+            images_bytes = await response.aread()
+            logger.debug(
+                "ResolvedImageUrl: %s -> %d bytes", image_ref, len(images_bytes)
+            )
+            return images_bytes
+    elif image_ref.scheme == "data":
+        image_b64 = image_ref.unicode_string().split(",")[1]
+        images_bytes = base64.decodebytes(image_b64.encode())
+        logger.debug(
+            "ResolvedImageB64: %s -> %d bytes",
+            str(image_ref)[:16],
+            len(images_bytes),
+        )
+        return images_bytes
+    raise ValueError(f"Invalid image ref '{image_ref}'")
 
 
 @router.post("/chat/completions")
@@ -245,13 +266,22 @@ async def openai_create_chat_completion(
             completion_request.model,
         )
 
-        request_messages = openai_get_request_messages(
-            pipeline, completion_request
+        request_messages, request_images_urls = (
+            openai_parse_chat_completion_request(pipeline, completion_request)
         )
+        request_resolved_images = None
+        if request_images_urls:
+            resolve_image_tasks = [
+                resolve_image_from_url(image_url)
+                for image_url in request_images_urls
+            ]
+            request_resolved_images = await asyncio.gather(*resolve_image_tasks)
+
         response_generator = OpenAIChatResponseGenerator(pipeline)
         token_request = await response_generator.create_request(
             id=request_id,
             messages=request_messages,
+            images=request_resolved_images,
             model_name=completion_request.model,
             req_recv_time_ns=request.state.recv_time_ns,
             max_new_tokens=completion_request.max_tokens,
