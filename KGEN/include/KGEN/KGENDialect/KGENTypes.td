@@ -180,6 +180,43 @@ def KGEN_FloatLiteralType : KGENType<"FloatLiteral", "float_literal", [
 }
 
 //===----------------------------------------------------------------------===//
+// GeneratorType
+//===----------------------------------------------------------------------===//
+
+def KGEN_GeneratorType : KGENType<"Generator", "generator", [
+    ParameterScopeTypeInterface]> {
+  let summary = "The type of a generator (i.e. a parameterized value)";
+  let description = [{
+    This type describes a generator (i.e. a parameterized value). It describes
+    the generator's parameter signature (the types of input parameters), and the
+    generator's output type (potentially in terms of the input parameters).
+  }];
+
+  let parameters = (ins
+    OptionalArrayRefParameter<"Type">:$inputParamTypes,
+    "Type":$body
+  );
+  let assemblyFormat = [{
+    `<`
+      `<` (`>`) : (custom<ParamTypes>($inputParamTypes)^ `>`)?
+      custom<ParamType>($body)
+    `>`
+  }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins
+        "ArrayRef<Type>":$inputParamTypes, "Type":$body), [{
+      return $_get(body.getContext(), inputParamTypes, body);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// TODO: Remove result parameters entirely.
+    ArrayRef<Type> getResultParamTypes() { return {}; }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 

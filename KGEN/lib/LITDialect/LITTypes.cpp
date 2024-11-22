@@ -168,6 +168,39 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
 }
 
 //===----------------------------------------------------------------------===//
+// LITGeneratorType
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseParamSignature(AsmParser &p,
+                                       SmallVectorImpl<Type> &inputParamTypes,
+                                       PogListAttr &paramListAttr) {
+  return LIT::parseOptionalParamSignature(p, inputParamTypes, paramListAttr);
+}
+
+static void printParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
+                                PogListAttr paramListAttrs) {
+  if (inputParamTypes.empty()) {
+    p << "<>";
+    return;
+  }
+  LIT::printOptionalParamSignature(p, inputParamTypes, paramListAttrs);
+}
+
+LogicalResult
+LITGeneratorType::verify(function_ref<InFlightDiagnostic()> emitError,
+                         ArrayRef<Type> inputParamTypes,
+                         PogListAttr paramListAttrs, Type body) {
+  if (paramListAttrs.size() != inputParamTypes.size()) {
+    return emitError() << "number of parameter names doesn't match number of "
+                          "parameter types";
+  }
+
+  return verifyDefaultTypes(emitError, paramListAttrs.getDefaultPos(),
+                            paramListAttrs.getDefaultKwOnly(), paramListAttrs,
+                            inputParamTypes, "parameter");
+}
+
+//===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
 
