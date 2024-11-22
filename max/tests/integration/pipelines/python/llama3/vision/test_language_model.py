@@ -359,7 +359,7 @@ def test_llama_language_model():
         assert not (torch.isnan(pytorch_logits).any().item())
 
     # define kv_cache_inputs_types
-    params = TextHyperparameters(**config_dict)
+    params = TextHyperparameters(**config_dict)  # type: ignore
     params.dtype = DType.float32
 
     weights_registry: dict = {}
@@ -413,7 +413,7 @@ def test_llama_language_model():
 
     compiled = session.load(graph, weights_registry=weights_registry)
 
-    output = compiled.execute(input_ids, attention_mask, *kv_cache_inputs)[
+    output = compiled.execute(input_ids, attention_mask, *kv_cache_inputs)[  # type: ignore
         0
     ].to_numpy()
 

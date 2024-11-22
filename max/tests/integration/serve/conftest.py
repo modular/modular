@@ -55,7 +55,7 @@ def app(tinyllama_model):
     """The FastAPI app used to serve the model."""
     repo_id = "modularai/llama-3.1"
     tokenizer = DummyTokenizer(AutoTokenizer.from_pretrained(repo_id))
-    pipeline = TokenGeneratorPipeline(
+    pipeline = TokenGeneratorPipeline(  # type: ignore
         TokenGeneratorPipelineConfig.continuous_heterogenous(
             tg_batch_size=tinyllama_model.config.max_cache_batch_size,
             ce_batch_size=1,

@@ -12,12 +12,14 @@ from max.pipelines.config import WeightsFormat, PipelineConfig
 def test_config_init__raises_with_none_weights_path():
     # We expect this to fail.
     with pytest.raises(ValueError):
-        _ = PipelineConfig(architecture="test", weight_path=None)
+        _ = PipelineConfig(architecture="test", weight_path=None)  # type: ignore
 
 
 def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.
-    config = PipelineConfig(architecture="test", weight_path="file.path")
+    config = PipelineConfig(
+        architecture="test", weight_path="file.path"  # type: ignore
+    )
 
     assert isinstance(config.weight_path, list)
     assert len(config.weight_path) == 1

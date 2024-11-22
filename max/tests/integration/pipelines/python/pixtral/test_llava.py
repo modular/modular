@@ -428,8 +428,8 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
         norm_layer,
         output_linear,
         embedding_layer,
-        kv_params,
-        kv_collection_constructor,
+        kv_params,  # type: ignore
+        kv_collection_constructor,  # type: ignore
     )
     return model, weights_registry
 

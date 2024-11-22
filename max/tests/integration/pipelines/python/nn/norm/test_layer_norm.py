@@ -33,7 +33,7 @@ def test_layer_norm(session, input_type):
     weight_type = TensorType(input_type.dtype, [dim])
     with Graph("layer_norm", input_types=[input_type, weight_type]) as graph:
         x, weight = graph.inputs
-        graph.output(LPLayerNorm(weight)(x))
+        graph.output(LPLayerNorm(weight)(x))  # type: ignore
 
         @example(
             (

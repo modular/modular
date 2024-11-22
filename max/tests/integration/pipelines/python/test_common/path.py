@@ -101,7 +101,7 @@ def golden_data_fname(
 
 def _system_info():
     result = subprocess.run(
-        [os.getenv("MODULAR_SYSTEM_INFO_PATH")], stdout=subprocess.PIPE
+        [os.environ["MODULAR_SYSTEM_INFO_PATH"]], stdout=subprocess.PIPE
     )
     system_info = {}
     for line in result.stdout.decode().split("\n"):

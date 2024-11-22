@@ -91,7 +91,7 @@ async def test_tinyllama_serve_cpu_stream(
     inference_config = model_encoding.build_config(testdata_directory)
     tokenizer = TextTokenizer(inference_config)
     expected_response = [
-        await tokenizer.decode(tinyllama_model, x) for x in tokens
+        await tokenizer.decode(tinyllama_model, x) for x in tokens  # type: ignore
     ]
 
     def openai_completion_request(content):
@@ -139,5 +139,5 @@ async def test_tinyllama_serve_cpu_stream(
             tasks.append(
                 asyncio.create_task(main_stream(client, msg, expected))
             )
-        for t in tasks:
-            resp.append(await t)
+        for t in tasks:  # type: ignore
+            resp.append(await t)  # type: ignore

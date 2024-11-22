@@ -233,7 +233,7 @@ def test_patch_conv(imgs, img_sizes):
     compiled = session.load(graph)
 
     output = [
-        compiled.execute(np.ascontiguousarray(img))[0].to_numpy()
+        compiled.execute(np.ascontiguousarray(img))[0].to_numpy()  # type: ignore
         for img in graph_api_imgs
     ]
 
@@ -275,7 +275,7 @@ def test_vision_encoder(
             graph.output(graph_encoder_output)
             compiled = session.load(graph, weights_registry=weights_registry)
 
-            output = compiled.execute(*imgs)[0].to_numpy()
+            output = compiled.execute(*imgs)[0].to_numpy()  # type: ignore
             print("Vision Encoder Output shape = ", output.shape)
 
             np.testing.assert_allclose(

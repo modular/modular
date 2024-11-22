@@ -151,10 +151,10 @@ def run_torch_llama3(
     help="Whether to print the results of the evaluated logits.",
 )
 def main(model, encoding, verbose):
-    testdata_directory = os.getenv("PIPELINES_TESTDATA")
-    if testdata_directory is None:
+    testdata_directory_str = os.getenv("PIPELINES_TESTDATA")
+    if testdata_directory_str is None:
         raise ValueError("Environmental PIPELINES_TESTDATA not defined.")
-    testdata_directory = Path(testdata_directory)
+    testdata_directory = Path(testdata_directory_str)
     encoder = NumpyEncoder()
     tokenizer = create_tokenizer(testdata_directory)
     for model_encoding in supported_model_encodings(
