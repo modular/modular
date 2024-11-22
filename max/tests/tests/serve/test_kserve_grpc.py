@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# type: ignore
 
 import max.serve.grpc_serve.grpc_serve as max_grpc
 import ModelServing.proto.grpc_predict_v2_pb2 as pb2

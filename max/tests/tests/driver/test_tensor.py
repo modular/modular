@@ -293,8 +293,8 @@ def test_from_dlpack():
             tensor[0] = True
             assert array[0] == True
         else:
-            tensor[0] = np_dtype(7)
-            assert array[0] == np_dtype(7)
+            tensor[0] = np_dtype(7)  # type: ignore
+            assert array[0] == np_dtype(7)  # type: ignore
 
 
 def test_from_dlpack_short_circuit():
@@ -352,8 +352,8 @@ def test_dlpack():
         assert tensor.shape == array.shape
 
         # Numpy creates a read-only array, so we modify ours.
-        tensor[0, 0] = np_dtype(7)
-        assert array[0, 0] == np_dtype(7)
+        tensor[0, 0] = np_dtype(7)  # type: ignore
+        assert array[0, 0] == np_dtype(7)  # type: ignore
 
 
 def test_torch_tensor_conversion():

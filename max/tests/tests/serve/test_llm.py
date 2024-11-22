@@ -67,7 +67,7 @@ def token_generator_pipeline():
     """Fixture for a token generator pipeline."""
     # NOTE(matt): The config here _shouldn't_ impact anything.
     config = TokenGeneratorPipelineConfig.dynamic_homogenous(batch_size=1)
-    pipeline = TokenGeneratorPipeline(config, "test", MockTokenizer())
+    pipeline = TokenGeneratorPipeline(config, "test", MockTokenizer())  # type: ignore
     return pipeline
 
 
