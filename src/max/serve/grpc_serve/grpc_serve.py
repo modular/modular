@@ -204,7 +204,7 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
             if i.name == "prompt":
                 prompt_text = "".join(chr(c) for c in i.contents.int_contents)
         self.logger.info(f"Request data : {model_name}, {model_version}, {id}")
-        self.logger.info(
+        self.logger.debug(
             f"Max-tokens = {max_tokens}, Prompt is : {prompt_text}"
         )
         try:
@@ -219,13 +219,17 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
             text = ""
             async with self.pipeline:
                 async for t in self.pipeline.next_token(tg_request):
-                    text += t
+                    text += t.decoded_token
                 # text = await self.pipeline.all_tokens(tg_request)
             self.logger.info(f"Response is {text}")
         except Exception as e:
             import traceback
 
             self.logger.error(
+                f"Error in processing {id} : {e} - {traceback.format_exc()}"
+            )
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(
                 f"Error in processing {id} : {e} - {traceback.format_exc()}"
             )
 
