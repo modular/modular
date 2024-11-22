@@ -33,7 +33,7 @@ from gpu.memory import (
 from gpu.mma import ld_matrix, mma
 from gpu.intrinsics import lop
 from gpu.host.info import DEFAULT_GPU_ARCH
-from layout.int_tuple import IntTuple
+from layout.int_tuple import IntTuple, to_int
 from layout.layout import *
 from layout import RuntimeLayout
 from layout.layout_tensor import (
@@ -41,6 +41,7 @@ from layout.layout_tensor import (
     LayoutTensorIter,
     _swizzle_signature,
     copy_dram_to_sram_async,
+    copy_dram_to_sram,
     copy_local_to_dram,
     copy_local_to_sram,
     copy_sram_to_dram,
@@ -52,6 +53,7 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
+from layout.runtime_tuple import RuntimeTuple
 from linalg.cublas import cublas_matmul
 from linalg.utils_gpu import block_swizzle
 from linalg.matmul_gpu import _matmul_gpu
@@ -87,11 +89,6 @@ fn is_benchmark() -> Bool:
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
-
-
-@always_inline
-fn identity[type: DType](tid: Scalar[type]) -> Scalar[type]:
-    return tid
 
 
 @always_inline
@@ -156,7 +153,6 @@ fn multistage_mma_q[
     num_iters: Int,
     /,
     *,
-    num_a_rows: OptionalReg[Int] = None,
     num_b_rows: OptionalReg[Int] = None,
 ):
     alias simd_size = simdwidthof[a_type]()
@@ -195,6 +191,16 @@ fn multistage_mma_q[
 
     alias smem_reg_scales_layout = Layout.row_major(8, 4)
 
+    @always_inline
+    @parameter
+    fn _copy_tensor_to_sram[
+        thread_layout: Layout, swizzle: Bool
+    ](dst: LayoutTensor, src: LayoutTensor,):
+        copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle,](
+            dst.vectorize[1, simd_size](),
+            src.vectorize[1, simd_size](),
+        )
+
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
     if prefetch_init:
@@ -206,14 +212,8 @@ fn multistage_mma_q[
             if a_iter.address_space == AddressSpace.GENERIC:
                 var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
 
-                copy_dram_to_sram_async[
-                    thread_layout=async_copy_a_layout,
-                    swizzle=swizzle_a,
-                ](
-                    a_smem_tile.vectorize[1, simd_size](),
-                    a_iter[]
-                    .bitcast[a_type, address_space = AddressSpace.GENERIC]()
-                    .vectorize[1, simd_size](),
+                _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
+                    a_smem_tile, a_iter[]
                 )
 
                 a_iter._incr()
@@ -394,16 +394,8 @@ fn multistage_mma_q[
                             num_pipeline_stages - 1
                         )[]
 
-                        copy_dram_to_sram_async[
-                            thread_layout=async_copy_a_layout,
-                            swizzle=swizzle_a,
-                        ](
-                            a_smem_prefetch_tile.vectorize[1, simd_size](),
-                            a_iter[]
-                            .bitcast[
-                                a_type, address_space = AddressSpace.GENERIC
-                            ]()
-                            .vectorize[1, simd_size](),
+                        _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
+                            a_smem_prefetch_tile, a_iter[]
                         )
 
                         a_iter._incr()
@@ -473,30 +465,25 @@ fn multistage_gemm_q[
     c_layout: Layout,
     a_type: DType,
     a_layout: Layout,
-    b_type: DType,
+    b_packed_type: DType,
     b_layout: Layout,
-    scales_type: DType,
-    scales_layout: Layout,
     group_size: Int,
     pack_factor: Int,
     transpose_b: Bool,
-    config: MatmulConfig[a_type, b_type, c_type, transpose_b],
+    config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
 ](
     c: LayoutTensor[c_type, c_layout],
     a: LayoutTensor[a_type, a_layout],
-    b: LayoutTensor[b_type, b_layout],
-    scales: LayoutTensor[
-        scales_type,
-        scales_layout,
-    ],
+    b_packed: LayoutTensor[b_packed_type, b_layout],
 ):
     alias simd_size = simdwidthof[c_type]()
 
     alias repack_tile = Index(64, 16)
+    alias group_bytes = group_size // 2 + 2
 
     var M: UInt = c.dim(0)
-    var N: UInt = c.dim(1)
-    var K: UInt = a.dim(1)
+    alias N = to_int(b_layout.shape[0])
+    alias K = to_int(b_layout.shape[1]) // group_bytes * group_size
 
     alias BM = config.block_tile_shape[0]
     alias BN = config.block_tile_shape[1]
@@ -508,6 +495,20 @@ fn multistage_gemm_q[
     alias num_warps_m = config.num_warps_m()
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
+
+    # Unpack quantized weights
+    alias scales_type = DType.bfloat16
+    alias b_type = DType.uint32
+    alias b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
+    var b = LayoutTensor[b_type, b_weight_layout,](
+        b_packed.ptr.bitcast[Scalar[b_type]](),
+    )
+
+    alias b_scales_layout = Layout.row_major(K // group_size, N)
+    var b_scales_ptr = b_packed.ptr + N * K // 2
+    var scales = LayoutTensor[scales_type, b_scales_layout,](
+        b_scales_ptr.bitcast[Scalar[scales_type]](),
+    )
 
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     # constrained[
@@ -620,8 +621,6 @@ fn multistage_gemm_q[
         num_m_mmas * num_n_mmas, c_frag_size
     ]().local().alloc().fill(0)
 
-    var num_k_tiles = ceildiv(K, BK)
-
     multistage_mma_q[
         BM,
         BN,
@@ -641,7 +640,7 @@ fn multistage_gemm_q[
         b_smem_iter,
         scales_smem_iter,
         scales_gmem_iter,
-        num_k_tiles,
+        ceildiv(K, BK),
     )
 
     # Map global memory tile down to thread.
@@ -659,10 +658,10 @@ fn multistage_gemm_q[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = tb[accum_type]().row_major[
+        var accum_smem_warp_tile = tb[c_type]().row_major[
             WM, WN
         ]().shared().view(
-            a_smem.bitcast[Scalar[accum_type]]() + int(warp_id * WM * WN)
+            a_smem.bitcast[Scalar[c_type]]() + int(warp_id * WM * WN)
         )
 
         copy_local_to_sram[
@@ -676,26 +675,15 @@ fn multistage_gemm_q[
         # Guard writing to shared memory.
         barrier()
 
-        if M % BM == 0:
-            copy_sram_to_dram[
-                thread_layout = Layout.row_major(
-                    WARP_SIZE * simd_size // WN, WN // simd_size
-                ),
-                swizzle=swizzle,
-            ](
-                c_gmem_warp_tile.vectorize[1, simd_size](),
-                accum_smem_warp_tile.vectorize[1, simd_size](),
-            )
-        else:
-            copy_sram_to_dram[
-                thread_layout = Layout.row_major(
-                    WARP_SIZE * simd_size // WN, WN // simd_size
-                ),
-                swizzle=swizzle,
-            ](
-                c_gmem_warp_tile.vectorize[1, simd_size](),
-                accum_smem_warp_tile.vectorize[1, simd_size](),
-            )
+        copy_sram_to_dram[
+            thread_layout = Layout.row_major(
+                WARP_SIZE * simd_size // WN, WN // simd_size
+            ),
+            swizzle=swizzle,
+        ](
+            c_gmem_warp_tile.vectorize[1, simd_size](),
+            accum_smem_warp_tile.vectorize[1, simd_size](),
+        )
 
     else:
         copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
@@ -713,16 +701,13 @@ fn multistage_gemm_q[
 fn create_ref_b[
     type_q: DType,
     type_b: DType,
-    scales_type: DType,
     b_q_layout: Layout,
     b_layout: Layout,
-    scales_layout: Layout,
     group_size: Int,
     pack_factor: Int,
 ](
-    b_q: LayoutTensor[type_q, b_q_layout],
+    b_packed: LayoutTensor[type_q, b_q_layout],
     b_out: LayoutTensor[type_b, b_layout],
-    scales: LayoutTensor[scales_type, scales_layout],
 ):
     alias WARP_SIZE = 32
     alias BLOCK_N = 128
@@ -738,6 +723,24 @@ fn create_ref_b[
     var block_idx = Index(int(BlockIdx.x()), int(BlockIdx.y()))
     var warp_x: UInt = warp_id // num_k_warps
     var warp_y: UInt = warp_id % num_k_warps
+
+    alias group_bytes = group_size // 2 + 2
+    alias N = to_int(b_q_layout.shape[0])
+    alias K = to_int(b_q_layout.shape[1]) // group_bytes * group_size
+
+    # Unpack quantized weights
+    alias scales_type = DType.bfloat16
+    alias b_type = DType.uint32
+    alias b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
+    var b_q = LayoutTensor[b_type, b_weight_layout,](
+        b_packed.ptr.bitcast[Scalar[b_type]](),
+    )
+
+    alias b_scales_layout = Layout.row_major(K // group_size, N)
+    var b_scales_ptr = b_packed.ptr + N * K // 2
+    var scales = LayoutTensor[scales_type, b_scales_layout,](
+        b_scales_ptr.bitcast[Scalar[scales_type]](),
+    )
 
     var b_q_gmem_tile = b_q.tile[
         BLOCK_N // repack_tile[0], (BLOCK_K * repack_tile[0]) // pack_factor
@@ -837,9 +840,9 @@ fn test_quantized[
 ](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
     # quantization configs
     alias group_size = 128
-    alias bit_width = 4
     alias has_zero_point = False
     alias pack_factor = 8
+    alias group_bytes = group_size // 2 + 2
 
     alias repack_tile = Index(64, 16)
 
@@ -854,36 +857,35 @@ fn test_quantized[
     var K = k.value
 
     alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(
-        n.dim // repack_tile[0], (k.dim * repack_tile[0]) // pack_factor
-    )
+    alias static_b_shape = DimList(n.dim, (k.dim // group_size) * group_bytes)
     alias static_b_ref_shape = DimList(n.dim, k.dim)
     alias static_c_shape = DimList(m.dim, n.dim)
-    alias static_scales_shape = DimList(k.dim // group_size, n.dim)
 
     var dynamic_a_shape = DimList(m.value, k.value)
     var dynamic_b_shape = DimList(
-        n.dim // repack_tile[0], (k.dim * repack_tile[0]) // pack_factor
+        n.value, (k.value // group_size) * group_bytes
     )
     var dynamic_b_ref_shape = DimList(n.value, k.value)
     var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_scales_shape = DimList(k.value // group_size, n.value)
 
     var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
     var b_host = HostNDBuffer[type, 2, static_b_shape](dynamic_b_shape)
     var c_host = HostNDBuffer[a_type, 2, static_c_shape](dynamic_c_shape)
-    var scales_host = HostNDBuffer[a_type, 2, static_scales_shape](
-        dynamic_scales_shape
-    )
     var c_host_ref = HostNDBuffer[a_type, 2, static_c_shape](dynamic_c_shape)
 
     zero(c_host.tensor)
     random(a_host.tensor)
 
+    var b_scales_ptr = (b_host.tensor.data + N * K // 2).bitcast[
+        Scalar[a_type]
+    ]()
+    var b_scales_view = NDBuffer[
+        a_type, 2, DimList(k.dim // group_size, n.dim)
+    ](b_scales_ptr)
     # elements of b matrix is between [-1, 1]
-    random(scales_host.tensor, 0, 0.125)
+    random(b_scales_view, 0, 0.125)
     randint(
-        b_host.tensor.data,
+        b_host.tensor.data.bitcast[Scalar[DType.uint32]](),
         n.value * (k.value // pack_factor),
         UInt.MIN,
         UInt.MAX,
@@ -895,9 +897,6 @@ fn test_quantized[
     var b_device = DeviceNDBuffer[type, 2, static_b_shape](
         dynamic_b_shape, ctx=ctx
     )
-    var scales_device = DeviceNDBuffer[a_type, 2, static_scales_shape](
-        dynamic_scales_shape, ctx=ctx
-    )
     var b_device_ref = DeviceNDBuffer[a_type, 2, static_b_ref_shape](
         dynamic_b_ref_shape, ctx=ctx
     )
@@ -907,14 +906,10 @@ fn test_quantized[
 
     ctx.enqueue_copy_to_device(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy_to_device(b_device.buffer, b_host.tensor.data)
-    ctx.enqueue_copy_to_device(scales_device.buffer, scales_host.tensor.data)
 
     alias c_layout = Layout.row_major[c_device.rank](c_device.shape)
     alias a_layout = Layout.row_major[c_device.rank](a_device.shape)
     alias b_layout = Layout.row_major[c_device.rank](b_device.shape)
-    alias scales_layout = Layout.row_major[scales_device.rank](
-        scales_device.shape
-    )
     alias b_ref_layout = Layout.row_major[b_device_ref.rank](b_device_ref.shape)
 
     var c_tensor = LayoutTensor[a_type, c_layout,](
@@ -928,12 +923,6 @@ fn test_quantized[
     var b_tensor = LayoutTensor[type, b_layout,](
         b_device.buffer.ptr,
         RuntimeLayout[b_layout].row_major(b_device.tensor.dynamic_shape),
-    )
-    var scales_tensor = LayoutTensor[a_type, scales_layout,](
-        scales_device.buffer.ptr,
-        RuntimeLayout[scales_layout].row_major(
-            scales_device.tensor.dynamic_shape
-        ),
     )
     var b_ref_tensor = LayoutTensor[a_type, b_ref_layout,](
         b_device_ref.buffer.ptr,
@@ -976,8 +965,6 @@ fn test_quantized[
         a_tensor.layout,
         type,  # b_type
         b_tensor.layout,
-        a_type,
-        scales_tensor.layout,
         group_size,
         pack_factor,
         True,
@@ -998,10 +985,8 @@ fn test_quantized[
     alias dequan = create_ref_b[
         type,
         a_type,
-        a_type,
         b_tensor.layout,
         b_ref_tensor.layout,
-        scales_tensor.layout,
         group_size,
         pack_factor,
     ]
@@ -1029,7 +1014,6 @@ fn test_quantized[
                 c_tensor,
                 a_tensor,
                 b_tensor,
-                scales_tensor,
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
                 block_dim=(int(config.num_threads()), 1, 1),
                 shared_mem_bytes=smem_usage,
@@ -1042,7 +1026,6 @@ fn test_quantized[
                 c_tensor,
                 a_tensor,
                 b_tensor,
-                scales_tensor,
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
                 block_dim=(int(config.num_threads()), 1, 1),
                 shared_mem_bytes=smem_usage,
@@ -1066,7 +1049,6 @@ fn test_quantized[
         c_tensor,
         a_tensor,
         b_tensor,
-        scales_tensor,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
         block_dim=(int(config.num_threads()), 1, 1),
         shared_mem_bytes=smem_usage,  # config.shared_mem_usage(),
@@ -1076,7 +1058,6 @@ fn test_quantized[
         func_dequan,
         b_tensor,
         b_ref_tensor,
-        scales_tensor,
         grid_dim=(ceildiv(N, 128), ceildiv(K, 32), 1),
         block_dim=(128, 1, 1),
     )
@@ -1110,15 +1091,12 @@ fn test_quantized[
     _ = b_host
     _ = c_host
     _ = c_host_ref
-    _ = scales_host
     _ = a_device
     _ = b_device
-    _ = scales_device
 
     _ = a_tensor
     _ = b_tensor
     _ = c_tensor
-    _ = scales_tensor
 
     _ = func^
     _ = func_dequan^
@@ -1126,33 +1104,33 @@ fn test_quantized[
 
 def main():
     with DeviceContext() as ctx:
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, static[482](), static[6144](), static[4096]()
         )
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, static[482](), static[4096](), static[4096]()
         )
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, static[482](), static[28672](), static[4096]()
         )
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, static[482](), static[4096](), static[14336]()
         )
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, static[482](), static[128256](), static[4096]()
         )
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, dynamic(482), static[6144](), static[4096]()
         )
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, dynamic(482), static[4096](), static[4096]()
         )
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, dynamic(482), static[28672](), static[4096]()
         )
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, dynamic(482), static[4096](), static[14336]()
         )
-        test_quantized[DType.uint32](
+        test_quantized[DType.uint8](
             ctx, dynamic(482), static[128256](), static[4096]()
         )
