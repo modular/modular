@@ -39,11 +39,11 @@ class Graph:
         session = me.InferenceSession()
         model = session.load(graph)
         assert all(source._storage for source in self.sources)
-        results = model(*(source._storage for source in self.sources))
+        results = model(*(source._storage for source in self.sources))  # type: ignore
 
         for leaf, result in zip(leaves, results):
             assert isinstance(result, md.Tensor)
-            leaf.__init__(result)
+            leaf.__init__(result)  # type: ignore
 
     def merge(self, other: Graph):
         # So this is more complicated than it looks for even simple cases.
