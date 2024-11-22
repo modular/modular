@@ -6,7 +6,7 @@
 
 
 import os
-from typing import Union
+from typing import Any, Union
 
 from max.serve.telemetry.common import otelBaseUrl, metrics_resource
 
@@ -35,16 +35,16 @@ class _Metrics:
     """
 
     def __init__(self):
-        self._req_count = _NoOpMetric()
-        self._req_time = _NoOpMetric()
-        self._input_time = _NoOpMetric()
-        self._output_time = _NoOpMetric()
-        self._ttft = _NoOpMetric()
-        self._input_tokens = _NoOpMetric()
-        self._output_tokens = _NoOpMetric()
-        self._reqs_queued = _NoOpMetric()
-        self._reqs_running = _NoOpMetric()
-        self._model_load_time = _NoOpMetric()
+        self._req_count: Any = _NoOpMetric()
+        self._req_time: Any = _NoOpMetric()
+        self._input_time: Any = _NoOpMetric()
+        self._output_time: Any = _NoOpMetric()
+        self._ttft: Any = _NoOpMetric()
+        self._input_tokens: Any = _NoOpMetric()
+        self._output_tokens: Any = _NoOpMetric()
+        self._reqs_queued: Any = _NoOpMetric()
+        self._reqs_running: Any = _NoOpMetric()
+        self._model_load_time: Any = _NoOpMetric()
 
     def configure(self, otlp_level: Union[int, str, None] = None):
         meterProviders = [PrometheusMetricReader("metrics")]  # type: ignore

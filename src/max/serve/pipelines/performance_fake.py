@@ -147,9 +147,9 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         # number of times waited in the fake GPU
         self.wait_count = 0
         # timestamp of the end of the last GPU wait
-        self.last_wait_end = None
+        self.last_wait_end: Optional[float] = None
         # amount of time spent in between waiting
-        self.non_wait_secs = 0
+        self.non_wait_secs: float = 0
         # record of batches
         self.batch_infos: List[BatchInfo] = []
 
