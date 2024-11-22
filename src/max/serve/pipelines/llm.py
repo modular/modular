@@ -119,7 +119,7 @@ class TokenGeneratorStats:
 TokenGeneratorContext = TypeVar("TokenGeneratorContext")
 
 
-class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):  # type: ignore
+class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
     """Base class for LLM pipelines."""
 
     def __init__(

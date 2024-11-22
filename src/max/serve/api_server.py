@@ -140,7 +140,7 @@ def make_metrics_app():
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    app = fastapi_app(parse_settings(parser), parse_debug_settings(parser))  # type: ignore
+    app = fastapi_app(parse_settings(parser), parse_debug_settings(parser))
     config = fastapi_config(app=app)
     server = Server(config)
     await server.serve()

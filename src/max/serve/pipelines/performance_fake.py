@@ -191,7 +191,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             rid: ctx.prompt[-((ctx.context_len + 1) % ctx.prompt_len)]
             for rid, ctx in batch.items()
             if ctx.context_len - ctx.prompt_len < ctx.max_tokens
-        }  # type: ignore
+        }
 
     def release(self, context: PerformanceFakingContext):
         pass

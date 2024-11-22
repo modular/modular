@@ -180,7 +180,7 @@ def serve(bypass_serve: bool, model: str, port: int):
                 max_grpc.grpc_serve_direct(
                     server_config,
                     model_name,
-                    fake_tokenizer,  # type: ignore
+                    fake_tokenizer,
                     fake_pipeline,
                 )
             )
@@ -195,7 +195,7 @@ def serve(bypass_serve: bool, model: str, port: int):
                     server_config,
                     model_name,
                     replit_tokenizer,
-                    replit_pipeline_factory,  # type: ignore
+                    replit_pipeline_factory,
                 )
             )
         else:
