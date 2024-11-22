@@ -979,40 +979,6 @@ fn mgp_device_context_destroy(dev_ctx: UnsafePointer[DeviceContext]):
     _ = dev_ctx.destroy_pointee()
 
 
-@register_internal("mgp.device.context.profile.start")
-@always_inline
-fn mgp_device_context_profile_start[
-    aDeviceRuntimeSlot: UInt64,
-    bDevice: StringLiteral,
-    cTag: StringLiteral,
-    dFilePath: StringLiteral,
-](
-    in_chain: Int,
-    ctx: StateContext,
-    dev_ctx: UnsafePointer[DeviceContext],
-    call_ctx: MojoCallContextPtr,
-) -> Int:
-    # Call into device_context here.
-    return 1
-
-
-@register_internal("mgp.device.context.profile.end")
-@always_inline
-fn mgp_device_context_profile_end[
-    aDeviceRuntimeSlot: UInt64,
-    bDevice: StringLiteral,
-    cTag: StringLiteral,
-    dFilePath: StringLiteral,
-](
-    in_chain: Int,
-    ctx: StateContext,
-    dev_ctx: UnsafePointer[DeviceContext],
-    call_ctx: MojoCallContextPtr,
-) raises -> Int:
-    # Call into device_context here....
-    return 1
-
-
 @register_internal("mgp.sync")
 @always_inline
 fn mgp_sync[
