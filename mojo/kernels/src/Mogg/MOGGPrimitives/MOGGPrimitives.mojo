@@ -544,7 +544,6 @@ fn mgp_tensor_create[
     buffer_rank: Int,
     type: DType,
 ](
-    dummy_chain: Int,
     buffer: NDBuffer[DType.uint8, 1],
     spec: StaticTensorSpec[spec_rank],
 ) -> NDBuffer[type, buffer_rank]:
@@ -612,7 +611,6 @@ fn mgp_buffer_alloc[
     bRawAlign: UInt64,
     cDevice: StringLiteral,
 ](
-    dummy_chain: Int,
     byte_size: Int,
     dev_context: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
@@ -642,7 +640,6 @@ fn mgp_buffer_constant_external[
     dAlign: UInt64,
     eDevice: StringLiteral,
 ](
-    dummy_chain: Int,
     weights: UnsafePointer[WeightsRegistry],
     call_ctx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
@@ -705,7 +702,7 @@ fn mgp_buffer_set_with_index[
 @always_inline
 fn mgp_buffer_to_bool[
     bDevice: StringLiteral
-](dummy_chain: Int, buffer: NDBuffer[DType.uint8, 1]) -> Bool:
+](buffer: NDBuffer[DType.uint8, 1]) -> Bool:
     debug_assert(bDevice == "cpu", "to_bool can only work on cpu buffers")
     var bufSize = buffer.num_elements()
     debug_assert(
@@ -717,9 +714,7 @@ fn mgp_buffer_to_bool[
 
 @register_internal("mgp.buffer.to_index")
 @always_inline
-fn mgp_buffer_to_index(
-    dummy_chain: Int, buffer: NDBuffer[DType.uint8, 1]
-) raises -> Int:
+fn mgp_buffer_to_index(buffer: NDBuffer[DType.uint8, 1]) raises -> Int:
     var bufSize = buffer.num_elements()
     if bufSize == 4:
         return int(buffer.data.bitcast[Int32]()[0])
@@ -744,7 +739,6 @@ fn mgp_buffer_slice(
 fn mgp_buffer_concat[
     bDevice: StringLiteral
 ](
-    dummy_chain: Int,
     output: NDBuffer[DType.uint8, 1],
     inputs: StaticTuple[NDBuffer[DType.uint8, 1], *_],
     call_ctx: MojoCallContextPtr,
@@ -767,7 +761,6 @@ fn mgp_buffer_device_to_host[
     cOtherDevice: StringLiteral,
     dHostDevice: StringLiteral,
 ](
-    in_chain: Int,
     dev_buf: NDBuffer[DType.uint8, 1],
     host_buf: NDBuffer[DType.uint8, 1],
     dev_ctx: UnsafePointer[DeviceContext],
@@ -797,7 +790,6 @@ fn mgp_buffer_device_to_device[
     cSrcDevice: StringLiteral,
     dDstDevice: StringLiteral,
 ](
-    in_chain: Int,
     src_buf: NDBuffer[DType.uint8, 1],
     dst_buf: NDBuffer[DType.uint8, 1],
     src_dev_ctx: UnsafePointer[DeviceContext],
@@ -836,7 +828,6 @@ fn mgp_buffer_host_to_device[
     cHostDevice: StringLiteral,
     dOtherDevice: StringLiteral,
 ](
-    in_chain: Int,
     host_buf: NDBuffer[DType.uint8, 1],
     dev_buf: NDBuffer[DType.uint8, 1],
     dev_ctx: UnsafePointer[DeviceContext],
@@ -863,7 +854,6 @@ fn mgp_buffer_host_to_device[
 @register_internal("mgp.buffer.get_cached")
 @always_inline
 fn mgp_buffer_get_cached(
-    dummy_chain: Int,
     ctx: StateContext,
     storage_ref_addr: UnsafePointer[UnsafePointer[NoneType]],
     buffer_slot: UInt64,
@@ -888,9 +878,7 @@ fn mgp_buffer_get_cached(
 
 @register_internal("mgp.buffer.remove_cached")
 @always_inline
-fn mgp_buffer_remove_cached(
-    dummy_chain: Int, ctx: StateContext, buffer_slot: UInt64
-) -> Int:
+fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64) -> Int:
     external_call["KGEN_CompilerRT_RemoveCachedBuffer", NoneType](
         int(buffer_slot), ctx.ctx_ptr
     )
@@ -899,7 +887,7 @@ fn mgp_buffer_remove_cached(
 
 @register_internal("mgp.buffer.get_size")
 @always_inline
-fn mgp_buffer_get_size(dummy_chain: Int, buf: NDBuffer[DType.uint8, 1]) -> Int:
+fn mgp_buffer_get_size(buf: NDBuffer[DType.uint8, 1]) -> Int:
     return buf.num_elements()
 
 
@@ -984,7 +972,6 @@ fn mgp_device_context_destroy(dev_ctx: UnsafePointer[DeviceContext]):
 fn mgp_sync[
     bDevice: StringLiteral,
 ](
-    in_chain: Int,
     ctx: StateContext,
     dev_ctx: UnsafePointer[DeviceContext],
     call_ctx: MojoCallContextPtr,
@@ -998,7 +985,7 @@ fn mgp_sync[
 fn mg_debug_print[
     aDebugString: StringLiteral,
     bLabel: StringLiteral,
-](in_chain: Int, ctx: StateContext,) raises -> Int:
+](ctx: StateContext,) raises -> Int:
     prefix = ""
     if bLabel:
         prefix = "[" + bLabel + "] "
