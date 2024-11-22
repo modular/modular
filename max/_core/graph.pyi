@@ -7,6 +7,7 @@
 from array import array
 from pathlib import Path
 from typing import Union
+from traceback import FrameSummary
 
 import numpy as np
 from max import mlir
@@ -82,3 +83,11 @@ def type_is_chain(type: mlir.Type) -> bool: ...
 def opaque_type(ctx: mlir.Context, name: str) -> mlir.Type: ...
 def opaque_type_name(type: mlir.Type) -> str: ...
 def chain_type(ctx: mlir.Context) -> mlir.Type: ...
+
+# These functions store call frames directly on location objects.
+# This keeps pointers to function frames for the lifetime of the mlir context.
+# It will free them when the context is freed.
+def frame_loc(
+    ctx: mlir.Context, frame: list[FrameSummary]
+) -> mlir.Location: ...
+def get_frame(loc: mlir.Location) -> list[FrameSummary]: ...
