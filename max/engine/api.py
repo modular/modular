@@ -378,7 +378,7 @@ class Model:
         """
         Returns the device objects used in the Model.
         """
-        return [Device(device) for device in self._impl.devices]  # type: ignore
+        return [Device(device) for device in self._impl.devices]
 
     @property
     def input_devices(self) -> List[Device]:
