@@ -17,6 +17,7 @@ import { Mutex } from 'async-mutex';
 import {
   directoryExists,
   getAllOpenMojoFiles,
+  isMojoFile,
   moveUpUntil,
   readFile,
 } from '../utils/files';
@@ -49,9 +50,11 @@ type SDKSelection = NotYetSelectedSDK | SelectedSDK;
  */
 export class MojoSDKManager extends DisposableContext {
   public logger: Logger;
+  private statusBarItem: vscode.StatusBarItem;
   private _activeSDK: SDKSelection = { state: 'not-yet-selected' };
   private set activeSDK(newSDK: SDKSelection) {
     this._activeSDK = newSDK;
+    this.refreshStatusBarItemVisibility();
     this.onActiveSDKChanged.next();
   }
   private get activeSDK() {
@@ -72,6 +75,19 @@ export class MojoSDKManager extends DisposableContext {
     this.logger = logger;
     this.isNightly = isNightly;
     this.extensionContext = extensionContext;
+    this.statusBarItem = vscode.window.createStatusBarItem(
+      'mojo.selected-sdk',
+      vscode.StatusBarAlignment.Right,
+      /*priority=*/ 100,
+    );
+    this.pushSubscription(this.statusBarItem);
+    this.statusBarItem.command = 'mojo.sdk.select-default';
+    this.statusBarItem.name = 'Mojo SDK';
+    this.pushSubscription(
+      vscode.window.onDidChangeVisibleTextEditors((_editors) => {
+        this.refreshStatusBarItemVisibility();
+      }),
+    );
 
     this.pushSubscription(
       vscode.commands.registerCommand('mojo.sdk.select-default', async () => {
@@ -94,10 +110,19 @@ export class MojoSDKManager extends DisposableContext {
         );
         if (selectedSDK !== undefined) {
           this.extensionContext.globalState.update(
-            'mojo.defaultSDK',
-            selectedName,
+            'mojo.defaultSDKModularHomePath',
+            selectedSDK.modularHomePath,
           );
-          this.activeSDK = { state: 'selected', sdkSpec: selectedSDK };
+          const finalSDK: SelectedSDK = {
+            state: 'selected',
+            sdkSpec: selectedSDK,
+          };
+          await this.createSDKAndShowError(
+            finalSDK,
+            /*hireRepeatedErrors=*/ false,
+            /*allowInstallation=*/ true,
+          );
+          this.activeSDK = finalSDK;
         }
       }),
     );
@@ -237,6 +262,18 @@ export class MojoSDKManager extends DisposableContext {
     return result.value;
   }
 
+  private refreshStatusBarItemVisibility(): void {
+    if (isMojoFile(vscode.window.activeTextEditor?.document.uri)) {
+      const activeSDK = this.activeSDK;
+      if (activeSDK.state === 'selected' && activeSDK.sdkSpec !== undefined) {
+        this.statusBarItem.text = `Mojo SDK: ${activeSDK.sdkSpec.version.toTinyString()}`;
+        this.statusBarItem.show();
+        return;
+      }
+    }
+    this.statusBarItem.hide();
+  }
+
   public showBazelwRunInstallPrompt(
     errorMessage: string,
     modularHomePath: string,
@@ -315,45 +352,17 @@ export class MojoSDKManager extends DisposableContext {
     if (allSDKSpecs.length === 1) {
       return allSDKSpecs[0];
     }
-    const defaultSDKName =
-      this.extensionContext.globalState.get<Optional<string>>(
-        'mojo.defaultSDK',
-      );
+    const defaultSDKModularHomePath = this.extensionContext.globalState.get<
+      Optional<string>
+    >('mojo.defaultSDKModularHomePath');
     const selectedDefaultSDKSpec = allSDKSpecs.find(
-      (spec) => spec.version.toString() === defaultSDKName,
+      (spec) => spec.modularHomePath === defaultSDKModularHomePath,
     )!;
     if (selectedDefaultSDKSpec !== undefined) {
       return selectedDefaultSDKSpec;
     }
 
-    const sdkNames = allSDKSpecs.map((spec) => spec.version.toString());
-    const selectedName =
-      (await vscode.window.showQuickPick(sdkNames, {
-        ignoreFocusOut: true,
-        title: 'Select the default MAX SDK to use',
-        placeHolder:
-          'Select an SDK or cancel to select the first one in the list',
-      })) || sdkNames[0];
-    const selectedSpec = allSDKSpecs.find(
-      (spec) => spec.version.toString() === selectedName,
-    )!;
-    this.askUserToUpdateTheDefaultSDK(selectedSpec);
-    return selectedSpec;
-  }
-
-  private askUserToUpdateTheDefaultSDK(selectedSpec: MojoSDKSpec) {
-    const name = selectedSpec.version.toString();
-    vscode.window
-      .showInformationMessage(
-        `Use '${name}' as default SDK? You may ignore this message.`,
-        'Yes',
-        'No',
-      )
-      .then((value) => {
-        if (value === 'Yes') {
-          this.extensionContext.globalState.update('mojo.defaultSDK', name);
-        }
-      });
+    return allSDKSpecs[0];
   }
 
   private async findAllSDKs(): Promise<MojoSDKSpec[]> {
@@ -367,11 +376,13 @@ export class MojoSDKManager extends DisposableContext {
       return releaseSDKSpecs;
     }
 
+    // This list has to be returned in a specific order, as the default SDK
+    // in new sessions will be the first one from this list.
     const [devSDKSpecs, releaseSDKSpecs, userProvidedSDKSpecs] =
       await Promise.all([
+        this.findUserProvidedSDKSpecs(),
         this.findDevSDKSpecs(),
         this.findMagicSDKSpecs(),
-        this.findUserProvidedSDKSpecs(),
       ]);
 
     return [...devSDKSpecs, ...releaseSDKSpecs, ...userProvidedSDKSpecs];

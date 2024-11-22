@@ -32,6 +32,13 @@ export class WorkspaceAwareFile {
   }
 }
 
+export function isMojoFile(uri: Optional<vscode.Uri>): boolean {
+  return (
+    uri !== undefined &&
+    (uri.fsPath.endsWith('.mojo') || uri.fsPath.endsWith('.🔥'))
+  );
+}
+
 /**
  * @returns All the currently open Mojo files as tuple, where the first element
  *     is the active document if it's a mojo file, and the second element are
@@ -41,19 +48,16 @@ export function getAllOpenMojoFiles(): [
   Optional<WorkspaceAwareFile>,
   WorkspaceAwareFile[],
 ] {
-  const mojoUriFilter = (uri: vscode.Uri) =>
-    uri && (uri.fsPath.endsWith('.mojo') || uri.fsPath.endsWith('.🔥'));
-
   const activeRawUri = vscode.window.activeTextEditor?.document.uri;
   const activeFile =
-    activeRawUri && mojoUriFilter(activeRawUri)
+    activeRawUri && isMojoFile(activeRawUri)
       ? new WorkspaceAwareFile(activeRawUri)
       : undefined;
 
   let otherOpenFiles = vscode.window.tabGroups.all
     .flatMap((tabGroup) => tabGroup.tabs)
     .map((tab) => (tab.input as any)?.uri)
-    .filter(mojoUriFilter)
+    .filter(isMojoFile)
     .map((uri) => new WorkspaceAwareFile(uri))
     // We remove the active file from this list.
     .filter(

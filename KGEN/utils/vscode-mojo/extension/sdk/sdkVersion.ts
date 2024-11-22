@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+import * as path from 'path';
 /**
  * This class represents a Mojo SDK version.
  */
@@ -52,6 +53,16 @@ export class MojoSDKVersion {
 
     // Otherwise, just format the version number.
     return `${this.title} - ${this.major}.${this.minor}.${this.patch}`;
+  }
+
+  /**
+   * @returns a tiny representation of this version for small displays.
+   */
+  toTinyString(): string {
+    if (this.isDev() || this.isUserProvided()) {
+      return `${path.dirname(this.modularHomePath)}`;
+    }
+    return `${this.title}`;
   }
 
   title: string;
