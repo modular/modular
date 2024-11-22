@@ -72,7 +72,6 @@ fn fused_qk_rope[
 
         @parameter
         if width == 1:
-            print("ROPE KERNEL CALLED WITH SINGLE VALUE, EXPECTED AT LEAST 2")
             return
         else:
             var idx = rebind[IndexList[4]](idx_arg)
@@ -208,7 +207,6 @@ fn fused_qk_rope_ragged[
 
         @parameter
         if width == 1:
-            print("ROPE KERNEL CALLED WITH SINGLE VALUE, EXPECTED AT LEAST 2")
             return
         else:
             var idx = rebind[IndexList[3]](idx_arg)
