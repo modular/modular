@@ -316,7 +316,7 @@ def test_from_dlpack_copy():
     for i in range(4):
         tensor[i] = i
 
-    arr = np.from_dlpack(tensor)  # type: ignore
+    arr = np.from_dlpack(tensor)
     tensor_copy = Tensor.from_dlpack(arr)  # Should be implicitly copied.
     tensor_copy[0] = np.int8(7)
     assert arr[0] != np.int8(7)
@@ -347,7 +347,7 @@ def test_dlpack():
             continue
 
         np_dtype = dtype.to_numpy()
-        array = np.from_dlpack(tensor)  # type: ignore
+        array = np.from_dlpack(tensor)
         assert array.dtype == np_dtype
         assert tensor.shape == array.shape
 
@@ -365,7 +365,7 @@ def test_torch_tensor_conversion():
     for x, y in product(range(2), range(5)):
         assert torch_tensor[x, y].item() == driver_tensor[x, y].item()
 
-    converted_tensor = torch.from_dlpack(driver_tensor)  # type: ignore
+    converted_tensor = torch.from_dlpack(driver_tensor)
     assert torch.all(torch.eq(torch_tensor, converted_tensor))
 
     # We should also be able to get this running for boolean tensors.
@@ -376,7 +376,7 @@ def test_torch_tensor_conversion():
     for x in range(4):
         assert bool_tensor[x].item() == converted_bool[x].item()
 
-    reconverted_bool = torch.from_dlpack(converted_bool)  # type: ignore
+    reconverted_bool = torch.from_dlpack(converted_bool)
     assert torch.all(torch.eq(bool_tensor, reconverted_bool))
 
 
@@ -389,7 +389,7 @@ def test_setitem_bfloat16(value: float):
     # In particular this is an issue near infinity, as there's certain values
     # that torch will represent as inf, while we will instead represent them
     # as bfloat16_max.
-    result = torch.from_dlpack(tensor)  # type: ignore
+    result = torch.from_dlpack(tensor)
     bf16info = torch.finfo(torch.bfloat16)
     if value > bf16info.max and math.isfinite(result.item()):
         assert result.item() == bf16info.max
@@ -487,7 +487,7 @@ def test_memmap(memmap_example_file: Path):
 
 def test_dlpack_memmap(memmap_example_file: Path):
     tensor = MemMapTensor(memmap_example_file, dtype=DType.int8, shape=(2, 4))
-    array = np.from_dlpack(tensor)  # type: ignore
+    array = np.from_dlpack(tensor)
     assert array.dtype == np.int8
     assert tensor.shape == array.shape
 
