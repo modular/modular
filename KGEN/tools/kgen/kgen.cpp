@@ -330,6 +330,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     options.targetTriple = target.getTripleStr();
     options.targetCpu = target.getArch();
     options.targetFeatures = target.getFeatures();
+    options.targetAccelerator = clOptions.targetAccelerator;
   }
 
   // Generate a library file or go all the way through elaboration.
@@ -602,6 +603,8 @@ int main(int argc, char **argv) {
   llvm::SourceMgr sourceManager;
   sourceManager.setIncludeDirs(clOptions.getIncludePaths());
   clOptions.addInputFilesToSourceMgrOrExit(sourceManager);
+  if (clOptions.targetAccelerator.empty())
+    clOptions.targetAccelerator = AsyncRT::Device::getAcceleratorArchOrEmpty();
 
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
