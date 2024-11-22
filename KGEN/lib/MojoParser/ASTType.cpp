@@ -187,8 +187,12 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
     return TypeConvention::MemoryOnly;
 
   // Trait values are generic and therefore use the default specification.
-  if (isa<TraitDeclOp>(decl))
-    return genericDefault;
+  if (auto trait = dyn_cast<TraitDeclOp>(decl)) {
+    TypeConvention convention = trait.getConvention();
+    if (convention == TypeConvention::Unspecified)
+      return genericDefault;
+    return convention;
+  }
 
   auto structOp = dyn_cast<StructDeclOp>(decl);
   assert(structOp && "only one user-defined type so far");
@@ -217,7 +221,9 @@ bool ASTType::isTrivial(llvm::SMLoc loc, SharedState &shared) const {
 /// The location specifies the location of the reference in case the use is
 /// invalid in this location.
 bool ASTType::isRegisterPassable(llvm::SMLoc loc, SharedState &shared) const {
-  return getRegisterPassability(loc, shared) != TypeConvention::MemoryOnly;
+  TypeConvention convention = getRegisterPassability(loc, shared);
+  return convention == TypeConvention::RegisterPassable ||
+         convention == TypeConvention::RegisterPassableTrivial;
 }
 
 /// Return true if this type is @register_passable or if it is a generic type
