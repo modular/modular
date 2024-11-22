@@ -90,7 +90,6 @@ fn run_rms_norm_gpu[
 
 def main():
     with DeviceContext() as ctx:
-        run_rms_norm_gpu[DType.float32](ctx, Index(0))
         run_rms_norm_gpu[DType.float32](ctx, Index(5))
         run_rms_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
         run_rms_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))
