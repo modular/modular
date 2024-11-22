@@ -14,6 +14,7 @@ from typing import Any, Iterable, List, Literal, Optional, Union
 
 import numpy as np
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.pipelines.response import TextResponse
 from max.pipelines.tokenizer import PreTrainedPipelineTokenizer
 from transformers import PreTrainedTokenizer, PreTrainedTokenizerFast
 
@@ -188,7 +189,9 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         # We return the reversed prompt, repeated as many times necessary
         # to satisfy the max_tokens
         return {
-            rid: ctx.prompt[-((ctx.context_len + 1) % ctx.prompt_len)]
+            rid: TextResponse(
+                next_token=ctx.prompt[-((ctx.context_len + 1) % ctx.prompt_len)]
+            )
             for rid, ctx in batch.items()
             if ctx.context_len - ctx.prompt_len < ctx.max_tokens
         }
