@@ -141,13 +141,13 @@ class _MojoMagic(IPython.core.magic.Magics):
         use_symbol_table = opts.get("use_symbol_table", True)
 
         # exec_count is sequentially increasing
-        config = get_ipython()
+        config = get_ipython()  # type: ignore
         exec_count = config.execution_count
         _vlog(f"{exec_count=}")
 
         # cell_id is not passed in, must get from pre execution hook event
         global _global_ipython_exec_info
-        cell_id = _global_ipython_exec_info.cell_id
+        cell_id = _global_ipython_exec_info.cell_id  # type: ignore
         _vlog(f"{cell_id=}")
 
         # delete any previous cached cell_contents
@@ -164,7 +164,7 @@ class _MojoMagic(IPython.core.magic.Magics):
         ]
 
         # Join all cell contents into a single unified buffer for compilation
-        all_cells = "\n".join(all_cells)
+        all_cells = "\n".join(all_cells)  # type: ignore
 
         # if option reload=True is enabled delete any previous function ptr
         if opts["reload"] and self.func:
