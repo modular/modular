@@ -203,7 +203,7 @@ class LlamaPipelineOracle(PipelineOracle):
         )
         internal_version = self._map_to_internal_version(version)
         config = pipelines.PipelineConfig(
-            architecture="llama",
+            architecture="LlamaForCausalLM",
             version=self._map_to_internal_version(version),
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_new_tokens=10,
