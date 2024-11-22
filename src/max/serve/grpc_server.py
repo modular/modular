@@ -132,8 +132,8 @@ def serve(bypass_serve: bool, model: str, port: int):
 
             model_name = "replit/replit-code-v1_5-3b"
             pipeline_config = get_default_replit_config()
-            _, pipeline_factory = PIPELINE_REGISTRY.retrieve(
-                pipeline_config, return_factory=True
+            _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+                pipeline_config,
             )
             asyncio.run(
                 max_grpc.grpc_serve(
@@ -188,7 +188,9 @@ def serve(bypass_serve: bool, model: str, port: int):
             model_name = "replit/replit-code-v1_5-3b"
             pipeline_config = get_default_replit_config()
             replit_tokenizer, replit_pipeline_factory = (
-                PIPELINE_REGISTRY.retrieve(pipeline_config, return_factory=True)
+                PIPELINE_REGISTRY.retrieve_factory(
+                    pipeline_config,
+                )
             )
             asyncio.run(
                 max_grpc.grpc_serve_direct(
