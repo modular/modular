@@ -175,7 +175,7 @@ def test_vision_encoder(
         )
         # attention_mask: shape=[1, 1, 4128, 4128], dtype=torch.bfloat16
         layers = [
-            VisionEncoderLayer(  # type: ignore
+            VisionEncoderLayer(
                 mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),  # type: ignore
                 input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),  # type: ignore
                 post_attention_layernorm=LPLayerNorm(encoder_layernorm_w2, eps),  # type: ignore

@@ -42,7 +42,7 @@ def pytorch_connector():
         num_key_value_heads=8,
         rms_norm_eps=1e-05,
         rope_theta=1000000000.0,
-        sliding_window=None,  # type:ignore
+        sliding_window=None,
         tie_word_embeddings=False,
         vocab_size=131072,
     )
