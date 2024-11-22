@@ -94,7 +94,7 @@ class Tensor(DLPackArray):
     def scalar(cls, value: Any, dtype: DType, device: Device = CPU()) -> Tensor:
         """Create a scalar value of a given dtype and value."""
         tensor = cls((), dtype, CPU())
-        tensor[0] = value  # type: ignore
+        tensor[0] = value
 
         # We can't directly set GPU memory, so we just have to copy
         # the tensor over.
@@ -232,7 +232,7 @@ class Tensor(DLPackArray):
         If the tensor is not on the host, an exception is raised.
         """
         try:
-            return np.from_dlpack(self)  # type: ignore
+            return np.from_dlpack(self)
         except RuntimeError as e:
             if str(e).startswith("Unsupported device in DLTensor"):
                 raise RuntimeError(
@@ -259,7 +259,7 @@ class Tensor(DLPackArray):
             # TODO(MSDK-976): since `np.memmap`s are often read-only, we just
             # use our own memmap implementation here, but it would be better to
             # always delegate to from_dlpack.
-            return MemMapTensor._from_numpy_memmap(arr)  # type: ignore
+            return MemMapTensor._from_numpy_memmap(arr)
         if isinstance(arr, np.ndarray):
             # TODO(MSDK-976): Older version of numpy don't support exporting
             # read-only arrays, so we copy if we can, and leave a hint if not.
@@ -286,7 +286,7 @@ class Tensor(DLPackArray):
                     )
                 raise e
 
-            return tensor.view(DType.bool) if is_bool else tensor  # type: ignore
+            return tensor.view(DType.bool) if is_bool else tensor
 
         # Short circuit if it's our type.
         if isinstance(arr, cls):
