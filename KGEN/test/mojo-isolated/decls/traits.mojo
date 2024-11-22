@@ -966,9 +966,15 @@ struct ParamType[x: int]:
 # CHECK: lit.trait.decl @RGTrait{{.*}} register_passable
 @register_passable
 trait RGTrait:
-    pass
+    # CHECK-NEXT: lit.func @"doSomething{{.*}}"[imm *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", imm *"{{.*}}"> borrow_in_mem) -> !kgen.none
+    fn doSomething(self):
+        ...
+    # CHECK: lit.func @"__del__({{.*}})"[mut *"{{.*}}"](%self: !lit.ref<:!RGTrait *"{{.*}}", mut *"{{.*}}"> owned_in_mem, |) -> !kgen.none
 
 # CHECK-LABEL: lit.trait.decl @RGTrivialTrait{{.*}} register_passable_trivial
 @register_passable("trivial")
 trait RGTrivialTrait:
-    pass
+    # CHECK-NEXT: lit.func @"doSomething{{.*}}"(%self: !kgen.paramref<:!RGTrivialTrait {{.*}}>) -> !kgen.none
+    fn doSomething(self):
+        ...
+
