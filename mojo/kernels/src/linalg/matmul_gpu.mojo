@@ -816,12 +816,14 @@ fn _matmul_gpu[
 
             return
 
-    if m == 1 or n == 1:
-        gemv_gpu[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c, a, b, ctx)
-        return
+    @parameter
+    if has_nvidia_gpu():
+        if m == 1 or n == 1:
+            gemv_gpu[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](c, a, b, ctx)
+            return
 
     alias BLOCK_DIM = 16
     var gpu_func = ctx.compile_function[
