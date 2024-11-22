@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import traceback
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional
+from types import FrameType
 
 from max import _graph, mlir
 from max.mlir.dialects import mo
@@ -30,57 +32,6 @@ from .value import TensorValue, Value, _ChainValue
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
-
-
-def _traceback_location(frame):
-    """Creates an MLIR location corresponding to a single stack frame.
-
-    An MLIR file location has a filename, a line, and a column.
-    - Encode the module, function name, and filename into the filename
-        as "{qualname}:{filename}".
-    """
-    if not mlir.Context.current:
-        raise RuntimeError("Can't create location: No MLIR context active")
-    # This should be cleaned up at some point and probably use an opaque location.
-    # For now, it is just storing the source context as the name.
-    # Would be good to add a bit more info to recreate the full python trace back.
-    code = frame.code_context[frame.index] if frame.code_context else ""
-    # frame.positions does not exist before python 3.11.
-    # Loading it will lead to an attribute error.
-    # Instead set the col_offset to zero in that case.
-    try:
-        col_offset = frame.positions.col_offset
-    except AttributeError:
-        col_offset = 0
-
-    return mlir.Location.name(
-        code,
-        mlir.Location.file(
-            f"{frame.function}:{frame.filename}",
-            frame.lineno,
-            col_offset,
-        ),
-    )
-
-
-def _location():
-    """Creates an MLIR Location with the current Python call stack."""
-    trace_back = inspect.stack()
-    # Remove the call to `inspect.stack()`, the call to `_location()`, and the
-    # call to `_add_op()` wrapping this.
-    trace_back = trace_back[3:]
-
-    # If this was called dircetly from a script root, python gives us no
-    # location info.
-    if not trace_back:
-        return mlir.Location.unknown()
-
-    frame = _traceback_location(trace_back[0])
-    stack = [_traceback_location(tb) for tb in trace_back[1:]]
-
-    # If this was called by a function directly called from a script root, we
-    # have no callstack. As such, we need to return only the single frame.
-    return mlir.Location.callsite(frame, stack) if stack else frame
 
 
 # From https://stackoverflow.com/a/76301341
@@ -203,7 +154,7 @@ class Graph:
         self._context_state = []
         self._context = context or _new_context()
 
-        with self._context, _location() as loc:
+        with self._context, self._location() as loc:
             # Create the top level module op.
             self._module = mlir.Module.create()
 
@@ -308,7 +259,7 @@ class Graph:
         # Construct and insert an op in the body of the graph
         # Insertion point is where the op is to be created in the IR structure
         # location contains info about the source of the op (e.g. file, line)
-        with mlir.InsertionPoint(self._body), _location():
+        with mlir.InsertionPoint(self._body), self._location():
             try:
                 with self._capturing_mlir_diagnostics():
                     # Insert op at the end of self._body, location set up by
@@ -423,7 +374,7 @@ class Graph:
             self._context.append_dialect_registry(registry)
             self._context.load_all_available_dialects()
 
-            with self._context, _location() as loc:
+            with self._context, self._location() as loc:
                 # Create the top level module op.
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):
@@ -496,3 +447,23 @@ class Graph:
             if name not in self._params:
                 break
         return SymbolicDim(name)
+
+    def _location(self):
+        """Creates an MLIR Location with the current Python call stack."""
+        if not mlir.Context.current:
+            raise RuntimeError("Can't create location: No MLIR context active")
+
+        # Originally this was capturing the current stack frame. It was really
+        # fast, but lead to some major issues due to the current frame keeping
+        # local variables alive. Instead we extract the stack into summaries.
+        # This is a bit slower, but still plenty fast (3s llama3 graph build
+        # time vs 2s with current frame). It also avoids any references cycles
+        # and is cleaned up properly.
+
+        # Remove the last 2 elements from the stack to get rid of `_location()`
+        # and `_add_op()`.
+        tb = traceback.extract_stack()[:-2]
+        if not tb:
+            return mlir.Location.unknown()
+
+        return _graph.frame_loc(mlir.Context.current, tb)
