@@ -31,6 +31,16 @@ def _getCloudProvider() -> str:
     return ""
 
 
+def _getGPUInfo() -> str:
+    try:
+        import torch  # type: ignore
+
+        device_properties = torch.cuda.get_device_properties(0)
+        return f"{torch.cuda.device_count()}:{device_properties.total_memory}:{device_properties.name}"
+    except Exception:
+        return ""
+
+
 logs_resource = Resource.create(
     {
         "event.domain": "serve",
@@ -40,6 +50,7 @@ logs_resource = Resource.create(
         "os.version": platform.release(),
         "cpu.description": platform.processor(),
         "cpu.arch": platform.architecture()[0],
+        "system.gpu": _getGPUInfo(),
         "system.cloud": _getCloudProvider(),
         "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
     }
