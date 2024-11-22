@@ -611,6 +611,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     TypeAttrOf<LIT_TypeSignatureType>:$signature,
     KGEN_ParamDeclArrayAttr:$params,
     TypeLineageArrayAttr:$parentTypes,
+    EnumProperty<"TypeConvention">:$convention,
     OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
@@ -624,7 +625,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
   let assemblyFormat = [{
     $sym_name ``
     custom<StructParameterSpec>($params, $signature, $parentTypes)
-    attr-dict-with-keyword $fields
+    custom<TypeConvention>($convention) attr-dict-with-keyword $fields
   }];
 
   let extraClassDeclaration = [{
@@ -634,6 +635,12 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
 
     /// Get a bound reference to the Trait type.
     TraitType bindReference();
+    bool isRegisterPassable() {
+      return getConvention() != TypeConvention::MemoryOnly;
+    }
+    bool isRegisterPassableTrivial() {
+      return getConvention() == TypeConvention::RegisterPassableTrivial;
+    }
   }];
 
   let builders = [

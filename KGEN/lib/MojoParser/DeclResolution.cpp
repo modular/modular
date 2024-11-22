@@ -1682,6 +1682,36 @@ parseOptionalParentList(ParserBase &p, ASTDecl &declScope, StringRef declName,
   return success();
 }
 
+bool isTrivialRegisterPassable(CallNode *callNode) {
+  if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
+    if (declRef->spelling == "register_passable" &&
+        callNode->operands.size() == 1 &&
+        callNode->operands[0].isPositionalStringLiteral("trivial")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
+                                                    TraitDeclOp traitOp,
+                                                    SharedState &shared,
+                                                    ASTDecl &traitDecl) {
+  if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+    if (declRef->spelling == "register_passable") {
+      traitOp.setConvention(TypeConvention::RegisterPassable);
+      return success();
+    }
+  }
+  if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    if (isTrivialRegisterPassable(callNode)) {
+      traitOp.setConvention(TypeConvention::RegisterPassableTrivial);
+      return success();
+    }
+  }
+  return failure();
+}
+
 /// Process a decorator that is resolved at the signature phase of resolution
 /// and return success, otherwise failure if it is handled later.
 static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
@@ -1711,9 +1741,7 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
       // @register_passable("trivial")
-      if (declRef->spelling == "register_passable" &&
-          callNode->operands.size() == 1 &&
-          callNode->operands[0].isPositionalStringLiteral("trivial")) {
+      if (isTrivialRegisterPassable(callNode)) {
         structOp.setConvention(TypeConvention::RegisterPassableTrivial);
         return success();
       }
@@ -2217,8 +2245,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  Decorators(decl, /*signatureOnly=*/true)
-      .applySignatureDecorators(decoratorExprs);
+  Decorators(decl).applySignatureDecorators(
+      decoratorExprs, [&](ExprNode *decorator) {
+        return processTraitSignatureDecorator(decorator, traitOp, shared, decl);
+      });
   if (ArrayRef<ExprNode *> bodyDecorators = decl.getBodyDecorators();
       !bodyDecorators.empty()) {
     emitError(bodyDecorators.front()->getLoc(),

@@ -1131,6 +1131,8 @@ static StringRef toString(TypeConvention convention) {
     return "register_passable";
   case TypeConvention::RegisterPassableTrivial:
     return "register_passable_trivial";
+  case TypeConvention::Unspecified:
+    return "";
   }
 }
 

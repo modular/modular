@@ -118,6 +118,10 @@ lit.trait.decl @T {
   }
 }
 
+// CHECK-LABEL: lit.trait.decl @RP register_passable
+lit.trait.decl @RP register_passable {
+}
+
 // CHECK-LABEL: @attributesAndDecorators
 lit.func @attributesAndDecorators()
   // CHECK-NEXT: decorators <{{.*}}> attributes {isParametric} {
