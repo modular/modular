@@ -617,6 +617,14 @@ KGEN_CompilerRT_GetCachedBuffer(size_t bBufferSlot,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_RemoveCachedBuffer(size_t bufferSlot,
+                                   AsyncRTWrapper<StateContext> rawCtx) {
+  StateContext &theContext = unwrap(rawCtx);
+  auto &stateSlot = theContext.getStateSlot(bufferSlot);
+  stateSlot.clear();
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_DestructAsyncRefs(size_t size, void **storageRefPtr) {
   for (size_t i = 0; i < size; i++) {
     void *ref_addr = storageRefPtr[i];
