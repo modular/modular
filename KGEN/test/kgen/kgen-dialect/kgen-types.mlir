@@ -69,3 +69,14 @@ kgen.func @type_value() {
   kgen.param.declare atype: type = <[struct<(typevalue<[struct<()>, {"method" : () -> () = @method}]>)>, struct<(struct<()>)>, {"method2" : () -> () = @method2}]>
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @generator_types
+kgen.func @generator_types() {
+  // CHECK-NEXT: type = <!kgen.generator<<> None>>
+  kgen.param.declare atype: type = <!kgen.generator<<> None>>
+  // CHECK-NEXT: type = <!kgen.generator<<AnyType> i1>>
+  kgen.param.declare atype: type = <!kgen.generator<<AnyType> i1>>
+  // CHECK-NEXT: type = <!kgen.generator<<AnyType, index, index> i1>>
+  kgen.param.declare atype: type = <!kgen.generator<<AnyType, index, index> i1>>
+  kgen.return
+}

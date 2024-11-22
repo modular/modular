@@ -29,6 +29,11 @@ def StringType : DialectType<(type)>;
 
 def IntLiteralType : DialectType<(type)>;
 
+def GeneratorType : DialectType<(type
+  TypeArray:$inputParamTypes,
+  Type:$body
+)>;
+
 def SignatureType : DialectType<(type
   TypeArray:$inputParamTypes,
   TypeArray:$resultParamTypes,
