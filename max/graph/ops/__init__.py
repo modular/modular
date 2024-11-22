@@ -42,7 +42,7 @@ from .permute import permute
 from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
-from .reduction import argmax, mean
+from .reduction import argmax, mean, sum
 from .reshape import reshape
 from .scatter import masked_scatter
 from .select import select

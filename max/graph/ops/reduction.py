@@ -14,6 +14,30 @@ from ..value import TensorValue, TensorValueLike
 from .constant import constant
 
 
+def sum(x: TensorValueLike, axis=-1) -> TensorValue:
+    """
+    Reduces a symbolic tensor using a sum operation.
+
+    Args:
+        x: The input tensor for the operation.
+        axis: The axis along which to compute the reduction. If negative,
+            indexes from the last dimension. For example, a value of -1 will
+            compute the reduction along the last dimension.
+
+    Returns:
+        A symbolic tensor representing the result of the sum operation.
+        The tensor will have the same rank as the input tensor, and the same
+        shape except along the ``axis`` dimension which will have size 1.
+    """
+    gv = TensorValue(x)
+    shape = Shape(gv.shape)
+    shape[axis] = Dim(1)
+    type = TensorType(gv.dtype, shape, gv.device)
+    return Graph.current._add_op(
+        rmo.mo_reduce_add, type.to_mlir(), gv, constant(axis, DType.int64)
+    )[0].tensor
+
+
 def mean(x: TensorValueLike, axis=-1) -> TensorValue:
     """
     Reduces a symbolic tensor using a mean operation.
