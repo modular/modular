@@ -148,8 +148,12 @@ compileModuleToArchive(const State &state, AsyncRT::Runtime &runtime,
 
   // Compile the moduleOp down to the post-elaboration phase, because before
   // that phase we don't have flat symbols.
+  // Set isJIT to be true so that we use the same CodeModel as
+  // what mojo-run does since there is no reason the binary objects should be
+  // different. This flag matters when we create TargetMachine for the backend,
+  // i.e. X86 will have CodeModel::Large with isJIT = true in llvm.
   ErrorOr<std::unique_ptr<ObjectCompiler>> objectCompilerOr =
-      ObjectCompiler::create(".mojo_cache", options, false, context);
+      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/true, context);
 
   if (objectCompilerOr.isError())
     return state.reportError(objectCompilerOr.getError());
