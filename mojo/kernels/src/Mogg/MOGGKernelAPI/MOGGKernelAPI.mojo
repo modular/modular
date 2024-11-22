@@ -157,6 +157,11 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
+from quantization.qmatmul_gpu import (
+    matmul_gpu_qint4,
+    gpu_qint4_repack_Q4_0,
+    gpu_qint4_repack_GPTQ,
+)
 from gpu.host import DeviceContext
 from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 
@@ -5330,6 +5335,144 @@ struct VroomQ6KRepackWeights:
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
         return b.get_runtime_spec().shape
+
+
+######
+# 4-bit quant GPU implementation
+######
+
+
+@compiler.register("qmatmul_b4_g32")
+struct QMatmulGPU_b4_g32:
+    @staticmethod
+    @always_inline
+    fn execute[
+        target: StringLiteral,
+    ](
+        c: ManagedTensorSlice[DType.bfloat16, 2],
+        a: ManagedTensorSlice[DType.bfloat16, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
+        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
+        alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
+        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+        with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g32"):
+            matmul_gpu_qint4[32, target](
+                managed_tensor_slice_to_ndbuffer[static_shape=c_shape](c),
+                managed_tensor_slice_to_ndbuffer[static_shape=a_shape](a),
+                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b),
+                ctx,
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size(0), b.dim_size(0))
+
+
+@compiler.register("qmatmul_b4_g128")
+struct QMatmulGPU_b4_g128:
+    @staticmethod
+    @always_inline
+    fn execute[
+        target: StringLiteral,
+    ](
+        c: ManagedTensorSlice[DType.bfloat16, 2],
+        a: ManagedTensorSlice[DType.bfloat16, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
+        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
+        alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
+        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+        with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g128"):
+            matmul_gpu_qint4[128, target](
+                managed_tensor_slice_to_ndbuffer[static_shape=c_shape](c),
+                managed_tensor_slice_to_ndbuffer[static_shape=a_shape](a),
+                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b),
+                ctx,
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        a: ManagedTensorSlice[DType.float32, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return IndexList[2](a.dim_size(0), b.dim_size(0))
+
+
+@compiler.register("GGUF_gpu_repack_q4_0")
+struct QMatmulGPURepackGGUF:
+    @staticmethod
+    @always_inline
+    fn execute[
+        target: StringLiteral,
+    ](
+        b_packed: ManagedTensorSlice[DType.uint8, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
+        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+        with Trace[TraceLevel.OP, target=target]("GGUF_gpu_repack_q4_0"):
+            gpu_qint4_repack_Q4_0[target](
+                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b),
+                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](
+                    b_packed
+                ),
+                ctx,
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return b.get_runtime_spec().shape
+
+
+@compiler.register("GPTQ_gpu_repack_b4_g128")
+struct QMatmulGPURepackGPTQ_b4_g128:
+    @staticmethod
+    @always_inline
+    fn execute[
+        target: StringLiteral,
+    ](
+        b_packed: ManagedTensorSlice[DType.uint8, 2],
+        b: ManagedTensorSlice[DType.uint8, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
+        alias b_packed_shape = compiler.specsof[b_packed.type, b_packed.rank](
+            "b_packed"
+        ).shape
+        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+        with Trace[TraceLevel.OP, target=target]("GPTQ_gpu_repack_b4_g128"):
+            gpu_qint4_repack_GPTQ[128, target](
+                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b),
+                managed_tensor_slice_to_ndbuffer[static_shape=b_packed_shape](
+                    b_packed
+                ),
+                ctx,
+            )
+
+    @staticmethod
+    @always_inline
+    fn shape(
+        b: ManagedTensorSlice[DType.uint8, 2],
+    ) -> IndexList[2]:
+        return IndexList[2](b.dim_size(1), b.dim_size(0))
 
 
 # ===----------------------------------------------------------------------===#

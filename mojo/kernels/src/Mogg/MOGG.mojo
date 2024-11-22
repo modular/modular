@@ -229,6 +229,11 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
+from quantization.qmatmul_gpu import (
+    matmul_gpu_qint4,
+    gpu_qint4_repack_Q4_0,
+    gpu_qint4_repack_GPTQ,
+)
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -4817,6 +4822,126 @@ fn ggml_q6_k_dequantize_shape_func[
     ) // block_nbytes
 
     return (input.dynamic_shape[0], elements_per_block * num_block_per_batch)
+
+
+######
+# 4-bit quant GPU implementation
+######
+
+
+@register_internal("qmatmul_b4_g32")
+@always_inline
+fn qmatmul_b4_g32[
+    input_0_static_shape: DimList,
+    input_1_static_shape: DimList,
+    output_0_static_shape: DimList,
+    target: StringLiteral = "cpu",
+](
+    a: NDBuffer[DType.bfloat16, 2, input_0_static_shape],
+    b: NDBuffer[DType.uint8, 2, input_1_static_shape],
+    c: NDBuffer[DType.bfloat16, 2, output_0_static_shape],
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+    with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g32"):
+        matmul_gpu_qint4[32, target](c, a, b, ctx)
+
+
+@register_internal_shape_func("qmatmul_b4_g32")
+@always_inline
+fn qmatmul_b4_g32_shape_func[
+    single_thread_blocking_override: Bool
+](a: NDBuffer[DType.bfloat16, 2], b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
+    constrained[
+        a.type.is_floating_point(), "expected float inputs and outputs"
+    ]()
+    constrained[b.type is DType.uint8, "expected uint8 input b"]()
+    constrained[a.rank == b.rank == 2, "expected rank to be 2"]()
+
+    return IndexList[2](a.dim[0](), b.dim[0]())
+
+
+@register_internal("qmatmul_b4_g128")
+@always_inline
+fn qmatmul_b4_g128[
+    input_0_static_shape: DimList,
+    input_1_static_shape: DimList,
+    output_0_static_shape: DimList,
+    target: StringLiteral = "cpu",
+](
+    a: NDBuffer[DType.bfloat16, 2, input_0_static_shape],
+    b: NDBuffer[DType.uint8, 2, input_1_static_shape],
+    c: NDBuffer[DType.bfloat16, 2, output_0_static_shape],
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+    with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g128"):
+        matmul_gpu_qint4[128, target](c, a, b, ctx)
+
+
+@register_internal_shape_func("qmatmul_b4_g128")
+@always_inline
+fn qmatmul_b4_g128_shape_func[
+    single_thread_blocking_override: Bool
+](a: NDBuffer[DType.bfloat16, 2], b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
+    constrained[
+        a.type.is_floating_point(), "expected float inputs and outputs"
+    ]()
+    constrained[b.type is DType.uint8, "expected uint8 input b"]()
+    constrained[a.rank == b.rank == 2, "expected rank to be 2"]()
+
+    return IndexList[2](a.dim[0](), b.dim[0]())
+
+
+@register_internal_override("GGUF_gpu_repack_q4_0", 1)
+@always_inline
+fn GGUF_gpu_repack_q4_0[
+    input_0_static_shape: DimList,
+    target: StringLiteral = "cpu",
+](
+    b: NDBuffer[DType.uint8, 2, input_0_static_shape],
+    b_packed: NDBuffer[DType.uint8, 2, input_0_static_shape],
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+    with Trace[TraceLevel.OP, target=target]("GGUF_gpu_repack_q4_0"):
+        gpu_qint4_repack_Q4_0[target](b, b_packed, ctx)
+
+
+@register_internal_shape_func("GGUF_gpu_repack_q4_0")
+@always_inline
+fn GGUF_gpu_repack_q4_0_shape_func[
+    single_thread_blocking_override: Bool
+](b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
+    return b.get_shape()
+
+
+@register_internal_override("GPTQ_gpu_repack_b4_g128", 1)
+@always_inline
+fn GPTQ_gpu_repack_b4_g128[
+    input_0_static_shape: DimList,
+    input_1_static_shape: DimList,
+    target: StringLiteral = "cpu",
+](
+    b: NDBuffer[DType.uint8, 2, input_0_static_shape],
+    b_packed: NDBuffer[DType.uint8, 2, input_1_static_shape],
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+    with Trace[TraceLevel.OP, target=target]("GPTQ_gpu_repack_b4_g128"):
+        gpu_qint4_repack_GPTQ[128, target](b, b_packed, ctx)
+
+
+@register_internal_shape_func("GPTQ_gpu_repack_b4_g128")
+@always_inline
+fn GPTQ_gpu_repack_b4_g128_shape_func[
+    single_thread_blocking_override: Bool
+](b: NDBuffer[DType.uint8, 2]) -> IndexList[2]:
+    return IndexList[2](b.dim[1](), b.dim[0]())
 
 
 # ===----------------------------------------------------------------------===#
