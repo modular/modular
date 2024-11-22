@@ -23,10 +23,11 @@ from max.pipelines import (
     TokenGeneratorRequest,
     TokenGeneratorRequestMessage,
 )
+from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.pipelines.llm import (
+    TokenGeneratorOutput,
     TokenGeneratorPipeline,
 )
-from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.schemas.openai import (  # type: ignore
     ChatCompletionRequestMessage,
     ChatCompletionRequestMessageContentPartText,
@@ -103,7 +104,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                     "Streaming: %s, TOKEN: %d, %s",
                     request.id,
                     response_idx,
-                    token,
+                    token.decoded_token,
                 )
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
@@ -112,7 +113,7 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                     Choice3(
                         index=0,
                         delta=ChatCompletionStreamResponseDelta(
-                            content=token,
+                            content=token.decoded_token,
                             function_call=None,
                             role="assistant",
                             refusal=None,
@@ -153,9 +154,10 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
         self, request: TokenGeneratorRequest
     ) -> CreateChatCompletionResponse:
         try:
-            completed_tokens = await self.pipeline.all_tokens(request)
-
-            response_message = "".join(completed_tokens)
+            completed_outputs = await self.pipeline.all_tokens(request)
+            response_message = "".join(
+                output.decoded_token for output in completed_outputs
+            )
             response_choices = [
                 Choice1(
                     index=0,
@@ -322,6 +324,23 @@ class CompletionStreamResponse(BaseModel):
     usage: Optional[CompletionUsage] = Field(default=None)
 
 
+def _process_log_probabilities(
+    token_generator_outputs: list[TokenGeneratorOutput],
+) -> Logprobs:
+    token_log_probabilities = []
+    top_log_probabilities = []
+    for output in token_generator_outputs:
+        if output.token_log_probabilities:
+            token_log_probabilities.extend(output.token_log_probabilities)
+        if output.top_log_probabilities:
+            top_log_probabilities.extend(output.top_log_probabilities)
+
+    return Logprobs(
+        token_logprobs=token_log_probabilities,
+        top_logprobs=top_log_probabilities,
+    )
+
+
 class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
     async def stream(self, request: TokenGeneratorRequest):
         logger.debug(
@@ -335,15 +354,18 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                     "Streaming: %s, TOKEN: %d, %s",
                     request.id,
                     response_idx,
-                    token,
+                    token.decoded_token,
                 )
+
+                log_probs = _process_log_probabilities([token])
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
                 choices = [
                     CompletionResponseStreamChoice(
                         index=0,
-                        text=token,
+                        text=token.decoded_token,
+                        logprobs=log_probs,
                     )
                 ]
                 # Each chunk is expected to have the same id
@@ -372,15 +394,18 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
     async def complete(
         self, request: TokenGeneratorRequest
     ) -> CreateCompletionResponse:
-        completed_tokens = await self.pipeline.all_tokens(request)
+        completed_outputs = await self.pipeline.all_tokens(request)
 
-        response_message = "".join(completed_tokens)
+        log_probs = _process_log_probabilities(completed_outputs)
+        response_message = "".join(
+            output.decoded_token for output in completed_outputs
+        )
         response_choices = [
             Choice(
                 index=0,
                 text=response_message,
                 finish_reason="stop",
-                logprobs=Logprobs(),
+                logprobs=log_probs,
             )
         ]
         response = CreateCompletionResponse(
@@ -442,6 +467,8 @@ async def openai_create_completion(
             model_name=completion_request.model,
             req_recv_time_ns=request.state.recv_time_ns,
             max_new_tokens=completion_request.max_tokens,
+            logprobs=completion_request.logprobs,
+            echo=completion_request.echo,
         )
 
         if completion_request.stream:

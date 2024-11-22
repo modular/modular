@@ -14,10 +14,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import AsyncGenerator, Callable, Generic, Mapping, Optional, TypeVar
 
-from max.pipelines.interfaces import (
-    TokenGeneratorRequest,
-    PipelineTokenizer,
-)
+from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
 from max.serve.scheduler.queues import (
     BatchingStrategy,
     BatchQueueConfig,
@@ -35,6 +32,13 @@ class TokenGeneratorTimers:
     ttft: StopWatch = field(default_factory=StopWatch)
     # Started on creation
     total: StopWatch = field(default_factory=StopWatch.start)
+
+
+@dataclass(frozen=True)
+class TokenGeneratorOutput:
+    decoded_token: str
+    token_log_probabilities: Optional[list[float]] = None
+    top_log_probabilities: Optional[list[dict[str, float]]] = None
 
 
 @dataclass(frozen=True)
@@ -156,7 +160,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
     async def next_token(
         self,
         request: TokenGeneratorRequest,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[TokenGeneratorOutput, None]:
         """Generates and streams tokens for the provided request."""
         timers = self._timers[request.id]
         timers.ttft.start_ns = request.req_recv_time_ns
@@ -179,7 +183,27 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                 if token_idx == 0:
                     METRICS.ttft(timers.ttft.elapsed_ms)
                 token_idx += 1
-                yield await self.tokenizer.decode(context, response.next_token)
+
+                token_log_probabilities = None
+                top_log_probabilities = None
+                if log_prob := response.log_probabilities:
+                    token_log_probabilities = log_prob.token_log_probabilities
+                    top_log_probabilities = []
+                    for top_log_probs in log_prob.top_log_probabilities:
+                        decoded_log_probs = {}
+                        for token_id, value in top_log_probs.items():
+                            decoded_log_probs[
+                                await self.tokenizer.decode(context, token_id)
+                            ] = value
+                        top_log_probabilities.append(decoded_log_probs)
+
+                yield TokenGeneratorOutput(
+                    decoded_token=await self.tokenizer.decode(
+                        context, response.next_token
+                    ),
+                    token_log_probabilities=token_log_probabilities,
+                    top_log_probabilities=top_log_probabilities,
+                )
         finally:
             self._complete_request(request)
             if self.debug_logging:
@@ -192,7 +216,9 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
 
             METRICS.outputTokens(token_idx)
 
-    async def all_tokens(self, request: TokenGeneratorRequest) -> list[str]:
+    async def all_tokens(
+        self, request: TokenGeneratorRequest
+    ) -> list[TokenGeneratorOutput]:
         """Generates all tokens for the provided request."""
         return [token async for token in self.next_token(request)]
 
