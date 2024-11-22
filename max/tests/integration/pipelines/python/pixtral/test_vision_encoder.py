@@ -8,12 +8,10 @@
 import numpy as np
 import pytest
 import torch
-from max.driver import DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
-from nn.conv import Conv2D
-from nn.linear import Linear
+from nn import Conv2D, Linear
 from nn.norm import RMSNorm
 from pixtral.vision_encoder.attention import Attention
 from pixtral.vision_encoder.rotary_embedding_2d import RotaryEmbedding2D
@@ -82,16 +80,16 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
     pytorch_model = pytorch_pixtral_vision_encoder
 
     # Collect all the weights into the weights registry.
-    weights_registry: dict[str, DLPackArray] = {}
+    weights_registry: dict = {}
 
-    def linear(name: str, array: DLPackArray) -> Linear:
+    def linear(name: str, array) -> Linear:
         """Creates a Linear layer backed by a weight."""
         weights_registry[name] = array
         return Linear(
             Weight(
                 name=name,
-                dtype=DType.from_numpy(array.numpy().dtype),  # type: ignore
-                shape=array.shape,  # type: ignore
+                dtype=DType.from_numpy(array.numpy().dtype),
+                shape=array.shape,
             )
         )
 
@@ -278,6 +276,7 @@ def test_vision_encoder(
             compiled = session.load(graph, weights_registry=weights_registry)
 
             output = compiled.execute(*imgs)[0].to_numpy()
+            print("Vision Encoder Output shape = ", output.shape)
 
             np.testing.assert_allclose(
                 output,

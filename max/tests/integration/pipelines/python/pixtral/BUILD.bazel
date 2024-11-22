@@ -42,8 +42,8 @@ modular_py_test(
     deps = [
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/serve",
-        "//SDK/pipelines/pixtral",
         "//SDK/public/max-repo/pipelines/python/nn",
+        "//SDK/public/max-repo/pipelines/python/pixtral",
         "//SDK/public/max-repo/pipelines/python/utils",
         "//Support/python:support",
         requirement("huggingface_hub"),
@@ -51,5 +51,6 @@ modular_py_test(
         requirement("pytest-asyncio"),
         requirement("torch"),
         requirement("transformers"),
+        requirement("pillow"),
     ],
 )

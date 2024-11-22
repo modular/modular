@@ -420,7 +420,7 @@ def test_llama_language_model():
     np.testing.assert_allclose(
         output,
         pytorch_logits.detach().numpy(),
-        equal_nan=True,  # TODO: flip to False when language_model is correct
+        equal_nan=False,  # TODO: flip to True when language_model is correct
         rtol=ACCURACY_RTOL,
         atol=ACCURACY_ATOL,
     )
