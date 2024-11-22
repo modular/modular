@@ -337,7 +337,7 @@ class TensorValue(Value):
 
     def __getitem__(self, index):
         return ops.slice_tensor(
-            self, index if isinstance(index, Iterable) else (index,)
+            self, index if isinstance(index, Iterable) else (index,)  # type: ignore
         )
 
     def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]

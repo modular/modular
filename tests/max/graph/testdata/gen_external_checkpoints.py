@@ -37,7 +37,7 @@ def write_gguf(filename):
         "fancy/name": np.array([1, 2, 3], dtype=np.int64),
     }
     for key, tensor in data.items():
-        gguf_writer.add_tensor(key, tensor)
+        gguf_writer.add_tensor(key, tensor)  # type: ignore
 
     # Separately add Bfloat16 tensor.
     gguf_writer.add_tensor(
