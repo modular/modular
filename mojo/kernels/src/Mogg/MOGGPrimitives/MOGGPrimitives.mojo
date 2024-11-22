@@ -886,6 +886,17 @@ fn mgp_buffer_get_cached(
     )
 
 
+@register_internal("mgp.buffer.remove_cached")
+@always_inline
+fn mgp_buffer_remove_cached(
+    dummy_chain: Int, ctx: StateContext, buffer_slot: UInt64
+) -> Int:
+    external_call["KGEN_CompilerRT_RemoveCachedBuffer", NoneType](
+        int(buffer_slot), ctx.ctx_ptr
+    )
+    return 0
+
+
 @register_internal("mgp.buffer.get_size")
 @always_inline
 fn mgp_buffer_get_size(dummy_chain: Int, buf: NDBuffer[DType.uint8, 1]) -> Int:
