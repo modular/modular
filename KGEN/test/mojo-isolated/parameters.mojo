@@ -1059,18 +1059,30 @@ struct Origin[is_mutable: Bool]:
     ]
     var _mlir_origin: Self.type
 
+    # Implicit ctor required to allow parameter inference happen.
+    @implicit
+    fn __init__(out self, value: Self.type): 
+        self._mlir_origin = value
+
+
 # MOCO-1457: Support struct param inference for origins
-struct OriginStructInference[origin: Origin[False]]:
+struct OriginStructInferenceImm[origin: Origin[False]]:
+    fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
+struct OriginStructInferencePar[is_mutable: Bool, //, origin: Origin[is_mutable]]:
     fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
 
 # CHECK-LABEL: lit.func @"test_origin_struct_inf
 fn test_origin_struct_inf(inout data: Int):
    # This needs to infer the origin through an implicit conversion
-   # CHECK-NEXT: %borrow = lit.var.decl "borrow"
-   # CHECK-NEXT: %0 = lit.ref.immut %data
-   # CHECK-NEXT: lit.call {{.*}}OriginStructInference::@"__init__
-   # CHECK-SAME: {_mlir_origin: origin<0> = (mutcast mut *"data`")}>(%borrow, %0)
-   borrow = OriginStructInference(data)
+   # CHECK: %0 = lit.ref.immut %data
+   # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceImm::@"__init__
+   # CHECK-SAME: {_mlir_origin: origin<0> = (mutcast mut *"data`")}>(%immTest, %0)
+   immTest = OriginStructInferenceImm(data)
+
+   # CHECK-NEXT: lit.call {{.*}}OriginStructInferencePar::@"__init__
+   # CHECK-SAME: {_mlir_origin: origin<1> = *"data`"}>(%parTest, %data)
+   parTest = OriginStructInferencePar(data)
+
 
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
