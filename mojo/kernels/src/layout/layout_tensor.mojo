@@ -2109,7 +2109,7 @@ struct LayoutTensor[
                     @parameter
                     if is_masked:
                         var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                        async_copy[element_size_bytes, fill = Fill.ZERO](
+                        async_copy[element_size_bytes, fill = Scalar[dtype](0)](
                             src_ptr.bitcast[Scalar[dtype]]() + src_idx,
                             dst_ptr + dst_idx,
                             src_copy_size,
