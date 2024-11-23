@@ -199,8 +199,10 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       if (failed(
               matchTypes(actual.getElementType(), expected.getElementType())))
         return failure();
-      if (failed(matchParams(actual.getOrigin(), expected.getOrigin())))
+      if (failed(
+              matchSingleEltStruct(actual.getOrigin(), expected.getOrigin())))
         return failure();
+
       return matchSingleEltStruct(actual.getAddressSpace(),
                                   expected.getAddressSpace());
     }
@@ -450,20 +452,20 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   return failure();
 }
 
-// Special Hack (tm) for address space matching for pointers and references.
-// Both are defined like this:
-//   struct YourPointer[type: ..., address_space: AddressSpace]:
-//     alias _mlir_type =
-//        `!kgen.pointer<`, type, `,`, address_space._value.value, `>`
-//     fn __init__(inout self, address: Self._mlir_type):
+// Special Hack (tm) for matching mlir values for pointers and references to
+// single-element structs.
 //
-// When inferring the "address_space" constructor from a concrete pointer type,
-// we end up seeing a concrete value in the !kgen.pointer, e.g. "3" as an index
-// value.  However, we need to realize a value for the address_space parameter,
+// Things like pointers are defined like this:
+//   struct YourPointer[type: ..., address_space: AddressSpace]:
+//     fn __init__(out self, ref [_] address: type):
+//
+// When inferring the "address_space" constructor from a !lit.ref that holds it.
+// In the !lit.ref, we have (e.g. "3" or some parameter) as an index value.
+// However, we need to realize a value for the address_space parameter,
 // which is a struct of a struct of an index.
 //
 // This ends up looking like:
-//   ActualAttr = 0 : index
+//   ActualAttr = 3 : index
 //   Expected=#lit.struct.extract<:@Int #lit.struct.extract<:@AddressSpace
 //          *(0,3), "_value">, "value"> : index
 //
@@ -486,8 +488,17 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
                                   expExtract.getStructValue());
     }
 
-    if (actual.getType() != expected.getType())
-      return failure();
+    // If the types mismatch, it might be due to an origin mutability
+    // conversion, which we can handle.
+    if (actual.getType() != expected.getType()) {
+      if (!ExprEmitter::canZeroCostConvert(actual.getType(), expected.getType(),
+                                           shared))
+        return failure();
+
+      // Ok we can do the conversion make it happen.
+      actual =
+          ExprEmitter::emitZeroCostConvert(actual, expected.getType(), shared);
+    }
 
     auto expStruct = expExtract.getStructValue();
     // Figure out if the struct is something we can handle.
@@ -495,7 +506,8 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
     // Conservatively only handle the types we know have a single field.
     if (expDRT.getName().strref() != "AddressSpace" &&
         expDRT.getName().strref() != "Int" &&
-        expDRT.getName().strref() != "Bool")
+        expDRT.getName().strref() != "Bool" &&
+        expDRT.getName().strref() != "Origin")
       return failure();
     std::tuple<StringAttr, TypedAttr> actualField(expExtract.getField(),
                                                   actual);
