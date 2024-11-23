@@ -187,8 +187,8 @@ def test_registry__test_retrieve_factory_with_unsupported_huggingface_repo_id():
         huggingface_repo_id="modularai/replit-code-1.5",
     )
 
-    with pytest.raises(ValueError):
-        PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+    # Fallback to the generalized pipeline
+    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
 
 
 @prepare_registry
@@ -210,5 +210,6 @@ def test_registry__test_load_factory_with_good_arch_and_no_weight_path():
         huggingface_repo_id="bumblebee-testing/tiny-random-LlamaForCausalLM",
     )
 
-    with pytest.raises(ValueError):
+    # Generalized model so transformers will raise because it can't load tokenizer
+    with pytest.raises(EnvironmentError):
         _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
