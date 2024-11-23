@@ -636,7 +636,9 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     /// Get a bound reference to the Trait type.
     TraitType bindReference();
     bool isRegisterPassable() {
-      return getConvention() != TypeConvention::MemoryOnly;
+      TypeConvention c = getConvention();
+      return c == TypeConvention::RegisterPassableTrivial ||
+       c == TypeConvention::RegisterPassable;
     }
     bool isRegisterPassableTrivial() {
       return getConvention() == TypeConvention::RegisterPassableTrivial;

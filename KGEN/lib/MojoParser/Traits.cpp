@@ -145,6 +145,14 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   if (failed(shared.declResolver->resolveFully(traitDecl, structDecl.getLoc())))
     return failure();
 
+  TraitDeclOp parentTrait = cast<TraitDeclOp>(traitDecl);
+  if (parentTrait.isRegisterPassable() && !structDeclOp.isRegisterPassable()) {
+    diag = shared.emitError(structDecl.getLoc(),
+                            "a struct must be register passable in order to "
+                            "inherit from a register passable trait");
+    return failure();
+  }
+
   ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
 
   bool allMatchFound = true;
