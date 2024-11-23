@@ -18,13 +18,27 @@ namespace M::KGEN {
 
 constexpr bool kIsTracingEnabled = Trace::EnableTrace(Trace::kCompiler, 1);
 
+using InterpreterProfilerEntry =
+    ProfilerEntry<kIsTracingEnabled, Trace::kCompiler>;
+
 /// Profiler entry for Mojo compilation passes.
 using CompilerProfilerEntry =
-    ProfilerEntry<kIsTracingEnabled, Trace::kCompiler>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 2), Trace::kCompiler>;
 
 /// Verbose profiler entry for Mojo compilation passes.
 using VerboseCompilerProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 2), Trace::kCompiler>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 3), Trace::kCompiler>;
+
+struct InterpreterTimeTraceScope
+    : public TimeTraceScope<Trace::kCompiler,
+                            InterpreterProfilerEntry::isEnabled()> {
+  using TimeTraceScope::TimeTraceScope;
+
+  InterpreterTimeTraceScope(StringRef name, StringRef detail = {})
+      : TimeTraceScope(InterpreterProfilerEntry::create(name, detail)) {}
+  InterpreterTimeTraceScope(StringRef name, ProfilerPrintFn detailFn)
+      : TimeTraceScope(InterpreterProfilerEntry::create(name, detailFn)) {}
+};
 
 struct CompilerTimeTraceScope
     : public TimeTraceScope<Trace::kCompiler,

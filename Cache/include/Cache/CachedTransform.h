@@ -259,7 +259,7 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
 
 /// Profiler entry for compile-time cache transforms.
 using CacheProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 1), Trace::kCompiler>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 2), Trace::kCompiler>;
 
 //===----------------------------------------------------------------------===//
 // Operation Transformations

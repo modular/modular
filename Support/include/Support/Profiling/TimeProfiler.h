@@ -152,9 +152,11 @@ struct Trace {
     kPrimitives = 4,
     // For traces related to compilation.
     // Level 1:
+    //   InterpreterProfilerEntry for Mojo interpreter traces.
+    // Level 2:
     //   CacheProfilerEntry for cache-related transforms.
     //   CompilerProfilerEntry for Mojo compiler passes.
-    // Level 2:
+    // Level 3:
     //   VerboseCompilerProfilerEntry for very detailed Mojo compiler profiling.
     kCompiler = 5,
   };

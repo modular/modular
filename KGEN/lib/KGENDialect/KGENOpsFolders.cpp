@@ -6,7 +6,9 @@
 
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/DebugStringHelper.h"
 
 using namespace M;
 using namespace KGEN;
