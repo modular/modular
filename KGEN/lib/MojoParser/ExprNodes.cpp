@@ -2407,8 +2407,7 @@ coerceTypesToEachOther(SMLoc loc, ValueType &lhs, const ExprNode *lhsExpr,
   // If neither is convertible to the other, check to see if there is a common
   // type, and convert both of them to it if so.
   if (!lhsConvertibleToRHS && !rhsConvertibleToLHS) {
-    if (auto commonType =
-            getZeroCostCommonType(lhsType, rhsType, emitter.shared)) {
+    if (auto commonType = emitter.getZeroCostCommonType(lhsType, rhsType)) {
       lhs = convert({lhs, lhsExpr}, commonType, /*isLHS*/ true);
       if (!lhs)
         return failure();

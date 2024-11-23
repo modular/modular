@@ -944,7 +944,7 @@ Value ExprEmitter::emitRefValue(ASTExprAnd<AnyValue> value,
 /// or do other non-trivial conversions.
 ///
 /// This produces an error and returns null on an invalid conversion.
-AnyValue ExprEmitter::rebindValue(ASTExprAnd<AnyValue> value, Type destType) {
+AnyValue ExprEmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
   // Materialize a parameter rebind.
   if (auto pvalue = value.ir.getIfPValue())
     return PValue(ParamOperatorAttr::get(POC::Rebind, pvalue.get(), destType));
@@ -1310,6 +1310,240 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
   return true;
 }
 
+/// Returns if a value of the specified type can be coerced to the other type
+/// with a zero-cost conversion like a rebind.  This means that values of the
+/// two types have exactly the same representation post-elaboration.
+bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
+                                     SharedState &shared) {
+  if (fromType.isEqualCanon(toType))
+    return true; // No rebind needed!
+
+  // Trait metatypes are allowed to upcast to trivial types.
+  if (isa<TypeType>(toType)) {
+    if (isa<AnyTraitType>(fromType))
+      return true;
+    if (auto structType = dyn_cast<AnyStructType>(fromType)) {
+      return ASTType(structType).getRegisterPassability(SMLoc(), shared) ==
+             TypeConvention::RegisterPassableTrivial;
+    }
+  }
+
+  // Handle conversions of values that have parametric type.
+  if (isa<ParamRefType>(fromType) || isa<ParamRefType>(toType)) {
+    if (auto fromMT = fromType.getMetaType()) {
+      if (auto toMT = toType.getMetaType()) {
+        // A value of parametric type or a result of parametric type can be
+        // rebind to each other if the have the same struct metatype, because
+        // there is exactly one type that implements it - the parameter must
+        // resolve to that struct.
+        if (isa<AnyStructType>(fromMT) && ASTType(fromMT).isEqualCanon(toMT))
+          return true;
+
+        // Allow conversion from parametric value of AnyTrait[SomeTrait]
+        // metatype to SomeTrait. We don't know what trait type the parametric
+        // value will resolve to, but we know that it conforms to SomeTrait.
+        //
+        // Note that it is not safe to allow conversions *TO* parametric
+        // types, even if they have the same AnyTrait type.  This is because
+        // post-elaboration they will resolve to a concrete type, not an erased
+        // type, and the types may disagree.  For example, this needs to be
+        // invalid because 'T' and 'U' can elaborate to different types:
+        //
+        //   fn different_traits[T: Copyable, U: Copyable](x: T) -> U:
+        //      return x   # Cannot convert from related types T to U.
+        if (isa<TraitType>(toType) && ASTType(fromMT).isEqualCanon(toMT))
+          return true;
+      }
+    }
+
+    // If the "from" type is a rebind of another type, it is a downcast from the
+    // actual type we care about.  Strip it off and try again.
+    if (auto fromRebind = dyn_cast<ParamOperatorAttr>(PValue(fromType).get());
+        fromRebind && fromRebind.getOpcode() == POC::Rebind)
+      return canZeroCostConvert(ASTType(fromRebind.getOperand(0)), toType,
+                                shared);
+    // Strip them off 'to' type also.
+    if (auto toRebind = dyn_cast<ParamOperatorAttr>(PValue(toType).get());
+        toRebind && toRebind.getOpcode() == POC::Rebind)
+      return canZeroCostConvert(fromType, ASTType(toRebind.getOperand(0)),
+                                shared);
+  }
+
+  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base] with a
+  // rebind.
+  if (auto toAnyTrait = dyn_cast<AnyTraitType>(toType)) {
+    if (auto fromAnyTrait = dyn_cast<AnyTraitType>(fromType)) {
+      auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared);
+      if (!fromDecl)
+        return false;
+
+      std::optional<InflightDiag> diag;
+      if (fromDecl->doesNominalTypeConformsTo(toAnyTrait.getTraitType(), diag))
+        return true;
+      if (diag)
+        diag->abandon();
+      return false;
+    }
+  }
+
+  // Check for closure structs and dig out their underlying signature types to
+  // check whether the conversion can occur.
+  auto fromDecl = dyn_cast_or_null<StructDeclOp>(fromType.getDecl(shared));
+  auto toDecl = dyn_cast_or_null<StructDeclOp>(toType.getDecl(shared));
+  if (fromDecl && toDecl) {
+    SignatureType fromSig = fromDecl.getClosureSignature().value_or(nullptr);
+    SignatureType toSig = toDecl.getClosureSignature().value_or(nullptr);
+    if (fromSig && toSig) {
+      // Compare the specialized signatures.
+      fromSig = fromSig.getSpecializedSignature(fromType.getParamBindings());
+      toSig = toSig.getSpecializedSignature(toType.getParamBindings());
+      return canZeroCostConvert(fromSig, toSig, shared);
+    }
+    return false;
+  }
+
+  // Check origin downcasting.  The safe conversions are:
+  //   Origins with identical mutability will be uniqued and already handled.
+  //   Conversion from any mutability to KNOWN immutable is fine.
+  //   Conversion from KNOWN mutable to any mutability is fine.
+  if (auto fromLife = dyn_cast<OriginType>(fromType))
+    if (auto toLife = dyn_cast<OriginType>(toType))
+      return toLife.isMutableKnown(false) || fromLife.isMutableKnown(true);
+
+  // Check reference downcasting.  The only thing allowed to disagree is the
+  // origin set / mutability.
+  if (auto fromRef = dyn_cast<RefType>(fromType)) {
+    if (auto toRef = dyn_cast<RefType>(toType)) {
+      // Element types and address space have to be exactly equal.
+      if (fromRef.getAddressSpace() != toRef.getAddressSpace())
+        return false;
+
+      // The element type needs to exactly match, but we allow rebinds to a
+      // different metatype in the way.
+      auto fromEltType = fromRef.getElementType();
+      auto toEltType = toRef.getElementType();
+      if (!ASTType(fromEltType).isEqualCanon(toEltType)) {
+        // If these are both parametric types, they may have a rebind in the
+        // way.  This rebind will be a downcast of a trait, e.g. from Copyable
+        // to AnyType, which is needed because Mojo/MLIR doesn't have subtype
+        // type compatibility of attributes.
+        bool isJustRebind = false;
+        if (isa<ParamRefType>(fromEltType) && isa<ParamRefType>(toEltType) &&
+            canZeroCostConvert(fromEltType, toEltType, shared))
+          isJustRebind = true;
+
+        if (!isJustRebind)
+          return false;
+      }
+
+      // Verify compatible OriginType(mutability).  This is checking the type
+      // of the origin, which contains its mutability specifier.
+      auto toOriginType = toRef.getOriginType();
+      if (fromRef.getOriginType() != toOriginType &&
+          !canZeroCostConvert(fromRef.getOriginType(), toOriginType, shared))
+        return false;
+
+      // We allow converting an "any" origin to anything concrete.
+      // NOTE: This is not memory safe; we should make this an explicit
+      // operation someday.
+      if (isa<AnyOriginAttr>(fromRef.getOrigin()))
+        return true;
+
+      // We can convert origin subset to a origins superset.
+      auto toOrigin = toRef.getOrigin();
+      auto originUnion = OriginUnionAttr::get(
+          {toOrigin, OriginMutCastAttr::get(fromRef.getOrigin(), toOriginType)},
+          toOriginType);
+      return toOrigin == originUnion;
+    }
+  }
+
+  auto from = dyn_cast<LITSignatureType>(fromType);
+  auto to = dyn_cast<LITSignatureType>(toType);
+  if (!from || !to)
+    return false;
+
+  // Allow signature types to be converted for free if they differ only in
+  // argument names, parameter names, passing kinds, or implicit origins.
+  size_t fromNumArgs = from.getNumArguments();
+  if (fromNumArgs != to.getNumArguments())
+    return false;
+  if (from.getNumParams() != to.getNumParams())
+    return false;
+  if (from.getArgConventions() != to.getArgConventions())
+    return false;
+
+  // Result types, and input/result parameter types must match exactly.
+  if (from.getResults() != to.getResults() ||
+      from.getParamTypes() != to.getParamTypes() ||
+      from.getResultParamTypes() != to.getResultParamTypes() ||
+      from.getFnEffects() != to.getFnEffects())
+    return false;
+
+  // The input argument types may have different implicit origins.
+  for (auto [fromTy, toTy, conv] : llvm::zip(
+           from.getArguments(), to.getArguments(), from.getArgConventions())) {
+    Type fromTyCmp = fromTy;
+    Type toTyCmp = toTy;
+    if (SignatureType::hasImplicitOrigin(conv)) {
+      fromTyCmp = ASTType(fromTyCmp).getReferenceElementType();
+      toTyCmp = ASTType(toTyCmp).getReferenceElementType();
+    }
+    if (!ASTType(fromTyCmp).isEqualCanon(toTyCmp))
+      return false;
+  }
+
+  // Otherwise, everything seems compatible.
+  return true;
+}
+
+/// Returns a type if there is a shared supertype for the two specified types,
+/// e.g. two derived classes may have the same base class even if neither is
+/// convertible to the other.  This returns null if there is no common type.
+///
+/// This is the implementation logic of getZeroCostCommonType and shouldn't be
+/// called directly.
+static ASTType getZeroCostCommonTypeImpl(ASTType type1, ASTType type2) {
+  // Check reference downcasting.
+  if (auto type1Ref = dyn_cast<RefType>(type1))
+    if (auto type2Ref = dyn_cast<RefType>(type2)) {
+      // Element types and addr spaces have to be exactly equal.
+      auto eltType = type1Ref.getElementType();
+      if (!ASTType(eltType).isEqualCanon(type2Ref.getElementType()) ||
+          type1Ref.getAddressSpace() != type2Ref.getAddressSpace())
+        return {};
+
+      // If so, we can form a common type with a subset of their mutability and
+      // a union of their origins.
+      auto isMutableAttr = ParamOperatorAttr::get(
+          POC::And, type1Ref.isMutable(), type2Ref.isMutable());
+
+      auto l1 = OriginMutCastAttr::get(type1Ref.getOrigin(), isMutableAttr);
+      auto l2 = OriginMutCastAttr::get(type2Ref.getOrigin(), isMutableAttr);
+
+      auto origin =
+          OriginUnionAttr::get({l1, l2}, cast<OriginType>(l1.getType()));
+      return RefType::get(eltType, origin, type1Ref.getAddressSpace());
+    }
+
+  // No common type found.
+  return {};
+}
+
+/// Returns a type if there is a shared supertype for the two specified types,
+/// e.g. two derived classes may have the same base class even if neither is
+/// convertible to the other.  This returns null if there is no common type.
+ASTType ExprEmitter::getZeroCostCommonType(ASTType type1, ASTType type2) {
+  if (auto result = getZeroCostCommonTypeImpl(type1, type2)) {
+    // Make sure we can always convert to the common type!
+    assert(canZeroCostConvert(type1, result, shared) &&
+           canZeroCostConvert(type2, result, shared) &&
+           "cannot convert to common type?");
+    return result;
+  }
+  return {};
+}
+
 /// Return true if 'value' may be implicitly converted to 'requiredType'
 /// by invoking (one level of) conversion operations.  This does not generate
 /// any IR.
@@ -1326,7 +1560,9 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (rvType.isEqualCanon(requiredType))
     return true;
 
-  if (canConvertWithRebind(rvType, requiredType, shared))
+  // If the types are identical after elaboration then they are implicitly
+  // convertible.
+  if (canZeroCostConvert(rvType, requiredType, shared))
     return true;
 
   // Origins and origin sets can convert between each other.
@@ -1405,7 +1641,36 @@ static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
   if (refinedType == valueType)
     return value;
 
-  return emitter.rebindValue({value, expr}, refinedType);
+  return emitter.rebindValue({cValue, expr}, refinedType);
+}
+
+/// Given a value of a type that can be zero cost converted to another type,
+/// emit a rebind or other operation to get it in the right type.
+PValue ExprEmitter::emitZeroCostConvert(PValue value, ASTType toType,
+                                        SharedState &shared) {
+  assert(toType.mlirType != value.getType() && "Already the same");
+
+  // PValues of origin type have a special conversion.
+  if (isa<OriginType>(toType) && isa<OriginType>(value.getType()))
+    value = OriginMutCastAttr::get(value, toType);
+
+  return PValue(ParamOperatorAttr::get(POC::Rebind, value.get(), toType));
+}
+
+AnyValue ExprEmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,
+                                          ASTType toType) {
+  assert(toType.mlirType != value.ir.getType() && "Already the same");
+
+  // PValue handling has a helper.
+  if (auto pv = value.ir.getIfPValue())
+    return emitZeroCostConvert(pv, toType, shared);
+
+  // The RValue types need to be rebound, but MValues have a level of
+  // reference around them that we want to maintain.
+  if (value.ir.isMValue())
+    toType = value.ir.getMValueType().getWithElement(toType);
+
+  return rebindValue(value, toType);
 }
 
 /// Emit the specified value into the current destination if present.  This
@@ -1461,19 +1726,9 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     if (!requiredType.isEqualCanon(rvType)) {
 
       // If we are dealing with types that differ only pre-elaboration,
-      // we insert a rebind.
-      if (canConvertWithRebind(rvType, requiredType, shared)) {
-        // The RValue types need to be rebound, but MValues have a level of
-        // reference around them that we want to maintain.
-        if (cValue.isMValue())
-          requiredType = cValue.getMValueType().getWithElement(requiredType);
-
-        // PValues of origin type have a special conversion.
-        if (isa<OriginType>(requiredType) && isa<OriginType>(cValue.getType()))
-          if (auto pv = cValue.getIfPValue())
-            value = OriginMutCastAttr::get(pv, requiredType);
-
-        value = rebindValue({value, expr}, requiredType);
+      // we insert a rebind or equivalent
+      if (canZeroCostConvert(rvType, requiredType, shared)) {
+        value = emitZeroCostConvert({cValue, expr}, requiredType);
         return emitResult(value, expr, dest);
       }
 
