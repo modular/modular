@@ -1050,6 +1050,28 @@ fn infer_box_type[T: AnyType, //, box: Box[T]]():
     # CHECK-NEXT: lit.call {{.*}}infer_box_type{{.*}}<:!AnyType [!Int,
     infer_box_type[Int()]()
 
+## TODO: Move to stubs.mojo
+struct Origin[is_mutable: Bool]:
+    alias type = __mlir_type[
+        `!lit.origin<`,
+        is_mutable.value,
+        `>`,
+    ]
+    var _mlir_origin: Self.type
+
+# MOCO-1457: Support struct param inference for origins
+struct OriginStructInference[origin: Origin[False]]:
+    fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
+
+# CHECK-LABEL: lit.func @"test_origin_struct_inf
+fn test_origin_struct_inf(inout data: Int):
+   # This needs to infer the origin through an implicit conversion
+   # CHECK-NEXT: %borrow = lit.var.decl "borrow"
+   # CHECK-NEXT: %0 = lit.ref.immut %data
+   # CHECK-NEXT: lit.call {{.*}}OriginStructInference::@"__init__
+   # CHECK-SAME: {_mlir_origin: origin<0> = (mutcast mut *"data`")}>(%borrow, %0)
+   borrow = OriginStructInference(data)
+
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
 ##===----------------------------------------------------------------------===##
