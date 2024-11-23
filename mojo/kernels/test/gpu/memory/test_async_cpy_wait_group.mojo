@@ -98,15 +98,41 @@ fn copy_with_src_size(
         smem[i] = -1.0
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
-    async_copy[16, fill = Fill.ZERO](src, smem, src_size)
+    async_copy[16, fill = Float32(0)](src, smem, src_size)
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
     # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
     # is no OOB access.
-    async_copy[16, fill = Fill.ZERO](src + 4, smem + 4, 0)
+    async_copy[16, fill = Float32(0)](src + 4, smem + 4, 0)
     async_copy_wait_all()
 
     for i in range(8):
+        dst[i] = smem[i]
+
+
+fn copy_with_non_zero_fill[
+    smem_size: Int
+](
+    src: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
+    dst: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
+):
+    var smem = stack_allocation[
+        smem_size, DType.bfloat16, address_space = AddressSpace.SHARED
+    ]()
+
+    for i in range(smem_size):
+        smem[i] = 0
+
+    var offset = smem_size // 2
+
+    async_copy[16, fill = BFloat16(32)](src, smem, predicate=True)
+
+    async_copy[16, fill = BFloat16(32)](
+        src + offset, smem + offset, predicate=False
+    )
+    async_copy_wait_all()
+
+    for i in range(smem_size):
         dst[i] = smem[i]
 
 
@@ -163,7 +189,69 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     _ = func^
 
 
+fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
+    alias size = 8
+
+    # Allocate arrays of different sizes to trigger an OOB address in test.
+    var a_host = UnsafePointer[BFloat16].alloc(size)
+    var b_host = UnsafePointer[BFloat16].alloc(2 * size)
+
+    for i in range(size):
+        a_host[i] = i + 1
+
+    for i in range(2 * size):
+        b_host[i] = 0
+
+    var a_device = ctx.enqueue_create_buffer[DType.bfloat16](size)
+    var b_device = ctx.enqueue_create_buffer[DType.bfloat16](2 * size)
+
+    ctx.enqueue_copy_to_device(a_device, a_host)
+
+    alias kernel = copy_with_non_zero_fill[2 * size]
+    var func = ctx.compile_function[kernel](threads_per_block=1)
+
+    alias src_size = 3 * sizeof[DType.bfloat16]()
+
+    ctx.enqueue_function(
+        func,
+        a_device,
+        b_device,
+        src_size,
+        grid_dim=(1, 1, 1),
+        block_dim=(1, 1, 1),
+    )
+
+    ctx.enqueue_copy_from_device(b_host, b_device)
+
+    ctx.synchronize()
+
+    assert_equal(b_host[0], 1)
+    assert_equal(b_host[1], 2)
+    assert_equal(b_host[2], 3)
+    assert_equal(b_host[3], 4)
+    assert_equal(b_host[4], 5)
+    assert_equal(b_host[5], 6)
+    assert_equal(b_host[6], 7)
+    assert_equal(b_host[7], 8)
+    assert_equal(b_host[8], 32)
+    assert_equal(b_host[9], 32)
+    assert_equal(b_host[10], 32)
+    assert_equal(b_host[11], 32)
+    assert_equal(b_host[12], 32)
+    assert_equal(b_host[13], 32)
+    assert_equal(b_host[14], 32)
+    assert_equal(b_host[15], 32)
+
+    _ = a_device
+    _ = b_device
+    a_host.free()
+    b_host.free()
+
+    _ = func^
+
+
 def main():
     with DeviceContext() as ctx:
         run_copy_via_shared(ctx)
         test_copy_with_src_size(ctx)
+        test_copy_with_non_zero_fill(ctx)

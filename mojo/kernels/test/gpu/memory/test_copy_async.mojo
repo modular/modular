@@ -163,10 +163,10 @@ fn test_async_copy_with_zero_fill_kernel(
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
-    async_copy[4, bypass_L1_16B=False, l2_prefetch=128, fill = Fill.ZERO](
+    async_copy[4, bypass_L1_16B=False, l2_prefetch=128, fill = Float32(0)](
         src, shared_mem
     )
-    async_copy[16, bypass_L1_16B=False, l2_prefetch=64, fill = Fill.ZERO](
+    async_copy[16, bypass_L1_16B=False, l2_prefetch=64, fill = Float32(0)](
         src, shared_mem
     )
 
@@ -203,6 +203,39 @@ fn test_async_copy_with_eviction(
     )
 
 
+fn async_copy_with_non_zero_fill_kernel(
+    src: UnsafePointer[Int32, AddressSpace.GLOBAL]
+):
+    var shared_mem = stack_allocation[
+        4, DType.int32, address_space = AddressSpace.SHARED
+    ]()
+    async_copy[16, bypass_L1_16B=False, l2_prefetch=128, fill = Int32(32)](
+        src, shared_mem, predicate=True
+    )
+    async_copy[16, bypass_L1_16B=False, l2_prefetch=64, fill = Int32(32)](
+        src, shared_mem, predicate=False
+    )
+
+
+fn _verify_async_copy_with_non_zero_fill(asm: String) raises -> None:
+    assert_true("mov.b32 	%r3, 32;" in asm)
+    assert_true(
+        "@p cp.async.ca.shared.global.L2::128B [%r2], [%rd1], 16;" in asm
+    )
+    assert_true(
+        "@p cp.async.ca.shared.global.L2::64B [%r2], [%rd1], 16;" in asm
+    )
+    assert_true("@!p st.shared.v4.b32 [%r2], {%r3, %r3, %r3, %r3};" in asm)
+
+
+def test_async_copy_with_non_zero_fill():
+    print("test_async_copy_with_non_zero_fill")
+    alias asm = _compile_code_asm[
+        async_copy_with_non_zero_fill_kernel, target = _get_gpu_target()
+    ]()
+    _verify_async_copy_with_non_zero_fill(asm)
+
+
 fn _verify_async_copy_with_eviction(asm: String) raises -> None:
     assert_true("createpolicy.fractional.L2::evict_first.b64" in asm)
     assert_true("cp.async.ca.shared.global.L2::128B" in asm)
@@ -237,5 +270,6 @@ def main():
     test_async_copy_l2_prefetch_sm80()
     test_async_copy_l2_prefetch_sm90()
     test_async_copy_with_zero_fill()
+    test_async_copy_with_non_zero_fill()
     test_async_copy_with_eviction_sm80()
     test_async_copy_with_eviction_sm90()
