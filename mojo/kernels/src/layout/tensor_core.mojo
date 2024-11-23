@@ -23,6 +23,7 @@ from layout.swizzle import *
 from utils import IndexList
 
 from stdlib.builtin.simd import _has_native_f8_support
+from sys import is_nvidia_gpu
 
 
 fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:
@@ -93,8 +94,62 @@ struct TensorCore[
             return List[IndexList[3]](shape_null)
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
+
     @always_inline
     fn load_a(
+        inout self,
+        a: LayoutTensor,
+    ) -> Self.a_reg_tile_type as res:
+        @parameter
+        if is_nvidia_gpu():
+            return self._load_a_nvidia(a)
+        else:
+            return self._load_a_amd(a)
+
+    @always_inline
+    fn _load_a_amd(
+        inout self,
+        a: LayoutTensor,
+    ) -> Self.a_reg_tile_type as res:
+        alias mma_m = shape[0]
+        alias mma_k = shape[2]
+        var a_reg_tile = __type_of(res).stack_allocation()
+        alias reg_per_thread = num_matrix_reg[mma_m, mma_k]()
+
+        alias warp_layout = Layout.col_major(16, 4)
+
+        constrained[
+            in_type
+            in (
+                DType.float32,
+                DType.bfloat16,
+                DType.float16,
+            ),
+            "No valid type to load matrix fragment a",
+        ]()
+
+        @parameter
+        if in_type is DType.float32:
+            constrained[
+                reg_per_thread in (1,),
+                "No valid mma shape to load matrix fragment a (float32)",
+            ]()
+            var a_reg_frags = a.distribute[warp_layout](lane_id())
+            a_reg_tile.copy_from(a_reg_frags)
+
+        elif in_type in (DType.bfloat16, DType.float16):
+            constrained[
+                reg_per_thread in (4,),
+                "No valid mma shape to load matrix fragment a (bfloat16)",
+            ]()
+            var a_reg_frags = a.distribute[warp_layout](lane_id())
+            a_reg_tile.copy_from(a_reg_frags)
+        else:
+            constrained[False, "not supported"]()
+        return a_reg_tile
+
+    @always_inline
+    fn _load_a_nvidia(
         inout self,
         a: LayoutTensor,
     ) -> Self.a_reg_tile_type as res:
@@ -156,6 +211,54 @@ struct TensorCore[
         inout self,
         b: LayoutTensor,
     ) -> Self.b_reg_tile_type as res:
+        @parameter
+        if is_nvidia_gpu():
+            return self._load_b_nvidia(b)
+        else:
+            return self._load_b_amd(b)
+
+    # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
+    @always_inline
+    fn _load_b_amd(
+        inout self,
+        b: LayoutTensor,
+    ) -> Self.b_reg_tile_type as res:
+        alias mma_n = shape[1]
+        alias mma_k = shape[2]
+        var b_reg_tile = __type_of(res).stack_allocation()
+        alias reg_per_thread = num_matrix_reg[mma_k, mma_n]()
+
+        alias warp_layout = Layout.row_major(4, 16)
+
+        @parameter
+        if in_type is DType.float32:
+            constrained[
+                reg_per_thread in (1,),
+                "No valid mma shape to load matrix fragment b",
+            ]()
+
+            var b_ram_frags = b.distribute[warp_layout](lane_id())
+            b_reg_tile.copy_from(b_ram_frags)
+
+        elif in_type in (DType.bfloat16, DType.float16):
+            constrained[
+                reg_per_thread in (4,),
+                "No valid mma shape to load matrix fragment b",
+            ]()
+
+            var b_ram_frags = b.distribute[warp_layout](lane_id())
+            b_reg_tile.copy_from(b_ram_frags)
+        else:
+            constrained[False, "not supported"]()
+
+        return b_reg_tile
+
+    # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
+    @always_inline
+    fn _load_b_nvidia(
+        inout self,
+        b: LayoutTensor,
+    ) -> Self.b_reg_tile_type as res:
         alias mma_n = shape[1]
         alias mma_k = shape[2]
         var b_reg_tile = __type_of(res).stack_allocation()
@@ -206,6 +309,43 @@ struct TensorCore[
         inout self,
         c: LayoutTensor,
     ) -> Self.c_reg_tile_type as res:
+        @parameter
+        if is_nvidia_gpu():
+            return self._load_c_nvidia(c)
+        else:
+            return self._load_c_amd(c)
+
+    @always_inline
+    fn _load_c_amd(
+        inout self,
+        c: LayoutTensor,
+    ) -> Self.c_reg_tile_type as res:
+        alias mma_m = shape[0]
+        alias mma_n = shape[1]
+        alias mma_k = shape[2]
+        var c_reg_tile = __type_of(res).stack_allocation()
+        alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
+        alias warp_layout = Layout.row_major(4, 16)
+
+        @parameter
+        if out_type is DType.float32:
+            constrained[
+                reg_per_thread == 4, "No valid shape to load matrix fragment c"
+            ]()
+
+            var c_ram_frags = c.vectorize[4, 1]().distribute[warp_layout](
+                lane_id()
+            )
+            c_reg_tile.vectorize[1, 4]().copy_from(c_ram_frags)
+        else:
+            constrained[False, "No valid type to load matrix fragment c"]()
+        return c_reg_tile
+
+    @always_inline
+    fn _load_c_nvidia(
+        inout self,
+        c: LayoutTensor,
+    ) -> Self.c_reg_tile_type as res:
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
@@ -229,6 +369,41 @@ struct TensorCore[
 
     @always_inline
     fn store_d(self, d_dst: LayoutTensor, d_src: LayoutTensor):
+        @parameter
+        if is_nvidia_gpu():
+            self._store_d_nvidia(d_dst, d_src)
+        else:
+            self._store_d_amd(d_dst, d_src)
+
+    @always_inline
+    fn _store_d_amd(self, d_dst: LayoutTensor, d_src: LayoutTensor):
+        constrained[
+            d_dst.dtype == out_type,
+            "destination tensor must have the same type",
+        ]()
+        constrained[
+            d_src.shape[0]() == Self.c_reg_tile_type.shape[0]()
+            and d_src.shape[1]() == Self.c_reg_tile_type.shape[1](),
+            "src tensor must have the same shape as c_reg_tile_type",
+        ]()
+        alias mma_m = shape[0]
+        alias mma_n = shape[1]
+        alias reg_per_thread = num_matrix_reg[mma_m, mma_n]()
+        alias warp_layout = Layout.row_major(4, 16)
+
+        @parameter
+        if out_type is DType.float32:
+            constrained[
+                reg_per_thread == 4, "No valid shape to store to LayoutTensor d"
+            ]()
+
+            var dst = d_dst.vectorize[4, 1]().distribute[warp_layout](lane_id())
+            dst.copy_from(d_src.vectorize[1, 4]())
+        else:
+            constrained[False, "No valid type to store to LayoutTensor d"]()
+
+    @always_inline
+    fn _store_d_nvidia(self, d_dst: LayoutTensor, d_src: LayoutTensor):
         constrained[
             d_dst.dtype == out_type,
             "destination tensor must have the same type",
