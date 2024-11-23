@@ -78,3 +78,30 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
         # expected-error @+1 {{cannot bind type 'DoesNotConform' to trait 'SimpleTrait'}}
         DoesNotConform,
     ]()
+
+@register_passable("trivial")
+trait TrivialTrait:
+    fn doSomething(self):
+        ...
+
+trait MemTraitViolation(TrivialTrait):
+    fn bar(self):
+        ...
+
+@register_passable
+trait NonTrivialRGTrait:
+    fn bar(self):
+        ...
+
+# expected-error @+1 {{a struct must be register passable in order to inherit from a register passable trait}}
+struct StructViolation1(NonTrivialRGTrait):
+    pass
+
+# expected-error @+1 {{a struct must be register passable in order to inherit from a register passable trait}}
+struct StructViolation2(TrivialTrait):
+    pass
+
+# expected-error @+1 {{a struct must be register passable in order to inherit from a register passable trait}}
+struct StructViolation3(MemTraitViolation):
+    fn bar(self):
+        pass
