@@ -861,6 +861,11 @@ fn get_mma_shape[
             return shape_16x8x8
         else:
             return shape_8x8x4
+    elif accum_type is DType.float32 and input_type in (
+        DType.float8e4m3,
+        DType.float8e5m2,
+    ):
+        return shape_16x8x32
     else:
         constrained[False, "Unsupported mma shape."]()
         return shape_null
@@ -884,6 +889,8 @@ fn get_accum_type[
             return preferred_accum_type
         else:
             return DType.float16
+    elif input_type in (DType.float8e4m3, DType.float8e5m2):
+        return DType.float32
     else:
         constrained[
             False, "Only support fp16, bf16, fp32 accumulation for now."
