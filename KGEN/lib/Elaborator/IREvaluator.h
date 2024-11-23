@@ -62,6 +62,9 @@ public:
   ErrorTreeOr<TypedAttr>
   evaluateFunctionWithResultSlot(FuncOp func, ArrayRef<TypedAttr> inputs);
 
+  /// Set the location to associate errors with.
+  void setErrorLoc(Location loc) { errorLoc = loc; }
+
 private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,

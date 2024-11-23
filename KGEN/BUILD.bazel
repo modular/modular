@@ -533,6 +533,7 @@ modular_cc_library(
         ":InterpreterDialectIncGen",
         ":InterpreterOpInterfaceIncGen",
         ":MemoryableTypeInterfaceIncGen",
+        ":Support",
         "//Support:ADT",
         "//Support:Base",
         "//Support:Compiler",

@@ -7,6 +7,7 @@
 #include "KGEN/Interpreter/BytecodeInterpreter.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
 #include "KGEN/Interpreter/Utils.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "Support/AlignedAlloc.h"
 #include "llvm/Support/MathExtras.h"
 
@@ -323,6 +324,22 @@ FunctionIRBytecode::compile(Region &entry, TargetInfoAttr target) {
 ErrorTreeOrSuccess
 BytecodeInterpreter::callFunctionBody(Region &body,
                                       ArrayRef<Attribute> arguments) {
+  if constexpr (KGEN::kIsTracingEnabled) {
+    KGEN::InterpreterProfilerEntry::createAndPush(
+        "Interpret", [&]() -> std::string {
+          std::string detail;
+          llvm::raw_string_ostream os(detail);
+          if (auto sym = dyn_cast<mlir::SymbolOpInterface>(body.getParentOp()))
+            os << sym.getName();
+          if (!arguments.empty()) {
+            os << "\nargs:";
+            for (Attribute arg : arguments)
+              os << "\n  " << arg;
+          }
+          return detail;
+        });
+  }
+
   // Push a new frame.
   StackFrame &newFrame = stack.push();
   newFrame.func = body.getParentOp();
@@ -359,6 +376,9 @@ BytecodeInterpreter::callFunctionBody(Region &body,
 }
 
 void BytecodeInterpreter::returnFromFunction(ArrayRef<Attribute> returnValues) {
+  if constexpr (KGEN::kIsTracingEnabled)
+    KGEN::InterpreterProfilerEntry::endAndPop();
+
   StackFrame &frame = getCurrentFrame();
   notifyReturnFromFrame(frame.numStackAllocs, frame.numSymbolicAllocs);
 

@@ -701,6 +701,7 @@ ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
     if (!operandsAttr)
       return ElaborationState::skipNode();
 
+    inode->getEvaluator().setErrorLoc(op.getLoc());
     ErrorTreeOr<TypedAttr> result =
         inode->getEvaluator().evaluateFunction(func, operandsAttr);
     if (result.isError()) {
@@ -951,6 +952,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   while (true) {
     iterator =
         StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
+    parent->getEvaluator().setErrorLoc(op.getLoc());
     ErrorTreeOr<TypedAttr> result =
         parent->getEvaluator().evaluateFunctionWithResultSlot(*func, iterator);
     if (result.isError()) {

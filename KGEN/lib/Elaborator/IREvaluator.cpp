@@ -36,6 +36,10 @@ ErrorOr<Region *> IREvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
 
 ErrorTreeOr<TypedAttr>
 IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
+  if constexpr (KGEN::kIsTracingEnabled)
+    auto ts = InterpreterTimeTraceScope("Launch interpreter",
+                                        mlir::debugString(errorLoc));
+
   // Evaluate the function body.
   SmallVector<Attribute> arguments;
   for (TypedAttr input : inputs)
@@ -56,6 +60,10 @@ IREvaluator::evaluateFunction(FuncOp func, ArrayRef<TypedAttr> inputs) {
 ErrorTreeOr<TypedAttr>
 IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
                                             ArrayRef<TypedAttr> inputs) {
+  if constexpr (KGEN::kIsTracingEnabled)
+    auto ts = InterpreterTimeTraceScope("Launch interpreter",
+                                        mlir::debugString(errorLoc));
+
   // Evaluate the function body.
   SmallVector<Attribute> arguments;
   for (TypedAttr input : inputs)
