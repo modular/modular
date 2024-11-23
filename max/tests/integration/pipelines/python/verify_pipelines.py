@@ -13,7 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 import traceback
-from typing import Callable, Mapping, Optional, Sequence, TextIO
+from typing import Callable, Mapping, Optional, Sequence, TextIO, Union
 
 import click
 
@@ -86,10 +86,15 @@ class TagFilterParamType(click.ParamType):
 
     def convert(
         self,
-        value: str,
+        value: Union[str, TagFilter],
         param: Optional[click.Parameter],
         ctx: Optional[click.Context],
     ) -> TagFilter:
+        # Unsure why click sometimes tries to re-convert an already-converted
+        # value, but it does.
+        if isinstance(value, TagFilter):
+            return value
+        assert isinstance(value, str), f"Value of unexpected type {type(value)}"
         if not value:
             return TagFilter()
         parts = value.split(",")
