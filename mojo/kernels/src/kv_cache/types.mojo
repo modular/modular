@@ -29,6 +29,7 @@ struct KVCacheStaticParams(EqualityComparable):
         return not (self == rhs)
 
 
+@register_passable("trivial")
 trait KVCacheT(CollectionElement):
     """Trait for different KVCache types and implementations.
 
