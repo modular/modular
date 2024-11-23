@@ -491,24 +491,64 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
     // If the types mismatch, it might be due to an origin mutability
     // conversion, which we can handle.
     if (actual.getType() != expected.getType()) {
-      if (!ExprEmitter::canZeroCostConvert(actual.getType(), expected.getType(),
-                                           shared))
+      // See if we can infer anything from the types, this allows us to infer
+      // 'is_mut' parameter from "origin<1>" and "origin<is_mut>".
+      if (failed(matchTypes(actual.getType(), expected.getType())))
         return failure();
-
-      // Ok we can do the conversion make it happen.
-      actual =
-          ExprEmitter::emitZeroCostConvert(actual, expected.getType(), shared);
     }
 
+    // Ok, we have a struct that seems like it could line up.  See if we can
+    // implicitly construct this from a value of this type.  If so, then we
+    // assume it is a value-wise initializer that we can infer from.
+    //
+    // TODO: We could make this more strict by using a keyword argument for the
+    // argument value instead of an implicit conv.
     auto expStruct = expExtract.getStructValue();
     // Figure out if the struct is something we can handle.
     auto expDRT = cast<StructType>(expStruct.getType());
-    // Conservatively only handle the types we know have a single field.
+
+    // Conservatively only handle the types we know have a single field.  We
+    // special case these ones to avoid name lookup in common cases.
     if (expDRT.getName().strref() != "AddressSpace" &&
         expDRT.getName().strref() != "Int" &&
-        expDRT.getName().strref() != "Bool" &&
-        expDRT.getName().strref() != "Origin")
-      return failure();
+        expDRT.getName().strref() != "Bool") {
+      // For non-trivial types like Origin[IsMut], we may need to infer
+      // parameters, so do a full conversion check.
+
+      // Convert Origin[*(0, 0)] to Origin[?] so we can infer the parameter(s).
+      auto nonParamDRT =
+          ASTType(expDRT).getWithUnknownParametersReplaced(shared);
+      FailureOr<PValue> pValue = OverloadSet::canConstructType(
+          nonParamDRT, CallOperands({{actual, curArgExpr}}), curArgExpr,
+          declScope, /*isImplicitConversion=*/true);
+      if (failed(pValue) || !pValue.value())
+        return failure();
+
+      // If we succeeded, figure out what the concrete type being inferred would
+      // be with any parameters bound.
+      auto initSig = cast<LITSignatureType>(pValue.value().getType());
+      // We expect args: 0=self, 1=value we're converting from.
+      assert(initSig.getArgConvention(0) == ArgConvention::InitSelf &&
+             initSig.getNumArguments() > 1);
+      auto selfType =
+          ASTType(initSig.getArguments()[0]).getReferenceElementType();
+      expDRT = cast<StructType>(selfType);
+
+      // Finally, perform any implicit conversion of the actual value to
+      // whatever the 'value' would provide.
+      auto argRVType = initSig.getArguments()[1];
+      if (SignatureType::hasAddress(initSig.getArgConvention(1)))
+        argRVType = ASTType(argRVType).getReferenceElementType();
+
+      if (actual.getType() != argRVType &&
+          ExprEmitter::canZeroCostConvert(actual.getType(), argRVType,
+                                          shared)) {
+        actual = ExprEmitter::emitZeroCostConvert(actual, argRVType, shared);
+      }
+    }
+
+    // Now that we know the actual type, we can infer against a wrapped struct,
+    // which can then infer from nested items etc.
     std::tuple<StringAttr, TypedAttr> actualField(expExtract.getField(),
                                                   actual);
     auto wrappedActual = LITStructAttr::get(actualField, expDRT);
@@ -908,7 +948,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // conversions disabled of course) to resolve our value as the init
   // methods argument.  This allows us to infer parameters from it.
   auto initSig = cast<LITSignatureType>(pValue.value().getType());
-  // We expected to args: 0=self, 1=value we're converting from.
+  // We expect args: 0=self, 1=value we're converting from.
+  assert(initSig.getArgConvention(0) == ArgConvention::InitSelf);
   ASTType inferredSelf =
       ASTType(initSig.getArguments()[0]).getReferenceElementType();
 
