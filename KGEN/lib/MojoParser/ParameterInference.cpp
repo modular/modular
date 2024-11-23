@@ -199,12 +199,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       if (failed(
               matchTypes(actual.getElementType(), expected.getElementType())))
         return failure();
-      if (failed(matchParams(actual.getOrigin(), expected.getOrigin()))) {
-        // The origins are allowed to mismatch due to mut->immut casts.
-        if (!canConvertWithRebind(actual.getOriginType(),
-                                  expected.getOriginType(), shared))
-          return failure();
-      }
+      if (failed(matchParams(actual.getOrigin(), expected.getOrigin())))
+        return failure();
       return matchSingleEltStruct(actual.getAddressSpace(),
                                   expected.getAddressSpace());
     }
@@ -218,7 +214,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
         return success();
       // If that fails, check compatibility, actualType might be mutable=true,
       // and expected might be mutable=false, and this is fine.
-      return success(canConvertWithRebind(actualType, expectedType, shared));
+      return success(
+          ExprEmitter::canZeroCostConvert(actualType, expectedType, shared));
     }
 
   // Handle PointerType.
@@ -824,7 +821,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   // Zero cost conversions don't count as implicit conversions. We attempt this
   // after trying to match the types to try to infer values first.
-  if (canConvertWithRebind(argType, expectedType, shared))
+  if (ExprEmitter::canZeroCostConvert(argType, expectedType, shared))
     return success();
 
   // Handle values of nonmaterializable types.  These freely convert to their

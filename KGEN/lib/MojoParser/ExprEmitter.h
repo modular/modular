@@ -296,13 +296,41 @@ public:
   PValue emitErrorForDynamicValueInParameter(Location loc,
                                              const char *customMessage = {});
 
+  //===--------------------------------------------------------------------===//
+  // Value conversion helpers, handle post-elaborator type equality.
+  //
+
   /// If needed, convert the specified value to the target destination type,
   /// with a noop cast.  This is used to adjust inconsequential details of the
   /// type or for simple things like upcasts.  This does not invoke constructors
   /// or do other non-trivial conversions.
   ///
   /// This produces an error and returns null on an invalid conversion.
-  AnyValue rebindValue(ASTExprAnd<AnyValue> value, Type destType);
+  AnyValue rebindValue(ASTExprAnd<CValue> value, Type destType);
+
+  /// Returns true if a value of the specified type can be coerced to the other
+  /// type with a zero-cost conversion like a rebind.  This means that values of
+  /// the two types have exactly the same representation post-elaboration.
+  static bool canZeroCostConvert(ASTType fromType, ASTType toType,
+                                 SharedState &shared);
+
+  /// Returns true if a value of the specified type can be coerced to the other
+  /// type with a zero-cost conversion like a rebind.  This means that values of
+  /// the two types have exactly the same representation post-elaboration.
+  bool canZeroCostConvert(ASTType fromType, ASTType toType) {
+    return canZeroCostConvert(fromType, toType, shared);
+  }
+
+  /// Given a value of a type that can be zero cost converted to another type,
+  /// emit a rebind or other operation to get it in the right type.
+  static PValue emitZeroCostConvert(PValue value, ASTType toType,
+                                    SharedState &shared);
+  AnyValue emitZeroCostConvert(ASTExprAnd<CValue> value, ASTType toType);
+
+  /// Returns a type if there is a shared supertype for the two specified types,
+  /// e.g. two derived classes may have the same base class even if neither is
+  /// convertible to the other.  This returns null if there is no common type.
+  ASTType getZeroCostCommonType(ASTType type1, ASTType type2);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.

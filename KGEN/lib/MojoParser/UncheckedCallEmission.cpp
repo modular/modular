@@ -262,7 +262,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     auto expectedRefType = cast<RefType>(expectedType);
 
     // Origins must be convertible, this is checked by OverloadFitness.
-    // The destination may be less mutable because of canConvertWithRebind.
+    // The destination may be less mutable because of canZeroCostConvert.
     // This also lazy materializes cast to immutable that MBValue avoided.
     if (!refValueType.isMutableKnown(false) &&
         expectedRefType.isMutableKnown(false)) {

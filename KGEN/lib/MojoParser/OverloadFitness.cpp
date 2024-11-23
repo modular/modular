@@ -260,12 +260,13 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
                          << operandRefTy.getAddressSpace()
                          << " doesn't match expected address space "
                          << argType.getAddressSpace();
-  } else if (!canConvertWithRebind(operandRefTy.getOriginType(),
-                                   argType.getOriginType(), shared)) {
+  } else if (!ExprEmitter::canZeroCostConvert(operandRefTy.getOriginType(),
+                                              argType.getOriginType(),
+                                              shared)) {
     diag.attachNote(loc) << "operand mutability " << operandRefTy.isMutable()
                          << " doesn't match expected mutability "
                          << argType.isMutable();
-  } else if (!canConvertWithRebind(operandRefTy, argType, shared)) {
+  } else if (!ExprEmitter::canZeroCostConvert(operandRefTy, argType, shared)) {
     diag.attachNote(loc) << "operand origin " << operandRefTy.getOrigin()
                          << " doesn't match expected origin "
                          << argType.getOrigin();
@@ -494,7 +495,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // If we are binding to something that is already a reference, check for
     // compatibility of the references and we're done.
     if (valueRefType) {
-      if (canConvertWithRebind(valueRefType, expectedType, shared))
+      if (ExprEmitter::canZeroCostConvert(valueRefType, expectedType, shared))
         return {kValidType, expectedType};
       // Otherwise this is the wrong type for the argument.
       return {kWrongType, expectedType};
@@ -587,7 +588,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     }
 
     // Argument name mismatches don't count as implicit conversions.
-    if (canConvertWithRebind(argType, expectedType, shared))
+    if (ExprEmitter::canZeroCostConvert(argType, expectedType, shared))
       return {kValidType, expectedType};
 
     // If implicit conversions are possible and one will work, then we succeed

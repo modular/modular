@@ -58,18 +58,6 @@ TypedAttr getOriginsAccessibleByParams(PogListAttr paramList,
                                        SharedState &shared,
                                        TypedAttr captureOrigins);
 
-/// Returns if a value of the specified type can be coerced to the other type
-/// with a rebind.  This means that values of the two types have exactly the
-/// same representation post-elaboration.
-bool canConvertWithRebind(ASTType fromType, ASTType toType,
-                          SharedState &shared);
-
-/// Returns a type if there is a shared supertype for the two specified types,
-/// e.g. two derived classes may have the same base class even if neither is
-/// convertible to the other.  This returns null if there is no common type.
-ASTType getZeroCostCommonType(ASTType type1, ASTType type2,
-                              SharedState &shared);
-
 /// Certain special methods have type-specific restrictions or need special
 /// handling. This function returns true if a given method can be synthesized
 /// for a type with the given passability; if so an appropriate entry is added

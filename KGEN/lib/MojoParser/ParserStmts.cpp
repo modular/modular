@@ -767,7 +767,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
     // We already checked the element type, check the origin and address
     // space.
     if (!userResultType.isEqualCanon(argType)) {
-      if (!canConvertWithRebind(argType, userResultType, shared)) {
+      if (!emitter.canZeroCostConvert(argType, userResultType)) {
         auto expectedRefType = cast<RefType>(userResultType);
         auto diag = emitter.emitError(operandExpr->getLoc())
                     << "cannot return reference with incompatible ";
@@ -795,9 +795,9 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
       }
       // Rebind to make the reference compatible, e.g. converting to a more
       // general origin union.
+      ASTExprAnd<CValue> rvAndExpr = {SRValue(refValue), operandExpr};
       refValue =
-          emitter.rebindValue({SRValue(refValue), operandExpr}, userResultType)
-              .getIfSRValue();
+          emitter.emitZeroCostConvert(rvAndExpr, userResultType).getIfSRValue();
     }
 
     // We're returning the reference itself, so switch to SRValue.
