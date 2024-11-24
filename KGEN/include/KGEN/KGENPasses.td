@@ -63,6 +63,10 @@ def VerifyParameters : Pass<"verify-parameters", "ModuleOp"> {
     Option<"enableInterp", "enable-interp", "bool", "false",
            "Set this to enable the interpreter. FOR TESTING ONLY!">
   ];
+
+  let dependentDialects = [
+    "KGENDialect"
+  ];
 }
 
 //===----------------------------------------------------------------------===//

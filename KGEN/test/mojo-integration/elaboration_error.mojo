@@ -42,12 +42,14 @@ fn no_parameters():
 @no_inline
 fn parametric[param: Int]():  # expected-note {{function instantiation failed}}
     constrained[
-        param == 2, "param must be 2"
+        param == 2, "param must be 2 but is " + str("something else")
     ]()  # expected-note {{call expansion failed}}
 
 
 @always_inline("nodebug")
-fn constrained[cond: Bool, msg: StringLiteral]():
-    __mlir_op.`kgen.param.assert`[
-        cond = cond.__mlir_i1__(), message = msg.value
-    ]()  # expected-note {{constraint failed}}
+fn constrained[cond: Bool, msg: String]():
+    __mlir_op.`kgen.param.assert.ex`[
+        cond = cond.__mlir_i1__(),
+        messageStart = msg.unsafe_ptr().address,
+        messageLength = msg.byte_length().value,
+    ]()  # expected-note {{constraint failed: param must be 2 but is something else}}

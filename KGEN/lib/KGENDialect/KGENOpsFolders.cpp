@@ -134,6 +134,26 @@ LogicalResult ParamAssertOp::canonicalize(ParamAssertOp op,
 }
 
 //===----------------------------------------------------------------------===//
+// ParamAssertExOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ParamAssertExOp::canonicalize(ParamAssertExOp op,
+                                            PatternRewriter &rewriter) {
+
+  // If the condition is statically true then we can just remove this op.
+  auto cond = op.getCond();
+  if (auto intCond = dyn_cast<IntegerAttr>(cond)) {
+    // Leave failing conditions, they must be diagnosed at elaboration time.
+    if (intCond.getValue().isZero())
+      return failure();
+    rewriter.eraseOp(op);
+    return success();
+  }
+
+  return failure();
+}
+
+//===----------------------------------------------------------------------===//
 // ParamIfOp
 //===----------------------------------------------------------------------===//
 
