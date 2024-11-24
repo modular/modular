@@ -2773,8 +2773,8 @@ fn _bmm0_bs[
         ):
             p[y * padded_num_keys + x] = min_or_neg_inf[p_type]()
     else:
-        var score_row = x
-        var score_col = y
+        var score_row = y + k_cache.cache_length(batch)
+        var score_col = x
         p[y * padded_num_keys + x] = mask_functor.mask(
             Index(
                 int(batch),
