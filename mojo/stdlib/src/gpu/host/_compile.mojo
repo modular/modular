@@ -34,12 +34,6 @@ fn _get_gpu_target[
     return info.target()
 
 
-fn _get_nvptx_fn_name[
-    func_type: AnyTrivialRegType, //, func: func_type
-]() -> StringLiteral:
-    return get_linkage_name[_get_gpu_target(), func]()
-
-
 # ===----------------------------------------------------------------------===#
 # Compilation
 # ===----------------------------------------------------------------------===#

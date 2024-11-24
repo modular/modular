@@ -23,7 +23,6 @@ from .info import DEFAULT_GPU
 from gpu.host._compile import (
     _compile_code,
     _compile_code_asm,
-    _get_nvptx_fn_name,
     _get_gpu_target,
     _ptxas_compile,
     _to_sass,
