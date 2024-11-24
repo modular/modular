@@ -87,7 +87,13 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   /// Replace the symbol reference to a StructGeneratorOp with a reference to
   /// the concreteized StructInstanceOp.
   I32EnumAttrCase<"InstantiateStructRef", 37, "inst_struct_ref">,
+  /// Convert an arbitrary MLIR attribute into a !kgen.string using
+  /// mlir::debugString on the attribute.
   I32EnumAttrCase<"AttrToStr", 38, "attr_to_str">,
+  /// Convert a length+pointer representation in interpreter memory into a
+  /// !kgen.string, used to convert comp-time String (and related types) to
+  /// StringLiteral.
+  I32EnumAttrCase<"DataToStr", 39, "data_to_str">,
 ]>;
 
 //===----------------------------------------------------------------------===//

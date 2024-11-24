@@ -30,6 +30,10 @@ fn instantiateElsewhere():
     stringInputParam["thrice"]()
 
 
+fn test_literal_from_comptime_string[s: String]() -> StringLiteral:
+    return StringLiteral.from_string[s + "-" + s]()
+
+
 fn to_string_literal(i: Int) -> StringLiteral:
     return __mlir_op.`pop.string.create`(i)
 
@@ -52,12 +56,17 @@ fn main():
     stringInputParamInline[strValue]()
     print(strValue)
 
+    # CHECK: hihi-hihi
+    alias hi: String = "hi"
+    var strlit: StringLiteral = test_literal_from_comptime_string[hi * 2]()
+    print(strlit)
+
     alias s = to_string_literal(33)
 
-    # Check: 33
+    # CHECK: 33
     print(s)
 
     alias t = to_string_literal(Int64(42))
 
-    # Check: #pop<simd 42> : !pop.scalar<si64>
+    # CHECK: #pop<simd 42> : !pop.scalar<si64>
     print(t)
