@@ -332,17 +332,6 @@ void ParamAssertOp::walkDefinitions(
 bool ParamAssertOp::isImplicitlyParametric() { return true; }
 
 //===----------------------------------------------------------------------===//
-// ParamAssertExOp
-//===----------------------------------------------------------------------===//
-
-/// This operation defines no parameters.
-void ParamAssertExOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
-
-/// This operation is implicitly parametric.
-bool ParamAssertExOp::isImplicitlyParametric() { return true; }
-
-//===----------------------------------------------------------------------===//
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 

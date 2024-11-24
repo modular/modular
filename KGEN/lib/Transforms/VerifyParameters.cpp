@@ -216,11 +216,6 @@ static void propagateTrivialParameters(Region *region,
         constraint.erase();
         continue;
       }
-    if (auto constraint = dyn_cast<ParamAssertExOp>(op))
-      if (!seenAsserts.insert(constraint.getCond()).second) {
-        constraint.erase();
-        continue;
-      }
   }
 
   // Any op might contain a parametric location, so we go through all of them.
