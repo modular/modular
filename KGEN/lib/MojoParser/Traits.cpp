@@ -30,24 +30,30 @@ using namespace LIT;
 static std::pair<LITSignatureType, ParamBindings>
 getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
                           ASTType structSelfType, TraitType trait,
-                          const ExprNode *expr) {
+                          const ExprNode *expr,
+                          ParserParamEvaluator &traitAliasReplacer) {
+
   LITSignatureType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
   ArrayRef<Type> paramTypes = signature.getParamTypes();
 
   // Add trait's _Self param replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, trait));
-  ParserParamEvaluator evaluator(emitter.getDeclResolver(), params);
   auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
                                                     structSelfType, expr);
   // Leave the rest alone.
   for (Type type : paramTypes.drop_front()) {
     params.push_back(UnboundAttr::get(type));
-    evaluator.addInputValue(params.back());
     bindings.addPrechecked(expr, params.back());
   }
 
-  return {signature.getSpecializedSignature(params), std::move(bindings)};
+  LITSignatureType newSignature = signature.getSpecializedSignature(params);
+
+  newSignature = traitAliasReplacer.replace(newSignature);
+
+  // TODO(MOCO-1438): Logic to replace get_type_method calls will go here.
+
+  return {newSignature, bindings};
 }
 
 /// Allow synthesizing default implementations of certain special functions.
@@ -191,11 +197,12 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     }
 
     SyntheticNode syntheticNode(structDecl.getLoc());
-    auto [newSignature, bindings] = getTraitFunctionSignature(
-        emitter, traitFn, selfType, trait, syntheticNode);
+
+    auto [traitSignature, bindings] = getTraitFunctionSignature(
+        emitter, traitFn, selfType, trait, syntheticNode, traitAliasReplacer);
+
     // Match against the transformed calling convention if the struct is
     // register-passable.
-    LITSignatureType traitSignature = traitAliasReplacer.replace(newSignature);
 
     // Omit errors for certain special functions where the parser will
     // specifically verify their signatures if present.

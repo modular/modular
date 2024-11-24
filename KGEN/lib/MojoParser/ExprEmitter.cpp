@@ -1092,6 +1092,25 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 };
 } // namespace
 
+static LITSignatureType
+createRequirementSignature(MLIRContext *context, TypedAttr newSelfValue,
+                           ParserParamEvaluator &traitAliasReplacer,
+                           LIT::FuncOp traitFn) {
+  // The requirement will have a Self parameter whose type will be of the
+  // current trait.  In order to get types to line up, we need to force it
+  // to the implementation type.  This changes the parameter value, but also
+  // changes the metatype of the value.  To support this, we use a custom
+  // replacer.
+  TraitSelfBinder selfBinder(newSelfValue);
+  LITSignatureType traitFnWithCorrectedSelf =
+      selfBinder.replace(traitFn.getFullSignature());
+  // At this point, requirementSig's `self` argument's type is the struct.
+
+  // TODO(MOCO-1438): Logic to replace get_type_method calls will go here.
+
+  return traitAliasReplacer.replace(traitFnWithCorrectedSelf);
+}
+
 PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
                                                   TraitType trait) {
   assert((isa<AnyStructType, TraitType>(value.ir.getType())) &&
@@ -1170,7 +1189,6 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
   // Bind each trait requirement into vtable entries.
   SmallVector<VTableEntryAttr> vtable;
-  TraitSelfBinder selfBinder(typeValue);
   for (auto &[name, requirementDecls] : traitDecl->getDeclsInScope()) {
     // Each entry can have multiple overloads in 'decls'.
     if (requirementDecls.empty())
@@ -1213,27 +1231,24 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
     // Each requirement may be overloaded, resolve each individually.
     for (ASTDecl *expected : requirementDecls) {
-      auto requirementFn = dyn_cast<LIT::FuncOp>(expected);
-      assert(requirementFn &&
-             "trait has an alias and a fn with the same name!");
+      auto traitFn = dyn_cast<LIT::FuncOp>(expected);
+      assert(traitFn && "trait has an alias and a fn with the same name!");
 
       // For any given requirement, the implementing type may have multiple
       // overloads.  Resolve which one we're using by forming an overload set
-      // and filtering it.  Start by finding a set of param bindings in the
-      // implementing function that get bound, including the self type if the
-      // conforming type is a trait.
+      // and filtering it.  Start by finding a set of param bindings for the
+      // implementing function that get bound, including:
+      //
+      //  * The self type if the conforming type is a trait.
+      //  * The conforming struct's values for the trait's aliases.
 
       // The requirement will have a Self parameter whose type will be of the
       // current trait.  In order to get types to line up, we need to force it
       // to the implementation type.  This changes the parameter value, but also
       // changes the metatype of the value.  To support this, we use a custom
       // replacer.
-      LITSignatureType requirementSig =
-          selfBinder.replace(requirementFn.getFullSignature());
-
-      // If the trait method mentions an associated alias (`alias N: Int`) then
-      // replace it with the alias from the struct.
-      requirementSig = traitAliasReplacer.replace(requirementSig);
+      LITSignatureType requirementSig = createRequirementSignature(
+          getContext(), typeValue, traitAliasReplacer, traitFn);
 
       // Form a set of bindings to plow into the impl signature.
       auto implBindings = ParamBindings::getForDeclaredType(
