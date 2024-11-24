@@ -1092,10 +1092,11 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 };
 } // namespace
 
-static LITSignatureType
-createRequirementSignature(MLIRContext *context, TypedAttr newSelfValue,
-                           ParserParamEvaluator &traitAliasReplacer,
-                           LIT::FuncOp traitFn) {
+static LITSignatureType createRequirementSignature(
+    MLIRContext *context, TypedAttr newSelfValue,
+    ParserParamEvaluator &traitAliasReplacer,
+    const std::unordered_map<std::string, TypedAttr> &aliasNameToReplacement,
+    LIT::FuncOp traitFn) {
   // The requirement will have a Self parameter whose type will be of the
   // current trait.  In order to get types to line up, we need to force it
   // to the implementation type.  This changes the parameter value, but also
@@ -1106,9 +1107,42 @@ createRequirementSignature(MLIRContext *context, TypedAttr newSelfValue,
       selfBinder.replace(traitFn.getFullSignature());
   // At this point, requirementSig's `self` argument's type is the struct.
 
-  // TODO(MOCO-1438): Logic to replace get_type_method calls will go here.
+  // Next we'll replace trait aliases that appear in the trait methods, such as:
+  //
+  //     trait MyTrait:
+  //         alias T: ATrait
+  //         fn bork(self) -> Something[T]: ...
+  //         fn zork(self) -> Something[Self.T]: ...
+  //
+  // We'll replace them with the struct's trait value, like the int in:
+  //
+  //     struct MyStruct(MyTrait):
+  //         alias T: ATrait = int
+  //         fn bork(self) -> SIMD[int]: ...
 
-  return traitAliasReplacer.replace(traitFnWithCorrectedSelf);
+  // bork's `T` is a regular paramRef, we use traitAliasReplacer to replace it.
+  LITSignatureType traitFnWithCorrectedSelfAndAliasParamRefs =
+      traitAliasReplacer.replace(traitFnWithCorrectedSelf);
+
+  // However, zork's `Self.T` is different, like: get_type_method(Self, "T").
+  // And after the first step, that Self is actually the struct, so the
+  // requirementFn is really more like: get_type_method(MyStruct, "T").
+  // We'll manually replace those entire get_type_method calls.
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
+    if (paramOp.getOpcode() == POC::GetTypeMethod &&
+        paramOp.getOperand(0) == newSelfValue) {
+      auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
+      auto iter = aliasNameToReplacement.find(aliasName.str());
+      if (iter != aliasNameToReplacement.end()) {
+        return iter->second;
+      }
+    }
+    return paramOp;
+  });
+
+  return cast<KGEN::SignatureType>(
+      replacer.replace(traitFnWithCorrectedSelfAndAliasParamRefs));
 }
 
 PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
@@ -1177,6 +1211,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // we don't want to look for a `fn bork(self) -> Something[T]` in the struct,
   // we want to look for a `fn bork(self) -> SIMD[int]`. This helps us do that.
   ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
+  std::unordered_map<std::string, TypedAttr> aliasNameToReplacement;
 
   // If the struct (e.g. List[T]) has an alias that uses an input parameter,
   // (e.g. `alias element_type = T`), then this will help us interpret that
@@ -1216,6 +1251,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
       traitAliasReplacer.setParameterValue(traitAliasDecl.getParamDecl(),
                                            newValue);
+      aliasNameToReplacement.emplace(name.str(), newValue);
       continue;
     }
 
@@ -1248,7 +1284,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // changes the metatype of the value.  To support this, we use a custom
       // replacer.
       LITSignatureType requirementSig = createRequirementSignature(
-          getContext(), typeValue, traitAliasReplacer, traitFn);
+          getContext(), typeValue, traitAliasReplacer, aliasNameToReplacement,
+          traitFn);
 
       // Form a set of bindings to plow into the impl signature.
       auto implBindings = ParamBindings::getForDeclaredType(

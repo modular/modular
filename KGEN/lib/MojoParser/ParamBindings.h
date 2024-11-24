@@ -16,6 +16,7 @@ class ParameterExprArrayAttr;
 
 namespace M::KGEN::LIT {
 using llvm::SMLoc;
+class DeclResolver;
 class ExprNode;
 class FuncOp;
 class LITSignatureType;
@@ -217,6 +218,10 @@ private:
   /// FIXME: Remove this, why is this needed?
   size_t numPreTypeChecked = 0;
 };
+
+LITSignatureType substituteTraitAliasesIntoSignature(
+    DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
+    LITSignatureType desiredSignature, PValue selfPValue);
 
 } // namespace M::KGEN::LIT
 

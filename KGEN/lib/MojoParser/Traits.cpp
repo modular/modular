@@ -27,11 +27,11 @@ using namespace LIT;
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
-static std::pair<LITSignatureType, ParamBindings>
-getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
-                          ASTType structSelfType, TraitType trait,
-                          const ExprNode *expr,
-                          ParserParamEvaluator &traitAliasReplacer) {
+static std::pair<LITSignatureType, ParamBindings> getTraitFunctionSignature(
+    ExprEmitter &emitter, LIT::FuncOp traitFn, ASTType structSelfType,
+    TraitType trait, const ExprNode *expr,
+    const std::unordered_map<std::string, TypedAttr> &aliasNameToReplacement,
+    ParserParamEvaluator &traitAliasReplacer) {
 
   LITSignatureType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
@@ -49,9 +49,23 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
 
   LITSignatureType newSignature = signature.getSpecializedSignature(params);
 
-  newSignature = traitAliasReplacer.replace(newSignature);
+  auto selfStructAsTrait = TypeConstantAttr::get(structSelfType, trait);
 
-  // TODO(MOCO-1438): Logic to replace get_type_method calls will go here.
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
+    if (paramOp.getOpcode() == POC::GetTypeMethod &&
+        paramOp.getOperand(0) == selfStructAsTrait) {
+      auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
+      auto iter = aliasNameToReplacement.find(aliasName.str());
+      if (iter != aliasNameToReplacement.end()) {
+        return iter->second;
+      }
+    }
+    return paramOp;
+  });
+  newSignature = cast<KGEN::SignatureType>(replacer.replace(newSignature));
+
+  newSignature = traitAliasReplacer.replace(newSignature);
 
   return {newSignature, bindings};
 }
@@ -160,6 +174,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   }
 
   ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
+  std::unordered_map<std::string, TypedAttr> aliasNameToReplacement;
 
   bool allMatchFound = true;
   // Prepare an error. It will be abandoned if the check succeeds.
@@ -199,7 +214,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     SyntheticNode syntheticNode(structDecl.getLoc());
 
     auto [traitSignature, bindings] = getTraitFunctionSignature(
-        emitter, traitFn, selfType, trait, syntheticNode, traitAliasReplacer);
+        emitter, traitFn, selfType, trait, syntheticNode,
+        aliasNameToReplacement, traitAliasReplacer);
 
     // Match against the transformed calling convention if the struct is
     // register-passable.
@@ -260,6 +276,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 
     traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(),
                                          initializerExpr);
+    aliasNameToReplacement.emplace(name.str(), initializerExpr);
 
     SyntheticNode synthNode(structAliasDecl->getLoc());
     if (!ExprEmitter::canImplicitlyConvertToType({initializerExpr, synthNode},
