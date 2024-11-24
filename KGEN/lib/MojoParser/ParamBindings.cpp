@@ -726,6 +726,11 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   return {bindings, fitness, std::move(diag)};
 }
 
+// DO NOT SUBMIT
+extern LITSignatureType substituteTraitAliasesIntoSignature(
+    DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
+    LITSignatureType desiredSignature, PValue selfPValue);
+
 TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
                                               StringRef baseName,
                                               const ExprNode *expr) const {
@@ -768,25 +773,10 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   for (Type type : signature.getParamTypes().drop_front())
     paramValues.push_back(UnboundAttr::get(type));
 
-  ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
-
   ASTDecl &traitDecl = *selfExpr.getType().getDecl(shared);
-  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
-    for (ASTDecl *decl : decls) {
-      auto traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl);
-      if (!traitAlias)
-        continue;
-      // TODO(MOCO-1109): Pull this out into a helper.
-      TypedAttr aliasRef = ParamOperatorAttr::get(
-          POC::GetTypeMethod,
-          {PValue(selfExpr),
-           StringAttr::get(name.str(), StringType::get(funcOp.getContext()))},
-          traitAlias.getType());
-      traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(), aliasRef);
-    }
-  }
-
-  signature = traitAliasReplacer.replace(signature);
+  auto selfPValue = PValue(selfExpr);
+  signature = substituteTraitAliasesIntoSignature(
+      *shared.declResolver, &traitDecl, funcOp, signature, selfPValue);
 
   signature = signature.getSpecializedSignature(paramValues, [&]() {
     return mlir::emitError(shared.translateLocation(expr->getLoc()))
@@ -794,7 +784,6 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   });
   assert(signature && "Error binding trait Self type");
 
-  // TODO(MOCO-1143): Factor this out into a helper
   TypedAttr fnRef = ParamOperatorAttr::get(
       POC::GetTypeMethod,
       {PValue(selfExpr),

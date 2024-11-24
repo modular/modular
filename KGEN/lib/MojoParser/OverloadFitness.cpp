@@ -660,22 +660,20 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
 ///
 /// This function will do that conversion. If we aren't calling a trait method
 /// with an alias, it'll return the given desiredSignature unmodified.
-static LITSignatureType substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, PValue selfPValue,
-    LITSignatureType desiredSignature, ASTDecl *candidate) {
-  // TODO(MOCO-1259): Support static methods with associated aliases
-  if (!candidate)
-    return desiredSignature;
-  auto traitDecl = candidate->getParentDecl();
-  if (!traitDecl || !isa<TraitDeclOp>(traitDecl))
-    return desiredSignature;
+///
+/// For more context, see
+/// https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
+///
+/// TODO(MOCO-1259): Support static methods with associated aliases
+LITSignatureType substituteTraitAliasesIntoSignature(
+    DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
+    LITSignatureType desiredSignature, PValue selfPValue) {
   ParserParamEvaluator traitAliasReplacer(declResolver);
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
       AliasDeclOp traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl);
       if (!traitAlias)
         continue;
-      auto candidateFunc = cast<LIT::FuncOp>(candidate);
       StringAttr nameStringAttr = StringAttr::get(
           name.str(), StringType::get(candidateFunc->getContext()));
       TypedAttr aliasRef = ParamOperatorAttr::get(POC::GetTypeMethod,
@@ -690,12 +688,17 @@ static LITSignatureType substituteTraitAliasesIntoSignature(
 OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           const OverloadSet &callable,
                                           PValue selfPValue) {
+  DeclResolver &resolver = *callable.getShared().declResolver;
   auto func = cast<LIT::FuncOp>(*candidate);
   LITSignatureType signature = func.getFullSignature();
 
   if (selfPValue) {
-    signature = substituteTraitAliasesIntoSignature(
-        *callable.getShared().declResolver, selfPValue, signature, candidate);
+    // TODO(MOCO-1259): Support static methods with associated aliases
+    auto parentDecl = candidate->getParentDecl();
+    if (dyn_cast_or_null<TraitDeclOp>(parentDecl)) {
+      signature = substituteTraitAliasesIntoSignature(
+          resolver, parentDecl, func, signature, selfPValue);
+    }
   }
 
   auto [bindings, fitness, diag] = callable.paramBindings.verifyBindings(
@@ -732,11 +735,15 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   if (!operands.empty()) {
     if (auto selfCValue = operands[0].ir.getIfCValue()) {
-      ASTType selfType = selfCValue.getRValueType();
-      auto selfPValue = PValue(selfType.mlirType);
-      if (selfPValue) {
-        signature = substituteTraitAliasesIntoSignature(
-            *shared.declResolver, selfPValue, signature, funcIfDirect);
+      if (auto selfPValue = PValue(selfCValue.getRValueType().mlirType)) {
+        // TODO(MOCO-1259): Support static methods with associated aliases
+        if (auto func = dyn_cast_or_null<LIT::FuncOp>(funcIfDirect)) {
+          auto parentDecl = funcIfDirect->getParentDecl();
+          if (dyn_cast_or_null<TraitDeclOp>(parentDecl)) {
+            signature = substituteTraitAliasesIntoSignature(
+                *shared.declResolver, parentDecl, func, signature, selfPValue);
+          }
+        }
       }
     }
   }
