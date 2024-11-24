@@ -533,10 +533,28 @@ fn deprecated_function():
     pass
 
 
+# MOTO-418: Improve AST type printing of `reversed` in API docs
+# CHECK-LABEL: "name": "dep_type"
+# CHECK: "returnType": "ref [value] UsesParameter[K]",
+# CHECK: "signature": "dep_type[K: AnyType](ref value: UsesParameter[K]) -> ref [value] UsesParameter[K]",
+struct UsesParameter[A: AnyType]:
+    pass
+
+
+fn dep_type[
+    K: AnyType
+](ref value: UsesParameter[K]) -> ref [value] UsesParameter[K]:
+    return value
+
+
+# ===----------------------------------------------------------------------=== #
+# Struct documentation
+# ===----------------------------------------------------------------------=== #
+
 # CHECK:  "kind": "module",
 # CHECK:  "name": "mojo_doc",
 
-# CHECK:  "structs": [
+# CHECK-LABEL:  "structs": [
 
 
 # MOTO-516: [doc generation] Print 'ref' arguments and results in docgen

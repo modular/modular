@@ -798,18 +798,21 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   isStaticFlag = funcOp.getIsStatic();
   isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
   isDefFlag = funcOp.isDef();
-  initFromSignature(declRef, funcOp.getSignature(), funcOp.getArgumentTypes());
+  initFromSignature(declRef, funcOp.getSignature(), funcOp.getArgumentTypes(),
+                    funcOp.getUserResultType());
 }
 
 FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef,
                                    KGEN::LIT::LITSignatureType signature)
     : DeclView(DeclViewKind::DK_FunctionDeclView, /*name=*/StringRef()) {
-  initFromSignature(declRef, signature, signature.getArguments());
+  initFromSignature(declRef, signature, signature.getArguments(),
+                    signature.getUserResultType());
 }
 
 void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
                                          LITSignatureType signature,
-                                         ArrayRef<Type> argTypes) {
+                                         ArrayRef<Type> userArgTypes,
+                                         Type userResultType) {
   auto &shared = *declRef.getShared();
   raisesFlag = signature.isThrows();
   isAsyncFlag = signature.isAsync();
@@ -824,14 +827,14 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
   // it in the normal argument list.
   if (!argConventions.empty() &&
       argConventions.back() == ArgConvention::ByRefResult) {
-    argTypes = argTypes.drop_back();
+    userArgTypes = userArgTypes.drop_back();
     sigTypes = sigTypes.drop_back();
     argPogs = argPogs.drop_back();
     argConventions = argConventions.drop_back();
   }
   if (!argConventions.empty() &&
       argConventions.back() == ArgConvention::ByRefError) {
-    argTypes = argTypes.drop_back();
+    userArgTypes = userArgTypes.drop_back();
     sigTypes = sigTypes.drop_back();
     argPogs = argPogs.drop_back();
     argConventions = argConventions.drop_back();
@@ -844,9 +847,9 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
 
   // Grab the types of the arguments to the function.
   DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());
-  for (auto [argIdx, type, sigType, conventionX, pogAttr] :
-       llvm::enumerate(argTypes, sigTypes, argConventions, argPogs)) {
-    ArgConvention convention = refineConventionForType(type, conventionX);
+  for (auto [argIdx, userType, sigType, conventionX, pogAttr] :
+       llvm::enumerate(userArgTypes, sigTypes, argConventions, argPogs)) {
+    ArgConvention convention = refineConventionForType(userType, conventionX);
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultArgHandler.getDefault(argIdx))
       defaultValue = generatePValueString(shared, defaultAttr);
@@ -879,11 +882,12 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
     VariadicKind variadicKind =
         getVariadicKind(signature.getArgListAttrs(), argIdx);
     bool isSelf = selfType && argIdx == 0;
-    args.push_back(ArgumentDeclView(
-        pogAttr.getName(), std::move(prefix),
-        generateTypeString(shared, type, variadicKind, selfType, convention),
-        pogAttr.getPassingKind(), variadicKind, std::move(defaultValue),
-        declConvention, isSelf));
+    args.push_back(
+        ArgumentDeclView(pogAttr.getName(), std::move(prefix),
+                         generateTypeString(shared, userType, variadicKind,
+                                            selfType, convention),
+                         pogAttr.getPassingKind(), variadicKind,
+                         std::move(defaultValue), declConvention, isSelf));
   }
 
   // Grab the types of the parameters to the function.
@@ -920,8 +924,8 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
       str = "ref " + getRefPrefixAsString(shared, cast<RefType>(resultType),
                                           signature, /*isRefResult*/ true);
     }
-    str += generateTypeString(shared, resultType, VariadicKind::kNone, selfType,
-                              convention);
+    str += generateTypeString(shared, userResultType, VariadicKind::kNone,
+                              selfType, convention);
     returnType = str;
   }
 
