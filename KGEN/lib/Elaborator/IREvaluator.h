@@ -78,6 +78,8 @@ private:
   FailureOr<TypedAttr> evaluateCompileAssembly(ParamOperatorAttr op);
   /// Evaluate a `get_linkage_name` operator.
   FailureOr<TypedAttr> evaluateGetLinkageName(ParamOperatorAttr op);
+  /// Evaluate POC::DataToStr "data_to_str" operator.
+  FailureOr<TypedAttr> evaluateDataToStr(ParamOperatorAttr op);
 
   Attribute getReboundAttribute(Attribute attr) {
     return ParameterEvaluator::getReboundAttribute(attr);

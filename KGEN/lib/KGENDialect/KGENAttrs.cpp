@@ -1102,6 +1102,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::PtrBitcast:
   case POC::InstantiateStructRef:
   case POC::AttrToStr:
+  case POC::DataToStr:
   case POC::VariadicPtrMap:
   case POC::VariadicPtrRemoveMap:
     break;
@@ -1320,6 +1321,12 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::VariadicPtrRemoveMap:
     return verifyVariadicPtrRemoveMap(operands, type, emitError);
   case POC::AttrToStr:
+    break;
+  case POC::DataToStr:
+    if (operands.size() != 2 || !::isa<IndexType>(operands[0].getType()) ||
+        !::isa<PointerType>(operands[1].getType()))
+      return emitError() << "'data_to_str' expects two operands, one 'index' "
+                            "length and one pointer";
     break;
   }
   return success();
@@ -2551,6 +2558,7 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     result = simplifyTargetGetField(operands, resultType);
     break;
   case POC::AcceleratorArch:
+  case POC::DataToStr:
     resultType = StringType::get(ctx);
     break;
   case POC::In:
@@ -2569,9 +2577,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::Apply:
     result = simplifyApply(operands, resultType);
     break;
-  case POC::ApplyResultSlot:
-    result = {};
-    break;
   case POC::Rebind:
     result = simplifyRebind(operands, resultType);
     break;
@@ -2581,13 +2586,12 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::Cond:
     result = simplifyCond(operands);
     break;
+  case POC::ApplyResultSlot:
   case POC::GetEnv:
-    result = {};
-    break;
   case POC::CompileAssembly:
-    result = {};
-    break;
   case POC::GetLinkageName:
+  case POC::InstantiateStructRef:
+  case POC::AttrToStr:
     result = {};
     break;
   case POC::GetTypeMethod:
@@ -2598,10 +2602,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::LoadFromMem:
     result = simplifyLoadFromMem(operands, resultType);
-    break;
-  case POC::InstantiateStructRef:
-  case POC::AttrToStr:
-    result = {};
     break;
   case POC::VariadicPtrMap:
     assert(operands.size() == 2 && "variadic_ptr_map always has 2 operands");

@@ -134,6 +134,8 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   case POC::AttrToStr:
     return {StringAttr::get(mlir::debugString(op.getOperands().front()),
                             StringType::get(op.getContext()))};
+  case POC::DataToStr:
+    return evaluateDataToStr(op);
   case POC::Rebind:
     // Catch unfolded rebinds to emit a nicer error message.
     emitError(ErrorTree(
@@ -219,6 +221,42 @@ IREvaluator::evaluateInstantiateStruct(ParamOperatorAttr op) {
     return failure();
   }
   return symOr.takeValue();
+}
+
+/// Evaluate POC::DataToStr "data_to_str" operator.
+FailureOr<TypedAttr> IREvaluator::evaluateDataToStr(ParamOperatorAttr op) {
+  auto lengthAttr = dyn_cast<IntegerAttr>(op.getOperand(0));
+  TypedAttr pointerAttr = dyn_cast<MemRefAttr>(op.getOperand(1));
+  if (!lengthAttr || !pointerAttr) {
+    emitError({*errorLoc, "'data_to_str' did not narrow to a constant"});
+    return failure();
+  }
+
+  if (ErrorOrSuccess err = internalizeMemory(pointerAttr)) {
+    emitError({*errorLoc, "'data_to_str' failed to read data"});
+    return failure();
+  }
+
+  size_t address = cast<PointerAttr>(pointerAttr).getAddr();
+  size_t numBytes = lengthAttr.getInt();
+  Type byteType = IntegerType::get(getContext(), 8);
+
+  // Read each of the bytes into 'result' one at a time.  If any fail,
+  // just bail out.
+  std::string result;
+  while (numBytes) {
+    ErrorOr<TypedAttr> attrOr = readAttributeFromMemory(address, byteType);
+    if (attrOr.isError() || !isa<IntegerAttr>(attrOr.get())) {
+      emitError({*errorLoc, "'data_to_str' failed to read data"});
+      return failure();
+    }
+    result.push_back((char)cast<IntegerAttr>(attrOr.get()).getInt());
+    ++address;
+    --numBytes;
+  }
+
+  // Success!
+  return {StringAttr::get(result, StringType::get(getContext()))};
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateGetEnv(ParamOperatorAttr op) {
