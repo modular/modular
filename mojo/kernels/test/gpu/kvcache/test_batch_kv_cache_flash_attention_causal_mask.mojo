@@ -115,7 +115,7 @@ def execute_flash_attention[
                 for k_idx in range(max_prompt_len + max_cache_valid_length):
                     mask_host.tensor.store(
                         Index(b, h, q_idx, k_idx),
-                        0 if q_idx + max_cache_valid_length
+                        0 if q_idx + cache_valid_length[b]
                         >= k_idx else min_or_neg_inf[type](),
                     )
 
