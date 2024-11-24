@@ -34,12 +34,15 @@ fn test_literal_from_comptime_string[s: String]() -> StringLiteral:
     return StringLiteral.from_string[s + "-" + s]()
 
 
-fn to_string_literal(i: Int) -> StringLiteral:
-    return __mlir_op.`pop.string.create`(i)
+fn to_string_literal[val: Int]() -> StringLiteral:
+    alias s = StringLiteral.from_string[str(val)]()
+    return s
 
 
-fn to_string_literal(i: SIMD) -> StringLiteral:
-    return __mlir_op.`pop.string.create`(i)
+fn to_string_literal[val: SIMD]() -> StringLiteral:
+    constrained[val.type.is_integral(), "input type must be integral"]()
+    alias s = StringLiteral.from_string[str(val)]()
+    return s
 
 
 fn main():
@@ -61,12 +64,11 @@ fn main():
     var strlit: StringLiteral = test_literal_from_comptime_string[hi * 2]()
     print(strlit)
 
-    alias s = to_string_literal(33)
-
     # CHECK: 33
-    print(s)
+    print(to_string_literal[33]())
 
-    alias t = to_string_literal(Int64(42))
+    # CHECK: 42
+    print(to_string_literal[Int64(42)]())
 
-    # CHECK: #pop<simd 42> : !pop.scalar<si64>
-    print(t)
+    # CHECK: [1, 2, 3, 4]
+    print(to_string_literal[SIMD[DType.int64, 4](1, 2, 3, 4)]())
