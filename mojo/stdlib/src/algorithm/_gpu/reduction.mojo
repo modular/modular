@@ -18,7 +18,7 @@ from gpu import (
     shuffle_down,
     warp_reduce,
 )
-from gpu.host import DeviceAttribute, DeviceContext
+from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 
@@ -342,6 +342,7 @@ fn reduce_launch[
 ) raises:
     alias BLOCK_SIZE = 128
     alias register_width = 32
+    alias sm_count = ctx.device_info.sm_count
 
     alias packing_factor = 1
 
@@ -359,7 +360,6 @@ fn reduce_launch[
     ]()
 
     var num_rows = shape.flattened_length() // shape[axis] // packing_factor
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
     alias sm_overprovision_factor = 32  # tunable
     var num_blocks = min(num_rows, sm_overprovision_factor * sm_count)
 
