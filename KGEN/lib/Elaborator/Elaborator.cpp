@@ -245,7 +245,7 @@ static ElaborationState processRebindOp(ImplNode *inode, RebindOp op) {
 }
 
 //===----------------------------------------------------------------------===//
-// processParamAssertOp / processParamAssertExOp
+// processParamAssertOp
 //===----------------------------------------------------------------------===//
 
 /// Process a param.assert op by folding its parameter expression and checking
@@ -264,68 +264,6 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
     inode->setToError(
         ErrorTree(op.getLoc(),
                   "constraint failed: " + cast<StringAttr>(value).getValue()));
-    return failure();
-  }
-
-  // The kgen.param.assert op serves no further purpose, so we can remove it.
-  op->erase();
-  return ElaborationState::advance();
-}
-
-static std::string decodeMessage(Attribute messageStart, IntegerAttr msgSize,
-                                 IREvaluator &evaluator) {
-  if (ErrorOrSuccess err = evaluator.internalizeMemory(messageStart))
-    return {};
-
-  // Read each of the bytes into messageBytes one at a time.  If any fail,
-  // just bail out.
-  size_t address = cast<PointerAttr>(messageStart).getAddr();
-  size_t numBytes = msgSize.getInt();
-  Type byteType = IntegerType::get(evaluator.getContext(), 8);
-
-  std::string result;
-  while (numBytes) {
-    ErrorOr<TypedAttr> attrOr =
-        evaluator.readAttributeFromMemory(address, byteType);
-    if (attrOr.isError() || !isa<IntegerAttr>(attrOr.get()))
-      return {};
-    result.push_back((char)cast<IntegerAttr>(attrOr.get()).getInt());
-    ++address;
-    --numBytes;
-  }
-
-  return result;
-}
-
-/// Process a param.assert op by folding its parameter expression and checking
-/// its constraint. Returns the appropriate error if the constraint failed.
-static ElaborationState processParamAssertExOp(ImplNode *inode,
-                                               ParamAssertExOp op) {
-  // Check the condition expression.
-  Attribute cond;
-  HANDLE_EVALUATOR_CONC(cond, inode, op.getLoc(), op.getCond());
-
-  // If the constraint evaluated to zero then the assert fails.
-  auto resultInt = cast<IntegerAttr>(cond);
-  if (resultInt.getValue().isZero()) {
-    Attribute messageStart, messageLen;
-    HANDLE_EVALUATOR_CONC(messageStart, inode, op.getLoc(),
-                          op.getMessageStart());
-    HANDLE_EVALUATOR_CONC(messageLen, inode, op.getLoc(),
-                          op.getMessageLength());
-
-    // We expect the message to be an InterpMemRef.
-    StringRef message = "<unknown param.assert message>";
-    std::string messageData;
-    if (auto msgSize = dyn_cast<IntegerAttr>(messageLen)) {
-      if (auto msgStart = dyn_cast<MemRefAttr>(messageStart)) {
-        messageData = decodeMessage(msgStart, msgSize, inode->getEvaluator());
-        if (!messageData.empty())
-          message = messageData;
-      }
-    }
-
-    inode->setToError(ErrorTree(op.getLoc(), "constraint failed: " + message));
     return failure();
   }
 
@@ -1309,8 +1247,6 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
     return processRebindOp(node, rebindOp);
   if (auto assertOp = dyn_cast<ParamAssertOp>(op))
     return processParamAssertOp(node, assertOp);
-  if (auto assertOp = dyn_cast<ParamAssertExOp>(op))
-    return processParamAssertExOp(node, assertOp);
   if (auto ifOp = dyn_cast<ParamIfOp>(op))
     return processParamIfOp(node, ifOp);
   if (auto forOp = dyn_cast<ParamForOp>(op))
