@@ -212,8 +212,15 @@ static void propagateTrivialParameters(Region *region,
     // tree. We can discard the message since we know the elaborator will hit
     // the sooner assert first and only emit its error message.
     if (auto constraint = dyn_cast<ParamAssertOp>(op))
-      if (!seenAsserts.insert(constraint.getCond()).second)
+      if (!seenAsserts.insert(constraint.getCond()).second) {
         constraint.erase();
+        continue;
+      }
+    if (auto constraint = dyn_cast<ParamAssertExOp>(op))
+      if (!seenAsserts.insert(constraint.getCond()).second) {
+        constraint.erase();
+        continue;
+      }
   }
 
   // Any op might contain a parametric location, so we go through all of them.

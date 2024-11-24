@@ -808,8 +808,7 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert",
   let summary = "check a parameter expression at elaboration time";
   let description = [{
     The `kgen.param.assert` operation ensures that a parameter expression is
-    true at elaboration time. It is a more flexible form of the constraint list
-    on a generator.
+    true at elaboration time.
   }];
 
   let arguments = (ins AttrOfType<I1>:$cond,
@@ -821,6 +820,34 @@ def KGEN_ParamAssertOp : KGENOp<"param.assert",
 
   let hasCanonicalizeMethod = 1;
 }
+
+//===----------------------------------------------------------------------===//
+// ParamAssertExOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_ParamAssertExOp : KGENOp<"param.assert.ex",
+    [DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]>,
+    NoParamDecls {
+  let summary = "check a parameter expression at elaboration time";
+  let description = [{
+    The `kgen.param.assert.ex` operation ensures that a parameter expression is
+    true at elaboration time. It allows arbitrary computation to form a string
+    that is printed at elaboration time.  It is more general than
+    kgen.param.assert, but generates more IR overhead.
+  }];
+
+  let arguments = (ins AttrOfType<I1>:$cond,
+                       AttrOfType<PointerType>:$messageStart,
+                       AttrOfType<Index>:$messageLength);
+  let assemblyFormat = [{
+    ` ` `<` custom<ParamValue>($cond, "$_builder.getI1Type()") `>` `,`
+            custom<ColonTypeParamValue>($messageStart) `,`
+            custom<IndexParamValue>($messageLength) attr-dict
+  }];
+
+  let hasCanonicalizeMethod = 1;
+}
+
 
 //===----------------------------------------------------------------------===//
 // ParamForOp

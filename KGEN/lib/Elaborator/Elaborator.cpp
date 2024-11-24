@@ -245,7 +245,7 @@ static ElaborationState processRebindOp(ImplNode *inode, RebindOp op) {
 }
 
 //===----------------------------------------------------------------------===//
-// processParamAssertOp
+// processParamAssertOp / processParamAssertExOp
 //===----------------------------------------------------------------------===//
 
 /// Process a param.assert op by folding its parameter expression and checking
@@ -264,6 +264,68 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
     inode->setToError(
         ErrorTree(op.getLoc(),
                   "constraint failed: " + cast<StringAttr>(value).getValue()));
+    return failure();
+  }
+
+  // The kgen.param.assert op serves no further purpose, so we can remove it.
+  op->erase();
+  return ElaborationState::advance();
+}
+
+static std::string decodeMessage(Attribute messageStart, IntegerAttr msgSize,
+                                 IREvaluator &evaluator) {
+  if (ErrorOrSuccess err = evaluator.internalizeMemory(messageStart))
+    return {};
+
+  // Read each of the bytes into messageBytes one at a time.  If any fail,
+  // just bail out.
+  size_t address = cast<PointerAttr>(messageStart).getAddr();
+  size_t numBytes = msgSize.getInt();
+  Type byteType = IntegerType::get(evaluator.getContext(), 8);
+
+  std::string result;
+  while (numBytes) {
+    ErrorOr<TypedAttr> attrOr =
+        evaluator.readAttributeFromMemory(address, byteType);
+    if (attrOr.isError() || !isa<IntegerAttr>(attrOr.get()))
+      return {};
+    result.push_back((char)cast<IntegerAttr>(attrOr.get()).getInt());
+    ++address;
+    --numBytes;
+  }
+
+  return result;
+}
+
+/// Process a param.assert op by folding its parameter expression and checking
+/// its constraint. Returns the appropriate error if the constraint failed.
+static ElaborationState processParamAssertExOp(ImplNode *inode,
+                                               ParamAssertExOp op) {
+  // Check the condition expression.
+  Attribute cond;
+  HANDLE_EVALUATOR_CONC(cond, inode, op.getLoc(), op.getCond());
+
+  // If the constraint evaluated to zero then the assert fails.
+  auto resultInt = cast<IntegerAttr>(cond);
+  if (resultInt.getValue().isZero()) {
+    Attribute messageStart, messageLen;
+    HANDLE_EVALUATOR_CONC(messageStart, inode, op.getLoc(),
+                          op.getMessageStart());
+    HANDLE_EVALUATOR_CONC(messageLen, inode, op.getLoc(),
+                          op.getMessageLength());
+
+    // We expect the message to be an InterpMemRef.
+    StringRef message = "<unknown param.assert message>";
+    std::string messageData;
+    if (auto msgSize = dyn_cast<IntegerAttr>(messageLen)) {
+      if (auto msgStart = dyn_cast<MemRefAttr>(messageStart)) {
+        messageData = decodeMessage(msgStart, msgSize, inode->getEvaluator());
+        if (!messageData.empty())
+          message = messageData;
+      }
+    }
+
+    inode->setToError(ErrorTree(op.getLoc(), "constraint failed: " + message));
     return failure();
   }
 
@@ -1237,31 +1299,33 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
     if (!block->isEntryBlock())
       return ElaborationState::advance();
 
-  if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
+  if (auto declare = dyn_cast<ParamDeclareOp>(op))
     return processParamDeclareOp(node, declare);
-  } else if (auto constant = dyn_cast<ParamConstantOp>(op)) {
+  if (auto constant = dyn_cast<ParamConstantOp>(op))
     return processParamConstantOp(node, constant);
-  } else if (auto constant = dyn_cast<ParamMaterializeOp>(op)) {
+  if (auto constant = dyn_cast<ParamMaterializeOp>(op))
     return processParamConstantOp(node, constant);
-  } else if (auto rebindOp = dyn_cast<RebindOp>(op)) {
+  if (auto rebindOp = dyn_cast<RebindOp>(op))
     return processRebindOp(node, rebindOp);
-  } else if (auto assertOp = dyn_cast<ParamAssertOp>(op)) {
+  if (auto assertOp = dyn_cast<ParamAssertOp>(op))
     return processParamAssertOp(node, assertOp);
-  } else if (auto ifOp = dyn_cast<ParamIfOp>(op)) {
+  if (auto assertOp = dyn_cast<ParamAssertExOp>(op))
+    return processParamAssertExOp(node, assertOp);
+  if (auto ifOp = dyn_cast<ParamIfOp>(op))
     return processParamIfOp(node, ifOp);
-  } else if (auto forOp = dyn_cast<ParamForOp>(op)) {
+  if (auto forOp = dyn_cast<ParamForOp>(op))
     return processParamForOp(node, forOp);
-  } else if (auto call = dyn_cast<GeneratorUserOpInterface>(op)) {
+  if (auto call = dyn_cast<GeneratorUserOpInterface>(op))
     return processCallOp(node, call);
-  } else if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
-    // Delay elaboration of the DILocalVariableAttr until when locations are
-    // elaborated.
+
+  // Delay elaboration of the DILocalVariableAttr until when locations are
+  // elaborated.
+  if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op))
     return ElaborationState::advance();
-  } else {
-    // NOTE: We only need to elaborate locations manually for generic ops if we
-    // don't do it globally.
-    return processGenericOp(node, op);
-  }
+
+  // NOTE: We only need to elaborate locations manually for generic ops if we
+  // don't do it globally.
+  return processGenericOp(node, op);
 }
 
 //===----------------------------------------------------------------------===//
