@@ -430,7 +430,7 @@ private:
   /// Initialize the function view with the given signature.
   void initFromSignature(MojoASTDeclRef declRef,
                          KGEN::LIT::LITSignatureType signature,
-                         ArrayRef<Type> argTypes);
+                         ArrayRef<Type> userArgTypes, Type userResultType);
 
   /// Augment this function view with docstring documentation, as well as its
   /// parameters and args.

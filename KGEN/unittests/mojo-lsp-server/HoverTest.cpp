@@ -788,7 +788,7 @@ fn foo():
       .hover(doc, *doc.findLastPos("parametric"),
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(function) fn parametric[type: DType, simd_width: Int, //, other: Int](x: SIMD[type, simd_width]) -> SIMD[$0, $1]
+(function) fn parametric[type: DType, simd_width: Int, //, other: Int](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]
 ```)");
              })
       .execute();
