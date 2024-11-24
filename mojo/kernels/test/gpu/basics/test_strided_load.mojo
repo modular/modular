@@ -24,7 +24,7 @@ fn strided_load_kernel[
 
 def test_strided_load():
     print(
-        _compile_code_asm[strided_load_kernel[width=4], emission_kind="ptx"]()
+        _compile_code_asm[strided_load_kernel[width=4], emission_kind="asm"]()
     )
 
 

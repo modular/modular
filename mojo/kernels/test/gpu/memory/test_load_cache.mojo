@@ -36,35 +36,35 @@ def test_load():
     assert_true(
         "ld.global "
         in _compile_code_asm[
-            load_value[width=1, prefetch_size=128], emission_kind="ptx"
+            load_value[width=1, prefetch_size=128], emission_kind="asm"
         ]()
     )
 
     assert_true(
         "ld.global.L2::128B.v2.u32 "
         in _compile_code_asm[
-            load_value[width=2, prefetch_size=128], emission_kind="ptx"
+            load_value[width=2, prefetch_size=128], emission_kind="asm"
         ]()
     )
 
     assert_true(
         "ld.global.L2::128B.v4.u32 "
         in _compile_code_asm[
-            load_value[width=4, prefetch_size=128], emission_kind="ptx"
+            load_value[width=4, prefetch_size=128], emission_kind="asm"
         ]()
     )
 
     assert_true(
         "ld.global.L2::256B.v4.u32 "
         in _compile_code_asm[
-            load_value[width=4, prefetch_size=256], emission_kind="ptx"
+            load_value[width=4, prefetch_size=256], emission_kind="asm"
         ]()
     )
 
     assert_equal(
         str(
             _compile_code_asm[
-                load_value[width=64, prefetch_size=128], emission_kind="ptx"
+                load_value[width=64, prefetch_size=128], emission_kind="asm"
             ]()
         ).count("ld.global.L2::128B.v4.u32 "),
         16,
@@ -79,7 +79,7 @@ def test_load():
                 prefetch_size=None,
                 cache_policy = CacheOperation.LAST_USE,
             ],
-            emission_kind="ptx",
+            emission_kind="asm",
         ]()
     )
 
@@ -87,7 +87,7 @@ def test_load():
         "ld.global.nc.v2.u32 "
         in _compile_code_asm[
             load_value[type = DType.uint32, width=2, read_only=True],
-            emission_kind="ptx",
+            emission_kind="asm",
         ]()
     )
 
