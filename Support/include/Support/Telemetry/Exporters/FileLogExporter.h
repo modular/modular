@@ -11,6 +11,7 @@
 #include "opentelemetry/exporters/ostream/log_record_exporter.h"
 #include "opentelemetry/sdk/logs/recordable.h"
 #include <filesystem>
+#include <sstream>
 #endif // MODULAR_ENABLE_TELEMETRY
 
 namespace M::Telemetry::Exporter {
