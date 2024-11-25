@@ -298,8 +298,6 @@ fn build_static_tensor_specs[
     alignment: Int,
     address_space: AddressSpace,
     exclusive: Bool,
-    in_lambda: OptionalReg[StaticTensorSpec[type, rank].in_lambda_t],
-    out_lambda: OptionalReg[StaticTensorSpec[type, rank].out_lambda_t],
 ) -> StaticTensorSpec[type, rank]:
     alias SpecType = StaticTensorSpec[type, rank]
 
@@ -309,6 +307,29 @@ fn build_static_tensor_specs[
         alignment,
         address_space,
         exclusive,
+        None,
+        None,
+    )
+
+
+# Rebuild the StaticTensorSpec parameter for the DPS kernels with different lambdas
+@register_internal_override("rebuild_static_tensor_specs_with_lambdas", 1)
+fn rebuild_static_tensor_specs_with_lambdas[
+    type: DType,
+    rank: Int,
+](
+    spec: StaticTensorSpec[type, rank],
+    in_lambda: OptionalReg[StaticTensorSpec[type, rank].in_lambda_t],
+    out_lambda: OptionalReg[StaticTensorSpec[type, rank].out_lambda_t],
+) -> StaticTensorSpec[type, rank]:
+    alias SpecType = StaticTensorSpec[type, rank]
+
+    return SpecType(
+        spec.shape,
+        spec.strides,
+        spec.alignment,
+        spec.address_space,
+        spec.exclusive,
         in_lambda,
         out_lambda,
     )
