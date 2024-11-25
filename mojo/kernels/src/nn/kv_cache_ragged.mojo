@@ -997,6 +997,44 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
+fn generic_flash_attention_kv_cache_cont_batch_ragged[
+    type: DType, //,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("output", output),
+            trace_arg("q", q),
+            trace_arg("input_row_offset", input_row_offset),
+            "layer_idx=" + str(layer_idx),
+            "num_heads=" + str(kv_collection.kv_params.num_heads),
+            "head_size=" + str(kv_collection.kv_params.head_size),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h"
+        + str(kv_collection.kv_params.num_heads)
+        + "_d"
+        + str(kv_collection.kv_params.head_size)
+        + "_cont_batch_ragged",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _flash_attention_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
+
+
 @register_internal("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
 fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
     type: DType, //,
@@ -1012,12 +1050,9 @@ fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h1_d16_cont_batch_ragged"
-    ):
-        return _flash_attention_kv_cache_ragged[
-            kv_collection.CacheType, target=target
-        ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
+    generic_flash_attention_kv_cache_cont_batch_ragged[target=target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
 
 
 @register_internal("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
@@ -1035,12 +1070,9 @@ fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h8_d64_cont_batch_ragged"
-    ):
-        return _flash_attention_kv_cache_ragged[
-            kv_collection.CacheType, target=target
-        ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
+    generic_flash_attention_kv_cache_cont_batch_ragged[target=target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
 
 
 @register_internal("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
@@ -1058,12 +1090,9 @@ fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h8_d128_cont_batch_ragged"
-    ):
-        return _flash_attention_kv_cache_ragged[
-            kv_collection.CacheType, target=target
-        ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
+    generic_flash_attention_kv_cache_cont_batch_ragged[target=target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
 
 
 @register_internal("flash_attention_kv_cache_h32_d128_cont_batch_ragged")
@@ -1081,12 +1110,9 @@ fn flash_attention_kv_cache_h32_d128_cont_batch_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    with Trace[TraceLevel.OP, target=target](
-        "flash_attention_kv_cache_h32_d128_cont_batch_ragged"
-    ):
-        return _flash_attention_kv_cache_ragged[
-            kv_collection.CacheType, target=target
-        ](q, input_row_offset, kv_collection, layer_idx, scale, output, context)
+    generic_flash_attention_kv_cache_cont_batch_ragged[target=target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
 
 
 @always_inline
