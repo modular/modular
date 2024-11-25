@@ -43,6 +43,10 @@ enum class PassingKind : uint32_t;
 /// Returns whether the given attribute is a LIT type expression.
 bool isTypeExpr(TypedAttr attr);
 
+// This is the name of the field of the standard library Origin type.  This
+// needs to be kept in sync with the standard library.
+#define ORIGIN_FIELD_NAME "_mlir_origin"
+
 //===----------------------------------------------------------------------===//
 // Parameter Mangling
 //===----------------------------------------------------------------------===//
