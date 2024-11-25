@@ -89,8 +89,8 @@ struct StaticTensorSpec[
 
     fn __init__(out self):
         self = Self(
-            DimList(),
-            DimList(),
+            DimList.create_unknown[rank](),
+            DimList.create_unknown[rank](),
             1,
             AddressSpace.GENERIC,
             True,

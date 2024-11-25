@@ -8,16 +8,18 @@ from bit import is_power_of_two
 from collections import InlineArray, OptionalReg
 from math import ceil, fma
 from sys import alignof, simdwidthof
+from sys.info import is_nvidia_gpu
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
 from compiler_internal.directives import StaticTensorSpec
 from compiler_internal.directives import __mogg_intrinsic_attr, specsof
 from memory import UnsafePointer
+from memory.pointer import _GPUAddressSpace
 from runtime.asyncrt import MojoCallContextPtr
 from tensor_internal import RuntimeTensorSpec, TensorSpec
 
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from utils import IndexList
 
 from .indexing import _dot_prod, _row_major_strides, _slice_to_tuple
@@ -210,8 +212,13 @@ struct ManagedTensorSlice[
     ](self, index: IndexList[_rank]) -> SIMD[type, width]:
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
-        alias alignment = specsof[type, rank]("self").alignment
-        return self._simd_load_internal[width, alignment=alignment](ridx)
+        alias static_specs = specsof[type, rank]("self")
+        return self._simd_load_internal[
+            width,
+            alignment = static_specs.alignment,
+            address_space = static_specs.address_space,
+            static_strides = static_specs.strides,
+        ](ridx)
 
     @always_inline
     fn _fused_load[
@@ -227,20 +234,45 @@ struct ManagedTensorSlice[
 
         alias in_lambda = specsof[type, rank]("self").in_lambda
         alias alignment = specsof[type, rank]("self").alignment
+        alias address_space = specsof[type, rank]("self").address_space
+        alias strides = specsof[type, rank]("self").strides
 
         @parameter
         if in_lambda:
             alias in_fn = in_lambda.value()
             return in_fn[width](ridx)
         else:
-            return self._simd_load_internal[width, alignment](ridx)
+            return self._simd_load_internal[
+                width,
+                alignment=alignment,
+                address_space=address_space,
+                static_strides=strides,
+            ](ridx)
 
     @always_inline
-    fn _compute_offset(self, index: IndexList[rank]) -> Int:
-        # TODO(GRA-1017): Add address space cases.
+    fn _compute_offset[
+        address_space: AddressSpace
+    ](self, index: IndexList[rank]) -> Int:
         @parameter
         if rank == 0:
             return 0
+
+        # Special case for NVidia GPU on shared memory.
+        # We can do the offset computation in int32 instead.
+        @parameter
+        if is_nvidia_gpu() and address_space in (
+            _GPUAddressSpace.SHARED,
+            _GPUAddressSpace.LOCAL,
+            _GPUAddressSpace.CONSTANT,
+            _GPUAddressSpace.PARAM,
+        ):
+            var offset: Int32 = 0
+
+            @parameter
+            for i in range(rank):
+                offset = fma(Int32(index[i]), Int32(self._strides[i]), offset)
+
+            return int(offset)
 
         var offset = 0
 
@@ -254,17 +286,19 @@ struct ManagedTensorSlice[
     fn _simd_load_internal[
         width: Int,
         alignment: Int = 1,
+        address_space: AddressSpace = AddressSpace.GENERIC,
+        static_strides: DimList = DimList.create_unknown[rank](),
     ](self, index: IndexList[rank]) -> SIMD[type, width]:
-        var flat_index = self._compute_offset(index)
+        var flat_index = self._compute_offset[address_space](index)
         var stride = self._strides[rank - 1]
+        alias static_stride = static_strides.at[rank - 1]()
 
         # Load alignment cannot exceed the data type's alignment.
         alias max_alignment = gcd_pow2[alignment, alignof[type]()]()
 
-        if stride == 0:
-            return self._ptr.load(flat_index)
-        elif stride == 1:
-
+        # Stride = 1
+        @parameter
+        fn load_stride1() -> SIMD[type, width]:
             @parameter
             if type is DType.bool:
                 var v = self._ptr.bitcast[Scalar[DType.uint8]]().load[
@@ -275,8 +309,10 @@ struct ManagedTensorSlice[
                 return self._ptr.load[width=width, alignment=max_alignment](
                     flat_index
                 )
-        else:
 
+        # Stride > 1
+        @parameter
+        fn load_strided(stride: Int) -> SIMD[type, width]:
             @parameter
             if type is DType.bool:
                 var v = strided_load[width](
@@ -287,6 +323,26 @@ struct ManagedTensorSlice[
             else:
                 return strided_load[width](self._ptr.offset(flat_index), stride)
 
+        @parameter
+        if static_stride.is_dynamic():
+            # Dynamic stride
+            if stride == 0:
+                return self._ptr.load(flat_index)
+            elif stride == 1:
+                return load_stride1()
+            else:
+                return load_strided(stride)
+
+        else:
+            # Static stride
+            @parameter
+            if static_stride.get() == 0:
+                return self._ptr.load(flat_index)
+            elif static_stride.get() == 1:
+                return load_stride1()
+            else:
+                return load_strided(static_stride.get())
+
     @always_inline
     fn store[
         width: Int,
@@ -296,8 +352,13 @@ struct ManagedTensorSlice[
         constrained[_rank == rank]()
         var ridx = rebind[IndexList[rank]](index)
 
-        alias alignment = specsof[type, rank]("self").alignment
-        self._simd_store_internal[width, alignment=alignment](ridx, val)
+        alias static_specs = specsof[type, rank]("self")
+        self._simd_store_internal[
+            width,
+            alignment = static_specs.alignment,
+            address_space = static_specs.address_space,
+            static_strides = static_specs.strides,
+        ](ridx, val)
 
     @always_inline
     fn _fused_store[
@@ -313,37 +374,48 @@ struct ManagedTensorSlice[
 
         alias out_lambda = specsof[type, rank]("self").out_lambda
         alias alignment = specsof[type, rank]("self").alignment
+        alias address_space = specsof[type, rank]("self").address_space
+        alias strides = specsof[type, rank]("self").strides
 
         @parameter
         if out_lambda:
             alias out_fn = out_lambda.value()
             out_fn[width](ridx, val)
         else:
-            self._simd_store_internal[width, alignment=alignment](ridx, val)
+            self._simd_store_internal[
+                width,
+                alignment=alignment,
+                address_space=address_space,
+                static_strides=strides,
+            ](ridx, val)
 
     @always_inline
     fn _simd_store_internal[
         width: Int,
         alignment: Int = 1,
+        address_space: AddressSpace = AddressSpace.GENERIC,
+        static_strides: DimList = DimList.create_unknown[rank](),
     ](self, index: IndexList[rank], val: SIMD[type, width]):
-        var flat_index = self._compute_offset(index)
+        var flat_index = self._compute_offset[address_space](index)
 
         # Store alignment cannot exceed the data type's alignment.
         alias max_alignment = gcd_pow2[alignment, alignof[type]()]()
 
         var stride = self._strides[rank - 1]
-        if stride == 0:
-            self._ptr[] = flat_index
-        elif stride == 1:
+        alias static_stride = static_strides.at[rank - 1]()
 
+        # Stride = 1
+        @parameter
+        fn store_stride1():
             @parameter
             if type is DType.bool:
                 var v = val.cast[DType.uint8]()
                 self._ptr.bitcast[Scalar[DType.uint8]]().store(flat_index, v)
             else:
                 self._ptr.store[alignment=max_alignment](flat_index, val)
-        else:
 
+        # Stride > 1
+        fn store_strided(stride: Int):
             @parameter
             if type is DType.bool:
                 var v = val.cast[DType.uint8]()
@@ -354,6 +426,26 @@ struct ManagedTensorSlice[
                 )
             else:
                 return strided_store(val, self._ptr.offset(flat_index), stride)
+
+        @parameter
+        if static_stride.is_dynamic():
+            # Dynamic stride
+            if stride == 0:
+                self._ptr.store[alignment=max_alignment](0, val)
+            elif stride == 1:
+                store_stride1()
+            else:
+                store_strided(stride)
+
+        else:
+            # static stride
+            @parameter
+            if static_stride.get() == 0:
+                self._ptr.store[alignment=max_alignment](0, val)
+            elif static_stride.get() == 1:
+                store_stride1()
+            else:
+                store_strided(static_stride.get())
 
     # Helper functions used in SliceMOGGDPSFunc to ensure the lambda isn't DCE
     @no_inline
