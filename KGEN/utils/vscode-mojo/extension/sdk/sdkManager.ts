@@ -11,8 +11,8 @@ import * as config from '../utils/config';
 import { realpath } from 'fs-extra';
 import { Logger } from '../logging';
 import { DisposableContext } from '../utils/disposableContext';
-import { MojoSDKConfig } from './sdkConfig';
-import { MojoSDK } from './sdk';
+import { MAXSDKConfig } from './sdkConfig';
+import { MAXSDK } from './sdk';
 import { Mutex } from 'async-mutex';
 import {
   directoryExists,
@@ -21,9 +21,9 @@ import {
   moveUpUntil,
   readFile,
 } from '../utils/files';
-import { MojoSDKVersion } from './sdkVersion';
+import { MAXSDKVersion } from './sdkVersion';
 import { findMagicSDKSpec, installMagicSDK } from './magicSdk';
-import { Expected, MojoSDKSpec } from './types';
+import { Expected, MAXSDKSpec } from './types';
 import { Subject } from 'rxjs';
 
 type NotYetSelectedSDK = {
@@ -32,7 +32,7 @@ type NotYetSelectedSDK = {
 
 type SelectedSDK = {
   state: 'selected';
-  sdkSpec: Optional<MojoSDKSpec>;
+  sdkSpec: Optional<MAXSDKSpec>;
   errorMessage?: Optional<string>;
 };
 
@@ -48,7 +48,7 @@ type SDKSelection = NotYetSelectedSDK | SelectedSDK;
  *
  * Caching should be minimized to capture the current state of the SDKs in the filesystem.
  */
-export class MojoSDKManager extends DisposableContext {
+export class MAXSDKManager extends DisposableContext {
   public logger: Logger;
   private statusBarItem: vscode.StatusBarItem;
   private _activeSDK: SDKSelection = { state: 'not-yet-selected' };
@@ -82,7 +82,7 @@ export class MojoSDKManager extends DisposableContext {
     );
     this.pushSubscription(this.statusBarItem);
     this.statusBarItem.command = 'mojo.sdk.select-default';
-    this.statusBarItem.name = 'Mojo SDK';
+    this.statusBarItem.name = 'MAX SDK';
     this.pushSubscription(
       vscode.window.onDidChangeVisibleTextEditors((_editors) => {
         this.refreshStatusBarItemVisibility();
@@ -150,9 +150,7 @@ export class MojoSDKManager extends DisposableContext {
     );
   }
 
-  public async findSDK(
-    hideRepeatedErrors: boolean,
-  ): Promise<Optional<MojoSDK>> {
+  public async findSDK(hideRepeatedErrors: boolean): Promise<Optional<MAXSDK>> {
     const doWork = async () => {
       if (this.activeSDK.state === 'selected') {
         return this.createSDKAndShowError(
@@ -180,7 +178,7 @@ export class MojoSDKManager extends DisposableContext {
   public async createAdHocSDKAndShowError(
     modularHomePath: string,
     section: Optional<string>,
-  ): Promise<Optional<MojoSDK>> {
+  ): Promise<Optional<MAXSDK>> {
     const hideRepeatedErrors = false;
     const allowInstallation = false;
 
@@ -203,11 +201,11 @@ export class MojoSDKManager extends DisposableContext {
         allowInstallation,
       );
     }
-    const sdkSpec: MojoSDKSpec = {
+    const sdkSpec: MAXSDKSpec = {
       kind: 'custom',
       modularHomePath,
       section: section || 'mojo-max' + (this.isNightly ? '-nightly' : ''),
-      version: new MojoSDKVersion(
+      version: new MAXSDKVersion(
         modularHomePath,
         '0',
         '0',
@@ -226,7 +224,7 @@ export class MojoSDKManager extends DisposableContext {
     selectedSDK: SelectedSDK,
     hideRepeatedErrors: boolean,
     allowInstallation: boolean,
-  ): Promise<Optional<MojoSDK>> {
+  ): Promise<Optional<MAXSDK>> {
     const result = await this.doCreateSDK(selectedSDK, allowInstallation);
     if (result.errorMessage !== undefined) {
       if (
@@ -266,7 +264,7 @@ export class MojoSDKManager extends DisposableContext {
     if (isMojoFile(vscode.window.activeTextEditor?.document.uri)) {
       const activeSDK = this.activeSDK;
       if (activeSDK.state === 'selected' && activeSDK.sdkSpec !== undefined) {
-        this.statusBarItem.text = `Mojo SDK: ${activeSDK.sdkSpec.version.toTinyString()}`;
+        this.statusBarItem.text = `MAX SDK: ${activeSDK.sdkSpec.version.toTinyString()}`;
         this.statusBarItem.show();
         return;
       }
@@ -296,7 +294,7 @@ export class MojoSDKManager extends DisposableContext {
   private async doCreateSDK(
     selectedSDK: SelectedSDK,
     allowInstallation: boolean,
-  ): Promise<Expected<MojoSDK>> {
+  ): Promise<Expected<MAXSDK>> {
     const spec = selectedSDK.sdkSpec;
     if (spec === undefined) {
       return {
@@ -331,7 +329,7 @@ export class MojoSDKManager extends DisposableContext {
         errorMessage: `The modular config file '${modularConfigPath}' doesn't have the expected section ${spec.section}`,
       };
     }
-    const sdkConfig = new MojoSDKConfig(
+    const sdkConfig = new MAXSDKConfig(
       spec.version,
       spec.modularHomePath,
       mojoConfig,
@@ -341,10 +339,10 @@ export class MojoSDKManager extends DisposableContext {
         errorMessage: `Unable to determine the MAX SDK version.`,
       };
     }
-    return { value: new MojoSDK(sdkConfig, spec.kind, this.logger) };
+    return { value: new MAXSDK(sdkConfig, spec.kind, this.logger) };
   }
 
-  private async selectSDK(): Promise<Optional<MojoSDKSpec>> {
+  private async selectSDK(): Promise<Optional<MAXSDKSpec>> {
     const allSDKSpecs = await this.findAllSDKs();
     if (allSDKSpecs.length === 0) {
       return undefined;
@@ -365,7 +363,7 @@ export class MojoSDKManager extends DisposableContext {
     return allSDKSpecs[0];
   }
 
-  private async findAllSDKs(): Promise<MojoSDKSpec[]> {
+  private async findAllSDKs(): Promise<MAXSDKSpec[]> {
     // If we're only going to use the release SDK specs, don't bother looking for others.
     if (process.env['MOJO_EXTENSION_FORCE_MAGIC']) {
       const releaseSDKSpecs = await this.findMagicSDKSpecs();
@@ -388,7 +386,7 @@ export class MojoSDKManager extends DisposableContext {
     return [...devSDKSpecs, ...releaseSDKSpecs, ...userProvidedSDKSpecs];
   }
 
-  private async findUserProvidedSDKSpecs(): Promise<MojoSDKSpec[]> {
+  private async findUserProvidedSDKSpecs(): Promise<MAXSDKSpec[]> {
     const additionalRoots = config.get<string[]>(
       'SDK.additionalSDKs',
       undefined,
@@ -407,10 +405,10 @@ export class MojoSDKManager extends DisposableContext {
         const section = contents.includes('[mojo-max-nightly]')
           ? 'mojo-max-nightly'
           : 'mojo-max';
-        const spec: MojoSDKSpec = {
+        const spec: MAXSDKSpec = {
           kind: 'custom',
           modularHomePath,
-          version: new MojoSDKVersion(
+          version: new MAXSDKVersion(
             'MAX SDK',
             '-1',
             '-1',
@@ -422,10 +420,10 @@ export class MojoSDKManager extends DisposableContext {
         return spec;
       }),
     );
-    return specs.filter((spec): spec is MojoSDKSpec => spec !== undefined);
+    return specs.filter((spec): spec is MAXSDKSpec => spec !== undefined);
   }
 
-  private async findDevSDKSpecs(): Promise<MojoSDKSpec[]> {
+  private async findDevSDKSpecs(): Promise<MAXSDKSpec[]> {
     const visiblePaths = [];
     const [activeMojoFile, otherOpenMojoFiles] = getAllOpenMojoFiles();
 
@@ -443,13 +441,13 @@ export class MojoSDKManager extends DisposableContext {
 
   private async findDevSDKSpecsFromSubPaths(
     paths: string[],
-  ): Promise<MojoSDKSpec[]> {
+  ): Promise<MAXSDKSpec[]> {
     const candidateSDKSpecs = (
       await Promise.all(
         paths.map((path) => this.findDevSDKSpecFromSubPath(path)),
       )
-    ).filter((spec): spec is MojoSDKSpec => spec !== undefined);
-    const uniqueSDKSpecs = new Map<string, MojoSDKSpec>();
+    ).filter((spec): spec is MAXSDKSpec => spec !== undefined);
+    const uniqueSDKSpecs = new Map<string, MAXSDKSpec>();
     candidateSDKSpecs.forEach((spec) =>
       uniqueSDKSpecs.set(spec.modularHomePath, spec),
     );
@@ -458,7 +456,7 @@ export class MojoSDKManager extends DisposableContext {
 
   private async findDevSDKSpecFromSubPath(
     fsPath: string,
-  ): Promise<Optional<MojoSDKSpec>> {
+  ): Promise<Optional<MAXSDKSpec>> {
     const repoRoot = await moveUpUntil(fsPath, (p) =>
       directoryExists(path.join(p, '.git')),
     );
@@ -478,10 +476,10 @@ export class MojoSDKManager extends DisposableContext {
       return undefined;
     }
     const modularHomePath = await realpath(path.join(repoRoot, '.derived'));
-    const spec: MojoSDKSpec = {
+    const spec: MAXSDKSpec = {
       kind: 'dev',
       modularHomePath,
-      version: new MojoSDKVersion(
+      version: new MAXSDKVersion(
         'Modular Repo',
         '0',
         '0',
@@ -493,7 +491,7 @@ export class MojoSDKManager extends DisposableContext {
     return spec;
   }
 
-  private async findMagicSDKSpecs(): Promise<MojoSDKSpec[]> {
+  private async findMagicSDKSpecs(): Promise<MAXSDKSpec[]> {
     const spec = await findMagicSDKSpec(
       this.extensionContext,
       this.logger,

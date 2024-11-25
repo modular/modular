@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 import { Logger } from '../logging';
-import { MojoSDKVersion } from './sdkVersion';
+import { MAXSDKVersion } from './sdkVersion';
 import * as util from 'util';
 const execFile = util.promisify(require('child_process').execFile);
 
@@ -13,11 +13,11 @@ const execFile = util.promisify(require('child_process').execFile);
  * This class represents a subset of the Modular config object used by extension
  * for interacting with mojo. It should be handled a POD object.
  */
-export class MojoSDKConfig {
+export class MAXSDKConfig {
   /**
    * The version of the SDK.
    */
-  readonly version: MojoSDKVersion;
+  readonly version: MAXSDKVersion;
 
   /**
    * The MODULAR_HOME path containing the SDK.
@@ -60,7 +60,7 @@ export class MojoSDKConfig {
   readonly lldbPath: string;
 
   public constructor(
-    version: MojoSDKVersion,
+    version: MAXSDKVersion,
     modularPath: string,
     rawConfig: { [key: string]: any },
   ) {
@@ -82,7 +82,7 @@ export class MojoSDKConfig {
     logger: Logger,
     driverPath: string,
     configSection: string,
-  ): Promise<Optional<MojoSDKVersion>> {
+  ): Promise<Optional<MAXSDKVersion>> {
     try {
       let { stdout, stderr } = await execFile(driverPath, ['--version'], {
         env: { ...process.env },
@@ -113,7 +113,7 @@ export class MojoSDKConfig {
         title += ' (nightly)';
       }
 
-      return new MojoSDKVersion(
+      return new MAXSDKVersion(
         title,
         `${match[1]}`,
         `${match[2]}`,

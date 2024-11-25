@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 import * as vscode from 'vscode';
-import { MojoSDKSpec } from './types';
+import { MAXSDKSpec } from './types';
 import * as path from 'path';
 import { mkdirp, chmod, rm, createWriteStream } from 'fs-extra';
 import * as util from 'util';
@@ -15,7 +15,7 @@ import axios from 'axios';
 import { Logger } from '../logging';
 import { execFile } from 'child_process';
 const execFileSync = util.promisify(execFile);
-import { MojoSDKVersion as MaxSDKVersion } from './sdkVersion';
+import { MAXSDKVersion as MaxSDKVersion } from './sdkVersion';
 
 const SDK_INSTALLATION_CANCELLATION_MSG = 'SDK installation cancelled';
 type MagicInstallationResult = 'succeeded' | 'failed' | 'cancelled';
@@ -446,7 +446,7 @@ export async function findMagicSDKSpec(
   context: vscode.ExtensionContext,
   logger: Logger,
   isNightly: boolean,
-): Promise<Optional<MojoSDKSpec>> {
+): Promise<Optional<MAXSDKSpec>> {
   const downloadSpec = await createDownloadSpec(context, isNightly, logger);
   if (downloadSpec === undefined) {
     return undefined;

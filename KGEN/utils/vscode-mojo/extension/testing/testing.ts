@@ -6,11 +6,11 @@
 
 import { execFile } from 'child_process';
 import * as vscode from 'vscode';
-import { MojoSDK } from '../sdk/sdk';
+import { MAXSDK } from '../sdk/sdk';
 import * as config from '../utils/config';
 import { DisposableContext } from '../utils/disposableContext';
 import * as path from 'path';
-import { MojoSDKManager } from '../sdk/sdkManager';
+import { MAXSDKManager } from '../sdk/sdkManager';
 import { Logger } from '../logging';
 
 /**
@@ -52,7 +52,7 @@ interface MojoTestExecutionResult {
  * mojo testing.
  */
 export class MojoTestManager extends DisposableContext {
-  private sdkManager: MojoSDKManager;
+  private sdkManager: MAXSDKManager;
   private controller: vscode.TestController;
   private logger: Logger;
 
@@ -60,7 +60,7 @@ export class MojoTestManager extends DisposableContext {
   private docTestTag = new vscode.TestTag('docTest');
   private unitTestTag = new vscode.TestTag('unitTest');
 
-  constructor(sdkManager: MojoSDKManager, logger: Logger) {
+  constructor(sdkManager: MAXSDKManager, logger: Logger) {
     super();
     this.sdkManager = sdkManager;
     this.logger = logger;
@@ -342,7 +342,7 @@ export class MojoTestManager extends DisposableContext {
    * arguments. Returns the json output of running the command.
    */
   async runMojoTestCommand<Result>(
-    sdk: MojoSDK,
+    sdk: MAXSDK,
     testId: string,
     workspaceFolder: Optional<vscode.WorkspaceFolder>,
     args: string[] = [],
