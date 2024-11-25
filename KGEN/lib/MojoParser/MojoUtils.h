@@ -41,6 +41,10 @@ inline const char *plural(size_t value, const char *one = "",
   return value == 1 ? one : other;
 }
 
+// This is the name of the field of the standard library Origin type.  This
+// needs to be kept in sync with the standard library.
+#define ORIGIN_FIELD_NAME "_mlir_origin"
+
 /// This function takes a list of function parameter types and returns a
 /// `OriginSetAttr` consisting of the origin parameters accessible through
 /// the function parameters. For example, a function with the signature

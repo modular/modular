@@ -483,3 +483,8 @@ fn test_higher_order_capture(owned x: MemExample, owned y: MemExample):
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%x)
   # CHECK-NEXT: lit.call {{.*}}MemExample::@"__del__{{.*}}(%y)
   higher_order_function[capture]()
+
+# CHECK-LABEL: lit.func @"test_origin_ref_spec
+# CHECK-SAME: !lit.ref<!Int, mut #lit.struct.extract<{{.*}}@Origin<:!Bool {:i1 1}> our_origin, "_mlir_origin">> mutref)
+fn test_origin_ref_spec[our_origin: Origin[True]](ref[our_origin] a: Int):
+    pass
