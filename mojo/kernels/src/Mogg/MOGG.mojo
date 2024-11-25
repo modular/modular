@@ -1149,8 +1149,8 @@ fn get_target_simd[type: DType]() -> __mlir_type.index:
     return int(simdwidthof[type]()).value
 
 
-@register_internal("simd_target_cuda")
-fn get_target_simd_cuda[type: DType]() -> __mlir_type.index:
+@register_internal("simd_target_gpu")
+fn get_target_simd_gpu[type: DType]() -> __mlir_type.index:
     return int(simdwidthof[Scalar[type], target = _get_gpu_target()]()).value
 
 

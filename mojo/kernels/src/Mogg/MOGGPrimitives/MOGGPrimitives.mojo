@@ -127,8 +127,8 @@ fn byte_buffer_alloc[
     var shape = IndexList[1](byte_size)
 
     @parameter
-    if "cuda" in target:
-        # For now, only cuda targets can use device context directly
+    if "gpu" in target:
+        # For now, only gpu targets can use device context directly
         var buf = device_context[].enqueue_create_buffer[DType.int8](byte_size)
         return NDBuffer[DType.int8, 1](buf^.take_ptr(), shape)
     else:
@@ -767,7 +767,7 @@ fn mgp_buffer_device_to_host[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if (dHostDevice == "cpu") and ("cuda" in cOtherDevice):
+    if (dHostDevice == "cpu") and ("gpu" in cOtherDevice):
         dev_ctx[].enqueue_copy_from_device[DType.uint8](
             host_buf.data,
             DeviceBuffer[DType.uint8](
@@ -778,9 +778,7 @@ fn mgp_buffer_device_to_host[
             ),
         )
     else:
-        raise Error(
-            "mgp.buffer.device_to_host must be scheduled on cuda device"
-        )
+        raise Error("mgp.buffer.device_to_host must be scheduled on gpu device")
     return 0
 
 
@@ -797,7 +795,7 @@ fn mgp_buffer_device_to_device[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if ("cuda" in cSrcDevice) and ("cuda" in dDstDevice):
+    if ("gpu" in cSrcDevice) and ("gpu" in dDstDevice):
         dst_dev_ctx[].enqueue_copy_device_to_device[DType.uint8](
             DeviceBuffer[DType.uint8](
                 dst_dev_ctx[],
@@ -817,7 +815,7 @@ fn mgp_buffer_device_to_device[
     else:
         raise Error(
             "mgp.buffer.device_to_device can be scheduled between same device"
-            " types (cpu-cpu) or (cuda-cuda)"
+            " types (cpu-cpu) or (gpu-gpu)"
         )
     return 0
 
@@ -834,7 +832,7 @@ fn mgp_buffer_host_to_device[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if ("cuda" in dOtherDevice) and (cHostDevice == "cpu"):
+    if ("gpu" in dOtherDevice) and (cHostDevice == "cpu"):
         dev_ctx[].enqueue_copy_to_device[DType.uint8](
             DeviceBuffer[DType.uint8](
                 dev_ctx[],
@@ -845,9 +843,7 @@ fn mgp_buffer_host_to_device[
             host_buf.data,
         )
     else:
-        raise Error(
-            "mgp.buffer.host_to_device must be scheduled on cuda device"
-        )
+        raise Error("mgp.buffer.host_to_device must be scheduled on gpu device")
     return 0
 
 
