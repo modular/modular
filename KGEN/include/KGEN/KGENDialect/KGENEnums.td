@@ -70,7 +70,7 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"GetLinkageName", 31, "get_linkage_name">,
 
   // Generics.
-  I32EnumAttrCase<"GetTypeMethod", 32, "get_type_method">,
+  I32EnumAttrCase<"GetVTableEntry", 32, "get_vtable_entry">,
   I32EnumAttrCase<"PtrBitcast", 33, "ptr_bitcast">,
   I32EnumAttrCase<"LoadFromMem", 34, "load_from_mem">,
 

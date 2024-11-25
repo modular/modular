@@ -309,10 +309,10 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 fn ref_copyability[*element_types: Copyable](*args: *element_types):
   # CHECK: %x = lit.var.decl
   # CHECK: [[ITEM:%.*]] = lit.call @stdlib::@builtin::@stubs::@VariadicPack::@"__getitem__
-  # CHECK: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__copyinit__{{.*}}(%x, [[ITEM]])
+  # CHECK: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__copyinit__{{.*}}(%x, [[ITEM]])
   var x = args[4]
 
-  # CHECK-NEXT: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__del__{{.*}}(%x)
+  # CHECK-NEXT: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__del__{{.*}}(%x)
 
 # Issue #37659: Parameter inference doesn't work with force-immut origins
 

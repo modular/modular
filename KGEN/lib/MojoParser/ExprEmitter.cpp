@@ -1124,13 +1124,13 @@ static LITSignatureType createRequirementSignature(
   LITSignatureType traitFnWithCorrectedSelfAndAliasParamRefs =
       traitAliasReplacer.replace(traitFnWithCorrectedSelf);
 
-  // However, zork's `Self.T` is different, like: get_type_method(Self, "T").
+  // However, zork's `Self.T` is different, like: get_vtable_entry(Self, "T").
   // And after the first step, that Self is actually the struct, so the
-  // requirementFn is really more like: get_type_method(MyStruct, "T").
-  // We'll manually replace those entire get_type_method calls.
+  // requirementFn is really more like: get_vtable_entry(MyStruct, "T").
+  // We'll manually replace those entire get_vtable_entry calls.
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
-    if (paramOp.getOpcode() == POC::GetTypeMethod &&
+    if (paramOp.getOpcode() == POC::GetVTableEntry &&
         paramOp.getOperand(0) == newSelfValue) {
       auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
       auto iter = aliasNameToReplacement.find(aliasName.str());

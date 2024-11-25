@@ -276,7 +276,7 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
         auto specSig = dtorSig.getSpecializedSignature({generic.getParam()});
         auto delStr =
             StringAttr::get("__del__", StringType::get(type.getContext()));
-        return ParamOperatorAttr::get(POC::GetTypeMethod,
+        return ParamOperatorAttr::get(POC::GetVTableEntry,
                                       {generic.getParam(), delStr}, specSig);
       }
     }

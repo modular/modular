@@ -53,7 +53,7 @@ static std::pair<LITSignatureType, ParamBindings> getTraitFunctionSignature(
 
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
-    if (paramOp.getOpcode() == POC::GetTypeMethod &&
+    if (paramOp.getOpcode() == POC::GetVTableEntry &&
         paramOp.getOperand(0) == selfStructAsTrait) {
       auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
       auto iter = aliasNameToReplacement.find(aliasName.str());

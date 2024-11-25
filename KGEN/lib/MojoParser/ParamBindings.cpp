@@ -39,7 +39,7 @@ using namespace M::KGEN::LIT;
 /// Then we'll need to adjust our desired signature from:
 ///     fn lork(self, thing: MyStruct[T])
 /// to:
-///     fn lork(self, thing: MyStruct[get_type_method(X, T)])
+///     fn lork(self, thing: MyStruct[get_vtable_entry(X, T)])
 ///
 /// This function will do that conversion. If we aren't calling a trait method
 /// with an alias, it'll return the given desiredSignature unmodified.
@@ -59,7 +59,7 @@ LITSignatureType M::KGEN::LIT::substituteTraitAliasesIntoSignature(
         continue;
       StringAttr nameStringAttr = StringAttr::get(
           name.str(), StringType::get(candidateFunc->getContext()));
-      TypedAttr aliasRef = ParamOperatorAttr::get(POC::GetTypeMethod,
+      TypedAttr aliasRef = ParamOperatorAttr::get(POC::GetVTableEntry,
                                                   {selfPValue, nameStringAttr},
                                                   traitAlias.getType());
       traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(), aliasRef);
@@ -769,6 +769,11 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   return {bindings, fitness, std::move(diag)};
 }
 
+// DO NOT SUBMIT
+extern LITSignatureType substituteTraitAliasesIntoSignature(
+    DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
+    LITSignatureType desiredSignature, PValue selfPValue);
+
 TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
                                               StringRef baseName,
                                               const ExprNode *expr) const {
@@ -823,7 +828,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   assert(signature && "Error binding trait Self type");
 
   TypedAttr fnRef = ParamOperatorAttr::get(
-      POC::GetTypeMethod,
+      POC::GetVTableEntry,
       {PValue(selfExpr),
        StringAttr::get(baseName, StringType::get(funcOp.getContext()))},
       signature);

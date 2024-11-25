@@ -1461,15 +1461,15 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
           << spelling << "' in non-parameter " << baseRVType << getRange();
       return {};
     }
-    // Make a get_type_method call to extract the value out of the trait value's
-    // vtable.
+    // Make a get_vtable_entry call to extract the value out of the trait
+    // value's vtable.
     // See
     // https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
     // for why and where else we do this.
     auto vtableEntryName =
         StringAttr::get(spelling, StringType::get(emitter.getContext()));
     auto vtableEntryResult = ParamOperatorAttr::get(
-        POC::GetTypeMethod, {basePValue, vtableEntryName},
+        POC::GetVTableEntry, {basePValue, vtableEntryName},
         aliasDeclOpParam.getType());
 
     return emitter.emitResult(vtableEntryResult, this, dest);

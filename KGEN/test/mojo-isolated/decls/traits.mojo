@@ -124,22 +124,22 @@ struct CFMStructParams[t1: AnyTrivialRegType, t2: AnyTrivialRegType](
 # CHECK-SAME: %x: !lit.ref<:!Trait T, imm {{.*}}> borrow_in_mem
 fn generic_trait_fn[T: Trait](x: T):
     # CHECK: lit.call[!lit.signature<[1]("self": {{.*}} borrow_in_mem) -> !kgen.none>:
-    # CHECK-SAME: get_type_method(:!Trait T, "f0")]{{.*}}(%x)
+    # CHECK-SAME: get_vtable_entry(:!Trait T, "f0")]{{.*}}(%x)
     x.f0()
 
     # CHECK: lit.call[!lit.signature<[1]("self": {{[^)]*}}) -> !kgen.none>:
-    # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}(%x)
+    # CHECK-SAME: get_vtable_entry({{.*}}, "overloaded")]{{.*}}(%x)
     x.overloaded()
     # CHECK: lit.call[!lit.signature<[1]("self": {{.*}}, "x": index)
-    # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}(%x, %{{.*}})
+    # CHECK-SAME: get_vtable_entry({{.*}}, "overloaded")]{{.*}}(%x, %{{.*}})
     x.overloaded(`1`)
     # CHECK: lit.call[!lit.signature<[1]("self": {{.*}}, "x": !kgen.string)
-    # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}(%x, %{{.*}})
+    # CHECK-SAME: get_vtable_entry({{.*}}, "overloaded")]{{.*}}(%x, %{{.*}})
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
     # CHECK: lit.call[!lit.signature<[1]("self": {{[^)]*}} borrow_in_mem)
     # CHECK-SAME: bind_signature(:!lit.signature<[1]<"x": index>(
-    # CHECK-SAME: get_type_method(:{{.*}} T, "parametric"), 1)
+    # CHECK-SAME: get_vtable_entry(:{{.*}} T, "parametric"), 1)
     x.parametric[`1`]()
 
 
@@ -220,7 +220,7 @@ struct StaticMethodStruct(StaticMethodTrait, Copyable):
 
 # CHECK-LABEL: lit.func @"trait_static_method{{.*}}<T: !StaticMethodTrait
 fn trait_static_method[T: StaticMethodTrait]():
-    # CHECK: call[!lit.signature<() -> !kgen.none>: get_type_method(:!StaticMethodTrait T, "foobar")]()
+    # CHECK: call[!lit.signature<() -> !kgen.none>: get_vtable_entry(:!StaticMethodTrait T, "foobar")]()
     T.foobar()
 
 
@@ -230,7 +230,7 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__: !lit.ref<:!Copyable T, mut {{.*}}> byref_result
 fn copy_me[T: Copyable](value: T) -> T:
     # CHECK-NEXT: call[!lit.signature<[2]("self": {{.*}}T, {{.*}}> init_self, "existing": {{.*}}T, {{.*}}> borrow_in_mem, |) -> !kgen.none>:
-    # CHECK-SAME: get_type_method({{.*}} T, "__copyinit__")]{{.*}}(%__result__, %value)
+    # CHECK-SAME: get_vtable_entry({{.*}} T, "__copyinit__")]{{.*}}(%__result__, %value)
     return value
 
 
@@ -240,7 +240,7 @@ fn copy_me[T: Copyable](value: T) -> T:
 # CHECK-SAME: :!Movable T, {{.*}}> byref_result
 fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: lit.ownership.use %value
-    # CHECK-NEXT: call[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value)
+    # CHECK-NEXT: call[{{.*}}get_vtable_entry({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value)
     return value^
 
 
@@ -288,9 +288,9 @@ struct RegTraitType(TraitForReg):
 
 # CHECK-LABEL: lit.func @"raising_method
 fn raising_method[T: TraitForReg](x: T) raises:
-    # CHECK: lit.call[{{.*}}: get_type_method(:!TraitForReg T, "may_throw")][{{.*}}](%__error__, %anonymous
+    # CHECK: lit.call[{{.*}}: get_vtable_entry(:!TraitForReg T, "may_throw")][{{.*}}](%__error__, %anonymous
     _ = T.may_throw()
-    # CHECK: lit.call[{{.*}}: get_type_method(:!TraitForReg T, "throwing_method")][{{.*}}](%{{.*}}, %__error__, %anonymous
+    # CHECK: lit.call[{{.*}}: get_vtable_entry(:!TraitForReg T, "throwing_method")][{{.*}}](%{{.*}}, %__error__, %anonymous
     x.throwing_method()
 
 
@@ -635,8 +635,8 @@ fn infer_grand_father[T: GrandFather](x: T):
 fn pass_up_trait[T: Father](x: T):
     # CHECK-NEXT: call {{.*}}infer_grand_father{{.*}}<:!GrandFather
     # CHECK-SAME: [!kgen.paramref<:!Father T>, {
-    # CHECK-SAME: "bar" : !lit.signature<[1]("self": !lit.ref<:!Father T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} T, "bar"),
-    # CHECK-SAME: "foo" : !lit.signature<[1]("self": !lit.ref<:!Father T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} T, "foo")
+    # CHECK-SAME: "bar" : !lit.signature<[1]("self": !lit.ref<:!Father T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_vtable_entry({{.*}} T, "bar"),
+    # CHECK-SAME: "foo" : !lit.signature<[1]("self": !lit.ref<:!Father T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_vtable_entry({{.*}} T, "foo")
     # CHECK-SAME: }]>(%x)
     infer_grand_father(x)
 
@@ -766,13 +766,13 @@ struct KeysContainer[end: int](KeysBuilder):
 
 # CHECK-LABEL: lit.func @"param_trait
 fn param_trait[T: SimpleTrait, value: T]():
-    # CHECK-NEXT: apply({{.*}} get_type_method(:!SimpleTrait T, "method"){{.*}} store_to_mem(value), 1)
+    # CHECK-NEXT: apply({{.*}} get_vtable_entry(:!SimpleTrait T, "method"){{.*}} store_to_mem(value), 1)
     alias param = value.method(`1`)
     # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl
     # CHECK-NEXT: [[VALUE:%.*]] = kgen.param.materialize
     # CHECK-NEXT: store [[VALUE]], [[VAR]]
     # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[VAR]]
-    # CHECK: call[{{.*}}get_type_method(:!SimpleTrait T, "method"){{.*}}([[IMM]], %index2)
+    # CHECK: call[{{.*}}get_vtable_entry(:!SimpleTrait T, "method"){{.*}}([[IMM]], %index2)
     value.method(`2`)
 
 
