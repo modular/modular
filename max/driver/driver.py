@@ -85,7 +85,7 @@ class DeviceSpec:
     id: int
     """Provided id for this device."""
 
-    device_type: Literal["cpu", "cuda"] = "cpu"
+    device_type: Literal["cpu", "gpu"] = "cpu"
     """Type of specified device."""
 
     @staticmethod
@@ -94,4 +94,4 @@ class DeviceSpec:
 
     @staticmethod
     def cuda(id: int = -1):
-        return DeviceSpec(id, "cuda")
+        return DeviceSpec(id, "gpu")
