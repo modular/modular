@@ -81,7 +81,7 @@ def test_io_device_output_errors() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "Loaded Model output idx=0 uses device=cuda:0 which was not set up"
+            "Loaded Model output idx=0 uses device=gpu:0 which was not set up"
             " in InferenceSession"
         ),
     ):
@@ -97,7 +97,7 @@ def test_io_device_input_errors() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "Loaded Model input idx=0 uses device=cuda:0 which was not set up"
+            "Loaded Model input idx=0 uses device=gpu:0 which was not set up"
             " in InferenceSession"
         ),
     ):

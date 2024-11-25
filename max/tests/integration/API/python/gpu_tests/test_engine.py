@@ -171,7 +171,7 @@ def test_execute_external_weights_gpu_resident() -> None:
         for op in graph._mlir_op.regions[0].blocks[0].operations
         if isinstance(op, mo.ConstantExternalOp)
     )
-    assert "cuda" in str(const_external_op.attributes["device"])
+    assert "gpu" in str(const_external_op.attributes["device"])
 
     # Compile and execute with the gpu-resident weights.
     compiled = gpu_session.load(graph, weights_registry={"foo": weights})
