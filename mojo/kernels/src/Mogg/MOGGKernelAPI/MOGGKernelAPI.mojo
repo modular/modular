@@ -63,9 +63,10 @@ from nn.kv_cache import (
     generic_get_continuous_cache,
 )
 from nn.kv_cache_ragged import (
-    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
-    generic_fused_qk_rope_bshd_ragged,
+    generic_flash_attention_kv_cache_cont_batch_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
+    generic_fused_qk_rope_bshd_ragged,
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
 )
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.index_tensor import index_tensor
@@ -7614,6 +7615,165 @@ struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch:
             target
         ](
             output, q, kv_collection, layer_idx, valid_lengths, scale, context
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# flash_attention_kv_cache_*_cont_batch_ragged
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[
+    type: DType, //,
+    target: StringLiteral,
+](
+    q: ManagedTensorSlice[type, 3],
+    input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: ScalarTensor[DType.uint32],
+    scale: ScalarTensor[DType.float32],
+    output: ManagedTensorSlice[type, 3],
+    context: MojoCallContextPtr,
+) raises:
+    alias output_shape = compiler.specsof[output.type, output.rank](
+        "output"
+    ).shape
+    alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
+    alias input_row_shape = compiler.specsof[
+        input_row_offset.type, input_row_offset.rank
+    ]("input_row_offset").shape
+
+    generic_flash_attention_kv_cache_cont_batch_ragged[target](
+        managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
+        managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
+            input_row_offset
+        ),
+        kv_collection,
+        layer_idx[0],
+        scale[0],
+        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        context,
+    )
+
+
+@compiler.register("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
+struct Struct_flash_attention_kv_cache_h1_d16_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h1_d16_bshd,
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        scale: ScalarTensor[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
+            q,
+            input_row_offset,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
+struct Struct_flash_attention_kv_cache_h8_d64_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d64_bshd,
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        scale: ScalarTensor[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
+            q,
+            input_row_offset,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
+struct Struct_flash_attention_kv_cache_h8_d128_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d128_bshd,
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        scale: ScalarTensor[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
+            q,
+            input_row_offset,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h32_d128_cont_batch_ragged")
+struct Struct_flash_attention_kv_cache_h32_d128_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h32_d128_bshd,
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        scale: ScalarTensor[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
+            q,
+            input_row_offset,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
         )
 
 
