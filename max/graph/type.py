@@ -477,7 +477,7 @@ class DeviceType(str, Enum):
     """A device type representation."""
 
     CPU = "cpu"
-    CUDA = "cuda"
+    CUDA = "gpu"
 
     def __str__(self) -> str:
         return self.value

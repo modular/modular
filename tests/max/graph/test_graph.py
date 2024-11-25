@@ -81,9 +81,9 @@ def test_elementwise_add_graph_with_device_prop() -> None:
         graph.output(graph.inputs[0] + graph.inputs[1])
         # Ensure input tensor has cuda
         for input in graph.inputs:
-            assert "cuda" in str(input)
+            assert "gpu" in str(input)
         # Ensure output tensor has cuda propagated
-        assert " -> !mo.tensor<[batch, channels], f32, cuda:0>" in str(
+        assert " -> !mo.tensor<[batch, channels], f32, gpu:0>" in str(
             graph._mlir_op
         )
 
@@ -124,8 +124,8 @@ def test_transpose_graph_with_device_prop() -> None:
     ) as graph:
         graph.output(ops.transpose(graph.inputs[0], -1, -2))
         for input in graph.inputs:
-            assert "cuda" in str(input)
-        assert " -> !mo.tensor<[channels, batch], f32, cuda:0>" in str(
+            assert "gpu" in str(input)
+        assert " -> !mo.tensor<[channels, batch], f32, gpu:0>" in str(
             graph._mlir_op
         )
 
