@@ -733,11 +733,6 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
         target_arch
         in (
             "cuda",
-            "cuda-sm_80",
-            "cuda-sm_86",
-            "cuda-sm_89",
-            "cuda-sm_90",
-            "cuda-sm_90a",
             "sm_80",
             "sm_86",
             "sm_89",
@@ -754,19 +749,13 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
     ]()
 
     @parameter
-    if target_arch in ("cuda-sm_80", "sm_80", "nvidia:80"):
+    if target_arch in ("sm_80", "nvidia:80"):
         return A100
-    elif target_arch in ("cuda-sm_86", "sm_86", "nvidia:86"):
+    elif target_arch in ("sm_86", "nvidia:86"):
         return A10
-    elif target_arch in ("cuda-sm_89", "sm_89", "nvidia:89"):
+    elif target_arch in ("sm_89", "nvidia:89"):
         return L4
-    elif target_arch in (
-        "cuda-sm_90",
-        "cuda-sm_90a",
-        "sm_90",
-        "sm_90a",
-        "nvidia:90",
-    ):
+    elif target_arch in ("sm_90", "sm_90a", "nvidia:90"):
         return H100
     elif target_arch in ("mi300x", "amdgpu:94"):
         return MI300X
@@ -778,19 +767,13 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
 
 @always_inline("nodebug")
 fn _get_compute(target_arch: String) -> Float32:
-    if target_arch in ("cuda-sm_80", "sm_80", "nvidia:80"):
+    if target_arch in ("sm_80", "nvidia:80"):
         return A100.compute
-    elif target_arch in ("cuda-sm_86", "sm_86", "nvidia:86"):
+    elif target_arch in ("sm_86", "nvidia:86"):
         return A10.compute
-    elif target_arch in ("cuda-sm_89", "sm_89", "nvidia:89"):
+    elif target_arch in ("sm_89", "nvidia:89"):
         return L4.compute
-    elif target_arch in (
-        "cuda-sm_90",
-        "cuda-sm_90a",
-        "sm_90",
-        "sm_90a",
-        "nvidia:90",
-    ):
+    elif target_arch in ("sm_90", "sm_90a", "nvidia:90"):
         return H100.compute
     elif target_arch in ("mi300x", "amdgpu:94"):
         return MI300X.compute
