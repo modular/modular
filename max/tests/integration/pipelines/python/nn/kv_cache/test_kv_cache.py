@@ -44,15 +44,17 @@ async def test_kv_collection_constructor_continuous() -> None:
     kv_manager.step(valid_lengths={seq_id: expected_cache_len})
 
     # Construct a KV cache collection with the given cache length.
-    kv_tuple = kv_manager.fetch(seq_ids=[seq_id])
-    assert len(kv_tuple) == 4
+    kv_tuple_list = kv_manager.fetch(seq_ids=[seq_id])
+    assert len(kv_tuple_list) == 1
+    assert len(kv_tuple_list[0]) == 4
+    kv_tuple = kv_tuple_list[0]
 
     graph = Graph(
         "create_collection",
         FetchContinuousBatchingKVCacheCollection(kv_params),
-        input_types=kv_manager.input_symbols(),
+        input_types=kv_manager.input_symbols()[0],
     )
 
-    outputs = session.load(graph).execute(*kv_tuple)
+    outputs = session.load(graph).execute(*kv_tuple)  # type: ignore
     kv_collection = outputs[0]
     assert kv_collection is not None

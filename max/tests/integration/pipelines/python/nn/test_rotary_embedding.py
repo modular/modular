@@ -192,7 +192,7 @@ def test_kv_cache_ragged_rope(session):
     )
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
     blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_manager.input_symbols()
+        kv_manager.input_symbols()[0]
     )
 
     with Graph(
@@ -248,7 +248,7 @@ def test_kv_cache_ragged_rope(session):
     input_row_offset[batch_size] = running_sum
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(seq_ids)
+        kv_manager.fetch(seq_ids)[0]
     )
 
     @modular_graph_test(

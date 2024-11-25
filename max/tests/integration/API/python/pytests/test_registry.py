@@ -108,7 +108,7 @@ class DummyPipelineModel(PipelineModel):
     ) -> Model:
         """Provided a PipelineConfig and InferenceSession, build and load the model graph.
         """
-        kv_inputs = self.kv_manager.input_symbols()
+        kv_inputs = self.kv_manager.input_symbols()[0]
         with Graph(
             "dummy",
             input_types=[

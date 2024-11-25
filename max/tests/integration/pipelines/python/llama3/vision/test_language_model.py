@@ -435,7 +435,7 @@ def test_llama_language_model():
         *kv_cache_types,
     ]
 
-    with Graph("language_model", input_types=input_types) as graph:
+    with Graph("language_model", input_types=input_types) as graph:  # type: ignore
         graph_input_ids, graph_attention_mask, *graph_kv_cache_inputs = (
             graph.inputs
         )

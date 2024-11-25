@@ -113,7 +113,7 @@ def next_token_with_logits(
         cache_seq_ids = [ctx.cache_seq_id for ctx in context_batch]
 
         # Fetch kv inputs.
-        kv_inputs = model.kv_manager.fetch(cache_seq_ids)
+        kv_inputs = model.kv_manager.fetch(cache_seq_ids)[0]
 
         # Get Model inputs
         model_inputs = model.prepare_initial_token_inputs(context_batch)
@@ -141,7 +141,7 @@ def next_token_with_logits(
 
         cache_seq_ids = [ctx.cache_seq_id for ctx in context_batch]
         token_input = model._prepare_initial_token_inputs(context_batch)
-        kv_cache_inputs = kv_manager.fetch(cache_seq_ids)
+        kv_cache_inputs = kv_manager.fetch(cache_seq_ids)[0]
 
         logits = model._execute(*token_input, *kv_cache_inputs).to(CPU())
 
