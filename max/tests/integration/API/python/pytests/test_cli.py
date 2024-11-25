@@ -11,7 +11,7 @@ import pytest
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Optional
-from utils.cli.config import (
+from cli.config import (
     get_field_type,
     validate_field,
     get_default,

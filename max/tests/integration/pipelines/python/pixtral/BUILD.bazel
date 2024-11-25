@@ -42,9 +42,9 @@ modular_py_test(
     deps = [
         "//SDK/lib/API/python/max/engine",
         "//SDK/lib/API/python/max/serve",
+        "//SDK/public/max-repo/pipelines/python/cli",
         "//SDK/public/max-repo/pipelines/python/nn",
         "//SDK/public/max-repo/pipelines/python/pixtral",
-        "//SDK/public/max-repo/pipelines/python/utils",
         "//Support/python:support",
         requirement("huggingface_hub"),
         requirement("hypothesis"),
