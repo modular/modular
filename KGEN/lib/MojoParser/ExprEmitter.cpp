@@ -32,6 +32,8 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/Support/SaveAndRestore.h"
 
+#include <unordered_map>
+
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;

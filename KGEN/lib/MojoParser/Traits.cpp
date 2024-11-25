@@ -20,6 +20,8 @@
 #include "Support/STLExtras.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
+#include <unordered_map>
+
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
