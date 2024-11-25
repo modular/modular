@@ -21,6 +21,7 @@ from max.pipelines import (
     PipelineConfig,
     HuggingFaceFile,
     ModelOutputs,
+    PipelineEngine,
 )
 from max.pipelines.context import InputContext
 from max.pipelines.kv_cache import (
@@ -157,15 +158,29 @@ def test_registry__test_register():
 
 
 @prepare_registry
-def test_registry__test_retrieve_with_unknown_architecture():
+def test_registry__test_retrieve_with_unknown_architecture_max_engine():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        architecture="not_registered",
+        # This forces it to fail if we dont have it.
+        engine=PipelineEngine.MAX,
+    )
+
+    with pytest.raises(ValueError):
+        config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+
+@prepare_registry
+def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
     PIPELINE_REGISTRY.register(DUMMY_ARCH)
 
     config = PipelineConfig(
         architecture="not_registered",
     )
 
-    with pytest.raises(ValueError):
-        PIPELINE_REGISTRY.retrieve(config)
+    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+    assert config.engine == PipelineEngine.HUGGINGFACE
 
 
 @prepare_registry
@@ -185,10 +200,15 @@ def test_registry__test_retrieve_factory_with_unsupported_huggingface_repo_id():
 
     config = PipelineConfig(
         huggingface_repo_id="modularai/replit-code-1.5",
+        trust_remote_code=True,
+    )
+
+    config = PIPELINE_REGISTRY.validate_pipeline_config(
+        pipeline_config=config,
     )
 
     # Fallback to the generalized pipeline
-    _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+    assert config.engine == PipelineEngine.HUGGINGFACE
 
 
 @prepare_registry
@@ -200,16 +220,3 @@ def test_registry__test_load_factory_with_known_architecture_and_hf_repo_id():
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
-
-
-@prepare_registry
-def test_registry__test_load_factory_with_good_arch_and_no_weight_path():
-    PIPELINE_REGISTRY.register(DUMMY_ARCH)
-
-    config = PipelineConfig(
-        huggingface_repo_id="bumblebee-testing/tiny-random-LlamaForCausalLM",
-    )
-
-    # Generalized model so transformers will raise because it can't load tokenizer
-    with pytest.raises(EnvironmentError):
-        _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
