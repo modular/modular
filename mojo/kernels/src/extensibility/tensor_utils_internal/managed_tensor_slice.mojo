@@ -463,7 +463,15 @@ struct ManagedTensorSlice[
         @always_inline
         @parameter
         fn _input_lambda[_w: Int](i: IndexList[rank]) -> SIMD[type, _w]:
-            return rebind[SIMD[type, _w]](self._simd_load_internal[_w](i))
+            alias static_specs = _get_tensor_specs_without_lambdas[type, rank]()
+            return rebind[SIMD[type, _w]](
+                self._simd_load_internal[
+                    _w,
+                    alignment = static_specs.alignment,
+                    address_space = static_specs.address_space,
+                    static_strides = static_specs.strides,
+                ](i)
+            )
 
         self._extract_lambda[_input_lambda]()
 
@@ -474,7 +482,13 @@ struct ManagedTensorSlice[
         @always_inline
         @parameter
         fn _output_lambda[_w: Int](i: IndexList[rank], v: SIMD[type, _w]):
-            self._simd_store_internal(i, rebind[SIMD[type, _w]](v))
+            alias static_specs = _get_tensor_specs_without_lambdas[type, rank]()
+            self._simd_store_internal[
+                _w,
+                alignment = static_specs.alignment,
+                address_space = static_specs.address_space,
+                static_strides = static_specs.strides,
+            ](i, rebind[SIMD[type, _w]](v))
 
         self._extract_lambda[_output_lambda]()
 
@@ -541,3 +555,18 @@ fn foreach[
         use_blocking_impl=synchronous,
         target=target,
     ](tensor.get_runtime_spec().shape, ctx)
+
+
+# This is a special version of `specsof(self)`
+# Returns the static tensor spec of self, but without I/O lambdas.
+# This function is called only inside the lambda implementations.
+# Using specsof wouldn't work because the lambda would recursively depend on itself:
+# kgen.param.declare_region lambda_fn = {
+#   kgen.param.declare specs = build_tensor_specs(..., lambda_fn, ...) // cycle
+# }
+@__mogg_intrinsic_attr("mogg.get_tensor_specs_without_lambdas")
+@no_inline
+fn _get_tensor_specs_without_lambdas[
+    type: DType, rank: Int
+]() -> StaticTensorSpec[type, rank]:
+    return StaticTensorSpec[type, rank]()
