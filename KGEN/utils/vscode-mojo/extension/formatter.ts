@@ -7,11 +7,11 @@
 import { execFile } from 'child_process';
 import * as vscode from 'vscode';
 
-import { MojoSDKManager } from './sdk/sdkManager';
+import { MAXSDKManager } from './sdk/sdkManager';
 import { get } from './utils/config';
 import { readFile, writeFile } from './utils/files';
 
-export function registerFormatter(mojoSDKManager: MojoSDKManager) {
+export function registerFormatter(maxSDKManager: MAXSDKManager) {
   return vscode.languages.registerDocumentFormattingEditProvider('mojo', {
     async provideDocumentFormattingEdits(document, _options) {
       const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
@@ -20,7 +20,7 @@ export function registerFormatter(mojoSDKManager: MojoSDKManager) {
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
       // We use 'hideRepeatedErrors' because this action is often automated.
-      const sdk = await mojoSDKManager.findSDK(/*hideRepeatedErrors=*/ true);
+      const sdk = await maxSDKManager.findSDK(/*hideRepeatedErrors=*/ true);
 
       if (!sdk) {
         return [];
@@ -55,7 +55,7 @@ export function registerFormatter(mojoSDKManager: MojoSDKManager) {
             // necessarily fatal, so this doesn't prevent edits from being
             // applied.
             if (error) {
-              mojoSDKManager.logger.main.logError(
+              maxSDKManager.logger.main.logError(
                 `Formatting error:\n${stderr}`,
               );
               reject(error);

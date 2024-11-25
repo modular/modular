@@ -9,8 +9,8 @@ import * as vscode from 'vscode';
 import { DisposableContext } from '../utils/disposableContext';
 import path = require('path');
 import * as config from '../utils/config';
-import { MojoSDK } from '../sdk/sdk';
-import { MojoSDKManager } from '../sdk/sdkManager';
+import { MAXSDK } from '../sdk/sdk';
+import { MAXSDKManager } from '../sdk/sdkManager';
 import { MojoDebugConfiguration } from '../debug/debug';
 import * as md5 from 'md5';
 
@@ -23,10 +23,10 @@ type FileArgs = {
  * This class provides a manager for executing and debugging mojo files.
  */
 class ExecutionManager extends DisposableContext {
-  readonly sdkManager: MojoSDKManager;
+  readonly sdkManager: MAXSDKManager;
   private context: vscode.ExtensionContext;
 
-  constructor(sdkManager: MojoSDKManager, context: vscode.ExtensionContext) {
+  constructor(sdkManager: MAXSDKManager, context: vscode.ExtensionContext) {
     super();
 
     this.sdkManager = sdkManager;
@@ -211,7 +211,7 @@ class ExecutionManager extends DisposableContext {
   /**
    * Get a terminal to use for the given file.
    */
-  getTerminalForFile(doc: vscode.TextDocument, sdk: MojoSDK): vscode.Terminal {
+  getTerminalForFile(doc: vscode.TextDocument, sdk: MAXSDK): vscode.Terminal {
     const fullId = `${doc.fileName} · ${sdk.config.modularHomePath}`;
     // We have to keep the full terminal name short so that VS Code renders it nicely,
     // and we have to keep it unique among other files.
@@ -282,7 +282,7 @@ class ExecutionManager extends DisposableContext {
  *     commands.
  */
 export function activateRunCommands(
-  sdkManager: MojoSDKManager,
+  sdkManager: MAXSDKManager,
   context: vscode.ExtensionContext,
 ): vscode.Disposable {
   return new ExecutionManager(sdkManager, context);

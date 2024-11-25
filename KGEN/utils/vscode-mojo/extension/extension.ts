@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 
 import { Logger } from './logging';
-import { MojoSDKManager } from './sdk/sdkManager';
+import { MAXSDKManager } from './sdk/sdkManager';
 import { MojoLSPManager } from './lsp/lsp';
 import * as configWatcher from './utils/configWatcher';
 import { DisposableContext } from './utils/disposableContext';
@@ -78,7 +78,7 @@ Activating the Mojo Extension
 =============================
 `);
 
-      const sdkManager = new MojoSDKManager(
+      const sdkManager = new MAXSDKManager(
         this.logger,
         this.isNightly,
         this.extensionContext,

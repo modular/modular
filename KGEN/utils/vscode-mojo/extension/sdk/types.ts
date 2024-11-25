@@ -1,16 +1,16 @@
-import { MojoSDKVersion } from './sdkVersion';
+import { MAXSDKVersion } from './sdkVersion';
 
-export type MojoSDKKind = 'dev' | 'magic' | 'custom';
+export type MAXSDKKind = 'dev' | 'magic' | 'custom';
 
 /**
- * A Mojo SDK Spec represents an SDK somewhere in the file system, but it's not
+ * A MAX SDK Spec represents an SDK somewhere in the file system, but it's not
  * guaranteed to exist or even have a valid modular.cfg file.
  */
-export type MojoSDKSpec = {
-  kind: MojoSDKKind;
+export type MAXSDKSpec = {
+  kind: MAXSDKKind;
   modularHomePath: string;
   section: string;
-  version: MojoSDKVersion;
+  version: MAXSDKVersion;
 };
 
 export type Expected<T> =

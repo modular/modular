@@ -6,9 +6,9 @@
 
 import * as path from 'path';
 /**
- * This class represents a Mojo SDK version.
+ * This class represents a MAX SDK version.
  */
-export class MojoSDKVersion {
+export class MAXSDKVersion {
   constructor(
     title: string,
     major: string,

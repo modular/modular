@@ -5,21 +5,21 @@
 //===----------------------------------------------------------------------===//
 
 import { Logger } from '../logging';
-import { MojoSDKConfig } from './sdkConfig';
+import { MAXSDKConfig } from './sdkConfig';
 import { Memoize } from 'typescript-memoize';
 import * as util from 'util';
-import { MojoSDKKind } from './types';
+import { MAXSDKKind as MAXSDKKind } from './types';
 const execFile = util.promisify(require('child_process').execFile);
 
 /**
  * Class that represents an SDK in the system.
  */
-export class MojoSDK {
-  public readonly config: MojoSDKConfig;
-  public readonly kind: MojoSDKKind;
+export class MAXSDK {
+  public readonly config: MAXSDKConfig;
+  public readonly kind: MAXSDKKind;
   private logger: Logger;
 
-  constructor(config: MojoSDKConfig, kind: MojoSDKKind, logger: Logger) {
+  constructor(config: MAXSDKConfig, kind: MAXSDKKind, logger: Logger) {
     this.config = config;
     this.kind = kind;
     this.logger = logger;

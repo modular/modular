@@ -11,9 +11,9 @@ import { DisposableContext } from '../utils/disposableContext';
 import { getAllOpenMojoFiles, WorkspaceAwareFile } from '../utils/files';
 import { activatePickProcessToAttachCommand } from './attachQuickPick';
 import { initializeInlineLocalVariablesProvider } from './inlineVariables';
-import { MojoSDK } from '../sdk/sdk';
+import { MAXSDK } from '../sdk/sdk';
 import { MojoExtension } from '../extension';
-import { MojoSDKManager } from '../sdk/sdkManager';
+import { MAXSDKManager } from '../sdk/sdkManager';
 import { quote } from 'shell-quote';
 import * as util from 'util';
 const execFile = util.promisify(require('child_process').execFile);
@@ -74,8 +74,8 @@ const DEBUG_TYPE: string = 'mojo-lldb';
  */
 async function findSDKForDebugConfiguration(
   config: MojoDebugConfiguration,
-  sdkManager: MojoSDKManager,
-): Promise<Optional<MojoSDK>> {
+  sdkManager: MAXSDKManager,
+): Promise<Optional<MAXSDK>> {
   if (config.modularHomePath !== undefined) {
     return sdkManager.createAdHocSDKAndShowError(
       config.modularHomePath,
@@ -91,9 +91,9 @@ async function findSDKForDebugConfiguration(
 class MojoDebugAdapterDescriptorFactory
   implements vscode.DebugAdapterDescriptorFactory
 {
-  private sdkManager: MojoSDKManager;
+  private sdkManager: MAXSDKManager;
 
-  constructor(sdkManager: MojoSDKManager) {
+  constructor(sdkManager: MAXSDKManager) {
     this.sdkManager = sdkManager;
   }
 
@@ -179,9 +179,9 @@ class MojoCudaGdbDebugAdapterDescriptorFactory
 class MojoDebugConfigurationResolver
   implements vscode.DebugConfigurationProvider
 {
-  private sdkManager: MojoSDKManager;
+  private sdkManager: MAXSDKManager;
 
-  constructor(sdkManager: MojoSDKManager) {
+  constructor(sdkManager: MAXSDKManager) {
     this.sdkManager = sdkManager;
   }
 
@@ -325,9 +325,9 @@ class MojoDebugConfigurationResolver
 class MojoCudaGdbDebugConfigurationResolver
   implements vscode.DebugConfigurationProvider
 {
-  private sdkManager: MojoSDKManager;
+  private sdkManager: MAXSDKManager;
 
-  constructor(sdkManager: MojoSDKManager) {
+  constructor(sdkManager: MAXSDKManager) {
     this.sdkManager = sdkManager;
   }
 
@@ -424,9 +424,9 @@ class MojoDebugDynamicConfigurationProvider
  * mojo debugging.
  */
 export class MojoDebugManager extends DisposableContext {
-  private sdkManager: MojoSDKManager;
+  private sdkManager: MAXSDKManager;
 
-  constructor(extension: MojoExtension, sdkManager: MojoSDKManager) {
+  constructor(extension: MojoExtension, sdkManager: MAXSDKManager) {
     super();
     this.sdkManager = sdkManager;
 

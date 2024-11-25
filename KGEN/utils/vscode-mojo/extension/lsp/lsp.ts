@@ -10,19 +10,19 @@ import * as vscodelc from 'vscode-languageclient/node';
 import { TransportKind } from 'vscode-languageclient/node';
 
 import { InitializationOptions } from '../../lsp-proxy/src/types';
-import { MojoSDK } from '../sdk/sdk';
+import { MAXSDK } from '../sdk/sdk';
 import * as config from '../utils/config';
 import { DisposableContext } from '../utils/disposableContext';
 import { Subject } from 'rxjs';
 import { Logger } from '../logging';
-import { MojoSDKManager } from '../sdk/sdkManager';
+import { MAXSDKManager } from '../sdk/sdkManager';
 import { TelemetryReporter } from '../telemetry';
 
 /**
  *  This class manages the LSP clients.
  */
 export class MojoLSPManager extends DisposableContext {
-  private sdkManager: MojoSDKManager;
+  private sdkManager: MAXSDKManager;
   private extensionContext: vscode.ExtensionContext;
   public lspClient: Optional<vscodelc.LanguageClient>;
   public lspClientChanges = new Subject<Optional<vscodelc.LanguageClient>>();
@@ -30,7 +30,7 @@ export class MojoLSPManager extends DisposableContext {
   private reporter: TelemetryReporter;
 
   constructor(
-    sdkManager: MojoSDKManager,
+    sdkManager: MAXSDKManager,
     extensionContext: vscode.ExtensionContext,
     reporter: TelemetryReporter,
   ) {
@@ -102,7 +102,7 @@ export class MojoLSPManager extends DisposableContext {
    * Create a new language server.
    */
   activateLanguageClient(
-    sdk: MojoSDK,
+    sdk: MAXSDK,
     includeDirs: string[],
   ): vscodelc.LanguageClient {
     this.logger.lsp.logInfo('Activating language client');
