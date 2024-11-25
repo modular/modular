@@ -106,7 +106,6 @@ def execute_kv_cache_ragged_flash_attention[
         else:
             curr_cache_length = cache_len
 
-        input_row_offset_host.tensor[i] = curr_seq_length
         if curr_seq_length > max_prompt_length:
             max_prompt_length = int(curr_seq_length)
 
@@ -116,6 +115,7 @@ def execute_kv_cache_ragged_flash_attention[
         if curr_cache_length > 0:
             is_context_encoding = False
 
+        input_row_offset_host.tensor[i] = total_seq_len
         cache_lengths_host.tensor[i] = curr_cache_length
         total_seq_len += curr_seq_length
 
