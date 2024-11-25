@@ -66,26 +66,60 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
     addrSpaceExpr = tuple->exprs[1];
   }
 
+  // If the specified PValue is a !lit.origin or an Origin struct that wraps it,
+  // return the !lit.origin, otherwise return null.
+  auto digOutLitOrigin = [&](PValue value) -> PValue {
+    // A raw !lit.origin always works.
+    if (isa<OriginType>(value.getRValueType()))
+      return value;
+
+    // TODO: This is generating a StructExtractAttr the hard way.  It would be
+    // way nicer to form a call to `o.__mlir_origin__()` or something like we do
+    // for bools, but unfortunately that won't get inlined and simplified by the
+    // call emission because Origin is parametric.
+
+    // The builtin Origin type can have a field extracted from it.
+    ASTDecl *typeDecl = value.getRValueType().getDecl(shared);
+    if (!typeDecl || !isa<LIT::StructType>(value.getRValueType()))
+      return {};
+
+    // Check to see if it has the expected field of Origin.
+    LookupResult lookup = shared.lookupAndResolveDecl(
+        ORIGIN_FIELD_NAME, originExpr->getLoc(), *typeDecl,
+        /*searchParentScopes=*/false);
+    if (lookup.getIfSuccess().size() != 1)
+      return {};
+    auto fieldOp = dyn_cast<StructFieldOp>(lookup.getIfSuccess()[0]);
+    if (!fieldOp)
+      return {};
+
+    auto extractVal = LIT::StructExtractAttr::get(value, fieldOp);
+    return isa<OriginType>(extractVal.getType()) ? extractVal : TypedAttr();
+  };
+
   // Emit the origin expression if it is a normal expression.
   PValue origin;
   if (originExpr && originExpr->kind != ExprNode::kDiscardLiteral) {
-    // The origin expression may either be a MValue or a value of
-    // !lit.origin type.  In the former case, we want to evaluate the
-    // expression without evaluating it, because it may involve complex nested
-    // expressions and we may be in a PValue expression.
+    // The origin expression may be any of:
+    //   1) an MValue, which we take the origin from.
+    //   2) a value of !lit.origin or Origin[Mut] type.
+    //  In the former case, we want to evaluate the expression without
+    // evaluating it, because it may involve complex nested expressions and we
+    // may be in a PValue expression.
     emitter.emitExpressionWithOutEvaluatingIt(
         originExpr, EC_Origin, [&](CValue result) {
-          // If this is a PValue of origin type, directly use it.
-          if (isa<OriginType>(result.getRValueType()) && result.getIfPValue()) {
-            origin = result.getIfPValue();
-          } else if (result.isMValue()) {
-            // We can get the origin of an MValue.
+          if (result.isMValue()) { // We can get the origin of an MValue.
             origin = result.getMValueType().getOrigin();
-          } else {
-            emitter.emitError(originExpr->getLoc())
-                << "value of type " << result.getRValueType()
-                << " doesn't have a memory origin" << originExpr->getRange();
+            return;
           }
+          // Check for !lit.origin and Origin struct.
+          if (auto pv = result.getIfPValue())
+            if ((origin = digOutLitOrigin(pv)))
+              return;
+
+          emitter.emitError(originExpr->getLoc())
+              << "value of type " << result.getRValueType()
+              << " doesn't have a memory origin" << originExpr->getRange();
         });
   } else {
     // If no origin is specified, then it is inferred from the callsite. Add two

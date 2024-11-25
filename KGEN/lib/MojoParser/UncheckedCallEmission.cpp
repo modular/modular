@@ -1062,7 +1062,8 @@ static TypedAttr tryOriginInitFold(SymbolRefAttr symbolRef,
   auto originStructType = cast<LIT::StructType>(
       ASTType(sigType.getArguments()[0]).getReferenceElementType());
 
-  StringAttr fieldName = StringAttr::get(shared.getContext(), "_mlir_origin");
+  StringAttr fieldName =
+      StringAttr::get(shared.getContext(), ORIGIN_FIELD_NAME);
   // When in debug mode, verify that Origin matches what we think it does.
 #ifndef NDEBUG
   auto &declResolver = shared.getDeclResolver();
