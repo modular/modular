@@ -98,7 +98,7 @@ struct DeviceRef {
 
 /// Well known device labels.
 constexpr const char *kCPULabel = "cpu";
-constexpr const char *kGPULabel = "cuda";
+constexpr const char *kGPULabel = "gpu";
 
 } // namespace M
 
