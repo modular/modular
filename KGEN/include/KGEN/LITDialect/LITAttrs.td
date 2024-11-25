@@ -526,7 +526,9 @@ def AnyOriginAttr : LITTypedAttr<"AnyOrigin", "any.origin"> {
 // StaticOriginAttr
 //===----------------------------------------------------------------------===//
 
-def StaticOriginAttr : LITTypedAttr<"StaticOrigin", "static.origin"> {
+def StaticOriginAttr : LITTypedAttr<"StaticOrigin", "static.origin", [
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>
+  ]> {
   let summary = "A !lit.origin<mut> value that refers to static memory";
   let description = [{
     This attribute is a singleton (for each mutability) which represents the
@@ -545,7 +547,9 @@ def StaticOriginAttr : LITTypedAttr<"StaticOrigin", "static.origin"> {
 // OriginUnionAttr
 //===----------------------------------------------------------------------===//
 
-def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union"> {
+def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union", [
+      DeclareAttrInterfaceMethods<ParameterAttrInterface>
+  ]> {
   let summary = "A #lit.origin.union set";
   let description = [{
     This attribute represents a union of symbolic origin attributes.  It is
@@ -592,7 +596,9 @@ def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union"> {
 // OriginMutCastAttr
 //===----------------------------------------------------------------------===//
 
-def OriginMutCastAttr : LITTypedAttr<"OriginMutCast", "origin.mutcast"> {
+def OriginMutCastAttr : LITTypedAttr<"OriginMutCast", "origin.mutcast", [
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>
+  ]> {
   let summary = "Cast a !lit.origin value to a different mutability";
   let description = [{
     This attribute is a cast of a origin value from one mutability to another.
@@ -638,7 +644,9 @@ def OriginMutCastAttr : LITTypedAttr<"OriginMutCast", "origin.mutcast"> {
 // OriginFieldAttr
 //===----------------------------------------------------------------------===//
 
-def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field"> {
+def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field", [
+          DeclareAttrInterfaceMethods<ParameterAttrInterface>
+  ]> {
   let summary = "Get a field-sensitive subfield of another origin";
   let description = [{
     This attribute refines a larger origin to that of a subfield.  This
@@ -674,7 +682,9 @@ def OriginFieldAttr : LITTypedAttr<"OriginField", "origin.field"> {
 // IndirectOriginAttr
 //===----------------------------------------------------------------------===//
 
-def IndirectOriginAttr : LITTypedAttr<"IndirectOrigin", "indirect.origin"> {
+def IndirectOriginAttr : LITTypedAttr<"IndirectOrigin", "indirect.origin",  [
+          DeclareAttrInterfaceMethods<ParameterAttrInterface>
+  ]> {
   let summary = "Access an indirectly defined origin";
   let description = [{
     This attribute specifies an indirectly accessed memory location that is

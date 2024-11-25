@@ -733,6 +733,13 @@ TypedAttr BindTypeAttr::get(MLIRContext *context, TypedAttr typeValue,
 }
 
 //===----------------------------------------------------------------------===//
+// StaticOriginAttr
+//===----------------------------------------------------------------------===//
+
+// Origins are treated as simple constants, allowing folding of function calls.
+bool StaticOriginAttr::isConstant() const { return true; }
+
+//===----------------------------------------------------------------------===//
 // OriginUnionAttr
 //===----------------------------------------------------------------------===//
 
@@ -836,6 +843,14 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
   return OriginUnionAttr::get(origins, OriginType::get(mutability));
 }
 
+// Origins unions are simple constants if all their elements are.
+bool OriginUnionAttr::isConstant() const {
+  for (auto op : getOperands())
+    if (!ParameterAttr::isSimpleConstant(op))
+      return false;
+  return true;
+}
+
 //===----------------------------------------------------------------------===//
 // OriginMutCastAttr
 //===----------------------------------------------------------------------===//
@@ -887,6 +902,11 @@ TypedAttr OriginMutCastAttr::get(TypedAttr operand, bool isMutable) {
   return get(operand, BoolAttr::get(operand.getContext(), isMutable));
 }
 
+// Casts are simple constants if their base is.
+bool OriginMutCastAttr::isConstant() const {
+  return ParameterAttr::isSimpleConstant(getOperand());
+}
+
 //===----------------------------------------------------------------------===//
 // OriginFieldAttr
 //===----------------------------------------------------------------------===//
@@ -929,6 +949,11 @@ OriginFieldAttr OriginFieldAttr::getFromBytecode(TypedAttr structOrigin,
   return Base::get(type.getContext(), structOrigin, field, type);
 }
 
+// Fields are simple constants if their base is.
+bool OriginFieldAttr::isConstant() const {
+  return ParameterAttr::isSimpleConstant(getBase());
+}
+
 //===----------------------------------------------------------------------===//
 // IndirectOriginAttr
 //===----------------------------------------------------------------------===//
@@ -965,12 +990,20 @@ TypedAttr IndirectOriginAttr::get(TypedAttr baseOrigin) {
                                        baseType);
 }
 
+// Fields are simple constants if their base is.
+bool IndirectOriginAttr::isConstant() const {
+  return ParameterAttr::isSimpleConstant(getBase());
+}
+
 //===----------------------------------------------------------------------===//
 // ImplicitOriginRefAttr
 //===----------------------------------------------------------------------===//
 
-bool ImplicitOriginRefAttr::isConstant() const { return false; }
+// Origins are treated as simple constants, allowing folding of function calls.
+bool ImplicitOriginRefAttr::isConstant() const { return true; }
 
+// Make sure that these are implicitly sorted w.r.t. each other when KGEN
+// canonicalizes them.
 std::optional<bool> ImplicitOriginRefAttr::isLessThan(Attribute rhs) const {
   auto ref = ::dyn_cast<ImplicitOriginRefAttr>(rhs);
   if (!ref)

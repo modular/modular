@@ -50,8 +50,7 @@ ErrorOr<Region *> ParserInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
       func.getInlineLevel() == InlineLevel::Never)
     return Error("function is not always_inline");
   LITSignatureType fullSig = func.getFullSignature();
-  if (!fullSig.getParamTypes().empty() ||
-      !fullSig.getResultParamTypes().empty())
+  if (!fullSig.getParamTypes().empty())
     return Error("function is parametric");
 
   // Make sure to fully resolve the body and everything within it.
