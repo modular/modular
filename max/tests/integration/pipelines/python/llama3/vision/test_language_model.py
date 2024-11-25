@@ -3,8 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Runs Llama3.2 vision language model layer.
-"""
+"""Runs Llama3.2 vision language model layer."""
+
 import random
 from typing import Union
 
@@ -17,17 +17,17 @@ from llama_vision.cross_attention_decoder import (
 )
 from llama_vision.language_model import (
     CausalLanguageModel,
-    TextHyperparameters,
     TextModel,
 )
 
 # from llama_vision.rotary_embedding_2d import RotaryEmbedding2D
-from max.driver import CPU, CUDA, Tensor
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, Weight, ops
+from max.graph import Graph, TensorType, Weight
 from max.pipelines.kv_cache import KVCacheParams, load_kv_manager
-from modular_graph_test import modular_graph_test
+
+# from modular_graph_test import modular_graph_test
 from nn import MLP, AttentionQKV, Embedding, Linear, RMSNorm, TransformerBlock
 from transformers import MllamaForCausalLM
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
@@ -99,17 +99,20 @@ def norm(name: str, weights_array, eps, weights_registry) -> RMSNorm:
 
 
 def cross_attention_decoder_layer(
-    params: TextHyperparameters,
+    num_attention_heads: int,
+    hidden_size: int,
+    num_key_value_heads: int,
+    rms_norm_eps: float,
     pytorch_layer,
     layer_idx: int,
     weights_registry: dict,
 ) -> CrossAttentionDecoderLayer:
-    num_heads = params.num_attention_heads
-    head_dim = params.hidden_size // num_heads
-    num_key_value_groups = num_heads // params.num_key_value_heads
+    num_heads = num_attention_heads
+    head_dim = hidden_size // num_heads
+    num_key_value_groups = num_heads // num_key_value_heads
     sdpa_attn = CrossSdpaAttention(
         num_heads=num_heads,
-        num_key_value_heads=params.num_key_value_heads,
+        num_key_value_heads=num_key_value_heads,
         head_dim=head_dim,
         layer_idx=layer_idx,
         num_key_value_groups=num_key_value_groups,
@@ -136,13 +139,13 @@ def cross_attention_decoder_layer(
         q_norm=norm(
             f"text.layers{layer_idx}.cross_attn.q_norm",
             pytorch_layer.cross_attn.q_norm.weight.data,
-            params.rms_norm_eps,
+            rms_norm_eps,
             weights_registry,
         ),
         k_norm=norm(
             f"text.layers{layer_idx}.cross_attn.k_norm",
             pytorch_layer.cross_attn.k_norm.weight.data,
-            params.rms_norm_eps,
+            rms_norm_eps,
             weights_registry,
         ),
     )
@@ -151,7 +154,7 @@ def cross_attention_decoder_layer(
         input_layernorm=norm(
             f"text.layers{layer_idx}.input_layernorm",
             pytorch_layer.input_layernorm.weight.data,
-            params.rms_norm_eps,
+            rms_norm_eps,
             weights_registry,
         ),
         cross_attn_attn_gate=pytorch_layer.cross_attn_attn_gate.data,
@@ -175,7 +178,7 @@ def cross_attention_decoder_layer(
         post_attention_layernorm=norm(
             f"text.layers{layer_idx}.post_attention_layernorm",
             pytorch_layer.post_attention_layernorm.weight.data,
-            params.rms_norm_eps,
+            rms_norm_eps,
             weights_registry,
         ),
         cross_attn_mlp_gate=pytorch_layer.cross_attn_mlp_gate.data,
@@ -184,13 +187,15 @@ def cross_attention_decoder_layer(
 
 def self_attention_decoder_layer(
     kv_params: KVCacheParams,
-    params: TextHyperparameters,
+    num_attention_heads: int,
+    hidden_size: int,
+    rms_norm_eps: float,
     pytorch_layer,
     layer_idx: int,
     weights_registry: dict,
 ) -> TransformerBlock:
-    num_heads = params.num_attention_heads
-    head_dim = params.hidden_size // num_heads
+    num_heads = num_attention_heads
+    head_dim = hidden_size // num_heads
 
     q_proj = linear(
         f"text.layers{layer_idx}.self_attn.q_proj",
@@ -209,7 +214,7 @@ def self_attention_decoder_layer(
     )
 
     attention = AttentionQKV(
-        n_heads=params.num_attention_heads,
+        n_heads=num_attention_heads,
         kv_params=kv_params,
         layer_idx=layer_idx,
         wq=q_proj.weight,
@@ -243,28 +248,40 @@ def self_attention_decoder_layer(
         attention_norm=norm(
             f"text.layers{layer_idx}.input_layernorm",
             pytorch_layer.input_layernorm.weight.data,
-            params.rms_norm_eps,
+            rms_norm_eps,
             weights_registry,
         ),
         mlp_norm=norm(
             f"text.layers{layer_idx}.post_attention_layernorm",
             pytorch_layer.post_attention_layernorm.weight.data,
-            params.rms_norm_eps,
+            rms_norm_eps,
             weights_registry,
         ),
     )
 
 
 def language_model_given_pytorch_model(
-    pytorch_model, params, kv_params, weights_registry: dict
+    pytorch_model,
+    num_attention_heads,
+    hidden_size,
+    num_key_value_heads,
+    rms_norm_eps,
+    num_hidden_layers,
+    cross_attention_layers,
+    kv_params,
+    weights_registry: dict,
+    dtype: DType = DType.float32,
 ):
     layers: list[Union[CrossAttentionDecoderLayer, TransformerBlock]] = []
-    for layer_idx in range(params.num_hidden_layers):
+    for layer_idx in range(num_hidden_layers):
         curr_layer = pytorch_model.model.layers[layer_idx]
-        if layer_idx in params.cross_attention_layers:
+        if layer_idx in cross_attention_layers:
             layers.append(
                 cross_attention_decoder_layer(
-                    params=params,
+                    num_attention_heads=num_attention_heads,
+                    hidden_size=hidden_size,
+                    num_key_value_heads=num_key_value_heads,
+                    rms_norm_eps=rms_norm_eps,
                     pytorch_layer=curr_layer,
                     layer_idx=layer_idx,
                     weights_registry=weights_registry,
@@ -274,7 +291,9 @@ def language_model_given_pytorch_model(
             layers.append(
                 self_attention_decoder_layer(
                     kv_params=kv_params,
-                    params=params,
+                    num_attention_heads=num_attention_heads,
+                    hidden_size=hidden_size,
+                    rms_norm_eps=rms_norm_eps,
                     pytorch_layer=curr_layer,
                     layer_idx=layer_idx,
                     weights_registry=weights_registry,
@@ -283,7 +302,7 @@ def language_model_given_pytorch_model(
 
     text_model = TextModel(
         kv_params=kv_params,
-        dtype=params.dtype,
+        dtype=dtype,
         embed_tokens=embedding(
             "text.model.embed_tokens",
             pytorch_model.model.embed_tokens.weight.data,
@@ -292,7 +311,7 @@ def language_model_given_pytorch_model(
         norm=norm(
             "text.model.norm",
             pytorch_model.model.norm.weight.data,
-            params.rms_norm_eps,
+            rms_norm_eps,
             weights_registry,
         ),
         layers=layers,
@@ -307,7 +326,7 @@ def language_model_given_pytorch_model(
     )
 
     return CausalLanguageModel(
-        dtype=params.dtype,
+        dtype=dtype,
         kv_params=kv_params,
         model=text_model,
         lm_head=linear(
@@ -320,22 +339,30 @@ def language_model_given_pytorch_model(
 def test_llama_language_model():
     batch_size = 1
     seq_length = 7
+    rms_norm_eps = 1e-5
+    cross_attention_layers = [1]
+    num_hidden_layers = 2
+    max_position_embeddings = 512
+    hidden_size = 256
+    num_key_value_heads = 8
+    num_attention_heads = 8
+
     config_dict = {
         "model_type": "mllama",
         "vocab_size": 99,
-        "hidden_size": 256,  # was 32
-        "num_hidden_layers": 2,
-        "num_attention_heads": 8,
-        "num_key_value_heads": 8,
+        "hidden_size": hidden_size,  # was 32
+        "num_hidden_layers": num_hidden_layers,
+        "num_attention_heads": num_attention_heads,
+        "num_key_value_heads": num_key_value_heads,
         "intermediate_size": 37,
         "hidden_act": "gelu",
-        "max_position_embeddings": 512,
+        "max_position_embeddings": max_position_embeddings,
         "initializer_range": 0.02,
         "rope_scaling": {"rope_type": "default"},
         "pad_token_id": 0,
         "bos_token_id": 1,
         "eos_token_id": 2,
-        "cross_attention_layers": [1],
+        "cross_attention_layers": cross_attention_layers,
     }
     pytorch_lm_config = MllamaTextConfig(**config_dict)
     input_ids = (
@@ -359,19 +386,26 @@ def test_llama_language_model():
         assert not (torch.isnan(pytorch_logits).any().item())
 
     # define kv_cache_inputs_types
-    params = TextHyperparameters(**config_dict)  # type: ignore
-    params.dtype = DType.float32
+    dtype = DType.float32
 
     weights_registry: dict = {}
     # define kv_params
     kv_params = KVCacheParams(
-        dtype=DType.float32,
-        n_kv_heads=params.num_key_value_heads,
-        head_dim=params.hidden_size // params.num_key_value_heads,
+        dtype=dtype,
+        n_kv_heads=num_key_value_heads,
+        head_dim=hidden_size // num_key_value_heads,
     )
 
     graph_api_model = language_model_given_pytorch_model(
-        pytorch_model, params, kv_params, weights_registry
+        pytorch_model,
+        hidden_size=hidden_size,
+        num_attention_heads=num_attention_heads,
+        num_key_value_heads=num_key_value_heads,
+        rms_norm_eps=rms_norm_eps,
+        cross_attention_layers=cross_attention_layers,
+        num_hidden_layers=num_hidden_layers,
+        kv_params=kv_params,
+        weights_registry=weights_registry,
     )
 
     session = InferenceSession()
@@ -379,8 +413,8 @@ def test_llama_language_model():
     kv_manager = load_kv_manager(
         params=kv_params,
         max_cache_batch_size=batch_size,  # verify this.
-        max_seq_len=params.max_position_embeddings,  # verify this.
-        num_layers=params.num_hidden_layers,
+        max_seq_len=max_position_embeddings,  # verify this.
+        num_layers=num_hidden_layers,
         session=session,
         devices=[CPU()],
     )
@@ -390,7 +424,8 @@ def test_llama_language_model():
 
     kv_cache_types = kv_manager.input_symbols()
     input_ids_type = TensorType(
-        DType.int64, shape=input_ids.shape  # batch_size, sequence_length
+        DType.int64,
+        shape=input_ids.shape,  # batch_size, sequence_length
     )
     attention_mask_type = input_ids_type
     # kv_cache_types = [blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type]

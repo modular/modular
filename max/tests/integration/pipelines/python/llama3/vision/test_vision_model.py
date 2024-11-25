@@ -10,7 +10,6 @@ package reference implementation.
 import numpy as np
 import pytest
 from llama_vision.encoder import VisionEncoder, VisionEncoderLayer
-from llama_vision.hyperparameters import VisionHyperparameters
 from llama_vision.mlp import MLP
 from llama_vision.vision_model import VisionModel
 from llama_vision.positional_embedding import (
@@ -20,6 +19,7 @@ from llama_vision.positional_embedding import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
+from max.pipelines import PipelineConfig
 from modular_graph_test import modular_graph_test
 from nn import Conv2D, Linear, LPLayerNorm
 
@@ -28,8 +28,6 @@ def generate_test_vision_model() -> VisionModel:
     """
     This helper function generates a test vision model instance for testing purposes.
     """
-    params = VisionHyperparameters()
-
     # TODO(AIPIPE-131): Implement this.
     patch_embedding = None
     # TODO: Check if permutation is needed here.
@@ -117,8 +115,11 @@ def generate_test_vision_model() -> VisionModel:
     # )
 
     # self.post_init()  # TODO: Needed?
+    pipeline_config = PipelineConfig(
+        architecture="MllamaForConditionalGeneration"
+    )
     return VisionModel(
-        params=params,
+        pipeline_config=pipeline_config,
         patch_embedding=patch_embedding,  # type: ignore
         class_embedding=class_embedding,  # type: ignore
         gated_positional_embedding=gated_positional_embedding,  # type: ignore
