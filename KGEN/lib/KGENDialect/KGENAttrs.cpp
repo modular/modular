@@ -1031,12 +1031,13 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
 }
 
 static LogicalResult
-verifyGetTypeMethod(ArrayRef<TypedAttr> operands, Type type,
-                    function_ref<InFlightDiagnostic()> emitError) {
+verifyGetVTableEntry(ArrayRef<TypedAttr> operands, Type type,
+                     function_ref<InFlightDiagnostic()> emitError) {
   if (operands.size() != 2)
-    return emitError() << "'get_type_method' requires 2 operands";
+    return emitError() << "'get_vtable_entry' requires 2 operands";
   if (!isa<StringType>(operands[1].getType()))
-    return emitError() << "'get_type_method' second operand should be a string";
+    return emitError()
+           << "'get_vtable_entry' second operand should be a string";
   return success();
 }
 
@@ -1098,7 +1099,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::VariadicGet:
   case POC::CompileAssembly:
   case POC::GetLinkageName:
-  case POC::GetTypeMethod:
+  case POC::GetVTableEntry:
   case POC::PtrBitcast:
   case POC::InstantiateStructRef:
   case POC::AttrToStr:
@@ -1298,8 +1299,8 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError()
              << "'get_linkage_name' first operand should be a target type";
     break;
-  case POC::GetTypeMethod:
-    return verifyGetTypeMethod(operands, type, emitError);
+  case POC::GetVTableEntry:
+    return verifyGetVTableEntry(operands, type, emitError);
   case POC::PtrBitcast:
     if (operands.size() != 1)
       return emitError() << "'ptr_bitcast' expects one operand";
@@ -2408,8 +2409,8 @@ static TypedAttr simplifyCond(ArrayRef<TypedAttr> operands) {
   return {};
 }
 
-static TypedAttr simplifyGetTypeMethod(ArrayRef<TypedAttr> operands,
-                                       Type resultType) {
+static TypedAttr simplifyGetVTableEntry(ArrayRef<TypedAttr> operands,
+                                        Type resultType) {
   auto typeConstant = dyn_cast<TypeConstantAttr>(operands[0]);
   // typeConstant may actually be a parameter if this is called before
   // elaboration.  But after elaboration it should always be a TypeConstantAttr.
@@ -2594,8 +2595,8 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::AttrToStr:
     result = {};
     break;
-  case POC::GetTypeMethod:
-    result = simplifyGetTypeMethod(operands, resultType);
+  case POC::GetVTableEntry:
+    result = simplifyGetVTableEntry(operands, resultType);
     break;
   case POC::PtrBitcast:
     result = simplifyPtrBitcast(operands, resultType);
@@ -2648,7 +2649,7 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
              {POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
               POC::TargetHasFeature, POC::TargetGetField, POC::AcceleratorArch,
               POC::GetSizeOf, POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
-              POC::CompileAssembly, POC::GetLinkageName, POC::GetTypeMethod,
+              POC::CompileAssembly, POC::GetLinkageName, POC::GetVTableEntry,
               POC::VariadicPtrMap, POC::VariadicPtrRemoveMap},
              opcode) ||
          llvm::all_of(operandsIn.drop_front(),

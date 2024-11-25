@@ -895,7 +895,7 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         p.parseComma() || parseColonTypeParamValue(p, operands.emplace_back()))
       return failure();
     return success();
-  case (uint32_t)POC::GetTypeMethod:
+  case (uint32_t)POC::GetVTableEntry:
     if (!type)
       type = TypeType::get(p.getContext());
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
@@ -1032,7 +1032,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
         // result is always `i1`.
         operandType = p.getBuilder().getIndexType();
         break;
-      case (uint32_t)POC::GetTypeMethod:
+      case (uint32_t)POC::GetVTableEntry:
         operandType = TypeType::get(p.getContext());
         break;
       default:
@@ -1197,7 +1197,7 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     p << ", ";
     printColonTypeParamValue(p, operands[1]);
     break;
-  case POC::GetTypeMethod:
+  case POC::GetVTableEntry:
     if (!isa<TypeType>(operands[0].getType())) {
       p << ':';
       printKGENType(p, operands[0].getType());

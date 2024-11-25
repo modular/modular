@@ -29,8 +29,8 @@ struct StructWithMatchingAlias(TraitWithAlias):
 
 # CHECK-LABEL: getNFromTraitWithAlias
 fn getNFromTraitWithAlias[T: TraitWithAlias](t: T) -> Int:
-    # CHECK-NEXT: lit.alias.decl [[X:.*]]: !Int = <get_type_method(:!TraitWithAlias T, "N")>
-    # CHECK-NEXT: kgen.param.constant: !Int = <get_type_method(:!TraitWithAlias T, "N")>
+    # CHECK-NEXT: lit.alias.decl [[X:.*]]: !Int = <get_vtable_entry(:!TraitWithAlias T, "N")>
+    # CHECK-NEXT: kgen.param.constant: !Int = <get_vtable_entry(:!TraitWithAlias T, "N")>
     alias X = T.N
     return X
 
@@ -92,8 +92,8 @@ fn testUpcastingImplicitStructWithAliasMethod():
 # CHECK-LABEL: lit.func @"callTraitWithAliasReturnMethod
 fn callTraitWithAliasReturnMethod[X: TraitWithAliasReturnMethod](t: X):
     # CHECK: {{.*}}lit.call
-    # CHECK-SAME: "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_type_method(:!TraitWithAliasReturnMethod X, "T")>
-    # CHECK-SAME: : get_type_method(:!TraitWithAliasReturnMethod X, "bork")
+    # CHECK-SAME: "__result__": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasReturnMethod X, "T")>
+    # CHECK-SAME: : get_vtable_entry(:!TraitWithAliasReturnMethod X, "bork")
     _ = t.bork()
 
 
@@ -135,8 +135,8 @@ fn testUpcastingStructWithAliasArgMethod():
 # CHECK-LABEL: lit.func @"callTraitMethodWithAliasArg
 fn callTraitMethodWithAliasArg[X: TraitWithAliasArgMethod](t: X, thing: SIMD[X.T]):
     # CHECK:  %0 = lit.call
-    # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_type_method(:!TraitWithAliasArgMethod X, "T")>
-    # CHECK-SAME: : get_type_method(:!TraitWithAliasArgMethod X, "lork")
+    # CHECK-SAME: "thing": !lit.ref<@associated_aliases::@SIMD<:!ATrait get_vtable_entry(:!TraitWithAliasArgMethod X, "T")>
+    # CHECK-SAME: : get_vtable_entry(:!TraitWithAliasArgMethod X, "lork")
     t.lork(thing)
 
 

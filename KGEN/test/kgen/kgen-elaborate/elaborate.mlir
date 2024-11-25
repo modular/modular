@@ -1534,7 +1534,7 @@ kgen.generator @top() {
 
 // -----
 
-// test get_type_method
+// test get_vtable_entry
 
 kgen.generator @indexTraitMethod(%arg0: index) -> index {
   kgen.return %arg0 : index
@@ -1543,20 +1543,20 @@ kgen.generator @indexTraitMethod(%arg0: index) -> index {
 // COM: Check that this gets elaborated to use the concrete function from the vtable below.
 // CHECK-LABEL: kgen.func @"generic_call,T=[index{{.*}}]"
 kgen.generator @generic_call<T: type>(%arg0: !kgen.paramref<T>) -> index{
-  kgen.param.declare traitMethod: (index) -> index  = <get_type_method(T, "traitMethod")>
+  kgen.param.declare traitMethod: (index) -> index  = <get_vtable_entry(T, "traitMethod")>
   %anInt = kgen.param.constant = <1>
   // CHECK: kgen.call @indexTraitMethod
   %result = kgen.call_param[(index) -> index : traitMethod](%anInt)
 
-  kgen.param.declare parametric: <index>() -> ()  = <get_type_method(T, "parametric")>
+  kgen.param.declare parametric: <index>() -> ()  = <get_vtable_entry(T, "parametric")>
   // CHECK: kgen.call @"parametricTraitMethod,param=2"
   kgen.call_param[() -> (): bind_signature(:<index>() -> () parametric, 2)]()
 
-  kgen.param.declare bound: () -> () = <get_type_method(T, "bound")>
+  kgen.param.declare bound: () -> () = <get_vtable_entry(T, "bound")>
   // CHECK: kgen.call @"parametricTraitMethod,param=1"
   kgen.call_param[() -> (): bound]()
 
-  kgen.param.declare partial: <index>() -> () = <get_type_method(T, "partial")>
+  kgen.param.declare partial: <index>() -> () = <get_vtable_entry(T, "partial")>
   // CHECK: kgen.call @"twoParameters,parent=11,func=42"
   kgen.call_param[() -> (): bind_signature(:<index>() -> () partial, 11)]()
 
