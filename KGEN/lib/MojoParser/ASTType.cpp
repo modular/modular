@@ -656,6 +656,12 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  // Special case bool constants instead of printing as 0/1.
+  if (auto boolAttr = dyn_cast<BoolAttr>(param)) {
+    os << (boolAttr.getValue() ? "True" : "False");
+    return;
+  }
+
   os << getParamAsString(param, diagShared);
 }
 

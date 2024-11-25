@@ -265,7 +265,7 @@ fn badPackCalls(value: Int):
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType]:
-    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[0, args, AnyType, Ts]'}}
+    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[args, AnyType, Ts]'}}
     fn __init__(*args: *Ts):
          pass
 
@@ -929,6 +929,14 @@ def func_overloaded(x: Int):
 @export
 def func_overloaded(x: Bool):
   ...
+
+@value
+struct HasBoolParam[a: Bool]:
+   pass
+
+fn test(arg: HasBoolParam[True]):
+  # expected-error @+1 {{cannot implicitly convert 'HasBoolParam[True]' value to 'HasBoolParam[False]'}}
+  var bad : HasBoolParam[False] = arg
 
 
 # Issue #12090

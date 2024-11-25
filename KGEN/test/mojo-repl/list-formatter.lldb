@@ -49,7 +49,7 @@ struct Point(CollectionElement):
 # CHECK:     (Int) y = 3
 # CHECK:   }
 # CHECK: }
-# CHECK: (List[Int, Trivial]) vec_trivial = (size 3) {
+# CHECK: (List[Int, True]) vec_trivial = (size 3) {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (Int) [1] = 2
 # CHECK:   (Int) [2] = 3
