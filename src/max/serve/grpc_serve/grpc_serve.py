@@ -27,7 +27,7 @@ from ModelServing.proto.grpc_predict_v2_pb2_grpc import (
     add_GRPCInferenceServiceServicer_to_server,
 )
 
-from utils.cli import TextGenerationMetrics
+from cli import TextGenerationMetrics
 
 # logging.root.setLevel(logging.INFO)
 
