@@ -26,14 +26,13 @@ from max.pipelines import (
     TextTokenizer,
     TextGenerationPipeline,
     HuggingFaceFile,
+    PIPELINE_REGISTRY,
 )
 from max.pipelines import kv_cache, PIPELINE_REGISTRY
 
 # Pipelines
 from architectures import register_all_models
 import llama3
-import replit.config
-from replit import ReplitModel
 import mistral
 
 # Tests
@@ -48,7 +47,9 @@ class MaxPipelineAndTokenizer:
     """An instantiated MAX pipeline and pieces necessary to run it."""
 
     model: Any  # TODO(kathywu): Update to PipelineModel
-    generator: interfaces.TokenGenerator
+    generator: Union[
+        interfaces.TokenGenerator, TextGenerationPipeline
+    ]  # TODO(kcaverly): Move to only TextGenerationPipeline
     tokenizer: interfaces.PipelineTokenizer
 
 
@@ -281,28 +282,28 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-202): Implement MAX pipeline generation for Llama Vision.
         raise NotImplementedError
-        assert self.is_supported(
-            version=version, encoding=encoding, device_spec=device_spec
-        )
-        config = pipelines.PipelineConfig(
-            architecture="mllama",
-            device_spec=device_spec,
-            quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy=kv_cache.KVCacheStrategy.CONTINUOUS,
-            huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision",
-            trust_remote_code=True,
-        )
-        tokenizer = TextTokenizer(config)
-        generator = TextGenerationPipeline(
-            pipeline_config=config,
-            pipeline_model=ReplitModel,
-            eos_token_id=tokenizer.eos,
-        )
-        return MaxPipelineAndTokenizer(
-            model=generator._pipeline_model,
-            generator=generator,
-            tokenizer=tokenizer,
-        )
+        # assert self.is_supported(
+        #     version=version, encoding=encoding, device_spec=device_spec
+        # )
+        # config = pipelines.PipelineConfig(
+        #     architecture="mllama",
+        #     device_spec=device_spec,
+        #     quantization_encoding=pipelines.SupportedEncoding[encoding],
+        #     cache_strategy=kv_cache.KVCacheStrategy.CONTINUOUS,
+        #     huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision",
+        #     trust_remote_code=True,
+        # )
+        # tokenizer = TextTokenizer(config)
+        # generator = TextGenerationPipeline(
+        #     pipeline_config=config,
+        #     pipeline_model=ReplitModel,
+        #     eos_token_id=tokenizer.eos,
+        # )
+        # return MaxPipelineAndTokenizer(
+        #     model=generator._pipeline_model,
+        #     generator=generator,
+        #     tokenizer=tokenizer,
+        # )
 
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device
@@ -350,7 +351,7 @@ class ReplitPipelineOracle(PipelineOracle):
             version=version, encoding=encoding, device_spec=device_spec
         )
         config = pipelines.PipelineConfig(
-            architecture="replit",
+            architecture="MPTForCausalLM",
             device_spec=device_spec,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=(
@@ -358,24 +359,15 @@ class ReplitPipelineOracle(PipelineOracle):
                 in ["bfloat16", "float32"] else kv_cache.KVCacheStrategy.NAIVE
             ),
             huggingface_repo_id="modularai/replit-code-1.5",
-            weight_path=[
-                replit.config.get_replit_huggingface_file(
-                    pipelines.SupportedEncoding[encoding]
-                ).download()
-            ],
             trust_remote_code=True,
         )
-        tokenizer = TextTokenizer(config)
-        generator = TextGenerationPipeline(
-            pipeline_config=config,
-            pipeline_model=ReplitModel,
-            eos_token_id=tokenizer.eos,
-        )
+        tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
             # Unlike the other pipelines, replit.Replit is both a model and a
             # generator at the same time.
-            model=generator._pipeline_model,
-            generator=generator,
+            model=pipeline._pipeline_model,
+            generator=pipeline,
             tokenizer=tokenizer,
         )
 
