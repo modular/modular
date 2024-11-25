@@ -358,7 +358,7 @@ def M_DeviceRefAttr : MAttr<"DeviceRef", "device_ref"> {
 
     Example:
     ```mlir
-      #M.device_ref<"cuda", 0>
+      #M.device_ref<"gpu", 0>
     ```
   }];
 
@@ -411,7 +411,7 @@ def M_DeviceSpecAttr : MAttr<"DeviceSpec", "device_spec"> {
     runtime.
 
     ```mlir
-    #M.device_spec<ref = <"cuda", 1>,
+    #M.device_spec<ref = <"gpu", 1>,
                    target = <triple="nvptx64-nvidia-cuda", arch="sm_80">>
     ```
 
@@ -444,7 +444,7 @@ def M_DeviceSpecCollectionAttr : MAttr<"DeviceSpecCollection", "device_spec_coll
       devices = [<ref = <"cpu", 0>,
                   target = <triple="x86_64-unknown-linux-gnu", arch="znver3",
                             features="+avx2">>,
-                 <ref = <"cuda", 1>,
+                 <ref = <"gpu", 1>,
                   target = <triple="nvptx64-nvidia-cuda", arch="sm_80">>]>
     ```
 
