@@ -8,7 +8,7 @@
 from collections import OptionalReg
 from math import align_down, ceildiv, exp, iota, recip, align_up
 from os import abort
-from sys import alignof, bitwidthof, simdwidthof
+from sys import alignof, bitwidthof, simdwidthof, has_nvidia_gpu
 
 from algorithm import elementwise
 from algorithm.functional import unswitch, vectorize, tile_and_unswitch
@@ -24,7 +24,7 @@ from gpu import (
     warp_reduce,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import _get_info_from_target, has_nvidia_gpu
+from gpu.host.info import _get_info_from_target
 from gpu.memory import AddressSpace, external_memory
 from gpu.shuffle import warp_broadcast
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams, KVCacheT
