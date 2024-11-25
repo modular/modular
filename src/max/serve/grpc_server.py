@@ -9,15 +9,14 @@ import asyncio
 import functools
 
 import click
-import llama3
 import max.serve.grpc_serve.grpc_serve as max_grpc
-from llama3.config import get_llama_huggingface_file
 from max.driver import DeviceSpec
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     SupportedEncoding,
     TextTokenizer,
+    TextGenerationPipeline,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.pipelines.performance_fake import (
@@ -28,8 +27,6 @@ from transformers import AutoTokenizer
 
 
 def get_default_replit_config() -> PipelineConfig:
-    from replit.config import get_replit_huggingface_file
-
     pipeline_config = PipelineConfig(
         huggingface_repo_id="modularai/replit-code-1.5",
         architecture="MPTForCausalLM",
@@ -39,17 +36,13 @@ def get_default_replit_config() -> PipelineConfig:
         # serialized_model_path="/tmp/replit_gpu_16.mef",
         # pipeline_config.weight_path = hf_file.download()
     )
-    hf_file = get_replit_huggingface_file(pipeline_config.quantization_encoding)
-    pipeline_config.weight_path = hf_file.download()
     return pipeline_config
 
 
 def get_default_llama31_config() -> PipelineConfig:
-    hf_file = get_llama_huggingface_file("3.1", SupportedEncoding.bfloat16)
     return PipelineConfig(
         architecture=None,
         version="3.1",
-        weight_path=hf_file.download(),
         huggingface_repo_id="modularai/llama-3.1",
         device_spec=DeviceSpec(id=0, device_type="gpu"),
         quantization_encoding=SupportedEncoding.bfloat16,
@@ -89,17 +82,15 @@ def serve(bypass_serve: bool, model: str, port: int):
             # works!
             model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
             pipeline_config = get_default_llama31_config()
-            model_factory = functools.partial(
-                llama3.Llama3TokenGenerator,
-                pipeline_config,
-                128009,
+            _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
+                pipeline_config
             )
             asyncio.run(
                 max_grpc.grpc_serve(
                     server_config,
                     model_name,
                     pipeline_config,
-                    model_factory,
+                    pipeline_factory,
                 )
             )
         elif model == "perf-fake":
@@ -128,8 +119,6 @@ def serve(bypass_serve: bool, model: str, port: int):
                 )
             )
         elif model == "replit":
-            from replit.model import ReplitModel
-
             model_name = "replit/replit-code-v1_5-3b"
             pipeline_config = get_default_replit_config()
             _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
@@ -151,10 +140,14 @@ def serve(bypass_serve: bool, model: str, port: int):
             # Works!
             model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
             pipeline_config = get_default_llama31_config()
-            llama_tokenizer = TextTokenizer(pipeline_config)
-            llama_pipeline = llama3.Llama3TokenGenerator(
-                pipeline_config, llama_tokenizer.delegate.eos_token_id
+            llama_tokenizer, llama_pipeline = PIPELINE_REGISTRY.retrieve(
+                pipeline_config
             )
+            llama_tokenizer, llama_pipeline = PIPELINE_REGISTRY.retrieve(
+                pipeline_config
+            )
+            assert isinstance(llama_tokenizer, TextTokenizer)
+            assert isinstance(llama_pipeline, TextGenerationPipeline)
             asyncio.run(
                 max_grpc.grpc_serve_direct(
                     server_config, model_name, llama_tokenizer, llama_pipeline
@@ -192,6 +185,8 @@ def serve(bypass_serve: bool, model: str, port: int):
                     pipeline_config,
                 )
             )
+            assert isinstance(replit_tokenizer, TextTokenizer)
+            assert isinstance(replit_pipeline_factory, TextGenerationPipeline)
             asyncio.run(
                 max_grpc.grpc_serve_direct(
                     server_config,

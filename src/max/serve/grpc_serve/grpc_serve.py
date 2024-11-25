@@ -14,8 +14,9 @@ import grpc
 
 # mypy: disable-error-code="import-not-found"
 import ModelServing.proto.grpc_predict_v2_pb2 as pb2
+from typing import Callable
 from grpc_reflection.v1alpha import reflection
-from max.pipelines import PipelineConfig, TextTokenizer
+from max.pipelines import PipelineConfig, TextTokenizer, PipelineTokenizer
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
@@ -53,7 +54,7 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
         self,
         model_name: str,
         pipeline: TokenGenerator,
-        tokenizer: TextTokenizer,
+        tokenizer: PipelineTokenizer,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.model_name = model_name
@@ -289,7 +290,7 @@ async def grpc_serve(
     server_config: GRPCConfig,
     model_name: str,
     pipeline_config: PipelineConfig,
-    model_factory,
+    model_factory: Callable[[], TokenGenerator],
 ):
     # TODO arekay - this would be very useful in making the server robust.
     # See https://grpc-interceptor.readthedocs.io/en/latest/
@@ -332,14 +333,14 @@ async def grpc_serve(
         )
         server.add_insecure_port(f"[::]:{server_config.port}")
         await server.start()
-        logging.info(f"Started server...")
+        logging.info("Started server...")
         await server.wait_for_termination()
 
 
 async def grpc_serve_direct(
     server_config: GRPCConfig,
     model_name: str,
-    tokenizer: TextTokenizer,
+    tokenizer: PipelineTokenizer,
     pipeline: TokenGenerator,
 ):
     # logger = logging.getLogger("ServerStartup")
@@ -361,11 +362,11 @@ async def grpc_serve_direct(
     )
     reflection.enable_server_reflection(SERVICE_NAMES, server)
 
-    with TextGenerationMetrics() as metrics:
+    with TextGenerationMetrics() as _:
         add_GRPCInferenceServiceServicer_to_server(
             MaxDirectInferenceService(model_name, pipeline, tokenizer), server
         )
         server.add_insecure_port(f"[::]:{server_config.port}")
         await server.start()
-        logging.info(f"Started server...")
+        logging.info("Started server...")
         await server.wait_for_termination()
