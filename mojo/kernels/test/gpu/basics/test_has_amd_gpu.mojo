@@ -6,7 +6,7 @@
 # REQUIRES: AMD-GPU
 # RUN: %mojo-no-debug %s
 
-from gpu.host.info import has_amd_gpu
+from sys import has_amd_gpu
 from testing import assert_true
 
 

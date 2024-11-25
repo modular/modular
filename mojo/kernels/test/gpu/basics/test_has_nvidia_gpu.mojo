@@ -6,7 +6,7 @@
 # REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug %s
 
-from gpu.host.info import has_nvidia_gpu
+from sys import has_nvidia_gpu
 from testing import assert_true
 
 
