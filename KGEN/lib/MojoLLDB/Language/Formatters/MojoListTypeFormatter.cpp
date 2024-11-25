@@ -115,19 +115,6 @@ size_t MojoListSyntheticFrontEnd::GetIndexOfChildWithName(
   return ExtractIndexFromString(name.GetCString());
 }
 
-lldb_private::ConstString MojoListSyntheticFrontEnd::GetSyntheticTypeName() {
-  llvm::StringRef fullTypeName =
-      m_backend.GetNonSyntheticValue()->GetDisplayTypeName();
-
-  // The `List` type's second parameter is whether the type is trivial is not
-  // (as a hint). In the case that it's trivial (`1`), adjust the visible
-  // typename to lldb.
-  if (fullTypeName.consume_back(", 1]"))
-    return lldb_private::ConstString(fullTypeName.str() + ", Trivial]");
-
-  return lldb_private::ConstString(fullTypeName.str());
-}
-
 SyntheticChildrenFrontEnd *
 M::KGEN::Mojo::mojoListSyntheticFrontEndCreator(CXXSyntheticChildren *,
                                                 const ValueObjectSP &valobjSP) {
