@@ -118,6 +118,13 @@ static std::string getSignatureLifetime(SharedState &shared, TypedAttr origin,
     return paramListMetadata.getName(indexRef.getIndex()).str();
   }
 
+  // Handle an extract out of an Origin type.
+  if (auto extract = dyn_cast<LIT::StructExtractAttr>(origin)) {
+    if (extract.getField() == ORIGIN_FIELD_NAME)
+      return getSignatureLifetime(shared, extract.getStructValue(), signature,
+                                  isRefResult);
+  }
+
   // Otherwise, just print as normal.
   return generatePValueString(shared, origin);
 }
