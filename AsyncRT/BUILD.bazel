@@ -95,6 +95,7 @@ modular_cc_library(
         ":CUDADeviceContext",
         ":DeviceContext.headers",
         ":HIPDeviceContext",
+        ":RuntimeGlobals",
     ],
 )
 
