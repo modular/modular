@@ -11,7 +11,7 @@ from typing import Any, Iterable, Optional
 
 import numpy as np
 from max.driver import CPU
-from max.pipelines import PipelineModel
+from max.pipelines import ModelOutputs, PipelineModel
 from max.pipelines.interfaces import (
     TokenGeneratorRequest,
     PipelineTokenizer,
@@ -118,7 +118,8 @@ def next_token_with_logits(
         # Get Model inputs
         model_inputs = model.prepare_initial_token_inputs(context_batch)
 
-        logits = model.execute(*model_inputs, *kv_inputs).to(CPU())  # type: ignore
+        model_outputs = model.execute(*model_inputs, *kv_inputs)
+        logits = model_outputs.next_token_logits.to(CPU())
 
         model.kv_manager.step(
             valid_lengths={
@@ -153,13 +154,13 @@ def next_token_with_logits(
     else:
         logits = model._execute(req_to_context_dict).to(CPU())
 
-    for req_id, logits in zip(req_to_context_dict, logits.to_numpy()):
-        next_token = logits.argmax(axis=-1)
+    for req_id, req_logits in zip(req_to_context_dict, logits.to_numpy()):
+        next_token = req_logits.argmax(axis=-1)
         update_values[req_id].append(
             {
                 "next_token": next_token,
-                "next_token_logits": logits[next_token],
-                "logits": logits,
+                "next_token_logits": req_logits[next_token],
+                "logits": req_logits,
             }
         )
         # Update the context for the next input.
