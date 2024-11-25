@@ -1180,3 +1180,13 @@ fn handleAnyLifetime5():
     # CHECK: lit.ref.load [[INT_REF]]
     # CHECK: lit.call {{.*}}__del__{{.*}}(%a)
     use_int(a.data[0])
+
+
+# This checks that the Mojo parser successfully folds the initializer call for
+# origin into a struct attr, which is important for lifetime analysis to be able
+# to reason about these.
+
+# CHECK-LABEL: lit.func @"test_origin_ctor_folding
+fn test_origin_ctor_folding(abcdef: A):
+    # CHECK-NEXT: lit.alias.decl {{.*}} = <{_mlir_origin: origin<0> = *"abcdef`"}> 
+    alias x = Origin(__origin_of(abcdef))

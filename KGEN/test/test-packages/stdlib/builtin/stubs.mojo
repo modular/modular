@@ -33,19 +33,25 @@ alias `True` = __mlir_attr.`1 : i1`
 alias `False` = __mlir_attr.`0 : i1`
 
 
+@value
+@register_passable("trivial")
 struct Origin[is_mutable: Bool]:
-    """This represents a origin reference of potentially parametric type.
-    TODO: This should be replaced with a parametric type alias.
-
-    Parameters:
-        is_mutable: Whether the origin reference is mutable.
-    """
-
     alias type = __mlir_type[
         `!lit.origin<`,
         is_mutable.value,
         `>`,
     ]
+
+    var _mlir_origin: Self.type
+
+    @implicit
+    @always_inline("nodebug")
+    fn __init__(out self, mlir_origin: Self.type):
+        """Initialize an Origin from a raw MLIR `!lit.origin` value.
+
+        Args:
+            mlir_origin: The raw MLIR origin value."""
+        self._mlir_origin = mlir_origin
 
 
 # Static constants are a named subset of the global origin.
