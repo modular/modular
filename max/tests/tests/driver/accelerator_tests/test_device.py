@@ -19,7 +19,7 @@ def test_cuda_device_label_id():
     dev_id = 0
     default_device = CUDA()
     device = CUDA(id=dev_id)
-    assert "cuda" in device.label
+    assert "gpu" in device.label
     assert dev_id == device.id
     assert dev_id == default_device.id
     dev_from_runtime = Device(device.label, device.id)
