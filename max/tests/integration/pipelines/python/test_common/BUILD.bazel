@@ -6,8 +6,6 @@ load(
     "requirement",
 )
 
-package(default_visibility = ["//visibility:public"])
-
 modular_py_library(
     name = "test_common",
     srcs = ["__init__.py"],
