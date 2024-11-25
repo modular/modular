@@ -122,12 +122,13 @@ modular_py_binary(
             "//SDK/public/max-repo/pipelines/python/llama_vision",
             "//SDK/public/max-repo/pipelines/python/nn",
             "//Support/python:support",
+            requirement("click"),
+            requirement("huggingface_hub"),
             requirement("hypothesis"),
-            requirement("transformers"),
             requirement("pytest-asyncio"),
             requirement("pytest-xdist"),
-            requirement("huggingface_hub"),
             requirement("torch"),
+            requirement("transformers"),
         ],
     )
     for src in glob(

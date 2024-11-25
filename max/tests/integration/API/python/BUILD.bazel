@@ -50,12 +50,13 @@ modular_py_test(
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/mistral",
         "//SDK/public/max-repo/pipelines/python/nn",
+        requirement("click"),
+        requirement("gguf"),
+        requirement("hypothesis"),
+        requirement("safetensors"),
+        requirement("sentencepiece"),
         requirement("torch"),
         requirement("transformers"),
-        requirement("hypothesis"),
-        requirement("sentencepiece"),
-        requirement("gguf"),
-        requirement("safetensors"),
     ],
 )
 
