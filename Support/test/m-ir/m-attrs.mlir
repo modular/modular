@@ -46,12 +46,12 @@
 // CHECK: #M.device_ref<"foo", 3>
 "some.op"() {a = #M.device_ref<"foo", 3>} : () -> ()
 
-// CHECK: #M.device_spec<ref = <"cuda", 1>, target = <triple = "nvptx64-nvidia-cuda", arch = "sm_80">>
-"some.op"() {a = #M.device_spec<ref = <"cuda", 1>, target = <triple="nvptx64-nvidia-cuda", arch = "sm_80">>} : () -> ()
+// CHECK: #M.device_spec<ref = <"gpu", 1>, target = <triple = "nvptx64-nvidia-cuda", arch = "sm_80">>
+"some.op"() {a = #M.device_spec<ref = <"gpu", 1>, target = <triple="nvptx64-nvidia-cuda", arch = "sm_80">>} : () -> ()
 
-// CHECK: #M.device_spec_collection<host = <"cpu", 0>, devices = [<ref = <"cuda", 0>, target = <triple = "nvptx64-nvidia-cuda", arch = "sm_80">>, <ref = <"cpu", 0>, target = <triple = "x86_64-unknown-linux-gnu", arch = "znver3", features = "+avx2">>]>
+// CHECK: #M.device_spec_collection<host = <"cpu", 0>, devices = [<ref = <"gpu", 0>, target = <triple = "nvptx64-nvidia-cuda", arch = "sm_80">>, <ref = <"cpu", 0>, target = <triple = "x86_64-unknown-linux-gnu", arch = "znver3", features = "+avx2">>]>
 "some.op"() {a = #M.device_spec_collection<host = <"cpu", 0>,
-                   devices = [<ref = <"cuda", 0>, target = <triple = "nvptx64-nvidia-cuda", arch = "sm_80">>,
+                   devices = [<ref = <"gpu", 0>, target = <triple = "nvptx64-nvidia-cuda", arch = "sm_80">>,
                               <ref = <"cpu", 0>, target = <triple="x86_64-unknown-linux-gnu", arch="znver3", features="+avx2">>]>} : () -> ()
 
 // CHECK: #M<multiline["a", "b", "c"]>
