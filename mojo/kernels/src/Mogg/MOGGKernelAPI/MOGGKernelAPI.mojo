@@ -47,6 +47,7 @@ from nn.kv_cache import (
     kv_params_h1_d16_bshd,
     kv_params_h6_d48_bshd,
     kv_params_h8_d128_bshd,
+    kv_params_h8_d16_bshd,
     kv_params_h8_d32_bshd,
     kv_params_h8_d64_bshd,
     kv_params_h32_d128_bshd,
@@ -62,6 +63,7 @@ from nn.kv_cache import (
     generic_get_continuous_cache,
 )
 from nn.kv_cache_ragged import (
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
     generic_fused_qk_rope_bshd_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
 )
@@ -5915,6 +5917,68 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache_kernel_api[
     )
 
 
+# ===----------------------------------------------------------------------===#
+# fused_qkv_matmul_kv_cache_*_cont_batch_ragged
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
+    target: StringLiteral,
+    type: DType,
+](
+    output: ManagedTensorSlice[type, 2],
+    hidden_state: ManagedTensorSlice[type, 2],
+    input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+    weight: ManagedTensorSlice[type, 2],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: ScalarTensor[DType.uint32],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+        hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
+        input_row_offset: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+    alias output_shape = compiler.specsof[output.type, output.rank](
+        "output"
+    ).shape
+    alias hidden_state_shape = compiler.specsof[
+        hidden_state.type, hidden_state.rank
+    ]("hidden_state").shape
+    alias weight_shape = compiler.specsof[weight.type, weight.rank](
+        "weight"
+    ).shape
+    alias input_row_shape = compiler.specsof[
+        input_row_offset.type, input_row_offset.rank
+    ]("input_row_offset").shape
+
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
+        managed_tensor_slice_to_ndbuffer[static_shape=hidden_state_shape](
+            hidden_state
+        ),
+        managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
+            input_row_offset
+        ),
+        managed_tensor_slice_to_ndbuffer[static_shape=weight_shape](weight),
+        kv_collection,
+        layer_idx[0],
+        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        ctx,
+    )
+
+
 @compiler.register("fused_qkv_matmul_kv_cache_h6_d48_bshd")
 struct Struct_fused_qkv_matmul_kv_cache_h6_d48_bshd:
     @uses_opaque
@@ -6005,6 +6069,126 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d32_bshd:
         generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache_kernel_api[
             target
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 2],
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d128_bshd,
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
+            output,
+            hidden_state,
+            input_row_offset,
+            weight,
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 2],
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h32_d128_bshd,
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
+            output,
+            hidden_state,
+            input_row_offset,
+            weight,
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 2],
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d64_bshd,
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
+            output,
+            hidden_state,
+            input_row_offset,
+            weight,
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h8_d16_cont_batch_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h8_d16_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 2],
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d16_bshd,
+        ],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
+            output,
+            hidden_state,
+            input_row_offset,
+            weight,
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
 
 
 ######
