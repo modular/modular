@@ -51,7 +51,7 @@ def get_default_llama31_config() -> PipelineConfig:
         version="3.1",
         weight_path=hf_file.download(),
         huggingface_repo_id="modularai/llama-3.1",
-        device_spec=DeviceSpec(id=0, device_type="cuda"),
+        device_spec=DeviceSpec(id=0, device_type="gpu"),
         quantization_encoding=SupportedEncoding.bfloat16,
         max_length=512,
         max_new_tokens=512,
