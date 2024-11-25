@@ -21,6 +21,7 @@ modular_py_binary(
     deps = [
         "//SDK/lib/API/python/max/pipelines",
         "//SDK/lib/API/python/max/serve",
+        "//SDK/public/max-repo/pipelines/python/architectures",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/pixtral",
         "//SDK/public/max-repo/pipelines/python/utils",
@@ -144,6 +145,7 @@ modular_py_binary(
         ":torch",
         "//SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama",
         "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/public/max-repo/pipelines/python/architectures",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/mistral",
         "//SDK/public/max-repo/pipelines/python/replit",

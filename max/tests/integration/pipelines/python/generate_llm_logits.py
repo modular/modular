@@ -30,6 +30,7 @@ from max.pipelines import (
 from max.pipelines import kv_cache, PIPELINE_REGISTRY
 
 # Pipelines
+from architectures import register_all_models
 import llama3
 import replit.config
 from replit import ReplitModel
@@ -550,6 +551,9 @@ def main(
     with //SDK/integration-test/pipelines/python/llama3/verify to check their
     similarity.
     """
+
+    # Register all models.
+    register_all_models()
 
     if workspace_dir := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(workspace_dir)
