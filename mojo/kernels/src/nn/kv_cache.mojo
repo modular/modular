@@ -43,6 +43,7 @@ from utils.numerics import isnan, min_finite
 alias kv_params_h1_d16_bshd = KVCacheStaticParams(num_heads=1, head_size=16)
 alias kv_params_h6_d48_bshd = KVCacheStaticParams(num_heads=6, head_size=48)
 alias kv_params_h8_d128_bshd = KVCacheStaticParams(num_heads=8, head_size=128)
+alias kv_params_h8_d16_bshd = KVCacheStaticParams(num_heads=8, head_size=16)
 alias kv_params_h8_d32_bshd = KVCacheStaticParams(num_heads=8, head_size=32)
 alias kv_params_h8_d64_bshd = KVCacheStaticParams(num_heads=8, head_size=64)
 alias kv_params_h32_d128_bshd = KVCacheStaticParams(num_heads=32, head_size=128)
@@ -342,16 +343,13 @@ fn _kv_cache_length[
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContiguousKVCacheCollection,
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -397,19 +395,16 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache[
 @register_internal("fused_qkv_matmul_kv_cache_h6_d48_bshd")
 fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContiguousKVCacheCollection[
         type,
         kv_params_h6_d48_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache[
@@ -420,19 +415,16 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bshd[
 @register_internal("fused_qkv_matmul_kv_cache_h8_d128_bshd")
 fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContiguousKVCacheCollection[
         type,
         kv_params_h8_d128_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache[
@@ -443,19 +435,16 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd[
 @register_internal("fused_qkv_matmul_kv_cache_h1_d16_bshd")
 fn fused_qkv_matmul_kv_cache_h1_d16_bshd[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContiguousKVCacheCollection[
         type,
         kv_params_h1_d16_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache[
@@ -466,19 +455,16 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd[
 @register_internal("fused_qkv_matmul_kv_cache_h8_d32_bshd")
 fn fused_qkv_matmul_kv_cache_h8_d32_bshd[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContiguousKVCacheCollection[
         type,
         kv_params_h8_d32_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache[
@@ -489,16 +475,13 @@ fn fused_qkv_matmul_kv_cache_h8_d32_bshd[
 @always_inline
 fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -544,19 +527,16 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
 @register_internal("fused_qkv_matmul_kv_cache_h8_d64_bshd")
 fn fused_qkv_matmul_kv_cache_h8_d64_bshd[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h8_d64_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
@@ -567,19 +547,16 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd[
 @register_internal("fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch")
 fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h8_d128_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
@@ -590,19 +567,16 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
 @register_internal("fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch")
 fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h1_d16_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
@@ -613,19 +587,16 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
 @register_internal("fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch")
 fn fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h8_d32_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
@@ -636,19 +607,16 @@ fn fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch[
 @register_internal("fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch")
 fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h8_d64_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
@@ -659,19 +627,16 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
 @register_internal("fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch")
 fn fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     target: StringLiteral = "cpu",
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h32_d128_bshd,
     ],
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     ctx: MojoCallContextPtr,
 ) raises:
     return generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
@@ -682,19 +647,16 @@ fn fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch[
 @always_inline
 fn _fused_qkv_matmul_kv_cache[
     type: DType,
-    hidden_state_shape: DimList,
-    weight_shape: DimList,
-    output_shape: DimList,
     collection_t: KVCollectionT, //,
     cache_t: KVCacheT,
     *,
     target: StringLiteral,
 ](
-    hidden_state: NDBuffer[type, 3, hidden_state_shape],
-    weight: NDBuffer[type, 2, weight_shape],
+    hidden_state: NDBuffer[type, 3, _],
+    weight: NDBuffer[type, 2, _],
     kv_collection: collection_t,
     layer_idx: UInt32,
-    output: NDBuffer[type, 3, output_shape],
+    output: NDBuffer[type, 3, _],
     context: MojoCallContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument

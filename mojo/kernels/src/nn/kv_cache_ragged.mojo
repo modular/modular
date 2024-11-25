@@ -37,6 +37,68 @@ from nn._ragged_utils import get_batch_from_row_offsets
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
+fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offset: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The object storing the KVCache for this layer.
+        layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+            Shape: (sum(seq_lens), num_heads * head_size).
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("output", output),
+            trace_arg("hidden_state", hidden_state),
+            trace_arg("weight", weight),
+            "layer_idx=" + str(layer_idx),
+            "num_heads=" + str(kv_collection.kv_params.num_heads),
+            "head_size=" + str(kv_collection.kv_params.head_size),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "fused_qkv_matmul_kv_cache_h"
+        + str(kv_collection.kv_params.num_heads)
+        + "_d"
+        + str(kv_collection.kv_params.head_size)
+        + "_cont_batch_ragged",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _fused_qkv_matmul_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](
+            hidden_state,
+            input_row_offset,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
 @register_internal("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
 fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
     type: DType, //,
@@ -68,20 +130,15 @@ fn fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged[
             Shape: (sum(seq_lens), num_heads * head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    with Trace[TraceLevel.OP, target=target](
-        "fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged"
-    ):
-        return _fused_qkv_matmul_kv_cache_ragged[
-            kv_collection.CacheType, target=target
-        ](
-            hidden_state,
-            input_row_offset,
-            weight,
-            kv_collection,
-            layer_idx,
-            output,
-            ctx,
-        )
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
 
 
 @register_internal("fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged")
@@ -115,20 +172,15 @@ fn fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged[
             Shape: (sum(seq_lens), num_heads * head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    with Trace[TraceLevel.OP, target=target](
-        "fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged"
-    ):
-        return _fused_qkv_matmul_kv_cache_ragged[
-            kv_collection.CacheType, target=target
-        ](
-            hidden_state,
-            input_row_offset,
-            weight,
-            kv_collection,
-            layer_idx,
-            output,
-            ctx,
-        )
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
 
 
 @register_internal("fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged")
@@ -162,20 +214,15 @@ fn fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged[
             Shape: (sum(seq_lens), num_heads * head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    with Trace[TraceLevel.OP, target=target](
-        "fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged"
-    ):
-        return _fused_qkv_matmul_kv_cache_ragged[
-            kv_collection.CacheType, target=target
-        ](
-            hidden_state,
-            input_row_offset,
-            weight,
-            kv_collection,
-            layer_idx,
-            output,
-            ctx,
-        )
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
 
 
 @register_internal("fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged")
@@ -209,20 +256,15 @@ fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged[
             Shape: (sum(seq_lens), num_heads * head_size).
         ctx: The call context pointer, passed by the graph compiler.
     """
-    with Trace[TraceLevel.OP, target=target](
-        "fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged"
-    ):
-        return _fused_qkv_matmul_kv_cache_ragged[
-            kv_collection.CacheType, target=target
-        ](
-            hidden_state,
-            input_row_offset,
-            weight,
-            kv_collection,
-            layer_idx,
-            output,
-            ctx,
-        )
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
 
 
 @always_inline
