@@ -22,7 +22,7 @@ from gpu.host import DeviceContext
 
 def _to_device_str(gpu_id: Int, sm_ver: Int) -> String:
     return (
-        "Device(type=cuda,gpu_id=0,target_info(triple=nvptx64-nvidia-cuda,arch=sm_"
+        "Device(type=gpu,gpu_id=0,target_info(triple=nvptx64-nvidia-cuda,arch=sm_"
         + str(sm_ver)
         + ",features=[])"
     )
