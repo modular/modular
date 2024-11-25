@@ -61,6 +61,11 @@ from nn.kv_cache import (
     generic_get_contiguous_cache,
     generic_get_continuous_cache,
 )
+from nn.kv_cache_ragged import (
+    generic_fused_qk_rope_bshd_ragged,
+    generic_fused_qk_rope_bshd_continous_batch_ragged,
+)
+from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.index_tensor import index_tensor
 
 # ===----------------------------------------------------------------------===#
@@ -6495,6 +6500,401 @@ struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch:
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
             output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+        )
+
+
+# ===----------------------------------------------------------------------===#
+# Fused QK Rope Ragged
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn generic_fused_qk_rope_bshd_ragged_kernel_api[
+    type: DType, target: StringLiteral
+](
+    output: ManagedTensorSlice[type, 3],
+    q_proj: ManagedTensorSlice[type, 3],
+    input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+    kv_collection: ContiguousKVCacheCollection,
+    freqs_cis: ManagedTensorSlice[type, 2],
+    layer_idx: ScalarTensor[DType.uint32],
+    ctx: MojoCallContextPtr,
+):
+    alias output_shape = compiler.specsof[output.type, output.rank](
+        "output"
+    ).shape
+    alias q_proj_shape = compiler.specsof[q_proj.type, q_proj.rank](
+        "q_proj"
+    ).shape
+    alias freqs_cis_shape = compiler.specsof[freqs_cis.type, freqs_cis.rank](
+        "freq_cis"
+    ).shape
+    alias input_row_shape = compiler.specsof[
+        input_row_offset.type, input_row_offset.rank
+    ]("input_row_offset").shape
+
+    generic_fused_qk_rope_bshd_ragged[target=target](
+        managed_tensor_slice_to_ndbuffer[static_shape=q_proj_shape](q_proj),
+        managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
+            input_row_offset
+        ),
+        kv_collection,
+        managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
+            freqs_cis
+        ),
+        layer_idx[0],
+        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        ctx,
+    )
+
+
+@always_inline
+fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
+    type: DType, target: StringLiteral
+](
+    output: ManagedTensorSlice[type, 3],
+    q_proj: ManagedTensorSlice[type, 3],
+    input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    freqs_cis: ManagedTensorSlice[type, 2],
+    layer_idx: ScalarTensor[DType.uint32],
+    ctx: MojoCallContextPtr,
+):
+    alias output_shape = compiler.specsof[output.type, output.rank](
+        "output"
+    ).shape
+    alias q_proj_shape = compiler.specsof[q_proj.type, q_proj.rank](
+        "q_proj"
+    ).shape
+    alias freqs_cis_shape = compiler.specsof[freqs_cis.type, freqs_cis.rank](
+        "freq_cis"
+    ).shape
+    alias input_row_shape = compiler.specsof[
+        input_row_offset.type, input_row_offset.rank
+    ]("input_row_offset").shape
+
+    generic_fused_qk_rope_bshd_continous_batch_ragged[target=target](
+        managed_tensor_slice_to_ndbuffer[static_shape=q_proj_shape](q_proj),
+        managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
+            input_row_offset
+        ),
+        kv_collection,
+        managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
+            freqs_cis
+        ),
+        layer_idx[0],
+        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        ctx,
+    )
+
+
+@compiler.register("fused_qk_rope_h6_d48_bshd_ragged")
+struct Struct_fused_qk_rope_h6_d48_bshd_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContiguousKVCacheCollection[
+            type,
+            kv_params_h6_d48_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d128_bshd_ragged")
+struct Struct_fused_qk_rope_h8_d128_bshd_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContiguousKVCacheCollection[
+            type,
+            kv_params_h8_d128_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qk_rope_h1_d16_bshd_ragged")
+struct Struct_fused_qk_rope_h1_d16_bshd_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContiguousKVCacheCollection[
+            type,
+            kv_params_h1_d16_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d32_bshd_ragged")
+struct Struct_fused_qk_rope_h8_d32_bshd_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContiguousKVCacheCollection[
+            type,
+            kv_params_h8_d32_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d64_bshd_ragged")
+struct Struct_fused_qk_rope_h8_d64_bshd_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContiguousKVCacheCollection[
+            type,
+            kv_params_h8_d64_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d128_bshd_continuous_batch_ragged")
+struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d128_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
+            target=target
+        ](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qk_rope_h32_d128_bshd_continuous_batch_ragged")
+struct Struct_fused_qk_rope_h32_d128_bshd_continuous_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h32_d128_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
+            target=target
+        ](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qk_rope_h1_d16_bshd_continuous_batch_ragged")
+struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h1_d16_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
+            target=target
+        ](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d32_bshd_continuous_batch_ragged")
+struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d32_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
+            target=target
+        ](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d64_bshd_continuous_batch_ragged")
+struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d64_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: ScalarTensor[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
+            target=target
+        ](
+            output,
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            ctx,
         )
 
 
