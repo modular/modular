@@ -1002,6 +1002,7 @@ ErrorOr<BufferRef> ObjectCompiler::emitArchive(OwningOpRef<ModuleOp> module,
   *produceArchiveKey << ", isJIT=" << isJIT
                      << ", enableLLVMPerFunctionSplitting="
                      << options.enableLLVMPerFunctionSplitting
+                     << ", emitAssembly=" << emitAssembly
                      << ", verboseOutput=" << options.verboseOutput << ')';
 
   auto output = cachedTransform(
