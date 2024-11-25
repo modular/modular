@@ -59,9 +59,10 @@ from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel, trace_arg
 from os import abort
 from sys import alignof, simdwidthof, is_defined
-from utils.index import Index
+from utils.index import Index, IndexList
 
 
 @always_inline
@@ -895,7 +896,8 @@ fn dual_gemm[
     var M = shape.M
     var N = 2 * shape.N
     var K = shape.K
-    var multi_gemm_cond = (M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128)
+    var multi_gemm_cond = (N % 128 == 0 and K % 32 == 0 and K >= 128)
+    # var multi_gemm_cond = (M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128)
     alias multistage_gemm_supported_shape = b_shape.all_known[
         2
     ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
@@ -1074,6 +1076,7 @@ fn dual_gemm[
             ctx,
         )
         return
+    print("M,N,K =", M, N, K)
     abort("dual gemm size unsupported.")
 
 
@@ -1086,12 +1089,13 @@ fn swishGLU[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList, //,
+    trace_description: StringLiteral = "",
     target: StringLiteral = "cpu",
 ](
     a: NDBuffer[a_type, 2, a_shape],
     b0: NDBuffer[b_type, 2, b_shape],
     b1: NDBuffer[b_type, 2, b_shape],
-    output: NDBuffer[c_type, 2, c_shape],
+    c: NDBuffer[c_type, 2, c_shape],
     ctx: MojoCallContextPtr,
 ):
     """
@@ -1104,4 +1108,21 @@ fn swishGLU[
     """
 
     constrained["cuda" in target, "only valid on CUDA GPUs"]()
-    dual_gemm[transpose_b=True](output, a, b0, b1, ctx=ctx.get_device_context())
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        var shape = GemmShape.get[True](c, a, b0)
+        return String(";").join(
+            str(target),
+            trace_arg("A", IndexList[2](shape.M, shape.K), a.type),
+            trace_arg("B0", IndexList[2](shape.K, shape.N), b0.type),
+            trace_arg("B1", IndexList[2](shape.K, shape.N), b1.type),
+            trace_arg("C", IndexList[2](shape.M, shape.N), c.type),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "swish_glu(" + trace_description + ")",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        dual_gemm[transpose_b=True](c, a, b0, b1, ctx=ctx.get_device_context())
