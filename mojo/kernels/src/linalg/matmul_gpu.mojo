@@ -14,6 +14,7 @@ from sys import (
     is_defined,
     env_get_int,
     env_get_bool,
+    has_nvidia_gpu,
 )
 from pathlib import Path
 from algorithm.functional import elementwise, tile_and_unswitch
@@ -25,7 +26,7 @@ from gpu.host import (
     FuncAttribute,
     LaunchAttribute,
 )
-from gpu.host.info import A100, has_nvidia_gpu
+from gpu.host.info import A100
 from gpu.host._compile import _get_gpu_target
 from gpu.memory import (
     AddressSpace,
