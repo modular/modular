@@ -211,7 +211,7 @@ static ArrayAttr getTensorParametersForTensor(LIT::StructType &structType,
 static SmallVector<NamedAttribute>
 getUnboundParametersForTensorTuple(LIT::StructType &structType,
                                    OpBuilder &builder) {
-  // TODO(GRA-1126): consider a tuple which only contains tensors to
+  // TODO(GEX-1126): consider a tuple which only contains tensors to
   // simplify this
   constexpr unsigned kElementType = 0;
   constexpr unsigned kSizeIndex = 1;
@@ -258,7 +258,7 @@ static ArrayAttr getTensorParametersForTensorTuple(LIT::StructType &structType,
 static SmallVector<NamedAttribute>
 getUnboundParametersForTensorList(LIT::StructType &structType,
                                   OpBuilder &builder) {
-  // TODO(GRA-1126): consider a tuple which only contains tensors to
+  // TODO(GEX-1126): consider a tuple which only contains tensors to
   // simplify this
   constexpr unsigned kElementType = 0;
   auto allParameters = litTypeToParams(structType);

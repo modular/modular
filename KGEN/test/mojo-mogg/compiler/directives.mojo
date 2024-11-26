@@ -49,7 +49,7 @@ fn uses_opaque():
     """
     Dummy registration decorator for testing.
 
-    TODO(GRA-1145): Remove the need for this.
+    TODO(GEX-1145): Remove the need for this.
     """
     return
 
