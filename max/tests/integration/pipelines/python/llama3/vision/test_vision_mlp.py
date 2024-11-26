@@ -25,7 +25,7 @@ from llama_vision.mlp import MLP
         TensorType(DType.float32, ["dim"]),
         TensorType(DType.float32, ["batch", "dim"]),
         TensorType(DType.float32, ["x", "y", "z", "dim"]),
-        # TODO(GRA-855): batched matmul rank > 4
+        # TODO(GEX-855): batched matmul rank > 4
         # TensorType(DType.float32, ["a", "x", "y", "z", "dim"]),
         TensorType(DType.float64, ["dim"]),
     ],
