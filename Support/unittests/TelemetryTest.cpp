@@ -10,6 +10,8 @@
 #include "Support/Telemetry/Logs.h"
 #include "llvm/Support/MemoryBuffer.h"
 
+#include <cstdlib>
+#include <fstream>
 #include <thread>
 
 #include <stdlib.h>
@@ -527,4 +529,83 @@ TEST(Telemetry, LocalIDs) {
       },
       testing::ExitedWithCode(0), "");
 }
+
+// RAII utility for overriding an environment variable.
+struct EnvSetter {
+  EnvSetter(StringRef name, StringRef newValue)
+      : name(name), oldValue(std::getenv(name.data())) {
+    setenv(name.data(), newValue.data(), true);
+  }
+
+  ~EnvSetter() {
+    if (oldValue)
+      setenv(name.data(), oldValue, true);
+    else
+      unsetenv(name.data());
+  }
+
+private:
+  StringRef name;
+  const char *oldValue = nullptr;
+};
+
+TEST(Telemetry, ModularEmployee) {
+  ErrorOr<TempDir> tempHome =
+      TempDir::create("telemetry-modularemployee-%%%%%%%%");
+  EXPECT_FALSE(tempHome.isError()) << tempHome.getError();
+  EnvSetter homeOverride("HOME", tempHome->getPath().c_str());
+
+  auto checkTelemetry = [&](bool expectedValue) {
+    LogFileSetup logFileSetup("logs");
+    TempFile tmpFile = logFileSetup.getLogFile("log", "1");
+    Settings settings(logFileSetup.getConfig(),
+                      EntitlementStore::alwaysOpen(llvm::errs()));
+
+    TelemetryContext ctx(settings, {});
+
+    auto logger = ctx.getLogger("basic.log");
+    logger->emitL0Event("test.ModularEmployee");
+    ctx.flush();
+
+    auto err = readFileUnderLock(
+        tmpFile.getPath(), [&](const std::filesystem::path &path) {
+          auto mbufOr = llvm::MemoryBuffer::getFile(path.string(),
+                                                    /*IsText=*/true);
+          EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
+          std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
+
+          auto getLineStartingAt = [&](auto pos) {
+            StringRef str = mbuf->getBuffer().substr(pos);
+            return str.take_until([](char c) { return c == '\n'; });
+          };
+
+          bool eventFound = false;
+          iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
+            auto eventNamePos = message.find("event.name");
+            StringRef eventNameLine = getLineStartingAt(eventNamePos);
+            if (eventNameLine.split(':').second.trim() !=
+                "test.ModularEmployee")
+              return;
+
+            eventFound = true;
+
+            auto resourcePos = message.find("modular.employee");
+            StringRef resourceLine = getLineStartingAt(resourcePos);
+            EXPECT_EQ(resourceLine.split(':').second.trim(),
+                      expectedValue ? StringRef("1") : StringRef("0"));
+          });
+
+          EXPECT_TRUE(eventFound) << "expected to find event in file";
+        });
+    EXPECT_FALSE(err.isError()) << err.getError();
+  };
+
+  checkTelemetry(false);
+
+  // Create the marker file that signals Modular employee status.
+  std::ofstream(tempHome->getPath() / ".modular-internal");
+
+  checkTelemetry(true);
+}
+
 #endif // MODULAR_ENABLE_TELEMETRY

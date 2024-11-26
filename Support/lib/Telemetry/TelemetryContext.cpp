@@ -50,6 +50,7 @@
 #define TEST_UDS 0
 
 #include <algorithm> // For std::sort.
+#include <cstdlib>   // For std::getenv
 
 #define DEBUG_TYPE "telemetry-context"
 
@@ -61,6 +62,15 @@ using namespace Exporter;
 
 /// Modular's public telemetry endpoint.
 constexpr StringRef kTelemetryUrl = MODULAR_TELEMETRY_URL;
+
+static bool isModularEmployee() {
+  const char *home = std::getenv("HOME");
+  if (home == nullptr)
+    return false;
+
+  return std::filesystem::exists(std::filesystem::path(home) /
+                                 ".modular-internal");
+}
 
 static Level levelFromString(StringRef levelStr) {
   if (levelStr.empty())
@@ -289,6 +299,8 @@ TelemetryContext::TelemetryContext(
   if (!webId.empty()) {
     attrs.SetAttribute("web.user.id", webId);
   }
+
+  attrs.SetAttribute("modular.employee", isModularEmployee());
 
   // Set the values of any resources we've been provided.
   for (auto &resource : resources) {
