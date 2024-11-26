@@ -358,7 +358,7 @@ class Spec:
             )
         try:
             return Spec.loads(file.read_text())
-        except Exception as exc:
+        except Exception:
             raise ValueError(f"Could not load spec from {file}")
 
     @staticmethod
