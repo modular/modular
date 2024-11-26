@@ -67,10 +67,11 @@ TypedAttr LIT::getOriginsAccessibleByParams(PogListAttr paramList,
 }
 
 bool LIT::canSynthesizeIfMissing(StringRef name, bool rpTrivial,
-                                 bool regPassable) {
+                                 bool regPassable,
+                                 bool implicitlyDestructible) {
   // Allow types that lack `__del__` to conform. A no-op destructor will be
   // synthesized for them.
-  if (name == "__del__")
+  if (implicitlyDestructible && name == "__del__")
     return true;
   // Trivial types are not allowed to have explicit `__copyinit__` methods, so
   // if the trait requires them, consider them automatically satisfied by

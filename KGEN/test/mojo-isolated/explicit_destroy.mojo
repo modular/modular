@@ -1,0 +1,52 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
+
+
+struct MyAffine:
+    fn __init__(inout self):
+        pass
+
+# CHECK-LABEL: @testAffineThing
+fn testAffineThing():
+    var l = MyAffine()
+    # CHECK: __del__
+
+
+@explicit_destroy
+struct EmptyExplicit:
+    fn __init__(inout self):
+        pass
+
+    # CHECK-LABEL: @consume
+    fn consume(owned self):
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
+        # CHECK-NOT: lit.call {{.*}}__del__
+
+fn correctUseExample():
+    var l = EmptyExplicit()
+    l^.consume()
+
+
+struct ImplicitlyDestructibleContainerOfExplicit:
+    var m: EmptyExplicit
+    fn __init__(inout self):
+        self.m = EmptyExplicit()
+    fn __del__(owned self):
+        self.m^.consume()
+
+fn foo1[T: Movable](owned x: T) -> T:
+    # Is fine, we move it away instead of calling x.__del__()
+    return x^
+
+fn foo2[T: UnknownDestructibility](x: T):
+    # Is fine, since x is a borrow
+    pass
+
+fn foo3[T: ImplicitlyDestructible](owned x: T):
+    # Is fine, there's a x.__del__() available
+    pass

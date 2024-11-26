@@ -853,7 +853,7 @@ struct LegacyInOutInit:
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType, !Copyable, !Movable)
+# CHECK-LABEL: lit.struct.decl @ValueMem(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable)
 # CHECK: move :!lit.signature<[2]({{.*}} init_self, {{.*}} owned_in_mem, |) {{.*}}ValueMem::@"__moveinit__
 @value
 struct ValueMem:
@@ -898,7 +898,7 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store [[TMP]], %[[PB]]
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType, !Copyable, !Movable)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable)
 @value
 struct ValueMemHasCopy:
     var a: Int
@@ -909,7 +909,7 @@ struct ValueMemHasCopy:
         self.b = other.b
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType, !Copyable, !Movable)
+# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable)
 @value
 struct ValueMemHasMove:
     var a: Int
@@ -921,7 +921,7 @@ struct ValueMemHasMove:
 
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
-# CHECK-SAME: (!AnyType, !Copyable, !Movable) register_passable_trivial
+# CHECK-SAME: (!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable) register_passable_trivial
 
 # CHECK: lit.func @"__copyinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> borrow_in_mem, |) -> !kgen.none always_inline_no_debug
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.load %1 : <!ValueRegTrivial
@@ -974,7 +974,7 @@ struct ValueReg:
 
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo(!AnyType, !Copyable, !Movable) attributes
+# CHECK-LABEL: lit.struct.decl @Foo(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable) attributes
 @value
 struct Foo:
     var a: Int

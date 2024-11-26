@@ -1080,8 +1080,8 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
 
 bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
 
-/// Lookup a builtin trait like `AnyType`, `Copyable`, `Movable` etc.  On error
-/// this returns null but does not print an error.
+/// Lookup a builtin trait like `AnyType`, `ImplicitlyDestructible`, `Copyable`,
+/// `Movable` etc.  On error this returns null but does not print an error.
 ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, ASTDecl *context,
                                          SMLoc loc) {
   LookupResult lookup = lookupAndResolveDecl(traitName, loc, *context, true);
