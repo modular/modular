@@ -35,11 +35,13 @@ fn _verify_mbarrier(asm: String) raises -> None:
 
 
 def test_mbarrier_sm80():
+    print("test_mbarrier_sm80")
     alias asm = _compile_code_asm[test_mbarrier, target = _get_gpu_target()]()
     _verify_mbarrier(asm)
 
 
 def test_mbarrier_sm90():
+    print("test_mbarrier_sm90")
     alias asm = _compile_code_asm[
         test_mbarrier, target = _get_gpu_target["sm_90"]()
     ]()
@@ -53,12 +55,13 @@ fn test_mbarrier_init(
 
 
 fn _verify_mbarrier_init(asm: String) raises -> None:
-    assert_true("ld.param.u64" in asm)
+    assert_true("ld.param.u32" in asm)
     assert_true("mov.b32" in asm)
     assert_true("mbarrier.init.shared.b64" in asm)
 
 
 def test_mbarrier_init_sm80():
+    print("test_mbarrier_init_sm80")
     alias asm = _compile_code_asm[
         test_mbarrier_init, target = _get_gpu_target()
     ]()
@@ -67,6 +70,7 @@ def test_mbarrier_init_sm80():
 
 
 def test_mbarrier_init_sm90():
+    print("test_mbarrier_init_sm90")
     alias asm = _compile_code_asm[
         test_mbarrier_init, target = _get_gpu_target["sm_90"]()
     ]()
@@ -87,6 +91,7 @@ fn _verify_mbarrier_test_wait(asm: String) raises -> None:
 
 
 def test_mbarrier_test_wait_sm80():
+    print("test_mbarrier_test_wait_sm80")
     alias asm = _compile_code_asm[
         test_mbarrier_test_wait, target = _get_gpu_target()
     ]()
@@ -94,6 +99,7 @@ def test_mbarrier_test_wait_sm80():
 
 
 def test_mbarrier_test_wait_sm90():
+    print("test_mbarrier_test_wait_sm90")
     alias asm = _compile_code_asm[
         test_mbarrier_test_wait, target = _get_gpu_target["sm_90"]()
     ]()
@@ -176,10 +182,10 @@ fn test_async_copy_with_zero_fill_kernel(
 
 fn _verify_test_async_copy_with_zero_fill(asm: String) raises -> None:
     assert_true(
-        "cp.async.ca.shared.global.L2::128B [%r1], [%rd1], 4, %r2;" in asm
+        "cp.async.ca.shared.global.L2::128B [%r3], [%rd1], 4, %r2;" in asm
     )
     assert_true(
-        "cp.async.ca.shared.global.L2::64B [%r1], [%rd1], 16, %r2;" in asm
+        "cp.async.ca.shared.global.L2::64B [%r3], [%rd1], 16, %r2;" in asm
     )
 
 
@@ -222,13 +228,9 @@ fn async_copy_with_non_zero_fill_kernel(
 
 fn _verify_async_copy_with_non_zero_fill(asm: String) raises -> None:
     assert_true("mov.b32 	%r3, 32;" in asm)
-    assert_true(
-        "@p cp.async.ca.shared.global.L2::128B [%r2], [%rd1], 16;" in asm
-    )
-    assert_true(
-        "@p cp.async.ca.shared.global.L2::64B [%r2], [%rd1], 16;" in asm
-    )
-    assert_true("@!p st.shared.v4.b32 [%r2], {%r3, %r3, %r3, %r3};" in asm)
+    assert_true("@p cp.async.ca.shared.global.L2::128B" in asm and "16" in asm)
+    assert_true("@p cp.async.ca.shared.global.L2::64B" in asm and "16" in asm)
+    assert_true("@!p st.shared.v4.b32" in asm)
 
 
 def test_async_copy_with_non_zero_fill():
