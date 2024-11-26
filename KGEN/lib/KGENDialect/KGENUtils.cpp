@@ -674,9 +674,9 @@ static bool isLegalMLIRIdentifier(StringRef name) {
 /// TODO: Can't interact directly with the MLIR AsmParser.
 static bool isMLIRBuiltinType(StringRef name) {
   // Check for a keyword type.
-  static const char *keywordTypes[] = {"f8e5m2", "f8e4m3", "f8e3m4", "bf16",
-                                       "f16",    "f32",    "f64",    "f80",
-                                       "f128",   "index",  "none"};
+  static const char *keywordTypes[] = {
+      "f8e5m2", "f8e4m3", "f8e3m4", "f8e5m2fnuz", "f8e4m3fnuz", "bf16", "f16",
+      "f32",    "f64",    "f80",    "f128",       "index",      "none"};
   if (llvm::is_contained(keywordTypes, name))
     return true;
   // Check for an integral type: (s|u)*i[0-9]+

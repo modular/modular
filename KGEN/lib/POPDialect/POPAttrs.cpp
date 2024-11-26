@@ -58,8 +58,12 @@ const llvm::fltSemantics &DTypeValue::getFloatSemantics(KGENDType dtype) {
   switch (dtype.getValue()) {
   case DType::f8e5m2:
     return APFloat::Float8E5M2();
+  case DType::f8e5m2fnuz:
+    return APFloat::Float8E5M2FNUZ();
   case DType::f8e4m3:
     return APFloat::Float8E4M3();
+  case DType::f8e4m3fnuz:
+    return APFloat::Float8E4M3FNUZ();
   case DType::f8e3m4:
     return APFloat::Float8E3M4();
   case DType::f16:

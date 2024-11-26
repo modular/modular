@@ -14,8 +14,12 @@ bool M::areEquivalentFloatTypes(DType dtype, FloatType fpType) {
   switch (dtype.getValue()) {
   case DType::f8e5m2:
     return llvm::isa<Float8E5M2Type>(fpType);
+  case DType::f8e5m2fnuz:
+    return llvm::isa<Float8E5M2FNUZType>(fpType);
   case DType::f8e4m3:
     return llvm::isa<Float8E4M3Type>(fpType);
+  case DType::f8e4m3fnuz:
+    return llvm::isa<Float8E4M3FNUZType>(fpType);
   case DType::f8e3m4:
     return llvm::isa<Float8E3M4Type>(fpType);
   case DType::f16:
@@ -39,8 +43,12 @@ FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
   switch (dtype.getValue()) {
   case DType::f8e5m2:
     return FloatType::getFloat8E5M2(ctx);
+  case DType::f8e5m2fnuz:
+    return FloatType::getFloat8E5M2FNUZ(ctx);
   case DType::f8e4m3:
     return FloatType::getFloat8E4M3(ctx);
+  case DType::f8e4m3fnuz:
+    return FloatType::getFloat8E4M3FNUZ(ctx);
   case DType::f8e3m4:
     return FloatType::getFloat8E3M4(ctx);
   case DType::f16:
@@ -65,7 +73,9 @@ FloatType M::getEquivalentFloatType(MLIRContext *ctx, DType dtype) {
 bool M::hasEquivalentFloatType(DType dtype) {
   switch (dtype.getValue()) {
   case DType::f8e5m2:
+  case DType::f8e5m2fnuz:
   case DType::f8e4m3:
+  case DType::f8e4m3fnuz:
   case DType::f8e3m4:
   case DType::f16:
   case DType::bf16:
@@ -96,8 +106,12 @@ bool M::hasEquivalentIntegerType(DType dtype) {
 DType M::getEquivalentDType(FloatType fpType) {
   if (fpType.isFloat8E5M2())
     return DType::f8e5m2;
+  if (fpType.isFloat8E5M2FNUZ())
+    return DType::f8e5m2fnuz;
   if (fpType.isFloat8E4M3())
     return DType::f8e4m3;
+  if (fpType.isFloat8E4M3FNUZ())
+    return DType::f8e4m3fnuz;
   if (fpType.isFloat8E3M4())
     return DType::f8e3m4;
   if (fpType.isF16())
