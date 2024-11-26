@@ -168,7 +168,7 @@ struct Foo:
 fn toNDBuffer[
     out_dtype: DType, out_rank: Int
 ](tensor: ManagedTensorSlice) -> NDBuffer[out_dtype, out_rank]:
-    # TODO(GRA-734): forward other static params automatically
+    # TODO(GEX-734): forward other static params automatically
     return rebind[NDBuffer[out_dtype, out_rank]](
         NDBuffer[tensor.type, tensor.rank](
             tensor._ptr, tensor.get_runtime_spec().shape

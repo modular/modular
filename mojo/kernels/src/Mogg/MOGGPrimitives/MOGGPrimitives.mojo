@@ -215,7 +215,7 @@ fn create_i1_async(
 
 
 # TODO: this should contain a pointer or reference to the DeviceContext, NOT
-# a copy of it. This is not possible until GRA-902 is resolved.
+# a copy of it. This is not possible until GEX-902 is resolved.
 alias DeviceBufferMojoValueType = Tuple[DeviceContext, UnsafePointer[Int8]]
 
 
@@ -258,7 +258,7 @@ fn create_buffer_ref_async[
     ](size, align)
     # Note: We need to make a copy of the DeviceContext here because the graph
     # compiler does not share the same DeviceContext object as the MAX Driver
-    # (GRA-902). The members are shared so this is OK.
+    # (GEX-902). The members are shared so this is OK.
     # The DeviceContext is currently really big (1700B) so this needs to be fixed.
     mojo_value_ptr.init_pointee_move(
         (call_ctx.get_device_context(), buffer.data)

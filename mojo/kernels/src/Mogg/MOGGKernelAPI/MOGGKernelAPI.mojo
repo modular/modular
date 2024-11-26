@@ -420,7 +420,7 @@ fn index_tensor_primitive[
 # Helpers
 # ===----------------------------------------------------------------------===#
 
-# TODO(GRA-914): Properly support scalars.
+# TODO(GEX-914): Properly support scalars.
 alias ScalarTensor = ManagedTensorSlice[rank=1]
 
 
@@ -2265,7 +2265,7 @@ struct Transpose:
             output, Self.transpose_in_place(input, permutations), ctx
         )
 
-    # TODO(GRA-1033) Make it possible to have multiple raises.
+    # TODO(GEX-1033) Make it possible to have multiple raises.
     @no_inline
     @staticmethod
     fn shape_impl(
@@ -3228,7 +3228,7 @@ struct GatherND:
 
 @compiler.register("mo.gather")
 struct Gather:
-    # TODO(GRA-1298): Re-enable fusion
+    # TODO(GEX-1298): Re-enable fusion
     # @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
@@ -3393,7 +3393,7 @@ struct LayerNorm:
         return input._spec.shape
 
 
-# TODO(GRA-1216): This kernel slows down pipeline by 2x for some reason.
+# TODO(GEX-1216): This kernel slows down pipeline by 2x for some reason.
 # Likely due to something related to fusion.
 @compiler.register("rms_norm")
 struct RMSNorm:
@@ -4147,7 +4147,7 @@ fn concat_shape_impl[
     return output_shape
 
 
-# TODO(GRA-1263): Cleanup mo.concat code hack to get the tuple of inputs lambdas.
+# TODO(GEX-1263): Cleanup mo.concat code hack to get the tuple of inputs lambdas.
 @always_inline("nodebug")
 fn statictuple_setitem__[
     element_type: AnyTrivialRegType,
@@ -4191,14 +4191,14 @@ fn get_inputs_lambdas[
 
 @compiler.register("mo.concat")
 struct Concat:
-    # TODO(GRA-1299): Re-enable concat fusion
+    # TODO(GEX-1299): Re-enable concat fusion
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         synchronous: Bool,
         target: StringLiteral,
-        # TODO(GRA-1116): Support input fusion for concat
+        # TODO(GEX-1116): Support input fusion for concat
         # lambdas_have_fusion: Bool,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
@@ -6270,7 +6270,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_bshd:
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
 
 
-# TODO(GRA-1216): Under new path, this leads to 50% drop in pipeline throughput
+# TODO(GEX-1216): Under new path, this leads to 50% drop in pipeline throughput
 @compiler.register("fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch")
 struct Struct_fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch:
     @uses_opaque
