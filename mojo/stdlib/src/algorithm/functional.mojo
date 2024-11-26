@@ -880,6 +880,7 @@ fn tile_and_unswitch[
 
     # Initialize where to start on the overall work load.
     var current_offset = offset
+    var remaining = upperbound - offset
 
     @parameter
     for idx in range(len(tile_size_list)):
@@ -888,14 +889,15 @@ fn tile_and_unswitch[
 
         # Process work with the tile size until there's not enough remaining work
         #  to fit in a tile.
-        while current_offset <= upperbound - tile_size:
+        while remaining >= tile_size:
             workgroup_function[tile_size_list[idx], True](
                 current_offset, upperbound
             )
             current_offset += tile_size
+            remaining -= tile_size
 
     # Use the last tile size to process the residue.
-    if current_offset < upperbound:
+    if remaining > 0:
         workgroup_function[tile_size_list[len(tile_size_list) - 1], False](
             current_offset, upperbound
         )

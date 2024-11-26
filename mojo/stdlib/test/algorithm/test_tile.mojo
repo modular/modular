@@ -223,6 +223,11 @@ fn test_tile_and_unswitch():
     tile_and_unswitch[
         print_number_static_unswitched, VariadicList[Int](4, 3, 2)
     ](1, 6)
+    # CHECK: (4, 4, 8)
+    # CHECK: Unswitched: True
+    tile_and_unswitch[print_number_static_unswitched, VariadicList[Int](4, 1)](
+        4, 8
+    )
 
 
 fn test_tile_middle_unswitch_boundaries():
