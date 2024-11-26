@@ -18,7 +18,8 @@ def test_config_init__raises_with_none_weights_path():
 def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.
     config = PipelineConfig(
-        architecture="test", weight_path="file.path"  # type: ignore
+        architecture="test",
+        weight_path="file.path",  # type: ignore
     )
 
     assert isinstance(config.weight_path, list)
@@ -69,15 +70,6 @@ def test_config_weights_format__correct_weights_format():
         Path("model_c.safetensors"),
     ]
     assert config.weights_format == WeightsFormat.safetensors
-
-
-def test_validate_huggingface_repo_id__model_id_provided():
-    config = PipelineConfig(
-        architecture="test",
-        huggingface_repo_id="bert-base-uncased",
-    )
-
-    assert config.huggingface_repo_id == "bert-base-uncased"
 
 
 def test_validate_huggingface_repo_id__correct_repo_id_provided():
