@@ -389,7 +389,7 @@ fn layer_norm_gpu[
     epsilon: Scalar[type],
     output: NDBuffer[type, rank, *_],
     *,
-    context: DeviceContext,
+    ctx: DeviceContext,
 ) raises:
     if rank == 0:
         return
@@ -415,7 +415,7 @@ fn layer_norm_gpu[
         return input_fn[simd_width](indices.canonicalize())
 
     alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
-    alias max_warps_per_block = 32
+    alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
     var block_dim = min(
@@ -428,10 +428,10 @@ fn layer_norm_gpu[
         # registers we do warp tiling which is a single pass to do mean/var
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
-            var gpu_func = context.compile_function[
+            var gpu_func = ctx.compile_function[
                 layer_norm_gpu_warp_tiling[simd_width, input_fn_2d, gamma_fn]
             ]()
-            context.enqueue_function(
+            ctx.enqueue_function(
                 gpu_func,
                 output_rs,
                 beta,
@@ -440,10 +440,10 @@ fn layer_norm_gpu[
                 block_dim=block_dim,
             )
         else:
-            var gpu_func = context.compile_function[
+            var gpu_func = ctx.compile_function[
                 layer_norm_gpu_block[simd_width, input_fn_2d, gamma_fn]
             ]()
-            context.enqueue_function(
+            ctx.enqueue_function(
                 gpu_func,
                 output_rs,
                 beta,
@@ -452,10 +452,10 @@ fn layer_norm_gpu[
                 block_dim=block_dim,
             )
     else:
-        var gpu_func = context.compile_function[
+        var gpu_func = ctx.compile_function[
             layer_norm_gpu_block[1, input_fn_2d, gamma_fn]
         ]()
-        context.enqueue_function(
+        ctx.enqueue_function(
             gpu_func,
             output_rs,
             beta,
@@ -652,7 +652,7 @@ fn layer_norm[
                 beta,
                 epsilon,
                 output,
-                context=ctx.get_device_context(),
+                ctx=ctx.get_device_context(),
             )
         else:
             constrained[False, "unsupported target " + target]()
@@ -806,7 +806,7 @@ fn rms_norm_gpu[
         return input_fn[simd_width](indices.canonicalize())
 
     alias simd_width = simdwidthof[type, target = _get_gpu_target()]()
-    alias max_warps_per_block = 32
+    alias max_warps_per_block = ctx.device_info.max_thread_block_size // WARP_SIZE
 
     var grid_dim = rows
     var block_dim = min(
