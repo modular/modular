@@ -173,7 +173,7 @@ class _MojoMagic(IPython.core.magic.Magics):
             self.func = None
 
         if not self.func:
-            _vlog(f"reloading %%mojo extension")
+            _vlog("reloading %%mojo extension")
             self.func = _load_function()
 
         uid = uuid.uuid4().hex
