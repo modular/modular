@@ -200,7 +200,6 @@ modular_py_library(
     name = "modular_graph_test",
     srcs = ["graph_tests/modular_graph_test.py"],
     imports = ["graph_tests"],
-    precompile = "disabled",
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/lib/API/python/max/driver",
