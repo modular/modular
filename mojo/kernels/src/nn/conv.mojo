@@ -2591,7 +2591,9 @@ fn pack_filter_shape[
 @always_inline
 fn _get_group_filter_base(
     packed_filter: NDBuffer, group_idx: Int, f_per_group: Int
-) -> UnsafePointer[Scalar[packed_filter.type], packed_filter.address_space]:
+) -> UnsafePointer[
+    Scalar[packed_filter.type], address_space = packed_filter.address_space
+]:
     """Returns the pointer of the input group's start in the packed filter."""
     # Each group is zero padded to
     #     ceildiv(F_per_group, micro_kernel_width)

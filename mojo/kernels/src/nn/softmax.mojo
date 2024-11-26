@@ -984,8 +984,8 @@ fn _online_softmax_iter_for_mma_output[
     output_reg_tile: LayoutTensor[type, *_, **_],
     p_reg_tile: LayoutTensor[type, *_, **_],
     warp_scratch: LayoutTensor[type, *_, **_],
-    rowmax: UnsafePointer[Scalar[type], *_, **_],
-    rowsum: UnsafePointer[Scalar[type], *_, **_],
+    rowmax: UnsafePointer[Scalar[type], **_],
+    rowsum: UnsafePointer[Scalar[type], **_],
 ):
     constrained[num_m_mmas * num_n_mmas == p_reg_tile.shape[0]()]()
 

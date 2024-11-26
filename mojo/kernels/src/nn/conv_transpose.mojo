@@ -1123,7 +1123,9 @@ fn accumulate_wo_tile[
 @always_inline
 fn _get_group_filter_base(
     packed_filter: NDBuffer, group_idx: Int, f_per_group: Int
-) -> UnsafePointer[Scalar[packed_filter.type], packed_filter.address_space]:
+) -> UnsafePointer[
+    Scalar[packed_filter.type], address_space = packed_filter.address_space
+]:
     # TODO: support groups > 1.
     return packed_filter.data
 
