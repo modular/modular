@@ -30,8 +30,8 @@ from transformers.models.mllama.modeling_mllama import (
 )
 
 BATCH_SIZE = 1
-ACCURACY_RTOL = 1e-2
-ACCURACY_ATOL = 1e-2
+ACCURACY_RTOL = 1e-10
+ACCURACY_ATOL = 1e-10
 
 
 class TorchAttention(nn.Module):
@@ -68,7 +68,7 @@ class TorchAttention(nn.Module):
 
 
 def _attention_layer(
-    config: MllamaTextConfig, layer_idx: int
+    config: MllamaTextConfig, seq_len: int, layer_idx: int
 ) -> tuple[Graph, Any]:
     dim = config.hidden_size
     n_heads = config.num_attention_heads
@@ -76,7 +76,7 @@ def _attention_layer(
     head_dim = dim // n_heads
 
     dtype = DType.float32
-    input_type = TensorType(dtype, [BATCH_SIZE, "seq_len", dim])
+    input_type = TensorType(dtype, [BATCH_SIZE, seq_len, dim])
     wq_type = TensorType(dtype, [n_heads * head_dim, config.hidden_size])
     wk_type = TensorType(dtype, [n_kv_heads * head_dim, config.hidden_size])
     wv_type = TensorType(dtype, [n_kv_heads * head_dim, config.hidden_size])
@@ -190,7 +190,7 @@ def test_self_attention(session, start_pos, seq_len):
 
     # Set up MAX Graph attention layer.
     layer_graph, kv_cache_inputs = _attention_layer(
-        config=test_config, layer_idx=layer_idx
+        config=test_config, seq_len=seq_len, layer_idx=layer_idx
     )
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_cache_inputs
@@ -229,18 +229,16 @@ def test_self_attention(session, start_pos, seq_len):
             8: lookup_table_tensor.to_numpy(),
             9: is_cache_empty_buf.to_numpy(),
         },
-        # max_magnitude=1 / 64,
     )
     def test_correctness(execute, inputs, torch_inputs):
-        # TODO: I get a segfault on execute() call here. Debug and fix it.
         inputs = list(inputs)
-        # result = execute(inputs)
-        # assert np.any(result != np.nan)
-        # assert np.any(result != np.inf)
+        result = execute(inputs)
 
         x, wq, wk, wv, wo, *_ = torch_inputs
         # position_embeddings
-        partial_tensor = torch.randn(BATCH_SIZE, 1, 128, dtype=torch.bfloat16)
+        partial_tensor = torch.randn(
+            BATCH_SIZE, 1, seq_len, dtype=torch.bfloat16
+        )
         positional_embeddings = [partial_tensor, partial_tensor]
         expected = (
             torch_attention(x, wq, wk, wv, wo, positional_embeddings)
@@ -248,14 +246,13 @@ def test_self_attention(session, start_pos, seq_len):
             .numpy()
         )
 
-        # TODO: Do actual functional correctness test(s).
-        # # TODO(MSDK-1071): Consolidate and figure out how to call
-        # # assert_allclose(result, expected) to fire again on mismatched
-        # # tensor values.
-        # np.testing.assert_allclose(
-        #     result,
-        #     expected,
-        #     atol=ACCURACY_ATOL,
-        #     rtol=ACCURACY_RTOL,
-        #     equal_nan=True,
-        # )
+        # TODO(MSDK-1071): Consolidate and figure out how to call
+        # assert_allclose(result, expected) to fire again on mismatched
+        # tensor values.
+        np.testing.assert_allclose(
+            result,
+            expected,
+            atol=ACCURACY_ATOL,
+            rtol=ACCURACY_RTOL,
+            equal_nan=True,
+        )
