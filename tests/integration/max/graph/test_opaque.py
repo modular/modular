@@ -135,7 +135,7 @@ class PythonCounter:
 
 
 # Disabling until we get function signatures sorted.
-@pytest.mark.skip(reason="GRA-1005")
+@pytest.mark.skip(reason="GEX-1005")
 def test_pyobject_opaque(
     session: InferenceSession, counter_ops_path: Path
 ) -> None:
