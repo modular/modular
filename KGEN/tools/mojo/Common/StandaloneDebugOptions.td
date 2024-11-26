@@ -37,11 +37,11 @@ def vscode: Flag<["--", "-"], "vscode">,
   HelpText<"Launches the debug session on VS Code via the Mojo extension.">;
 
 def rpc: Flag<["--", "-"], "rpc">,
-  Group<DebugServerOptionGroup>, Index<1>,
+  Group<DebugServerOptionGroup>, Index<2>,
   HelpText<"Alias for --vscode.">;
 
 defm terminal: CommandOptionWithValues<
-          ["--"], "terminal", DebugServerOptionGroup, Index<2>,
+          ["--"], "terminal", DebugServerOptionGroup, Index<3>,
           MetaVarName<"TERMINAL">,
           HelpText<"The type of terminal to use when starting a launch debug "
                    "session.\n\n"
@@ -53,16 +53,16 @@ defm terminal: CommandOptionWithValues<
           Values<"console,integrated">>;
 
 defm port: CommandOption<["--", "-"], "port",
-  DebugServerOptionGroup, Index<3>, MetaVarName<"PORT">,
+  DebugServerOptionGroup, Index<4>, MetaVarName<"PORT">,
   HelpText<"Uses the given PORT to communicate with the RPC debug server. "
            "Defaults to trying all ports from 12355 to 12364 inclusive.">>;
 
 def stopOnEntry: Flag<["--", "-"], "stop-on-entry">,
-  Group<DebugServerOptionGroup>, Index<4>,
+  Group<DebugServerOptionGroup>, Index<5>,
   HelpText<"Automatically stop after launch.">;
 
 defm initCommand: CommandOption<["--", "-"], "init-command",
-  DebugServerOptionGroup, Index<5>, MetaVarName<"INIT_COMMAND">,
+  DebugServerOptionGroup, Index<6>, MetaVarName<"INIT_COMMAND">,
   HelpText<"Initialization command executed upon debugger startup. Can be "
            "specified multiple times.">>;
 
