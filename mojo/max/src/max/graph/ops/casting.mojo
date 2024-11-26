@@ -272,7 +272,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
     return reshape(v, new_shape, dims)
 
 
-# TODO(GRA-578): Remove old reshape apis once we have dim expressions and remove dynamic dimensions.
+# TODO(GEX-578): Remove old reshape apis once we have dim expressions and remove dynamic dimensions.
 # Only this version should be needed in the future.
 def reshape(v: Symbol, shape: List[Dim]) -> Symbol:
     """Reshapes a symbolic tensor.

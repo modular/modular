@@ -170,7 +170,7 @@ struct Symbol(CollectionElement, Stringable, Writable):
             List[Dim](),
         )
 
-    # TODO(GRA-578): Once reshape with Variant[Symbol, Int] is removed, we can also remove this.
+    # TODO(GEX-578): Once reshape with Variant[Symbol, Int] is removed, we can also remove this.
     # Will only need Variant[Dim, Int].
     @always_inline
     fn reshape(self, *dims: Int) raises -> Symbol:
@@ -186,7 +186,7 @@ struct Symbol(CollectionElement, Stringable, Writable):
         """
         return self._reshape_impl(dims, __call_location())
 
-    # TODO(GRA-578): Once reshape with Variant[Symbol, Int] is removed, we can also remove this.
+    # TODO(GEX-578): Once reshape with Variant[Symbol, Int] is removed, we can also remove this.
     # Will only need Variant[Dim, Int].
     fn _reshape_impl(
         self, dims: VariadicList[Int], call_loc: _SourceLocation

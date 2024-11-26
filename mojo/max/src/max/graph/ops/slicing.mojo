@@ -315,7 +315,7 @@ def slice(
                 + ". Please set out_dims.",
                 loc,
             )
-        # TODO(GRA-578): This should be handled by the slice op builder.
+        # TODO(GEX-578): This should be handled by the slice op builder.
         # It should raise if the slice may load the wrong number of elements.
         # Technically this is based on the last loaded index rather than the end.
         if length and slice.end and slice.end.value() > int(length.value()):

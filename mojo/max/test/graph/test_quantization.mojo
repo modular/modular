@@ -58,7 +58,7 @@ def test_quantize_bfloat16():
 
     # Add zeros with the weights as a "pseudo identity" op.
     # Otherwise the API/runtime returns an invalid stack address as output.
-    # TODO(GRA-498): Fix issue returning mgp.buffer.constant directly.
+    # TODO(GEX-498): Fix issue returning mgp.buffer.constant directly.
     g.output(bfloat16_symbol + g[0])
 
     zeros = Tensor[DType.uint8](TensorShape(num_tokens, 2 * channels))
@@ -130,7 +130,7 @@ def test_quantize_q4_0():
     # Quantize the float32 token embeddings to q4_0.
     q4_0_symbol = g.quantize[Q4_0Encoding](f32_tensor)
 
-    # TODO(GRA-498): Remove pseudo-identity once GRA-498 is fixed.
+    # TODO(GEX-498): Remove pseudo-identity once GEX-498 is fixed.
     g.output(q4_0_symbol + g[0])
 
     zeros = Tensor[DType.uint8](TensorShape(num_rows, 2 * sizeof[BlockQ40]()))
@@ -387,7 +387,7 @@ def test_quantize_q4_k():
     # Quantize the float32 token embeddings to q4_k.
     q4_k_symbol = g.quantize[Q4_KEncoding](f32_tensor)
 
-    # TODO(GRA-498): Remove pseudo-identity once GRA-498 is fixed.
+    # TODO(GEX-498): Remove pseudo-identity once GEX-498 is fixed.
     g.output(q4_k_symbol + g[0])
 
     zeros = Tensor[DType.uint8](TensorShape(num_rows, 2 * sizeof[BlockQ4K]()))
@@ -626,7 +626,7 @@ def test_quantize_q5_k():
     # Quantize the float32 token embeddings to q5_k.
     q5_k_symbol = g.quantize[Q5_KEncoding](f32_tensor)
 
-    # TODO(GRA-498): Remove pseudo-identity once GRA-498 is fixed.
+    # TODO(GEX-498): Remove pseudo-identity once GEX-498 is fixed.
     g.output(q5_k_symbol + g[0])
 
     zeros = Tensor[DType.uint8](TensorShape(num_rows, 2 * sizeof[BlockQ5K]()))
@@ -888,7 +888,7 @@ def test_quantize_q6_k():
     # Quantize the float32 token embeddings to q6_k.
     q6_k_symbol = g.quantize[Q6_KEncoding](f32_tensor)
 
-    # TODO(GRA-498): Remove pseudo-identity once GRA-498 is fixed.
+    # TODO(GEX-498): Remove pseudo-identity once GEX-498 is fixed.
     g.output(q6_k_symbol + g[0])
 
     zeros = Tensor[DType.uint8](TensorShape(num_rows, 2 * sizeof[BlockQ6K]()))

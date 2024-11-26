@@ -149,7 +149,7 @@ fn test_rebind() raises:
 def main():
     test_reshape()
     test_reshape_error()
-    # TODO(GRA-578): Once we have dim expression in, test a runtime negative number.
+    # TODO(GEX-578): Once we have dim expression in, test a runtime negative number.
     test_reshape_runtime_zero()
     test_broadcast_to()
     test_broadcast_to_error()
