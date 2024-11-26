@@ -39,6 +39,75 @@ alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
 
 
+def _initialize_ragged_inputs[
+    type: DType, hidden_size: Int
+](
+    inout input_row_offset_host: HostNDBuffer[DType.uint32, 1],
+    batch_size: Int,
+    prompt_lens: List[Int],
+    ctx: DeviceContext,
+) -> (
+    DeviceNDBuffer[DType.uint32, 1],
+    DeviceNDBuffer[type, 2, DimList(Dim(), hidden_size)],
+    DeviceNDBuffer[type, 2, DimList(Dim(), hidden_size)],
+):
+    """Initializes input row offsets and hidden state ragged tensor inputs."""
+    total_length = 0
+    max_seq_length_batch = -1
+    for i in range(batch_size):
+        input_row_offset_host.tensor[i] = total_length
+
+        curr_len = prompt_lens[i]
+        total_length += curr_len
+        if curr_len > max_seq_length_batch:
+            max_seq_length_batch = curr_len
+
+    input_row_offset_host.tensor[batch_size] = total_length
+    input_row_offset_device = input_row_offset_host.copy_to_device(ctx)
+
+    # Initialize ragged hidden state.
+    hidden_state_ragged_host = HostNDBuffer[
+        type, 2, DimList(Dim(), hidden_size)
+    ](IndexList[2](total_length, hidden_size))
+
+    random(hidden_state_ragged_host.tensor)
+
+    hidden_state_ragged_device = hidden_state_ragged_host.copy_to_device(ctx)
+
+    # Initialize padded hidden state.
+    hidden_state_padded_host = HostNDBuffer[
+        type, 2, DimList(Dim(), hidden_size)
+    ](IndexList[2](batch_size * max_seq_length_batch, hidden_size))
+
+    # Copy over the ragged values to the padded tensor.
+    # Don't worry about padded values, we won't read them.
+    for bs in range(batch_size):
+        unpadded_seq_len = prompt_lens[bs]
+        ragged_start_idx = int(input_row_offset_host.tensor[bs])
+        for s in range(unpadded_seq_len):
+            padded_ptr = hidden_state_padded_host.tensor._offset(
+                (bs * max_seq_length_batch + s, 0)
+            )
+            ragged_ptr = hidden_state_ragged_host.tensor._offset(
+                (ragged_start_idx + s, 0)
+            )
+            memcpy(padded_ptr, ragged_ptr, hidden_size)
+
+    hidden_state_padded_device = hidden_state_padded_host.copy_to_device(ctx)
+
+    # Sync here so that HtoD transfers complete prior to host buffer dtor.
+    ctx.synchronize()
+
+    _ = hidden_state_ragged_host^
+    _ = hidden_state_padded_host^
+
+    return (
+        input_row_offset_device,
+        hidden_state_ragged_device,
+        hidden_state_padded_device,
+    )
+
+
 def execute_fused_qkv_matmul[
     num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
 ](
@@ -78,51 +147,13 @@ def execute_fused_qkv_matmul[
         + ")",
     )
 
-    # initialize input_row_offset
+    # Initialize input row offsets and hidden states.
     input_row_offset_host = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
-
-    total_length = 0
-    max_seq_length_batch = -1
-    for i in range(batch_size):
-        input_row_offset_host.tensor[i] = total_length
-
-        curr_len = prompt_lens[i]
-        total_length += curr_len
-        if curr_len > max_seq_length_batch:
-            max_seq_length_batch = curr_len
-
-    input_row_offset_host.tensor[batch_size] = total_length
-
-    input_row_offset_device = input_row_offset_host.copy_to_device(ctx)
-
-    # initialize ragged hidden state
-    hidden_state_ragged_host = HostNDBuffer[
-        type, 2, DimList(Dim(), hidden_size)
-    ](IndexList[2](total_length, hidden_size))
-
-    random(hidden_state_ragged_host.tensor)
-    hidden_state_ragged_device = hidden_state_ragged_host.copy_to_device(ctx)
-
-    # initialize padded hidden state
-    hidden_state_padded_host = HostNDBuffer[
-        type, 2, DimList(Dim(), hidden_size)
-    ](IndexList[2](batch_size * max_seq_length_batch, hidden_size))
-
-    # copy over the ragged values to the padded tensor.
-    # Don't worry about padded values, we won't read them.
-    for bs in range(batch_size):
-        unpadded_seq_len = prompt_lens[bs]
-        ragged_start_idx = int(input_row_offset_host.tensor[bs])
-        for s in range(unpadded_seq_len):
-            padded_ptr = hidden_state_padded_host.tensor._offset(
-                (bs * max_seq_length_batch + s, 0)
-            )
-            ragged_ptr = hidden_state_ragged_host.tensor._offset(
-                (ragged_start_idx + s, 0)
-            )
-            memcpy(padded_ptr, ragged_ptr, hidden_size)
-
-    hidden_state_padded_device = hidden_state_padded_host.copy_to_device(ctx)
+    input_row_offset_device, hidden_state_ragged_device, hidden_state_padded_device = _initialize_ragged_inputs[
+        type, hidden_size
+    ](
+        input_row_offset_host, batch_size, prompt_lens, ctx
+    )
 
     # initialize the weights
     weight_host = HostNDBuffer[
@@ -134,19 +165,19 @@ def execute_fused_qkv_matmul[
     weight_device = weight_host.copy_to_device(ctx)
 
     # initialize reference output
+    padded_batch_dim = hidden_state_padded_device.tensor.dim(0)
+    max_seq_length_batch = padded_batch_dim // batch_size
     ref_output_host = HostNDBuffer[type, 2, DimList(Dim(), fused_hidden_size),](
         IndexList[2](
-            batch_size * max_seq_length_batch,
+            padded_batch_dim,
             fused_hidden_size,
         )
     )
     ref_output_device = ref_output_host.copy_to_device(ctx)
 
-    test_output_host = HostNDBuffer[type, 2, DimList(Dim(), hidden_size),](
-        IndexList[2](
-            total_length,
-            hidden_size,
-        )
+    total_length = hidden_state_ragged_device.tensor.dim(0)
+    test_output_host = HostNDBuffer[type, 2, DimList(Dim(), hidden_size)](
+        IndexList[2](total_length, hidden_size)
     )
     test_output_device = test_output_host.copy_to_device(ctx)
 
@@ -301,7 +332,7 @@ def execute_fused_qkv_matmul[
                 )
 
     _ = hidden_state_ragged_device^
-    _ = hidden_state_ragged_host^
+    _ = hidden_state_padded_device^
     _ = weight_device^
     _ = weight_host^
     _ = ref_output_device^
@@ -315,6 +346,7 @@ def execute_fused_qkv_matmul[
     _ = cache_lengths_device^
     _ = cache_lengths_host^
     _ = input_row_offset_device^
+    _ = input_row_offset_host^
 
 
 def execute_fused_matmul_suite(ctx: DeviceContext):
