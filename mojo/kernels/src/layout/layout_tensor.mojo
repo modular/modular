@@ -19,7 +19,7 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
 from builtin.int import int as _int
-from gpu.id import ThreadIdx
+from gpu.id import ThreadIdx, BlockIdx
 from gpu.memory import Fill, CacheEviction, async_copy, async_copy
 from layout.element import Element, MemoryElement
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
@@ -209,6 +209,7 @@ struct LayoutTensor[
     """
 
     alias index_type: DType = _get_index_type(layout, address_space)
+    alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
 
     var ptr: UnsafePointer[Scalar[dtype], address_space=address_space]
 
@@ -1923,23 +1924,31 @@ struct LayoutTensor[
         return __type_of(result)(self.ptr)
 
     @always_inline
-    fn distance(
+    fn distance[
+        # Unsafe to infer uint type from self's layout cosize because the
+        # input ptr could come from a much larger base tensor.
+        _uint_dtype: DType = DType.uint32 if address_space
+        == _GPUAddressSpace.SHARED else DType.uint64,
+    ](
         self,
-        addr: UnsafePointer[Scalar[dtype], address_space=address_space, **_],
-    ) -> UInt:
+        addr: UnsafePointer[Scalar[dtype], address_space=address_space, *_],
+    ) -> Scalar[_uint_dtype]:
         """Returns the distance from the input address."""
 
-        return UInt(int(self.ptr) - int(addr)) // sizeof[dtype]()
+        return Scalar[_uint_dtype](int(self.ptr) - int(addr)) // sizeof[dtype]()
 
     @always_inline
     fn distance[
-        _layout: Layout  # see MOCO-1089
+        _layout: Layout,
+        _uint_dtype: DType = _get_unsigned_type(_layout, address_space),
     ](
         self, src: LayoutTensor[dtype, _layout, address_space=address_space]
-    ) -> UInt:
+    ) -> Scalar[_uint_dtype]:
         """Returns the distance from the input address."""
 
-        return UInt(int(self.ptr) - int(src.ptr)) // sizeof[dtype]()
+        return Scalar[_uint_dtype](
+            (int(self.ptr) - int(src.ptr)) // sizeof[dtype]()
+        )
 
     # Returns the linear index of an elem_i 0 ... size(layout).
     #
@@ -2007,8 +2016,8 @@ struct LayoutTensor[
     ](
         self,
         src: LayoutTensor,
-        src_idx_bound: Int = UNKNOWN_VALUE,
-        base_offset: Int = UNKNOWN_VALUE,
+        src_idx_bound: Scalar[__type_of(src).index_type] = 0,
+        base_offset: Self.uint_type = 0,
     ):
         constrained[
             self.address_space == _GPUAddressSpace.SHARED,
@@ -2075,7 +2084,7 @@ struct LayoutTensor[
 
             @parameter
             for j in range(num_vecs_per_swizzle):
-                alias dst_offset = layout(j)
+                alias dst_offset = Self.uint_type(layout(j))
                 var swizzled_offset = dst_offset
 
                 # Swizzle each vector within the first 2^bits rows.
@@ -2083,10 +2092,12 @@ struct LayoutTensor[
                 if swizzle:
                     alias swizzle_fn = swizzle.value()
                     swizzled_offset = (
-                        swizzle_fn(
-                            (base_offset + dst_offset) // self.element_size
+                        Self.uint_type(
+                            swizzle_fn(
+                                (base_offset + dst_offset) // self.element_size
+                            )
+                            * self.element_size
                         )
-                        * self.element_size
                         - base_offset
                     )
 
@@ -2095,10 +2106,10 @@ struct LayoutTensor[
                 # in the group, which is within the first 2^bits rows.
                 @parameter
                 for i in range(j, dst_size, num_vecs_per_swizzle):
-                    var src_idx = 0
+                    var src_idx: Scalar[src.index_type] = 0
 
                     # only get index like this when it is vectorized form
-                    alias src_static_idx = src.layout(i)
+                    alias src_static_idx: Scalar[src.index_type] = src.layout(i)
                     alias dst_distance = layout(i) - layout(j)
 
                     @parameter
@@ -2111,10 +2122,14 @@ struct LayoutTensor[
 
                     @parameter
                     if is_masked:
-                        var src_copy_size = element_size_bytes if src_idx < src_idx_bound else 0
-                        async_copy[element_size_bytes, fill = Scalar[dtype](0)](
+                        var src_copy_size = Int32(
+                            element_size_bytes
+                        ) if src_idx < src_idx_bound else 0
+                        async_copy[
+                            element_size_bytes, fill = Scalar[dtype](0.0)
+                        ](
                             src_ptr.bitcast[Scalar[dtype]]() + src_idx,
-                            dst_ptr + dst_idx,
+                            dst_ptr + int(dst_idx),
                             src_copy_size,
                         )
                     else:
@@ -2319,30 +2334,47 @@ fn copy_dram_to_sram_async[
     var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
     var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
 
-    var dst_frag_offset = dst_fragments.distance(dst.ptr) if swizzle else 0
+    var dst_frag_offset = rebind[dst_fragments.uint_type](
+        dst_fragments.distance(dst.ptr) if swizzle else 0
+    )
 
     @parameter
     if not src_fragments.masked:
         dst_fragments.copy_from_async[
             swizzle=swizzle_option, eviction_policy=eviction_policy
-        ](src_fragments, base_offset=dst_frag_offset)
+        ](src_fragments, base_offset=int(dst_frag_offset))
     else:
         var src_frag_offset = src_fragments.distance(src.ptr)
-        alias static_stride = src.layout.stride[0].value()
+        alias src_uint_dtype = _get_unsigned_type(
+            src_fragments.layout, src_fragments.address_space
+        )
+
+        # Stride between two rows
+        alias static_row_stride = Scalar[src_uint_dtype](
+            src.layout.stride[0].value()
+        )
+        var row_stride = static_row_stride
 
         @parameter
-        if src.layout.all_dims_known():
-            stride = static_stride
-        else:
-            stride = src.runtime_layout.stride.value[0]
-        var src_idx_bound = src.dim(0) * stride - src_frag_offset
+        if src.layout.stride[0].value() == UNKNOWN_VALUE:
+            row_stride = Scalar[src_uint_dtype](
+                src.runtime_layout.stride.value[0]
+            )
+
+        var src_idx_bound = (
+            Scalar[src_uint_dtype](src.dim(0)) * row_stride
+            - src_frag_offset.cast[src_uint_dtype]()
+        ).cast[src_fragments.index_type]()
+
         dst_fragments.copy_from_async[
             is_masked=True,
             swizzle=swizzle_option,
             eviction_policy=eviction_policy,
         ](
             src_fragments,
-            src_idx_bound=src_idx_bound,
+            src_idx_bound=rebind[Scalar[src_fragments.index_type]](
+                src_idx_bound
+            ),
             base_offset=dst_frag_offset,
         )
 
@@ -2449,14 +2481,20 @@ fn copy_sram_to_dram[
             else:
                 stride = dst.runtime_layout.stride.value[0]
             var dst_frag_offset = dst_fragments.distance(dst.ptr)
-            var dst_idx_bound = dst.dim(0) * stride - dst_frag_offset
+            var dst_idx_bound = (dst.dim(0) * stride - dst_frag_offset).cast[
+                dst_fragments.index_type
+            ]()
 
             @parameter
             for i in range(num_stores_per_thread):
                 alias src_idx = src_fragments.layout(i)
+
+                alias dst_uint_dtype = _get_unsigned_type(
+                    dst_fragments.layout, dst_fragments.address_space
+                )
                 alias dst_static_idx = dst_fragments.layout(i)
 
-                var dst_idx = 0
+                var dst_idx: Scalar[dst_fragments.index_type] = 0
 
                 @parameter
                 if dst.layout.all_dims_known():
@@ -2554,16 +2592,21 @@ fn copy_local_to_dram[
             stride = static_stride
         else:
             stride = dst.runtime_layout.stride.value[0]
-        var dst_idx_bound = dst.dim(0) * stride - dst_frag_offset
+        var dst_idx_bound = (dst.dim(0) * stride - dst_frag_offset).cast[
+            dst_fragments.index_type
+        ]()
 
         alias num_stores_per_thread = dst_fragments.layout.size()
 
         @parameter
         for i in range(num_stores_per_thread):
             alias src_idx = src.layout(i)
+            alias dst_uint_dtype = _get_unsigned_type(
+                dst_fragments.layout, dst_fragments.address_space
+            )
             alias dst_static_idx = dst_fragments.layout(i)
 
-            var dst_idx = 0
+            var dst_idx: Scalar[dst_fragments.index_type] = 0
 
             @parameter
             if dst_fragments.layout.all_dims_known():
