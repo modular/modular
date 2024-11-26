@@ -70,11 +70,20 @@ bool EmitAsAttr::classof(Attribute attr) {
   auto intAttr = ::dyn_cast<IntegerAttr>(attr);
   if (!intAttr)
     return false;
+
+#ifndef MODULAR_PRODUCTION
+  return ::isa<IndexType>(intAttr.getType()) &&
+         contains_if(
+             ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT,
+                      EmitAs::SHARED_OBJ, EmitAs::ELABORATED_MLIR},
+             [&](EmitAs kind) { return (int)kind == intAttr.getInt(); });
+#else
   return ::isa<IndexType>(intAttr.getType()) &&
          contains_if(
              ArrayRef{EmitAs::ASM, EmitAs::LLVM, EmitAs::LLVM_OPT,
                       EmitAs::SHARED_OBJ},
              [&](EmitAs kind) { return (int)kind == intAttr.getInt(); });
+#endif
 }
 
 EmitAsAttr EmitAsAttr::get(MLIRContext *ctx, EmitAs val) {
@@ -1279,9 +1288,16 @@ LogicalResult ParamOperatorAttr::verify(
              << "'compile_assembly' second operand should have index type";
     if (auto emissionIntAttr = ::dyn_cast<IntegerAttr>(operands[1])) {
       if (!::isa<EmitAsAttr>(emissionIntAttr)) {
+
+#ifndef MODULAR_PRODUCTION
+        return emitError() << "'compile_assembly' second operand should "
+                              "evaluate to either 'asm', 'llvm', 'llvm-opt', "
+                              "'sharedobj', or 'elabmlir'";
+#else
         return emitError() << "'compile_assembly' second operand should "
                               "evaluate to either 'asm', 'llvm', 'llvm-opt', "
                               "or 'sharedobj'";
+#endif
       }
     }
     if (!operands[3].getType().isInteger(1))
