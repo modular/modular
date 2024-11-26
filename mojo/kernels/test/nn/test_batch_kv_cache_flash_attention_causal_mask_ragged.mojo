@@ -197,7 +197,7 @@ def execute_ragged_flash_attention[
         k_cache,
         v_cache,
         CausalMask(),
-        # TODO take scale from argument GRA-750
+        # TODO take scale from argument GEX-750
         isqrt(Float32(kv_params.head_size)),
         test_output.tensor,
     )
