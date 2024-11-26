@@ -6,6 +6,7 @@
 """Test Llama vision language model self attention layer."""
 
 from typing import Any
+
 import numpy as np
 import pytest
 import torch
@@ -17,7 +18,6 @@ from max.graph import Graph, TensorType
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
-    KVCacheStrategy,
     load_kv_manager,
 )
 from modular_graph_test import modular_graph_test
