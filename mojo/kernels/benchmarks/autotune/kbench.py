@@ -28,7 +28,6 @@ import pickle
 
 from model.utils.common_cli_options import CommonOptions
 from model.utils.exceptions import CLIException, pretty_exception_handler
-from model.utils.logging import CONSOLE
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
