@@ -655,6 +655,28 @@ struct ConvertKGENGlobalAddress
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// ConvertKGENSourceLoc
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENSourceLoc : ConvertPOPToLLVMPattern<SourceLocOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(SourceLocOp op, SourceLocOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto inlineCountIntAttr = dyn_cast<IntegerAttr>(op.getInlineCount());
+    if (!inlineCountIntAttr)
+      return op.emitError(
+          "failed to materialize inline count value for call location");
+
+    return op.emitError("call location was not inlined the specified number of "
+                        "times: requires " +
+                        Twine(inlineCountIntAttr.getInt() + 1) +
+                        " more time(s)");
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // ConvertKGENStructCreate
 //===----------------------------------------------------------------------===//
 
@@ -745,6 +767,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       // clang-format off
       ConvertKGENCall,
       ConvertKGENGlobalAddress,
+      ConvertKGENSourceLoc,
       ConvertKGENStructCreate,
       ConvertKGENStructGEP,
       ConvertKGENStructGet,

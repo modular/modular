@@ -1,5 +1,6 @@
 // RUN: kgen-opt %s -inline-param="nodebug-only=true optimization-level=2" -mlir-print-debuginfo -split-input-file -allow-unregistered-dialect | FileCheck %s
 
+// SourceLoc immediate
 kgen.generator @wrap_source_loc_0() -> !kgen.none always_inline_no_debug {
   %line, %col, %fileName = kgen.source_loc[0]
   %none = kgen.param.constant: none = <#kgen.none>
@@ -14,9 +15,7 @@ kgen.generator @wrap_source_loc_1() -> !kgen.none always_inline_no_debug {
 
 // CHECK-LABEL: kgen.generator @test_wrap_source_loc_0
 kgen.generator @test_wrap_source_loc_0() -> !kgen.none always_inline_no_debug {
-  // CHECK-DAG: kgen.param.constant = <4>
-  // CHECK-DAG: kgen.param.constant = <6>
-  // CHECK-DAG: kgen.param.constant: string = <"some_file.mojo">
+  // CHECK: kgen.source_loc[-1]
   // CHECK-NOT: kgen.call
   %0 = kgen.call @wrap_source_loc_0() : () -> !kgen.none loc("some_file.mojo":4:6)
   %none = kgen.param.constant: none = <#kgen.none>
@@ -34,9 +33,7 @@ kgen.generator @call_wrapped_source_loc_1() -> !kgen.none always_inline_no_debug
 
 // CHECK-LABEL: kgen.generator @test_wrapped_source_loc_1
 kgen.generator @test_wrapped_source_loc_1() -> !kgen.none {
-  // CHECK-DAG: kgen.param.constant = <10>
-  // CHECK-DAG: kgen.param.constant = <12>
-  // CHECK-DAG: kgen.param.constant: string = <"other_file.mojo">
+  // CHECK: kgen.source_loc[-1]
   // CHECK-NOT: kgen.call
   %0 = kgen.call @call_wrapped_source_loc_1() : () -> !kgen.none loc("other_file.mojo":10:12)
   %none = kgen.param.constant: none = <#kgen.none>
@@ -45,13 +42,40 @@ kgen.generator @test_wrapped_source_loc_1() -> !kgen.none {
 
 // CHECK-LABEL: kgen.generator @test_wrapped_source_loc_1_inlined
 kgen.generator @test_wrapped_source_loc_1_inlined() -> !kgen.none always_inline_no_debug {
-  // CHECK-DAG: kgen.param.constant = <42>
-  // CHECK-DAG: kgen.param.constant = <13>
-  // CHECK-DAG: kgen.param.constant: string = <"another_file.mojo">
+  // CHECK: kgen.source_loc[-1]
   // CHECK-NOT: kgen.call
   %0 = kgen.call @call_wrapped_source_loc_1() : () -> !kgen.none loc("another_file.mojo":42:13)
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
+}
+
+// SourceLoc parametric
+kgen.generator @wrap_source_loc_param<depth: index>() -> !kgen.none always_inline_no_debug {
+  %line, %col, %fileName = kgen.source_loc[depth]
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// CHECK-LABEL: kgen.generator @call_wrapped_source_loc_param
+kgen.generator @call_wrapped_source_loc_param() -> !kgen.none always_inline_no_debug {
+  // CHECK: kgen.param.declare depth = <1>
+  // CHECK: kgen.source_loc[add(depth, -1)]
+  // CHECK-NOT: kgen.call
+  %0 = kgen.call @wrap_source_loc_param<1>() : () -> !kgen.none
+  kgen.return %0 : !kgen.none
+}
+
+// CHECK-LABEL: kgen.generator @test_wrap_source_loc_param
+kgen.generator @test_wrap_source_loc_param() -> !kgen.none always_inline_no_debug {
+  // CHECK: kgen.param.declare [[DEPTH:.+]] = <1>
+  // CHECK: kgen.source_loc[add([[DEPTH]], -2)]
+  // CHECK-NOT: kgen.call
+  %0 = kgen.call @call_wrapped_source_loc_param() : () -> !kgen.none loc("some_file.mojo":4:6)
+  // CHECK: kgen.param.declare [[DEPTH:.+]] = <1>
+  // CHECK: kgen.source_loc[add([[DEPTH]], -3)]
+  // CHECK-NOT: kgen.call
+  %1 = kgen.call @call_wrapped_source_loc_param() : () -> !kgen.none loc(callsite("some_file.mojo":4:6 at "some_other_file.mojo":5:7))
+  kgen.return %0 : !kgen.none
 }
 
 kgen.generator @nodebug_inline_me() always_inline_no_debug {

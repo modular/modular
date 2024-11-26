@@ -344,28 +344,86 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
 // SourceLocOp
 //===----------------------------------------------------------------------===//
 
-/// Core implementation for interpreting kgen.source_loc.
-static SmallVector<Attribute> sourceLocInterpretImpl(Operation *callOp,
-                                                     MLIRContext *ctx) {
-  OpBuilder b(ctx);
-  auto strType = b.getType<StringType>();
+/// Resolve negative inlineCounts by inspecting location.
+/// Non-negative inlineCounts can be optionally handled by providing `state`.
+/// On success, pushes the three result attributes into the result vector.
+template <typename ResultList>
+static LogicalResult sourceLocOpHelper(int64_t inlineCount, MLIRContext *ctx,
+                                       Location loc, InterpreterState *state,
+                                       ResultList &results) {
+  LocationAttr targetLocation;
+  StringRef errorLocMsg;
+  if (inlineCount >= 0) {
+    if (!state)
+      return failure();
 
-  if (callOp) {
-    FileLineColLoc fileLoc = DebugInfo::extractSourceLoc(callOp->getLoc());
-    return {b.getIndexAttr(fileLoc.getLine()),
-            b.getIndexAttr(fileLoc.getColumn()),
-            StringAttr::get(fileLoc.getFilename().getValue(), strType)};
+    // Need to fetch upwards in the call stack. Requires `state`.
+    // Note that "0" inline count means 1 level up.
+    Operation *ancestorCallOp = state->getOrigin(inlineCount);
+    if (ancestorCallOp)
+      targetLocation = ancestorCallOp->getLoc();
+    else
+      errorLocMsg = "<unknown location in parameter context>";
+  } else {
+    // Need to fetch downwards in the inlined call stack. Inspect the location's
+    // callsite history. Since "0" inlineCount means 1 level up, -1 inlineCount
+    // means 0 levels down (i.e. outermost caller loc).
+    int64_t remaining = -inlineCount;
+    DebugInfo::walkLocation(loc, DebugInfo::LocWalkPolicy::CallerPriority,
+                            [&](Location loc) -> WalkResult {
+                              if (isa<mlir::CallSiteLoc>(loc))
+                                return WalkResult::advance();
+                              if (!--remaining) {
+                                // If after decrementing, we get to 0, this is
+                                // the location to stop at.
+                                targetLocation = loc;
+                                return WalkResult::interrupt();
+                              }
+                              return WalkResult::skip();
+                            });
+    if (!targetLocation)
+      errorLocMsg = "<unknown inlined location>";
   }
 
-  auto zero = b.getIndexAttr(0);
-  return {zero, zero,
-          StringAttr::get("<unknown location in parameter context>", strType)};
+  OpBuilder b(ctx);
+  auto strType = b.getType<StringType>();
+  if (!targetLocation) {
+    auto zero = b.getIndexAttr(0);
+    results.insert(results.begin(),
+                   {zero, zero, StringAttr::get(errorLocMsg, strType)});
+    return success();
+  }
+
+  FileLineColLoc fileLoc = DebugInfo::extractSourceLoc(targetLocation);
+  results.insert(results.begin(),
+                 {b.getIndexAttr(fileLoc.getLine()),
+                  b.getIndexAttr(fileLoc.getColumn()),
+                  StringAttr::get(fileLoc.getFilename().getValue(), strType)});
+  return success();
+}
+
+LogicalResult SourceLocOp::fold(FoldAdaptor adaptor,
+                                SmallVectorImpl<OpFoldResult> &results) {
+  auto inlineCountIntAttr = dyn_cast<IntegerAttr>(getInlineCount());
+  if (!inlineCountIntAttr)
+    return failure();
+
+  return sourceLocOpHelper(inlineCountIntAttr.getInt(), getContext(), getLoc(),
+                           nullptr, results);
 }
 
 ErrorTreeOrSuccess SourceLocOp::interpret(ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
-  state.mapResults(sourceLocInterpretImpl(
-      state.getOrigin(getProperties().getInlineCount()), getContext()));
+  // The inline count must be an immediate at interpretation time.
+  auto inlineCountIntAttr = dyn_cast<IntegerAttr>(getInlineCount());
+  if (!inlineCountIntAttr)
+    return ErrorTree(getLoc(), Error("inlineCount must be an "
+                                     "integer immediate"));
+
+  SmallVector<Attribute> results;
+  (void)sourceLocOpHelper(inlineCountIntAttr.getInt(), getContext(), getLoc(),
+                          &state, results);
+  state.mapResults(results);
   return success();
 }
 

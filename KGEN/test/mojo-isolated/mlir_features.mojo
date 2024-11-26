@@ -127,14 +127,10 @@ fn structured_for_loop() -> __mlir_type.index:
     ](__mlir_attr.`0 : index`)
 
 
-# CHECK-LABEL: lit.func @"mlir_properties()"
-fn mlir_properties():
-    # CHECK: kgen.source_loc[1]
-    _ = __mlir_op.`kgen.source_loc`[
-        _type = (
-            __mlir_type.index,
-            __mlir_type.index,
-            __mlir_type.`!kgen.string`,
-        ),
-        _properties = __mlir_attr.`{inlineCount = 1 : i64}`,
-    ]()
+# CHECK-LABEL: lit.func @"mlir_properties
+fn mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
+    # CHECK: llvm.add %arg0, %arg1 overflow<nsw> : i64
+    _ = __mlir_op.`llvm.add`[
+        _type = __mlir_type.i64,
+        _properties = __mlir_attr.`{overflowFlags = #llvm.overflow<nsw>}`,
+    ](arg0, arg1)

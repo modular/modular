@@ -2036,3 +2036,56 @@ kgen.generator @gen_structs() {
 kgen.generator export @exported_parametric<param>() {
   kgen.return
 }
+
+// -----
+
+// SourceLoc interpretation
+
+kgen.generator @wrap_source_loc_param<depth: index>() -> !kgen.string always_inline_no_debug {
+  %line, %col, %fileName = kgen.source_loc[depth] loc("source":0:0)
+  kgen.return %fileName : !kgen.string
+}
+
+kgen.generator @level_zero() -> !kgen.string always_inline_no_debug {
+  %0 = kgen.call @wrap_source_loc_param<1>() : () -> !kgen.string loc("first_call":1:2)
+  kgen.return %0 : !kgen.string
+}
+
+kgen.generator @level_one() -> !kgen.string always_inline_no_debug {
+  %0 = kgen.call @level_zero() : () -> !kgen.string loc("second_call":3:4)
+  kgen.return %0 : !kgen.string
+}
+
+#sp = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#loc3 = loc(fused<#sp>["level -3":2:2])
+#loc2 = loc(callsite(#loc3 at fused<#sp>["level -2":1:1]))
+#loc1 = loc(callsite(#loc2 at fused<#sp>["level -1":0:0]))
+
+kgen.generator @inlined_source_loc_3() -> !kgen.string always_inline_no_debug {
+  kgen.param.declare depth = <0>
+  %line, %col, %fileName = kgen.source_loc[add(depth, -3)] loc(#loc1)
+  kgen.return %fileName : !kgen.string
+}
+
+kgen.generator @inlined_source_loc_1() -> !kgen.string always_inline_no_debug {
+  kgen.param.declare depth = <0>
+  %line, %col, %fileName = kgen.source_loc[add(depth, -1)] loc(#loc1)
+  kgen.return %fileName : !kgen.string
+}
+
+// CHECK-LABEL: kgen.func @test_wrap_source_loc_param
+kgen.generator @test_wrap_source_loc_param() -> !kgen.string always_inline_no_debug {
+  // CHECK: kgen.param.constant: string = <"second_call">
+  // CHECK-NOT: kgen.call
+  kgen.param.apply a = [() -> !kgen.string: @level_one]() loc("param_apply":5:6)
+  %0 = kgen.param.constant : !kgen.string = <a>
+  // CHECK: kgen.param.constant: string = <"level -3">
+  // CHECK-NOT: kgen.call
+  kgen.param.apply b = [() -> !kgen.string: @inlined_source_loc_3]() loc("param_apply":7:8)
+  %1 = kgen.param.constant : !kgen.string = <b>
+  // CHECK: kgen.param.constant: string = <"level -1">
+  // CHECK-NOT: kgen.call
+  kgen.param.apply c = [() -> !kgen.string: @inlined_source_loc_1]() loc("param_apply":9:10)
+  %2 = kgen.param.constant : !kgen.string = <c>
+  kgen.return %2 : !kgen.string
+}
