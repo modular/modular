@@ -155,7 +155,7 @@ class SpecInstance:
     def mojo_binary(self) -> str:
         mojo = shutil.which("mojo")
         if not mojo:
-            raise FileNotFoundError(f"Could not find the `mojo` binary.")
+            raise FileNotFoundError("Could not find the `mojo` binary.")
         return mojo
 
     def get_executor(self) -> list[str]:
