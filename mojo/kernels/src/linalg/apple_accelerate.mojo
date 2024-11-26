@@ -153,9 +153,9 @@ fn _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: UnsafePointer[Float32, *_],
-    a_ptr: UnsafePointer[Float32, *_],
-    b_ptr: UnsafePointer[Float32, *_],
+    c_ptr: UnsafePointer[Float32, **_],
+    a_ptr: UnsafePointer[Float32, **_],
+    b_ptr: UnsafePointer[Float32, **_],
 ):
     cblas_gemm_fn(
         _CBLASOrder.ROW_MAJOR,
@@ -190,9 +190,9 @@ fn _cblas_f32[
     ldc: Int32,
     alpha: Float32,
     beta: Float32,
-    c_ptr: UnsafePointer[Float32, *_],
-    a_ptr: UnsafePointer[Float32, *_],
-    b_ptr: UnsafePointer[Float32, *_],
+    c_ptr: UnsafePointer[Float32, **_],
+    a_ptr: UnsafePointer[Float32, **_],
+    b_ptr: UnsafePointer[Float32, **_],
 ):
     var cblas_gemm = get_cblas_f32_function()
 
@@ -357,9 +357,15 @@ fn apple_matmul[
             ldc,
             alpha,
             beta,
-            rebind[UnsafePointer[Float32, c.address_space]](c.data),
-            rebind[UnsafePointer[Float32, a.address_space]](a.data),
-            rebind[UnsafePointer[Float32, b.address_space]](b.data),
+            rebind[UnsafePointer[Float32, address_space = c.address_space]](
+                c.data
+            ),
+            rebind[UnsafePointer[Float32, address_space = a.address_space]](
+                a.data
+            ),
+            rebind[UnsafePointer[Float32, address_space = b.address_space]](
+                b.data
+            ),
         )
 
         @parameter

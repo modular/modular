@@ -379,7 +379,7 @@ struct _Accumulator[
         partial_load: Bool = False,
     ](
         inout self,
-        input: UnsafePointer[Scalar[dt], *_],
+        input: UnsafePointer[Scalar[dt], **_],
         input_stride: Int,
         partial_load_size: OptionalReg[Int] = None,
     ):
@@ -417,7 +417,7 @@ struct _Accumulator[
         partial_store: Bool = False,
     ](
         inout self,
-        output: UnsafePointer[Scalar[dt], *_],
+        output: UnsafePointer[Scalar[dt], **_],
         output_stride: Int,
         partial_store_size: OptionalReg[Int] = None,
     ):
@@ -461,9 +461,9 @@ struct _Accumulator[
     ](
         inout self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], *_],
+        a: UnsafePointer[Scalar[a_type], **_],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], *_],
+        b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -519,10 +519,10 @@ struct _Accumulator[
     ](
         inout self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], *_],
+        a: UnsafePointer[Scalar[a_type], **_],
         a_base_offsets: Buffer[DType.int32, num_rows],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], *_],
+        b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -632,9 +632,9 @@ struct _Accumulator[
     ](
         inout self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], *_],
+        a: UnsafePointer[Scalar[a_type], **_],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], *_],
+        b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -694,10 +694,10 @@ struct _Accumulator[
     ](
         inout self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], *_],
+        a: UnsafePointer[Scalar[a_type], **_],
         a_base_offsets: Buffer[DType.int32, num_rows],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], *_],
+        b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -797,9 +797,9 @@ struct _Accumulator[
     ](
         inout self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], *_],
+        a: UnsafePointer[Scalar[a_type], **_],
         a_stride: Int,
-        b: UnsafePointer[Scalar[b_type], *_],
+        b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -854,10 +854,10 @@ struct _Accumulator[
     ](
         inout self,
         length: Int,
-        a: UnsafePointer[Scalar[a_type], *_],
+        a: UnsafePointer[Scalar[a_type], **_],
         a_base_offsets: Buffer[DType.int32, num_rows],
         a_offset: Int,
-        b: UnsafePointer[Scalar[b_type], *_],
+        b: UnsafePointer[Scalar[b_type], **_],
         b_stride: Int,
         partial_load_b_size: OptionalReg[Int] = None,
     ):
@@ -909,7 +909,7 @@ struct _Accumulator[
 fn _simd_load_maybe_partial[
     dt: DType, //, simd_width: Int, partial_load: Bool
 ](
-    ptr: UnsafePointer[Scalar[dt], *_],
+    ptr: UnsafePointer[Scalar[dt], **_],
     offset: Int,
     partial_load_size: OptionalReg[Int] = None,
 ) -> SIMD[dt, simd_width]:
@@ -936,7 +936,7 @@ fn _simd_load_maybe_partial[
 fn _simd_store_maybe_partial[
     dt: DType, //, simd_width: Int, partial_store: Bool
 ](
-    ptr: UnsafePointer[Scalar[dt], *_],
+    ptr: UnsafePointer[Scalar[dt], **_],
     offset: Int,
     vec: SIMD[dt, simd_width],
     partial_store_size: OptionalReg[Int] = None,
