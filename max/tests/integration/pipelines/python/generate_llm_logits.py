@@ -161,7 +161,7 @@ class LlamaPipelineOracle(PipelineOracle):
         if device_spec.device_type == "cpu":
             if encoding == "bfloat16":
                 return False
-        elif device_spec.device_type == "cuda":
+        elif device_spec.device_type == "gpu":
             if encoding != "bfloat16":
                 return False
         else:
@@ -269,7 +269,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
     ) -> bool:
         assert version in self.supported_versions
         assert encoding in self.supported_encodings
-        return device_spec.device_type == "cuda"
+        return device_spec.device_type == "gpu"
 
     def create_max_pipeline(
         self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
@@ -331,7 +331,7 @@ class ReplitPipelineOracle(PipelineOracle):
         if device_spec.device_type == "cpu":
             if encoding == "bfloat16":
                 return False
-        elif device_spec.device_type == "cuda":
+        elif device_spec.device_type == "gpu":
             if encoding != "bfloat16":
                 return False
         else:
@@ -418,7 +418,7 @@ class MistralPipelineOracle(PipelineOracle):
     ) -> bool:
         assert version in self.supported_versions
         assert encoding in self.supported_encodings
-        return device_spec.device_type == "cuda"
+        return device_spec.device_type == "gpu"
 
     def create_max_pipeline(
         self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
