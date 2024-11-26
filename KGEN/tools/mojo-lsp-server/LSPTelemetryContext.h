@@ -31,10 +31,20 @@ public:
   /// document has changed while the request was in the queue.
   void recordOutdatedRequest(StringRef request);
 
+  /// Report initialization of the server, including the name the client
+  /// reported, if provided.
+  void reportInitialization(std::optional<StringRef> clientName);
+
+  /// Report an orderly shutdown of the server. This is not reported if there is
+  /// a crash.
+  void reportShutdown();
+
 private:
   Telemetry::Histogram<uint64_t> responseTimeHistogram;
   Telemetry::Counter<uint64_t> outdatedRequestCounter;
   Telemetry::Counter<uint64_t> invalidRequestCounter;
+
+  Telemetry::TelemetryContext &ctx;
 };
 } // namespace M::Mojo::LSP
 

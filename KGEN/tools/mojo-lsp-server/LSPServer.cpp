@@ -191,10 +191,15 @@ void LSPServer::onInitialize(const InitializeParams &params,
         llvm::json::Object{{"name", "mojo-lsp-server"}, {"version", "0.0.1"}}},
        {"capabilities", std::move(serverCaps)}}};
   responder.reply(std::move(result));
+
+  server.getLSPTelemetryContext().reportInitialization(
+      params.clientInfo ? std::make_optional<StringRef>(params.clientInfo->name)
+                        : std::nullopt);
 }
 void LSPServer::onInitialized(const InitializedParams &) {}
 void LSPServer::onShutdown(const NoParams &,
                            LSPResponder<std::nullptr_t> responder) {
+  server.getLSPTelemetryContext().reportShutdown();
   server.shutdown();
   shutdownRequestReceived = true;
   responder.reply(nullptr);

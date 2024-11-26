@@ -23,7 +23,8 @@ LSPTelemetryContext::LSPTelemetryContext(Telemetry::TelemetryContext &ctx)
           "Number of outdated LSP requests.")),
       invalidRequestCounter(ctx.createUInt64Counter(
           "mojo.lsp.request.invalid", Telemetry::Level::L1, /*attributes=*/{},
-          "Number of invalid LSP requests.")) {}
+          "Number of invalid LSP requests.")),
+      ctx(ctx) {}
 
 void LSPTelemetryContext::recordResponseTime(
     StringRef request, std::chrono::microseconds microseconds) {
@@ -42,5 +43,19 @@ void LSPTelemetryContext::recordInvalidRequest(StringRef request) {
 void LSPTelemetryContext::recordOutdatedRequest(StringRef request) {
 #ifdef MODULAR_ENABLE_TELEMETRY
   outdatedRequestCounter.add(1, {{"request", request.str()}});
+#endif // MODULAR_ENABLE_TELEMETRY
+}
+
+void LSPTelemetryContext::reportInitialization(
+    std::optional<StringRef> clientName) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+  ctx.getLogger("mojo")->emitL0Event(
+      "lsp.initialized", {{"client_name", clientName.value_or("").str()}});
+#endif // MODULAR_ENABLE_TELEMETRY
+}
+
+void LSPTelemetryContext::reportShutdown() {
+#ifdef MODULAR_ENABLE_TELEMETRY
+  ctx.getLogger("mojo")->emitL0Event("lsp.shutdown");
 #endif // MODULAR_ENABLE_TELEMETRY
 }
