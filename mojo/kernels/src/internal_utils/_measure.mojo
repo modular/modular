@@ -306,21 +306,13 @@ fn _div[
 fn _sum[
     type: DType, //
 ](src: UnsafePointer[Scalar[type]], len: Int) raises -> Scalar[type]:
-    return sum(
-        Buffer[type, address_space = src.address_space](
-            UnsafePointer[_, _, False, *_](src), len
-        )
-    )
+    return sum(Buffer[type, address_space = src.address_space](src, len))
 
 
 fn _mean[
     type: DType, //
 ](src: UnsafePointer[Scalar[type]], len: Int) raises -> Scalar[type]:
-    return mean(
-        Buffer[type, address_space = src.address_space](
-            UnsafePointer[_, _, False, *_](src), len
-        )
-    )
+    return mean(Buffer[type, address_space = src.address_space](src, len))
 
 
 fn _dot[

@@ -181,7 +181,7 @@ fn _assert_with_measure_impl[
         UnsafePointer[Scalar[type]], UnsafePointer[Scalar[type]], Int
     ) -> Float64,
 ](
-    x: UnsafePointer[Scalar[type], *_],
+    x: UnsafePointer[Scalar[type], **_],
     y: __type_of(x),
     n: Int,
     msg: String = "",
