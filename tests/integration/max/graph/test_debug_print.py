@@ -9,7 +9,6 @@
 import platform
 import pytest
 import numpy as np
-import pytest
 from max.driver import Tensor
 from max.driver.tensor import load_max_tensor
 from max.dtype import DType

@@ -15,7 +15,6 @@ from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import (
-    BufferValue,
     BufferType,
     BufferValue,
     Graph,
