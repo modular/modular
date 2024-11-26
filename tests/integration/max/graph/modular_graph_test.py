@@ -28,7 +28,10 @@ def elements(dtype, max_magnitude=MAX_INPUT_MAGNITUDE, **kwargs):
         kwargs.setdefault("max_value", max_magnitude)
 
     if "min_value" not in kwargs:
-        kwargs.setdefault("min_value", -max_magnitude)
+        if np.issubdtype(dtype, np.integer):
+            kwargs.setdefault("min_value", 0)
+        else:
+            kwargs.setdefault("min_value", -max_magnitude)
 
     return nps.from_dtype(
         dtype, allow_nan=False, allow_infinity=False, **kwargs
