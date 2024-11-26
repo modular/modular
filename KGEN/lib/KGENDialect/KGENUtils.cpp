@@ -1483,10 +1483,21 @@ ParseResult KGEN::parseFunctionSignature(
     OpAsmParser::Argument &arg = args.emplace_back();
     OptionalParseResult result =
         p.parseOptionalArgument(arg, /*allowType=*/true);
+
+    // An SSA name is present and resulted in a parsing error.
     if (result.has_value() && failed(*result))
       return failure();
-    if (!result.has_value() && p.parseType(arg.type))
-      return failure();
+
+    // An SSA name is not present, try parsing just the type.
+    if (!result.has_value()) {
+      // Failed to parse the type as well.
+      if (p.parseType(arg.type))
+        return failure();
+
+      // Without an SSA name, the location information will not be set for
+      // the argument, use the current parser location.
+      arg.ssaName.location = p.getCurrentLocation();
+    }
 
     if (parseArgConvention(p, argConventions.emplace_back()))
       return failure();
