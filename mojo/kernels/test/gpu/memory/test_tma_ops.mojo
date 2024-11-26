@@ -22,9 +22,13 @@ fn test_async_copy_asm():
     print("== test_async_copy_asm")
 
     fn test_async_copy_kernel(
-        dst_mem: UnsafePointer[Float32, _GPUAddressSpace.SHARED],
+        dst_mem: UnsafePointer[
+            Float32, address_space = _GPUAddressSpace.SHARED
+        ],
         tma_descriptor: UnsafePointer[NoneType],
-        mem_bar: UnsafePointer[Float32, _GPUAddressSpace.SHARED],
+        mem_bar: UnsafePointer[
+            Float32, address_space = _GPUAddressSpace.SHARED
+        ],
         *coords: Int32,
     ):
         # CHECK: cp.async.bulk.tensor.2d.shared::cluster.global.mbarrier::complete_tx::bytes

@@ -178,7 +178,9 @@ def test_erf_kernel_sm90():
 # ===----------------------------------------------------------------------===#
 
 
-fn test_shared_stack_allocation() -> UnsafePointer[Int8, AddressSpace.SHARED]:
+fn test_shared_stack_allocation() -> (
+    UnsafePointer[Int8, address_space = AddressSpace.SHARED]
+):
     return stack_allocation[
         999, DType.int8, 8, address_space = AddressSpace.SHARED
     ]()

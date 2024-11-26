@@ -18,7 +18,7 @@ fn test_array_offset():
 
     fn kernel(
         output: UnsafePointer[Float32],
-        p: UnsafePointer[Float32, AddressSpace.SHARED],
+        p: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
         idx: Int,
     ):
         output[] = p[idx]

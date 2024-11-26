@@ -61,7 +61,10 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
 
 fn call_int4tobf16[
     no_lop: Bool
-](i4: Int32, out_ptr: UnsafePointer[BFloat16, AddressSpace.GLOBAL]):
+](
+    i4: Int32,
+    out_ptr: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
+):
     var v = int4tobf16[no_lop](i4)
     out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[DType.int32, 4](v))
 

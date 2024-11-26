@@ -20,11 +20,11 @@ fn copy_via_shared(
 ):
     var thId = int(ThreadIdx.x())
     var mem_buff: UnsafePointer[
-        Float32, AddressSpace.SHARED
+        Float32, address_space = AddressSpace.SHARED
     ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
-    var src_global: UnsafePointer[Float32, AddressSpace.GLOBAL] = src.bitcast[
-        address_space = AddressSpace.GLOBAL
-    ]()
+    var src_global: UnsafePointer[
+        Float32, address_space = AddressSpace.GLOBAL
+    ] = src.bitcast[address_space = AddressSpace.GLOBAL]()
 
     memory.async_copy[4](
         src_global.offset(thId),

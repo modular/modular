@@ -18,7 +18,9 @@ from testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext):
-    fn alloc[n: Int]() -> UnsafePointer[Float32, _GPUAddressSpace.PARAM]:
+    fn alloc[
+        n: Int
+    ]() -> UnsafePointer[Float32, address_space = _GPUAddressSpace.PARAM]:
         return stack_allocation[
             n, Float32, address_space = _GPUAddressSpace.PARAM
         ]()
@@ -33,7 +35,9 @@ def test_constant_memory_compile(ctx: DeviceContext):
 def test_constant_mem(ctx: DeviceContext):
     print("== test_constant_mem")
 
-    fn _fill_impl[n: Int]() -> UnsafePointer[Float32, AddressSpace.PARAM]:
+    fn _fill_impl[
+        n: Int
+    ]() -> UnsafePointer[Float32, address_space = AddressSpace.PARAM]:
         var ptr = stack_allocation[
             n, Float32, address_space = AddressSpace.PARAM
         ]()
@@ -73,7 +77,9 @@ def test_constant_mem(ctx: DeviceContext):
 def test_constant_mem_via_func(ctx: DeviceContext):
     print("== test_constant_mem_via_func")
 
-    fn _fill_impl[n: Int]() -> UnsafePointer[Float32, AddressSpace.PARAM]:
+    fn _fill_impl[
+        n: Int
+    ]() -> UnsafePointer[Float32, address_space = AddressSpace.PARAM]:
         var ptr = stack_allocation[
             n, Float32, address_space = AddressSpace.PARAM
         ]()
@@ -84,7 +90,9 @@ def test_constant_mem_via_func(ctx: DeviceContext):
         return ptr
 
     fn static_constant_kernel[
-        get_constant_memory: fn () -> UnsafePointer[Float32, AddressSpace.PARAM]
+        get_constant_memory: fn () -> UnsafePointer[
+            Float32, address_space = AddressSpace.PARAM
+        ]
     ](data: UnsafePointer[Float32]):
         alias val = get_constant_memory()
         data[ThreadIdx.x()] = val[ThreadIdx.x()]

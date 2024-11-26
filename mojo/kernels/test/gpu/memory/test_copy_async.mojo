@@ -16,10 +16,10 @@ from testing import *
 fn test_mbarrier(
     addr0: UnsafePointer[Int8],
     addr1: UnsafePointer[UInt8],
-    addr2: UnsafePointer[Float32, AddressSpace.GLOBAL],
-    addr3: UnsafePointer[Float32, AddressSpace.SHARED],
-    addr4: UnsafePointer[Float64, AddressSpace.GLOBAL],
-    addr5: UnsafePointer[Float64, AddressSpace.SHARED],
+    addr2: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL],
+    addr3: UnsafePointer[Float32, address_space = AddressSpace.SHARED],
+    addr4: UnsafePointer[Float64, address_space = AddressSpace.GLOBAL],
+    addr5: UnsafePointer[Float64, address_space = AddressSpace.SHARED],
 ):
     mbarrier(addr0)
     mbarrier(addr1)
@@ -47,7 +47,7 @@ def test_mbarrier_sm90():
 
 
 fn test_mbarrier_init(
-    shared_mem: UnsafePointer[Int32, AddressSpace.SHARED],
+    shared_mem: UnsafePointer[Int32, address_space = AddressSpace.SHARED],
 ):
     mbarrier_init(shared_mem, 4)
 
@@ -74,7 +74,8 @@ def test_mbarrier_init_sm90():
 
 
 fn test_mbarrier_test_wait(
-    shared_mem: UnsafePointer[Int32, AddressSpace.SHARED], state: Int
+    shared_mem: UnsafePointer[Int32, address_space = AddressSpace.SHARED],
+    state: Int,
 ):
     var done = False
     while not done:
@@ -99,7 +100,9 @@ def test_mbarrier_test_wait_sm90():
     assert_true("mbarrier.test_wait.shared.b64" in asm)
 
 
-fn test_async_copy(src: UnsafePointer[Float32, AddressSpace.GLOBAL]):
+fn test_async_copy(
+    src: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL]
+):
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
@@ -127,7 +130,7 @@ def test_async_copy_sm90():
 
 
 fn test_async_copy_l2_prefetch(
-    src: UnsafePointer[Float32, AddressSpace.GLOBAL]
+    src: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL]
 ):
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
@@ -158,7 +161,7 @@ def test_async_copy_l2_prefetch_sm90():
 
 
 fn test_async_copy_with_zero_fill_kernel(
-    src: UnsafePointer[Float32, AddressSpace.GLOBAL]
+    src: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL]
 ):
     var shared_mem = stack_allocation[
         4, DType.float32, address_space = AddressSpace.SHARED
@@ -189,7 +192,7 @@ def test_async_copy_with_zero_fill():
 
 
 fn test_async_copy_with_eviction(
-    src: UnsafePointer[Float32, AddressSpace.GLOBAL]
+    src: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL]
 ):
     print("test_async_copy_with_eviction")
     var shared_mem = stack_allocation[
@@ -204,7 +207,7 @@ fn test_async_copy_with_eviction(
 
 
 fn async_copy_with_non_zero_fill_kernel(
-    src: UnsafePointer[Int32, AddressSpace.GLOBAL]
+    src: UnsafePointer[Int32, address_space = AddressSpace.GLOBAL]
 ):
     var shared_mem = stack_allocation[
         4, DType.int32, address_space = AddressSpace.SHARED
