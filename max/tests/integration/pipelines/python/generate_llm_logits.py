@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import Any, Mapping, Sequence, Union, Optional
+from typing import Mapping, Sequence, Union, Optional
 
 # 3rd-party
 import click
@@ -23,17 +23,15 @@ from max import driver
 from max import pipelines
 from max.pipelines import (
     interfaces,
-    TextTokenizer,
     TextGenerationPipeline,
     HuggingFaceFile,
     PIPELINE_REGISTRY,
+    PipelineModel,
 )
-from max.pipelines import kv_cache, PIPELINE_REGISTRY
 
 # Pipelines
 from architectures import register_all_models
 import llama3
-import mistral
 
 # Tests
 import replit_compat
@@ -46,7 +44,7 @@ from test_common import numpy_encoder
 class MaxPipelineAndTokenizer:
     """An instantiated MAX pipeline and pieces necessary to run it."""
 
-    model: Any  # TODO(kathywu): Update to PipelineModel
+    model: PipelineModel
     generator: Union[
         interfaces.TokenGenerator, TextGenerationPipeline
     ]  # TODO(kcaverly): Move to only TextGenerationPipeline
@@ -214,10 +212,6 @@ class LlamaPipelineOracle(PipelineOracle):
                 self._weight_path_for(version=version, encoding=encoding)
             ],
             device_spec=device_spec,
-            cache_strategy=(
-                kv_cache.KVCacheStrategy.CONTINUOUS if encoding
-                in ["bfloat16", "float32"] else kv_cache.KVCacheStrategy.NAIVE
-            ),
         )
         tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, TextGenerationPipeline)
@@ -354,10 +348,6 @@ class ReplitPipelineOracle(PipelineOracle):
             architecture="MPTForCausalLM",
             device_spec=device_spec,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy=(
-                kv_cache.KVCacheStrategy.CONTINUOUS if encoding
-                in ["bfloat16", "float32"] else kv_cache.KVCacheStrategy.NAIVE
-            ),
             huggingface_repo_id="modularai/replit-code-1.5",
             trust_remote_code=True,
         )
@@ -437,11 +427,9 @@ class MistralPipelineOracle(PipelineOracle):
             version=version, encoding=encoding, device_spec=device_spec
         )
         config = pipelines.PipelineConfig(
-            architecture="mistral",
+            architecture="MistralForCausalLM",
             device_spec=device_spec,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
-            cache_strategy=kv_cache.KVCacheStrategy.CONTINUOUS,
-            huggingface_repo_id="mistralai/Mistral-Nemo-Instruct-2407",
             weight_path=[
                 HuggingFaceFile(
                     "mistralai/Mistral-Nemo-Instruct-2407",
@@ -449,11 +437,13 @@ class MistralPipelineOracle(PipelineOracle):
                 ).download()
             ],
         )
-        generator = mistral.Mistral(config)
-        tokenizer = TextTokenizer(config)
+        tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
 
+        assert isinstance(pipeline, TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
-            model=generator, generator=generator, tokenizer=tokenizer
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
         )
 
     def create_torch_pipeline(
