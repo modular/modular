@@ -15,10 +15,7 @@ from llama_vision.cross_attention_decoder import (
     CrossAttentionDecoderLayer,
     CrossSdpaAttention,
 )
-from llama_vision.language_model import (
-    CausalLanguageModel,
-    TextModel,
-)
+from llama_vision.language_model import CausalLanguageModel, TextModel
 
 # from llama_vision.rotary_embedding_2d import RotaryEmbedding2D
 from max.driver import CPU
@@ -28,7 +25,15 @@ from max.graph import Graph, TensorType, Weight
 from max.pipelines.kv_cache import KVCacheParams, load_kv_manager
 
 # from modular_graph_test import modular_graph_test
-from nn import MLP, AttentionQKV, Embedding, Linear, RMSNorm, TransformerBlock
+from nn import (
+    MLP,
+    AttentionQKV,
+    Embedding,
+    Linear,
+    OptimizedRotaryEmbedding,
+    RMSNorm,
+    TransformerBlock,
+)
 from transformers import MllamaForCausalLM
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.testing_utils import torch_device
@@ -193,6 +198,7 @@ def self_attention_decoder_layer(
     pytorch_layer,
     layer_idx: int,
     weights_registry: dict,
+    rotary_embedding: OptimizedRotaryEmbedding,
 ) -> TransformerBlock:
     num_heads = num_attention_heads
     head_dim = hidden_size // num_heads
@@ -213,6 +219,7 @@ def self_attention_decoder_layer(
         weights_registry,
     )
 
+    # TODO: This needs to be updated to SelfSdpaAttention.
     attention = AttentionQKV(
         n_heads=num_attention_heads,
         kv_params=kv_params,
@@ -268,10 +275,22 @@ def language_model_given_pytorch_model(
     rms_norm_eps,
     num_hidden_layers,
     cross_attention_layers,
+    max_position_embeddings: int,
+    rope_theta: float,
     kv_params,
     weights_registry: dict,
     dtype: DType = DType.float32,
 ):
+    rotary_embedding = OptimizedRotaryEmbedding(
+        dim=hidden_size,
+        n_heads=num_attention_heads,
+        theta=rope_theta,
+        # TODO: Check if this param value used is correct for "max_seq_len".
+        max_seq_len=max_position_embeddings,
+        # TODO: Figure out how we want to pass this
+        # rope_scaling=params.rope_scaling,
+    )
+
     layers: list[Union[CrossAttentionDecoderLayer, TransformerBlock]] = []
     for layer_idx in range(num_hidden_layers):
         curr_layer = pytorch_model.model.layers[layer_idx]
@@ -295,6 +314,7 @@ def language_model_given_pytorch_model(
                     hidden_size=hidden_size,
                     rms_norm_eps=rms_norm_eps,
                     pytorch_layer=curr_layer,
+                    rotary_embedding=rotary_embedding,
                     layer_idx=layer_idx,
                     weights_registry=weights_registry,
                 )
@@ -315,14 +335,8 @@ def language_model_given_pytorch_model(
             weights_registry,
         ),
         layers=layers,
-        # TODO: To be added later when we add rotary embeddings
-        #     rotary_emb=RotaryEmbedding2D(dim=params.hidden_size,
-        #                          n_heads=params.num_attention_heads, # Should this be params.num_key_value_heads
-        #                          theta=params.rope_theta,
-        #                          max_patches_per_side=params.max_position_embeddings, # verify this
-        #                          #rope_scaling=params.rope_scaling, # TODO:figure it out
-        # ),
         cross_attention_layers=pytorch_model.model.cross_attention_layers,
+        rotary_emb=rotary_embedding,
     )
 
     return CausalLanguageModel(
@@ -346,6 +360,7 @@ def test_llama_language_model():
     hidden_size = 256
     num_key_value_heads = 8
     num_attention_heads = 8
+    rope_theta = 500000.0
 
     config_dict = {
         "model_type": "mllama",
@@ -363,6 +378,7 @@ def test_llama_language_model():
         "bos_token_id": 1,
         "eos_token_id": 2,
         "cross_attention_layers": cross_attention_layers,
+        "rope_theta": rope_theta,
     }
     pytorch_lm_config = MllamaTextConfig(**config_dict)
     input_ids = (
@@ -402,8 +418,10 @@ def test_llama_language_model():
         num_attention_heads=num_attention_heads,
         num_key_value_heads=num_key_value_heads,
         rms_norm_eps=rms_norm_eps,
-        cross_attention_layers=cross_attention_layers,
         num_hidden_layers=num_hidden_layers,
+        cross_attention_layers=cross_attention_layers,
+        max_position_embeddings=max_position_embeddings,
+        rope_theta=rope_theta,
         kv_params=kv_params,
         weights_registry=weights_registry,
     )
