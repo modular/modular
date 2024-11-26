@@ -132,14 +132,28 @@ class PipelineSitter:
 
 
 @click.command()
+@click.option(
+    "--override-pipelines",
+    type=click.Path(
+        exists=True, executable=True, dir_okay=False, path_type=Path
+    ),
+)
 @click.option("--pipelines-probe-port", type=int)
 @click.option("--pipelines-probe-timeout", type=float)
 @click.option("--pipelines-arg", "pipelines_args", multiple=True)
+@click.option(
+    "--override-lm-eval",
+    type=click.Path(
+        exists=True, executable=True, dir_okay=False, path_type=Path
+    ),
+)
 @click.option("--lm-eval-arg", "lm_eval_args", multiple=True)
 def main(
+    override_pipelines: Optional[Path],
     pipelines_probe_port: Optional[int],
     pipelines_probe_timeout: Optional[int],
     pipelines_args: Sequence[str],
+    override_lm_eval: Optional[Path],
     lm_eval_args: Sequence[str],
 ) -> None:
     """Start pipelines server, run lm-eval, and then shut down server."""
@@ -148,12 +162,18 @@ def main(
     runfiles = python.runfiles.Create()
     if runfiles is None:
         raise FileNotFoundError("Unable to find runfiles tree")
-    pipelines_path = _must_rlocation(
-        runfiles, "_main/SDK/public/max-repo/pipelines/python/pipelines"
-    )
-    lm_eval_path = _must_rlocation(
-        runfiles, "_main/SDK/integration-test/pipelines/python/lm-eval"
-    )
+    if override_pipelines is not None:
+        pipelines_path = override_pipelines
+    else:
+        pipelines_path = _must_rlocation(
+            runfiles, "_main/SDK/public/max-repo/pipelines/python/pipelines"
+        )
+    if override_lm_eval is not None:
+        lm_eval_path = override_lm_eval
+    else:
+        lm_eval_path = _must_rlocation(
+            runfiles, "_main/SDK/integration-test/pipelines/python/lm-eval"
+        )
     logger.debug("Pipelines binary at:", pipelines_path)
     logger.debug("lm-eval binary at:", lm_eval_path)
 
