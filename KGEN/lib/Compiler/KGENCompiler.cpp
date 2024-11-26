@@ -395,6 +395,16 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
     if (ErrorOrSuccess err = compiler->emitSharedObject(std::move(module), os))
       return err.takeError();
     break;
+
+#ifndef MODULAR_PRODUCTION
+  case EmitAs::ELABORATED_MLIR:
+    module->print(os);
+    break;
+#else
+  default:
+    return Error("EmitAs kind not supported.");
+    break;
+#endif
   }
 
   return CrossDeviceFunction{
