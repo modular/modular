@@ -88,7 +88,10 @@ def get_pipeline(request: Request, model_name: str):
         pipeline = pipeline_state.batched_generator
         return pipeline
     except KeyError:
-        raise ValueError(f"Unknown pipeline model {model_name}")
+        raise ValueError(
+            f"Unknown model '{model_name}'. Available models are"
+            f" '{list(app_state.pipelines.keys())}'."
+        )
 
 
 class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
