@@ -700,7 +700,7 @@ struct DeviceContextV2:
     """DeviceContext backed by a C++ implementation."""
 
     alias device_info = DEFAULT_GPU
-    alias device_kind = Self.device_info.api
+    alias device_api = Self.device_info.api
 
     alias SYNC = DeviceSyncMode(True)
     alias ASYNC = DeviceSyncMode(False)
@@ -708,9 +708,9 @@ struct DeviceContextV2:
     var _handle: _DeviceContextPtr
 
     fn __init__(
-        inout self, device_id: Int = 0, *, kind: String = Self.device_kind
+        inout self, device_id: Int = 0, *, api: String = Self.device_api
     ) raises:
-        # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *kind, int id)
+        # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *api, int id)
         var result = _DeviceContextPtr()
         _checked(
             external_call[
@@ -721,7 +721,7 @@ struct DeviceContextV2:
                 Int32,
             ](
                 UnsafePointer.address_of(result),
-                kind.unsafe_ptr(),
+                api.unsafe_ptr(),
                 device_id,
             )
         )
@@ -778,16 +778,19 @@ struct DeviceContextV2:
         )
         return result
 
-    fn kind(self) -> String:
-        # const char *AsyncRT_DeviceContext_deviceKind(const DeviceContext *ctx)
-        var kind_ptr = external_call[
-            "AsyncRT_DeviceContext_deviceKind",
-            _CharPtr,
+    fn api(self) -> String:
+        # void AsyncRT_DeviceContext_deviceApi(llvm::StringRef *result, const DeviceContext *ctx)
+        var api_ptr = StringRef()
+        external_call[
+            "AsyncRT_DeviceContext_deviceApi",
+            NoneType,
+            UnsafePointer[StringRef],
             _DeviceContextPtr,
         ](
+            UnsafePointer.address_of(api_ptr),
             self._handle,
         )
-        return String(StringRef(ptr=kind_ptr))
+        return String(api_ptr)
 
     fn malloc_host[
         type: AnyType
@@ -1335,7 +1338,7 @@ struct DeviceContextV2:
         )
 
     @staticmethod
-    fn number_of_devices(*, kind: String = Self.device_kind) raises -> Int:
+    fn number_of_devices(*, api: String = Self.device_api) raises -> Int:
         # const char *AsyncRT_DeviceContext_numberOfDevices(int32_t *result, const char* kind)
         var num_devices: Int32 = 0
         _checked(
@@ -1346,7 +1349,7 @@ struct DeviceContextV2:
                 _CharPtr,
             ](
                 UnsafePointer.address_of(num_devices),
-                kind.unsafe_ptr(),
+                api.unsafe_ptr(),
             )
         )
         return int(num_devices)
