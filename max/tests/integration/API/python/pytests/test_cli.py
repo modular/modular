@@ -21,7 +21,7 @@ from cli.config import (
     is_optional,
 )
 from max.driver import DeviceSpec
-from max.pipelines import PipelineConfig
+from max.pipelines import PipelineConfig, PipelineEngine
 from max.pipelines.kv_cache import KVCacheStrategy
 
 
@@ -37,6 +37,7 @@ class TestConfig:
     path_sequence_field: list[Path] = field(default_factory=list)
     device_spec_field: DeviceSpec = DeviceSpec.cpu()
     optional_str_field: Optional[str] = None
+    optional_enum_field: Optional[TestEnum] = None
 
 
 @dataclass
@@ -80,6 +81,13 @@ VALID_RESULTS = {
     "optional_str_field": Output(
         default=None,
         field_type=str,
+        flag=False,
+        multiple=False,
+        optional=True,
+    ),
+    "optional_enum_field": Output(
+        default=None,
+        field_type=click.Choice([e for e in TestEnum]),
         flag=False,
         multiple=False,
         optional=True,
@@ -274,6 +282,19 @@ VALID_COMMANDS = [
                 Path("model3.safetensors"),
             ],
             "device_spec": DeviceSpec.cuda(id=0),
+        },
+        valid=True,
+    ),
+    TestCommand(
+        args=[
+            "--huggingface-repo-id",
+            "modularai/llama-3.1",
+            "--engine",
+            "max",
+        ],
+        expected={
+            "huggingface_repo_id": "modularai/llama-3.1",
+            "engine": PipelineEngine.MAX,
         },
         valid=True,
     ),
