@@ -21,15 +21,15 @@ fn expect_eq(val: Bool, expected: Bool, msg: String = "") raises:
         raise Error("expect_eq failed: " + msg)
 
 
-fn kind() -> String:
+fn api() -> String:
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        alias kind = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+        alias api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
         @parameter
-        if kind == "gpu":
-            return DeviceContext.device_kind
-        return kind
+        if api == "gpu":
+            return DeviceContext.device_api
+        return api
     return "default"
 
 
@@ -39,8 +39,8 @@ fn create_test_device_context(device_id: Int = 0) raises -> DeviceContext:
 
     @parameter
     if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        print("Using DeviceContext: V2 - " + kind())
-        test_ctx = DeviceContext(device_id=device_id, kind=kind())
+        print("Using DeviceContext: V2 - " + api())
+        test_ctx = DeviceContext(device_id=device_id, api=api())
     elif is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():
         raise Error("DeviceContextV1 is unsupported")
     else:
