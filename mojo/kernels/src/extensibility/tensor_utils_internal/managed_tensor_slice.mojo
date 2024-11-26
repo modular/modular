@@ -56,14 +56,17 @@ struct ManagedTensorSlice[
         slicer_spec: RuntimeTensorSpec[type, rank],
     ):
         @parameter
+        @always_inline
         fn start_fn(slice: Slice) -> Int:
             return slice.start.value()
 
         @parameter
+        @always_inline
         fn stop_fn(slice: Slice) -> Int:
             return slice.end.value()
 
         @parameter
+        @always_inline
         fn step_fn(slice: Slice) -> Int:
             return slice.step.or_else(1)
 
@@ -201,6 +204,7 @@ struct ManagedTensorSlice[
 
         return product
 
+    @always_inline
     fn unsafe_ptr[__type: DType = type](self) -> UnsafePointer[Scalar[__type]]:
         return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
 
@@ -494,6 +498,7 @@ struct ManagedTensorSlice[
 
 
 @parameter
+@always_inline
 fn gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
     constrained[
@@ -517,6 +522,8 @@ fn foreach[
     alias simd_width = simdwidthof[tensor.type]()
 
     @parameter
+    # TODO(MOCO-1469)
+    # @always_inline
     fn elementwise_fn_wrapper[
         width: Int, rank: Int
     ](index: IndexList[rank]) capturing:
@@ -543,6 +550,8 @@ fn foreach[
     alias simd_width = simdwidthof[tensor.type]()
 
     @parameter
+    # TODO(MOCO-1469)
+    # @always_inline
     fn elementwise_fn_wrapper[
         width: Int, rank: Int
     ](index: IndexList[rank]) capturing:
