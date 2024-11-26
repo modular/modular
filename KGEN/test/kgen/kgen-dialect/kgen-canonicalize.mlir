@@ -441,6 +441,31 @@ kgen.func @source_loc_pure() {
   kgen.return
 }
 
+#sp = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#loc_lvl3 = loc(fused<#sp>["level -3":2:2])
+#loc_lvl2 = loc(callsite(#loc_lvl3 at fused<#sp>["level -2":1:1]))
+#loc_lvl1 = loc(callsite(#loc_lvl2 at fused<#sp>["level -1":0:0]))
+
+// CHECK-LABEL: @source_loc_fold
+kgen.func @source_loc_fold() -> (!kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string) {
+  // CHECK-DAG: kgen.source_loc[0]
+  %l0, %c0, %f0 = kgen.source_loc[0]
+  // CHECK-DAG: kgen.source_loc[1]
+  %l1, %c1, %f1 = kgen.source_loc[1]
+
+  // CHECK-DAG: %[[S1:.+]] = kgen.param.constant: string = <"level -1">
+  %l2, %c2, %f2 = kgen.source_loc[-1] loc(#loc_lvl1)
+  // CHECK-DAG: %[[S2:.+]] = kgen.param.constant: string = <"level -2">
+  %l3, %c3, %f3 = kgen.source_loc[-2] loc(#loc_lvl1)
+  // CHECK-DAG: %[[S3:.+]] = kgen.param.constant: string = <"level -3">
+  %l4, %c4, %f4 = kgen.source_loc[-3] loc(#loc_lvl1)
+  // CHECK-DAG: %[[S4:.+]] = kgen.param.constant: string = <"<unknown inlined location>">
+  %l5, %c5, %f5 = kgen.source_loc[-4] loc(#loc_lvl1)
+
+  // CHECK: kgen.return {{.*}} %[[S1]], %[[S2]], %[[S3]], %[[S4]] :
+  kgen.return %f0, %f1, %f2, %f3, %f4, %f5 : !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string
+}
+
 // CHECK-LABEL: @param_if_known_trivial
 kgen.generator @param_if_known_trivial(%arg0: index) -> index {
   // CHECK-NEXT: return %arg0

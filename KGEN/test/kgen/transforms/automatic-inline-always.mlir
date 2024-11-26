@@ -288,9 +288,7 @@ kgen.func @call_wrapped_source_loc_1() always_inline {
 
 // CHECK-LABEL: kgen.func @test_wrapped_source_loc_1
 kgen.func @test_wrapped_source_loc_1() {
-  // CHECK-DAG: kgen.param.constant = <10>
-  // CHECK-DAG: kgen.param.constant = <12>
-  // CHECK-DAG: kgen.param.constant: string = <"other_file.mojo">
+  // CHECK: kgen.source_loc[-1]
   // CHECK-NOT: kgen.call
   kgen.call @call_wrapped_source_loc_1() : () -> () loc("other_file.mojo":10:12)
   kgen.return
@@ -303,15 +301,17 @@ kgen.func @test_wrapped_source_loc_1_inlined() always_inline {
 
 // CHECK-LABEL: kgen.func @test_source_loc
 kgen.func @test_source_loc() {
-  // CHECK-DAG: kgen.param.constant = <4>
-  // CHECK-DAG: kgen.param.constant = <6>
-  // CHECK-DAG: kgen.param.constant: string = <"some_file.mojo">
+  // CHECK: kgen.source_loc[-2]
   kgen.call @test_wrap_source_loc_0() : () -> ()
 
-  // CHECK-DAG: kgen.param.constant = <42>
-  // CHECK-DAG: kgen.param.constant = <13>
-  // CHECK-DAG: kgen.param.constant: string = <"another_file.mojo">
+  // CHECK: kgen.source_loc[-3]
+  kgen.call @test_wrap_source_loc_0() : () -> () loc(callsite("some_file.mojo":4:6 at "some_other_file.mojo":5:7))
+
+  // CHECK: kgen.source_loc[-2]
   kgen.call @test_wrapped_source_loc_1_inlined() : () -> ()
+
+  // CHECK: kgen.source_loc[-3]
+  kgen.call @test_wrapped_source_loc_1_inlined() : () -> () loc(callsite("some_file.mojo":4:6 at "some_other_file.mojo":5:7))
 
   kgen.return
 }

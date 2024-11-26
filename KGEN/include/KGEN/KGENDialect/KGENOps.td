@@ -1282,11 +1282,12 @@ def KGEN_SourceLocOp : KGENOp<"source_loc", [Pure,
     ```
   }];
 
-  let arguments = (ins IntProperty<"int64_t">:$inlineCount);
+  let arguments = (ins AttrOfType<Index>:$inlineCount);
   let results = (outs Index:$line, Index:$col, KGEN_StringType:$fileName);
   let assemblyFormat = [{
-    `[` custom<IntProperty>($inlineCount) `]` attr-dict
+    `[` custom<IndexParamValue>($inlineCount) `]` attr-dict
   }];
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

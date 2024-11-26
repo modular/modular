@@ -109,32 +109,24 @@ std::pair<Operation *, bool> KGEN::inlineRegion(mlir::RewriterBase &b,
 
 void KGEN::processSourceLocOp(SourceLocOp sourceLocOp, Location callLoc,
                               mlir::RewriterBase &b) {
-  // The inline count is decremented until it reaches 0. When that happens, we
-  // capture the caller's location, and replace the op.
-  if (auto &props = sourceLocOp.getProperties();
-      int64_t inlineCount = props.getInlineCount()) {
-    b.modifyOpInPlace(sourceLocOp,
-                      [&] { props.setInlineCount(inlineCount - 1); });
-    return;
-  }
+  int64_t callLocInlineCount = 0;
+  DebugInfo::walkLocation(callLoc, DebugInfo::LocWalkPolicy::CallerPriority,
+                          [&](Location loc) -> WalkResult {
+                            if (isa<mlir::CallSiteLoc>(loc))
+                              return WalkResult::advance();
+                            ++callLocInlineCount;
+                            return WalkResult::skip();
+                          });
 
-  // Extract the source location, even in the presence of debuginfo.
-  FileLineColLoc fileLoc = DebugInfo::extractSourceLoc(callLoc);
-  Location opLoc = sourceLocOp.getLoc();
-
-  // Replace the source location op with constants.
-  b.setInsertionPoint(sourceLocOp);
-  b.replaceAllUsesWith(
-      sourceLocOp.getLine(),
-      b.create<ParamConstantOp>(opLoc, b.getIndexAttr(fileLoc.getLine())));
-  b.replaceAllUsesWith(
-      sourceLocOp.getCol(),
-      b.create<ParamConstantOp>(opLoc, b.getIndexAttr(fileLoc.getColumn())));
-  b.replaceAllUsesWith(
-      sourceLocOp.getFileName(),
-      b.create<ParamConstantOp>(
-          opLoc, StringAttr::get(fileLoc.getFilename().getValue(),
-                                 b.getType<StringType>())));
+  TypedAttr inlineCountParam = sourceLocOp.getInlineCount();
+  // Decrement the inlineCount by the number of times the callsite was inlined.
+  b.modifyOpInPlace(sourceLocOp, [&]() {
+    sourceLocOp.setInlineCountAttr(ParamOperatorAttr::get(
+        POC::Add, {inlineCountParam, b.getIndexAttr(-callLocInlineCount)}));
+    // Op location must be updated immediately, as the op semantics is reliant
+    // on an up to date location.
+    DebugInfo::updateInlinedLoc(sourceLocOp, callLoc);
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -175,7 +167,8 @@ static void updateBlockDebugInfo(Block &block, IntegerAttr tag,
 
   for (Operation &op : llvm::make_early_inc_range(block)) {
     // Inline the location if not inside an inlined subprogram.
-    if (!insideInlinedSubprogram) {
+    // Skip SourceLocOp as its location is always up to date.
+    if (!insideInlinedSubprogram && !isa<SourceLocOp>(op)) {
       DebugInfo::updateInlinedLoc(&op, callLoc);
     }
 

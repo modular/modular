@@ -96,17 +96,14 @@ fn mlir_magic_keyword_param():
     alias a = __mlir_type[a=`!pop.scalar<bool>`]
 
 
-fn mlir_properties():
-    _ = __mlir_op.`kgen.source_loc`[
-        _type = (
-            __mlir_type.index,
-            __mlir_type.index,
-            __mlir_type.`!kgen.string`,
-        ),
-        _properties = __mlir_attr.`1 : i64`,
-    ]()
+fn mlir_properties(arg0: __mlir_type.i64, arg1: __mlir_type.i64):
+    _ = __mlir_op.`llvm.add`[
+        _type = __mlir_type.i64,
+        _properties = __mlir_attr.`#llvm.overflow<nsw>`,
+    ](arg0, arg1)
     # expected-error @above {{cannot set property}}
     # expected-error @above {{expected DictionaryAttr to set properties}}
+
 
 fn mlir_illegal_op():
     # expected-error @below {{MLIR verification error: 'llvm.intr.ctlz' op requires attribute 'is_zero_poison'}}
