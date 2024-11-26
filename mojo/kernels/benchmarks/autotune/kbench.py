@@ -24,6 +24,8 @@ import click
 import numpy as np
 import pandas as pd
 import rich
+import pickle
+
 from model.utils.common_cli_options import CommonOptions
 from model.utils.exceptions import CLIException, pretty_exception_handler
 from model.utils.logging import CONSOLE
@@ -38,9 +40,18 @@ from modular.utils.yaml import YAML
 
 CONSOLE = Console()
 
-
 CURRENT_FILE = Path(__file__).resolve()
 LINE = 80 * "-"
+
+
+def store_pickle(path, data):
+    with open(path, "wb") as handle:
+        pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+def load_pickle(path):
+    with open(path, "rb") as handle:
+        return pickle.load(handle)
 
 
 def configure_logging(
@@ -117,7 +128,7 @@ class ParamSpace:
         """Flatten the values in self.value and store them in a List
         Also, get the length of value list and store it in `length`.
         """
-        self.value_set = sorted(set(flatten(self.value)))
+        self.value_set = sorted(set(flatten(self.value)), reverse=False)
         self.value = None
         self.length = len(self.value_set)
 
@@ -132,9 +143,6 @@ class KBENCH_MODE(Enum):
     RUN = 0x1
     TUNE = 0x2
     BUILD = 0x4
-
-
-KBENCH_PARAM_CACHE: np.array = None
 
 
 @dataclass(frozen=True, repr=True)
@@ -166,6 +174,7 @@ class SpecInstance:
         dryrun: bool = False,
         verbose: bool = False,
         check_kbench_cache: bool = False,
+        KBENCH_CACHE: dict = {},
     ) -> ProcessOutput:
         if not output_file:
             output_file = Path(tempfile.gettempdir()) / Path(
@@ -206,20 +215,29 @@ class SpecInstance:
 
         if check_kbench_cache:
             cmd = []
+            KBENCH_CACHE_PATH = output_file.parent.absolute() / "kbench_cache"
+            os.makedirs(KBENCH_CACHE_PATH, exist_ok=True)
 
-            global KBENCH_PARAM_CACHE
-            found_in_cache = np.array_equal(
-                np.array(defines), np.array(KBENCH_PARAM_CACHE)
-            )
+            defines_str = str(defines)
+            found_in_cache = defines_str in KBENCH_CACHE.keys()
+            print(f"binary: {defines_str} found in cache: {found_in_cache}")
+
             if not found_in_cache:
-                KBENCH_PARAM_CACHE = np.array(defines)
+                binary_path = KBENCH_CACHE_PATH / file_abs_path.stem
+                obj_path = str(file_abs_path.with_suffix(""))
+                KBENCH_CACHE[defines_str] = binary_path
                 cmd = self.get_executor()
                 cmd.extend(["build", *defines, str(file_abs_path)])
                 # TODO: how to handle the return from failing here?
+                out = self._run(cmd, output_file, verbose, dryrun)
+                if out.stderr:
+                    print(out.stderr)
+                # move the binary to kbench_cache directory.
+                cmd = ["mv", str(obj_path), str(binary_path)]
                 self._run(cmd, output_file, verbose, dryrun)
 
             # at this point the previous build is in the cache, a binary of the same name (without the extension) is created:
-            binary_name = str(file_abs_path.with_suffix(""))
+            binary_name = KBENCH_CACHE[defines_str]
             cmd = [binary_name, "-o", str(output_file), *vars]
 
         return self._run(cmd, output_file, verbose, dryrun)
@@ -569,6 +587,7 @@ def run(
     optimization_level=None,
     dryrun=False,
     cached=False,
+    KBENCH_CACHE={},
     verbose=False,
     tmp_path=None,
 ):
@@ -639,6 +658,7 @@ def run(
                     dryrun=dryrun,
                     verbose=verbose,
                     check_kbench_cache=cached,
+                    KBENCH_CACHE=KBENCH_CACHE,
                 )
                 elapsed_time_list[i] = (time() - t_start_item) * 1e3
                 spec_list[i] = s
@@ -854,7 +874,18 @@ help_str = (
 )
 @click.option("--force", "-f", is_flag=True, default=False, help="Force.")
 @click.option(
-    "--cached", is_flag=True, default=False, help="Enable Kbench cache."
+    "--cached",
+    "-c",
+    is_flag=True,
+    default=False,
+    help="Enable Kbench cache (WARNING: doesn't check for source changes).",
+)
+@click.option(
+    "--clear-cache",
+    "-cc",
+    is_flag=True,
+    default=False,
+    help="Clear Kbench cache.",
 )
 @click.option(
     "--dryrun",
@@ -878,6 +909,7 @@ def cli(
     optimization_level,
     force,
     cached,
+    clear_cache,
     dryrun,
     verbose,
 ) -> bool:
@@ -896,18 +928,34 @@ def cli(
 
     check_gpu_clock()
 
-    run(
-        yaml_path_list=FileGlobArg(files),
-        output_path=output_path,
-        mode=mode,
-        param_list=param,
-        filter_list=filter,
-        debug_level=debug_level,
-        optimization_level=optimization_level,
-        dryrun=dryrun,
-        cached=cached,
-        verbose=verbose,
-    )
+    # check kbench_cache and load it if exists:
+    KBENCH_CACHE_PATH = "kbench_cache.pickle"
+    if clear_cache and os.path.exists(KBENCH_CACHE_PATH):
+        logging.debug(f"Removing kbench-cache: {KBENCH_CACHE_PATH}")
+        run_shell_command(["rm", KBENCH_CACHE_PATH])
+
+    KBENCH_CACHE = {}
+    if cached and os.path.exists(KBENCH_CACHE_PATH):
+        KBENCH_CACHE = load_pickle(KBENCH_CACHE_PATH)
+
+    if files:
+        run(
+            yaml_path_list=FileGlobArg(files),
+            output_path=output_path,
+            mode=mode,
+            param_list=param,
+            filter_list=filter,
+            debug_level=debug_level,
+            optimization_level=optimization_level,
+            dryrun=dryrun,
+            cached=cached,
+            KBENCH_CACHE=KBENCH_CACHE,
+            verbose=verbose,
+        )
+
+    if cached:
+        store_pickle(KBENCH_CACHE_PATH, KBENCH_CACHE)
+
     return True
 
 

@@ -73,6 +73,14 @@ autotuning problem, so let’s just lean into building something simple.
     $MODULAR_PYTHON kbench.py YAML_FILE --output OUTPUT_PATH --tune
     ```
 
+5. Avoid recompilation by enabling `kbench` compilation cache:
+    Simply add `--cached` or `-c` to the of command.
+
+    Note:
+    - This doesn't check the changes in the source.
+    - Caching is persistent for follow-up calls unless `kbench --clear-cache`
+        or `kbench -cc` is invoked.
+
 ## Example
 
 Just running [`sample.mojo`](sample.mojo) with parameters in [`test.yaml`](test.yaml):
