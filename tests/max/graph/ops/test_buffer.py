@@ -222,7 +222,7 @@ def test_load_store_ellipsis_slice(
         graph._mlir_op.verify()
         assert "rmo.mo.mutable.load" in str(graph)
         assert "rmo.mo.mutable.store" in str(graph)
-        assert not "rmo.mo.mutable.store.slice" in str(graph)
+        assert "rmo.mo.mutable.store.slice" not in str(graph)
         assert "mo.chain.create" in str(graph)
 
 
@@ -278,8 +278,8 @@ def test_no_implicit_load(tensor_type: TensorType, buffer_type: BufferType):
         with pytest.raises(TypeError):  # unary ops
             y = abs(buffer)
 
-        assert not "rmo.mo.mutable.load" in str(graph)
-        assert not "rmo.mo.slice" in str(graph)
+        assert "rmo.mo.mutable.load" not in str(graph)
+        assert "rmo.mo.slice" not in str(graph)
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)

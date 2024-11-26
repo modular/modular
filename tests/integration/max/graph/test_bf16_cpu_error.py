@@ -13,7 +13,7 @@ from max.graph import Graph, TensorType
 
 
 @pytest.mark.skipif(
-    not platform.machine() in ["arm64", "aarch64"],
+    platform.machine() not in ["arm64", "aarch64"],
     reason="BF16 is only unsupported on ARM CPU architecture",
 )
 def test_bf16_cpu_input_error(session):
@@ -30,7 +30,7 @@ def test_bf16_cpu_input_error(session):
 
 
 @pytest.mark.skipif(
-    not platform.machine() in ["arm64", "aarch64"],
+    platform.machine() not in ["arm64", "aarch64"],
     reason="BF16 is only unsupported on ARM CPU architecture",
 )
 def test_bf16_cpu_output_error(session):
