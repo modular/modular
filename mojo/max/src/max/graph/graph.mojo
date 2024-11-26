@@ -594,6 +594,19 @@ struct Graph(CollectionElement, Stringable, Writable):
         This takes the full-precision `value` as owned data and frees it.
         The resulting quantized constant is allocated and owns its data.
 
+        To quantize your model weights, follow these steps:
+
+        1. Import your trained model weights
+        2. Choose your [quantization
+        encodings](/max/api/mojo/graph/quantization/encodings)
+        3. Apply quantization using [`Graph.quantize()`](/max/api/mojo/graph/graph/Graph#quantize)
+
+        ```mojo
+        quantized_constant = graph.quantize[Q4_0Encoding](constant_value)
+        ```
+        4. Use [`qmatmul()`](/max/api/mojo/graph/ops/quantized_ops/qmatmul) for matrix
+        operations with quantized weights
+
         Parameters:
             encoding: Describes a specific quantization encoding such as Q4_0.
 

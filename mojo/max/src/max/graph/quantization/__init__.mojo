@@ -39,6 +39,10 @@ can also add a quantized node in your graph with
 
 To save the quantized tensors to disk, use
 [`graph.checkpoint.save()`](/max/api/mojo/graph/checkpoint/save_load/save).
+
+The Graph API does not support model
+training, so you must import your model weights, load them as
+[`Tensor`](/mojo/stdlib/tensor/tensor/Tensor) values, and then quantize them.
 """
 
 from .quantization_encoding import QuantizationEncoding
