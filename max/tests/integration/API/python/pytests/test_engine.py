@@ -485,7 +485,7 @@ def test_repr_torch_input_spec():
 
 
 @dataclass
-class Model:  # type: ignore
+class ExternalWeightsModel:
     num_elems: int
 
     def __call__(self, input: Value) -> Value:
@@ -517,7 +517,7 @@ def external_weights_size() -> int:
 def external_weights_graph(external_weights_size: int) -> Graph:
     graph = Graph(
         "external_weights",
-        Model(external_weights_size),  # type: ignore
+        ExternalWeightsModel(external_weights_size),
         input_types=(TensorType(DType.float32, (external_weights_size,)),),
     )
     graph._mlir_op.verify()
