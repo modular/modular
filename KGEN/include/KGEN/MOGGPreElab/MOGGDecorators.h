@@ -100,7 +100,7 @@ constexpr StringLiteral REGISTER_INTERNAL_FUNCTION_OVERRIDE =
 constexpr StringLiteral REGISTER_PUBLIC_OVERRIDE = "op";
 
 // Decorator to indicate opaque use and we should generate conformances
-// TODO(GRA-1145): Remove the need for this.
+// TODO(GEX-1145): Remove the need for this.
 constexpr StringLiteral USES_OPAQUE = "uses_opaque";
 
 constexpr StringLiteral REGISTER_SHAPE_FUNC = "register_internal_shape_func";

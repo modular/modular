@@ -259,7 +259,7 @@ public:
       // The first operand is always the output.
       // And there might be non-tensor arguments (eg MojoCallContext).
       unsigned kernelInputsCount = 0;
-      /// TODO: GRA-1046: We should have markers in Mojo for what is an input
+      /// TODO: GEX-1046: We should have markers in Mojo for what is an input
       /// and what is an output (ex: mo.top_k).
       unsigned kernelOutputsCount = 1;
       for (size_t i = 1, e = argumentTypeNames.getValue().size(); i < e; i++) {
