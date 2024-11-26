@@ -402,9 +402,9 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 @always_inline
 fn ld_matrix[
     type: DType, simd_width: Int, transpose: Bool = False
-](ptr: UnsafePointer[Scalar[type], AddressSpace.SHARED]) -> SIMD[
-    type, simd_width
-]:
+](
+    ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED]
+) -> SIMD[type, simd_width]:
     """Performs warp sync copy from shared memory to registers.
     Loads in a fashion that can be used directly by tensor core MMA instructions.
     """

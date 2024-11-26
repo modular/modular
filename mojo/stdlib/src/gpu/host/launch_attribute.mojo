@@ -289,7 +289,7 @@ struct AccessPolicyWindow:
     ](
         inout self,
         *,
-        base_ptr: UnsafePointer[T, *_, **_],
+        base_ptr: UnsafePointer[T, **_],
         count: Int,
         hit_ratio: Float32,
         hit_prop: AccessProperty = AccessProperty.NORMAL,

@@ -364,7 +364,7 @@ fn _get_pointer_constraint() -> StringLiteral:
 @always_inline
 fn store_release[
     type: DType, //, scope: Scope = Scope.SYSTEM, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], *_, **_], value: Scalar[type]):
+](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
     alias constraints = _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
@@ -383,7 +383,7 @@ fn store_release[
 @always_inline
 fn load_acquire[
     type: DType, //, *, scope: Scope = Scope.SYSTEM, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], *_, **_]) -> Scalar[type]:
+](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
     alias constraints = "=" + _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
@@ -402,7 +402,7 @@ fn load_acquire[
 @always_inline
 fn store_volatile[
     type: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], *_, **_], value: Scalar[type]):
+](ptr: UnsafePointer[Scalar[type], **_], value: Scalar[type]):
     alias constraints = _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")
@@ -416,7 +416,7 @@ fn store_volatile[
 @always_inline
 fn load_volatile[
     type: DType, //, memory: Bool = True
-](ptr: UnsafePointer[Scalar[type], *_, **_]) -> Scalar[type]:
+](ptr: UnsafePointer[Scalar[type], **_]) -> Scalar[type]:
     alias constraints = "=" + _get_register_constraint[
         type
     ]() + "," + _get_pointer_constraint() + (",~{memory}" if memory else "")

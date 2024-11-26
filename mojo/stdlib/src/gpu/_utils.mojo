@@ -13,7 +13,7 @@
 fn to_llvm_shared_mem_ptr[
     type: AnyType
 ](
-    ptr: UnsafePointer[type, GPUAddressSpace.SHARED, *_]
+    ptr: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_]
 ) -> __mlir_type.`!llvm.ptr<3>`:
     """Cast shared memory pointer to LLVMPointer Type.
 

@@ -75,7 +75,7 @@ fn syncwarp(mask: Int = -1):
 @always_inline("nodebug")
 fn _mbarrier_impl[
     type: AnyType, address_space: AddressSpace
-](address: UnsafePointer[type, address_space, *_]):
+](address: UnsafePointer[type, address_space=address_space, **_]):
     """Makes the mbarrier object track all prior copy async operations initiated
     by the executing thread.
 
@@ -102,7 +102,7 @@ fn _mbarrier_impl[
 @always_inline("nodebug")
 fn mbarrier[
     type: AnyType, address_space: AddressSpace
-](address: UnsafePointer[type, address_space, *_]):
+](address: UnsafePointer[type, address_space=address_space, **_]):
     """Makes the mbarrier object track all prior copy async operations initiated
     by the executing thread.
 
@@ -123,7 +123,9 @@ fn mbarrier[
 fn mbarrier_init[
     type: AnyType
 ](
-    shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED, *_],
+    shared_mem: UnsafePointer[
+        type, address_space = GPUAddressSpace.SHARED, **_
+    ],
     num_threads: Int32,
 ):
     """Initialize shared memory barrier for N number of threads.
@@ -147,7 +149,9 @@ fn mbarrier_init[
 @always_inline("nodebug")
 fn mbarrier_arrive[
     type: AnyType
-](shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED, *_]) -> Int:
+](
+    shared_mem: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_]
+) -> Int:
     """Commits the arrival of thead to a shared memory barrier.
 
     Args:
@@ -173,7 +177,9 @@ fn mbarrier_arrive[
 fn mbarrier_test_wait[
     type: AnyType
 ](
-    shared_mem: UnsafePointer[type, GPUAddressSpace.SHARED, *_],
+    shared_mem: UnsafePointer[
+        type, address_space = GPUAddressSpace.SHARED, **_
+    ],
     state: Int,
 ) -> Bool:
     """Test waiting for the memory barrier.
@@ -202,7 +208,10 @@ fn mbarrier_test_wait[
 @always_inline("nodebug")
 fn mbarrier_arrive_expect_tx_shared[
     type: AnyType
-](addr: UnsafePointer[type, GPUAddressSpace.SHARED, *_], tx_count: Int32):
+](
+    addr: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_],
+    tx_count: Int32,
+):
     """Performs an expect-tx operation on shared memory barrier.
 
     This makes the current phase of the mbarrier object to expect and
@@ -232,7 +241,7 @@ fn mbarrier_arrive_expect_tx_shared[
 fn mbarrier_try_wait_parity_shared[
     type: AnyType
 ](
-    addr: UnsafePointer[type, GPUAddressSpace.SHARED, *_],
+    addr: UnsafePointer[type, address_space = GPUAddressSpace.SHARED, **_],
     phase: Int32,
     ticks: Int32,
 ):

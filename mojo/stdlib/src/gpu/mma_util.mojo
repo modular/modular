@@ -13,7 +13,7 @@ PTX documentation => https://docs.nvidia.com/cuda/parallel-thread-execution/inde
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[Float32, _],
+    a_ptr: UnsafePointer[Float32],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -44,7 +44,7 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[Float16, _],
+    a_ptr: UnsafePointer[Float16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -77,7 +77,7 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: UnsafePointer[BFloat16, _],
+    a_ptr: UnsafePointer[BFloat16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -139,7 +139,7 @@ fn load_matrix_a[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[Float32, _],
+    b_ptr: UnsafePointer[Float32],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -167,7 +167,7 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[Float16, _],
+    b_ptr: UnsafePointer[Float16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -195,7 +195,7 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: UnsafePointer[BFloat16, _],
+    b_ptr: UnsafePointer[BFloat16],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
@@ -241,7 +241,7 @@ fn load_matrix_b[
 fn store_matrix_d[
     dtype: DType, m: Int, n: Int, k: Int
 ](
-    d_ptr: UnsafePointer[Scalar[dtype], _],
+    d_ptr: UnsafePointer[Scalar[dtype]],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,

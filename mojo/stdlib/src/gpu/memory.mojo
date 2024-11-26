@@ -65,8 +65,8 @@ fn async_copy[
     l2_prefetch: OptionalReg[Int] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
 ](
-    src: UnsafePointer[Scalar[type], AddressSpace.GLOBAL],
-    dst: UnsafePointer[Scalar[type], AddressSpace.SHARED],
+    src: UnsafePointer[Scalar[type], address_space = AddressSpace.GLOBAL],
+    dst: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED],
     src_size: Int32 = 0,
     predicate: Bool = False,
 ):
@@ -246,7 +246,7 @@ fn external_memory[
     address_space: _AddressSpace,
     alignment: Int,
     name: StringLiteral = "extern_ptr_syml",
-]() -> UnsafePointer[type, address_space, alignment]:
+]() -> UnsafePointer[type, address_space=address_space, alignment=alignment]:
     """Gets a pointer to dynamic shared memory.
 
     Parameters:
@@ -259,11 +259,13 @@ fn external_memory[
         A pointer to dynamic shared memory.
     """
     var extern_ptr_symbol = UnsafePointer[
-        StaticTuple[type, 0], address_space, alignment
+        StaticTuple[type, 0], address_space=address_space, alignment=alignment
     ](
         __mlir_op.`pop.extern_ptr_symbol`[
             _type = UnsafePointer[
-                StaticTuple[type, 0], address_space, alignment
+                StaticTuple[type, 0],
+                address_space=address_space,
+                alignment=alignment,
             ]._mlir_type,
             name = name.value,
             alignment = alignment.value,
@@ -280,7 +282,10 @@ fn external_memory[
 @always_inline
 fn fence_proxy_tensormap_generic_sys_acquire[
     type: AnyType,
-](ptr: UnsafePointer[type, GPUAddressSpace.GENERIC, *_], size: Int32):
+](
+    ptr: UnsafePointer[type, address_space = GPUAddressSpace.GENERIC, **_],
+    size: Int32,
+):
     """Acquires tensor map system's memory fence of particular size
     Args:
         ptr: Pointer to tensor map object in system's memory.
@@ -303,9 +308,9 @@ fn fence_proxy_tensormap_generic_sys_release():
 fn cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType, mbr_type: AnyType, rank: Int
 ](
-    dst_mem: UnsafePointer[dst_type, GPUAddressSpace.SHARED],
+    dst_mem: UnsafePointer[dst_type, address_space = GPUAddressSpace.SHARED],
     tma_descriptor: UnsafePointer[NoneType],
-    mem_bar: UnsafePointer[mbr_type, GPUAddressSpace.SHARED],
+    mem_bar: UnsafePointer[mbr_type, address_space = GPUAddressSpace.SHARED],
     coords: IndexList[rank],
 ):
     """Initiates an asynchronous copy operation on the tensor data from global
