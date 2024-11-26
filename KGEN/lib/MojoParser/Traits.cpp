@@ -150,6 +150,20 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 
   auto &shared = structDecl.getShared();
   auto structDeclOp = cast<StructDeclOp>(structDecl);
+
+  // TODO(MOCO-1468): Pull out into a helper method.
+  bool implicitlyDestructible = false;
+  for (auto parentAttr : structDeclOp.getParentTypes()) {
+    ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(
+        cast<TraitType>(parentAttr.getType()).getSymbol());
+    if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
+      if (parentTrait.getSymName() == "AnyType") {
+        implicitlyDestructible = true;
+        break;
+      }
+    }
+  }
+
   bool rpTrivial = structDeclOp.isRegisterPassableTrivial();
   bool regPassable = structDeclOp.isRegisterPassable();
   bool hadErrors = false;
@@ -194,7 +208,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     }
     ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
     if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
-      if (canSynthesizeIfMissing(name, rpTrivial, regPassable)) {
+      if (canSynthesizeIfMissing(name, rpTrivial, regPassable,
+                                 implicitlyDestructible)) {
         specialFns.push_back(SpecialFunctionInfo::getKind(name));
         return success();
       }

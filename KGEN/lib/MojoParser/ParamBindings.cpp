@@ -769,11 +769,6 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   return {bindings, fitness, std::move(diag)};
 }
 
-// DO NOT SUBMIT
-extern LITSignatureType substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
-    LITSignatureType desiredSignature, PValue selfPValue);
-
 TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
                                               StringRef baseName,
                                               const ExprNode *expr) const {

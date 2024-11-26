@@ -355,6 +355,12 @@ struct Slice:
 # ===----------------------------------------------------------------------=== #
 
 
+# A linear type, see
+# https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
+trait UnknownDestructibility:
+    pass
+
+
 trait Copyable:
     fn __copyinit__(out self, existing: Self, /):
         pass
@@ -368,6 +374,9 @@ trait Movable:
 trait AnyType:
     fn __del__(owned self, /):
         ...
+
+
+alias ImplicitlyDestructible = AnyType
 
 
 # ===----------------------------------------------------------------------=== #

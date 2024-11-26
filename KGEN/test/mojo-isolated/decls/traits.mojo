@@ -432,7 +432,7 @@ trait SimpleTraitB:
 
 
 # CHECK-LABEL: lit.struct.decl @TwoThunks
-# CHECK-SAME: (!SimpleTraitA, !AnyType[!SimpleTraitA], !SimpleTraitB)
+# CHECK-SAME: (!SimpleTraitA, !UnknownDestructibility[!SimpleTraitA], !AnyType[!SimpleTraitA], !SimpleTraitB)
 @register_passable
 struct TwoThunks(SimpleTraitA, SimpleTraitB):
     # CHECK: lit.func @"method({{.*}}TwoThunks)"
@@ -557,7 +557,7 @@ trait ChildTraitSameSig(ParentTraitSameSig):
 
 
 # CHECK-LABEL: lit.trait.decl @GreatGrandFather
-# CHECK-SAME: (!AnyType)
+# CHECK-SAME: (!UnknownDestructibility, !AnyType)
 trait GreatGrandFather:
     # CHECK: lit.func @"foo
     fn foo(self):
@@ -820,7 +820,7 @@ trait ImplicitChild(ImplicitParent):
 
 
 # CHECK-LABEL: lit.struct.decl @NoExplicitTraits
-# CHECK-SAME: (!AnyType, !ImplicitConformance, !ImplicitParent, !ImplicitChild)
+# CHECK-SAME: (!UnknownDestructibility, !AnyType, !ImplicitConformance, !ImplicitParent, !ImplicitChild)
 struct NoExplicitTraits:
     fn implicit(self):
         pass
@@ -833,7 +833,7 @@ struct NoExplicitTraits:
 
 
 # CHECK-LABEL: lit.struct.decl @ChildFirst
-# CHECK-SAME: (!AnyType, !ImplicitChild, !ImplicitParent[!ImplicitChild])
+# CHECK-SAME: (!UnknownDestructibility, !AnyType, !ImplicitChild, !ImplicitParent[!ImplicitChild])
 struct ChildFirst:
     fn child_method(self):
         pass
@@ -843,7 +843,7 @@ struct ChildFirst:
 
 
 # CHECK-LABEL: lit.struct.decl @RegisterPassable
-# CHECK-SAME: (!AnyType, !Copyable, !ImplicitConformance)
+# CHECK-SAME: (!UnknownDestructibility, !AnyType, !Copyable, !ImplicitConformance)
 @register_passable
 struct RegisterPassable:
     # CHECK: lit.func @"__copyinit__{{.*}}"
@@ -977,4 +977,3 @@ trait RGTrivialTrait:
     # CHECK-NEXT: lit.func @"doSomething{{.*}}"(%self: !kgen.paramref<:!RGTrivialTrait {{.*}}>) -> !kgen.none
     fn doSomething(self):
         ...
-

@@ -1196,10 +1196,23 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // trait type will already have been erased to a memory type.
   bool rpTrivial = false;
   bool regPassable = false;
+  bool implicitlyDestructible = false;
   if (auto structDeclOp = dyn_cast<StructDeclOp>(metaTypeDecl)) {
     rpTrivial = structDeclOp.isRegisterPassable();
     regPassable = structDeclOp.isRegisterPassableTrivial();
     structParamDecls = structDeclOp.getParams();
+    // TODO(MOCO-1468): Pull out into a helper, or make a method like
+    // isRegisterPassable that can go on the structDeclOp.
+    for (auto parentAttr : structDeclOp.getParentTypes()) {
+      ASTDecl &parentDecl = shared.declResolver->getDeclForTypeSymbol(
+          cast<TraitType>(parentAttr.getType()).getSymbol());
+      if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
+        if (parentTrait.getSymName() == "AnyType") {
+          implicitlyDestructible = true;
+          break;
+        }
+      }
+    }
   }
 
   // When we're looking for a trait's method in a certain struct, like:
@@ -1317,8 +1330,10 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       if (!result) {
         // Don't error out if name is for the thunk functions that will be
         // synthesized when conformance check happens.
-        if (canSynthesizeIfMissing(name, rpTrivial, regPassable))
+        if (canSynthesizeIfMissing(name, rpTrivial, regPassable,
+                                   implicitlyDestructible)) {
           continue;
+        }
 
         // The struct does not have the specified member and we cannot
         // synthesize it. Re-emit the error to get a diagnostic.

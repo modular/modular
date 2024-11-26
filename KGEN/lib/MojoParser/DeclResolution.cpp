@@ -697,7 +697,8 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
     }
     // If this is some MLIR type, generate the default trait conformances.
     if (!metatype || isa<TypeType>(metatype)) {
-      for (StringRef traitName : {"AnyType", "Copyable", "Movable"}) {
+      for (StringRef traitName :
+           {"UnknownDestructibility", "AnyType", "Copyable", "Movable"}) {
         auto traitDecl = cast_or_null<TraitDeclOp>(
             shared.lookupBuiltinTrait(traitName, &decl, node.getLoc()));
         if (!traitDecl)
@@ -1734,6 +1735,7 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
       // Fallthrough the decorator to body resolution.
       return failure();
     }
+    // We don't process @explicit_destroy here, we do it in resolveSignature.
   }
 
   // `x()` forms.
@@ -1821,9 +1823,9 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setSignature(sig);
   structOp.setParentTypes(parentTypes);
 
-  // Make every nominal type inherit from `AnyType`.
+  // Make every nominal struct type inherit from `UnknownDestructibility`.
   if (ASTDecl *traitDecl = shared.lookupBuiltinTrait(
-          "AnyType", decl.getParentDecl(), decl.getLoc()))
+          "UnknownDestructibility", decl.getParentDecl(), decl.getLoc()))
     StructEmitter::addTraitParent(structOp, traitDecl);
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
@@ -1839,6 +1841,45 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
         return processStructSignatureDecorator(decorator, structOp, shared,
                                                decl);
       });
+  std::string linearTypeErrorMsg;
+  for (auto decoratorExpr : decoratorExprs) {
+    if (auto *declRefNode = dyn_cast<DeclRefNode>(decoratorExpr.first)) {
+      // TODO(MOCO-1468): Remove this, always require argument to
+      // @explicit_destroy.
+      if (declRefNode->spelling == "explicit_destroy") {
+        linearTypeErrorMsg =
+            "Unhandled explicit_destroy type " + structOp.getDeclName().str();
+      }
+    } else if (auto *callNode = dyn_cast<CallNode>(decoratorExpr.first)) {
+      if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
+        if (declRef->spelling == "explicit_destroy") {
+          // TODO(MOCO-1468): Remove this, always require argument to
+          // @explicit_destroy.
+          if (callNode->operands.size() == 0) {
+            linearTypeErrorMsg = "Unhandled explicit_destroy type " +
+                                 structOp.getDeclName().str();
+          } else {
+            auto strExpr =
+                dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
+            // TODO(MOCO-1468): Error message here.
+            if (!strExpr)
+              return failure();
+            linearTypeErrorMsg = strExpr->getValue();
+          }
+        }
+      }
+    }
+  }
+  // TODO(MOCO-1468): Remove else; always require argument to @explicit_destroy.
+  if (!linearTypeErrorMsg.empty()) {
+    structOp.setLinearTypeErrorMsg(
+        std::make_optional(llvm::StringRef(linearTypeErrorMsg)));
+  } else {
+    if (ASTDecl *implicitlyDestructibleDecl = shared.lookupBuiltinTrait(
+            "AnyType", decl.getParentDecl(), decl.getLoc())) {
+      StructEmitter::addTraitParent(structOp, implicitlyDestructibleDecl);
+    }
+  }
 
   // Always generate SourceName for structs (even on non-debug builds).
   structOp.setSourceNameAttr(shared.getSourceName(structOp));
@@ -2043,7 +2084,16 @@ LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
       processValueDecorator(decorator->getRangeStart(), moveFunc, copyFunc);
       return success();
     }
-    return failure();
+    if (declRef->spelling == "explicit_destroy") {
+      return success();
+    }
+  }
+  if (auto callNode = dyn_cast<CallNode>(decorator)) {
+    if (auto declRef = dyn_cast<DeclRefNode>(callNode->callee)) {
+      if (declRef->spelling == "explicit_destroy") {
+        return success();
+      }
+    }
   }
   return failure();
 }
@@ -2116,12 +2166,25 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (ParserBase(shared, lexer).parseSuite(structDecl))
     return failure();
 
+  // TODO(MOCO-1468): Pull this out into a helper.
+  bool implicitlyDestructible = false;
+  for (auto parentAttr : structOp.getParentTypes()) {
+    ASTDecl &parentDecl =
+        getDeclForTypeSymbol(cast<TraitType>(parentAttr.getType()).getSymbol());
+    if (auto parentTrait = dyn_cast<TraitDeclOp>(parentDecl)) {
+      if (parentTrait.getSymName() == "AnyType") {
+        implicitlyDestructible = true;
+        break;
+      }
+    }
+  }
+
   // Check to see if there is a destructor and install it into the StructDeclOp
   // if so.
   if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
     // Check to see if we have an explicitly declared destructor.
     structOp.setDestructorAttr(dtorAttr);
-  } else if (structDecl.getTypeDeclSelf() &&
+  } else if (structDecl.getTypeDeclSelf() && implicitlyDestructible &&
              !structOp.isRegisterPassableTrivial() &&
              structDecl
                  .lookupInCurrentScope(StringAttr::get(getContext(), "__del__"))
@@ -2279,8 +2342,25 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   if (p.parseToken(Token::colon, "expected ':' in trait definition"))
     return failure();
 
-  // Make every trait inherit from `AnyType`, except itself.
-  if (parentTypes.empty() && traitOp.getSymName() != "AnyType") {
+  if (traitOp.getSymName() == "UnknownDestructibility") {
+    traitOp.setLinearTypeErrorMsg(std::make_optional(llvm::StringRef(
+        "Unhandled explicit_destroy type UnknownDestructibility")));
+  }
+
+  // Make every trait inherit from `UnknownDestructibility`, except itself.
+  if (parentTypes.empty() && traitOp.getSymName() != "UnknownDestructibility") {
+    if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
+            "UnknownDestructibility", decl.getParentDecl(), decl.getLoc())) {
+      TraitType anyType = cast<TraitDeclOp>(anyTypeDecl).bindReference();
+      parentTypes.push_back(TypeLineageAttr::get(anyType));
+    }
+  }
+  // Make every trait inherit from `ImplicitlyDestructible`, except itself and
+  // UnknownDestructibility.
+  // TODO(MOCO-1468): Make this not happen when there's an @explicit_destroy on
+  // it.
+  if (traitOp.getSymName() != "AnyType" &&
+      traitOp.getSymName() != "UnknownDestructibility") {
     if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
             "AnyType", decl.getParentDecl(), decl.getLoc())) {
       TraitType anyType = cast<TraitDeclOp>(anyTypeDecl).bindReference();

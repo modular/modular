@@ -40,8 +40,8 @@ fn custom_op_generic[T: Movable, *Ts: Copyable](a: T, *b: *Ts) -> MemoryType:
 
 
 # CHECK: lit.func @"custom_op_param
-# CHECK-NEXT: mogg.arg_conformances = [#kgen<exprs[[[PARAM]]]>,
-# CHECK-SAME: mogg.result_conformances = #kgen<exprs[[[PARAM]]]>
+# CHECK-NEXT: mogg.arg_conformances = [#kgen<exprs[#kgen.type<@mogg::@ParamType<:!Int a>> : !UnknownDestructibility, [[PARAM]]]>,
+# CHECK-SAME: mogg.result_conformances = #kgen<exprs[#kgen.type<@mogg::@ParamType<:!Int a>> : !UnknownDestructibility, [[PARAM]]]>
 @register_internal("custom.op")
 fn custom_op_param[a: Int](b: ParamType[a], c: ParamType[1]) -> ParamType[a]:
     pass
