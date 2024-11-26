@@ -1041,7 +1041,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
     because the graph compiler doesn't know about the dependency between these
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
-    Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
+    Q_proj with K_proj, so K_proj RoPE is only executed after QKV completes.
     """
 
     @always_inline
