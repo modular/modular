@@ -40,8 +40,8 @@ def sum(inputs: Iterable[TensorValue]) -> Iterable[TensorValue]:
             shape = input.shape
         if input.shape != shape:
             raise ValueError(
-                f"allreduce.sum operation must have the same shape across all"
-                f" input tensors."
+                "allreduce.sum operation must have the same shape across all"
+                " input tensors."
             )
         if not input.device:
             raise ValueError(
@@ -50,8 +50,8 @@ def sum(inputs: Iterable[TensorValue]) -> Iterable[TensorValue]:
             )
         if input.device in devices:
             raise ValueError(
-                f"allreduce.sum operation must have unique devices across it's"
-                f" input tensors."
+                "allreduce.sum operation must have unique devices across it's"
+                " input tensors."
             )
         devices.append(input.device)
 
