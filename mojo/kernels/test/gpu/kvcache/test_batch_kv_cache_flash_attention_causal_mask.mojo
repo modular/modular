@@ -267,7 +267,7 @@ def execute_flash_attention[
         CausalMask(),
         IdentityScoreMod(),
         valid_length_device.tensor,
-        # TODO take scale from argument GRA-750
+        # TODO take scale from argument GEX-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -281,7 +281,7 @@ def execute_flash_attention[
         NullMask(),
         IdentityScoreMod(),
         valid_length_device.tensor,
-        # TODO take scale from argument GRA-750
+        # TODO take scale from argument GEX-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
