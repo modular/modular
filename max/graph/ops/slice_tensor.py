@@ -81,7 +81,7 @@ def _concrete_static_slice(n: int, index: slice) -> slice:
 
     if start < 0:
         start = n + start
-    if stop < 0 and not index.stop is None:
+    if stop < 0 and index.stop is not None:
         stop = n + stop
     return slice(start, stop, step)
 
