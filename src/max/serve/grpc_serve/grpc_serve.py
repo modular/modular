@@ -167,7 +167,7 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
     def __init__(self, pipeline: TokenGeneratorPipeline):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.pipeline = pipeline
-        self.logger.info(f"Starting server handler")
+        self.logger.info("Starting server handler")
 
     async def ServerLive(
         self, request: pb2.ServerLiveRequest, context
