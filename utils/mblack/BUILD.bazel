@@ -9,15 +9,6 @@ exports_files([
 ])
 
 modular_py_binary(
-    name = "mblack_main",
-    srcs = ["src/mblack/__main__.py"],
-    main = "src/mblack/__main__.py",
-    deps = [
-        ":mblack",
-    ],
-)
-
-modular_py_binary(
     name = "mblack",
     srcs = glob(["src/**/*.py"]),
     data = glob(["src/**/*.txt"]),
