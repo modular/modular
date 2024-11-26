@@ -1099,6 +1099,24 @@ TypedAttr OriginSetUnionAttr::get(TypedAttr value, OriginType type) {
 // LITStructAttr
 //===----------------------------------------------------------------------===//
 
+TypedAttr LITStructAttr::get(MLIRContext *ctx,
+                             ArrayRef<std::tuple<StringAttr, TypedAttr>> values,
+                             StructType type) {
+
+  // If we are forming a struct from an single extract from the same type,
+  // canonicalize it away so we get type equality for important types like
+  // Origin and AddressSpace etc.
+  if (values.size() == 1) {
+    auto [fieldName, value] = values[0];
+    if (auto extract = ::dyn_cast<LIT::StructExtractAttr>(value))
+      if (extract.getField() == fieldName &&
+          extract.getStructValue().getType() == type)
+        return extract.getStructValue();
+  }
+
+  return LITStructAttr::Base::get(ctx, values, type);
+}
+
 static ParseResult
 parseStructElements(AsmParser &p,
                     SmallVector<std::tuple<StringAttr, TypedAttr>> &values) {

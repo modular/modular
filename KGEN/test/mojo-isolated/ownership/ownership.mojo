@@ -1187,6 +1187,10 @@ fn handleAnyLifetime5():
 # to reason about these.
 
 # CHECK-LABEL: lit.func @"test_origin_ctor_folding
-fn test_origin_ctor_folding(abcdef: A):
-    # CHECK-NEXT: lit.alias.decl {{.*}} = <{_mlir_origin: origin<0> = *"abcdef`"}> 
+fn test_origin_ctor_folding[orig1: Origin[_]](abcdef: A):
+    # CHECK-NEXT: lit.alias.decl {{.*}} = <{_mlir_origin: origin<0> = *"abcdef`1"}>
     alias x = Origin(__origin_of(abcdef))
+
+    # MOCO-1467: Origin type equality problem.
+    # CHECK-NEXT: lit.alias.decl {{.*}} = <orig1>
+    alias y = Origin(orig1._mlir_origin)

@@ -1055,15 +1055,17 @@ static TypedAttr tryOriginInitFold(SymbolRefAttr symbolRef,
       !nestedRefs.back().getValue().starts_with("__init__"))
     return {};
 
-  // Okay, we know we want to fold this.  Figure out what the struct field is
-  // so we can form a StructAttr.  We know the "self" type has been bound to any
-  // parameters, so it will be the actual struct type.
+  // Okay, we know we want to fold this.
   assert(sigType.getArgConvention(0) == ArgConvention::InitSelf);
   auto originStructType = cast<LIT::StructType>(
       ASTType(sigType.getArguments()[0]).getReferenceElementType());
 
+  // Figure out what the struct field is so we can form a StructAttr.  We know
+  // the "self" type has been bound to any parameters, so it will be the actual
+  // struct type.
   StringAttr fieldName =
       StringAttr::get(shared.getContext(), ORIGIN_FIELD_NAME);
+
   // When in debug mode, verify that Origin matches what we think it does.
 #ifndef NDEBUG
   auto &declResolver = shared.getDeclResolver();
