@@ -6,9 +6,10 @@
 
 from sys.intrinsics import _type_is_eq
 
+from os import abort
 from buffer import Dim, DimList, NDBuffer
 from memory import UnsafePointer
-
+from layout import Layout, LayoutTensor
 from utils import IndexList
 
 
@@ -103,6 +104,24 @@ trait KVCacheT(CollectionElement):
     fn empty_cache(self) -> Bool:
         """Returns true if the cache_lengths for all requests is 0,
         false otherwise."""
+        ...
+
+    # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
+    @always_inline
+    fn block_paged_ptr[
+        type: DType, tile_size: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[type]]:
+        """Returns a LayoutTensor pointing to the KVCache block at the given index.
+
+        Paged KVCache implementations must have a block_size which is a multiple of the
+        and greater than the layout's first dimension.
+        """
         ...
 
 
@@ -278,143 +297,21 @@ struct ContiguousKVCache[
     fn empty_cache(self) -> Bool:
         return self.is_cache_empty
 
-
-struct ContiguousKVCacheCollection[
-    type: DType,
-    kv_params: KVCacheStaticParams,
-](KVCollectionT):
-    """This is a "view" of the cache for the given sequences
-    in the batch.
-
-    This object does not own the underlying buffers in k_cache and v_cache,
-    it's borrowing them from the BlockWrappers in our KVCacheManager.
-    It does own the Pointer[NDBuffer[type, 3]] and valid_lengths buffer
-    """
-
-    # TODO outer should be list, inner can be Pointer?
-    alias CacheType = ContiguousKVCache[type, kv_params]
-    var key_cache: NDBuffer[type, 5]
-    var value_cache: NDBuffer[type, 5]
-    var cache_lengths: NDBuffer[DType.uint32, 1]
-    var is_context_encoding: Bool
-    var seq_ids: List[Int]
-    var num_layers: Int
-    var batch_size: Int
-    var max_seq_len: Int
-
-    fn __init__(
-        inout self,
-        key_cache: NDBuffer[type, 5],
-        value_cache: NDBuffer[type, 5],
-        cache_lengths: NDBuffer[DType.uint32, 1],
-        is_context_encoding: Bool,
-        seq_ids: List[Int],
-        num_layers: Int,
-        batch_size: Int,
-    ):
-        debug_assert(key_cache.dim[0]() == num_layers, "invalid key_cache size")
-        debug_assert(
-            value_cache.dim[0]() == num_layers, "invalid value_cache size "
+    @always_inline
+    fn block_paged_ptr[
+        type: DType, tile_size: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[type]]:
+        debug_assert(tile_size < self._block.dim[1](), "tile_size out of range")
+        var idx = self._get_idx_tuple(
+            batch_idx, head_idx, start_tok_idx, head_dim_idx
         )
-
-        self.key_cache = key_cache
-        self.value_cache = value_cache
-        self.seq_ids = seq_ids
-
-        self.num_layers = num_layers
-        self.batch_size = batch_size
-        self.max_seq_len = key_cache.dim[2]()
-
-        self.cache_lengths = cache_lengths
-        self.is_context_encoding = is_context_encoding
-
-    fn __copyinit__(out self, other: Self):
-        self.key_cache = other.key_cache
-        self.value_cache = other.value_cache
-        self.seq_ids = other.seq_ids
-
-        self.cache_lengths = other.cache_lengths
-        self.is_context_encoding = other.is_context_encoding
-        self.num_layers = other.num_layers
-        self.batch_size = other.batch_size
-        self.max_seq_len = other.max_seq_len
-
-    fn __moveinit__(out self, owned other: Self):
-        self.key_cache = other.key_cache
-        self.value_cache = other.value_cache
-        self.seq_ids = other.seq_ids^
-        self.cache_lengths = other.cache_lengths
-        self.is_context_encoding = other.is_context_encoding
-        self.num_layers = other.num_layers
-        self.batch_size = other.batch_size
-        self.max_seq_len = other.max_seq_len
-
-    @staticmethod
-    fn id() -> String:
-        return (
-            "ContiguousKVCacheCollection+"
-            + str(type)
-            + "+"
-            + str(kv_params.num_heads)
-            + "+"
-            + str(kv_params.head_size)
-        )
-
-    fn get_key_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
-        constrained[_type_is_eq[cache_t, self.CacheType]()]()
-        var layer_size = self.batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
-        var k_shape = IndexList[4](
-            self.key_cache.dim[1](),
-            self.key_cache.dim[2](),
-            self.key_cache.dim[3](),
-            self.key_cache.dim[4](),
-        )
-
-        var layer_key_cache = Self.CacheType.BlockType(
-            self.key_cache.data + (layer_idx * layer_size), k_shape
-        )
-        return rebind[cache_t](
-            self.CacheType(
-                layer_key_cache,
-                self.cache_lengths,
-                self.is_context_encoding,
-                self.batch_size,
-            )
-        )
-
-    fn get_value_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
-        var layer_size = self.batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
-        var v_shape = IndexList[4](
-            self.value_cache.dim[1](),
-            self.value_cache.dim[2](),
-            self.value_cache.dim[3](),
-            self.value_cache.dim[4](),
-        )
-
-        var layer_value_cache = self.CacheType.BlockType(
-            self.value_cache.data + (layer_idx * layer_size), v_shape
-        )
-
-        return rebind[cache_t](
-            self.CacheType(
-                layer_value_cache,
-                self.cache_lengths,
-                self.is_context_encoding,
-                self.batch_size,
-            )
-        )
-
-    fn get_seq_ids(self) -> List[Int]:
-        return self.seq_ids
-
-    fn cache_length(self, batch_idx: Int) -> Int:
-        debug_assert(
-            batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
-        )
-        return int(self.cache_lengths[batch_idx])
-
-    fn cache_length_nd(self) -> NDBuffer[DType.uint32, 1]:
-        return self.cache_lengths
+        return rebind[UnsafePointer[Scalar[type]]](self._block._offset(idx))
 
 
 @value
@@ -618,6 +515,192 @@ struct ContinuousBatchingKVCache[
         false otherwise."""
         return self.is_cache_empty
 
+    @always_inline
+    fn block_paged_ptr[
+        type: DType, tile_size: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[type]]:
+        var block_idx = int(self.lookup_table[batch_idx])
+        var full_block_idx = self._get_idx_tuple(
+            block_idx, head_idx, start_tok_idx, head_dim_idx
+        )
+        var offset_ptr = self.blocks._offset(full_block_idx)
+        return rebind[UnsafePointer[Scalar[type]]](offset_ptr)
+
+
+@value
+@register_passable("trivial")
+struct PagedKVCache[
+    type: DType, kv_params: KVCacheStaticParams, page_size: Int
+](KVCacheT):
+    """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
+    It is used to access the KVCache blocks for PagedAttention.
+    """
+
+    alias KeyIdx = 0
+    alias ValueIdx = 1
+
+    """The entire region of memory for KVCache blocks with shape:
+    [num_layers, 2, total_num_blocks, page_size, num_heads, head_size].
+    """
+    var blocks: NDBuffer[type, 6]
+    var cache_lengths: NDBuffer[DType.uint32, 1]
+    var lookup_table: NDBuffer[DType.uint32, 2]
+    var is_cache_empty: Bool
+    var layer_idx: Int
+    var kv_idx: Int
+
+    fn __init__(
+        out self,
+        blocks: __type_of(self.blocks),
+        cache_lengths: __type_of(self.cache_lengths),
+        lookup_table: __type_of(self.lookup_table),
+        is_cache_empty: Bool,
+        layer_idx: Int,
+        kv_idx: Int,
+    ):
+        self.blocks = blocks
+        self.cache_lengths = cache_lengths
+        self.lookup_table = lookup_table
+        self.is_cache_empty = is_cache_empty
+        self.layer_idx = layer_idx
+        self.kv_idx = kv_idx
+
+    @staticmethod
+    fn id() -> String:
+        """Returns a string id describing the type, this is used when defining
+        mo.opaque symbols."""
+        return "PagedKVCache+" + str(type)
+
+    @staticmethod
+    fn get_kv_params() -> KVCacheStaticParams:
+        """Helper method to get the static parameters for the KVCache, like
+        num_heads and head_size.
+        """
+        return kv_params
+
+    @staticmethod
+    fn get_type() -> DType:
+        """Helper method to retrieve the type of the underlying KVCache."""
+        return type
+
+    @staticmethod
+    fn get_block_static_shape() -> DimList:
+        """Helper method to get the static shape returned by the `block`
+        function.
+        """
+        # TODO placeholder, we'll remove this method entirely.
+        return DimList(Dim(), kv_params.num_heads, kv_params.head_size)
+
+    fn cache_length(self, batch_idx: Int) -> Int:
+        """Returns the length of the cache for a given batch index."""
+        return int(self.cache_lengths[batch_idx])
+
+    @always_inline
+    fn _get_idx(
+        self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
+    ) -> IndexList[6]:
+        debug_assert(
+            head_idx < kv_params.num_heads,
+            "KVCache head_idx out of range (",
+            head_idx,
+            ")",
+        )
+        debug_assert(
+            head_dim_idx < kv_params.head_size,
+            "KVCache head_dim_idx is out of range",
+        )
+
+        lut_block_index, tok_in_block_idx = divmod(tok_idx, page_size)
+
+        debug_assert(
+            tok_in_block_idx < self.blocks.dim[3](),
+            "KVCache tok_idx out of range",
+        )
+
+        debug_assert(bs < len(self.cache_lengths), "batch_idx is oob")
+        debug_assert(lut_block_index < page_size, "block_idx is OOB")
+        block_idx = int(self.lookup_table[bs, lut_block_index])
+        return IndexList[6](
+            self.layer_idx,
+            self.kv_idx,
+            block_idx,
+            tok_in_block_idx,
+            head_idx,
+            head_dim_idx,
+        )
+
+    fn load[
+        type_: DType, width: Int
+    ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
+        type_, width
+    ]:
+        """Loads an element from the given index."""
+        var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
+        return rebind[SIMD[type_, width]](self.blocks.load[width=width](idx))
+
+    fn store[
+        type_: DType, width: Int
+    ](
+        self,
+        bs: Int,
+        head_idx: Int,
+        tok_idx: Int,
+        head_dim_idx: Int,
+        val: SIMD[type_, width],
+    ):
+        """Stores an element at the given index."""
+        var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
+        self.blocks.store[width=width](idx, rebind[SIMD[type, width]](val))
+
+    fn block[
+        type: DType, block_shape: DimList
+    ](
+        self,
+        batch_idx: Int,
+        new_seq_len: Int,
+    ) -> NDBuffer[
+        type, 3, block_shape
+    ] as result:
+        """Returns a contiguous buffer for a given batch entry."""
+        abort("paged block not used")
+        return __type_of(result)()
+
+    fn empty_cache(self) -> Bool:
+        """Returns true if the cache_lengths for all requests is 0,
+        false otherwise."""
+        return self.is_cache_empty
+
+    @always_inline
+    fn block_paged_ptr[
+        type: DType, tile_size: Int
+    ](
+        self,
+        batch_idx: Int,
+        start_tok_idx: Int,
+        head_idx: Int,
+        head_dim_idx: Int = 0,
+    ) -> UnsafePointer[Scalar[type]]:
+        constrained[
+            tile_size <= page_size and page_size % tile_size == 0,
+            (
+                "layout block size must be divisible and less than or equal to"
+                " the block size"
+            ),
+        ]()
+
+        var full_block_idx = self._get_idx(
+            batch_idx, head_idx, start_tok_idx, head_dim_idx
+        )
+
+        var ptr = self.blocks._offset(full_block_idx)
+        return rebind[UnsafePointer[Scalar[type]]](ptr)
+
 
 trait KVCollectionT(CollectionElement):
     @staticmethod
@@ -638,6 +721,144 @@ trait KVCollectionT(CollectionElement):
 
     fn cache_length_nd(self) -> NDBuffer[DType.uint32, 1]:
         ...
+
+
+struct ContiguousKVCacheCollection[
+    type: DType,
+    kv_params: KVCacheStaticParams,
+](KVCollectionT):
+    """This is a "view" of the cache for the given sequences
+    in the batch.
+
+    This object does not own the underlying buffers in k_cache and v_cache,
+    it's borrowing them from the BlockWrappers in our KVCacheManager.
+    It does own the Pointer[NDBuffer[type, 3]] and valid_lengths buffer
+    """
+
+    # TODO outer should be list, inner can be Pointer?
+    alias CacheType = ContiguousKVCache[type, kv_params]
+    var key_cache: NDBuffer[type, 5]
+    var value_cache: NDBuffer[type, 5]
+    var cache_lengths: NDBuffer[DType.uint32, 1]
+    var is_context_encoding: Bool
+    var seq_ids: List[Int]
+    var num_layers: Int
+    var batch_size: Int
+    var max_seq_len: Int
+
+    fn __init__(
+        inout self,
+        key_cache: NDBuffer[type, 5],
+        value_cache: NDBuffer[type, 5],
+        cache_lengths: NDBuffer[DType.uint32, 1],
+        is_context_encoding: Bool,
+        seq_ids: List[Int],
+        num_layers: Int,
+        batch_size: Int,
+    ):
+        debug_assert(key_cache.dim[0]() == num_layers, "invalid key_cache size")
+        debug_assert(
+            value_cache.dim[0]() == num_layers, "invalid value_cache size "
+        )
+
+        self.key_cache = key_cache
+        self.value_cache = value_cache
+        self.seq_ids = seq_ids
+
+        self.num_layers = num_layers
+        self.batch_size = batch_size
+        self.max_seq_len = key_cache.dim[2]()
+
+        self.cache_lengths = cache_lengths
+        self.is_context_encoding = is_context_encoding
+
+    fn __copyinit__(out self, other: Self):
+        self.key_cache = other.key_cache
+        self.value_cache = other.value_cache
+        self.seq_ids = other.seq_ids
+
+        self.cache_lengths = other.cache_lengths
+        self.is_context_encoding = other.is_context_encoding
+        self.num_layers = other.num_layers
+        self.batch_size = other.batch_size
+        self.max_seq_len = other.max_seq_len
+
+    fn __moveinit__(out self, owned other: Self):
+        self.key_cache = other.key_cache
+        self.value_cache = other.value_cache
+        self.seq_ids = other.seq_ids^
+        self.cache_lengths = other.cache_lengths
+        self.is_context_encoding = other.is_context_encoding
+        self.num_layers = other.num_layers
+        self.batch_size = other.batch_size
+        self.max_seq_len = other.max_seq_len
+
+    @staticmethod
+    fn id() -> String:
+        return (
+            "ContiguousKVCacheCollection+"
+            + str(type)
+            + "+"
+            + str(kv_params.num_heads)
+            + "+"
+            + str(kv_params.head_size)
+        )
+
+    fn get_key_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
+        constrained[_type_is_eq[cache_t, self.CacheType]()]()
+        var layer_size = self.batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
+        var k_shape = IndexList[4](
+            self.key_cache.dim[1](),
+            self.key_cache.dim[2](),
+            self.key_cache.dim[3](),
+            self.key_cache.dim[4](),
+        )
+
+        var layer_key_cache = Self.CacheType.BlockType(
+            self.key_cache.data + (layer_idx * layer_size), k_shape
+        )
+        return rebind[cache_t](
+            self.CacheType(
+                layer_key_cache,
+                self.cache_lengths,
+                self.is_context_encoding,
+                self.batch_size,
+            )
+        )
+
+    fn get_value_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
+        var layer_size = self.batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
+        var v_shape = IndexList[4](
+            self.value_cache.dim[1](),
+            self.value_cache.dim[2](),
+            self.value_cache.dim[3](),
+            self.value_cache.dim[4](),
+        )
+
+        var layer_value_cache = self.CacheType.BlockType(
+            self.value_cache.data + (layer_idx * layer_size), v_shape
+        )
+
+        return rebind[cache_t](
+            self.CacheType(
+                layer_value_cache,
+                self.cache_lengths,
+                self.is_context_encoding,
+                self.batch_size,
+            )
+        )
+
+    fn get_seq_ids(self) -> List[Int]:
+        return self.seq_ids
+
+    fn cache_length(self, batch_idx: Int) -> Int:
+        debug_assert(
+            batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
+        )
+        return int(self.cache_lengths[batch_idx])
+
+    fn cache_length_nd(self) -> NDBuffer[DType.uint32, 1]:
+        return self.cache_lengths
 
 
 struct ContinuousBatchingKVCacheCollection[
@@ -724,6 +945,97 @@ struct ContinuousBatchingKVCacheCollection[
                 self.is_cache_empty,
                 layer_idx,
                 Self.CacheType.ValueIdx,
+            )
+        )
+
+    fn get_seq_ids(self) -> List[Int]:
+        return self.seq_ids
+
+    fn cache_length(self, bs_idx: Int) -> Int:
+        return int(self.cache_lengths[bs_idx])
+
+    fn cache_length_nd(self) -> NDBuffer[DType.uint32, 1]:
+        return self.cache_lengths
+
+
+struct PagedKVCacheCollection[
+    type: DType, kv_params: KVCacheStaticParams, page_size: Int
+](KVCollectionT):
+    alias CacheType = PagedKVCache[type, kv_params, page_size]
+
+    var blocks: NDBuffer[type, 6]
+    var cache_lengths: NDBuffer[DType.uint32, 1]
+    var lookup_table: NDBuffer[DType.uint32, 2]
+    var is_cache_empty: Bool
+    var seq_ids: List[Int]
+
+    fn __init__(
+        out self,
+        blocks: __type_of(self.blocks),
+        cache_lengths: __type_of(self.cache_lengths),
+        lookup_table: __type_of(self.lookup_table),
+        is_cache_empty: Bool,
+        seq_ids: List[Int],
+    ):
+        self.blocks = blocks
+        self.cache_lengths = cache_lengths
+        self.lookup_table = lookup_table
+        self.is_cache_empty = is_cache_empty
+        self.seq_ids = seq_ids
+
+    fn __copyinit__(out self, other: Self):
+        self.blocks = other.blocks
+        self.cache_lengths = other.cache_lengths
+        self.lookup_table = other.lookup_table
+        self.is_cache_empty = other.is_cache_empty
+        self.seq_ids = other.seq_ids
+
+    fn __moveinit__(out self, owned other: Self):
+        self.blocks = other.blocks
+        self.cache_lengths = other.cache_lengths
+        self.lookup_table = other.lookup_table
+        self.is_cache_empty = other.is_cache_empty
+        self.seq_ids = other.seq_ids^
+
+    @staticmethod
+    fn id() -> String:
+        return "PagedKVCacheCollection+" + str(type)
+
+    fn get_key_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
+        constrained[
+            _type_is_eq[cache_t, self.CacheType](),
+            (
+                "Invalid cache type passed to"
+                " PagedKVCacheCollection::get_key_cache"
+            ),
+        ]()
+        return rebind[cache_t](
+            self.CacheType(
+                self.blocks,
+                self.cache_lengths,
+                self.lookup_table,
+                self.is_cache_empty,
+                layer_idx,
+                Self.CacheType.KeyIdx,
+            )
+        )
+
+    fn get_value_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
+        constrained[
+            _type_is_eq[cache_t, self.CacheType](),
+            (
+                "Invalid cache type passed to"
+                " PagedKVCacheCollection::get_key_cache"
+            ),
+        ]()
+        return rebind[cache_t](
+            self.CacheType(
+                self.blocks,
+                self.cache_lengths,
+                self.lookup_table,
+                self.is_cache_empty,
+                layer_idx,
+                Self.CacheType.KeyIdx,
             )
         )
 
