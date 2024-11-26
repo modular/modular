@@ -123,6 +123,6 @@ fn uses_opaque():
     information about the funciton may be needed to lower things in the graph
     compiler.
 
-    TODO(GRA-1145): Remove the need for this.
+    TODO(GEX-1145): Remove the need for this.
     """
     return
