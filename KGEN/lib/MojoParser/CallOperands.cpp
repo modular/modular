@@ -59,11 +59,10 @@ CallOperands::diagnoseKeywordOperands(PogListAttr pogListAttr,
     if (name.empty())
       continue;
     PassingKind passingKind = pogAttr.getPassingKind();
-    // Implicit and inferred parameter aren't passed by the user. They must be
+    // Implicit parameter cannot be passed by the user. They must be
     // inferred from values bound to parameters or arguments, so we don't have
-    // to verify them here.
-    if (passingKind == PassingKind::Implicit ||
-        passingKind == PassingKind::Inferred)
+    // to verify them here.  Implicit parameters can be bound by name.
+    if (passingKind == PassingKind::Implicit)
       continue;
     if (pogListAttr.isPack(argIdx) || pogListAttr.isVariadic(argIdx))
       continue; // Variadic/pack args cannot be specified by their keyword.

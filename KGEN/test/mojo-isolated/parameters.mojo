@@ -749,6 +749,19 @@ struct MyList[T: Copyable]:
     @implicit
     fn __init__(out self, *values: T): pass
 
+# Infer-only parameters should be bindable with keywords
+alias ImmMyStringSlice = MyStringSlice[is_mutable=False]
+struct MyStringSlice[is_mutable: Bool, //, origin: Origin[is_mutable]]:  pass
+
+# This only binds to immutable things.
+# CHECK-LABEL: lit.func @"test_imm_string_slice
+# CHECK-SAME: (%a: !lit.ref<{{.*}}@MyStringSlice<:!Bool {:i1 0}, 
+fn test_imm_string_slice(a: ImmMyStringSlice):
+    pass
+
+
+
+
 
 ##===----------------------------------------------------------------------===##
 # Function Overloading on Parameters
