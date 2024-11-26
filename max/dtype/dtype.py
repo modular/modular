@@ -47,15 +47,17 @@ class DType(Enum):
     # f8e5m2 = 0 | mIsFloat
     # f8e4m3 = 1 | mIsFloat
     # f8e3m4 = 2 | mIsFloat
-    float16 = 3 | mIsFloat  # Original name: f16
-    bfloat16 = 4 | mIsFloat  # Original name: bf16
-    float32 = 5 | mIsFloat  # Original name: f32
-    float64 = 6 | mIsFloat  # Original name: f64
-    # f128 = 7 | mIsFloat
+    # f8e5m2fnuz = 3 | mIsFloat
+    # f8e4m3fnuz = 4 | mIsFloat
+    float16 = 5 | mIsFloat  # Original name: f16
+    bfloat16 = 6 | mIsFloat  # Original name: bf16
+    float32 = 7 | mIsFloat  # Original name: f32
+    float64 = 8 | mIsFloat  # Original name: f64
+    # f128 = 9 | mIsFloat
 
-    # f24 = 8 | mIsFloat
-    # f80 = 9 | mIsFloat
-    # tf32 = 10 | mIsFloat
+    # f24 = 10 | mIsFloat
+    # f80 = 11 | mIsFloat
+    # tf32 = 12 | mIsFloat
 
     bool = 1  # Original name: kBool
 
