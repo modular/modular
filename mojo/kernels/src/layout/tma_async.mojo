@@ -45,7 +45,9 @@ fn _to_int_tuple[*vals: Int]() -> IntTuple:
 @value
 @register_passable("trivial")
 struct TMABarrier(CollectionElement):
-    var mbar: UnsafePointer[Scalar[DType.int64], AddressSpace.SHARED]
+    var mbar: UnsafePointer[
+        Scalar[DType.int64], address_space = AddressSpace.SHARED
+    ]
 
     @always_inline
     fn __init__(inout self):

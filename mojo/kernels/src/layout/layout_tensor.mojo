@@ -210,7 +210,7 @@ struct LayoutTensor[
 
     alias index_type: DType = _get_index_type(layout, address_space)
 
-    var ptr: UnsafePointer[Scalar[dtype], address_space]
+    var ptr: UnsafePointer[Scalar[dtype], address_space=address_space]
 
     var runtime_layout: RuntimeLayout[layout, bitwidth=layout_bitwidth]
 
@@ -225,7 +225,9 @@ struct LayoutTensor[
 
     @always_inline
     @implicit
-    fn __init__(out self, ptr: UnsafePointer[Scalar[dtype], address_space]):
+    fn __init__(
+        out self, ptr: UnsafePointer[Scalar[dtype], address_space=address_space]
+    ):
         """Create a LayoutTensor with an UnsafePointer. Expect layout to be
         fully static.
 
@@ -243,7 +245,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         inout self,
-        ptr: UnsafePointer[Scalar[dtype], address_space],
+        ptr: UnsafePointer[Scalar[dtype], address_space=address_space],
         runtime_layout: RuntimeLayout[layout, **_],
     ):
         """Create a LayoutTensor with an UnsafePointer. Expect element layout
@@ -272,7 +274,7 @@ struct LayoutTensor[
     @always_inline
     fn __init__(
         inout self,
-        ptr: UnsafePointer[Scalar[dtype], address_space],
+        ptr: UnsafePointer[Scalar[dtype], address_space=address_space],
         runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
         element_runtime_layout: RuntimeLayout[element_layout],
     ):
@@ -1922,7 +1924,8 @@ struct LayoutTensor[
 
     @always_inline
     fn distance(
-        self, addr: UnsafePointer[Scalar[dtype], address_space, *_]
+        self,
+        addr: UnsafePointer[Scalar[dtype], address_space=address_space, **_],
     ) -> UInt:
         """Returns the distance from the input address."""
 
@@ -2570,9 +2573,11 @@ fn copy_local_to_dram[
 
             if dst_idx < dst_idx_bound:
                 var src_element = Element[dst.dtype, src.element_layout].load(
-                    rebind[UnsafePointer[Scalar[dst.dtype], src.address_space]](
-                        src.ptr
-                    ).offset(src_idx),
+                    rebind[
+                        UnsafePointer[
+                            Scalar[dst.dtype], address_space = src.address_space
+                        ]
+                    ](src.ptr).offset(src_idx),
                     src.runtime_element_layout,
                 )
                 alias dst_element_type = Element[dst.dtype, dst.element_layout]
@@ -2741,7 +2746,9 @@ struct LayoutTensorIter[
     The returned layout tensor is NOT vectorized. User should explicitly vectorize.
     """
 
-    var ptr: UnsafePointer[Scalar[type], address_space, alignment]
+    var ptr: UnsafePointer[
+        Scalar[type], address_space=address_space, alignment=alignment
+    ]
     var offset: Scalar[_get_unsigned_type(layout, address_space)]
     var stride: Scalar[_get_unsigned_type(layout, address_space)]
     var bound: Scalar[_get_unsigned_type(layout, address_space)]

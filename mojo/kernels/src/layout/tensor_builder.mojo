@@ -367,7 +367,9 @@ struct LayoutTensorBuild[
     @always_inline
     fn view[
         address_space: AddressSpace
-    ](self, ptr: UnsafePointer[Scalar[dtype], address_space]) -> LayoutTensor[
+    ](
+        self, ptr: UnsafePointer[Scalar[dtype], address_space=address_space]
+    ) -> LayoutTensor[
         dtype,
         __layout,
         address_space=address_space,
@@ -401,7 +403,7 @@ struct LayoutTensorBuild[
     @always_inline
     fn iter(
         self,
-        ptr: UnsafePointer[Scalar[dtype], __address_space],
+        ptr: UnsafePointer[Scalar[dtype], address_space=__address_space],
         bound: Int,
     ) -> LayoutTensorIter[
         dtype,

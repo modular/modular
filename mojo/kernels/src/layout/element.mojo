@@ -89,7 +89,7 @@ struct Element[
 
     @staticmethod
     fn load(
-        ptr: UnsafePointer[Scalar[dtype], *_, **_],
+        ptr: UnsafePointer[Scalar[dtype], **_],
         runtime_layout: RuntimeLayout[
             layout, bitwidth=bitwidth
         ] = RuntimeLayout[layout, bitwidth=bitwidth](),
@@ -158,7 +158,7 @@ struct Element[
 
     @staticmethod
     fn masked_load(
-        ptr: UnsafePointer[Scalar[dtype], *_, **_],
+        ptr: UnsafePointer[Scalar[dtype], **_],
         runtime_layout: RuntimeLayout[
             layout, bitwidth=bitwidth
         ] = RuntimeLayout[layout, bitwidth=bitwidth](),
@@ -281,7 +281,7 @@ struct Element[
                 ]
         return Element(element_data, runtime_layout)
 
-    fn store(self, ptr: UnsafePointer[Scalar[dtype], *_, **_]):
+    fn store(self, ptr: UnsafePointer[Scalar[dtype], **_]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
@@ -340,7 +340,7 @@ struct Element[
                     self.element_data[i + j * dim_0]
                 )
 
-    fn masked_store(self, ptr: UnsafePointer[Scalar[dtype], *_, **_]):
+    fn masked_store(self, ptr: UnsafePointer[Scalar[dtype], **_]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
