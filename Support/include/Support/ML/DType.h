@@ -97,15 +97,17 @@ public:
     f8e5m2 = 0 | mIsFloat,
     f8e4m3 = 1 | mIsFloat,
     f8e3m4 = 2 | mIsFloat,
-    f16 = 3 | mIsFloat,
-    bf16 = 4 | mIsFloat,
-    f32 = 5 | mIsFloat,
-    f64 = 6 | mIsFloat,
-    f128 = 7 | mIsFloat,
+    f8e5m2fnuz = 3 | mIsFloat,
+    f8e4m3fnuz = 4 | mIsFloat,
+    f16 = 5 | mIsFloat,
+    bf16 = 6 | mIsFloat,
+    f32 = 7 | mIsFloat,
+    f64 = 8 | mIsFloat,
+    f128 = 9 | mIsFloat,
 
-    f24 = 8 | mIsFloat,
-    f80 = 9 | mIsFloat,
-    tf32 = 10 | mIsFloat,
+    f24 = 10 | mIsFloat,
+    f80 = 11 | mIsFloat,
+    tf32 = 12 | mIsFloat,
 
     //===--- Encodings for other types ------------------------------------===//
 
@@ -282,6 +284,8 @@ inline constexpr ssize_t DType::getWidthInBits() const {
   case DType::f8e5m2:
   case DType::f8e4m3:
   case DType::f8e3m4:
+  case DType::f8e5m2fnuz:
+  case DType::f8e4m3fnuz:
   case DType::kBool:
     return 8;
   case DType::f16:
@@ -318,8 +322,10 @@ DType::getSignificandPrecisionInBits() const {
     // f24 has an unclear format and is not supported in our stack.
     return std::nullopt;
   case DType::f8e5m2:
+  case DType::f8e5m2fnuz:
     return 2 + 1;
   case DType::f8e4m3:
+  case DType::f8e4m3fnuz:
     return 3 + 1;
   case DType::f8e3m4:
     return 4 + 1;
