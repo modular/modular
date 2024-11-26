@@ -556,6 +556,20 @@ fn dep_type[
     return value
 
 
+# Check that we dump optional default values correctly.
+from collections.optional import Optional
+
+
+# CHECK: "signature": "optional_default_arg_none(input: Optional[SIMD[int64, 1]] = Optional(None))"
+fn optional_default_arg_none(input: Optional[Int64] = None):
+    pass
+
+
+# CHECK: "signature": "optional_default_arg_13(input: Optional[SIMD[int64, 1]] = Optional(SIMD(13)))"
+fn optional_default_arg_13(input: Optional[Int64] = Int64(13)):
+    pass
+
+
 # ===----------------------------------------------------------------------=== #
 # Struct documentation
 # ===----------------------------------------------------------------------=== #

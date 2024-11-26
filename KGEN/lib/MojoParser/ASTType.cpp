@@ -662,6 +662,11 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
+  if (auto noneAttr = dyn_cast<NoneAttr>(param)) {
+    os << "None";
+    return;
+  }
+
   os << getParamAsString(param, diagShared);
 }
 
