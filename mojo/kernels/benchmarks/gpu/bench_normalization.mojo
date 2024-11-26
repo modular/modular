@@ -85,7 +85,7 @@ fn bench_layer_norm_gpu[
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
             layer_norm_gpu[input_fn, gamma_fn](
-                shape, beta, epsilon, data_buf, context=ctx
+                shape, beta, epsilon, data_buf, ctx=ctx
             )
 
         b.iter_custom[kernel_launch](ctx)
