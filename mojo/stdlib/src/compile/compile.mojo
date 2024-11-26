@@ -68,6 +68,8 @@ alias _EMISSION_KIND_ASM = 0
 alias _EMISSION_KIND_LLVM = 1
 alias _EMISSION_KIND_LLVM_OPT = 2
 alias _EMISSION_KIND_SHARED_OBJ = 3
+# This is should be used internal only.
+alias _EMISSION_KIND_ELABORATED_MLIR = 4
 
 
 fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
@@ -180,6 +182,27 @@ fn compile_info[
     compile_options: StringLiteral = "",
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> Info:
+    @parameter
+    if emission_kind == "elab-mlir":
+
+        @parameter
+        if is_failable:
+            return _compile_info_failable_impl[
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_ELABORATED_MLIR,
+                compile_options=compile_options,
+                target=target,
+            ]()
+        else:
+            return _compile_info_non_failable_impl[
+                func_type,
+                func,
+                emission_kind=_EMISSION_KIND_ELABORATED_MLIR,
+                compile_options=compile_options,
+                target=target,
+            ]()
+
     @parameter
     if emission_kind == "llvm":
 
