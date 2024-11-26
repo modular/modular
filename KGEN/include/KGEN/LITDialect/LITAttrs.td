@@ -865,12 +865,19 @@ def LIT_StructAttr : LITAttr<"LITStruct", "struct", [TypedAttrInterface,
     AttributeSelfTypeParameter<"", "StructType">:$type);
   let assemblyFormat = "`<` custom<StructElements>($values) `>`";
 
+  // Disable default builders so we can canonicalize on construction.
+  let skipDefaultBuilders = 1;
+
   let builders = [
+    // Returns TypedAttr instead of StructAttr because it canonicalizes on
+    // construction.
+    AttrBuilder<(ins "ArrayRef<std::tuple<StringAttr, TypedAttr>>":$values,
+                     "StructType":$type), "", "TypedAttr">,
     AttrBuilderWithInferredContext<(ins
         "ArrayRef<std::tuple<StringAttr, TypedAttr>>":$values,
         "StructType":$type), [{
-      return $_get(type.getContext(), values, type);
-    }]>
+      return get(type.getContext(), values, type);
+    }], "TypedAttr">
   ];
 }
 
