@@ -727,9 +727,9 @@ class InferenceSession:
         options_dict: dict[str, Any] = {}
 
         if custom_extensions is not None:
-            options_dict[
-                "custom_extensions"
-            ] = _process_custom_extensions_objects(custom_extensions)
+            options_dict["custom_extensions"] = (
+                _process_custom_extensions_objects(custom_extensions)
+            )
         if custom_ops_path is not None:
             if "custom_extensions" not in options_dict:
                 options_dict["custom_extensions"] = list()
@@ -762,9 +762,9 @@ class InferenceSession:
                     model, _FrameworkFormat.torchscript_function, options_dict
                 )
             elif _is_torch_mlir_module(model):
-                options_dict[
-                    "_mlir_module_capsule_name"
-                ] = "modular.torch_mlir.ir.Module._CAPIPtr"
+                options_dict["_mlir_module_capsule_name"] = (
+                    "modular.torch_mlir.ir.Module._CAPIPtr"
+                )
                 _model = self._impl.compile_from_object(
                     model, _FrameworkFormat.torch_mlir, options_dict
                 )
