@@ -477,7 +477,7 @@ fn someFn2():
   if True: # expected-error {{unknown tokens at the end of a declaration}}
     pass
 
-@value  # expected-error {{body decorators not supported on this statement}}
+@value  # expected-error {{unrecognized body decorators}}
 trait NoDecorators:
     pass
 
