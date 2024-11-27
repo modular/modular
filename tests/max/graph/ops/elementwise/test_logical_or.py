@@ -68,6 +68,6 @@ def test_logical_or__invalid_broadcast(s1: Shape, s2: Shape):
 @given(tensor_type=tensor_types(dtypes=st.just(DType.bool)), b=...)
 def test_logical_or__python_bool(tensor_type: TensorType, b: bool):
     with Graph("logical_or", input_types=[tensor_type]) as graph:
-        x, = graph.inputs
+        (x,) = graph.inputs
         assert logical_or(x, b).type == tensor_type
         assert logical_or(b, x).type == tensor_type

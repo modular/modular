@@ -55,8 +55,7 @@ def test_elementwise_add_graph() -> None:
 
 
 def test_elementwise_add_graph_with_device_prop() -> None:
-    """Builds a simple graph with explicit device on inputs and checks for output device propagation in the IR.
-    """
+    """Builds a simple graph with explicit device on inputs and checks for output device propagation in the IR."""
     with Graph(
         "elementwise_add",
         input_types=[
@@ -83,8 +82,7 @@ def test_elementwise_add_graph_with_device_prop() -> None:
 
 
 def test_elementwise_add_graph_with_device_prop_error() -> None:
-    """Builds a simple graph with explicit device on inputs and checks for error conditions on output device propagation in the IR.
-    """
+    """Builds a simple graph with explicit device on inputs and checks for error conditions on output device propagation in the IR."""
     with Graph(
         "elementwise_add",
         input_types=[

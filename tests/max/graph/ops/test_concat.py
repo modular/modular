@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """ops.concat tests."""
 
-
 import pytest
 from conftest import axes, shapes, tensor_types
 from hypothesis import assume, given, settings

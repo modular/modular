@@ -8,7 +8,6 @@
 
 """Test the max.engine Python bindings with Max Graph when using explicit device."""
 
-
 import numpy as np
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType

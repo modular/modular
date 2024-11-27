@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for load_buffer."""
 
-
 from max.mlir.dialects import rmo
 
 from ..graph import Graph

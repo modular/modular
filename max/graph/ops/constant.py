@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
+
 from typing import Union
 
 import numpy as np

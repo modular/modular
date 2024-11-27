@@ -38,7 +38,11 @@ def _install(package):
 
 
 def _check_gguf():
-    global gguf, _GGML_TO_DTYPE, _FROM_QUANTIZED_GGML_DTYPES, _TO_QUANTIZED_GGML_DTYPES
+    global \
+        gguf, \
+        _GGML_TO_DTYPE, \
+        _FROM_QUANTIZED_GGML_DTYPES, \
+        _TO_QUANTIZED_GGML_DTYPES
     if gguf is None:
         _install("sentencepiece")
         _install("gguf")
@@ -109,9 +113,11 @@ class GGUFWeights:
         """
         _check_gguf()
         assert gguf is not None
-        self._reader = source if isinstance(
-            source, gguf.GGUFReader
-        ) else gguf.GGUFReader(source)
+        self._reader = (
+            source
+            if isinstance(source, gguf.GGUFReader)
+            else gguf.GGUFReader(source)
+        )
         self._tensors = tensors or {t.name: t for t in self._reader.tensors}
         self._prefix = prefix
         self._allocated = {} if allocated is None else allocated
@@ -125,11 +131,14 @@ class GGUFWeights:
         """Iterate through allocable weights that start with the weight name."""
         for name in self._tensors:
             if name.startswith(self._prefix):
-                yield name, GGUFWeights(
-                    self._reader,
-                    self._tensors,
-                    prefix=name,
-                    allocated=self._allocated,
+                yield (
+                    name,
+                    GGUFWeights(
+                        self._reader,
+                        self._tensors,
+                        prefix=name,
+                        allocated=self._allocated,
+                    ),
                 )
 
     def __getattr__(self, attr) -> GGUFWeights:

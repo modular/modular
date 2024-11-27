@@ -189,10 +189,11 @@ class Graph:
                 # Account for forward methods that return None, a single
                 # output, or multiple outputs.
                 outputs = (
-                    () if result
-                    is None else (result,) if not isinstance(
-                        result, tuple
-                    ) else result
+                    ()
+                    if result is None
+                    else (result,)
+                    if not isinstance(result, tuple)
+                    else result
                 )
                 self.output(*outputs)
 
@@ -366,8 +367,7 @@ class Graph:
         except Exception as e:
             raise ValueError(
                 "Graph failed to verify. Please file an issue. This should be"
-                " impossible."
-                + f"\n{e}"
+                " impossible." + f"\n{e}"
             ) from None
 
     def _load_mlir(self, path: Path):
@@ -420,8 +420,7 @@ class Graph:
             align=(
                 # Default to dtype alignment unless otherwise specified, for
                 # example by checkpoint metadata.
-                weight.align if weight.align
-                is not None else weight.dtype.align
+                weight.align if weight.align is not None else weight.dtype.align
             ),
         )[0]
 

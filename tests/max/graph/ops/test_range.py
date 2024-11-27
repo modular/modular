@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """ops.range tests."""
 
-
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType

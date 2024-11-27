@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test value printing and debug print options."""
 
-
 import platform
 import pytest
 import numpy as np
@@ -61,8 +60,7 @@ def test_debug_print_compact(compiled_model, session, capfd):
     captured = capfd.readouterr()
     assert (
         "test_x_value = tensor([[1.1235, 1.1235, 1.1235, ..., 1.1235,"
-        " 1.1235, 1.1235]], dtype=f32, shape=[20])"
-        in captured.out
+        " 1.1235, 1.1235]], dtype=f32, shape=[20])" in captured.out
     )
 
 
@@ -74,8 +72,7 @@ def test_debug_print_buffer(compiled_buffer_model, session, capfd):
     captured = capfd.readouterr()
     assert (
         "test_x_value = tensor([[1.1235, 1.1235, 1.1235, ..., 1.1235,"
-        " 1.1235, 1.1235]], dtype=f32, shape=[20])"
-        in captured.out
+        " 1.1235, 1.1235]], dtype=f32, shape=[20])" in captured.out
     )
 
 
@@ -89,8 +86,7 @@ def test_debug_print_full(compiled_model, session, capfd):
         "test_x_value = tensor<20xf32> [1.12e+00, 1.12e+00, 1.12e+00,"
         " 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00,"
         " 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00, 1.12e+00,"
-        " 1.12e+00, 1.12e+00, 1.12e+00]"
-        in captured.out
+        " 1.12e+00, 1.12e+00, 1.12e+00]" in captured.out
     )
 
     session.set_debug_print_options("FULL", 6)
@@ -103,8 +99,7 @@ def test_debug_print_full(compiled_model, session, capfd):
         " 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00,"
         " 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00,"
         " 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00, 1.123457e+00,"
-        " 1.123457e+00, 1.123457e+00, 1.123457e+00]"
-        in captured.out
+        " 1.123457e+00, 1.123457e+00, 1.123457e+00]" in captured.out
     )
 
 

@@ -206,7 +206,8 @@ class BufferValue(Value):
         if index is Ellipsis:
             return x
         return ops.slice_tensor(
-            x, index if isinstance(index, Iterable) else (index,)  # type: ignore
+            x,
+            index if isinstance(index, Iterable) else (index,),  # type: ignore
         )
 
     def __setitem__(
@@ -217,7 +218,9 @@ class BufferValue(Value):
         if index is Ellipsis:
             return ops.buffer_store(self, val)
         return ops.buffer_store_slice(
-            self, val, index if isinstance(index, Iterable) else (index,)  # type: ignore
+            self,
+            val,
+            index if isinstance(index, Iterable) else (index,),  # type: ignore
         )
 
     def print(self, label: str = "debug_buffer"):
@@ -336,7 +339,8 @@ class TensorValue(Value):
 
     def __getitem__(self, index):
         return ops.slice_tensor(
-            self, index if isinstance(index, Iterable) else (index,)  # type: ignore
+            self,
+            index if isinstance(index, Iterable) else (index,),  # type: ignore
         )
 
     def __eq__(self, rhs: Any) -> TensorValue:  # type: ignore[override]

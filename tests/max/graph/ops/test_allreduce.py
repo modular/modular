@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
+
 import pytest
 from conftest import tensor_types
 from hypothesis import strategies as st

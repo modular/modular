@@ -131,13 +131,16 @@ class SafetensorWeights:
         """Iterate through allocable weights that start with the weight name."""
         for name in self._tensors:
             if name.startswith(self._prefix):
-                yield name, SafetensorWeights(
-                    self._filepaths,
-                    self._tensors,
-                    tensors_to_file_idx=self._tensors_to_file_idx,
-                    prefix=name,
-                    allocated=self._allocated,
-                    gguf_name_map=self._gguf_name_map,
+                yield (
+                    name,
+                    SafetensorWeights(
+                        self._filepaths,
+                        self._tensors,
+                        tensors_to_file_idx=self._tensors_to_file_idx,
+                        prefix=name,
+                        allocated=self._allocated,
+                        gguf_name_map=self._gguf_name_map,
+                    ),
                 )
 
     def __getattr__(self, attr) -> SafetensorWeights:

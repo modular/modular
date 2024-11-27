@@ -201,8 +201,8 @@ def _slice_and_output_tensors(
             f"Too many indices supplied to slice for shape {x.shape}"
         )
 
-    ellipsis_index = indices.index(Ellipsis) if Ellipsis in indices else len(
-        indices
+    ellipsis_index = (
+        indices.index(Ellipsis) if Ellipsis in indices else len(indices)
     )
     before = indices[:ellipsis_index]
     after = indices[ellipsis_index + 1 :]
@@ -226,8 +226,8 @@ def _slice_and_output_tensors(
     # If type(dim,int), convert to an int constant TensorValue.
     def value(dim: Union[TensorValue, int]) -> TensorValue:
         assert isinstance(dim, (TensorValue, int))
-        return dim if isinstance(dim, TensorValue) else constant(
-            dim, DType.int64
+        return (
+            dim if isinstance(dim, TensorValue) else constant(dim, DType.int64)
         )
 
     # Create starts, stops, and steps tensors.
@@ -255,8 +255,8 @@ def expand_ellipsis(indices: SliceIndices, input_rank: int) -> SliceIndices:
         raise ValueError(msg)
 
     # Handle Ellipsis by expanding remaining indices with slice(None).
-    ellipsis_index = indices.index(Ellipsis) if Ellipsis in indices else len(
-        indices
+    ellipsis_index = (
+        indices.index(Ellipsis) if Ellipsis in indices else len(indices)
     )
     num_regular_indices = len(indices) - num_ellipsis - indices.count(None)
     remaining = input_rank - num_regular_indices
@@ -311,8 +311,9 @@ def slice_arguments(
         if step < 0:
             start = subslice.start if subslice.start is not None else -1
             stop = (
-                subslice.stop if subslice.stop
-                is not None else -input_shape[i] - 1
+                subslice.stop
+                if subslice.stop is not None
+                else -input_shape[i] - 1
             )
         elif step > 0:
             start = subslice.start if subslice.start is not None else 0

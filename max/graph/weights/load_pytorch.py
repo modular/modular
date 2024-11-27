@@ -128,11 +128,14 @@ class PytorchWeights:
         """Iterate through allocable weights that start with the weight name."""
         for name in self._tensor_infos:
             if name.startswith(self._prefix):
-                yield name, PytorchWeights(
-                    self._filepath,
-                    tensor_infos=self._tensor_infos,
-                    prefix=name,
-                    allocated=self._allocated,
+                yield (
+                    name,
+                    PytorchWeights(
+                        self._filepath,
+                        tensor_infos=self._tensor_infos,
+                        prefix=name,
+                        allocated=self._allocated,
+                    ),
                 )
 
     def __getattr__(self, attr) -> PytorchWeights:

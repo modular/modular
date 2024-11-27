@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Tests attribute factories."""
+
 import array
 import re
 from pathlib import Path
