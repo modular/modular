@@ -248,6 +248,33 @@ PogListAttr::toPogs(ArrayRef<StringAttr> names,
   return pogs;
 }
 
+LogicalResult
+PogListAttr::verifyGenerator(function_ref<InFlightDiagnostic()> emitError,
+                             ArrayRef<Type> inputParamTypes, Type body) const {
+  if (size() != inputParamTypes.size()) {
+    return emitError()
+           << "number of pog names doesn't match number of pog types";
+  }
+
+  if (failed(verifyDefaultTypes(emitError, getDefaultPos(), getDefaultKwOnly(),
+                                *this, inputParamTypes, "pog")))
+    return failure();
+  return success();
+}
+
+void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
+  ArrayRef<Type> paramTypes = generator.getInputParamTypes();
+
+  p << "!lit.generator<";
+  if (paramTypes.empty())
+    p << "<>";
+  else
+    LIT::printOptionalParamSignature(p, paramTypes, *this);
+  p << ' ';
+  printKGENType(p, generator.getBody());
+  p << '>';
+}
+
 //===----------------------------------------------------------------------===//
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
