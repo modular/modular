@@ -8,7 +8,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import llvm_intrinsic
+from sys import llvm_intrinsic, has_amd_gpu
 from sys.info import alignof
 from memory import bitcast
 
@@ -27,11 +27,6 @@ from utils.index import Index
 from utils.numerics import isnan
 
 alias BLOCK_DIM = 8
-# MMA dimensions. FP32 = TF32*TF32 + FP32. We use the following (via library):
-# llvm.nvvm.mma.m16n8k8.row.col.tf32
-alias MMA_M = 16
-alias MMA_N = 8
-alias MMA_K = 8
 
 
 # BM: The threadblock size for M dimension SMEM caching.
@@ -313,8 +308,9 @@ fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
     alias K = 4096
 
     # TODO: Find best for target GPU.
-    #       For A100 see below (based on siboehm repo):
-    # alias K10_NUM_THREADS = 128
+    #       For A100 see below (based on siboehm repo).
+    #       For MI300X we need to further autotune (below is a working version).
+    # alias K10_NUM_THREADS = 256 if has_amd_gpu() else 128
     # alias K10_BN = 128
     # alias K10_BM = 64
     # alias K10_BK = 16
@@ -324,18 +320,20 @@ fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
     # alias K10_TN = 4
     # alias K10_TM = 4
     # Settings for A6000
-    alias K10_NUM_THREADS = 128
+    alias K10_NUM_THREADS = 256 if has_amd_gpu() else 128
     alias K10_BN = 128
-    alias K10_BM = 128
+    alias K10_BM = 256 if has_amd_gpu() else 128
     alias K10_BK = 16
     alias K10_WN = 64
-    alias K10_WM = 64
+    alias K10_WM = 128 if has_amd_gpu() else 64
     alias K10_WNITER = 4
     alias K10_TN = 4
     alias K10_TM = 8
 
-    alias NUM_WARPS = K10_NUM_THREADS / 32
-    alias K10_WMITER = (K10_WM * K10_WN) // (32 * K10_TM * K10_TN * K10_WNITER)
+    alias NUM_WARPS = K10_NUM_THREADS / WARP_SIZE
+    alias K10_WMITER = (K10_WM * K10_WN) // (
+        WARP_SIZE * K10_TM * K10_TN * K10_WNITER
+    )
 
     # Warptile in threadblocktile.
     constrained[(K10_BN % K10_WN == 0) and (K10_BM % K10_WM == 0)]()
@@ -440,7 +438,9 @@ fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
         TN=K10_TN,
         NUM_THREADS=K10_NUM_THREADS,
     ]
-    var func = ctx.compile_function[sgemm_type](
+    var func = ctx.compile_function[
+        sgemm_type
+    ]() if has_amd_gpu() else ctx.compile_function[sgemm_type](
         threads_per_block=K10_NUM_THREADS
     )
 
