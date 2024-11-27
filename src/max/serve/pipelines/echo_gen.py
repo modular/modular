@@ -54,9 +54,9 @@ class EchoPipelineTokenizer(
         return EchoTokenGeneratorContext(
             prompt=prompt,
             index=0,
-            max_tokens=request.max_new_tokens if request.max_new_tokens else len(
-                prompt
-            ),
+            max_tokens=request.max_new_tokens
+            if request.max_new_tokens
+            else len(prompt),
             seq_len=len(prompt),
         )
 

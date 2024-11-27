@@ -34,7 +34,7 @@ class Parameters(BaseModel):
 
 
 class TensorData(RootModel[List]):
-    root: List = Field(..., title='tensor_data')
+    root: List = Field(..., title="tensor_data")
 
 
 class RequestOutput(BaseModel):

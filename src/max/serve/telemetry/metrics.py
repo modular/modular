@@ -29,8 +29,7 @@ class _NoOpMetric:
 
 
 class _Metrics:
-    """Centralizes metrics to encapsulate the OTEL dependency and avoid breaking schema changes.
-    """
+    """Centralizes metrics to encapsulate the OTEL dependency and avoid breaking schema changes."""
 
     def __init__(self):
         self._req_count: Any = _NoOpMetric()

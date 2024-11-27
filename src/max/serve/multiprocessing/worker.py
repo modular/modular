@@ -46,16 +46,13 @@ class Worker(ABC):
     def __post_init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def shutdown(self):
-        ...
+    def shutdown(self): ...
 
     # Async lifecycle events.
 
-    async def started(self):
-        ...
+    async def started(self): ...
 
-    async def stopped(self):
-        ...
+    async def stopped(self): ...
 
 
 @dataclass
