@@ -70,8 +70,7 @@ def traced(
 
 
 def is_profiling_enabled() -> bool:
-    """Returns true if profiling is enabled via `MODULAR_ENABLE_PROFILING = 1`
-    """
+    """Returns true if profiling is enabled via `MODULAR_ENABLE_PROFILING = 1`"""
     enable_profiling: str | None = os.getenv("MODULAR_ENABLE_PROFILING")
     truthy_values: list[str] = ["1", "t", "true", "yes", "y"]
     return (
