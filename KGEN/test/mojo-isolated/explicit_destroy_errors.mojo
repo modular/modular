@@ -36,3 +36,23 @@ struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
 # expected-error @below {{Unhandled explicit_destroy type UnknownDestructibility}}
 fn foo[T: UnknownDestructibility](owned x: T):
     pass
+
+# TODO(MOCO-1468): Require error message for @explicit_destroy
+@explicit_destroy
+trait LinearCopyable:
+    fn __copyinit__(out self, existing: Self, /):
+        pass
+
+# CHECK-LABEL: @"receiveLinearCopyable
+# expected-error @below {{Unhandled explicit_destroy type LinearCopyable}}
+fn receiveLinearCopyable[T: LinearCopyable](owned x: T):
+    pass
+
+@explicit_destroy
+struct LinearCopyableStruct(LinearCopyable):
+    fn __copyinit__(out self, existing: Self, /):
+        pass
+
+# CHECK-LABEL: @"upcastLinearCopyable
+fn upcastLinearCopyable(owned x: LinearCopyableStruct):
+    receiveLinearCopyable(x)
