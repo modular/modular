@@ -31,7 +31,7 @@ from testing import assert_almost_equal
 
 from gpu.host import DeviceContext
 from gpu.host.info import DEFAULT_GPU_ARCH
-from internal_utils import bench_compile_time, env_get_dtype
+from internal_utils import bench_compile_time, env_get_dtype, arg_parse
 
 
 fn run_mha[
@@ -217,9 +217,6 @@ struct MHA_cfg:
     var depth: Int
     var num_heads: Int
     var group: Int
-    # vars
-    var seq_len: Int
-    var num_keys: Int
 
     @no_inline
     fn __str__(self) -> String:
@@ -247,9 +244,10 @@ fn main() raises:
     alias depth = env_get_int["depth", 128]()
     alias num_heads = env_get_int["num_heads", 32]()
     alias group = env_get_int["group", 1]()
-    alias seq_len = env_get_int["seq_len", 64]()
-    alias num_keys = env_get_int["num_keys", 64]()
     alias batch_size = env_get_int["batch_size", 1]()
+
+    var seq_len = int(arg_parse("seq_len", 64))
+    var num_keys = int(arg_parse("num_keys", 64))
 
     alias cfg = MHA_cfg(
         qkv_type=qkv_type,
@@ -257,8 +255,6 @@ fn main() raises:
         depth=depth,
         num_heads=num_heads,
         group=group,
-        seq_len=seq_len,
-        num_keys=num_keys,
     )
 
     var m = Bench()
@@ -271,7 +267,7 @@ fn main() raises:
                 cfg.num_heads,
                 cfg.group,
                 batch_size,
-            ](m, cfg.seq_len, cfg.num_keys, ctx)
+            ](m, seq_len, num_keys, ctx)
 
     except e:
         print("CUDA_ERROR:", e)

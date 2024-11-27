@@ -16,8 +16,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 32
-  num_keys: 32
+  $seq_len: 32
+  $num_keys: 32
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -25,8 +25,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 64
-  num_keys: 64
+  $seq_len: 64
+  $num_keys: 64
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -34,8 +34,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 128
-  num_keys: 128
+  $seq_len: 128
+  $num_keys: 128
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -43,8 +43,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 256
-  num_keys: 256
+  $seq_len: 256
+  $num_keys: 256
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -52,8 +52,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 512
-  num_keys: 512
+  $seq_len: 512
+  $num_keys: 512
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -61,8 +61,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 1024
-  num_keys: 1024
+  $seq_len: 1024
+  $num_keys: 1024
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -70,8 +70,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 1536
-  num_keys: 1536
+  $seq_len: 1536
+  $num_keys: 1536
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -79,8 +79,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 2048
-  num_keys: 2048
+  $seq_len: 2048
+  $num_keys: 2048
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -88,8 +88,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 4096
-  num_keys: 4096
+  $seq_len: 4096
+  $num_keys: 4096
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -97,8 +97,8 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 8192
-  num_keys: 8192
+  $seq_len: 8192
+  $num_keys: 8192
 
 - mask_rank: 4
   qkv_type: DType.bfloat16
@@ -106,6 +106,6 @@ params:
   depth: 128
   num_heads: 32
   group: 4
-  seq_len: 16384
-  num_keys: 16384
+  $seq_len: 16384
+  $num_keys: 16384
 
