@@ -8,7 +8,7 @@ from math import isclose
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, CUDA, Device, Tensor
+from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceType, Device, Graph, TensorType, Value
