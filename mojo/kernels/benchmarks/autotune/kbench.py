@@ -123,7 +123,7 @@ class ParamSpace:
         """Flatten the values in self.value and store them in a List
         Also, get the length of value list and store it in `length`.
         """
-        self.value_set = set(sorted(set(flatten(self.value)), reverse=False))
+        self.value_set = sorted(set(flatten(self.value)), reverse=False)
         self.value = None
         self.length = len(self.value_set)
 
