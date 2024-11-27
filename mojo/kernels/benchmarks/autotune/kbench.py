@@ -6,6 +6,7 @@
 import csv
 import functools
 import os
+import pickle
 import shutil
 import string
 import sys
@@ -22,8 +23,6 @@ import click
 import numpy as np
 import pandas as pd
 import rich
-import pickle
-
 from model.utils.exceptions import CLIException, pretty_exception_handler
 from rich import print, traceback
 from rich.console import Console
@@ -124,7 +123,7 @@ class ParamSpace:
         """Flatten the values in self.value and store them in a List
         Also, get the length of value list and store it in `length`.
         """
-        self.value_set = sorted(set(flatten(self.value)), reverse=False)
+        self.value_set = set(sorted(set(flatten(self.value)), reverse=False))
         self.value = None
         self.length = len(self.value_set)
 
