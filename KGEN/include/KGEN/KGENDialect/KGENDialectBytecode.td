@@ -31,7 +31,8 @@ def IntLiteralType : DialectType<(type)>;
 
 def GeneratorType : DialectType<(type
   TypeArray:$inputParamTypes,
-  Type:$body
+  Type:$body,
+  ConcreteOptionalAttribute<"GeneratorMetadataAttrInterface">:$metadata
 )>;
 
 def SignatureType : DialectType<(type
