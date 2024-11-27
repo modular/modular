@@ -17,12 +17,6 @@ def TypeCheckErrorType : DialectType<(type)>;
 
 def UnresolvedType : DialectType<(type)>;
 
-def LITGeneratorType : DialectType<(type
-  TypeArray:$inputParamTypes,
-  ConcreteType<"PogListAttr">:$paramListAttrs,
-  Type:$body
-)>;
-
 def TypeSignatureType : DialectType<(type
   TypeArray:$paramTypes,
   ConcreteAttribute<"PogListAttr">:$paramListAttrs
