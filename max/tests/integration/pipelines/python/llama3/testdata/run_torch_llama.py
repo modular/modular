@@ -19,6 +19,7 @@ A machine with ~25GB will likely OOM.
 `--encoding q4_k` might work, but the transformers library will first dequantize
 the checkpoint.
 """
+
 import os
 from pathlib import Path
 from typing import Iterable, Optional, List, Union

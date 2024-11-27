@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.engine Python bindings with Max Graph when using explicit device."""
 
-
 import numpy as np
 import pytest
 from max.driver import CPU, CUDA, Tensor

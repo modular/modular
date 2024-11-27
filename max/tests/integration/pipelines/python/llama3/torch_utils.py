@@ -3,8 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Llama testing utils.
-"""
+"""Llama testing utils."""
+
 from __future__ import annotations
 
 import math

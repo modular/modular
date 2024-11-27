@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test pipelines attention layer."""
 
-
 import numpy as np
 import pytest
 from max.driver import CPU, Device, Tensor
@@ -110,7 +109,10 @@ def _attention_layer(
 
         # Get KV Collection
         kv_collection = fetch_op(
-            blocks, cache_lengths, lookup_table, is_cache_empty  # type: ignore
+            blocks,
+            cache_lengths,
+            lookup_table,
+            is_cache_empty,  # type: ignore
         )
 
         # Update this if provided

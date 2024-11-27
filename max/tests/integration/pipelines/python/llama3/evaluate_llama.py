@@ -104,14 +104,15 @@ class SupportedTestModels:
                 kwargs["huggingface_repo_id"] = hf_file.repo_id
 
         if "device_spec" not in kwargs:
-            kwargs[
-                "device_spec"
-            ] = DeviceSpec.cuda() if self.use_gpu else DeviceSpec.cpu()
+            kwargs["device_spec"] = (
+                DeviceSpec.cuda() if self.use_gpu else DeviceSpec.cpu()
+            )
 
         if "cache_strategy" not in kwargs:
             kwargs["cache_strategy"] = (
-                KVCacheStrategy.CONTINUOUS if self.encoding
-                in ["bfloat16", "float32"] else KVCacheStrategy.NAIVE
+                KVCacheStrategy.CONTINUOUS
+                if self.encoding in ["bfloat16", "float32"]
+                else KVCacheStrategy.NAIVE
             )
 
         if self.version == "3.1":

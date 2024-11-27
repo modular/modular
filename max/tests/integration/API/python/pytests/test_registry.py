@@ -80,8 +80,10 @@ class DummyPipelineModel(PipelineModel):
 
     def _get_kv_params(self) -> KVCacheParams:
         cache_dtype = (
-            DType.float32 if self.pipeline_config.quantization_encoding.quantization_encoding  # type: ignore
-            is not None else self.pipeline_config.dtype
+            DType.float32
+            if self.pipeline_config.quantization_encoding.quantization_encoding  # type: ignore
+            is not None
+            else self.pipeline_config.dtype
         )
         return KVCacheParams(
             dtype=cache_dtype,
@@ -92,8 +94,7 @@ class DummyPipelineModel(PipelineModel):
         )
 
     def load_kv_manager(self, session: InferenceSession) -> KVCacheManager:
-        """Provided a PipelineConfig and InferenceSession, load the kv manager.
-        """
+        """Provided a PipelineConfig and InferenceSession, load the kv manager."""
         return load_kv_manager(
             params=self._get_kv_params(),
             max_cache_batch_size=self.pipeline_config.max_cache_batch_size,
@@ -107,8 +108,7 @@ class DummyPipelineModel(PipelineModel):
         self,
         session: InferenceSession,
     ) -> Model:
-        """Provided a PipelineConfig and InferenceSession, build and load the model graph.
-        """
+        """Provided a PipelineConfig and InferenceSession, build and load the model graph."""
         kv_inputs = self.kv_manager.input_symbols()[0]
         with Graph(
             "dummy",

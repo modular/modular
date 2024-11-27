@@ -206,9 +206,15 @@ def test_kv_cache_ragged_rope(session):
             is_cache_empty_type,
         ],
     ) as g:
-        input, input_row_offset, freqs_cis, blocks, cache_lengths, lookup_table, is_cache_empty = (
-            g.inputs
-        )
+        (
+            input,
+            input_row_offset,
+            freqs_cis,
+            blocks,
+            cache_lengths,
+            lookup_table,
+            is_cache_empty,
+        ) = g.inputs
         layer_idx = ops.constant(
             0,
             DType.uint32,

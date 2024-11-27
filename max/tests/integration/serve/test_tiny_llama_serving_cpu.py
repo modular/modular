@@ -91,7 +91,8 @@ async def test_tinyllama_serve_cpu_stream(
     inference_config = model_encoding.build_config(testdata_directory)
     tokenizer = TextTokenizer(inference_config)
     expected_response = [
-        await tokenizer.decode(tinyllama_model, x) for x in tokens  # type: ignore
+        await tokenizer.decode(tinyllama_model, x)  # type: ignore
+        for x in tokens
     ]
 
     def openai_completion_request(content):

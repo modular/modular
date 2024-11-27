@@ -184,11 +184,14 @@ async def test_tinyllama_max_new_tokens(
     max_model_tokens = tinyllama_model.config.max_length
     max_model_tokens_after_prompt = max_model_tokens - prompt_size
     requested_max_new_tokens = (
-        max_new_tokens_fixture if max_new_tokens_fixture else tinyllama_model.config.max_new_tokens
+        max_new_tokens_fixture
+        if max_new_tokens_fixture
+        else tinyllama_model.config.max_new_tokens
     )
     configured_max_new_tokens = (
-        max_model_tokens_after_prompt if requested_max_new_tokens
-        < 0 else min(max_model_tokens_after_prompt, requested_max_new_tokens)
+        max_model_tokens_after_prompt
+        if requested_max_new_tokens < 0
+        else min(max_model_tokens_after_prompt, requested_max_new_tokens)
     )
     assert context.max_tokens == prompt_size + configured_max_new_tokens
 

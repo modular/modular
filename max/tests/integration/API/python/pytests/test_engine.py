@@ -290,7 +290,8 @@ def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
     presliced_output_tensor = presliced_output[0]
     for idx in range(5):
         assert isclose(
-            presliced_output_tensor[idx].item(), presliced_expected[idx]  # type: ignore
+            presliced_output_tensor[idx].item(),  # type: ignore
+            presliced_expected[idx],
         )
 
 

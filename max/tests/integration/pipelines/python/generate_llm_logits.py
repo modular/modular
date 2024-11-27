@@ -112,8 +112,7 @@ class PipelineOracle:
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
-        """Instantiate a Torch pipeline for the given version/encoding/device.
-        """
+        """Instantiate a Torch pipeline for the given version/encoding/device."""
         raise NotImplementedError
 
     @property
@@ -596,9 +595,9 @@ def main(
             torch_pipeline_and_tokenizer.data_processor,
             torch_device,
             pipeline_oracle.prompts,
-            pipeline_oracle.images if isinstance(
-                pipeline_oracle, MultiModalPipelineOracle
-            ) else None,
+            pipeline_oracle.images
+            if isinstance(pipeline_oracle, MultiModalPipelineOracle)
+            else None,
         )
     else:
         raise NotImplementedError(

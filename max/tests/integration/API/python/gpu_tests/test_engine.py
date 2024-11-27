@@ -116,9 +116,9 @@ class Model:
         # Set the constant external op's device explicitly.
         const_external_op = weights_tensor._mlir_value.owner
         const_external_op.attributes["device"] = (
-            Device.CPU()
-            .to_mlir() if self.device.is_host else Device(DeviceType.CUDA, 0)
-            .to_mlir()
+            Device.CPU().to_mlir()
+            if self.device.is_host
+            else Device(DeviceType.CUDA, 0).to_mlir()
         )
 
         return input + weights_tensor

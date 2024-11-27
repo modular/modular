@@ -10,7 +10,6 @@ https://github.com/EleutherAI/lm-evaluation-harness/tree/v0.4.5/lm_eval/tasks
 
 """
 
-
 from __future__ import annotations
 
 import asyncio

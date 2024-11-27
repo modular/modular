@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Temporary Tests to ensure layers execute."""
 
-
 import max.engine as me
 import numpy as np
 import pytest
