@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-import subprocess
-import sys
 from pathlib import Path
 
 from lit.llvm import llvm_config

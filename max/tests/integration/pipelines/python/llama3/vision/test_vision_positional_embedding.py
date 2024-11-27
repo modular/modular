@@ -7,7 +7,6 @@
 transformers package reference implementation.
 """
 
-import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -18,7 +17,6 @@ from llama_vision.positional_embedding import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
-from modular_graph_test import modular_graph_test
 from nn import Embedding
 
 

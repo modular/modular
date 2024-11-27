@@ -6,7 +6,6 @@
 
 # type: ignore
 
-import asyncio
 
 import numpy as np
 from max.driver import CPU, Tensor

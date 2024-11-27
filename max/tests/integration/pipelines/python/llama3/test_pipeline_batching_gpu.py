@@ -21,7 +21,6 @@ from max.engine import InferenceSession
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
-    TextContext,
     TextTokenizer,
 )
 from max.pipelines.interfaces import TokenGeneratorRequest

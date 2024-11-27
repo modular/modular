@@ -8,7 +8,6 @@ from math import isclose
 from pathlib import Path
 
 import numpy as np
-from max import mlir
 from max.driver import CPU, CUDA, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession

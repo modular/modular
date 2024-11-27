@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test pipelines attention layer."""
 
-import asyncio
 
 import numpy as np
 import pytest

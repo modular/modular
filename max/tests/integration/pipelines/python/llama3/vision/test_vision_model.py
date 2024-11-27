@@ -7,21 +7,12 @@
 package reference implementation.
 """
 
-import numpy as np
 import pytest
-from llama_vision.encoder import VisionEncoder, VisionEncoderLayer
-from llama_vision.mlp import MLP
 from llama_vision.vision_model import VisionModel
-from llama_vision.positional_embedding import (
-    PrecomputedAspectRatioEmbedding,
-    PrecomputedPositionEmbedding,
-)
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import TensorType
 from max.pipelines import PipelineConfig
-from modular_graph_test import modular_graph_test
-from nn import Conv2D, Linear, LPLayerNorm
 
 
 def generate_test_vision_model() -> VisionModel:

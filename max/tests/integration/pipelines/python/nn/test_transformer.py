@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Temporary Tests to ensure layers execute."""
 
-from dataclasses import dataclass
 
 import max.engine as me
 import numpy as np

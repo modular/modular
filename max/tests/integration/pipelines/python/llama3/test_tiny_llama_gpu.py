@@ -7,7 +7,6 @@
 golden values.
 """
 
-import re
 from dataclasses import dataclass
 import random
 from uuid import uuid4
@@ -21,7 +20,7 @@ from max.pipelines.interfaces import TokenGeneratorRequest
 from max.driver import DeviceSpec
 from max.pipelines.kv_cache import KVCacheStrategy
 from max.pipelines import TextTokenizer
-from test_common.evaluate import PROMPTS, run_model
+from test_common.evaluate import PROMPTS
 
 
 @dataclass(frozen=True)

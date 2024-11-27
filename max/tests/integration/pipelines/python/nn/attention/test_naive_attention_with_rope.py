@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 from max.dtype import DType
-from max.graph import BufferType, Graph, TensorType, TensorValue, ops
+from max.graph import BufferType, Graph, TensorType, ops
 from modular_graph_test import modular_graph_test
 from nn import NaiveAttentionWithRope, Linear, RotaryEmbedding
 from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy

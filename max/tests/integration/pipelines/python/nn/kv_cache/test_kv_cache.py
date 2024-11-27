@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from max.driver import CPU, Tensor
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import Graph
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,

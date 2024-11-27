@@ -10,7 +10,6 @@ golden values.
 from functools import partial
 from pathlib import Path
 
-import numpy as np
 import pytest
 from evaluate_llama import SupportedTestModels
 from llama3.llama3 import load_llama3_and_kv_manager

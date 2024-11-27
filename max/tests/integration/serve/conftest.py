@@ -16,7 +16,6 @@ from llama3.llama3 import (
 from max.pipelines import (
     PipelineConfig,
     PreTrainedPipelineTokenizer,
-    TextTokenizer,
 )
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.serve.api_server import fastapi_app

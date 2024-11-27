@@ -32,7 +32,6 @@ from pixtral.vision_encoder.transformer import (
     TransformerBlock,
 )
 from pixtral.vision_encoder.vision_encoder import VisionEncoder
-from safetensors.torch import load_file as safe_load_file
 from transformers import (
     AutoProcessor,
     LlavaConfig,

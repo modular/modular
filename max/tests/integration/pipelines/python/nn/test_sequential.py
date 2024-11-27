@@ -4,10 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
 import numpy as np
 from max.dtype import DType
-from max.graph import TensorType, Graph, TensorValueLike, ops
+from max.graph import TensorType, Graph, ops
 from nn.sequential import Sequential
 from nn.linear import Linear
 from modular_graph_test import modular_graph_test
