@@ -113,6 +113,10 @@ public:
 
   std::string mtune;
 
+  std::string mcmodel;
+
+  std::string largeDataThreshold;
+
   /// Get the include directories that exist on the file system.
   std::vector<std::string> getIncludePaths() const {
     std::vector<std::string> result;
@@ -279,6 +283,19 @@ private:
       "target-accelerator",
       cl::desc("The target architecture for the accelerator"),
       llvm::cl::location(options.targetAccelerator),
+      llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
+
+  M::cl::MOpt<std::string, true> mcmodel{
+      "mcmodel",
+      cl::desc(
+          "CodeModel for object file, i.e. small (default), medium or large."),
+      llvm::cl::location(options.mcmodel), llvm::cl::cat(KGENOptionsCategory),
+      llvm::cl::Hidden};
+
+  M::cl::MOpt<std::string, true> largeDataThreshold{
+      "large-data-threshold",
+      cl::desc("Choose large data threshold for x86_64 medium code model."),
+      llvm::cl::location(options.largeDataThreshold),
       llvm::cl::cat(KGENOptionsCategory), llvm::cl::Hidden};
 
 private:
