@@ -600,15 +600,6 @@ fn get_scalar_from_ndbuffer[
     return tensor[0]
 
 
-# Extract a value from a shape.
-@register_internal("get_int_from_shape")
-@always_inline
-fn get_int_from_shape[
-    param_index: Int, rank: Int
-](shape: IndexList[rank]) -> Int:
-    return shape[param_index]
-
-
 @register_internal("shape_to_ndbuffer")
 @always_inline
 fn shape_to_ndbuffer[
