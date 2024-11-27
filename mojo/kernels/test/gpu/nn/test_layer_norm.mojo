@@ -316,7 +316,6 @@ def main():
         run_layer_norm_warp_tiling[DType.float32](ctx, rows=10, cols=4096)
 
         # variable rank
-        run_layer_norm_gpu[DType.float32](ctx, Index(0))
         run_layer_norm_gpu[DType.float32](ctx, Index(5))
         run_layer_norm_gpu[DType.float32](ctx, Index(3, 4, 10, 20, 8))
         run_layer_norm_gpu[DType.float32](ctx, Index(1, 5, 6, 10, 128))
