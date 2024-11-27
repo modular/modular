@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import operator
 import random
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import pytest
 from conftest import tensor_types

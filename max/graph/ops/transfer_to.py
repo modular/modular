@@ -7,12 +7,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import DimLike, Device, Shape, ShapeLike, TensorType
+from ..type import Device, TensorType
 from ..value import TensorValue
 
 

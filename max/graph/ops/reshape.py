@@ -5,11 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for reshape."""
 
-import numpy as np
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import Shape, ShapeLike, StaticDim
+from ..type import Shape, ShapeLike
 from ..value import TensorValue, TensorValueLike
 
 

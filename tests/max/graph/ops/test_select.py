@@ -9,7 +9,6 @@ from functools import reduce
 
 from conftest import broadcast_shapes, broadcastable_tensor_types
 from hypothesis import given
-from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 

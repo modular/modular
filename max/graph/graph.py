@@ -14,7 +14,6 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional
-from types import FrameType
 
 from max import _graph, mlir
 from max.mlir.dialects import mo

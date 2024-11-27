@@ -7,16 +7,12 @@
 
 from typing import Iterable
 
-import numpy as np
-from max import mlir
-from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import Dim, DimLike, Shape, StaticDim, SymbolicDim, TensorType
+from ..type import Dim, DimLike, StaticDim, TensorType
 from ..value import TensorValue, TensorValueLike
-from .constant import constant
 
 
 def tile(x: TensorValueLike, repeats: Iterable[DimLike]):

@@ -7,11 +7,9 @@
 from __future__ import annotations
 
 import itertools
-import math
 import operator
 import os
 import random
-from datetime import timedelta
 from functools import reduce
 from pathlib import Path
 from typing import Optional, Sequence
@@ -27,7 +25,6 @@ from max.graph import (
     Dim,
     Graph,
     Shape,
-    ShapeLike,
     StaticDim,
     SymbolicDim,
     TensorType,

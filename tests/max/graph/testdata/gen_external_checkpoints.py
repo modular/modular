@@ -8,14 +8,13 @@
 br //SDK/test/API/graph/python/pytests/testdata:gen_external_checkpoints -- $(pwd)/SDK/test/API/graph/python/pytests/testdata/
 """
 
-import os
 from pathlib import Path
 
 import click
 import numpy as np
 import safetensors.torch as safe_torch
 import torch
-from gguf import GGMLQuantizationType, GGUFReader, GGUFWriter
+from gguf import GGMLQuantizationType, GGUFWriter
 
 
 def test_data():

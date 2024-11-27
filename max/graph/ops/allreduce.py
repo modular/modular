@@ -9,10 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max.mlir.dialects import rmo
-
 from ..graph import Graph
-from ..type import DimLike, Device, Shape, ShapeLike, TensorType
 from ..value import TensorValue
 from .elementwise import add
 from .transfer_to import transfer_to

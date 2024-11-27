@@ -11,7 +11,7 @@ from hypothesis import strategies as st
 import pytest
 
 from max.dtype import DType
-from max.graph import Graph, Shape, StaticDim, TensorType, ops
+from max.graph import Graph, StaticDim, TensorType, ops
 
 # gather not meaningful for scalar inputs
 input_types = tensor_types(shapes=st.lists(dims, min_size=1))

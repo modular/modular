@@ -5,10 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-import dis
-import inspect
-import sys
-import traceback
 from unittest import mock
 
 import pytest
@@ -18,12 +14,10 @@ from max import _graph, mlir
 from max.dtype import DType
 from max.graph import (
     Device,
-    DeviceType,
     Dim,
     Graph,
     TensorType,
     TensorValue,
-    graph,
     ops,
 )
 from max.mlir.dialects import rmo

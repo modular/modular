@@ -11,7 +11,6 @@ from typing import Iterable, Optional, Union
 import numpy as np
 import pytest
 from conftest import graph_result_type
-from max import mlir
 from max.dtype import DType
 from max.graph import Graph, TensorType, TensorValue, ops
 

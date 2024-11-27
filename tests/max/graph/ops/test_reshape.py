@@ -5,22 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-import math
 from collections.abc import Collection
 
 import pytest
 from conftest import (
-    MAX_INT64,
-    axes,
     shapes,
-    static_dims,
     symbolic_dims,
     tensor_types,
 )
 from hypothesis import assume, example, given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Dim, Graph, Shape, ShapeLike, StaticDim, TensorType
+from max.graph import Dim, Graph, Shape, StaticDim, TensorType
 
 
 def test_reshape() -> None:

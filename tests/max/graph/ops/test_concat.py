@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """ops.concat tests."""
 
-from random import Random
 
 import pytest
 from conftest import axes, shapes, tensor_types
@@ -13,7 +12,6 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import (
-    AlgebraicDim,
     Dim,
     Graph,
     Shape,

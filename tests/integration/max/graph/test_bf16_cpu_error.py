@@ -6,8 +6,6 @@
 
 import platform
 import pytest
-import numpy as np
-from max.driver import Tensor
 from max.dtype import DType
 from max.graph import Graph, TensorType
 

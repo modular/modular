@@ -6,7 +6,7 @@
 """ops.stack tests."""
 
 from conftest import new_axes, tensor_types
-from hypothesis import assume, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 from max.graph import Graph, StaticDim, TensorType, ops
 

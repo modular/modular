@@ -26,18 +26,15 @@ from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..type import (
-    AlgebraicDim,
     Dim,
     DimLike,
     Shape,
     StaticDim,
-    SymbolicDim,
     TensorType,
 )
 from ..value import BufferValue, TensorValue
 from .constant import constant
 from .select import select
-from .shape_to_tensor import shape_to_tensor
 from .stack import stack_scalars
 
 # Currently slicing does not have any shape inference in RMO. Instead, it is

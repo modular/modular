@@ -5,10 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for load_buffer."""
 
-from typing import Union
 
-from max import mlir
-from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph

@@ -5,13 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for concat."""
 
-from typing import Iterable, Optional
+from typing import Iterable
 
 from max import mlir
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import Dim, DimLike, Shape
 from ..value import TensorValue, TensorValueLike
 
 

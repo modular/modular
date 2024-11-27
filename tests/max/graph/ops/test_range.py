@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """ops.range tests."""
 
-from random import Random
 
 from hypothesis import assume, given
 from hypothesis import strategies as st

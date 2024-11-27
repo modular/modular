@@ -6,7 +6,7 @@
 """Test the max.graph Python bindings."""
 
 import pytest
-from conftest import axes, shapes, tensor_types
+from conftest import shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.graph import Graph, TensorType

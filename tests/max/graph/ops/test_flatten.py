@@ -7,7 +7,6 @@
 
 import operator
 from functools import reduce
-from random import Random
 
 import pytest
 from conftest import shapes, tensor_types

@@ -9,7 +9,7 @@ import pytest
 import numpy as np
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, ops
+from max.graph import Graph, ops
 
 
 # For masked scatter specifically, I am adding execution tests. Generally, we

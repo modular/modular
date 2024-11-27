@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from max.dtype import DType
 from max.graph import Graph, TensorType, TensorValue
-from max.graph.ops import constant, conv2d
+from max.graph.ops import conv2d
 from modular_graph_test import modular_graph_test
 
 

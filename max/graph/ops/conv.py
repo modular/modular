@@ -13,7 +13,7 @@ from max.mlir.dialects import rmo
 
 from .. import dtype_promotion
 from ..graph import Graph
-from ..type import Dim, Shape, StaticDim
+from ..type import Dim, Shape
 from ..value import TensorType, TensorValue, TensorValueLike
 from .constant import constant
 

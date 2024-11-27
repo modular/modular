@@ -9,7 +9,7 @@ from typing import Dict, Optional
 
 import numpy as np
 import torch
-from hypothesis import HealthCheck, given, reject, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
 from max.driver import Tensor

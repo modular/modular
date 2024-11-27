@@ -5,12 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import os
-import tempfile
-
 import numpy as np
 from max.dtype import DType
-from max.graph import Graph, TensorType, TensorValue, ops
+from max.graph import Graph, TensorType, TensorValue
 
 
 def test_shape_to_tensor_static(session):

@@ -5,11 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-from conftest import axes, tensor_types
-from hypothesis import assume, given
+from conftest import tensor_types
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Device, DeviceType, Graph, TensorType
+from max.graph import Device, Graph, TensorType
 
 
 shared_types = st.shared(tensor_types())

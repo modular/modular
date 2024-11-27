@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for nonzero."""
 
-import numpy as np
 from max.mlir.dialects import rmo
 from max.dtype import DType
 
