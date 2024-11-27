@@ -186,7 +186,15 @@ class Graph:
             # constructor.
             with self:
                 result = forward(*self.inputs, *args, **kwargs)
-                self.output(result)
+                # Account for forward methods that return None, a single
+                # output, or multiple outputs.
+                outputs = (
+                    () if result
+                    is None else (result,) if not isinstance(
+                        result, tuple
+                    ) else result
+                )
+                self.output(*outputs)
 
     def _update_chain(self, new_chain: _ChainValue) -> None:
         self._current_chain = new_chain
