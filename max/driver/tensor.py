@@ -35,11 +35,9 @@ ShapeType = Sequence[int]
 
 @runtime_checkable
 class DLPackArray(Protocol):
-    def __dlpack__(self) -> Any:
-        ...
+    def __dlpack__(self) -> Any: ...
 
-    def __dlpack_device__(self) -> Any:
-        ...
+    def __dlpack_device__(self) -> Any: ...
 
 
 _T = TypeVar("_T", bound="Tensor")
@@ -280,8 +278,7 @@ class Tensor(DLPackArray):
                 msg = str(e)
                 if msg.startswith("Cannot export readonly array"):
                     raise type(e)(
-                        msg
-                        + " Consider passing `copy = True` to"
+                        msg + " Consider passing `copy = True` to"
                         " `Tensor.from_dlpack`."
                     )
                 raise e

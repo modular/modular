@@ -67,9 +67,9 @@ class Graph:
 
         def clone_into(graph: mg.Graph, source: Graph):
             for i, arg in enumerate(source.sources):
-                value_map[
-                    source.graph._body.arguments[i]
-                ] = graph._body.arguments[arg_ids[arg]]
+                value_map[source.graph._body.arguments[i]] = (
+                    graph._body.arguments[arg_ids[arg]]
+                )
 
             insertion_point = mlir.InsertionPoint(graph._body)
 
