@@ -14,6 +14,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "llvm/BinaryFormat/Dwarf.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/TargetParser/Host.h"
 
 namespace M::KGEN {
@@ -92,6 +93,9 @@ public:
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
+  std::optional<llvm::CodeModel::Model> mcmodel = {};
+  std::optional<uint64_t> largeDataThreshold = {};
+
   std::string targetAccelerator =
       M::AsyncRT::Device::getAcceleratorArchOrEmpty();
   llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_;

@@ -554,8 +554,10 @@ KGEN::createTargetMachine(const CompilationOptions &options, bool isJIT) {
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       options.targetTriple, options.targetCpu, options.targetFeatures,
-      /*Options=*/{}, options.relocModel, /*CM=*/{},
+      /*Options=*/{}, options.relocModel, /*CM=*/options.mcmodel,
       /*OL=*/options.getCodeGenOptLevel(), /*JIT=*/isJIT));
+  if (options.largeDataThreshold)
+    machine->setLargeDataThreshold(options.largeDataThreshold.value());
   if (!machine)
     return Error("unable to create target machine");
 

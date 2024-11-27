@@ -40,7 +40,16 @@ defm mtune : CommandOption<["--", "-"], "mtune", TargetOptionGroup,
   HelpText<"Sets the CPU for which to tune code.">>;
 
 defm target_accelerator : CommandOptionHidden<["--", "-"], "target-accelerator",
-  TargetOptionGroup, Index<6>, MetaVarName<"ACCELERATOR">,
+  TargetOptionGroup, Index<7>, MetaVarName<"ACCELERATOR">,
   HelpText<"Sets the accelerator used for computation.">>;
+
+defm mcmodel: CommandOptionHidden<["--", "-"], "mcmodel",
+  TargetOptionGroup, Index<8>, MetaVarName<"MCMODEL">,
+  HelpText<"Sets the CodeModel for object file, i.e. small (default), medium or large.">>;
+
+defm large_data_threshold: CommandOptionHidden<["--", "-"], "large-data-threshold",
+  TargetOptionGroup, Index<9>, MetaVarName<"LDT">,
+  HelpText<"Choose large data threshold for x86_64 medium code model.">>;
+
 
 #endif // KGEN_TOOLS_MOJO_COMMON_TARGETOPTIONS_TD
