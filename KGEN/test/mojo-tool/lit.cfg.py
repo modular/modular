@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-import platform
 
 from lit.llvm import llvm_config
 

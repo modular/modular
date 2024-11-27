@@ -5,13 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-import glob
-import sys
 
 import click
 
 from src import generate_mojo_extension_module
-from src.utils import eprint
 
 
 @click.command(name="mojo-pybind")

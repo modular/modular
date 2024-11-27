@@ -15,7 +15,6 @@ import argparse
 import ctypes
 import json
 import os
-import shutil
 import time
 import traceback
 from configparser import ConfigParser

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
-from pathlib import Path
 
 from lit.llvm import llvm_config
 
