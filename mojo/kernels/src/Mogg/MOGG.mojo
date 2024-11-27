@@ -177,6 +177,7 @@ from nn.kv_cache_ragged import (
     flash_attention_kv_cache_h8_d128_cont_batch_ragged,
     flash_attention_kv_cache_h8_d512_cont_batch_ragged,
     flash_attention_kv_cache_h32_d128_cont_batch_ragged,
+    matmul_kv_cache_h8_d128_cont_batch_ragged,
 )
 
 from nn.mha import flash_attention
@@ -388,6 +389,7 @@ fn MOGGExport():
     alias _flash_attention_kv_cache_h8_d128_cont_batch_ragged = flash_attention_kv_cache_h8_d128_cont_batch_ragged
     alias _flash_attention_kv_cache_h8_d512_cont_batch_ragged = flash_attention_kv_cache_h8_d512_cont_batch_ragged
     alias _flash_attention_kv_cache_h32_d128_cont_batch_ragged = flash_attention_kv_cache_h32_d128_cont_batch_ragged
+    alias _matmul_kv_cache_h8_d128_cont_batch_ragged = matmul_kv_cache_h8_d128_cont_batch_ragged
 
 
 # ===----------------------------------------------------------------------===#
