@@ -29,6 +29,7 @@
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
@@ -223,6 +224,30 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     applyDefaultTimingManagerCLOptions(*defaultManager);
     timingManager = std::move(defaultManager);
   }
+
+  if (!clOptions.mcmodel.empty()) {
+    if (!llvm::is_contained({"small", "medium", "larget"}, clOptions.mcmodel)) {
+      return Error("invalid mcmodel'" + clOptions.mcmodel +
+                   "', expected one of: `small`, `medium` or `large`");
+    }
+    if (clOptions.mcmodel == "small")
+      options.mcmodel = llvm::CodeModel::Small;
+    else if (clOptions.mcmodel == "medium")
+      options.mcmodel = llvm::CodeModel::Medium;
+    else if (clOptions.mcmodel == "large")
+      options.mcmodel = llvm::CodeModel::Large;
+  }
+
+  if (!clOptions.largeDataThreshold.empty()) {
+    uint64_t value;
+    if (!llvm::to_integer(clOptions.largeDataThreshold, value)) {
+      return Error("invalid large-data-threshold'" +
+                   clOptions.largeDataThreshold +
+                   "', expected a positive integer number");
+    }
+    options.largeDataThreshold = value;
+  }
+
   TimingScope timing = timingManager->getRootScope();
 
   PassManagerConfigOptions pmOptions;
