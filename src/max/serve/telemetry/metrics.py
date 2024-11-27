@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import os
 from typing import Any, Union
 
 from max.serve.telemetry.common import otelBaseUrl, metrics_resource
@@ -17,7 +16,6 @@ from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.metrics import get_meter_provider, set_meter_provider
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-from opentelemetry.sdk.resources import Resource
 
 
 class _NoOpMetric:

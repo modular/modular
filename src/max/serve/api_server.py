@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Mapping, Optional, Union
+from typing import Mapping, Union
 
 from max.serve.telemetry.logger import configureLogging
 from max.serve.telemetry.metrics import METRICS

@@ -7,9 +7,7 @@
 
 import logging
 import os
-import platform
-import uuid
-from typing import Optional, Union
+from typing import Union
 
 from max.serve.telemetry.common import otelBaseUrl, logs_resource
 
@@ -17,7 +15,6 @@ from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
 from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.sdk.resources import Resource
 from pythonjsonlogger import jsonlogger
 
 

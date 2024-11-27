@@ -29,8 +29,6 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
 )
 from max.serve.schemas.openai import (  # type: ignore
-    ChatCompletionRequestMessage,
-    ChatCompletionRequestMessageContentPartText,
     ChatCompletionResponseMessage,
     ChatCompletionStreamResponseDelta,
     Choice,
