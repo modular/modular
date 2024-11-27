@@ -17,10 +17,11 @@ from testing import assert_equal, assert_true
 fn strided_load_kernel[
     *, type: DType = DType.uint32, width: Int = 1
 ](
+    output: UnsafePointer[SIMD[type, width]],
     ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.GENERIC],
     stride: Int,
-) -> SIMD[type, width]:
-    return strided_load[width](ptr, stride)
+):
+    output[] = strided_load[width](ptr, stride)
 
 
 def test_strided_load():
