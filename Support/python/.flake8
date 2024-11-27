@@ -1,8 +1,0 @@
-[flake8]
-max-line-length = 80
-exclude = __pycache__,build,dist
-per-file-ignores =
-    __init__.py: F401
-    Support/python/modular/utils/logging.py: F401,F405
-    Support/python/modular/utils/typing.py: F401
-    Support/python/modular/utils/debuglib/lldbtypes.py: F811
