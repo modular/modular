@@ -50,9 +50,10 @@ def are_vsix_equal(lhs: Path, rhs: Path) -> bool:
         # thorough check (and still cheap enough to be fine).
         buffer_size = 1024
         for name in filtered_names:
-            with lhs_zip.open(lhs_info[name]) as lhs_file, rhs_zip.open(
-                rhs_info[name]
-            ) as rhs_file:
+            with (
+                lhs_zip.open(lhs_info[name]) as lhs_file,
+                rhs_zip.open(rhs_info[name]) as rhs_file,
+            ):
                 while True:
                     buffer1 = lhs_file.read(buffer_size)
                     buffer2 = rhs_file.read(buffer_size)

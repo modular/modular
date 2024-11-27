@@ -144,9 +144,7 @@ class TimeTrace:
             int(x.rpartition("Thread")[-1].strip())
             for x in thread_events
             if "Thread" in x
-        ] + [
-            0
-        ]  # main thread doesn't have "Thread" in it
+        ] + [0]  # main thread doesn't have "Thread" in it
         return max(thread_ids) + 1
 
     def trim(
@@ -179,12 +177,10 @@ class TimeTrace:
         include_fragments: Optional[List[str]] = None,
         exclude_fragments: Optional[List[str]] = None,
     ) -> "TimeTrace":
-        """Select and remove events with names that match the given fragments.
-        """
+        """Select and remove events with names that match the given fragments."""
         local_include = (
             # default to the empty string, which is in everything
-            include_fragments if include_fragments
-            is not None else [""]
+            include_fragments if include_fragments is not None else [""]
         )
         local_exclude = exclude_fragments if exclude_fragments else []
 
