@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import functools
 import logging
 from threading import Thread
 
@@ -25,10 +24,6 @@ from max.serve.pipelines.echo_gen import (
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
-)
-from max.serve.pipelines.performance_fake import (
-    PerformanceFakingPipelineTokenizer,
-    get_performance_fake,
 )
 from max.serve.schemas.openai import CreateChatCompletionResponse  # type: ignore
 

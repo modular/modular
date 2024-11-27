@@ -9,7 +9,6 @@ import time
 
 import pytest
 from max.pipelines.interfaces import TokenGenerator
-from max.serve.pipelines.deps import echo_generator_pipeline
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
