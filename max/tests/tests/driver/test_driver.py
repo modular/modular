@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """Test the max.driver Python bindings."""
+
 import max.driver as md
 
 

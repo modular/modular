@@ -164,8 +164,7 @@ async def test_llm_new_context_value_error(test_client, request_url):
 )
 @pytest.mark.asyncio
 async def test_llm_new_context_value_error_stream(test_client, request_url):
-    """Test the server's response to a value error when calling new context while streaming.
-    """
+    """Test the server's response to a value error when calling new context while streaming."""
     MAX_CHUNK_TO_READ_BYTES = 10 * 1024
 
     payload = simple_openai_request(model_name="test", content="test")
