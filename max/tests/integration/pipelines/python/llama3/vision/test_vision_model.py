@@ -8,136 +8,72 @@ package reference implementation.
 """
 
 import pytest
-from llama_vision.vision_model import VisionModel
+from pathlib import Path
+from llama_vision.vision_model import instantiate_vision_model
+from max.pipelines import PipelineConfig, SupportedEncoding
 from max.dtype import DType
-from max.engine import InferenceSession
-from max.graph import TensorType
-from max.pipelines import PipelineConfig
+from max.graph import Graph, ops
+from max.graph.weights import SafetensorWeights
 
 
-def generate_test_vision_model() -> VisionModel:
+def generate_test_vision_model() -> Graph:
     """
     This helper function generates a test vision model instance for testing purposes.
     """
-    # TODO(AIPIPE-131): Implement this.
-    patch_embedding = None
-    # TODO: Check if permutation is needed here.
-    # patch_embedding = Conv2D(
-    #     # in_channels=params.num_channels,
-    #     # out_channels=params.hidden_size,
-    #     # kernel_size=params.patch_size,
-    #     filter=patch_embedding_weight,
-    #     stride=(params.patch_size, params.patch_size),
-    #     padding=(0, 0, 0, 0),
-    #     bias=False,
-    # )
 
-    # TODO(AIPIPE-136): Implement this.
-    class_embedding = None
-    # class_embedding = nn.Parameter(
-    #     params.scale * torch.randn(params.hidden_size)
-    # )
-
-    # TODO: Reenable this.
-    gated_positional_embedding = None
-    # gated_positional_embedding = PrecomputedPositionEmbedding(
-    #     params=params,
-    #     gate=gate,
-    #     embedding=embedding,
-    #     tile_embedding=tile_embedding,
-    # )
-
-    # TODO: Reenable this.
-    pre_tile_positional_embedding = None
-    # pre_tile_positional_embedding = PrecomputedAspectRatioEmbedding(
-    #     params, is_gated=True
-    # )
-    post_tile_positional_embedding = None
-    # post_tile_positional_embedding = PrecomputedAspectRatioEmbedding(
-    #     params, is_gated=True
-    # )
-
-    # The reference implementation does not specify an eps (so falls back to
-    # default). We do this anyway by specifying eps=1e-5.
-    layernorm_pre = None
-    layernorm_post = None
-    # layernorm_pre = LPLayerNorm(
-    #     vision_model_pre_weight, eps=params.norm_eps
-    # )
-    # layernorm_post = LPLayerNorm(
-    #     vision_model_post_weight, eps=params.norm_eps
-    # )
-
-    # encoders
-    transformer = None
-    # transformer = VisionEncoder(
-    #     [
-    #         VisionEncoderLayer(
-    #             mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),
-    #             input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),
-    #             post_attention_layernorm=LPLayerNorm(
-    #                 encoder_layernorm_w2, eps
-    #             ),
-    #             is_gated=False,
-    #             gate_attn=None,
-    #             gate_ffn=None,
-    #         )
-    #         for _ in range(num_hidden_layers)
-    #     ]
-    # )
-
-    global_transformer = None
-    # global_transformer = VisionEncoder(
-    #     [
-    #         VisionEncoderLayer(
-    #             mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),
-    #             input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),
-    #             post_attention_layernorm=LPLayerNorm(
-    #                 encoder_layernorm_w2, eps
-    #             ),
-    #             is_gated=True,
-    #             # TODO(AIPIPE-137): Implement this.
-    #             gate_attn=gate_attn,
-    #             # TODO(AIPIPE-137): Implement this.
-    #             gate_ffn=gate_ffn,
-    #         )
-    #         for _ in range(num_global_layers)
-    #     ]
-    # )
-
-    # self.post_init()  # TODO: Needed?
     pipeline_config = PipelineConfig(
-        architecture="MllamaForConditionalGeneration"
+        architecture="MllamaForConditionalGeneration",
+        huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision-Instruct",
+        quantization_encoding=SupportedEncoding.bfloat16,
+        weight_path=[
+            Path("model-00001-of-00005.safetensors"),
+            Path("model-00002-of-00005.safetensors"),
+            Path("model-00003-of-00005.safetensors"),
+            Path("model-00004-of-00005.safetensors"),
+            Path("model-00005-of-00005.safetensors"),
+        ],
     )
-    return VisionModel(
-        pipeline_config=pipeline_config,
-        patch_embedding=patch_embedding,  # type: ignore
-        class_embedding=class_embedding,  # type: ignore
-        gated_positional_embedding=gated_positional_embedding,  # type: ignore
-        pre_tile_positional_embedding=pre_tile_positional_embedding,  # type: ignore
-        post_tile_positional_embedding=post_tile_positional_embedding,  # type: ignore
-        layernorm_pre=layernorm_pre,  # type: ignore
-        layernorm_post=layernorm_post,  # type: ignore
-        transformer=transformer,  # type: ignore
-        global_transformer=global_transformer,  # type: ignore
-    )
+    vision_config = pipeline_config.huggingface_config.vision_config
+
+    weights = pipeline_config.load_weights()
+    assert isinstance(
+        weights, SafetensorWeights
+    ), "only safetensor weights supported currently"
+
+    with Graph("test_llama_vision") as graph:
+        print("building vision model...")
+        vision_model = instantiate_vision_model(
+            dtype=pipeline_config.dtype,
+            image_size=vision_config.image_size,
+            patch_size=vision_config.patch_size,
+            supported_aspect_ratios=vision_config.supported_aspect_ratios,
+            hidden_size=vision_config.hidden_size,
+            max_num_tiles=vision_config.max_num_tiles,
+            num_channels=vision_config.num_channels,
+            norm_eps=vision_config.norm_eps,
+            attention_heads=vision_config.attention_heads,
+            num_hidden_layers=vision_config.num_hidden_layers,
+            intermediate_size=vision_config.intermediate_size,
+            num_global_layers=vision_config.num_global_layers,
+            intermediate_layers_indices=[3, 7, 15, 23, 30],
+            weights=weights,
+        )
+
+        graph.output(
+            ops.constant(
+                len(vision_model.intermediate_layers_indices), dtype=DType.int32
+            ),
+        )
+
+        return graph
 
 
-@pytest.mark.parametrize(
-    "input_type",
-    [
-        TensorType(DType.float32, ["dim"]),
-        TensorType(DType.float32, ["batch", "dim"]),
-        TensorType(DType.float32, ["x", "y", "z", "dim"]),
-    ],
-)
-def test_vision_model(
-    session: InferenceSession, input_type: TensorType
-) -> None:
-    dim = input_type.shape[-1]
-    mlp_fc1_type = TensorType(input_type.dtype, ["hidden_dim", dim])
-    mlp_fc2_type = TensorType(input_type.dtype, [dim, "hidden_dim"])
-    encoder_layernorm_w1_type = TensorType(input_type.dtype, [dim])
-    encoder_layernorm_w2_type = encoder_layernorm_w1_type
-
-    # TODO: Complete implementation here!
+@pytest.mark.skip("requires internet and very large 20GB+")
+def test_build_vision_model():
+    """
+    This test is not meant to be run in CI.
+    It will require the internet and download over 20gb of weights.
+    It is primarily meant to be run as a double check function that the vision model continues to build.
+    """
+    vision_model = generate_test_vision_model()
+    assert isinstance(vision_model, Graph)
