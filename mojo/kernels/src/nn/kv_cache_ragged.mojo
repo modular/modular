@@ -435,7 +435,6 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         if idx[1] < qk_offset:
             cache = k_cache
             h_idx, hd_idx = divmod(UInt(idx[1]) - q_dim, kv_params.head_size)
-
         else:
             cache = v_cache
             h_idx, hd_idx = divmod(
@@ -537,6 +536,210 @@ fn _matmul_common[
     @parameter
     if target == "cpu":
         c_nd.data.free()
+
+
+# ===----------------------------------------------------------------------===#
+# Unfused KV cache matmul
+# ===----------------------------------------------------------------------===#
+
+
+@register_internal("matmul_kv_cache_h8_d128_cont_batch_ragged")
+fn matmul_kv_cache_h8_d128_cont_batch_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a matmul, writing the output into a mutable ContiguousKVCache object.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offset: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("weight", weight),
+            "layer_idx=" + str(layer_idx),
+            "num_heads=" + str(kv_collection.kv_params.num_heads),
+            "head_size=" + str(kv_collection.kv_params.head_size),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "matmul_kv_cache_h"
+        + str(kv_collection.kv_params.num_heads)
+        + "_d"
+        + str(kv_collection.kv_params.head_size)
+        + "_bshd_cont_batch_ragged",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _matmul_kv_cache_ragged[target=target](
+            hidden_state,
+            input_row_offset,
+            weight,
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@always_inline
+fn _matmul_kv_cache_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    context: MojoCallContextPtr,
+) raises:
+    """Helper for performing matmul with custom ContiguousKVCache types.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offset: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, 2 * num_kv_heads * head_size)
+        kv_collection: The historical KVCache for keys and values. The KVCache for
+            this layer is retrieved via layer_idx.
+        layer_idx: The index of the layer being executed. Used to retrieve the KVCache
+            for the given layer from kv_collection.
+        context: Pointer containing the runtime context for the target device.
+    """
+    var cuda_ctx: Optional[DeviceContext] = None
+    layer_idx_cast = int(layer_idx)
+    k_cache = kv_collection.get_key_cache[kv_collection.CacheType](
+        layer_idx_cast
+    )
+    v_cache = kv_collection.get_value_cache[kv_collection.CacheType](
+        layer_idx_cast
+    )
+
+    @parameter
+    if target != "cpu":
+        cuda_ctx = context.get_device_context()
+
+    return _matmul_kv_cache_ragged_impl[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        k_cache,
+        v_cache,
+        cuda_ctx,
+    )
+
+
+@always_inline
+fn _matmul_kv_cache_ragged_impl[
+    type: DType,
+    cache_t: KVCacheT, //,
+    *,
+    target: StringLiteral,
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    k_cache: cache_t,
+    v_cache: cache_t,
+    ctx: Optional[DeviceContext],
+) raises:
+    """Helper for performing matmul with custom ContiguousKVCache types.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offset: Tensor with shape (batch_size + 1,)
+            denoting the start of each sequence along the seq_len dimension.
+        weight: Tensor with shape (num_heads * head_size, 2 * num_kv_heads * head_size)
+        k_cache: The historical ContiguousKVCache for keys, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        v_cache: The historical ContiguousKVCache for values, with logical shape:
+            (batch_size, max_seq_len, num_kv_heads, head_size).
+        ctx: Pointer containing the runtime context for the target device.
+    """
+    alias kv_params = cache_t.get_kv_params()
+    alias kv_type = cache_t.get_type()
+    alias N: UInt = weight.shape.get[0]()
+    alias K: UInt = weight.shape.get[1]()
+
+    constrained[
+        kv_type == type, "Mismatch in type between hidden state and KV tensors"
+    ]()
+
+    batch_size = input_row_offset.dim[0]() - 1
+
+    # Set the matmul_common output lambda to write to K cache for the first N
+    # elements and V cache for the next N.
+    k_offset = kv_params.head_size * kv_params.num_heads
+
+    @parameter
+    @__copy_capture(input_row_offset, k_offset, batch_size)
+    @always_inline
+    fn write_to_cache_common[
+        type_: DType, cache_t: KVCacheT, width: Int
+    ](
+        k_cache: cache_t,
+        v_cache: cache_t,
+        idx: IndexList[2],
+        val: SIMD[type_, width],
+    ):
+        # Token index in the "ragged" combined sequence dimension.
+        global_token_idx = idx[0]
+
+        batch_idx = get_batch_from_row_offsets(
+            input_row_offset, global_token_idx
+        )
+        token_idx = int(global_token_idx - input_row_offset[batch_idx])
+
+        if idx[1] < k_offset:
+            # Write this element to the K cache.
+            cache = k_cache
+            h_idx, hd_idx = divmod(UInt(idx[1]), kv_params.head_size)
+        else:
+            # Otherwise, write this element to the V cache.
+            cache = v_cache
+            h_idx, hd_idx = divmod(UInt(idx[1]) - k_offset, kv_params.head_size)
+
+        cache_length = cache.cache_length(batch_idx)
+        cache_token_idx = token_idx + cache_length
+        cache.store(
+            batch_idx,
+            h_idx,
+            cache_token_idx,
+            hd_idx,
+            rebind[SIMD[type, width]](val),
+        )
+
+    # Cast to a register passable type so the function closure works on GPU.
+    k_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](k_cache)
+    v_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](v_cache)
+
+    @parameter
+    @__copy_capture(k_cache_reg, v_cache_reg)
+    fn write_to_cache_continuous[
+        type_: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[type_, width]):
+        write_to_cache_common(k_cache_reg, v_cache_reg, idx, val)
+
+    _matmul_common[
+        target=target, elementwise_lambda_fn=write_to_cache_continuous
+    ](hidden_state, weight, ctx)
 
 
 # ===----------------------------------------------------------------------===#

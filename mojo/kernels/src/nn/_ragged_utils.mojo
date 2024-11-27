@@ -20,7 +20,6 @@ fn get_batch_from_row_offsets(
         "tok_idx is out of range of row_offsets",
     )
 
-    var target = UInt(tok_idx)
     var low: UInt = 0
     var high: UInt = row_offsets_size - 1
     while low + 1 != high:
