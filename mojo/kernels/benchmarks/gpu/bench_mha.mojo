@@ -40,8 +40,13 @@ fn run_mha[
     depth: Int,
     num_heads: Int,
     group: Int = 1,
-    batch_size: Int = 1,
-](inout m: Bench, seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+](
+    inout m: Bench,
+    seq_len: Int,
+    num_keys: Int,
+    batch_size: Int,
+    ctx: DeviceContext,
+) raises:
     # Query, key, value dimensions.
     alias scale = Float32(0.125)  # isqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
@@ -244,10 +249,10 @@ fn main() raises:
     alias depth = env_get_int["depth", 128]()
     alias num_heads = env_get_int["num_heads", 32]()
     alias group = env_get_int["group", 1]()
-    alias batch_size = env_get_int["batch_size", 1]()
 
     var seq_len = int(arg_parse("seq_len", 64))
     var num_keys = int(arg_parse("num_keys", 64))
+    var batch_size = int(arg_parse("batch_size", 1))
 
     alias cfg = MHA_cfg(
         qkv_type=qkv_type,
@@ -266,8 +271,7 @@ fn main() raises:
                 cfg.depth,
                 cfg.num_heads,
                 cfg.group,
-                batch_size,
-            ](m, seq_len, num_keys, ctx)
+            ](m, seq_len, num_keys, batch_size, ctx)
 
     except e:
         print("CUDA_ERROR:", e)
