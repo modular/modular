@@ -199,6 +199,74 @@ ErrorOr<TypedAttr> TypeType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
+// GeneratorType
+//===----------------------------------------------------------------------===//
+
+/// Parse a plain (i.e. non-LIT) generator type.
+static OptionalParseResult
+parseOptionalKGENGenerator(AsmParser &p, GeneratorType &generator) {
+  if (failed(p.parseOptionalLess()))
+    return std::nullopt;
+
+  SmallVector<Type> paramTypes;
+  Type body;
+
+  // A failure is if the param list is not empty, and param type parsing failed.
+  if (failed(p.parseOptionalGreater()) &&
+      (parseParamTypes(p, paramTypes) || p.parseGreater())) {
+    return failure();
+  }
+
+  if (parseParamType(p, body))
+    return failure();
+
+  generator = GeneratorType::get(paramTypes, body);
+  return mlir::success();
+}
+
+static ParseResult parseGenerator(AsmParser &p, GeneratorType &generator) {
+  // Try parsing as a plain KGEN generator first (no metadata);
+  OptionalParseResult result = parseOptionalKGENGenerator(p, generator);
+  if (result.has_value())
+    return *result;
+
+  result = p.parseOptionalType(generator);
+  if (!result.has_value())
+    return p.emitError(p.getCurrentLocation(),
+                       "expected '<' to begin a generator");
+  if (failed(*result))
+    return failure();
+  if (!isa<GeneratorType>(generator))
+    return p.emitError(p.getCurrentLocation(), "expected a generator type");
+  return success();
+}
+
+static void printGenerator(AsmPrinter &p, GeneratorType generator) {
+  if (GeneratorMetadataAttrInterface metadata = generator.getMetadata()) {
+    metadata.printGenerator(p, generator);
+    return;
+  }
+
+  p << '<';
+  printParamTypes(p, generator.getInputParamTypes());
+  p << "> ";
+  printParamType(p, generator.getBody());
+}
+
+Type GeneratorType::parse(AsmParser &p) {
+  GeneratorType generator;
+  if (p.parseLess() || parseGenerator(p, generator) || p.parseGreater())
+    return {};
+  return generator;
+}
+
+void GeneratorType::print(AsmPrinter &p) const {
+  p << '<';
+  printGenerator(p, *this);
+  p << '>';
+}
+
+//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 

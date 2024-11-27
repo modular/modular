@@ -193,20 +193,18 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
   }];
 
   let parameters = (ins
-    OptionalArrayRefParameter<"Type">:$inputParamTypes,
-    "Type":$body
+    ArrayRefParameter<"Type">:$inputParamTypes,
+    "Type":$body,
+    "GeneratorMetadataAttrInterface":$metadata
   );
-  let assemblyFormat = [{
-    `<`
-      `<` (`>`) : (custom<ParamTypes>($inputParamTypes)^ `>`)?
-      custom<ParamType>($body)
-    `>`
-  }];
+  let hasCustomAssemblyFormat = 1;
 
   let builders = [
     TypeBuilderWithInferredContext<(ins
-        "ArrayRef<Type>":$inputParamTypes, "Type":$body), [{
-      return $_get(body.getContext(), inputParamTypes, body);
+        "ArrayRef<Type>":$inputParamTypes, "Type":$body,
+        CArg<"Attribute", "{}">:$metadata), [{
+      return $_get(body.getContext(), inputParamTypes, body,
+                   ::cast_or_null<GeneratorMetadataAttrInterface>(metadata));
     }]>
   ];
 

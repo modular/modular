@@ -238,6 +238,11 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // Otherwise print it as "p1, p2 -> r3, () -> ())"
     printSignature(p, signature);
+  } else if (auto generator = dyn_cast<GeneratorType>(type)) {
+    if (GeneratorMetadataAttrInterface metadata = generator.getMetadata())
+      metadata.printGenerator(p, generator);
+    else
+      p << type;
   } else {
     p << type;
   }

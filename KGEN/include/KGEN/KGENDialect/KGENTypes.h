@@ -21,6 +21,7 @@
 namespace M::KGEN {
 class FnMetadataAttrInterface;
 class FuncInterface;
+class GeneratorMetadataAttrInterface;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
 class SignatureType;

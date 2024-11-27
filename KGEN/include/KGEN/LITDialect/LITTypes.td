@@ -22,57 +22,20 @@ class LITType<string name, string typeMnemonic, list<Trait> traits = []>
 }
 
 //===----------------------------------------------------------------------===//
+// LITGeneratorType
+//===----------------------------------------------------------------------===//
+
+def LIT_GeneratorType : DialectType<LITDialect,
+    CPred<"llvm::isa<LITGeneratorType>($_self)">, "LIT generator type",
+    "LITGeneratorType">;
+
+//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 
 def LIT_SignatureType : DialectType<LITDialect,
     CPred<"llvm::isa<LITSignatureType>($_self)">, "LIT signature type",
     "LITSignatureType">;
-
-//===----------------------------------------------------------------------===//
-// LITGeneratorType
-//===----------------------------------------------------------------------===//
-
-def LIT_LITGeneratorType : LITType<"LITGenerator", "lit_generator", [
-    ParameterScopeTypeInterface]> {
-  let summary = "The type of a LIT generator (i.e. a parameterized value)";
-  let description = [{
-    This type describes a generator (i.e. a parameterized value). It describes
-    the generator's parameter signature (the types of input parameters), and the
-    generator's output type (potentially in terms of the input parameters).
-
-    The metadata attribute is used to store additional information about the
-    parameter signature, such as the parameter kind (e.g. positional, keyword)
-    and default values.
-  }];
-
-  let parameters = (ins
-    OptionalArrayRefParameter<"Type">:$inputParamTypes,
-    "PogListAttr":$paramListAttrs,
-    "Type":$body
-  );
-  let assemblyFormat = [{
-    `<`
-      custom<ParamSignature>($inputParamTypes, $paramListAttrs)
-      custom<ParamType>($body)
-    `>`
-  }];
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins
-        "ArrayRef<Type>":$inputParamTypes, "PogListAttr":$paramListAttrs,
-        "Type":$body), [{
-      return $_get(body.getContext(), inputParamTypes, paramListAttrs, body);
-    }]>
-  ];
-
-  let extraClassDeclaration = [{
-    /// TODO: Remove result parameters entirely.
-    ArrayRef<Type> getResultParamTypes() { return {}; }
-  }];
-
-  let genVerifyDecl = 1;
-}
 
 //===----------------------------------------------------------------------===//
 // TypeCheckErrorType

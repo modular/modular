@@ -158,15 +158,15 @@ kgen.generator @escape_trait_param_names<type: trait<@Trait>>() {
 
 // CHECK-LABEL: kgen.func @generator_types
 kgen.func @generator_types() {
-  // CHECK-NEXT: type = <!lit.lit_generator<<> none>>
-  kgen.param.declare empty: type = <!lit.lit_generator<<> none>>
-  // CHECK-NEXT: type = <!lit.lit_generator<<dtype> index>>
-  kgen.param.declare one_arg: type = <!lit.lit_generator<<dtype> index>>
-  // CHECK-NEXT: type = <!lit.lit_generator<<"dt": dtype = f32> index>>
-  kgen.param.declare one_arg_named: type = <!lit.lit_generator<<"dt": dtype = f32> index>>
-  // CHECK-NEXT: type = <!lit.lit_generator<<"dt": dtype, "width": index> index>>
-  kgen.param.declare more_args: type = <!lit.lit_generator<<"dt": dtype, "width": index> index>>
-  // CHECK-NEXT: type = <!lit.lit_generator<<"dt": dtype, |, "width": index, *, "tag": i1> index>>
-  kgen.param.declare arg_kinds: type = <!lit.lit_generator<<"dt": dtype, |, "width": index, *, "tag": i1> index>>
+  // CHECK-NEXT: type = <!lit.generator<<> none>>
+  kgen.param.declare empty: type = <!lit.generator<<> none>>
+  // CHECK-NEXT: type = <!lit.generator<<dtype> index>>
+  kgen.param.declare one_arg: type = <!lit.generator<<dtype> index>>
+  // CHECK-NEXT: type = <!lit.generator<<"dt": dtype = f32> index>>
+  kgen.param.declare one_arg_named: type = <!lit.generator<<"dt": dtype = f32> index>>
+  // CHECK-NEXT: type = <!lit.generator<<"dt": dtype, "width": index> index>>
+  kgen.param.declare more_args: type = <!lit.generator<<"dt": dtype, "width": index> index>>
+  // CHECK-NEXT: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1> index>>
+  kgen.param.declare arg_kinds: type = <!lit.generator<<"dt": dtype, |, "width": index, *, "tag": i1> index>>
   kgen.return
 }

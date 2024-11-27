@@ -168,39 +168,6 @@ TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
 }
 
 //===----------------------------------------------------------------------===//
-// LITGeneratorType
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseParamSignature(AsmParser &p,
-                                       SmallVectorImpl<Type> &inputParamTypes,
-                                       PogListAttr &paramListAttr) {
-  return LIT::parseOptionalParamSignature(p, inputParamTypes, paramListAttr);
-}
-
-static void printParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
-                                PogListAttr paramListAttrs) {
-  if (inputParamTypes.empty()) {
-    p << "<>";
-    return;
-  }
-  LIT::printOptionalParamSignature(p, inputParamTypes, paramListAttrs);
-}
-
-LogicalResult
-LITGeneratorType::verify(function_ref<InFlightDiagnostic()> emitError,
-                         ArrayRef<Type> inputParamTypes,
-                         PogListAttr paramListAttrs, Type body) {
-  if (paramListAttrs.size() != inputParamTypes.size()) {
-    return emitError() << "number of parameter names doesn't match number of "
-                          "parameter types";
-  }
-
-  return verifyDefaultTypes(emitError, paramListAttrs.getDefaultPos(),
-                            paramListAttrs.getDefaultKwOnly(), paramListAttrs,
-                            inputParamTypes, "parameter");
-}
-
-//===----------------------------------------------------------------------===//
 // StructType
 //===----------------------------------------------------------------------===//
 
@@ -928,6 +895,22 @@ REPLResultRefType REPLResultRefType::get(Type elementType) {
 #include "KGEN/LITDialect/LITTypes.cpp.inc"
 
 //===----------------------------------------------------------------------===//
+// GeneratorType Parsing
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseLITGenerator(AsmParser &p, Type &generator) {
+  SmallVector<Type> inputParamTypes;
+  PogListAttr paramListAttr;
+  Type body;
+  if (LIT::parseOptionalParamSignature(p, inputParamTypes, paramListAttr) ||
+      parseKGENType(p, body))
+    return failure();
+
+  generator = GeneratorType::get(inputParamTypes, body, paramListAttr);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // SignatureType Parsing
 //===----------------------------------------------------------------------===//
 
@@ -1028,9 +1011,13 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
   if (parseResult.has_value())
     return genType;
 
-  // Special alias for `!lit.signature` type.
+  // Special alias for `!lit.signature` & `!lit.generator` type.
   if (mnemonic == "signature") {
     if (p.parseLess() || parseLITSignature(p, genType) || p.parseGreater())
+      return {};
+    return genType;
+  } else if (mnemonic == "generator") {
+    if (p.parseLess() || parseLITGenerator(p, genType) || p.parseGreater())
       return {};
     return genType;
   }
@@ -1097,6 +1084,19 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   printSignatureValues(p, printElt, signature.getValues(), signature,
                        /*optionalResultList=*/false);
   p << '>';
+}
+
+//===----------------------------------------------------------------------===//
+// LITGeneratorType
+//===----------------------------------------------------------------------===//
+
+LITGeneratorType::LITGeneratorType(GeneratorType gen) : GeneratorType(gen) {
+  assert((!gen || ::isa_and_nonnull<PogListAttr>(gen.getMetadata())) &&
+         "expected LIT generator metadata");
+}
+
+PogListAttr LITGeneratorType::getMetadata() {
+  return ::cast<PogListAttr>(GeneratorType::getMetadata());
 }
 
 //===----------------------------------------------------------------------===//

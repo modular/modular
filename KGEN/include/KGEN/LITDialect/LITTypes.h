@@ -34,6 +34,18 @@ enum class PassingKind : uint32_t;
 namespace M::KGEN::LIT {
 
 //===----------------------------------------------------------------------===//
+// LITGeneratorType
+//===----------------------------------------------------------------------===//
+
+class LITGeneratorType : public GeneratorType {
+  using GeneratorType::GeneratorType;
+  LITGeneratorType(GeneratorType gen);
+
+  /// Get the generator metadata.
+  PogListAttr getMetadata();
+};
+
+//===----------------------------------------------------------------------===//
 // LITSignatureType
 //===----------------------------------------------------------------------===//
 

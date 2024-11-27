@@ -160,4 +160,31 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// GeneratorMetadataAttrInterface
+//===----------------------------------------------------------------------===//
+
+def GeneratorMetadataAttrInterface
+    : AttrInterface<"GeneratorMetadataAttrInterface"> {
+  let description = [{
+    This interface describes attributes that are attached to a GeneratorType,
+    and carries additional metadata about the list. This interface defines the
+    required methods for this metadata attribute, including verification and
+    print hooks.
+  }];
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Verify the generator using the current metadata.
+    }], "LogicalResult", "verifyGenerator", (ins
+      "function_ref<InFlightDiagnostic()>":$emitError,
+      "ArrayRef<Type>":$inputParamTypes, "Type":$body)>,
+    InterfaceMethod<[{
+      Request the custom metadata attribute print the provided generator.
+    }], "void", "printGenerator", (ins "AsmPrinter &":$p,
+                                       "GeneratorType":$generator)>,
+  ];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRINTERFACES_TD

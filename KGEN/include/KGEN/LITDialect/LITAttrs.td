@@ -99,7 +99,8 @@ def LIT_PackIndexParameter : OptionalParameter<"ssize_t"> {
   let defaultValue = "ssize_t(-1)";
 }
 
-def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
+def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
+    [DeclareAttrInterfaceMethods<GeneratorMetadataAttrInterface>]> {
   let summary = "Argument or parameter list metadata.";
   let description = [{
     The `#lit.pog_list` attribute contains metadata about an argument or
