@@ -222,7 +222,9 @@ class SpecInstance:
                 obj_path = str(file_abs_path.with_suffix(""))
                 KBENCH_CACHE[defines_str] = binary_path
                 cmd = self.get_executor()
-                cmd.extend(["build", *defines, str(file_abs_path)])
+                cmd.extend(
+                    ["build", *defines, str(file_abs_path), "-o", obj_path]
+                )
                 # TODO: how to handle the return from failing here?
                 out = self._run(cmd, output_file, verbose, dryrun)
                 if out.stderr:
@@ -249,7 +251,7 @@ class SpecInstance:
 
     def _run(self, cmd, output_file, verbose, dryrun):
         if verbose:
-            logging.info(f"[output_file: {output_file}")
+            logging.info(f"[output_file: {output_file}]")
         try:
             if dryrun:
                 if verbose:
