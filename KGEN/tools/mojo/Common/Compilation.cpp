@@ -14,6 +14,7 @@
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/Timing.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
@@ -131,7 +132,9 @@ ErrorOrSuccess M::parseTargetOptions(
     llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
     llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
     llvm::opt::OptSpecifier mtuneId,
-    llvm::opt::OptSpecifier targetAcceleratorId) {
+    llvm::opt::OptSpecifier targetAcceleratorId,
+    llvm::opt::OptSpecifier mcmodelId,
+    llvm::opt::OptSpecifier largeDataThresholdId) {
   StringRef targetTriple = args.getLastArgValue(tripleId);
   if (args.hasMultipleArgs(tripleId))
     return Error("too many specified target triples, expected exactly one");
@@ -162,6 +165,15 @@ ErrorOrSuccess M::parseTargetOptions(
     return Error(
         "too many specified target accelerators, expected exactly one");
 
+  StringRef mcmodel = args.getLastArgValue(mcmodelId);
+  if (args.hasMultipleArgs(mcmodelId))
+    return Error("too many specified CodeModel, expected exactly one");
+
+  StringRef largeDataThreshold = args.getLastArgValue(largeDataThresholdId);
+  if (args.hasMultipleArgs(largeDataThresholdId))
+    return Error(
+        "too many specified large data threshold, expected exactly one");
+
   // If the user specified the triple, the target CPU, or the target feature
   // set, use those to override the defaults.
   if (!targetTriple.empty())
@@ -172,6 +184,28 @@ ErrorOrSuccess M::parseTargetOptions(
     compilationOptions.targetFeatures = targetFeatures.str();
   if (!targetAccelerator.empty())
     compilationOptions.targetAccelerator = targetAccelerator.str();
+
+  if (!mcmodel.empty()) {
+    if (!llvm::is_contained({"small", "medium", "larget"}, mcmodel)) {
+      return Error("invalid mcmodel'" + mcmodel +
+                   "', expected one of: `small`, `medium` or `large`");
+    }
+    if (mcmodel == "small")
+      compilationOptions.mcmodel = llvm::CodeModel::Small;
+    else if (mcmodel == "medium")
+      compilationOptions.mcmodel = llvm::CodeModel::Medium;
+    else if (mcmodel == "large")
+      compilationOptions.mcmodel = llvm::CodeModel::Large;
+  }
+
+  if (!largeDataThreshold.empty()) {
+    uint64_t value;
+    if (!llvm::to_integer(largeDataThreshold, value)) {
+      return Error("invalid large-data-threshold'" + largeDataThreshold +
+                   "', expected a positive integer number");
+    }
+    compilationOptions.largeDataThreshold = value;
+  }
 
   // Initialize targets first - we rely on this for getTargetInfo as well as for
   // the ExecutionEngine.

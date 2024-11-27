@@ -843,7 +843,6 @@ static Value lowerStringToGlobalConstant(StringAttr strAttr,
   auto global = cast<LLVM::GlobalOp>(imc.getOrCreateGlobal(
       b.getLoc(), MemoryBlobAttr::get(hdl, MemoryKind::ConstGlobal, {}, {},
                                       /*addressSpace=*/0)));
-
   // The actual string size does not include \0.
   auto sizeType = cast<IntegerType>(tc.getIndexType());
   Value sizeVal = b.create<LLVM::ConstantOp>(

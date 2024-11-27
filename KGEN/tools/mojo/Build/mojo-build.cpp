@@ -122,7 +122,8 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
           state, args, compilationOptions, sourceManager, ctx, target,
           options::OPT_target_triple, options::OPT_target_cpu,
           options::OPT_target_features, options::OPT_march, options::OPT_mcpu,
-          options::OPT_mtune, options::OPT_target_accelerator))
+          options::OPT_mtune, options::OPT_target_accelerator,
+          options::OPT_mcmodel, options::OPT_large_data_threshold))
     return state.reportError(err.getError());
   return {};
 }
