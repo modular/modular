@@ -8,7 +8,7 @@
 from math import ceildiv, floor
 from os import abort
 from sys import env_get_string
-from sys.info import _accelerator_arch
+from sys.info import _accelerator_arch, _get_arch
 
 alias DEFAULT_GPU_ARCH = _accelerator_arch()
 alias DEFAULT_GPU = Info.from_name[DEFAULT_GPU_ARCH]()
@@ -77,6 +77,7 @@ alias NoGPU = Info(
     vendor=Vendor.NO_GPU,
     api="none",
     arch_name="no_gpu",
+    compile_options="",
     compute=0,
     version="",
     sm_count=0,
@@ -142,6 +143,7 @@ alias A100 = Info(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
+    compile_options="nvptx-short-ptr=true",
     compute=8.0,
     version="sm_80",
     sm_count=108,
@@ -199,6 +201,7 @@ alias A10 = Info(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ampere",
+    compile_options="nvptx-short-ptr=true",
     compute=8.6,
     version="sm_86",
     sm_count=72,
@@ -256,6 +259,7 @@ alias L4 = Info(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="ada",
+    compile_options="nvptx-short-ptr=true",
     compute=8.9,
     version="sm_89",
     sm_count=58,
@@ -313,6 +317,7 @@ alias H100 = Info(
     vendor=Vendor.NVIDIA_GPU,
     api="cuda",
     arch_name="hopper",
+    compile_options="nvptx-short-ptr=true",
     compute=9.0,
     version="sm_90a",
     sm_count=114,
@@ -361,6 +366,7 @@ alias MI300X = Info(
     vendor=Vendor.AMD_GPU,
     api="hip",
     arch_name="gfx942",
+    compile_options="",
     compute=9.4,
     version="CDNA3",
     sm_count=304,
@@ -445,6 +451,7 @@ struct Info:
     var vendor: Vendor
     var api: StringLiteral
     var arch_name: StringLiteral
+    var compile_options: StringLiteral
     var compute: Float32
     var version: StringLiteral
     var sm_count: Int
@@ -480,6 +487,10 @@ struct Info:
         if self.name == "":
             return _get_empty_target()
         return _get_a100_target[index_bit_width]()
+
+    @staticmethod
+    fn from_target[target: __mlir_type.`!kgen.target`]() -> Self:
+        return _get_info_from_target[_get_arch[target]()]()
 
     @staticmethod
     fn from_name[name: StringLiteral]() -> Self:
@@ -613,6 +624,7 @@ struct Info:
         writer.write("vendor: ", self.vendor, "\n")
         writer.write("api: ", self.api, "\n")
         writer.write("arch_name: ", self.arch_name, "\n")
+        writer.write("compile_options: ", self.compile_options, "\n")
         writer.write("compute: ", self.compute, "\n")
         writer.write("version: ", self.version, "\n")
         writer.write("sm_count: ", self.sm_count, "\n")
@@ -744,8 +756,10 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
             "nvidia:90",
             "amdgpu:94",
             "mi300x",
+            "gfx942",
             "",
-        )
+        ),
+        "the target architecture '" + target_arch + "' is not valid",
     ]()
 
     @parameter
@@ -757,7 +771,7 @@ fn _get_info_from_target[target_arch: StringLiteral]() -> Info:
         return L4
     elif target_arch in ("sm_90", "sm_90a", "nvidia:90"):
         return H100
-    elif target_arch in ("mi300x", "amdgpu:94"):
+    elif target_arch in ("gfx942", "mi300x", "amdgpu:94"):
         return MI300X
     elif DEFAULT_GPU_ARCH == "":
         return NoGPU
@@ -775,7 +789,7 @@ fn _get_compute(target_arch: String) -> Float32:
         return L4.compute
     elif target_arch in ("sm_90", "sm_90a", "nvidia:90"):
         return H100.compute
-    elif target_arch in ("mi300x", "amdgpu:94"):
+    elif target_arch in ("gfx942", "mi300x", "amdgpu:94"):
         return MI300X.compute
     elif DEFAULT_GPU_ARCH == "":
         return NoGPU.compute

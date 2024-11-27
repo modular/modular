@@ -34,15 +34,6 @@ fn _get_gpu_target[
     return info.target()
 
 
-@always_inline
-fn _is_target_nvidia[
-    target_arch: StringLiteral = DEFAULT_GPU_ARCH,
-]() -> Bool:
-    return (
-        "cuda" in target_arch or "sm_" in target_arch or "nvidia" in target_arch
-    )
-
-
 # ===----------------------------------------------------------------------===#
 # Compilation
 # ===----------------------------------------------------------------------===#
@@ -55,9 +46,11 @@ fn _compile_code[
     /,
     *,
     emission_kind: StringLiteral = "asm",
-    compile_options: StringLiteral = "nvptx-short-ptr=true" if _is_target_nvidia() else "",
     is_failable: Bool = False,
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
+    compile_options: StringLiteral = HardwareInfo.from_target[
+        target
+    ]().compile_options,
 ]() -> Info:
     return compile_info[
         func,
@@ -75,9 +68,11 @@ fn _compile_code_asm[
     /,
     *,
     emission_kind: StringLiteral = "asm",
-    compile_options: StringLiteral = "nvptx-short-ptr=true" if _is_target_nvidia() else "",
     is_failable: Bool = False,
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
+    compile_options: StringLiteral = HardwareInfo.from_target[
+        target
+    ]().compile_options,
 ]() -> StringLiteral:
     alias asm = compile_info[
         func,
