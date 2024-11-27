@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 import csv
 import functools
-import glob
-import operator
 import os
 import shutil
 import string
@@ -15,9 +13,9 @@ import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from itertools import chain, product
+from itertools import product
 from pathlib import Path
-from time import sleep, time
+from time import time
 from typing import Any, Dict, List, Optional, Set, Union
 
 import click
@@ -26,7 +24,6 @@ import pandas as pd
 import rich
 import pickle
 
-from model.utils.common_cli_options import CommonOptions
 from model.utils.exceptions import CLIException, pretty_exception_handler
 from rich import print, traceback
 from rich.console import Console

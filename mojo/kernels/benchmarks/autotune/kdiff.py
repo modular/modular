@@ -6,7 +6,6 @@
 # ===----------------------------------------------------------------------=== #
 import os
 import subprocess
-from pathlib import Path
 import sys
 import click
 import yaml
