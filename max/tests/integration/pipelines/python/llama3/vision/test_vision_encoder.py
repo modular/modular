@@ -9,14 +9,14 @@ package reference implementation.
 
 import numpy as np
 import pytest
-from llama_vision.encoder import Attention
-from llama_vision.encoder import VisionEncoder, VisionEncoderLayer
+from llama_vision.encoder import Attention, VisionEncoder, VisionEncoderLayer
 from llama_vision.mlp import MLP
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
 from modular_graph_test import modular_graph_test
 from nn import Linear, LPLayerNorm
+from test_common.distance_metrics import is_euclidean_distance_close
 from torch_vision_encoder import MllamaVisionEncoder, MllamaVisionEncoderLayer
 
 ATTENTION_HEADS = 16
@@ -124,13 +124,8 @@ def test_vision_encoder_layer(
                 .detach()
                 .numpy()
             )
-            # Relative L2 norm threshold
-            threshold = 1e-4
-            assert (
-                np.linalg.norm(result - expected)
-                / (np.linalg.norm(expected) + np.finfo(np.float32).eps)
-                < threshold
-            )
+
+            assert is_euclidean_distance_close(result, expected, rtol=1e-4)
 
 
 @pytest.mark.parametrize(
@@ -250,10 +245,4 @@ def test_vision_encoder(
                 .numpy()
             )
 
-            # Relative L2 norm threshold
-            threshold = 20
-            assert (
-                np.linalg.norm(result - expected)
-                / (np.linalg.norm(expected) + np.finfo(np.float32).eps)
-                < threshold
-            )
+            assert is_euclidean_distance_close(result, expected, rtol=20)

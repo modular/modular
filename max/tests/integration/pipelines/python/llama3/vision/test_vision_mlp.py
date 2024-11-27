@@ -9,14 +9,14 @@ package reference implementation.
 
 import numpy as np
 import pytest
-
+from llama_vision.mlp import MLP
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
 from modular_graph_test import modular_graph_test
 from nn import Linear
+from test_common.distance_metrics import is_euclidean_distance_close
 from torch_utils import TorchVisionEncoderMLP
-from llama_vision.mlp import MLP
 
 
 @pytest.mark.parametrize(
@@ -47,15 +47,6 @@ def test_mlp(session: InferenceSession, input_type: TensorType) -> None:
 
             # Transpose weights to match our Linear semantics.
             expected = TorchVisionEncoderMLP(w1, w2)(x).detach().numpy()
-            # Relative L2 norm threshold
-            rel_threshold = 0.01
-            # Absolute threshold to exclude tiny values affected by round-off.
-            abs_threshold = 1e-5
-
-            diff_norm = np.linalg.norm(result - expected)
-            assert (
-                diff_norm < abs_threshold
-                or diff_norm
-                / (np.linalg.norm(expected) + np.finfo(np.float32).eps)
-                < rel_threshold
+            assert is_euclidean_distance_close(
+                result, expected, rtol=0.01, atol=1e-5
             )

@@ -10,6 +10,18 @@ import torch
 import torch.nn.functional as F
 
 
+def is_euclidean_distance_close(
+    result, expected, rtol: float = 0.01, atol: float = 1e-5
+) -> bool:
+    """Computes whether the Euclidean distance between inputs is close."""
+    diff_norm = np.linalg.norm(result - expected)
+    return bool(
+        diff_norm < atol
+        or diff_norm / (np.linalg.norm(expected) + np.finfo(np.float32).eps)
+        < rtol
+    )
+
+
 def kl_divergence_verifier(
     predicted: np.ndarray,
     expected: np.ndarray,
