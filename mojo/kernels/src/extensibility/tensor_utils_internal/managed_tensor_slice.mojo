@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from bit import is_power_of_two
 from collections import InlineArray, OptionalReg
 from math import ceil, fma
 from sys import alignof, simdwidthof
@@ -12,14 +11,18 @@ from sys.info import is_nvidia_gpu
 from sys.intrinsics import strided_load, strided_store
 
 import algorithm
-from compiler_internal.directives import StaticTensorSpec
-from compiler_internal.directives import __mogg_intrinsic_attr, specsof
+from bit import is_power_of_two
+from buffer import DimList, NDBuffer
+from compiler_internal.directives import (
+    StaticTensorSpec,
+    __mogg_intrinsic_attr,
+    specsof,
+)
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace
 from runtime.asyncrt import MojoCallContextPtr
 from tensor_internal import RuntimeTensorSpec, TensorSpec
 
-from buffer import NDBuffer, DimList
 from utils import IndexList
 
 from .indexing import _dot_prod, _row_major_strides, _slice_to_tuple
