@@ -8,8 +8,7 @@
 # RUN: %mojo-no-debug -D MODULAR_ASYNCRT_DEVICE_CONTEXT_V2=gpu %s
 
 from asyncrt_test_utils import create_test_device_context, expect_eq
-
-from gpu.host import DeviceBuffer, DeviceContext, DeviceAttribute, DeviceStream
+from gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext, DeviceStream
 from gpu.host.nvidia_cuda import CUDA, CUcontext
 
 

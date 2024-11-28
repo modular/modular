@@ -12,11 +12,11 @@
 from sys import simdwidthof
 
 from algorithm.functional import elementwise
+from asyncrt_test_utils import create_test_device_context, expect_eq
 from buffer import NDBuffer
 from gpu import *
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from asyncrt_test_utils import create_test_device_context, expect_eq
 
 from utils import IndexList
 from utils.index import Index
