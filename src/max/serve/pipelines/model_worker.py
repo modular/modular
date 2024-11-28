@@ -53,7 +53,7 @@ async def start_model_worker(
     factories: TokenGeneratorFactoryMap,
     configs: Mapping[str, TokenGeneratorPipelineConfig],
     name: str = "MODEL_" + str(uuid.uuid4()),
-    timeout_secs: float = 8 * 60.0,
+    timeout_secs: float = 20 * 60.0,
 ):
     """Starts a model worker and associated process.
 
