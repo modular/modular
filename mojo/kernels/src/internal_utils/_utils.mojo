@@ -6,7 +6,7 @@
 
 from collections import InlineArray
 from random import rand
-from sys import env_get_string, is_defined, argv
+from sys import argv, env_get_string, is_defined
 from sys.info import alignof
 
 from benchmark import (
@@ -15,16 +15,16 @@ from benchmark import (
     BenchId,
     BenchMetric,
     ThroughputMeasure,
-    keep,
     clobber_memory,
+    keep,
 )
 from buffer import Dim, DimList, NDBuffer
 from buffer.dimlist import _make_tuple
 from compile import _internal_compile_code
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer
-from testing import assert_almost_equal, assert_equal, assert_true
 from tensor_utils_internal import ManagedTensorSlice
+from testing import assert_almost_equal, assert_equal, assert_true
 
 from utils import Index, IndexList
 from utils.index import product

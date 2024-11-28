@@ -15,6 +15,7 @@ from ._utils import (
     DeviceNDBuffer,
     HostNDBuffer,
     TestTensor,
+    arg_parse,
     bench_compile_time,
     env_get_dtype,
     env_get_shape,
@@ -24,5 +25,4 @@ from ._utils import (
     parse_shape,
     random,
     zero,
-    arg_parse,
 )

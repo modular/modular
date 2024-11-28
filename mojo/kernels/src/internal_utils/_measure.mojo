@@ -9,8 +9,8 @@ from math import inf, isnan, log, nan, sqrt
 from sys import simdwidthof
 
 from algorithm import elementwise, mean, sum, vectorize
-from buffer import Buffer
 from algorithm.functional import unswitch
+from buffer import Buffer
 from memory import UnsafePointer
 
 from utils import IndexList

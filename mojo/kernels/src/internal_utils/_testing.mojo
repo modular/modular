@@ -6,13 +6,14 @@
 
 
 from collections import OptionalReg
+from math import exp2
 
 import testing
 from buffer import NDBuffer
 from builtin._location import __call_location, _SourceLocation
-from math import exp2
 from memory import UnsafePointer
 from testing.testing import _assert_cmp_error
+
 from utils.numerics import FPUtils
 
 from ._utils import HostNDBuffer, TestTensor
