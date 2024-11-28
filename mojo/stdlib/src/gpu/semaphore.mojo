@@ -8,12 +8,12 @@
 Implementation of a CTA-wide semaphore for inter-CTA synchronization.
 """
 
-from sys import llvm_intrinsic, is_nvidia_gpu
+from sys import is_nvidia_gpu, llvm_intrinsic
 from sys._assembly import inlined_assembly
 
 from memory import UnsafePointer
-from .intrinsics import store_release, load_acquire, Scope
 
+from .intrinsics import Scope, load_acquire, store_release
 from .sync import barrier
 
 

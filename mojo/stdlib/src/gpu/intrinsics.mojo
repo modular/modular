@@ -13,8 +13,8 @@ from builtin.dtype import _int_type_of_width
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 
+from .memory import AddressSpace, _int_to_str
 from .sys import is_sm_greater_equal
-from .memory import _int_to_str, AddressSpace
 
 # ===----------------------------------------------------------------------===#
 # ldg

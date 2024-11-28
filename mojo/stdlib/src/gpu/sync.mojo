@@ -5,15 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes intrinsics for NVIDIA GPUs sync instructions."""
 
-from sys import llvm_intrinsic
 from os import abort
+from sys import llvm_intrinsic
 
 from memory import UnsafePointer
 from memory.pointer import AddressSpace
 
+from ._utils import to_i32, to_llvm_shared_mem_ptr
 from .memory import AddressSpace as GPUAddressSpace
-
-from ._utils import to_llvm_shared_mem_ptr, to_i32
 
 # ===----------------------------------------------------------------------===#
 # barrier

@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA GPUs id operations."""
 
-from gpu import WARP_SIZE
-from sys import llvm_intrinsic, is_nvidia_gpu
 from os import abort
+from sys import is_nvidia_gpu, llvm_intrinsic
+
+from gpu import WARP_SIZE
 
 # ===----------------------------------------------------------------------===#
 # ThreadIdx

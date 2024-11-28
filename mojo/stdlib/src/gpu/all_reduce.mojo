@@ -5,21 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from gpu.host import (
-    DeviceContext,
-    DeviceBuffer,
-)
+
 from buffer import Buffer, NDBuffer
-from utils.index import IndexList, StaticTuple
-from gpu import BlockIdx, GridDim, ThreadIdx, BlockDim, barrier
-from gpu.host import Dim
+from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
+from gpu.host import DeviceBuffer, DeviceContext, Dim
 from gpu.intrinsics import (
-    store_release,
-    load_acquire,
-    store_volatile,
-    load_volatile,
     Scope,
+    load_acquire,
+    load_volatile,
+    store_release,
+    store_volatile,
 )
+
+from utils.index import IndexList, StaticTuple
 
 # Comments from the original implementation:
 # Block and grid default configs are results after careful grid search. Using

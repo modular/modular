@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes a simple GPU profiler."""
 
-from builtin.io import _printf
 from builtin._location import __call_location, _SourceLocation
+from builtin.io import _printf
+
 from .intrinsics import clock64
 
 

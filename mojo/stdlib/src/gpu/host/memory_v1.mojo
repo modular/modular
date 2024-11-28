@@ -5,16 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA memory operations."""
 
-from builtin._location import __call_location, _SourceLocation
-from memory import UnsafePointer, stack_allocation
-from memory.unsafe import bitcast
 from os.path import isdir
 from pathlib import Path
 from sys import sizeof
 from sys.ffi import DLHandle, _get_dylib_function
-from utils import StaticTuple
 
+from builtin._location import __call_location, _SourceLocation
 from gpu.host.result_v1 import Result
+from memory import UnsafePointer, stack_allocation
+from memory.unsafe import bitcast
+
+from utils import StaticTuple
 
 # ===----------------------------------------------------------------------===#
 # Utilities

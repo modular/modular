@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes NVIDIA GPUs global constants."""
 
-from sys.info import is_nvidia_gpu, is_amd_gpu
-from .host.info import DEFAULT_GPU_ARCH, DEFAULT_GPU
+from sys.info import is_amd_gpu, is_nvidia_gpu
+
+from .host.info import DEFAULT_GPU, DEFAULT_GPU_ARCH
 
 # ===----------------------------------------------------------------------===#
 # Globals

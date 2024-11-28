@@ -4,18 +4,16 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory import UnsafePointer
+from sys import external_call
 
 from gpu.host import DeviceContext, DeviceStream
-
 from gpu.host.device_context_v2 import (
-    _checked,
     _CharPtr,
+    _checked,
     _DeviceContextPtr,
     _DeviceStreamPtr,
 )
-
-from sys import external_call
+from memory import UnsafePointer
 
 
 struct _CUctx_st:

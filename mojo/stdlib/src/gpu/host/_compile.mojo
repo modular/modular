@@ -5,20 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA compilation operations."""
 
-from collections import Optional
 import subprocess
 import tempfile
+from collections import Optional
 from os import abort
 from pathlib import Path
 from sys.info import _get_arch
+
 from compile import Info, compile_info, get_linkage_name
 
-from .info import (
-    DEFAULT_GPU_ARCH,
-    Info as HardwareInfo,
-    A100,
-    _get_info_from_target,
-)
+from .info import A100, DEFAULT_GPU_ARCH
+from .info import Info as HardwareInfo
+from .info import _get_info_from_target
 
 # ===----------------------------------------------------------------------===#
 # Targets

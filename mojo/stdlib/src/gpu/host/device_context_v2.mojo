@@ -7,18 +7,9 @@
 # Implementation of the C++ backed DeviceContext in Mojo
 
 from collections import List, Optional
-from memory import stack_allocation
 from pathlib import Path
-from sys import (
-    external_call,
-    env_get_int,
-    env_get_string,
-    sizeof,
-    env_get_string,
-)
-from utils import StringRef, Variant
+from sys import env_get_int, env_get_string, external_call, sizeof
 from sys.info import _get_arch, is_triple
-from .info import DEFAULT_GPU
 
 from gpu.host._compile import (
     _compile_code,
@@ -27,6 +18,11 @@ from gpu.host._compile import (
     _ptxas_compile,
     _to_sass,
 )
+from memory import stack_allocation
+
+from utils import StringRef, Variant
+
+from .info import DEFAULT_GPU
 
 alias DeviceFunction = DeviceFunctionV2
 alias DeviceBuffer = DeviceBufferV2

@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 """This module includes intrinsics for NVIDIA GPUs shuffle instructions."""
 
-from sys import llvm_intrinsic, is_nvidia_gpu
-from memory import bitcast
+from sys import is_nvidia_gpu, llvm_intrinsic
+
 from gpu import lane_id
+from memory import bitcast
 
-from .globals import WARP_SIZE, WARP_SIZE
-
+from .globals import WARP_SIZE
 from .tensor_ops import tc_reduce
 
 # TODO (#24457): support shuffles with width != 32

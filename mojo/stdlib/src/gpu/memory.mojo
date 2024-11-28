@@ -6,7 +6,7 @@
 """This module includes NVIDIA GPUs memory operations."""
 
 from collections import OptionalReg
-from sys import alignof, bitwidthof, sizeof, is_nvidia_gpu, is_amd_gpu, is_gpu
+from sys import alignof, bitwidthof, is_amd_gpu, is_gpu, is_nvidia_gpu, sizeof
 from sys._assembly import inlined_assembly
 from sys.intrinsics import _RegisterPackType
 
@@ -18,7 +18,7 @@ from memory.unsafe import bitcast
 
 from utils import IndexList, StaticTuple
 
-from ._utils import to_llvm_ptr, to_llvm_shared_mem_ptr, to_i32
+from ._utils import to_i32, to_llvm_ptr, to_llvm_shared_mem_ptr
 
 # ===----------------------------------------------------------------------===#
 # AddressSpace

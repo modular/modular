@@ -9,11 +9,11 @@ from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
+from gpu.host.nvidia_cuda import CUstream
 from memory import UnsafePointer
 
 from utils import StaticTuple
 
-from gpu.host.nvidia_cuda import CUstream
 from .backend import *
 
 # ===----------------------------------------------------------------------===#
