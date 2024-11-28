@@ -37,8 +37,8 @@ fn vec_add[
     in1: ManagedTensorSlice[type, rank],
     out: ManagedTensorSlice[type, rank],
 ):
-    var row = ThreadIdx.x()
-    var col = ThreadIdx.y()
+    var row = ThreadIdx.x
+    var col = ThreadIdx.y
     out[row, col] = in0[row, col] + in1[row, col]
 
 
