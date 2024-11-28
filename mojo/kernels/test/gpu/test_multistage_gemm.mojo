@@ -147,7 +147,7 @@ fn multistage_mma[
 ):
     alias simd_size = simdwidthof[a_type]()
 
-    var tid: UInt32 = ThreadIdx.x()
+    var tid: UInt32 = ThreadIdx.x
     var warp_id = tid // WARP_SIZE
 
     alias num_warps_m = BM // WM
@@ -403,16 +403,16 @@ fn multistage_gemm[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid: UInt32 = ThreadIdx.x()
+    var tid: UInt32 = ThreadIdx.x
     var warp_id = tid // WARP_SIZE
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
     var block_idx = block_swizzle(
-        (int(BlockIdx.x()), int(BlockIdx.y())),
-        (int(GridDim.x()), int(GridDim.y())),
-    ) if swizzle_block else Index(int(BlockIdx.x()), int(BlockIdx.y()))
+        (int(BlockIdx.x), int(BlockIdx.y)),
+        (int(GridDim.x), int(GridDim.y)),
+    ) if swizzle_block else Index(int(BlockIdx.x), int(BlockIdx.y))
 
     # Coordinates of the current warp.
     var warp_x = warp_id % num_warps_n

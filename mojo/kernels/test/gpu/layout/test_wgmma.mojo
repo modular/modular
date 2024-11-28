@@ -40,7 +40,7 @@ fn wgmma_tf32_tf32_f32_fill_kernel[M: Int, N: Int, K: Int]():
         address_space = AddressSpace.SHARED,
     ].stack_allocation().fill(1)
 
-    if ThreadIdx.x() == 0:
+    if ThreadIdx.x == 0:
         _ = smem_operand_a.fill(2)
         _ = smem_operand_b.fill(3)
 
@@ -60,9 +60,7 @@ fn wgmma_tf32_tf32_f32_fill_kernel[M: Int, N: Int, K: Int]():
     wgmma_fence_aligned()
     res = c_reg.cast[DType.float64]()
 
-    _printf["%lu : %g %g %g %g\n"](
-        ThreadIdx.x(), res[0], res[1], res[2], res[3]
-    )
+    _printf["%lu : %g %g %g %g\n"](ThreadIdx.x, res[0], res[1], res[2], res[3])
 
 
 # CHECK-LABEL: test_wgmma_64x64x8_f32_f32_f32_fill

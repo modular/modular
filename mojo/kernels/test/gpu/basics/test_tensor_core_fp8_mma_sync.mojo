@@ -21,7 +21,7 @@ fn mma_sync_16x8x32_E4M3():
     mma(d, a, b, c)
 
     _printf["thread %d : %g %g %g %g\n"](
-        ThreadIdx.x(),
+        ThreadIdx.x,
         d[0].cast[DType.float64](),
         d[1].cast[DType.float64](),
         d[2].cast[DType.float64](),
@@ -50,7 +50,7 @@ fn mma_sync_16x8x32_E4M2():
     mma(d, a, b, c)
 
     _printf["thread %d : %g %g %g %g\n"](
-        ThreadIdx.x(),
+        ThreadIdx.x,
         d[0].cast[DType.float64](),
         d[1].cast[DType.float64](),
         d[2].cast[DType.float64](),

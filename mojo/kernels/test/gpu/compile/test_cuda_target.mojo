@@ -104,7 +104,7 @@ fn erf_elementwise(buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext):
     # Each thread will process 4 * simd_width elements.
     alias granularity = 4 * simdwidthof[DType.float32]()
 
-    var tid = granularity * int(ThreadIdx.x() + BlockDim.x() * BlockIdx.x())
+    var tid = granularity * int(ThreadIdx.x + BlockDim.x * BlockIdx.x)
 
     @always_inline
     @__copy_capture(tid)
@@ -145,7 +145,7 @@ def test_erf_elementwise_sm90():
 
 
 fn erf_kernel(buf: UnsafePointer[Float32], len: Int):
-    var tid = ThreadIdx.x() + BlockDim.y() * BlockIdx.y()
+    var tid = ThreadIdx.x + BlockDim.y * BlockIdx.y
 
     if tid >= len:
         return
@@ -280,8 +280,8 @@ fn gemm(
     ]()
 
     # Thread indexing offsets.
-    var row = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var col = BlockIdx.y() * TILE_SZ_B
+    var row = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var col = BlockIdx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.float32]()
@@ -290,8 +290,8 @@ fn gemm(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i = ThreadIdx.x() // TILE_SZ_B
-        var j = ThreadIdx.x() % TILE_SZ_B
+        var i = ThreadIdx.x // TILE_SZ_B
+        var j = ThreadIdx.x % TILE_SZ_B
 
         # Load the B matrix into shared memory.
         var b_val: Float32
@@ -463,7 +463,7 @@ fn block_reduce(val: Float32) -> Float32:
     alias warp_shift = _static_log2[WARP_SIZE]()
 
     var lane = lane_id()
-    var warp = ThreadIdx.x() // 32
+    var warp = ThreadIdx.x // 32
 
     var warp_sum = warp_sum_reduce(val)
 
@@ -473,7 +473,7 @@ fn block_reduce(val: Float32) -> Float32:
     barrier()
 
     return warp_sum_reduce(
-        shared.load(lane) if ThreadIdx.x() < BlockDim.x() // 32 else 0
+        shared.load(lane) if ThreadIdx.x < BlockDim.x // 32 else 0
     )
 
 

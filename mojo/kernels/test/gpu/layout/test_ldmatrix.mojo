@@ -32,7 +32,7 @@ fn test_ldmatrix_fp32(
     alias mma_k: UInt = 8
 
     var d_reg = SIMD[DType.float32, 4](0)
-    var tid = ThreadIdx.x()
+    var tid = ThreadIdx.x
     var a_shared = stack_allocation[
         mma_m * mma_k,
         DType.float32,

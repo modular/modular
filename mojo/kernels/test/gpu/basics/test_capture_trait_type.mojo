@@ -38,7 +38,7 @@ def trait_repro_sub[
     @parameter
     @__copy_capture(thing)
     fn kernel_fn():
-        var idx = ThreadIdx.x()
+        var idx = ThreadIdx.x
         print(Float32(thing.get_val(idx)) * 2)
 
     cuda_fn = ctx.compile_function[kernel_fn]()

@@ -19,7 +19,7 @@ fn p2p_copy_kernel(
     src: UnsafePointer[Scalar[DType.float32]],
     num_elements: Int,
 ):
-    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
     if tid < num_elements:
         dst[tid] = src[tid]
 

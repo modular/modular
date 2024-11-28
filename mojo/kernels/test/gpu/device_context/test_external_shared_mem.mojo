@@ -20,9 +20,9 @@ fn test_external_shared_mem(ctx: DeviceContext) raises:
         var dynamic_sram = external_memory[
             Float32, address_space = AddressSpace.SHARED, alignment=4
         ]()
-        dynamic_sram[ThreadIdx.x()] = ThreadIdx.x()
+        dynamic_sram[ThreadIdx.x] = ThreadIdx.x
         barrier()
-        data[ThreadIdx.x()] = dynamic_sram[ThreadIdx.x()]
+        data[ThreadIdx.x] = dynamic_sram[ThreadIdx.x]
 
     # The default limitation is < 48KB for sm_80, 86, 89.
     var func = ctx.compile_function[dynamic_smem_kernel](

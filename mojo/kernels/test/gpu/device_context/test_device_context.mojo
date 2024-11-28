@@ -17,7 +17,7 @@ fn vec_func(
     len: Int,
     supplement: Int,
 ):
-    var tid = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
+    var tid = ThreadIdx.x + BlockDim.x * BlockIdx.x
     if tid >= len:
         return
     out[tid] = in0[tid] + in1[tid] + supplement

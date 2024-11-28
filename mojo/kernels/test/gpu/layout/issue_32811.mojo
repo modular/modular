@@ -17,9 +17,8 @@ fn gpu_kernel(
     rhs: UnsafePointer[Float32],
     lhs: UnsafePointer[Float32],
 ):
-    dst[BlockIdx.x() * 4 + ThreadIdx.x()] = (
-        rhs[BlockIdx.x() * 4 + ThreadIdx.x()]
-        + lhs[BlockIdx.x() * 4 + ThreadIdx.x()]
+    dst[BlockIdx.x * 4 + ThreadIdx.x] = (
+        rhs[BlockIdx.x * 4 + ThreadIdx.x] + lhs[BlockIdx.x * 4 + ThreadIdx.x]
     )
 
     var dst_tensor = LayoutTensor[

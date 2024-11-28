@@ -49,7 +49,7 @@ def test_constant_mem(ctx: DeviceContext):
 
     fn static_constant_kernel[n: Int](data: UnsafePointer[Float32]):
         alias val = _fill_impl[n]()
-        data[ThreadIdx.x()] = val[ThreadIdx.x()]
+        data[ThreadIdx.x] = val[ThreadIdx.x]
 
     var func = ctx.compile_function[static_constant_kernel[16]]()
 
@@ -95,7 +95,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
         ]
     ](data: UnsafePointer[Float32]):
         alias val = get_constant_memory()
-        data[ThreadIdx.x()] = val[ThreadIdx.x()]
+        data[ThreadIdx.x] = val[ThreadIdx.x]
 
     var func = ctx.compile_function[static_constant_kernel[_fill_impl[20]]]()
 
@@ -129,7 +129,7 @@ def test_external_constant_mem(ctx: DeviceContext):
             address_space = AddressSpace.PARAM,
             alignment=8,
         ]()
-        data[ThreadIdx.x()] = static_constant[ThreadIdx.x()]
+        data[ThreadIdx.x] = static_constant[ThreadIdx.x]
 
     var constant_memory = List[Float32](
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15

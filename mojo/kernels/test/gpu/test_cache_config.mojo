@@ -12,7 +12,7 @@ from testing import *
 
 
 fn gpu_kernel(buff: UnsafePointer[Int64]):
-    var idx = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var idx = BlockIdx.x * BlockDim.x + ThreadIdx.x
     buff[idx] = idx
 
 

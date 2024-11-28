@@ -21,14 +21,14 @@ from utils.static_tuple import StaticTuple
 fn test_tma_async_load[
     dtype: DType, layout: Layout
 ](tma_tile: TMATensorTile[dtype, layout]):
-    tile, barrier = tma_tile.async_load(BlockIdx.x(), BlockIdx.y())
+    tile, barrier = tma_tile.async_load(BlockIdx.x, BlockIdx.y)
     barrier.wait()
 
     _printf[
         "(%lu, %lu) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
     ](
-        BlockIdx.x(),
-        BlockIdx.y(),
+        BlockIdx.x,
+        BlockIdx.y,
         tile.ptr[0].cast[DType.float64](),
         tile.ptr[1].cast[DType.float64](),
         tile.ptr[2].cast[DType.float64](),

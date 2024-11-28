@@ -28,8 +28,8 @@ fn semaphore_vector_reduce[
     a_ptr: UnsafePointer[Scalar[type]],
     locks: UnsafePointer[Int32],
 ):
-    var tid = ThreadIdx.x()
-    var block_idx = BlockIdx.x()
+    var tid = ThreadIdx.x
+    var block_idx = BlockIdx.x
     var sema = Semaphore(locks.offset(0), tid)
 
     sema.fetch()
@@ -115,14 +115,14 @@ fn semaphore_matrix_reduce[
     a_ptr: UnsafePointer[Scalar[type]],
     locks: UnsafePointer[Int32],
 ):
-    var tid = ThreadIdx.x()
-    var block_idx = BlockIdx.x()
+    var tid = ThreadIdx.x
+    var block_idx = BlockIdx.x
     var sema = Semaphore(locks.offset(0), tid)
 
     sema.fetch()
 
     sema.wait(block_idx)
-    for x in range(tid, M * N, BlockDim.x()):
+    for x in range(tid, M * N, BlockDim.x):
         var row = x // N
         var col = x % N
         c_ptr[row * N + col] += a_ptr[

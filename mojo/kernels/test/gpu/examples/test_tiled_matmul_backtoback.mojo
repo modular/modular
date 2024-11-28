@@ -207,7 +207,7 @@ fn b2b_gemm[
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
 
-    var tid = ThreadIdx.x()
+    var tid = ThreadIdx.x
     # var ln_id = lane_id()
     var warp_id = tid // WARP_SIZE
 
@@ -217,9 +217,9 @@ fn b2b_gemm[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        (int(BlockIdx.x()), int(BlockIdx.y())),
-        (int(GridDim.x()), int(GridDim.y())),
-    ) if swizzle_block else Index(int(BlockIdx.x()), int(BlockIdx.y()))
+        (int(BlockIdx.x), int(BlockIdx.y)),
+        (int(GridDim.x), int(GridDim.y)),
+    ) if swizzle_block else Index(int(BlockIdx.x), int(BlockIdx.y))
 
     # Coordinates of the current warp.
     warp_y, warp_x = divmod(warp_id, num_warps_n)
@@ -470,10 +470,10 @@ fn b2b_gemm[
             )
             var d_gmem_frag = d_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x())
+            ]().distribute[warp_layout](ThreadIdx.x)
             var d_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x())
+            ]().distribute[warp_layout](ThreadIdx.x)
             var thread_offset = d_gmem_frag.distance(D.ptr)
             alias num_stores_per_thread = __type_of(d_gmem_frag).layout.size()
             alias src_align = alignof[

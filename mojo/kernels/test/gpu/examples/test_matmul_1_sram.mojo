@@ -58,12 +58,12 @@ fn matmul_sram(
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.
     # Map thread x to column for coalesced access in B.
-    var col = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var row = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var col = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var row = BlockIdx.y * BlockDim.y + ThreadIdx.y
 
     # Local index in the c sub-matrix updated by current block.
-    var localCol = ThreadIdx.x()
-    var localRow = ThreadIdx.y()
+    var localCol = ThreadIdx.x
+    var localRow = ThreadIdx.y
 
     # Result of current thread in C.
     var result = Float32(0.0)

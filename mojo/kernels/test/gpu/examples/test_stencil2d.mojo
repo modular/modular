@@ -31,8 +31,8 @@ fn stencil2d(
     coeff3: Int,
     coeff4: Int,
 ):
-    var tidx = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var tidy = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var tidx = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var tidy = BlockIdx.y * BlockDim.y + ThreadIdx.y
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
@@ -59,10 +59,10 @@ fn stencil2d_smem(
     coeff3: Int,
     coeff4: Int,
 ):
-    var tidx = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var tidy = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-    var lindex_x = ThreadIdx.x() + 1
-    var lindex_y = ThreadIdx.y() + 1
+    var tidx = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var tidy = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var lindex_x = ThreadIdx.x + 1
+    var lindex_y = ThreadIdx.y + 1
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
@@ -78,7 +78,7 @@ fn stencil2d_smem(
     a_shared[Index(lindex_y, lindex_x)] = a[tidy * num_cols + tidx]
 
     # First column also loads elements left and right to the block.
-    if ThreadIdx.x() == 0:
+    if ThreadIdx.x == 0:
         a_shared[Index(lindex_y, 0)] = (
             a[tidy * num_cols + (tidx - 1)] if 0
             <= tidy * num_cols + (tidx - 1)
@@ -91,7 +91,7 @@ fn stencil2d_smem(
         )
 
     # First row also loads elements above and below the block.
-    if ThreadIdx.y() == 0:
+    if ThreadIdx.y == 0:
         a_shared[Index(0, lindex_x)] = (
             a[(tidy - 1) * num_cols + tidx] if 0
             < (tidy - 1) * num_cols + tidx

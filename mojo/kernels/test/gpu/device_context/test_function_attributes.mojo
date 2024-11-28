@@ -15,7 +15,7 @@ from testing import *
 # CHECK-LABEL: test_function_attributes
 def test_function_attributes():
     fn kernel(x: UnsafePointer[Int]):
-        x[0] = ThreadIdx.x()
+        x[0] = ThreadIdx.x
 
     # CHECK: tid.x
 

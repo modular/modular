@@ -32,7 +32,7 @@ fn test_case_thread_id_nvidia():
     print("== test_case_thread_id_nvidia")
 
     fn kernel(output: UnsafePointer[Int32]):
-        output[] = ThreadIdx.x() + ThreadIdx.x() + ThreadIdx.x()
+        output[] = ThreadIdx.x + ThreadIdx.x + ThreadIdx.x
 
     # CHECK-COUNT-1: call i32 @llvm.nvvm.read.ptx.sreg.tid.x()
     print(
@@ -47,7 +47,7 @@ fn test_case_thread_id_mi300x():
     print("== test_case_thread_id_mi300x")
 
     fn kernel(output: UnsafePointer[Int32]):
-        output[] = ThreadIdx.x() + ThreadIdx.x() + ThreadIdx.x()
+        output[] = ThreadIdx.x + ThreadIdx.x + ThreadIdx.x
 
     # CHECK-COUNT-1: call i32 @llvm.amdgcn.workitem.id.x()
     print(

@@ -62,7 +62,7 @@ fn wgmma_tf32_tf32_f32_kernel[
         var operand_a_sm_tile = smem_operand_a.tile[M, WMMA_K](0, k_i)
         var operand_b_sm_tile = smem_operand_b.tile[WMMA_K, N](k_i, 0)
 
-        if ThreadIdx.x() == 0:
+        if ThreadIdx.x == 0:
             operand_a_sm_tile.copy_from(operand_a_tile)
             operand_b_sm_tile.copy_from(operand_b_tile)
 
@@ -85,8 +85,8 @@ fn wgmma_tf32_tf32_f32_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = ThreadIdx.x() // 32
-    var lan_id = ThreadIdx.x() % 32
+    var warp_id = ThreadIdx.x // 32
+    var lan_id = ThreadIdx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N8-D.png
     # Each warp updates a 16x8 tile, and within each tile,
@@ -379,7 +379,7 @@ fn wgmma_bf16_bf16_f32_kernel[
         var operand_a_sm_tile = smem_operand_a.tile[M, WMMA_K](0, k_i)
         var operand_b_sm_tile = smem_operand_b.tile[WMMA_K, N](k_i, 0)
 
-        if ThreadIdx.x() == 0:
+        if ThreadIdx.x == 0:
             operand_a_sm_tile.copy_from(operand_a_tile)
             operand_b_sm_tile.copy_from(operand_b_tile)
 
@@ -402,8 +402,8 @@ fn wgmma_bf16_bf16_f32_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = ThreadIdx.x() // 32
-    var lan_id = ThreadIdx.x() % 32
+    var warp_id = ThreadIdx.x // 32
+    var lan_id = ThreadIdx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-D.png
     # Each warp updates a 16x8 tile, and within each tile,
@@ -695,7 +695,7 @@ fn wgmma_f16_f16_f32_kernel[
         var operand_a_sm_tile = smem_operand_a.tile[M, WMMA_K](0, k_i)
         var operand_b_sm_tile = smem_operand_b.tile[WMMA_K, N](k_i, 0)
 
-        if ThreadIdx.x() == 0:
+        if ThreadIdx.x == 0:
             operand_a_sm_tile.copy_from(operand_a_tile)
             operand_b_sm_tile.copy_from(operand_b_tile)
 
@@ -718,8 +718,8 @@ fn wgmma_f16_f16_f32_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = ThreadIdx.x() // 32
-    var lan_id = ThreadIdx.x() % 32
+    var warp_id = ThreadIdx.x // 32
+    var lan_id = ThreadIdx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-D.png
     # Each warp updates a 16x8 tile, and within each tile,
@@ -1012,7 +1012,7 @@ fn wgmma_f16_f16_f16_kernel[
         var operand_a_sm_tile = smem_operand_a.tile[M, WMMA_K](0, k_i)
         var operand_b_sm_tile = smem_operand_b.tile[WMMA_K, N](k_i, 0)
 
-        if ThreadIdx.x() == 0:
+        if ThreadIdx.x == 0:
             operand_a_sm_tile.copy_from(operand_a_tile)
             operand_b_sm_tile.copy_from(operand_b_tile)
 
@@ -1035,8 +1035,8 @@ fn wgmma_f16_f16_f16_kernel[
         threadfence()
         wgmma_fence_aligned()
 
-    var warp_id = ThreadIdx.x() // 32
-    var lan_id = ThreadIdx.x() % 32
+    var warp_id = ThreadIdx.x // 32
+    var lan_id = ThreadIdx.x % 32
     # Refer to this layout:
     # https://docs.nvidia.com/cuda/parallel-thread-execution/_images/wgmma-64N16-D.png
     # Each warp updates a 16x8 tile, and within each tile,

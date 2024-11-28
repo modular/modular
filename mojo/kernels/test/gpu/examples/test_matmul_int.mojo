@@ -48,8 +48,8 @@ fn matmul(
     ]()
 
     # Thread indexing offsets.
-    var row: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var col: UInt = BlockIdx.y() * TILE_SZ_B
+    var row: UInt = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var col: UInt = BlockIdx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.index]()
@@ -58,8 +58,8 @@ fn matmul(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i: UInt = ThreadIdx.x() // TILE_SZ_B
-        var j: UInt = ThreadIdx.x() % TILE_SZ_B
+        var i: UInt = ThreadIdx.x // TILE_SZ_B
+        var j: UInt = ThreadIdx.x % TILE_SZ_B
 
         # Load the B matrix into shared memory.
         var b_val = int(b[tile_idx * TILE_SZ_RATIO + int(i), int(col) + int(j)])

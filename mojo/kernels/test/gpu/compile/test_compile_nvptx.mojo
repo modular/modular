@@ -16,7 +16,7 @@ from memory import UnsafePointer, stack_allocation
 
 
 fn kernel(x: Int) -> Int:
-    return ThreadIdx.x()
+    return ThreadIdx.x
 
 
 fn parametric[f: fn (Int) -> Int]() -> Int:
@@ -43,7 +43,7 @@ def test_compile_function():
     print("== test_compile_function")
 
     fn kernel(x: UnsafePointer[Int]):
-        x[0] = ThreadIdx.x()
+        x[0] = ThreadIdx.x
 
     # CHECK: tid.x
 
@@ -110,7 +110,7 @@ def test_short_nvptx_ptr():
         var a = stack_allocation[
             20, Int32, address_space = AddressSpace.SHARED
         ]()
-        a[ThreadIdx.x()] = src[0]
+        a[ThreadIdx.x] = src[0]
         barrier()
 
     # CHECK: // demoted variable

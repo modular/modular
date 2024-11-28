@@ -27,7 +27,7 @@ fn register_intrinsics(
 ):
     # Note we perform the store purely to avoid the compiler from optimizing
     # away the statements.
-    var tid = ThreadIdx.x()
+    var tid = ThreadIdx.x
     i8.store(tid, ldg(i8))
     ui8.store(tid, ldg(ui8))
     i16.store(tid, ldg(i16))

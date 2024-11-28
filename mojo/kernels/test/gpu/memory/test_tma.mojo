@@ -41,15 +41,15 @@ fn kernel_copy_async_tma(descriptor: TMADescriptor):
 
     mbarrier_arrive_expect_tx_shared(mbar, 64)
     cp_async_bulk_tensor_shared_cluster_global(
-        shmem, descriptor_ptr, mbar, Index(BlockIdx.x() * 4, BlockIdx.y() * 4)
+        shmem, descriptor_ptr, mbar, Index(BlockIdx.x * 4, BlockIdx.y * 4)
     )
     mbarrier_try_wait_parity_shared(mbar, 0, 10000000)
 
     _printf[
         "(%lu, %lu) : %g %g %g %g; %g %g %g %g; %g %g %g %g; %g %g %g %g\n"
     ](
-        BlockIdx.x(),
-        BlockIdx.y(),
+        BlockIdx.x,
+        BlockIdx.y,
         shmem[0].cast[DType.float64](),
         shmem[1].cast[DType.float64](),
         shmem[2].cast[DType.float64](),

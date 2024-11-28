@@ -27,10 +27,10 @@ def test_external_shared_mem(ctx: DeviceContext):
             address_space = AddressSpace.SHARED,
             alignment = alignof[Scalar[DType.float32]](),
         ]()
-        dynamic_sram[ThreadIdx.x()] = ThreadIdx.x()
-        sram[ThreadIdx.x()] = ThreadIdx.x()
+        dynamic_sram[ThreadIdx.x] = ThreadIdx.x
+        sram[ThreadIdx.x] = ThreadIdx.x
         barrier()
-        data[ThreadIdx.x()] = dynamic_sram[ThreadIdx.x()] + sram[ThreadIdx.x()]
+        data[ThreadIdx.x] = dynamic_sram[ThreadIdx.x] + sram[ThreadIdx.x]
 
     # The default limitation is < 48KB for sm_80, 86, 89.
     var func = ctx.compile_function[dynamic_smem_kernel, dump_llvm=True](

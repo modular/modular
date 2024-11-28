@@ -36,7 +36,7 @@ fn reduce(
     vec: UnsafePointer[Float32],
     len: Int,
 ):
-    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
 
     if tid >= len:
         return

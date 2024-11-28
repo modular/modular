@@ -27,7 +27,7 @@ fn copy_via_shared(
     src: UnsafePointer[Float32],
     dst: UnsafePointer[Float32],
 ):
-    var thread_id = Int(ThreadIdx.x())
+    var thread_id = Int(ThreadIdx.x)
     var mem_buff: UnsafePointer[
         Float32, address_space = AddressSpace.SHARED
     ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()

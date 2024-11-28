@@ -33,7 +33,7 @@ fn scatter_nd_gpu[
     last_index_dimension: Int,
     num_updates_elements: Int,
 ):
-    var id: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var id: UInt = BlockIdx.x * BlockDim.x + ThreadIdx.x
     if id >= num_indices:
         return
 
