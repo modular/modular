@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from memory import stack_allocation, UnsafePointer
 from compile import _internal_compile_code, compile_info
-from testing import *
 from gpu import *
 from gpu.host import *
 from gpu.memory import AddressSpace
+from memory import UnsafePointer, stack_allocation
+from testing import *
 
 alias target_short_ptr = __mlir_attr[
     `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
