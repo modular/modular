@@ -361,8 +361,20 @@ trait UnknownDestructibility:
     pass
 
 
+@explicit_destroy
+trait ExplicitlyDestroyedCopyable:
+    fn __copyinit__(out self, existing: Self, /):
+        pass
+
+
 trait Copyable:
     fn __copyinit__(out self, existing: Self, /):
+        pass
+
+
+@explicit_destroy
+trait ExplicitlyDestroyedMovable:
+    fn __moveinit__(out self, owned existing: Self, /):
         pass
 
 

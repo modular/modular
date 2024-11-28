@@ -1702,6 +1702,7 @@ static LogicalResult processTraitSignatureDecorator(ExprNode *decorator,
       traitOp.setConvention(TypeConvention::RegisterPassable);
       return success();
     }
+    // We don't process @explicit_destroy here, we do it in resolveSignature.
   }
   if (auto callNode = dyn_cast<CallNode>(decorator)) {
     if (isTrivialRegisterPassable(callNode)) {
@@ -2358,6 +2359,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   // TODO(MOCO-1468): Remove this, put an @explicit_destroy on
   // UnknownDestructibility's definition.
   if (traitOp.getSymName() == "UnknownDestructibility") {
+    // TODO(MOCO-1468): Remove this, specify it in the code.
     traitOp.setLinearTypeErrorMsg(std::make_optional(llvm::StringRef(
         "Unhandled explicit_destroy type UnknownDestructibility")));
   }
@@ -2370,6 +2372,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
       parentTypes.push_back(TypeLineageAttr::get(anyType));
     }
   }
+
   std::string linearTypeErrorMsg;
   for (auto decoratorExpr : decoratorExprs) {
     if (auto *declRefNode = dyn_cast<DeclRefNode>(decoratorExpr.first)) {

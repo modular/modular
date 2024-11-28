@@ -1785,7 +1785,7 @@ private:
   void destroyValueIfNeeded(Value v, ValueRef valueRef,
                             const BitVector &consumedValues,
                             ImplicitLocOpBuilder &builder);
-  void emitDestructorCall(Value value, bool isIndirect,
+  void emitDestructorCall(Value value, ValueRef valueRef,
                           ImplicitLocOpBuilder &builder);
   DtorEmissionResult optimizeCopyDestroys(Operation *opWithUse);
 
@@ -1876,7 +1876,7 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
     }
 
     // Emit the destructor.
-    emitDestructorCall(value, valueRef.isIndirect, builder);
+    emitDestructorCall(value, valueRef, builder);
     return;
   }
 
@@ -1938,11 +1938,10 @@ static Value getMutableRefForPossiblyImmutValue(Value value,
 ///
 /// The 'opWithUse' value, if present, is the operation using the overall value
 /// being destroyed.  This allows us to perform copy ctor+temp elision.
-void DestructorInserter::emitDestructorCall(Value value, bool isIndirect,
+void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
                                             ImplicitLocOpBuilder &builder) {
-
   Type destroyedType =
-      ValueRef::getDereferencedType(value.getType(), isIndirect);
+      ValueRef::getDereferencedType(value.getType(), valueRef.isIndirect);
   TypedAttr dtor = valueSet.typeDeclInfo.getDestructorForType(destroyedType);
   if (!dtor) {
     // If there is no destructor, then this is either a trivial type or a
@@ -1950,6 +1949,7 @@ void DestructorInserter::emitDestructorCall(Value value, bool isIndirect,
     if (StringAttr linearMsg =
             valueSet.typeDeclInfo.getLinearTypeErrorMsg(destroyedType)) {
       mlir::emitError(builder.getLoc()) << linearMsg.str();
+      valueSet.getValueInfo(valueRef.valueId).hasErrorDiagnosed = true;
     }
 
     // Otherwise, this is a trivial type; nothing to do.
