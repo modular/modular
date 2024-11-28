@@ -698,9 +698,9 @@ fn softmax_kernel[
     # each block reduces a row, which is convenient because it requires no partial
     # reductions across blocks
     for row_idx in range(
-        BlockIdx.x(),
+        BlockIdx.x,
         num_rows,
-        GridDim.x(),
+        GridDim.x,
     ):
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(
@@ -716,7 +716,7 @@ fn softmax_kernel[
             accum_type=accum_type,
         ](row_coords, axis, Scalar[type].MIN, int(row_size))
 
-        if ThreadIdx.x() == 0:
+        if ThreadIdx.x == 0:
             max_buf[0] = row_max
         barrier()
 
@@ -725,7 +725,7 @@ fn softmax_kernel[
         for offset_in_row in range(
             UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
         ):
-            var idx_in_padded_row = ThreadIdx.x() + offset_in_row
+            var idx_in_padded_row = ThreadIdx.x + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
@@ -743,7 +743,7 @@ fn softmax_kernel[
             exp_sum += val
 
         var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
-        if ThreadIdx.x() == 0:
+        if ThreadIdx.x == 0:
             exp_sum_buf[0] = block_exp_sum
         barrier()
 
@@ -752,7 +752,7 @@ fn softmax_kernel[
         for offset_in_row in range(
             UInt(0), row_size_padded, _temp_uint_from_int(BLOCK_SIZE)
         ):
-            var idx_in_padded_row = ThreadIdx.x() + offset_in_row
+            var idx_in_padded_row = ThreadIdx.x + offset_in_row
             if idx_in_padded_row >= row_size:
                 break
 
@@ -879,7 +879,7 @@ fn _online_softmax_kernel[
 
     alias frag_size = get_fragment_size[mma_shape]()[2]
 
-    var warp_id: UInt = warp_broadcast(ThreadIdx.x() // WARP_SIZE)
+    var warp_id: UInt = warp_broadcast(ThreadIdx.x // WARP_SIZE)
     var lane = lane_id()
 
     # If we do more than 2 iterations, the first N - 2 iterations won't be
@@ -989,7 +989,7 @@ fn _online_softmax_iter_for_mma_output[
 ):
     constrained[num_m_mmas * num_n_mmas == p_reg_tile.shape[0]()]()
 
-    var tid = ThreadIdx.x()
+    var tid = ThreadIdx.x
     var lane = lane_id()
     var warp_x = warp_broadcast(tid // WARP_SIZE) % UInt(num_rowwise_warps)
 

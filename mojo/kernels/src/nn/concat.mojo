@@ -635,7 +635,7 @@ fn _concat_inner_most_single_dim[
     output: NDBuffer[type, rank],
     inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
 ):
-    var idx = BlockIdx.x() * block_size + ThreadIdx.x()
+    var idx = BlockIdx.x * block_size + ThreadIdx.x
     var index = _get_start_indices_of_nth_subvolume_uint[1](
         idx, output.dynamic_shape
     )
@@ -870,7 +870,7 @@ fn _fused_concat_inner_most_single_dim[
 ):
     alias num_inputs = input_1_fn_tuple.size
 
-    var idx = BlockIdx.x() * block_size + ThreadIdx.x()
+    var idx = BlockIdx.x * block_size + ThreadIdx.x
     if idx >= product(input_shapes[0], rank):
         return
 

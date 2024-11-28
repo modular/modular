@@ -176,7 +176,7 @@ fn block_reduce_topk[
     ]()
 
     # Calculate warp id and thread information
-    var warp: UInt = warp_broadcast(ThreadIdx.x() // WARP_SIZE)
+    var warp: UInt = warp_broadcast(ThreadIdx.x // WARP_SIZE)
     alias num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
 
     # Each warp reduces its own TopK_2 value
@@ -191,7 +191,7 @@ fn block_reduce_topk[
 
     # Load warp results into final warp for block-level reduction
     var block_accum = TopK_2[T, largest]()
-    var thread_in_final_warp = ThreadIdx.x() < (BlockDim.x() // WARP_SIZE)
+    var thread_in_final_warp = ThreadIdx.x < (BlockDim.x // WARP_SIZE)
     if thread_in_final_warp:
         var p_idx = p_sram[lane_id() * p_width]  # loaded value is a scalar
         block_accum = TopK_2[T, largest](
@@ -245,9 +245,9 @@ fn topk_stage1[
     Note:
         The output buffers (local_topk_vals and local_topk_idxs) should be of size num_blocks_per_input * K.
     """
-    tid = ThreadIdx.x()
-    bid = BlockIdx.x()
-    block_size = BlockDim.x()
+    tid = ThreadIdx.x
+    bid = BlockIdx.x
+    block_size = BlockDim.x
 
     batch_id = bid // num_blocks_per_input
     block_lane = bid % num_blocks_per_input
@@ -346,10 +346,10 @@ fn topk_stage2[
     # compute the total number of elements reduced from stage 1
     var num_elem_reduced = num_blocks_per_input * K
 
-    var tid = ThreadIdx.x()
-    var batch_id = BlockIdx.x()
-    # assert (BlockIdx.x() == 0)
-    # assert (GridDim.x() == 1)
+    var tid = ThreadIdx.x
+    var batch_id = BlockIdx.x
+    # assert (BlockIdx.x == 0)
+    # assert (GridDim.x == 1)
     var batch_i_topk_vals = global_topk_vals + batch_id * K
     var batch_i_topk_idxs = global_topk_idxs + batch_id * (1 if sampling else K)
     var _local_topk_vals = local_topk_vals + batch_id * num_elem_reduced
@@ -390,7 +390,7 @@ fn topk_stage2[
     var max_logit = Scalar[T](0)
 
     # Cache local top-K results from stage 1 into shared memory
-    for i in range(tid, num_elem_reduced, BlockDim.x()):
+    for i in range(tid, num_elem_reduced, BlockDim.x):
         vals_sram[i] = _local_topk_vals[i]
         idxs_sram[i] = i
     barrier()
@@ -399,7 +399,7 @@ fn topk_stage2[
         # Re-initialize partial for each thread
         var partial = TopK_2[T, largest]()
         # TODO: unroll this
-        for i in range(tid, num_elem_reduced, BlockDim.x()):
+        for i in range(tid, num_elem_reduced, BlockDim.x):
             partial.insert(vals_sram[i], i)
 
         barrier()

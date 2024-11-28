@@ -85,9 +85,9 @@ fn topk_wrapper[
         p_threshold: UnsafePointer[Scalar[T]] - Threshold for top-p sampling if is_top_p is True else min-p cofficient
         skip_sort: UnsafePointer[Scalar[DType.bool]] - Output buffer to store whether sorting is needed
     """
-    tid = ThreadIdx.x()
-    bid = BlockIdx.x()
-    block_size = BlockDim.x()
+    tid = ThreadIdx.x
+    bid = BlockIdx.x
+    block_size = BlockDim.x
 
     batch_id = bid // num_blocks_per_input
     block_lane = bid % num_blocks_per_input
@@ -289,8 +289,8 @@ fn radix_sort_pairs_kernel[
     https://gpuopen.com/download/publications/Introduction_to_GPU_Radix_Sort.pdf.
     """
 
-    var tid = ThreadIdx.x()
-    var batch_id = BlockIdx.x()
+    var tid = ThreadIdx.x
+    var batch_id = BlockIdx.x
     var elems_per_thread = ceildiv(num_keys, BLOCK_SIZE)
     alias NUM_BUCKETS = 2**NUM_BITS_PER_PASS
 
@@ -538,9 +538,9 @@ fn topp_minp_sampling_kernel[
         out_token_ids: Output token ids.
         skip_sort: Whether sorting was skipped for this batch.
     """
-    var tid = ThreadIdx.x()
-    var block_size = BlockDim.x()
-    var batch_id = BlockIdx.x()
+    var tid = ThreadIdx.x
+    var block_size = BlockDim.x
+    var batch_id = BlockIdx.x
 
     if skip_sort[batch_id]:
         # out_token_ids is already set by topk_wrapper

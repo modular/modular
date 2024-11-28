@@ -3014,10 +3014,10 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var dil_h = dilation[0]
     var dil_w = dilation[1]
 
-    var n = BlockIdx.x()  # batch index
-    var f = BlockIdx.y()  # output channel (filter index)
-    var h = ThreadIdx.x()  # output height index
-    var w = ThreadIdx.y()  # output width index
+    var n = BlockIdx.x  # batch index
+    var f = BlockIdx.y  # output channel (filter index)
+    var h = ThreadIdx.x  # output height index
+    var w = ThreadIdx.y  # output width index
 
     if h >= H_out or w >= W_out:
         return

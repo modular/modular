@@ -194,7 +194,7 @@ fn block_sum_broadcast[
     val: Scalar,
 ) -> __type_of(val):
     var local_warp_sum = warp_sum(val)
-    var warp = warp_broadcast(ThreadIdx.x() // WARP_SIZE)
+    var warp = warp_broadcast(ThreadIdx.x // WARP_SIZE)
     var lane = lane_id()
     if lane == 0:
         reduction_smem[warp][0] = rebind[Scalar[reduction_smem.dtype]](
@@ -274,8 +274,8 @@ fn mha_decoding_single_batch_warp_shuffle[
     alias num_elems_per_thread = head_size // thread_group_size
     alias kv_num_heads = num_heads // group
 
-    var warp_idx = warp_broadcast(ThreadIdx.x() // WARP_SIZE)
-    var kv_head_idx = BlockIdx.y()
+    var warp_idx = warp_broadcast(ThreadIdx.x // WARP_SIZE)
+    var kv_head_idx = BlockIdx.y
 
     # logits shared memory, used to store intermediate calculations
     var logits_smem_ptr = external_memory[
@@ -381,8 +381,8 @@ fn mha_decoding_single_batch_warp_shuffle[
 
             qk = mask.mask(
                 Index(
-                    int(BlockIdx.z()),
-                    int(BlockIdx.y()),
+                    int(BlockIdx.z),
+                    int(BlockIdx.y),
                     num_keys - 1,
                     int(key_idx),
                 ),
@@ -393,8 +393,8 @@ fn mha_decoding_single_batch_warp_shuffle[
             if use_score_mod:
                 qk = score_mod.score_mod(
                     Index(
-                        int(BlockIdx.z()),
-                        int(BlockIdx.y()),
+                        int(BlockIdx.z),
+                        int(BlockIdx.y),
                         num_keys - 1,
                         int(key_idx),
                     ),
@@ -453,7 +453,7 @@ fn mha_decoding_single_batch_warp_shuffle[
         # need softmax_simdwidth = 4 for best performance
 
         var exp_sum = Scalar[accum_type](0)
-        for token in range(ThreadIdx.x(), num_keys, num_threads):
+        for token in range(ThreadIdx.x, num_keys, num_threads):
             var val = exp(logits[group_idx, token] - qk_max[group_idx])
             exp_sum += rebind[__type_of(exp_sum)](val)
             logits[group_idx, token] = val
@@ -468,7 +468,7 @@ fn mha_decoding_single_batch_warp_shuffle[
         )
 
         var inv_exp_sum = 1.0 / exp_sum
-        for token in range(ThreadIdx.x(), num_keys, num_threads):
+        for token in range(ThreadIdx.x, num_keys, num_threads):
             logits[group_idx, token] *= inv_exp_sum
 
         # wait for the completion of softmax
@@ -610,7 +610,7 @@ fn mha_decoding_warp_shuffle[
     mask: mask_t,
     score_mod: score_mod_t,
 ):
-    var batch_idx = BlockIdx.z()
+    var batch_idx = BlockIdx.z
     var q_batch_offset = head_size * num_heads * batch_idx
     var kv_batch_offset = head_size * (
         num_heads // group

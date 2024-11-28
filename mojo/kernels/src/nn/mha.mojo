@@ -1096,7 +1096,7 @@ fn mha[
     mask: mask_t,
     score_mod: score_mod_t,
 ):
-    var batch_idx = BlockIdx.z()
+    var batch_idx = BlockIdx.z
     var seq_len: Int
     var q_batch_offset: Int
 
@@ -1114,7 +1114,7 @@ fn mha[
         )
         seq_len = int(valid_length[batch_idx])
 
-    if seq_len < BlockIdx.x() * config.block_m():
+    if seq_len < BlockIdx.x * config.block_m():
         return
 
     var mask_batch_offset = batch_idx * max_seq_len * max_seq_len * (
@@ -1180,7 +1180,7 @@ fn mha[
 ):
     alias depth = config.depth
     alias num_heads = config.num_heads
-    var batch_idx = BlockIdx.z()
+    var batch_idx = BlockIdx.z
     var q_batch_offset = depth * num_heads * seq_len * batch_idx
     var kv_batch_offset = depth * (num_heads // group) * seq_len * batch_idx
     var mask_batch_offset = batch_idx * seq_len * seq_len * (
@@ -1263,7 +1263,7 @@ fn mha_single_batch[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid: UInt32 = ThreadIdx.x()
+    var tid: UInt32 = ThreadIdx.x
     var warp_id: UInt32 = warp_broadcast(tid // WARP_SIZE)
     var lane: UInt32 = lane_id()
 
@@ -1307,8 +1307,8 @@ fn mha_single_batch[
         circular=True,
     ](k_smem, k_smem_size)
 
-    var head_idx: UInt32 = BlockIdx.y()
-    var q_tile_idx: UInt32 = BlockIdx.x()
+    var head_idx: UInt32 = BlockIdx.y
+    var q_tile_idx: UInt32 = BlockIdx.x
 
     # Query global memory iterator
     alias q_gmem_layout = Layout(
@@ -1618,8 +1618,8 @@ fn mha_single_batch[
                                     IndexList[
                                         4, element_bitwidth=32, unsigned=True
                                     ](
-                                        int(BlockIdx.z()),
-                                        int(BlockIdx.y()),
+                                        int(BlockIdx.z),
+                                        int(BlockIdx.y),
                                         int(score_row),
                                         int(score_col),
                                     ),
@@ -1638,8 +1638,8 @@ fn mha_single_batch[
                                     IndexList[
                                         4, element_bitwidth=32, unsigned=True
                                     ](
-                                        int(BlockIdx.z()),
-                                        int(BlockIdx.y()),
+                                        int(BlockIdx.z),
+                                        int(BlockIdx.y),
                                         int(score_row),
                                         int(score_col),
                                     ),
@@ -1889,7 +1889,7 @@ fn mha_decoding[
     mask: mask_t,
     score_mod: score_mod_t,
 ):
-    var batch_idx = BlockIdx.z()
+    var batch_idx = BlockIdx.z
     var seq_len: Int
     var q_batch_offset: Int
 
@@ -2010,7 +2010,7 @@ fn mha_decoding[
     mask: mask_t,
     score_mod: score_mod_t,
 ):
-    var batch_idx = BlockIdx.z()
+    var batch_idx = BlockIdx.z
     var q_batch_offset = depth * num_heads * batch_idx
     var kv_batch_offset = depth * (num_heads // group) * num_keys * batch_idx
     var mask_batch_offset = batch_idx * num_keys * (
@@ -2109,7 +2109,7 @@ fn scale_and_mask_helper[
     var warp_offset = warp * WN
 
     var group_idx = lane // 4
-    var q_head_idx = BlockIdx.y() * group + group_idx
+    var q_head_idx = BlockIdx.y * group + group_idx
     var q_head_offset = Int(mask_stride * group_idx) if mask_rank == 4 else 0
 
     var q_mask_warp_ptr = mask_warp_ptr + q_head_offset
@@ -2146,7 +2146,7 @@ fn scale_and_mask_helper[
 
                 p_reg_tile[n_mma, i] = mask.mask(
                     Index(
-                        int(BlockIdx.z()),
+                        int(BlockIdx.z),
                         int(q_head_idx),
                         int(score_row),
                         int(score_col),
@@ -2158,7 +2158,7 @@ fn scale_and_mask_helper[
                 if use_score_mod:
                     p_reg_tile[n_mma, i] = score_mod.score_mod(
                         Index(
-                            int(BlockIdx.z()),
+                            int(BlockIdx.z),
                             int(q_head_idx),
                             int(score_row),
                             int(score_col),
@@ -2223,7 +2223,7 @@ fn mha_decoding_single_batch[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid = ThreadIdx.x()
+    var tid = ThreadIdx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
     var lane = lane_id()
 
@@ -2267,7 +2267,7 @@ fn mha_decoding_single_batch[
         circular=True,
     ](k_smem, k_smem_size)
 
-    var kv_head_idx = BlockIdx.y()
+    var kv_head_idx = BlockIdx.y
 
     alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
     alias MMA_M = mma_shape[0]
@@ -2355,7 +2355,7 @@ fn mha_decoding_single_batch[
     var q_gmem_iter = q_gmem_block.tiled_iterator[group, BK, axis=1](0, 0)
 
     # Preload q for all groups as loading in mma causes race condition
-    for i in range(tid * simd_size, BM * depth, BlockDim.x() * simd_size):
+    for i in range(tid * simd_size, BM * depth, BlockDim.x * simd_size):
         var vec = SIMD[q_type, simd_size](0.0)
         if i < depth * group:
             vec = q_ptr.load[
@@ -2683,14 +2683,14 @@ fn _bmm0_bs[
     mask_functor: mask_t,
 ):
     # total_context_length
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
     # prompt_length
-    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
 
     alias k_type = k_cache.get_type()
     alias kv_num_heads = k_cache.get_kv_params().num_heads
 
-    var batch_head = BlockIdx.z()
+    var batch_head = BlockIdx.z
     var batch: UInt
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))
@@ -2815,11 +2815,11 @@ fn _bmm1_bs[
     alias kv_num_heads = v_cache.get_kv_params().num_heads
 
     # head_size
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
     # seq_len
-    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
 
-    var batch_head = BlockIdx.z()
+    var batch_head = BlockIdx.z
     var batch: UInt
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))
@@ -2982,12 +2982,12 @@ fn _bmm0[
     depth: Int,
     group: Int,
 ):
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
     if x >= num_keys or y >= seq_len:
         return
 
-    var batch_head = BlockIdx.z()
+    var batch_head = BlockIdx.z
     var batch: UInt
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))
@@ -3036,12 +3036,12 @@ fn _bmm1[
     depth: Int,
     group: Int,
 ):
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
     if x >= depth or y >= seq_len:
         return
 
-    var batch_head = BlockIdx.z()
+    var batch_head = BlockIdx.z
     var batch: UInt
     var head: UInt
     batch, head = divmod(batch_head, UInt(num_heads))

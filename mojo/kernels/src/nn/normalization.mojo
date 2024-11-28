@@ -50,8 +50,8 @@ fn block_reduce[type: DType](val: Scalar[type]) -> Scalar[type]:
         1, type, address_space = AddressSpace.SHARED
     ]()
 
-    var tid = ThreadIdx.x()
-    for i in range(tid, max_warps_per_block, BlockDim.x()):
+    var tid = ThreadIdx.x
+    for i in range(tid, max_warps_per_block, BlockDim.x):
         m2_shared[i] = 0
 
     if tid == 0:
@@ -184,7 +184,7 @@ fn welford_block_all_reduce[
         1, type, address_space = AddressSpace.SHARED
     ]()
 
-    var warp_idx = ThreadIdx.x() // WARP_SIZE
+    var warp_idx = ThreadIdx.x // WARP_SIZE
     var lane_idx = lane_id()
     var warp_mean = Scalar[type]()
     var warp_m2 = Scalar[type]()
@@ -201,7 +201,7 @@ fn welford_block_all_reduce[
     barrier()
 
     if warp_idx == 0:
-        if ThreadIdx.x() < (BlockDim.x() // WARP_SIZE):
+        if ThreadIdx.x < (BlockDim.x // WARP_SIZE):
             warp_mean = mean_shared[lane_idx]
             warp_m2 = m2_shared[lane_idx]
             warp_count = count_shared[lane_idx]
@@ -247,8 +247,8 @@ fn layer_norm_gpu_warp_tiling[
     alias accum_type = get_accum_type[type]()
 
     var num_cols = output.dim[1]()
-    var tid: UInt = ThreadIdx.x()
-    var row: UInt = BlockIdx.x()
+    var tid: UInt = ThreadIdx.x
+    var row: UInt = BlockIdx.x
 
     var vec_data = SIMD[accum_type, simd_width]()
 
@@ -302,8 +302,8 @@ fn layer_norm_gpu_block[
     alias accum_type = get_accum_type[type]()
 
     var num_cols: UInt = output.dim[1]()
-    var tid = ThreadIdx.x()
-    var row = BlockIdx.x()
+    var tid = ThreadIdx.x
+    var row = BlockIdx.x
 
     # To store final row mean, mean of squares and the element count
     var row_mean = Scalar[accum_type]()
@@ -311,12 +311,12 @@ fn layer_norm_gpu_block[
     var row_count = Scalar[accum_type]()
 
     # Every block has a single row to process
-    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
+    for x in range(ceildiv(num_cols // simd_width, BlockDim.x)):
         var thread_mean = Scalar[accum_type]()
         var thread_m2 = Scalar[accum_type]()
         var thread_count = Scalar[accum_type]()
 
-        var offset = x * BlockDim.x() * simd_width + tid * simd_width
+        var offset = x * BlockDim.x * simd_width + tid * simd_width
 
         if offset < num_cols:
             var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
@@ -337,8 +337,8 @@ fn layer_norm_gpu_block[
     var norm_factor = isqrt(row_var + epsilon.cast[accum_type]())
 
     # need a pass again to perform in place normalization
-    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
-        var offset = x * BlockDim.x() * simd_width + tid * simd_width
+    for x in range(ceildiv(num_cols // simd_width, BlockDim.x)):
+        var offset = x * BlockDim.x * simd_width + tid * simd_width
 
         if offset < num_cols:
             var gamma_val = gamma_fn[simd_width](Index(offset))
@@ -702,8 +702,8 @@ fn rms_norm_gpu_warp_tiling[
     alias accum_type = get_accum_type[type]()
 
     var num_cols = output.dim[1]()
-    var tid: UInt = ThreadIdx.x()
-    var row: UInt = BlockIdx.x()
+    var tid: UInt = ThreadIdx.x
+    var row: UInt = BlockIdx.x
 
     var vec_data = SIMD[accum_type, simd_width]()
 
@@ -737,13 +737,13 @@ fn rms_norm_gpu_block[
     alias accum_type = get_accum_type[type]()
 
     var num_cols = output.dim[1]()
-    var tid: UInt = ThreadIdx.x()
-    var row: UInt = BlockIdx.x()
+    var tid: UInt = ThreadIdx.x
+    var row: UInt = BlockIdx.x
     var thread_m2 = Scalar[accum_type](0)
 
     # Every block has a single row to process
-    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
-        var offset = x * BlockDim.x() * simd_width + tid * simd_width
+    for x in range(ceildiv(num_cols // simd_width, BlockDim.x)):
+        var offset = x * BlockDim.x * simd_width + tid * simd_width
         if offset < num_cols:
             var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             thread_m2 += (vec_data**2).reduce_add()
@@ -752,8 +752,8 @@ fn rms_norm_gpu_block[
     var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
 
     # need a pass again to perform in place normalization
-    for x in range(ceildiv(num_cols // simd_width, BlockDim.x())):
-        var offset = x * BlockDim.x() * simd_width + tid * simd_width
+    for x in range(ceildiv(num_cols // simd_width, BlockDim.x)):
+        var offset = x * BlockDim.x * simd_width + tid * simd_width
 
         if offset < num_cols:
             var gamma_val = gamma.load[width=simd_width, alignment=align](
