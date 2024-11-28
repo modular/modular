@@ -8,7 +8,6 @@ import os
 
 import lit.formats
 import lit.llvm
-
 from lit.llvm import llvm_config
 
 # Configuration file for the 'lit' test runner.

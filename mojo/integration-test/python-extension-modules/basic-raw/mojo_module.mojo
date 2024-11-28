@@ -4,10 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import builtin
-
 from os import abort
 
+import builtin
 from python import Python, PythonObject, TypedPythonObject
 from python._cpython import PyMethodDef, PyObjectPtr
 

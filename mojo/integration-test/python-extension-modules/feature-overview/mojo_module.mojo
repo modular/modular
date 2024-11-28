@@ -4,33 +4,26 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import builtin
-
-from sys import exit
-from sys.info import sizeof
-from sys.ffi import c_int
-from memory import UnsafePointer
-
 from os import abort
+from sys import exit
+from sys.ffi import c_int
+from sys.info import sizeof
 
-from python import Python, PythonObject, TypedPythonObject
-from python._bindings import (
-    py_c_function_wrapper,
-    python_type_object,
-    PyMojoObject,
-)
+import builtin
 from builtin._pybind import (
-    check_arguments_arity,
-    check_argument_type,
     check_and_get_arg,
     check_and_get_or_convert_arg,
+    check_argument_type,
+    check_arguments_arity,
 )
-from python._cpython import (
-    PyMethodDef,
-    PyObject,
-    PyObjectPtr,
-    PyTypeObject,
+from memory import UnsafePointer
+from python import Python, PythonObject, TypedPythonObject
+from python._bindings import (
+    PyMojoObject,
+    py_c_function_wrapper,
+    python_type_object,
 )
+from python._cpython import PyMethodDef, PyObject, PyObjectPtr, PyTypeObject
 
 
 @export
