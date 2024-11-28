@@ -5,12 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from memory import memcpy, UnsafePointer
-from utils import IndexList
-
 from buffer import DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, assert_almost_equal
+from memory import UnsafePointer, memcpy
 from nn.fused_qk_rope import fused_qk_rope
 from nn.kv_cache import (
     ContiguousKVCache,
@@ -18,14 +16,15 @@ from nn.kv_cache import (
     KVCacheStaticParams,
     KVCacheT,
 )
-
 from testdata.fused_qk_rope_goldens import (
-    k_cache_input,
-    q_input,
     freqs_cis_table_input,
-    q_out_golden,
+    k_cache_input,
     k_out_golden,
+    q_input,
+    q_out_golden,
 )
+
+from utils import IndexList
 
 
 def _init_device_ndbuffer_from_goldens[

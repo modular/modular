@@ -13,19 +13,18 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
-from memory import UnsafePointer
+from memory import UnsafePointer, memset, memset_zero
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from testing import assert_almost_equal
-
-from utils.index import Index
-from utils.numerics import min_or_neg_inf
 from nn.mha_warp_shuffle import (
     run_mha_decoding_cpu,
     run_mha_decoding_warp_shuffle,
 )
-from memory import memset, memset_zero
+from testing import assert_almost_equal
+
+from utils.index import Index
+from utils.numerics import min_or_neg_inf
 
 
 fn is_benchmark() -> Bool:

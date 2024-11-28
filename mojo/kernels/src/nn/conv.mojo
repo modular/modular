@@ -23,6 +23,33 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.dimlist import Dim, DimList
+from gpu.cudnn.cnn_infer import (
+    cudnnConvolutionForward,
+    cudnnConvolutionMode_t,
+    cudnnConvolutionStruct,
+    cudnnCreateConvolutionDescriptor,
+    cudnnDestroyConvolutionDescriptor,
+    cudnnDestroyFilterDescriptor,
+    cudnnSetConvolution2dDescriptor,
+)
+from gpu.cudnn.infer import (
+    cudnnContext,
+    cudnnConvolutionFwdAlgo_t,
+    cudnnCreate,
+    cudnnCreateFilterDescriptor,
+    cudnnCreateTensorDescriptor,
+    cudnnDataType_t,
+    cudnnDestroy,
+    cudnnDestroyTensorDescriptor,
+    cudnnFilterStruct,
+    cudnnSetFilter4dDescriptor,
+    cudnnSetTensor4dDescriptor,
+    cudnnStatus_t,
+    cudnnTensorFormat_t,
+    cudnnTensorStruct,
+)
+from gpu.host import DeviceContext
+from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from memory import UnsafePointer, stack_allocation
@@ -49,33 +76,6 @@ from .conv_utils import (
     reorder_padding,
 )
 from .shapes import get_sliding_window_out_dim
-from gpu.host import DeviceContext
-from gpu.cudnn.infer import (
-    cudnnContext,
-    cudnnStatus_t,
-    cudnnCreate,
-    cudnnCreateTensorDescriptor,
-    cudnnSetTensor4dDescriptor,
-    cudnnTensorFormat_t,
-    cudnnDataType_t,
-    cudnnFilterStruct,
-    cudnnCreateFilterDescriptor,
-    cudnnSetFilter4dDescriptor,
-    cudnnTensorStruct,
-    cudnnConvolutionFwdAlgo_t,
-    cudnnDestroyTensorDescriptor,
-    cudnnDestroy,
-)
-from gpu.cudnn.cnn_infer import (
-    cudnnConvolutionStruct,
-    cudnnCreateConvolutionDescriptor,
-    cudnnSetConvolution2dDescriptor,
-    cudnnConvolutionForward,
-    cudnnDestroyConvolutionDescriptor,
-    cudnnDestroyFilterDescriptor,
-    cudnnConvolutionMode_t,
-)
-from gpu.id import BlockDim, BlockIdx, ThreadIdx
 
 
 @value

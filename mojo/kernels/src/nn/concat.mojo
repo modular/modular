@@ -21,10 +21,9 @@ from buffer import NDBuffer
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer, memcpy
-from register import register_internal
+from register import register_internal, register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel
-from register import register_internal_shape_func
 
 from utils import IndexList, StaticTuple, product
 

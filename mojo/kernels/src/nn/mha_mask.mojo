@@ -4,13 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from math import iota
 from sys import bitwidthof
 
+from builtin.dtype import _int_type_of_width, _uint_type_of_width
+
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
-
 
 # ===----------------------------------------------------------------------===#
 # TileMaskStatus

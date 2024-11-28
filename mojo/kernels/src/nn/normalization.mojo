@@ -25,8 +25,8 @@ from gpu import (
     lane_id,
     syncwarp,
 )
-from gpu.host._compile import _get_gpu_target
 from gpu.host import DeviceContext
+from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace
 from gpu.shuffle import _static_log2, shuffle_down, warp_broadcast, warp_sum
 from memory import stack_allocation

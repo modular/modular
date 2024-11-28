@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from collections import OptionalReg, InlinedFixedVector
-
+from collections import InlinedFixedVector, OptionalReg
 
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList

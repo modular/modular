@@ -7,9 +7,9 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from register import (
+    mogg_view_op,
     register_internal,
     register_internal_shape_func,
-    mogg_view_op,
 )
 
 from utils.index import IndexList

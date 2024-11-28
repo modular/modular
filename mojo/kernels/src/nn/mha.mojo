@@ -6,12 +6,12 @@
 
 
 from collections import OptionalReg
-from math import align_down, ceildiv, exp, iota, recip, align_up
+from math import align_down, align_up, ceildiv, exp, iota, recip
 from os import abort
-from sys import alignof, bitwidthof, simdwidthof, has_nvidia_gpu
+from sys import alignof, bitwidthof, has_nvidia_gpu, simdwidthof, sizeof
 
 from algorithm import elementwise
-from algorithm.functional import unswitch, vectorize, tile_and_unswitch
+from algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
 from gpu import (
@@ -30,7 +30,6 @@ from gpu.shuffle import warp_broadcast
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams, KVCacheT
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.layout_tensor import (
     LayoutTensor,
     LayoutTensorIter,
@@ -38,6 +37,7 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
 )
+from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
 from linalg._multistage_gemm_gpu import multistage_mma
@@ -48,17 +48,16 @@ from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
-from nn.mha_score_mod import ScoreModTrait, AlibiScoreMod, IdentityScoreMod
+from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from sys import sizeof
 
 from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
-from .softmax import _online_softmax_iter_for_mma_output, _softmax_gpu, softmax
 from .mha_warp_shuffle import mha_decoding_single_batch_warp_shuffle
+from .softmax import _online_softmax_iter_for_mma_output, _softmax_gpu, softmax
 
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention

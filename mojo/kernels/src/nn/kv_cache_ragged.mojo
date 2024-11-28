@@ -4,33 +4,35 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer, DimList, Dim
-from memory import UnsafePointer
 from collections import Optional, OptionalReg
+from sys.intrinsics import _type_is_eq
+
+from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from kv_cache.types import (
     ContiguousKVCache,
-    ContinuousBatchingKVCache,
     ContiguousKVCacheCollection,
+    ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
 )
-from linalg.matmul import matmul, elementwise_epilogue_type
-from sys.intrinsics import _type_is_eq
-from utils.index import IndexList, Index
-from runtime.asyncrt import MojoCallContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
-from register import register_internal
+from linalg.matmul import elementwise_epilogue_type, matmul
+from memory import UnsafePointer
+from nn._ragged_utils import get_batch_from_row_offsets
+from nn.flash_attention import (
+    flash_attention_kv_cache as flash_attention_kv_cache_cpu,
+)
 from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from nn.flash_attention import (
-    flash_attention_kv_cache as flash_attention_kv_cache_cpu,
-)
-from nn._ragged_utils import get_batch_from_row_offsets
+from register import register_internal
+from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel, trace_arg
+
+from utils.index import Index, IndexList
 
 # ===----------------------------------------------------------------------===#
 # Fused QKV Matmul

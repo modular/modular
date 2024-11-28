@@ -5,18 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from collections import OptionalReg
 from math import ceildiv, exp
-from sys import alignof, simdwidthof, sizeof, bitwidthof
+from sys import alignof, bitwidthof, simdwidthof, sizeof
 from sys._assembly import inlined_assembly
-from builtin.dtype import _uint_type_of_width
+
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
-from collections import OptionalReg
-
-from gpu.memory import AddressSpace, external_memory
-from gpu.random import Random
-from gpu.host import DeviceContext
-from memory import bitcast, UnsafePointer, stack_allocation
+from builtin.dtype import _uint_type_of_width
 from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
@@ -28,14 +24,19 @@ from gpu import (
     lane_id,
     shuffle_down,
 )
+from gpu.host import DeviceContext
 from gpu.host.dim import Dim
+from gpu.memory import AddressSpace, external_memory
+from gpu.random import Random
+from memory import UnsafePointer, bitcast, stack_allocation
+from nn.softmax import _softmax_gpu
 from nn.topk_gpu import (
-    _get_shmem_size_stg_1,
     TopK_2,
+    _get_shmem_size_stg_1,
     _topk_dead_val,
     block_reduce_topk,
 )
-from nn.softmax import _softmax_gpu
+
 from utils import IndexList
 
 alias DEBUG_FILE = False

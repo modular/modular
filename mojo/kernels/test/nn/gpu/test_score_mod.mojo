@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from math import iota, exp2
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, AddFactorMod
+from math import exp2, iota
+
+from nn.mha_score_mod import AddFactorMod, AlibiScoreMod, IdentityScoreMod
 from testing import assert_equal
+
 from utils.index import Index
 
 

@@ -9,6 +9,7 @@ from sys.info import simdwidthof
 from algorithm import stencil, stencil_gpu
 from buffer import NDBuffer
 from gpu.host import DeviceContext
+
 from utils.index import IndexList
 from utils.numerics import min_or_neg_inf
 

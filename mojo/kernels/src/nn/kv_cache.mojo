@@ -23,14 +23,14 @@ from kv_cache.types import (
     KVCollectionT,
 )
 from linalg import transpose
-from linalg.matmul import matmul, elementwise_epilogue_type
+from linalg.matmul import elementwise_epilogue_type, matmul
 from memory import UnsafePointer, memcpy
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import NullMask, CausalMask
+from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr

@@ -3,48 +3,48 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from memory import UnsafePointer
-from layout.layout import Layout
+from math import align_up, ceildiv, exp
+from pathlib import Path
+from sys import alignof, simdwidthof, sizeof
+
+from gpu import (
+    WARP_SIZE,
+    BlockDim,
+    BlockIdx,
+    GridDim,
+    ThreadIdx,
+    barrier,
+    lane_id,
+)
+from gpu.host import DeviceContext
+from gpu.memory import AddressSpace, external_memory
+from gpu.shuffle import (
+    _static_log2,
+    lane_group_max,
+    lane_group_sum,
+    shuffle_down,
+    warp_broadcast,
+    warp_sum,
+)
+from layout import IntTuple
+from layout.element import Element
+from layout.fillers import arange
+from layout.int_tuple import Index
+from layout.layout import UNKNOWN_VALUE, Layout
 from layout.layout_tensor import (
     LayoutTensor,
     copy_dram_to_sram,
     copy_sram_to_dram,
 )
-from layout.tensor_builder import LayoutTensorBuild as tb, static
-from sys import sizeof, alignof, simdwidthof
-from layout.fillers import arange
-from python import Python
-from math import exp, ceildiv, align_up
-from testing import assert_almost_equal
-from layout.layout import UNKNOWN_VALUE
-from layout import IntTuple
-from layout.int_tuple import Index
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
-from gpu.host import DeviceContext
-from memory import memset
-from gpu.memory import external_memory, AddressSpace
-from gpu.shuffle import (
-    lane_group_sum,
-    lane_group_max,
-    warp_sum,
-    _static_log2,
-    shuffle_down,
-    warp_broadcast,
-)
-from pathlib import Path
-from layout.element import Element
-from gpu import (
-    barrier,
-    ThreadIdx,
-    BlockIdx,
-    lane_id,
-    WARP_SIZE,
-    BlockDim,
-    GridDim,
-)
+from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.tensor_builder import static
 from layout.tensor_core import get_accum_type
+from memory import UnsafePointer, memset
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
-from nn.mha_score_mod import ScoreModTrait, AlibiScoreMod, IdentityScoreMod
+from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
+from python import Python
+from testing import assert_almost_equal
 
 
 fn mha_decoding_cpu_seq[

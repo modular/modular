@@ -6,19 +6,18 @@
 
 
 from collections import List
-from math import iota, exp
+from math import exp, iota
+from random import random_float64
 
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
 from builtin.sort import _quicksort
 from memory import UnsafePointer
+from nn.reshape import reshape
 from register import register_internal_shape_func
-from random import random_float64
 
 from utils import IndexList, Span
-
-from nn.reshape import reshape
 
 
 @always_inline

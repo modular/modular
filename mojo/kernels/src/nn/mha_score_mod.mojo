@@ -4,8 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import iota, exp2
+from math import exp2, iota
 from sys import bitwidthof
+
 from utils.index import IndexList
 
 

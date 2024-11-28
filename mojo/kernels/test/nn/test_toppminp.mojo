@@ -6,20 +6,17 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, iota
-from algorithm.functional import parallelize_over_rows
 from random import random_float64
 
-from benchmark import (
-    Bench,
-    Bencher,
-    BenchId,
-)
+from algorithm.functional import parallelize_over_rows
+from benchmark import Bench, Bencher, BenchId
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from memory import UnsafePointer
-from nn.toppminp import top_p_sampling, min_p_sampling
 from nn.softmax import softmax
+from nn.toppminp import min_p_sampling, top_p_sampling
 from testing import assert_equal
+
 from utils import IndexList
 
 alias DEBUG_BENCH = False

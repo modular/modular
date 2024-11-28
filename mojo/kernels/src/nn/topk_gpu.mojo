@@ -5,12 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from collections import OptionalReg
 from math import ceildiv, exp
 from sys import alignof, simdwidthof, sizeof
 
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
-from collections import OptionalReg
 from builtin.io import _printf
 from gpu import (
     WARP_SIZE,
@@ -31,8 +31,8 @@ from gpu.shuffle import _floorlog2, _static_log2, warp_reduce
 from memory import UnsafePointer, stack_allocation
 from nn.reshape import reshape
 
-from utils.numerics import min_or_neg_inf, max_or_inf
 from utils import IndexList
+from utils.numerics import max_or_inf, min_or_neg_inf
 
 alias SEED = 0
 alias DEBUG_FILE = False

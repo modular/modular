@@ -11,6 +11,7 @@ from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
+from complex import ComplexSIMD
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from kv_cache.types import (
@@ -19,12 +20,10 @@ from kv_cache.types import (
     KVCacheT,
     KVCollectionT,
 )
-from runtime.asyncrt import (
-    MojoCallContextPtr,
-)
-from utils import IndexList
-from complex import ComplexSIMD
 from nn._ragged_utils import get_batch_from_row_offsets
+from runtime.asyncrt import MojoCallContextPtr
+
+from utils import IndexList
 
 
 @always_inline

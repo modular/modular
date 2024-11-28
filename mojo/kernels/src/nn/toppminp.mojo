@@ -6,11 +6,13 @@
 
 
 from math import iota
-from memory import UnsafePointer
+from random import random_float64
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from memory import UnsafePointer
 from nn.softmax import softmax
-from random import random_float64
+
 from utils import IndexList
 
 

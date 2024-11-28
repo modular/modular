@@ -13,6 +13,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext
+from gpu.host.info import DEFAULT_GPU_ARCH
 from memory import UnsafePointer
 from nn.mha import (
     _naive_attention_with_transpose,
@@ -24,7 +25,6 @@ from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal
 
 from utils.index import Index
-from gpu.host.info import DEFAULT_GPU_ARCH
 
 
 fn is_benchmark() -> Bool:

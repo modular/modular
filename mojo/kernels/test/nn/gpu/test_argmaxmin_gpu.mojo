@@ -5,15 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from nn.argmaxmin import argmax, argmin
-from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
+from random import random_float64
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer
+from nn.argmaxmin import argmax, argmin
+from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from testing import assert_equal
-
-from random import random_float64
-from internal_utils import HostNDBuffer, DeviceNDBuffer
 
 
 fn test_argmaxmin_gpu[

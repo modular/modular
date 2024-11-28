@@ -13,6 +13,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import *
 from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.info import DEFAULT_GPU_ARCH
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask, NullMask
@@ -21,7 +22,6 @@ from testing import assert_almost_equal
 
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
-from gpu.host.info import DEFAULT_GPU_ARCH
 
 
 fn is_benchmark() -> Bool:

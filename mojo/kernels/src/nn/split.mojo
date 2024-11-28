@@ -12,8 +12,8 @@ from buffer import Buffer, NDBuffer
 from buffer.buffer import DynamicRankBuffer
 from buffer.dimlist import Dim, DimList
 from memory import memcpy
-from utils import StaticTuple
 
+from utils import StaticTuple
 from utils.index import product
 
 

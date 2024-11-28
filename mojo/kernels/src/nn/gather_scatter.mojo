@@ -4,12 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg, Optional
+from collections import Optional, OptionalReg
 from math import align_down, ceildiv
 from os import abort
 from sys import has_neon, simdwidthof, sizeof
-from sys.intrinsics import PrefetchOptions
 from sys.info import _current_target
+from sys.intrinsics import PrefetchOptions
 
 from algorithm import elementwise, parallel_memcpy, sync_parallelize
 from algorithm.functional import tile
