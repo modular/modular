@@ -226,7 +226,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   }
 
   if (!clOptions.mcmodel.empty()) {
-    if (!llvm::is_contained({"small", "medium", "larget"}, clOptions.mcmodel)) {
+    if (!llvm::is_contained({"small", "medium", "large"}, clOptions.mcmodel)) {
       return Error("invalid mcmodel'" + clOptions.mcmodel +
                    "', expected one of: `small`, `medium` or `large`");
     }
