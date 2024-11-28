@@ -15,11 +15,16 @@ from gpu import WARP_SIZE
 # ===----------------------------------------------------------------------===#
 
 
-struct ThreadIdx:
+@register_passable("trivial")
+struct _ThreadIdx:
     """ThreadIdx provides static methods for getting the x/y/z coordinates of
     a thread within a block."""
 
-    @always_inline
+    @always_inline("nodebug")
+    fn __init__(out self):
+        return
+
+    @always_inline("nodebug")
     @staticmethod
     fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
         @parameter
@@ -28,43 +33,23 @@ struct ThreadIdx:
         else:
             return "llvm.amdgcn.workitem.id." + dim
 
-    @always_inline
-    @staticmethod
-    fn _dispatch[dim: StringLiteral]() -> UInt:
+    @always_inline("nodebug")
+    fn __getattr__[dim: StringLiteral](self) -> UInt:
+        """Gets the `x`, `y`, or `z` coordinates of a thread within a block.
+
+        Returns:
+            The `x`, `y`, or `z` coordinates of a thread within a block.
+        """
+        constrained[
+            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
+        ]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
         )
 
-    @staticmethod
-    @always_inline("nodebug")
-    fn x() -> UInt:
-        """Gets the `x` coordinate of the thread within the block.
 
-        Returns:
-            The `x` coordinate within the block.
-        """
-        return Self._dispatch["x"]()
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn y() -> UInt:
-        """Gets the `y` coordinate of the thread within the block.
-
-        Returns:
-            The `y` coordinate within the block.
-        """
-        return Self._dispatch["y"]()
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn z() -> UInt:
-        """Gets the `z` coordinate of the thread within the block.
-
-        Returns:
-            The `z` coordinate within the block.
-        """
-        return Self._dispatch["z"]()
+alias ThreadIdx = _ThreadIdx()
 
 
 # ===----------------------------------------------------------------------===#
@@ -72,11 +57,16 @@ struct ThreadIdx:
 # ===----------------------------------------------------------------------===#
 
 
-struct BlockIdx:
+@register_passable("trivial")
+struct _BlockIdx:
     """BlockIdx provides static methods for getting the x/y/z coordinates of
     a block within a grid."""
 
-    @always_inline
+    @always_inline("nodebug")
+    fn __init__(out self):
+        return
+
+    @always_inline("nodebug")
     @staticmethod
     fn _get_intrinsic_name[dim: StringLiteral]() -> StringLiteral:
         @parameter
@@ -85,44 +75,23 @@ struct BlockIdx:
         else:
             return "llvm.amdgcn.workgroup.id." + dim
 
-    @always_inline
-    @staticmethod
-    fn _dispatch[dim: StringLiteral]() -> UInt:
+    @always_inline("nodebug")
+    fn __getattr__[dim: StringLiteral](self) -> UInt:
+        """Gets the `x`, `y`, or `z` coordinates of a block within a grid.
+
+        Returns:
+            The `x`, `y`, or `z` coordinates of a block within a grid.
+        """
+        constrained[
+            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
+        ]()
         alias intrinsic_name = Self._get_intrinsic_name[dim]()
         return UInt(
             int(llvm_intrinsic[intrinsic_name, Int32, has_side_effect=False]())
         )
 
-    @staticmethod
-    @always_inline("nodebug")
-    fn x() -> UInt:
-        """Gets the `x` coordinate of the block within a grid.
 
-        Returns:
-            The `x` coordinate within the grid.
-        """
-        return Self._dispatch["x"]()
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn y() -> UInt:
-        """Gets the `y` coordinate of the block within a grid.
-
-        Returns:
-            The `y` coordinate within the grid.
-        """
-        return Self._dispatch["y"]()
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn z() -> UInt:
-        """Gets the `z` coordinate of the block within a grid.
-
-        Returns:
-            The `z` coordinate within the grid.
-        """
-        return Self._dispatch["z"]()
-
+alias BlockIdx = _BlockIdx()
 
 # ===----------------------------------------------------------------------===#
 # BlockDim
@@ -139,13 +108,26 @@ fn _get_gcn_idx[offset: Int]() -> UInt:
     return UInt(int(ptr.load[alignment=4](offset)))
 
 
-struct BlockDim:
+@register_passable("trivial")
+struct _BlockDim:
     """BlockDim provides static methods for getting the x/y/z dimension of a
     block."""
 
-    @always_inline
-    @staticmethod
-    fn _dispatch[dim: StringLiteral]() -> UInt:
+    @always_inline("nodebug")
+    fn __init__(out self):
+        return
+
+    @always_inline("nodebug")
+    fn __getattr__[dim: StringLiteral](self) -> UInt:
+        """Gets the `x`, `y`, or `z` dimension of the block.
+
+        Returns:
+            The `x`, `y`, or `z` dimension of the block.
+        """
+        constrained[
+            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
+        ]()
+
         @parameter
         if is_nvidia_gpu():
             alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.ntid." + dim
@@ -171,49 +153,34 @@ struct BlockDim:
 
             return _get_gcn_idx[_get_offset()]()
 
-    @staticmethod
-    @always_inline("nodebug")
-    fn x() -> UInt:
-        """Gets the `x` dimension of the block.
 
-        Returns:
-            The `x` dimension of the block.
-        """
-        return Self._dispatch["x"]()
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn y() -> UInt:
-        """Gets the `y` dimension of the block.
-
-        Returns:
-            The `y` dimension of the block.
-        """
-        return Self._dispatch["y"]()
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn z() -> UInt:
-        """Gets the `z` dimension of the block.
-
-        Returns:
-            The `z` dimension of the block.
-        """
-        return Self._dispatch["z"]()
-
+alias BlockDim = _BlockDim()
 
 # ===----------------------------------------------------------------------===#
 # GridDim
 # ===----------------------------------------------------------------------===#
 
 
-struct GridDim:
+@register_passable("trivial")
+struct _GridDim:
     """GridDim provides static methods for getting the x/y/z dimension of a
     grid."""
 
-    @always_inline
-    @staticmethod
-    fn _dispatch[dim: StringLiteral]() -> UInt:
+    @always_inline("nodebug")
+    fn __init__(out self):
+        return
+
+    @always_inline("nodebug")
+    fn __getattr__[dim: StringLiteral](self) -> UInt:
+        """Gets the `x`, `y`, or `z` dimension of the grid.
+
+        Returns:
+            The `x`, `y`, or `z` dimension of the grid.
+        """
+        constrained[
+            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
+        ]()
+
         @parameter
         if is_nvidia_gpu():
             alias intrinsic_name = "llvm.nvvm.read.ptx.sreg.nctaid." + dim
@@ -239,36 +206,8 @@ struct GridDim:
 
             return _get_gcn_idx[_get_offset()]()
 
-    @staticmethod
-    @always_inline("nodebug")
-    fn x() -> UInt:
-        """Gets the `x` dimension of the grid.
 
-        Returns:
-            The `x` dimension of the grid.
-        """
-        return Self._dispatch["x"]()
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn y() -> UInt:
-        """Gets the `y` dimension of the grid.
-
-        Returns:
-            The `y` dimension of the grid.
-        """
-        return Self._dispatch["y"]()
-
-    @staticmethod
-    @always_inline("nodebug")
-    fn z() -> UInt:
-        """Gets the `z` dimension of the grid.
-
-        Returns:
-            The `z` dimension of the grid.
-        """
-        return Self._dispatch["z"]()
-
+alias GridDim = _GridDim()
 
 # ===----------------------------------------------------------------------===#
 # lane_id
