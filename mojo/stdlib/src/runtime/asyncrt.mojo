@@ -185,7 +185,7 @@ fn run(owned handle: Coroutine[*_]) -> handle.type as out:
     _async_execute[handle.type](handle._handle, -1)
     _async_wait(AsyncContext.get_chain(ctx))
     _del_asyncrt_chain(AsyncContext.get_chain(ctx))
-    _ = handle^
+    handle^.force_destroy()
 
 
 @always_inline
@@ -203,12 +203,13 @@ fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type as out:
     _async_wait(AsyncContext.get_chain(ctx))
     _del_asyncrt_chain(AsyncContext.get_chain(ctx))
     if __mlir_op.`co.get_results`[_type = __mlir_type.i1](handle._handle):
+        handle^.force_destroy()
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(__get_nearest_error_slot())
         )
         __mlir_op.`lit.raise`()
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
-    _ = handle^
+    handle^.force_destroy()
 
 
 # ===----------------------------------------------------------------------===#
@@ -239,7 +240,7 @@ struct Task[type: AnyType, origins: OriginSet]:
         """
         var ctx = self._handle._get_ctx[AsyncContext]()
         _del_asyncrt_chain(AsyncContext.get_chain(ctx))
-        _ = self._handle^
+        self._handle^.force_destroy()
 
     @always_inline
     fn __await__(self) -> ref [self.get()] type:
