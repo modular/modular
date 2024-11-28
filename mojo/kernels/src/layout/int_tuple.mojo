@@ -9,7 +9,7 @@ from os import abort
 
 from layout.dynamic_tuple import *
 
-from utils import Writer, Variant
+from utils import Variant, Writer
 
 # IntTuple definition
 # TODO: Consider a different approch https://linear.app/modularml/issue/KERN-638

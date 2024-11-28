@@ -9,7 +9,7 @@ from os import abort
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 
-from utils import Writer, Index
+from utils import Index, Writer
 from utils.variant import Variant
 
 

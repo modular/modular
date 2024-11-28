@@ -4,23 +4,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from layout import LayoutTensor, IntTuple
+from sys import sizeof
 
-from gpu.host.memory_v1 import (
-    create_tma_descriptor,
-    TMADescriptor,
-)
-
+from gpu.host.memory_v1 import TMADescriptor, create_tma_descriptor
 from gpu.memory import AddressSpace, cp_async_bulk_tensor_shared_cluster_global
 from gpu.sync import (
-    mbarrier_init,
     mbarrier_arrive_expect_tx_shared,
+    mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-
-from memory import stack_allocation, UnsafePointer
-
-from sys import sizeof
+from layout import IntTuple, LayoutTensor
+from memory import UnsafePointer, stack_allocation
 
 from utils.index import Index
 

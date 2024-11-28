@@ -6,6 +6,7 @@
 
 from random import random_float64
 from sys import is_nvidia_gpu
+
 from utils.numerics import max_finite
 
 

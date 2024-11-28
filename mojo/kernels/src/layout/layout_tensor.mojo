@@ -9,18 +9,18 @@ from math import align_up, ceildiv
 from os import abort
 from sys import (
     alignof,
-    prefetch,
     bitwidthof,
+    is_nvidia_gpu,
+    prefetch,
     simdwidthof,
     sizeof,
-    is_nvidia_gpu,
 )
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
 from builtin.int import int as _int
-from gpu.id import ThreadIdx, BlockIdx
-from gpu.memory import Fill, CacheEviction, async_copy, async_copy
+from gpu.id import BlockIdx, ThreadIdx
+from gpu.memory import CacheEviction, Fill, async_copy
 from layout.element import Element, MemoryElement
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from memory.pointer import AddressSpace, _GPUAddressSpace

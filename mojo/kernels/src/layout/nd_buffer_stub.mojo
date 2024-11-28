@@ -10,7 +10,7 @@ from sys import alignof, sizeof
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.id import ThreadIdx
-from gpu.memory import Fill, CacheEviction, async_copy
+from gpu.memory import CacheEviction, Fill, async_copy
 from layout import Layout, LayoutTensor
 from layout.int_tuple import depth, to_int
 from layout.layout import make_layout

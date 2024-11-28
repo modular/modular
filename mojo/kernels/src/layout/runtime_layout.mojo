@@ -4,8 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils import IndexList
 from sys import bitwidthof
+
+from utils import IndexList
 
 from . import IntTuple, Layout
 from .int_tuple import UNKNOWN_VALUE, flatten, to_int

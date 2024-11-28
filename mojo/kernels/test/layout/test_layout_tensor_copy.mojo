@@ -7,7 +7,7 @@
 
 from math import ceildiv
 from pathlib import Path
-from sys import simdwidthof, bitwidthof
+from sys import bitwidthof, simdwidthof
 
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -30,11 +30,11 @@ from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,
     copy_dram_to_sram_async,
+    copy_local_to_dram,
+    copy_local_to_local,
+    copy_local_to_sram,
     copy_sram_to_dram,
     copy_sram_to_local,
-    copy_local_to_sram,
-    copy_local_to_local,
-    copy_local_to_dram,
 )
 from memory import UnsafePointer
 from testing import assert_almost_equal

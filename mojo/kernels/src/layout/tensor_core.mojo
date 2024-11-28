@@ -7,23 +7,21 @@
 """
 
 from math import align_down
-from sys import simdwidthof, sizeof
-from memory.unsafe import bitcast
+from sys import is_nvidia_gpu, simdwidthof, sizeof
 
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, lane_id
+from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
 from gpu.mma import ld_matrix, mma
-from gpu.intrinsics import lop
 from layout._utils import load_to_simd
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import LayoutTensor, _swizzle_signature
 from layout.swizzle import *
+from memory.unsafe import bitcast
+from stdlib.builtin.simd import _has_native_f8_support
 
 from utils import IndexList
-
-from stdlib.builtin.simd import _has_native_f8_support
-from sys import is_nvidia_gpu
 
 
 fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:

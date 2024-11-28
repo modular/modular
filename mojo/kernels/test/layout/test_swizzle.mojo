@@ -6,7 +6,10 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from collections import OptionalReg
+from sys import is_x86, sizeof
+
 from layout.element import Element
+from layout.int_tuple import IntTuple, size, to_int
 from layout.layout import (
     Layout,
     LayoutList,
@@ -19,12 +22,11 @@ from layout.layout import (
     right_inverse,
     zipped_divide,
 )
-from layout.int_tuple import size, IntTuple, to_int
 from layout.layout_tensor import LayoutTensor, _compute_distribute_layout
 from layout.swizzle import Swizzle, make_swizzle
 from memory import UnsafePointer
-from sys import sizeof, is_x86
 from testing import assert_equal
+
 from utils import StaticTuple
 
 

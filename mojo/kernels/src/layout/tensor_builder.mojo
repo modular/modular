@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from sys import is_gpu, bitwidthof
+from sys import bitwidthof, is_gpu
 
 from layout import Layout, LayoutTensor
 from layout.layout_tensor import LayoutTensorIter, _get_index_type

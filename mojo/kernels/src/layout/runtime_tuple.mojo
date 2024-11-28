@@ -7,8 +7,8 @@
 from collections import InlineArray
 from os import abort
 from sys import bitwidthof
-from builtin.dtype import _int_type_of_width, _uint_type_of_width
 
+from builtin.dtype import _int_type_of_width, _uint_type_of_width
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple, flatten
 from layout.int_tuple import idx2crd as idx2crd_int_tuple
 from layout.int_tuple import prefix_product as prefix_product_int_tuple

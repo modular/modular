@@ -5,10 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.fillers import arange
 from layout import Layout
-
+from layout.fillers import arange
+from layout.tensor_builder import LayoutTensorBuild as tb
 from memory import stack_allocation
 
 
