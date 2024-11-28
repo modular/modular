@@ -14,7 +14,7 @@ from buffer import Buffer
 
 from math import align_down, fma, iota
 from pathlib import Path
-from sys.info import alignof, simdwidthof, sizeof, is_nvidia_gpu
+from sys.info import alignof, is_nvidia_gpu, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 
 from buffer.dimlist import Dim, DimList, _make_tuple
