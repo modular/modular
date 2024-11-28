@@ -5,8 +5,14 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from algorithm.functional import elementwise
 from collections import OptionalReg
+from math import exp2
+from os import abort
+from random import rand, randn
+from sys import argv, simdwidthof
+
+import benchmark
+from algorithm.functional import elementwise
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._compile import _get_gpu_target
 from layout import Layout
@@ -15,19 +21,14 @@ from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout_tensor import LayoutTensor
 from layout.runtime_layout import RuntimeLayout
 from linalg._multistage_gemm_gpu import distance, multistage_gemm_kernel
-from linalg.dual_gemm import multistage_dual_gemm, binary_fn_type
+from linalg.dual_gemm import binary_fn_type, multistage_dual_gemm
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, _bk_base
-from math import exp2
-from os import abort
-from random import rand, randn
-from sys import argv
-from sys import simdwidthof
 from testing import assert_almost_equal
+
 from utils import StaticTuple
 from utils.index import Index, IndexList
 from utils.numerics import FPUtils
-import benchmark
 
 
 fn binary_sub[

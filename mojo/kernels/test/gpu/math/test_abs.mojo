@@ -7,7 +7,7 @@
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from memory import UnsafePointer
-from testing import assert_true, assert_false
+from testing import assert_false, assert_true
 
 alias A100_TARGET = _get_gpu_target["sm_80"]()
 alias MI300X_TARGET = _get_gpu_target["mi300x"]()

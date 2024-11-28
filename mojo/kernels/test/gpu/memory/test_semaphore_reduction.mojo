@@ -6,15 +6,17 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv, isclose
+from random import rand
+
 from buffer import NDBuffer
 from buffer.dimlist import DimList
+from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.semaphore import Semaphore
 from memory import UnsafePointer, memset_zero
 from testing import assert_equal
-from gpu import BlockDim, BlockIdx, ThreadIdx, GridDim
+
 from utils.index import Index
-from random import rand
 
 
 fn semaphore_vector_reduce[

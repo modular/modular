@@ -10,20 +10,19 @@ from sys import simdwidthof
 import builtin
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
-from internal_utils import TestTensor, HostNDBuffer, DeviceNDBuffer
+from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, TestTensor
 from memory import UnsafePointer, stack_allocation
 from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import (
     PoolMethod,
     avg_pool,
-    max_pool,
-    pool_shape_impl,
-    max_pool_gpu,
     avg_pool_gpu,
+    max_pool,
+    max_pool_gpu,
+    pool_shape_impl,
 )
-from gpu.host import DeviceContext
 from testing import assert_almost_equal
-
 
 from utils.index import IndexList
 

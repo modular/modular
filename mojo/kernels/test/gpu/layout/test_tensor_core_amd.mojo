@@ -7,23 +7,20 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from builtin.io import _printf
-from gpu import barrier, lane_id
+from gpu import WARP_SIZE, barrier, lane_id
 from gpu.host import DeviceContext
 from gpu.id import ThreadIdx
 from gpu.memory import _GPUAddressSpace as AddressSpace
 from layout import Layout, LayoutTensor
-from layout._utils import (
-    load_to_simd,
-)
+from layout._utils import load_to_simd
 from layout.fillers import arange
 from layout.layout_tensor import copy_dram_to_sram
+from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
+from memory import UnsafePointer
+from testing import assert_almost_equal
 
 from utils.index import Index, IndexList
-from gpu import WARP_SIZE
-from memory import UnsafePointer
-from layout.tensor_builder import LayoutTensorBuild as tb
-from testing import assert_almost_equal
 
 
 fn test_load_a[

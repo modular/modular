@@ -10,6 +10,7 @@ from math import isclose
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host.info import DEFAULT_GPU_ARCH
 from linalg.matmul import matmul
 from linalg.matmul_gpu import _matmul_gpu
 from memory import UnsafePointer
@@ -17,7 +18,6 @@ from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 from utils import IndexList
-from gpu.host.info import DEFAULT_GPU_ARCH
 
 
 fn _size[rank: Int](dims: IndexList[rank, **_]) -> Int:

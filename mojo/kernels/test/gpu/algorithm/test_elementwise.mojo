@@ -6,12 +6,12 @@
 # RUN: %mojo-no-debug %s
 
 from math import exp
-from sys import simdwidthof, is_nvidia_gpu
+from sys import is_nvidia_gpu, simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
-from gpu.host._compile import _get_gpu_target
 from gpu.host import DeviceContext
+from gpu.host._compile import _get_gpu_target
 from testing import assert_equal
 
 from utils import IndexList

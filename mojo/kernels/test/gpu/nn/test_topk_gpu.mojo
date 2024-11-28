@@ -6,6 +6,7 @@
 # RUN: %mojo-no-debug %s
 
 
+from collections import OptionalReg
 from math import ceildiv, iota
 from os import abort
 from random import random_float64
@@ -13,14 +14,11 @@ from random import random_float64
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import OptionalReg
-from internal_utils import HostNDBuffer, DeviceNDBuffer
-from random import random_float64
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from memory import UnsafePointer
-from nn.topk_gpu import _topk_gpu, topk_gpu
 from nn.topk import _top_k
+from nn.topk_gpu import _topk_gpu, topk_gpu
 from testing import assert_almost_equal, assert_equal
 
 from utils import IndexList

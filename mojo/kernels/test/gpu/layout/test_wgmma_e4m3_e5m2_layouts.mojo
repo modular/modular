@@ -6,6 +6,8 @@
 # REQUIRES: GPU-H100
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from sys.info import _current_arch, _is_sm_8x, _is_sm_9x
+
 from builtin.io import _printf
 from gpu import barrier
 from gpu.host import DeviceContext
@@ -26,7 +28,6 @@ from layout.fillers import arange
 from layout.int_tuple import to_int
 from layout.layout import print_layout
 from memory import bitcast
-from sys.info import _current_arch, _is_sm_8x, _is_sm_9x
 
 
 fn wgmma_f32_kernel[

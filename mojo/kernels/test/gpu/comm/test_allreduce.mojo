@@ -7,15 +7,17 @@
 
 import time
 from math import floor
-from buffer import Buffer, NDBuffer
 from sys import sizeof
+
+from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
+from gpu.all_reduce import MAX_GPUS, Signal, all_reduce
+from gpu.host import DeviceBuffer, DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, TestTensor
 from memory import UnsafePointer
-from internal_utils import TestTensor, HostNDBuffer, DeviceNDBuffer
-from gpu.host import DeviceContext, DeviceBuffer
 from testing import assert_almost_equal
+
 from utils.index import IndexList, StaticTuple
-from gpu.all_reduce import all_reduce, Signal, MAX_GPUS
 
 
 fn _pretty_print_float(val: Float64) -> String:

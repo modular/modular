@@ -6,21 +6,15 @@
 # REQUIRES: GPU-H100
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from builtin.io import _printf
 from gpu.host import DeviceContext
-
-from layout.tma_async import TMATensorTile, create_tma_tile
+from gpu.host._compile import _get_gpu_target
+from gpu.id import BlockIdx
 from layout import Layout, LayoutTensor
+from layout.tma_async import TMATensorTile, create_tma_tile
+from memory import UnsafePointer, stack_allocation
 
 from utils.static_tuple import StaticTuple
-from gpu.id import BlockIdx
-
-from gpu.host._compile import _get_gpu_target
-
-
-from memory import stack_allocation, UnsafePointer
-
-
-from builtin.io import _printf
 
 
 @__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](0))

@@ -7,6 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from sys import has_nvidia_gpu
+
 from testing import assert_true
 
 

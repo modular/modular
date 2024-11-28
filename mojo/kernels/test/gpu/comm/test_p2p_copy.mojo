@@ -6,10 +6,11 @@
 # RUN: %mojo-no-debug %s
 
 from math import ceildiv
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu import BlockIdx, GridDim, ThreadIdx, BlockDim
-from memory import UnsafePointer
 from sys import env_get_int
+
+from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx
+from gpu.host import DeviceBuffer, DeviceContext
+from memory import UnsafePointer
 from testing import assert_almost_equal
 
 

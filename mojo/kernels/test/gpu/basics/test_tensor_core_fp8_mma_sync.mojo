@@ -6,12 +6,11 @@
 # REQUIRES: GPU-H100
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from builtin.io import _printf
 from gpu.host import DeviceContext
+from gpu.host._compile import _get_gpu_target
 from gpu.id import ThreadIdx
 from gpu.mma import mma
-from gpu.host._compile import _get_gpu_target
-
-from builtin.io import _printf
 
 
 fn mma_sync_16x8x32_E4M3():

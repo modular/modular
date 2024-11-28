@@ -10,16 +10,18 @@
 # logic and shift instruciton: lop3
 # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3
 
-from memory.unsafe import bitcast
 from sys import has_neon
 from sys.info import is_amd_gpu
-from testing import assert_equal
-from gpu.host import DeviceContext
+
 from buffer import Buffer
-from memory import UnsafePointer
+from gpu.host import DeviceContext
 from gpu.intrinsics import lop
-from utils import StaticTuple
 from gpu.memory import AddressSpace
+from memory import UnsafePointer
+from memory.unsafe import bitcast
+from testing import assert_equal
+
+from utils import StaticTuple
 
 
 # 8xint4 -> 8xbfloat16 interleaved conversion

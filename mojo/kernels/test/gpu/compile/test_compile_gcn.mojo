@@ -8,12 +8,12 @@
 from pathlib import Path
 from sys._assembly import inlined_assembly
 
-from gpu import ThreadIdx, BlockDim, GridDim, barrier, lane_id
-from gpu.shuffle import shuffle_down, shuffle_up, shuffle_xor, shuffle_idx
+from gpu import BlockDim, GridDim, ThreadIdx, barrier, lane_id
+from gpu.globals import WARP_SIZE
 from gpu.host import DeviceContext
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
+from gpu.shuffle import shuffle_down, shuffle_idx, shuffle_up, shuffle_xor
 from memory import UnsafePointer
-from gpu.globals import WARP_SIZE
 
 alias MI300X_TARGET = _get_gpu_target["mi300x"]()
 alias FULL_MASK_AMD = 2**WARP_SIZE - 1

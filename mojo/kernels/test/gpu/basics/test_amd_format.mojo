@@ -6,15 +6,17 @@
 # REQUIRES: AMD-GPU
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.host import DeviceContext
-from builtin._format_float import _write_float
-from testing import assert_true
 from collections import InlineArray
-from memory import memcmp, memcpy
 from os import abort
-from utils.write import _WriteBufferStack
-from builtin.simd import Float8e5m2, Float8e4m3
+
+from builtin._format_float import _write_float
+from builtin.simd import Float8e4m3, Float8e5m2
+from gpu.host import DeviceContext
+from memory import memcmp, memcpy
+from testing import assert_true
+
 from utils import Span
+from utils.write import _WriteBufferStack
 
 
 struct Buffer[capacity: Int](Writer):

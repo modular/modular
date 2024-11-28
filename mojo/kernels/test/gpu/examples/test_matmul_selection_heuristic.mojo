@@ -6,8 +6,8 @@
 # REQUIRES: GPU-A100
 # RUN: %mojo-no-debug --target-accelerator=nvidia:80 %s | FileCheck %s
 
-from linalg.utils_gpu import select_config
 from gpu.host import DeviceContext
+from linalg.utils_gpu import select_config
 
 
 # CHECK-LABEL: test_matmul_selection

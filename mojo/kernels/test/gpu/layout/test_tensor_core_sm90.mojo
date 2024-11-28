@@ -8,17 +8,13 @@
 
 from builtin.io import _printf
 from gpu.host import DeviceContext
+from gpu.host._compile import _get_gpu_target
 from gpu.id import ThreadIdx
 from gpu.mma import mma
-from gpu.host._compile import _get_gpu_target
-
-from layout._utils import (
-    ManagedLayoutTensor,
-    gpu_managed_alloc,
-    gpu_free,
-)
 from layout import Layout, LayoutTensor
+from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.tensor_core import TensorCore
+
 from utils.index import IndexList
 
 

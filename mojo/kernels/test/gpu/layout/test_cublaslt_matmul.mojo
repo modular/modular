@@ -6,21 +6,13 @@
 # REQUIRES: GPU-H100
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.cublas.cublas import (
-    check_cublas_error,
-)
-from gpu.cublas.cublaslt import (
-    Context,
-    cublasLtCreate,
-    cublasLtDestroy,
-)
-
+from gpu.cublas.cublas import check_cublas_error
+from gpu.cublas.cublaslt import Context, cublasLtCreate, cublasLtDestroy
 from gpu.host import DeviceContext
-
+from layout import Layout
+from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from linalg.cublas import cublasLt_fp8_matmul
 from memory import UnsafePointer
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from layout import Layout
 
 
 # CHECK-LABEL: cublaslt_e4m3_e4m3_f32_64x16x32

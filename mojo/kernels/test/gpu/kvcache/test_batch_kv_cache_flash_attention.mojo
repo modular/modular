@@ -6,25 +6,21 @@
 
 # RUN: %mojo-no-debug %s
 
+from collections import OptionalReg
 from math import isqrt
 
 from algorithm import max
 from buffer import Buffer, Dim, DimList, NDBuffer
-from collections import OptionalReg
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
+from layout.tensor_core import get_accum_type, get_mma_shape
 from memory import UnsafePointer
 from nn.mha import MHAConfig, flash_attention, mha_gpu_naive
 from nn.mha_mask import NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal, assert_equal
-
-from layout.tensor_core import (
-    get_accum_type,
-    get_mma_shape,
-)
 
 from utils import IndexList
 from utils.index import Index

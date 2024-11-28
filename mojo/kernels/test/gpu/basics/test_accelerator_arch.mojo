@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from testing import *
 from sys.info import _accelerator_arch
+
+from testing import *
 
 
 def main():

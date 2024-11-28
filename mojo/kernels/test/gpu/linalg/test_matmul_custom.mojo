@@ -12,13 +12,13 @@ from sys import bitwidthof
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host.info import DEFAULT_GPU_ARCH
 from linalg.bmm import _batched_matmul_gpu
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from memory import UnsafePointer
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-from gpu.host.info import DEFAULT_GPU_ARCH
 
 
 fn run_matmul_naive(ctx: DeviceContext, M: Int, N: Int, K: Int) raises:

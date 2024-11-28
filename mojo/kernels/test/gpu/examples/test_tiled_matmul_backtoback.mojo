@@ -5,50 +5,51 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from buffer.dimlist import Dim, DimList
 from collections import OptionalReg
-from gpu.host import DeviceContext, FuncAttribute
-from gpu import WARP_SIZE, GridDim, BlockIdx, ThreadIdx, barrier, lane_id
-from gpu.memory import (
-    external_memory,
-    AddressSpace,
-    async_copy_commit_group,
-    async_copy_wait_group,
-    async_copy_wait_all,
-)
-from layout import LayoutTensor, Layout
-from layout.layout import size
-import layout.runtime_tuple
-from layout.layout_tensor import (
-    LayoutTensorIter,
-    copy_dram_to_sram_async,
-    copy_local_to_sram,
-    copy_local_to_dram,
-    copy_sram_to_dram,
-)
-from layout.int_tuple import to_int, UNKNOWN_VALUE
-from layout.swizzle import make_swizzle
-from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import (
-    get_accum_type,
-    get_fragment_size,
-    get_mma_shape,
-    TensorCore,
-)
-from linalg._multistage_gemm_gpu import multistage_mma
-from linalg.utils_gpu import MatmulConfig, block_swizzle
-from linalg.utils import elementwise_epilogue_type
 from math import ceildiv
 from os import abort
 from sys import sizeof
 from sys.info import alignof, simdwidthof
-from utils.index import Index, IndexList
-from layout.fillers import arange
-from layout._utils import ManagedLayoutGPUTensor
+
+import layout.runtime_tuple
 from buffer import NDBuffer
-from layout.tensor_builder import LayoutTensorBuild as tb
-from testing import assert_false, assert_almost_equal
+from buffer.dimlist import Dim, DimList
 from builtin.io import _printf
+from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
+from gpu.host import DeviceContext, FuncAttribute
+from gpu.memory import (
+    AddressSpace,
+    async_copy_commit_group,
+    async_copy_wait_all,
+    async_copy_wait_group,
+    external_memory,
+)
+from layout import Layout, LayoutTensor
+from layout._utils import ManagedLayoutGPUTensor
+from layout.fillers import arange
+from layout.int_tuple import UNKNOWN_VALUE, to_int
+from layout.layout import size
+from layout.layout_tensor import (
+    LayoutTensorIter,
+    copy_dram_to_sram_async,
+    copy_local_to_dram,
+    copy_local_to_sram,
+    copy_sram_to_dram,
+)
+from layout.swizzle import make_swizzle
+from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.tensor_core import (
+    TensorCore,
+    get_accum_type,
+    get_fragment_size,
+    get_mma_shape,
+)
+from linalg._multistage_gemm_gpu import multistage_mma
+from linalg.utils import elementwise_epilogue_type
+from linalg.utils_gpu import MatmulConfig, block_swizzle
+from testing import assert_almost_equal, assert_false
+
+from utils.index import Index, IndexList
 
 
 @value

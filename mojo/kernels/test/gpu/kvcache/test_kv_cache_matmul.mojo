@@ -8,6 +8,7 @@
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
+from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -24,7 +25,6 @@ from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 from utils import Index, IndexList
-from gpu.host.info import DEFAULT_GPU_ARCH
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24

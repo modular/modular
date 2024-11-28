@@ -9,12 +9,13 @@
 # to build this file if running into linking issues with large PTX kernels.
 
 from collections.optional import Optional, OptionalReg
-from math import ceildiv
-from sys import simdwidthof, alignof
+from math import ceildiv, exp2
+from sys import alignof, simdwidthof
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList, _make_tuple
+from builtin._location import __source_location
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.cublas.cublas import (
     check_cublas_error,
@@ -22,8 +23,9 @@ from gpu.cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
-from gpu.host._compile import _get_gpu_target
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host._compile import _get_gpu_target
+from gpu.host.info import DEFAULT_GPU_ARCH
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -33,6 +35,7 @@ from internal_utils import (
     random,
     zero,
 )
+from internal_utils._measure import cosine
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.cublas import cublas_matmul
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
@@ -40,17 +43,11 @@ from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels
 from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as GPUAddressSpace
+from testing import assert_equal
 
 from utils import IndexList
 from utils.index import Index
-
-from builtin._location import __source_location
-from internal_utils._measure import cosine
-
-from math import exp2
 from utils.numerics import FPUtils
-from testing import assert_equal
-from gpu.host.info import DEFAULT_GPU_ARCH
 
 alias init_fn_type = fn (buff: NDBuffer) capturing -> None
 

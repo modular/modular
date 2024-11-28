@@ -5,11 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host import DeviceContext
-from gpu import ThreadIdx
-from utils.index import IndexList
 from buffer import NDBuffer
+from gpu import ThreadIdx
+from gpu.host import DeviceContext
 from internal_utils import HostNDBuffer
+
+from utils.index import IndexList
 
 
 @register_passable("trivial")

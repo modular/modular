@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from sys.info import _is_sm_9x
+
+from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from testing import *
 
 

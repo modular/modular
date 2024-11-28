@@ -6,28 +6,24 @@
 # REQUIRES: GPU-H100
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from builtin.io import _printf
 from gpu.host import DeviceContext
-from gpu.host.memory_v1 import (
-    create_tma_descriptor,
-    TMADescriptor,
-)
+from gpu.host._compile import _get_gpu_target
+from gpu.host.memory_v1 import TMADescriptor, create_tma_descriptor
+from gpu.id import BlockIdx
 from gpu.memory import (
     _GPUAddressSpace,
     cp_async_bulk_tensor_shared_cluster_global,
 )
 from gpu.sync import (
-    mbarrier_init,
     mbarrier_arrive_expect_tx_shared,
+    mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from gpu.id import BlockIdx
+from memory import UnsafePointer, stack_allocation
 
 from utils.index import Index
-from memory import stack_allocation, UnsafePointer
-from gpu.host._compile import _get_gpu_target
 from utils.static_tuple import StaticTuple
-
-from builtin.io import _printf
 
 
 @__llvm_metadata(`nvvm.grid_constant`=StaticTuple[Int, 1](0))

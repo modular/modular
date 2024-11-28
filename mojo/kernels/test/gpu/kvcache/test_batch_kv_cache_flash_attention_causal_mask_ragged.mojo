@@ -6,30 +6,25 @@
 
 # RUN: %mojo-no-debug %s -t
 
+from collections import Set
+from math import isclose, isqrt
+from random import random_ui64, seed
+
 from algorithm import max
-from buffer import Buffer, NDBuffer, Dim, DimList
+from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
-from math import isqrt, isclose
-from memory import UnsafePointer
-from nn.mha import mha_gpu_naive, flash_attention
-from nn.mha_mask import NullMask, CausalMask
+from memory import UnsafePointer, memcpy
+from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
-from internal_utils import (
-    HostNDBuffer,
-    DeviceNDBuffer,
-    random,
-)
-from memory import memcpy
-from runtime.asyncrt import (
-    MojoCallContextPtr,
-)
+from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
+
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
-from collections import Set
-from random import random_ui64, seed
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24

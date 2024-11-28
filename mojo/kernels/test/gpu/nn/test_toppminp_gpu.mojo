@@ -5,28 +5,22 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
+from collections import OptionalReg
 from math import ceildiv, iota
 from os import abort
-from algorithm.functional import parallelize_over_rows
 from random import random_float64
 
-from benchmark import (
-    Bench,
-    Bencher,
-    BenchId,
-    BenchMetric,
-    ThroughputMeasure,
-)
+from algorithm.functional import parallelize_over_rows
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from collections import OptionalReg
-from internal_utils import HostNDBuffer, DeviceNDBuffer
-from random import random_float64
 from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer
 from memory import UnsafePointer
-from nn.toppminp_gpu import top_p_sampling_gpu, min_p_sampling_gpu
 from nn.softmax import softmax
+from nn.toppminp_gpu import min_p_sampling_gpu, top_p_sampling_gpu
 from testing import assert_almost_equal, assert_equal
+
 from utils import IndexList
 
 alias DEBUG_BENCH = False

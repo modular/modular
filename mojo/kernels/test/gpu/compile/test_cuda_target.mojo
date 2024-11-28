@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from math import erf
-from sys.info import simdwidthof, is_nvidia_gpu
+from sys.info import is_nvidia_gpu, simdwidthof
 
 from algorithm.functional import elementwise
 from builtin.io import _printf

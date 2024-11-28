@@ -7,28 +7,23 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK-NOT: CUDA ERROR
 
+from math import isclose, isqrt
+
 from algorithm import max
-from buffer import Buffer, NDBuffer, Dim, DimList
+from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
-from math import isqrt, isclose
 from memory import UnsafePointer
 from nn.mha import flash_attention
-from nn.mha_mask import NullMask, CausalMask
-from nn.mha_score_mod import IdentityScoreMod, AddFactorMod
-from internal_utils import (
-    HostNDBuffer,
-    DeviceNDBuffer,
-    random,
-)
-from runtime.asyncrt import (
-    MojoCallContextPtr,
-)
+from nn.mha_mask import CausalMask, NullMask
+from nn.mha_score_mod import AddFactorMod, IdentityScoreMod
+from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
+
 from utils import IndexList
 from utils.index import Index
 from utils.numerics import min_or_neg_inf
-
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24

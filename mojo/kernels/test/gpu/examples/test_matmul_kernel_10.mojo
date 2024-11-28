@@ -8,19 +8,18 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import llvm_intrinsic, has_amd_gpu
+from sys import has_amd_gpu, llvm_intrinsic
 from sys.info import alignof
-from memory import bitcast
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.intrinsics import ldg
 from gpu.host import DeviceContext
+from gpu.intrinsics import ldg
 from gpu.memory import AddressSpace
 from linalg.utils import elementwise_epilogue_type
-from memory import UnsafePointer, memset_zero, stack_allocation
+from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
 
 from utils import StaticTuple
 from utils.index import Index

@@ -12,7 +12,7 @@ from random import rand
 from sys import alignof, argv, simdwidthof
 
 from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
+from buffer.dimlist import Dim, DimList
 from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
 from gpu.cublas.cublas import (
     check_cublas_error,
@@ -28,42 +28,6 @@ from gpu.memory import (
     external_memory,
 )
 from gpu.mma import ld_matrix, mma
-from layout.int_tuple import IntTuple
-from layout.layout import *
-from layout import RuntimeLayout
-from layout.layout_tensor import (
-    LayoutTensor,
-    LayoutTensorIter,
-    _swizzle_signature,
-    copy_dram_to_sram_async,
-    copy_local_to_dram,
-    copy_local_to_sram,
-    copy_sram_to_dram,
-    copy_local_to_local,
-)
-from layout.tensor_core import (
-    TensorCore,
-    get_accum_type,
-    get_fragment_size,
-    get_mma_shape,
-)
-from linalg.cublas import cublas_matmul
-from linalg.utils_gpu import block_swizzle
-from memory import UnsafePointer
-
-from utils.index import Index, IndexList
-from internal_utils._utils import ValOrDim, dynamic, static
-
-from layout.nd_buffer_stub import from_ndbuffer_row_major
-from layout.swizzle import Swizzle, make_swizzle
-from linalg.utils_gpu import (
-    block_swizzle,
-    MatmulConfig,
-    MatmulKernels,
-    select_config,
-)
-from layout.tensor_builder import LayoutTensorBuild as tb
-
 from internal_utils import (
     DeviceNDBuffer,
     HostNDBuffer,
@@ -74,8 +38,40 @@ from internal_utils import (
     random,
     zero,
 )
-
+from internal_utils._utils import ValOrDim, dynamic, static
+from layout import RuntimeLayout
+from layout.int_tuple import IntTuple
+from layout.layout import *
+from layout.layout_tensor import (
+    LayoutTensor,
+    LayoutTensorIter,
+    _swizzle_signature,
+    copy_dram_to_sram_async,
+    copy_local_to_dram,
+    copy_local_to_local,
+    copy_local_to_sram,
+    copy_sram_to_dram,
+)
+from layout.nd_buffer_stub import from_ndbuffer_row_major
+from layout.swizzle import Swizzle, make_swizzle
+from layout.tensor_builder import LayoutTensorBuild as tb
+from layout.tensor_core import (
+    TensorCore,
+    get_accum_type,
+    get_fragment_size,
+    get_mma_shape,
+)
 from linalg._multistage_gemm_gpu import multistage_gemm_kernel
+from linalg.cublas import cublas_matmul
+from linalg.utils_gpu import (
+    MatmulConfig,
+    MatmulKernels,
+    block_swizzle,
+    select_config,
+)
+from memory import UnsafePointer
+
+from utils.index import Index, IndexList
 
 
 fn is_benchmark() -> Bool:

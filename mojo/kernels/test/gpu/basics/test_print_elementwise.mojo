@@ -5,16 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from algorithm.functional import elementwise
-from layout import Layout, LayoutTensor, RuntimeLayout
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
-from gpu.host import DeviceContext
 from os import abort
 from sys import simdwidthof
+
+from algorithm.functional import elementwise
+from gpu import BlockIdx, ThreadIdx
+from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from utils.index import IndexList
+from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._utils import ManagedLayoutGPUTensor
-from gpu import ThreadIdx, BlockIdx
+from layout.int_tuple import UNKNOWN_VALUE, IntTuple
+
+from utils.index import IndexList
 
 
 fn test_elementwise_print[

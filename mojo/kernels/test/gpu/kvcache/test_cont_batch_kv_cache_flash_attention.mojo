@@ -14,10 +14,7 @@ from algorithm import max
 from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from kv_cache.types import (
-    ContinuousBatchingKVCache,
-    KVCacheStaticParams,
-)
+from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
 from memory import UnsafePointer
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import NullMask
