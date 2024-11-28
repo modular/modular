@@ -1129,7 +1129,6 @@ TypedAttr OriginSetUnionAttr::get(TypedAttr value, OriginType type) {
 TypedAttr LITStructAttr::get(MLIRContext *ctx,
                              ArrayRef<std::tuple<StringAttr, TypedAttr>> values,
                              StructType type) {
-
   // If we are forming a struct from an single extract from the same type,
   // canonicalize it away so we get type equality for important types like
   // Origin and AddressSpace etc.
