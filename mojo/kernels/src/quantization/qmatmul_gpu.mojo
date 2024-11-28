@@ -141,7 +141,7 @@ fn multistage_mma_q[
     ) + 1
     alias repack_tile = Index(64, 16)
 
-    var tid: UInt32 = ThreadIdx.x()
+    var tid: UInt32 = ThreadIdx.x
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
@@ -501,16 +501,16 @@ fn multistage_gemm_q[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
-    var tid: UInt32 = ThreadIdx.x()
+    var tid: UInt32 = ThreadIdx.x
     var warp_id = tid // WARP_SIZE
 
     # Only apply block swizzling for half precision types.
     alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
 
     var block_idx = block_swizzle(
-        (int(BlockIdx.x()), int(BlockIdx.y())),
-        (int(GridDim.x()), int(GridDim.y())),
-    ) if swizzle_block else Index(int(BlockIdx.x()), int(BlockIdx.y()))
+        (int(BlockIdx.x), int(BlockIdx.y)),
+        (int(GridDim.x), int(GridDim.y)),
+    ) if swizzle_block else Index(int(BlockIdx.x), int(BlockIdx.y))
 
     # Coordinates of the current warp.
     var warp_x = warp_id % num_warps_n
@@ -733,13 +733,13 @@ fn repack_Q4_0_for_sm8x[
     alias BN = 128
     alias BK = 1024
 
-    var tid: UInt = ThreadIdx.x()
+    var tid: UInt = ThreadIdx.x
     var warp_id: UInt = tid // WARP_SIZE
     alias num_warps_x = BN // repack_tile[0]
     var warp_x: UInt = warp_id % num_warps_x
     var warp_y: UInt = warp_id // num_warps_x
     var lane_id: Int = tid % WARP_SIZE
-    var block_idx = Index(int(BlockIdx.x()), int(BlockIdx.y()))
+    var block_idx = Index(int(BlockIdx.x), int(BlockIdx.y))
 
     alias N = to_int(q_layout.shape[0])
     alias K = to_int(q_layout.shape[1]) // group_bytes * group_size
@@ -952,13 +952,13 @@ fn repack_GPTQ_for_sm8x[
     alias BN = 128
     alias BK = 1024
 
-    var tid: UInt = ThreadIdx.x()
+    var tid: UInt = ThreadIdx.x
     var warp_id: UInt = tid // WARP_SIZE
     alias num_warps_x = BN // repack_tile[0]
     var warp_x: UInt = warp_id % num_warps_x
     var warp_y: UInt = warp_id // num_warps_x
     var lane_id: Int = tid % WARP_SIZE
-    var block_idx = Index(int(BlockIdx.x()), int(BlockIdx.y()))
+    var block_idx = Index(int(BlockIdx.x), int(BlockIdx.y))
 
     alias N = to_int(in_layout.shape[1])
     alias K = to_int(in_layout.shape[0]) // group_bytes * group_size
