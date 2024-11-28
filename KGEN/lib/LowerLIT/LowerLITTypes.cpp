@@ -758,32 +758,23 @@ LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerLITTypesPass
+// Entrypoint.
 //===----------------------------------------------------------------------===//
 
-namespace M::KGEN {
-#define GEN_PASS_DEF_LOWERLITTYPES
-#include "KGEN/KGENPasses.h.inc"
-} // namespace M::KGEN
+// TODO: Merge this into LowerLIT.cpp
+namespace M::KGEN::LIT {
+LogicalResult lowerLITTypes(ModuleOp module, mlir::SymbolTableAnalysis &symtab);
+}
 
-namespace {
-struct LowerLITTypesPass
-    : public KGEN::impl::LowerLITTypesBase<LowerLITTypesPass> {
-  using LowerLITTypesBase::LowerLITTypesBase;
-
-  void runOnOperation() override;
-};
-} // namespace
-
-void LowerLITTypesPass::runOnOperation() {
+LogicalResult LIT::lowerLITTypes(ModuleOp module,
+                                 mlir::SymbolTableAnalysis &symtab) {
   StructDecls state;
-  auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
-  if (failed(state.process(getOperation(), analysis.getTopLevelSymbolTable())))
-    return signalPassFailure();
-  LITTypeLowerer b(&getContext(), state);
+  if (failed(state.process(module, symtab.getTopLevelSymbolTable())))
+    return failure();
+  LITTypeLowerer b(module.getContext(), state);
 
   // Lower operations first.
-  WalkResult result = getOperation().walk([&](Operation *op) -> WalkResult {
+  WalkResult result = module.walk([&](Operation *op) -> WalkResult {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
               RefImmutOp, RefToPointerOp, RefFromPointerOp,
@@ -793,9 +784,9 @@ void LowerLITTypesPass::runOnOperation() {
         .Default([&](auto op) { return success(); });
   });
   if (result.wasInterrupted())
-    return signalPassFailure();
+    return failure();
 
-  getOperation().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+  module.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     b.replaceElementsIn(op, TypeDomain::AsType, /*replaceAttrs=*/true,
                         /*replaceLocs=*/true,
                         /*replaceTypes=*/true);
@@ -814,4 +805,5 @@ void LowerLITTypesPass::runOnOperation() {
     }
     return WalkResult::advance();
   });
+  return success();
 }

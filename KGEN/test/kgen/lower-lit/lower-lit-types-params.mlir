@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -verify-parameters -lower-lit-types -verify-parameters -kgen-print-inline-type-values | FileCheck %s
+// RUN: kgen-opt %s -verify-parameters -lower-lit -verify-parameters -kgen-print-inline-type-values | FileCheck %s
 
 lit.struct.decl @Coro<T: type> register_passable {
   lit.struct.field coro : !kgen.struct<(T)>

@@ -136,7 +136,8 @@ def LowerLIT : Pass<"lower-lit", "ModuleOp"> {
 
   let dependentDialects = [
     "KGENDialect",
-    "HLCF::HLCFDialect"
+    "HLCF::HLCFDialect",
+    "POP::POPDialect"
   ];
 
   let options = [
@@ -147,22 +148,6 @@ def LowerLIT : Pass<"lower-lit", "ModuleOp"> {
            "llvm::cl::values(clEnumValN(llvm::dwarf::DW_LANG_C, \"C\", \"C language.\"),"
            "clEnumValN(llvm::dwarf::DW_LANG_Mojo, \"Mojo\", \"Mojo language\"))">,
   ];
-}
-
-//===----------------------------------------------------------------------===//
-// LowerLITTypes
-//===----------------------------------------------------------------------===//
-
-def LowerLITTypes : Pass<"lower-lit-types", "ModuleOp"> {
-  let summary = "Lower struct declarations to POP structs.";
-  let description = [{
-    This pass lowers a variety of high level Mojo types in the 'lit' dialect
-    to lower level KGEN abstractions.  Notably, this eliminates symbol based
-    struct references (in favor of `!kgen.struct`), `!lit.ref` => `!kgen.pointer`
-    etc.  This runs immediately after the LowerLIT pass.
-  }];
-
-  let dependentDialects = ["POP::POPDialect"];
 }
 
 //===----------------------------------------------------------------------===//
