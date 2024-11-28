@@ -1655,11 +1655,11 @@ fn _elementwise_impl_gpu[
     @__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](block_size))
     fn _elementwise_gpu_kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
         # process the packed region
-        var tid = ThreadIdx.x() + block_size * BlockIdx.x()
+        var tid = ThreadIdx.x + block_size * BlockIdx.x
         for idx in range(
             tid,
             num_packed_elems,
-            block_size * GridDim.x(),
+            block_size * GridDim.x,
         ):
             var start_indices = _get_start_indices_of_nth_subvolume_uint[0](
                 idx * simd_width, shape
@@ -1975,15 +1975,15 @@ fn _stencil_impl_gpu[
     @parameter
     fn stencil_kernel():
         # Get thread indices
-        var tid_x = ThreadIdx.x()
-        var tid_y = ThreadIdx.y()
-        var bid_x = BlockIdx.x()
-        var bid_y = BlockIdx.y()
-        var bid_z = BlockIdx.z()
+        var tid_x = ThreadIdx.x
+        var tid_y = ThreadIdx.y
+        var bid_x = BlockIdx.x
+        var bid_y = BlockIdx.y
+        var bid_z = BlockIdx.z
 
         # Calculate global indices
-        var x = bid_x * BlockDim.x() + tid_x
-        var y = bid_y * BlockDim.y() + tid_y
+        var x = bid_x * BlockDim.x + tid_x
+        var y = bid_y * BlockDim.y + tid_y
 
         # Calculate batch and channel from bid_z
         var batch_idx = bid_z // shape[3]
