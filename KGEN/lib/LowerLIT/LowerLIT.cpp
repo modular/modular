@@ -15,6 +15,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPAttrs.h"
+#include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -699,6 +700,12 @@ orderAndLowerGlobalVariables(ModuleOp module,
 // Pass boilerplate.
 //===----------------------------------------------------------------------===//
 
+// TODO: Merge this pass with LowerLITTypes.cpp
+
+namespace M::KGEN::LIT {
+LogicalResult lowerLITTypes(ModuleOp module, mlir::SymbolTableAnalysis &symtab);
+}
+
 namespace {
 struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
   using LowerLITBase::LowerLITBase;
@@ -707,7 +714,7 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
     // TODO: This has to be a module pass because this mutates the body of
     // the module, but we could trivially parallelize this within the pass.
     ModuleOp module = getOperation();
-    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+    auto &symtab = getAnalysis<mlir::SymbolTableAnalysis>();
 
     DenseMap<StringAttr, StringAttr> renamedSymbols;
     if (failed(orderAndLowerGlobalVariables(
@@ -716,10 +723,14 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
                 debugInfoLanguage.getValue()))))
       return signalPassFailure();
 
-    LITLowerer lowerer{analysis.getTopLevelSymbolTable(), renamedSymbols};
+    LITLowerer lowerer{symtab.getTopLevelSymbolTable(), renamedSymbols};
     if (failed(lowerer.lowerModuleDecl(module.getBody())))
       return signalPassFailure();
     lowerAttributesAndTypes(module, renamedSymbols);
+
+    // Keep lowering all the operations and types.
+    if (failed(LIT::lowerLITTypes(module, symtab)))
+      signalPassFailure();
   }
 };
 

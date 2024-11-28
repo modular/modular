@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-lit-types -verify-parameters --kgen-print-inline-type-values %s | FileCheck %s
+// RUN: kgen-opt -lower-lit -verify-parameters --kgen-print-inline-type-values %s | FileCheck %s
 
 // CHECK: kgen.struct.generator @[[STRUCT_CONTAINER:.+]]<T: type> :
 // CHECK-NEXT: kgen.struct.info :type [struct_inst<"Container"[T]<:type T>(x: typevalue<T>) memoryOnly>, struct<(T) memoryOnly>]

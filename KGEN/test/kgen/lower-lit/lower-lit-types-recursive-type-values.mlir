@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-lit-types -allow-unregistered-dialect -split-input-file -verify-parameters -kgen-print-inline-type-values | FileCheck %s
+// RUN: kgen-opt %s -lower-lit -allow-unregistered-dialect -split-input-file -verify-parameters -kgen-print-inline-type-values | FileCheck %s
 
 //===----------------------------------------------------------------------===//
 // Self-Recursive Structs

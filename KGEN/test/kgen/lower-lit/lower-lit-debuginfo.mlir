@@ -4,12 +4,10 @@
 
 // CHECK-LABEL: kgen.generator @"(ctor_fn)foo"()
 // CHECK-NEXT:    %0 = kgen.global.address @foo : <index> loc(#[[LOC_CTOR_OP:.*]])
-// CHECK-NEXT:    = builtin.unrealized_conversion_cast %0
 // CHECK-NEXT:    kgen.return loc(#[[LOC_CTOR:.*]])
 // CHECK-NEXT:  } loc(#[[LOC_CTOR]])
 // CHECK-LABEL: kgen.generator @"(dtor_fn)foo"()
 // CHECK-NEXT:    %0 = kgen.global.address @foo : <index> loc(#[[LOC_DTOR_OP:.*]])
-// CHECK-NEXT:    = builtin.unrealized_conversion_cast %0
 // CHECK-NEXT:    kgen.return loc(#[[LOC_DTOR:.*]])
 // CHECK-NEXT:  } loc(#[[LOC_DTOR]])
 // CHECK-NEXT:  kgen.global @foo : index [@"(ctor_fn)foo", @"(dtor_fn)foo"](0) loc(#[[LOC_OP:.*]])
