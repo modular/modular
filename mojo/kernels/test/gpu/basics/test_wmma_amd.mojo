@@ -9,19 +9,14 @@
 from math import ceildiv
 from random import random_si64
 
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu import WARP_SIZE, BlockIdx
 from gpu.host import DeviceContext
 from gpu.mma import mma
-from linalg.matmul_gpu import matmul_kernel_naive
+from gpu.mma_util import load_matrix_a_amd as load_matrix_a
+from gpu.mma_util import load_matrix_b_amd as load_matrix_b
+from gpu.mma_util import store_matrix_d
 from memory import UnsafePointer
 from utils.numerics import isnan
-
-alias M = 16
-alias N = 16
-alias K = 16
-alias LDA = K
-alias LDB = N
-alias LDD = N
 
 
 fn matmul_naive[
@@ -42,7 +37,6 @@ fn matmul_naive[
                 c[n * i + j] += av * bv
 
 
-# FP32-FP32 Matrix core Matmul with shape m16n16k4
 fn mma_kernel_fp32_fp32(
     a_ptr: UnsafePointer[Float32],
     b_ptr: UnsafePointer[Float32],
@@ -51,20 +45,106 @@ fn mma_kernel_fp32_fp32(
     n: Int,
     k: Int,
 ):
+    alias mma_m = 16
+    alias mma_n = 16
+    alias mma_k = 4
+
     var d_reg: SIMD[DType.float32, 4] = 0
+    var tile_loops = k // (4 * mma_k)
 
-    var a_idx = LDA * ThreadIdx.x() + ThreadIdx.y()
-    var b_idx = ThreadIdx.x() + LDB * ThreadIdx.y()
+    for l in range(tile_loops):
+        for i in range(4):
+            var a_tile_row = BlockIdx.x() * mma_m
+            var a_tile_col = 4 * (l * mma_k + i)
+            var b_tile_row = 4 * (l * mma_k + i)
+            var b_tile_col = BlockIdx.y() * mma_n
+            var a_reg = load_matrix_a[mma_m, mma_n, mma_k](
+                a_ptr, a_tile_row, a_tile_col, k
+            )
+            var b_reg = load_matrix_b[mma_m, mma_n, mma_k](
+                b_ptr, b_tile_row, b_tile_col, n
+            )
 
-    for i in range(4):
-        var a_reg = a_ptr[a_idx + 4 * i]
-        var b_reg = b_ptr[b_idx + 4 * LDB * i]
+            # Perform mma (d = a * b + d)
+            mma(d_reg, a_reg, b_reg, d_reg)
 
+    var c_tile_row = BlockIdx.x() * mma_m
+    var c_tile_col = BlockIdx.y() * mma_n
+    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
+        c_ptr, d_reg, c_tile_row, c_tile_col, n
+    )
+
+
+fn mma_kernel_fp32_fp16(
+    a_ptr: UnsafePointer[Float16],
+    b_ptr: UnsafePointer[Float16],
+    c_ptr: UnsafePointer[Float32],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    alias mma_m = 16
+    alias mma_n = 16
+    alias mma_k = 16
+
+    var d_reg: SIMD[DType.float32, 4] = 0
+    var tile_loops = k // mma_k
+
+    for l in range(tile_loops):
+        var a_tile_row = BlockIdx.x() * mma_m
+        var a_tile_col = l * mma_k
+        var b_tile_row = l * mma_k
+        var b_tile_col = BlockIdx.y() * mma_n
+
+        var a_reg = load_matrix_a[mma_m, mma_n, mma_k](
+            a_ptr, a_tile_row, a_tile_col, k
+        )
+        var b_reg = load_matrix_b[mma_m, mma_n, mma_k](
+            b_ptr, b_tile_row, b_tile_col, n
+        )
         mma(d_reg, a_reg, b_reg, d_reg)
 
-    for i in range(4):
-        var d_idx = ThreadIdx.x() + i * LDD + 4 * LDD * ThreadIdx.y()
-        c_ptr[d_idx] = d_reg[i]
+    var c_tile_row = BlockIdx.x() * mma_m
+    var c_tile_col = BlockIdx.y() * mma_n
+    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
+        c_ptr, d_reg, c_tile_row, c_tile_col, n
+    )
+
+
+fn mma_kernel_fp32_bf16(
+    a_ptr: UnsafePointer[BFloat16],
+    b_ptr: UnsafePointer[BFloat16],
+    c_ptr: UnsafePointer[Float32],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    alias mma_m = 16
+    alias mma_n = 16
+    alias mma_k = 16
+
+    var d_reg: SIMD[DType.float32, 4] = 0
+    var tile_loops = k // mma_k
+
+    for l in range(tile_loops):
+        var a_tile_row = BlockIdx.x() * mma_m
+        var a_tile_col = l * mma_k
+        var b_tile_row = l * mma_k
+        var b_tile_col = BlockIdx.y() * mma_n
+
+        var a_reg = load_matrix_a[mma_m, mma_n, mma_k](
+            a_ptr, a_tile_row, a_tile_col, k
+        )
+        var b_reg = load_matrix_b[mma_m, mma_n, mma_k](
+            b_ptr, b_tile_row, b_tile_col, n
+        )
+        mma(d_reg, a_reg, b_reg, d_reg)
+
+    var c_tile_row = BlockIdx.x() * mma_m
+    var c_tile_col = BlockIdx.y() * mma_n
+    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
+        c_ptr, d_reg, c_tile_row, c_tile_col, n
+    )
 
 
 fn run_mma_fp32_fp32(
@@ -100,8 +180,14 @@ fn run_mma_fp32_fp32(
 
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy_to_device(c_device, c_host)
 
     var func_mma = ctx.compile_function[mma_kernel_fp32_fp32]()
+
+    alias WARP_PER_BLOCK = 1
+    alias MMA_M = 16
+    alias MMA_N = 16
+    alias MMA_K = 4
 
     ctx.enqueue_function(
         func_mma,
@@ -111,8 +197,8 @@ fn run_mma_fp32_fp32(
         M,
         N,
         K,
-        grid_dim=1,
-        block_dim=(16, 4),
+        grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
+        block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
 
     ctx.enqueue_copy_from_device(c_host, c_device)
@@ -142,29 +228,6 @@ fn run_mma_fp32_fp32(
         print("Success 🎉: Results match.")
     else:
         print("Failed ❌: results mismatch.")
-
-
-# FP32-FP16 Matrix core Matmul with shape m16n16k4
-fn mma_kernel_fp32_fp16(
-    a_ptr: UnsafePointer[Float16],
-    b_ptr: UnsafePointer[Float16],
-    c_ptr: UnsafePointer[Float32],
-    m: Int,
-    n: Int,
-    k: Int,
-):
-    var a_reg: SIMD[DType.float16, 4] = 0
-    var b_reg: SIMD[DType.float16, 4] = 0
-    var d_reg: SIMD[DType.float32, 4] = 0
-    for i in range(4):
-        var a_idx = LDA * ThreadIdx.x() + i + 4 * ThreadIdx.y()
-        var b_idx = ThreadIdx.x() + LDB * i + 4 * LDB * ThreadIdx.y()
-        a_reg[i] = a_ptr[a_idx]
-        b_reg[i] = b_ptr[b_idx]
-    mma(d_reg, a_reg, b_reg, d_reg)
-    for i in range(4):
-        var d_idx = ThreadIdx.x() + i * LDD + 4 * LDD * ThreadIdx.y()
-        c_ptr[d_idx] = d_reg[i]
 
 
 fn run_mma_fp32_fp16(
@@ -200,8 +263,14 @@ fn run_mma_fp32_fp16(
 
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy_to_device(c_device, c_host)
 
     var func_mma = ctx.compile_function[mma_kernel_fp32_fp16]()
+
+    alias WARP_PER_BLOCK = 1
+    alias MMA_M = 16
+    alias MMA_N = 16
+    alias MMA_K = 16
 
     ctx.enqueue_function(
         func_mma,
@@ -211,8 +280,8 @@ fn run_mma_fp32_fp16(
         M,
         N,
         K,
-        grid_dim=1,
-        block_dim=(16, 4),
+        grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
+        block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
 
     ctx.enqueue_copy_from_device(c_host, c_device)
@@ -242,29 +311,6 @@ fn run_mma_fp32_fp16(
         print("Success 🎉: Results match.")
     else:
         print("Failed ❌: results mismatch.")
-
-
-# FP32-BF16 Matrix core Matmul with shape m16n16k4
-fn mma_kernel_fp32_bf16(
-    a_ptr: UnsafePointer[BFloat16],
-    b_ptr: UnsafePointer[BFloat16],
-    c_ptr: UnsafePointer[Float32],
-    m: Int,
-    n: Int,
-    k: Int,
-):
-    var a_reg: SIMD[DType.bfloat16, 4] = 0
-    var b_reg: SIMD[DType.bfloat16, 4] = 0
-    var d_reg: SIMD[DType.float32, 4] = 0
-    for i in range(4):
-        var a_idx = LDA * ThreadIdx.x() + i + 4 * ThreadIdx.y()
-        var b_idx = ThreadIdx.x() + LDB * i + 4 * LDB * ThreadIdx.y()
-        a_reg[i] = a_ptr[a_idx]
-        b_reg[i] = b_ptr[b_idx]
-    mma(d_reg, a_reg, b_reg, d_reg)
-    for i in range(4):
-        var d_idx = ThreadIdx.x() + i * LDD + 4 * LDD * ThreadIdx.y()
-        c_ptr[d_idx] = d_reg[i]
 
 
 fn run_mma_fp32_bf16(
@@ -300,8 +346,14 @@ fn run_mma_fp32_bf16(
 
     ctx.enqueue_copy_to_device(a_device, a_host)
     ctx.enqueue_copy_to_device(b_device, b_host)
+    ctx.enqueue_copy_to_device(c_device, c_host)
 
     var func_mma = ctx.compile_function[mma_kernel_fp32_bf16]()
+
+    alias WARP_PER_BLOCK = 1
+    alias MMA_M = 16
+    alias MMA_N = 16
+    alias MMA_K = 16
 
     ctx.enqueue_function(
         func_mma,
@@ -311,8 +363,8 @@ fn run_mma_fp32_bf16(
         M,
         N,
         K,
-        grid_dim=1,
-        block_dim=(16, 4),
+        grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
+        block_dim=WARP_PER_BLOCK * WARP_SIZE,
     )
 
     ctx.enqueue_copy_from_device(c_host, c_device)
@@ -347,5 +399,13 @@ fn run_mma_fp32_bf16(
 def main():
     with DeviceContext() as ctx:
         run_mma_fp32_fp32(16, 16, 16, -100, 100, ctx)
+        run_mma_fp32_fp32(1024, 1024, 1024, -100, 100, ctx)
+        run_mma_fp32_fp32(1024, 4096, 2048, -100, 100, ctx)
+
         run_mma_fp32_fp16(16, 16, 16, -100, 100, ctx)
+        run_mma_fp32_fp16(1024, 1024, 1024, -100, 100, ctx)
+        run_mma_fp32_fp16(1024, 4096, 2048, -100, 100, ctx)
+
         run_mma_fp32_bf16(16, 16, 16, -100, 100, ctx)
+        run_mma_fp32_bf16(1024, 1024, 1024, -100, 100, ctx)
+        run_mma_fp32_bf16(1024, 4096, 2048, -100, 100, ctx)
