@@ -4,12 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from os import abort
 from sys.intrinsics import _type_is_eq
 
-from os import abort
 from buffer import Dim, DimList, NDBuffer
-from memory import UnsafePointer
 from layout import Layout, LayoutTensor
+from memory import UnsafePointer
+
 from utils import IndexList
 
 

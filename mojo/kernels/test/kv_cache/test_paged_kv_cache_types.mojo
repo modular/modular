@@ -5,16 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from kv_cache.types import (
-    PagedKVCacheCollection,
-    PagedKVCache,
-    KVCacheStaticParams,
-)
 from buffer import NDBuffer
-from layout import Layout, IntTuple
-from utils.index import IndexList
-from memory import UnsafePointer
 from internal_utils import HostNDBuffer
+from kv_cache.types import (
+    KVCacheStaticParams,
+    PagedKVCache,
+    PagedKVCacheCollection,
+)
+from layout import IntTuple, Layout
+from memory import UnsafePointer
+
+from utils.index import IndexList
 
 alias kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 
