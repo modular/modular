@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg, Optional
+from collections import Optional, OptionalReg
+from collections.vector import InlinedFixedVector
 from math import (
     ceil,
     cos,
@@ -20,14 +21,11 @@ from math import (
     sqrt,
     tanh,
 )
-from nn.concat import concat, _concat_cpu
 from random import randn, seed
 from sys import llvm_intrinsic
-from sys.info import simdwidthof
-from nn.split import split
-import compiler_internal as compiler
-from collections.vector import InlinedFixedVector
 from sys.info import bitwidthof, simdwidthof, sizeof
+
+import compiler_internal as compiler
 
 # ===----------------------------------------------------------------------===#
 # Kernel imports
@@ -37,47 +35,15 @@ from algorithm import mean
 from algorithm import min as reduce_min
 from algorithm import product, sum
 from algorithm.reduction import _reduce_generator, _reduce_generator_cpu
-from utils import StaticTuple
-from utils.static_tuple import _set_array_elem
-from nn.kv_cache import (
-    ContiguousKVCacheCollection,
-    ContinuousBatchingKVCacheCollection,
-    KVCacheStaticParams,
-    KVCollectionT,
-    kv_params_h1_d16_bshd,
-    kv_params_h6_d48_bshd,
-    kv_params_h8_d128_bshd,
-    kv_params_h8_d16_bshd,
-    kv_params_h8_d32_bshd,
-    kv_params_h8_d64_bshd,
-    kv_params_h8_d512_bshd,
-    kv_params_h32_d128_bshd,
-    generic_get_kv_cache_length,
-    generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache,
-    generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch,
-    generic_fused_qk_rope_bshd_contiguous_cache,
-    generic_fused_qk_rope_bshd_continuous_batch,
-    generic_flash_attention_kv_cache_contiguous_cache,
-    generic_flash_attention_kv_cache_continuous_batch,
-    generic_flash_attention_kv_cache_causal_mask_continuous_batch,
-    generic_get_contiguous_cache,
-    generic_get_continuous_cache,
-)
-from nn.kv_cache_ragged import (
-    generic_flash_attention_kv_cache_cont_batch_ragged,
-    generic_fused_qk_rope_bshd_continous_batch_ragged,
-    generic_fused_qk_rope_bshd_ragged,
-    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
-)
-from nn.fused_qk_rope import fused_qk_rope_ragged
-from nn.index_tensor import index_tensor
 
 # ===----------------------------------------------------------------------===#
 # General imports
 # ===----------------------------------------------------------------------===#
 from buffer import NDBuffer
-from buffer.dimlist import DimList, Dim
+from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
+from compiler_internal import StaticTensorSpec
+from gpu.host import DeviceContext
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
@@ -85,28 +51,29 @@ from linalg.bmm import (
 from linalg.matmul import matmul
 from linalg.matrix_band_part import matrix_band_part
 from linalg.matrix_solve import matrix_solve, matrix_solve_shape
+from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 from linalg.utils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
+from memory import AddressSpace, UnsafePointer
 from nn import arg_nonzero
-from nn.argmaxmin import argmax, argmin
-from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
-from nn.conv import (
-    ConvInfoStatic,
-    conv_nhwc_direct,
-    conv_shape,
-    pack_filter_shape as pack_filter_shape_conv,
-)
+from nn.argmaxmin import argmax, argmin
+from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
+from nn.concat import _concat_cpu, concat
+from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
+from nn.conv import pack_filter as _pack_conv_filter
+from nn.conv import pack_filter_shape as pack_filter_shape_conv
+from nn.conv_transpose import conv_transpose_shape, conv_transposed
+from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 from nn.conv_transpose import (
-    conv_transpose_shape,
-    conv_transposed,
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
 from nn.cumsum import cumsum
 from nn.flash_attention import flash_attention as nn_flash_attention
 from nn.flash_attention import flash_attention_split_kv
+from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.gather_scatter import (
     Axis,
     gather,
@@ -121,6 +88,37 @@ from nn.gather_scatter import (
     scatter_nd_generator,
     scatter_nd_shape,
 )
+from nn.index_tensor import index_tensor
+from nn.kv_cache import (
+    ContiguousKVCacheCollection,
+    ContinuousBatchingKVCacheCollection,
+    KVCacheStaticParams,
+    KVCollectionT,
+    generic_flash_attention_kv_cache_causal_mask_continuous_batch,
+    generic_flash_attention_kv_cache_contiguous_cache,
+    generic_flash_attention_kv_cache_continuous_batch,
+    generic_fused_qk_rope_bshd_contiguous_cache,
+    generic_fused_qk_rope_bshd_continuous_batch,
+    generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache,
+    generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch,
+    generic_get_contiguous_cache,
+    generic_get_continuous_cache,
+    generic_get_kv_cache_length,
+    kv_params_h1_d16_bshd,
+    kv_params_h6_d48_bshd,
+    kv_params_h8_d16_bshd,
+    kv_params_h8_d32_bshd,
+    kv_params_h8_d64_bshd,
+    kv_params_h8_d128_bshd,
+    kv_params_h8_d512_bshd,
+    kv_params_h32_d128_bshd,
+)
+from nn.kv_cache_ragged import (
+    generic_flash_attention_kv_cache_cont_batch_ragged,
+    generic_fused_qk_rope_bshd_continous_batch_ragged,
+    generic_fused_qk_rope_bshd_ragged,
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
+)
 from nn.mha import flash_attention, fused_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm, rms_norm
@@ -130,27 +128,15 @@ from nn.reshape import reshape, reshape_shape
 from nn.resize import resize_linear, resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
 from nn.slice import (
-    slice_as_view,
     copy_to_slice,
+    slice_as_view,
     slice_dim_as_view,
     slice_shape,
 )
 from nn.softmax import logsoftmax, softmax
+from nn.split import split
 from nn.tile import tile, tile_shape
 from nn.topk import top_k, top_k_shape_impl
-from runtime.asyncrt import MojoCallContextPtr
-from runtime.tracing import Trace, TraceLevel, trace_arg
-from tensor_utils_internal import ManagedTensorSlice, foreach
-from memory import AddressSpace, UnsafePointer
-from utils import IndexList, StaticTuple
-from utils.index import Index
-from utils.numerics import isinf, isnan
-from compiler_internal import StaticTensorSpec
-
-from register import register_internal_override, uses_opaque
-from nn.conv import pack_filter as _pack_conv_filter
-from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
-
 from quantization import (
     Q4sym,
     block_Q4_K,
@@ -160,19 +146,26 @@ from quantization import (
     q6_k_dequantize_impl,
 )
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
+from quantization.qmatmul_gpu import (
+    gpu_qint4_repack_GPTQ,
+    gpu_qint4_repack_Q4_0,
+    matmul_gpu_qint4,
+)
 from quantization.qmatmul_k import (
     matmul_Q4_K,
     matmul_Q4_K_pack_b,
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
-from quantization.qmatmul_gpu import (
-    matmul_gpu_qint4,
-    gpu_qint4_repack_Q4_0,
-    gpu_qint4_repack_GPTQ,
-)
-from gpu.host import DeviceContext
-from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
+from register import register_internal_override, uses_opaque
+from runtime.asyncrt import MojoCallContextPtr
+from runtime.tracing import Trace, TraceLevel, trace_arg
+from tensor_utils_internal import ManagedTensorSlice, foreach
+
+from utils import IndexList, StaticTuple
+from utils.index import Index
+from utils.numerics import isinf, isnan
+from utils.static_tuple import _set_array_elem
 
 # ===----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.

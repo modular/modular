@@ -9,12 +9,11 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from linalg.matmul import matmul as _matmul
 from nn.mha import fused_attention as cpu_fused_attention_impl
+from register import uses_opaque
 from runtime.asyncrt import MojoCallContextPtr
 from tensor_utils import ManagedTensorSlice, foreach
 
 from utils import IndexList, StaticTuple
-from register import uses_opaque
-
 
 # ===----------------------------------------------------------------------===#
 # Opaque Reg Types

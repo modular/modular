@@ -12,10 +12,8 @@ from memory import UnsafePointer
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
 
-from utils import unroll
+from utils import StaticTuple, unroll
 from utils.index import IndexList
-from utils import unroll, StaticTuple
-
 
 # ===----------------------------------------------------------------------===#
 # Special test targets just for generation tests

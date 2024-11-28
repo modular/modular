@@ -50,17 +50,16 @@ from MOGGKernelAPI import (
 from nn._optional_param import OptionalParamInt
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
+from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from nn.argmaxmin import argmax as _argmax
 from nn.argmaxmin import argmin as _argmin
 from nn.argmaxmin_gpu import argmax_gpu as _argmax_gpu
 from nn.argmaxmin_gpu import argmin_gpu as _argmin_gpu
-from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
-from nn.concat import (
-    concat as _concat,
-)
+from nn.concat import _concat_cpu
+from nn.concat import concat as _concat
 from nn.concat import concat_shape as concat_from_list_shape
-from nn.concat import _concat_cpu, test_concat_fusion
-from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape, conv_gpu
+from nn.concat import test_concat_fusion
+from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as _pack_conv_filter_shape
 from nn.conv_transpose import conv_transpose_shape
@@ -92,34 +91,34 @@ from nn.kv_cache import (
     contiguous_kv_cache_collection_h8_d32_bshd,
     contiguous_kv_cache_collection_h8_d64_bshd,
     contiguous_kv_cache_collection_h8_d128_bshd,
+    continuous_batching_kv_cache_collection_h1_d16_bshd,
     continuous_batching_kv_cache_collection_h8_d32_bshd,
     continuous_batching_kv_cache_collection_h8_d64_bshd,
     continuous_batching_kv_cache_collection_h8_d128_bshd,
     continuous_batching_kv_cache_collection_h8_d512_bshd,
     continuous_batching_kv_cache_collection_h32_d128_bshd,
-    continuous_batching_kv_cache_collection_h1_d16_bshd,
     flash_attention_kv_cache_h1_d16_bshd,
     flash_attention_kv_cache_h1_d16_bshd_continuous_batch,
+    flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch,
     flash_attention_kv_cache_h6_d48_bshd,
     flash_attention_kv_cache_h8_d32_bshd,
-    flash_attention_kv_cache_h8_d64_bshd,
     flash_attention_kv_cache_h8_d32_bshd_continuous_batch,
+    flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch,
+    flash_attention_kv_cache_h8_d64_bshd,
     flash_attention_kv_cache_h8_d64_bshd_continuous_batch,
+    flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch,
     flash_attention_kv_cache_h8_d128_bshd,
     flash_attention_kv_cache_h8_d128_bshd_continuous_batch,
+    flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch,
     flash_attention_kv_cache_h8_d512_bshd_continuous_batch,
     flash_attention_kv_cache_h32_d128_bshd_continuous_batch,
-    flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch,
     flash_attention_kv_cache_h32_d128_causal_mask_continuous_batch,
-    flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch,
-    flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch,
-    flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch,
     fused_qk_rope_h1_d16_bshd,
     fused_qk_rope_h1_d16_bshd_continuous_batch,
     fused_qk_rope_h6_d48_bshd,
     fused_qk_rope_h8_d32_bshd,
-    fused_qk_rope_h8_d64_bshd,
     fused_qk_rope_h8_d32_bshd_continuous_batch,
+    fused_qk_rope_h8_d64_bshd,
     fused_qk_rope_h8_d64_bshd_continuous_batch,
     fused_qk_rope_h8_d128_bshd,
     fused_qk_rope_h8_d128_bshd_continuous_batch,
@@ -150,36 +149,35 @@ from nn.kv_cache import (
     kv_cache_length_h8_d64_bshd_f32_continuous_batch,
     kv_cache_length_h8_d128_bshd_bf16,
     kv_cache_length_h8_d128_bshd_bf16_continuous_batch,
-    kv_cache_length_h32_d128_bshd_bf16_continuous_batch,
     kv_cache_length_h8_d128_bshd_f32,
     kv_cache_length_h8_d128_bshd_f32_continuous_batch,
+    kv_cache_length_h32_d128_bshd_bf16_continuous_batch,
 )
 from nn.kv_cache_ragged import (
-    fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged,
-    fused_qk_rope_h6_d48_bshd_ragged,
-    fused_qk_rope_h8_d128_bshd_ragged,
-    fused_qk_rope_h8_d512_bshd_ragged,
-    fused_qk_rope_h1_d16_bshd_ragged,
-    fused_qk_rope_h8_d32_bshd_ragged,
-    fused_qk_rope_h8_d64_bshd_ragged,
-    fused_qk_rope_h8_d128_bshd_continuous_batch_ragged,
-    fused_qk_rope_h8_d512_bshd_continuous_batch_ragged,
-    fused_qk_rope_h32_d128_bshd_continuous_batch_ragged,
-    fused_qk_rope_h1_d16_bshd_continuous_batch_ragged,
-    fused_qk_rope_h8_d32_bshd_continuous_batch_ragged,
-    fused_qk_rope_h8_d64_bshd_continuous_batch_ragged,
     flash_attention_kv_cache_h1_d16_cont_batch_ragged,
     flash_attention_kv_cache_h8_d64_cont_batch_ragged,
     flash_attention_kv_cache_h8_d128_cont_batch_ragged,
     flash_attention_kv_cache_h8_d512_cont_batch_ragged,
     flash_attention_kv_cache_h32_d128_cont_batch_ragged,
+    fused_qk_rope_h1_d16_bshd_continuous_batch_ragged,
+    fused_qk_rope_h1_d16_bshd_ragged,
+    fused_qk_rope_h6_d48_bshd_ragged,
+    fused_qk_rope_h8_d32_bshd_continuous_batch_ragged,
+    fused_qk_rope_h8_d32_bshd_ragged,
+    fused_qk_rope_h8_d64_bshd_continuous_batch_ragged,
+    fused_qk_rope_h8_d64_bshd_ragged,
+    fused_qk_rope_h8_d128_bshd_continuous_batch_ragged,
+    fused_qk_rope_h8_d128_bshd_ragged,
+    fused_qk_rope_h8_d512_bshd_continuous_batch_ragged,
+    fused_qk_rope_h8_d512_bshd_ragged,
+    fused_qk_rope_h32_d128_bshd_continuous_batch_ragged,
+    fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged,
+    fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged,
+    fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged,
+    fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged,
+    fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged,
     matmul_kv_cache_h8_d128_cont_batch_ragged,
 )
-
 from nn.mha import flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -204,8 +202,8 @@ from nn.resize import resize_linear as resize_linear_kernel
 from nn.resize import resize_nearest_neighbor
 from nn.roi_align import roi_align_nhwc
 from nn.slice import (
-    slice_as_view,
     copy_to_slice,
+    slice_as_view,
     slice_dim_as_view,
     slice_shape,
 )
@@ -216,12 +214,12 @@ from nn.tile import tile, tile_shape
 from nn.topk import top_k as _top_k
 from nn.topk import top_k_fused_sampling as _topk_fused_sampling
 from nn.topk import top_k_shape
-from nn.toppminp import top_p_sampling as _top_p_sampling
-from nn.toppminp import min_p_sampling as _min_p_sampling
-from nn.topk_gpu import topk_gpu as _topk_gpu
 from nn.topk_gpu import topk_fused_sampling_gpu as _topk_fused_sampling_gpu
-from nn.toppminp_gpu import top_p_sampling_gpu as _top_p_sampling_gpu
+from nn.topk_gpu import topk_gpu as _topk_gpu
+from nn.toppminp import min_p_sampling as _min_p_sampling
+from nn.toppminp import top_p_sampling as _top_p_sampling
 from nn.toppminp_gpu import min_p_sampling_gpu as _min_p_sampling_gpu
+from nn.toppminp_gpu import top_p_sampling_gpu as _top_p_sampling_gpu
 from quantization import (
     Q4sym,
     block_Q4_K,
@@ -231,16 +229,16 @@ from quantization import (
     q6_k_dequantize_impl,
 )
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
+from quantization.qmatmul_gpu import (
+    gpu_qint4_repack_GPTQ,
+    gpu_qint4_repack_Q4_0,
+    matmul_gpu_qint4,
+)
 from quantization.qmatmul_k import (
     matmul_Q4_K,
     matmul_Q4_K_pack_b,
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
-)
-from quantization.qmatmul_gpu import (
-    matmul_gpu_qint4,
-    gpu_qint4_repack_Q4_0,
-    gpu_qint4_repack_GPTQ,
 )
 from register import *
 from runtime.asyncrt import MojoCallContextPtr

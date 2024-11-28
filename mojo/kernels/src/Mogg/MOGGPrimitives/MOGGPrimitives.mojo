@@ -12,10 +12,7 @@ from sys import alignof, external_call, sizeof
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu.host import (
-    DeviceBuffer,
-    DeviceContext,
-)
+from gpu.host import DeviceBuffer, DeviceContext
 from memory import UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
