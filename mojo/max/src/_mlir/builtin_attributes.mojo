@@ -6,12 +6,13 @@
 
 from collections import List
 
+from utils import StringRef
+
 import ._c
 import ._c.BuiltinAttributes
 import ._c.BuiltinTypes
 from ._c.ffi import MLIR_func
 from .ir import Attribute, Context, DialectAttribute, Type
-from utils import StringRef
 
 
 @value
