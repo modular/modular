@@ -126,7 +126,7 @@ fn multistage_mma[
 ):
     alias simd_size = simdwidthof[a_type]()
 
-    var tid: UInt32 = ThreadIdx.x()
+    var tid: UInt32 = ThreadIdx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
@@ -548,7 +548,7 @@ fn multistage_gemm_kernel[
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
 
-    var tid = ThreadIdx.x()
+    var tid = ThreadIdx.x
     var ln_id = lane_id()
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
@@ -558,10 +558,10 @@ fn multistage_gemm_kernel[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        Index[element_bitwidth=32, unsigned=True](BlockIdx.x(), BlockIdx.y()),
-        Index[element_bitwidth=32, unsigned=True](GridDim.x(), GridDim.y()),
+        Index[element_bitwidth=32, unsigned=True](BlockIdx.x, BlockIdx.y),
+        Index[element_bitwidth=32, unsigned=True](GridDim.x, GridDim.y),
     ) if swizzle_block else Index[element_bitwidth=32, unsigned=True](
-        BlockIdx.x(), BlockIdx.y()
+        BlockIdx.x, BlockIdx.y
     )
 
     # Coordinates of the current warp.
@@ -692,10 +692,10 @@ fn multistage_gemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x())
+            ]().distribute[warp_layout](ThreadIdx.x)
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x())
+            ]().distribute[warp_layout](ThreadIdx.x)
             var thread_offset = c_gmem_frag.distance(c.ptr)
             alias num_stores_per_thread = __type_of(c_gmem_frag).layout.size()
 
@@ -807,12 +807,12 @@ fn multistage_gemm_split_k_kernel[
 
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
     # will be rounded up to multiple of BK.
-    var a_part = a.split[axis=1, alignment=BK](num_partitions, BlockIdx.z())
+    var a_part = a.split[axis=1, alignment=BK](num_partitions, BlockIdx.z)
     var b_part = b.split[axis= 1 if transpose_b else 0, alignment=BK](
-        num_partitions, BlockIdx.z()
+        num_partitions, BlockIdx.z
     )
     var work_space_part = LayoutTensor[work_space_type, c_layout](
-        work_space.data + BlockIdx.z() * M * N,
+        work_space.data + BlockIdx.z * M * N,
         RuntimeLayout[c_layout].row_major(IndexList[2](M, N)),
     )
 

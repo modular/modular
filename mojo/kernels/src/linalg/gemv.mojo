@@ -86,7 +86,7 @@ fn gemv_kernel[
     n: Int,
     k: Int,
 ):
-    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     if warp_id >= m:
@@ -144,7 +144,7 @@ fn gemv_kernel_vector[
 ):
     alias align_a = alignof[SIMD[a_type, simd_width]]()
     alias align_b = alignof[SIMD[b_type, simd_width]]()
-    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     var a_ptr = (
@@ -226,9 +226,9 @@ fn gemv_split_k[
     alias block_step = 128
     alias step_k = block_step // bitwidthof[a_type]()
     alias tile_k = step_k * block_size
-    var tile_id_m = BlockIdx.x() * tile_m
-    var tile_id_n = BlockIdx.y() * tile_n
-    var tid = ThreadIdx.x()
+    var tile_id_m = BlockIdx.x * tile_m
+    var tile_id_n = BlockIdx.y * tile_n
+    var tid = ThreadIdx.x
     var tile_a = stack_allocation[
         step_k, a_type, address_space = AddressSpace.LOCAL
     ]()
@@ -335,11 +335,11 @@ fn gevm_kernel[
     n: Int,
     k: Int,
 ):
-    var warps_per_block = BlockDim.x() // WARP_SIZE
-    var warp_id = ThreadIdx.x() // WARP_SIZE
+    var warps_per_block = BlockDim.x // WARP_SIZE
+    var warp_id = ThreadIdx.x // WARP_SIZE
     var accum = Scalar[s_type]()
-    var col = BlockIdx.x() * WARP_SIZE + lane_id()
-    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var col = BlockIdx.x * WARP_SIZE + lane_id()
+    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
     var global_warp_id = tid // WARP_SIZE
 
     var x_shared = stack_allocation[
@@ -358,7 +358,7 @@ fn gevm_kernel[
     x_shared[lane_id() * WARP_SIZE + warp_id] = accum
     barrier()
 
-    var total = x_shared.load(ThreadIdx.x()).cast[s_type]()
+    var total = x_shared.load(ThreadIdx.x).cast[s_type]()
     total = warp_sum(total)
 
     if lane_id() == 0:
@@ -392,11 +392,11 @@ fn gevm_tc_kernel_vector_8x[
     alias align_b = alignof[SIMD[b_type, simd_width]]()
     alias align_x = alignof[SIMD[s_type, simd_width]]()
 
-    var warps_per_block = BlockDim.x() // WARP_SIZE
-    var warp_id = ThreadIdx.x() // WARP_SIZE
+    var warps_per_block = BlockDim.x // WARP_SIZE
+    var warp_id = ThreadIdx.x // WARP_SIZE
     var accum = SIMD[s_type, simd_width]()
-    var col = BlockIdx.x() * WARP_SIZE * simd_width + lane_id() * simd_width
-    var tid = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var col = BlockIdx.x * WARP_SIZE * simd_width + lane_id() * simd_width
+    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
     var global_warp_id = warp_broadcast(tid // WARP_SIZE)
 
     var x_shared = stack_allocation[

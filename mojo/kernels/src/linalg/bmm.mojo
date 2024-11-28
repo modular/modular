@@ -494,9 +494,9 @@ fn batched_matmul_kernel[
     var n: UInt = c_buff.dim(2)
     var k: UInt = a_buff.dim(2)
 
-    var x: UInt = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y: UInt = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
-    var z: UInt = BlockIdx.z()
+    var x: UInt = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var y: UInt = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var z: UInt = BlockIdx.z
 
     if z >= batch_size or x >= n or y >= m:
         return

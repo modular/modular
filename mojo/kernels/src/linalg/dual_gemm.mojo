@@ -118,7 +118,7 @@ fn multistage_dual_mma[
     ]()
     alias simd_size = simdwidthof[a_type]()
 
-    var tid: UInt32 = ThreadIdx.x()
+    var tid: UInt32 = ThreadIdx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     alias num_warps_m = BM // WM
@@ -447,7 +447,7 @@ fn multistage_dual_gemm_kernel[
     alias num_warps_n = config.num_warps_n()
     alias num_threads = config.num_threads()
 
-    var tid = ThreadIdx.x()
+    var tid = ThreadIdx.x
     var ln_id = lane_id()
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
@@ -457,10 +457,10 @@ fn multistage_dual_gemm_kernel[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx = block_swizzle(
-        Index[element_bitwidth=32, unsigned=True](BlockIdx.x(), BlockIdx.y()),
-        Index[element_bitwidth=32, unsigned=True](GridDim.x(), GridDim.y()),
+        Index[element_bitwidth=32, unsigned=True](BlockIdx.x, BlockIdx.y),
+        Index[element_bitwidth=32, unsigned=True](GridDim.x, GridDim.y),
     ) if swizzle_block else Index[element_bitwidth=32, unsigned=True](
-        BlockIdx.x(), BlockIdx.y()
+        BlockIdx.x, BlockIdx.y
     )
 
     # Coordinates of the current warp.
@@ -619,10 +619,10 @@ fn multistage_dual_gemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x())
+            ]().distribute[warp_layout](ThreadIdx.x)
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](ThreadIdx.x())
+            ]().distribute[warp_layout](ThreadIdx.x)
             var thread_offset = c_gmem_frag.distance(c.ptr)
             alias num_stores_per_thread = __type_of(c_gmem_frag).layout.size()
 

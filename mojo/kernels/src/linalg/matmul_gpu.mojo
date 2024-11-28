@@ -141,12 +141,12 @@ fn matmul_kernel[
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.
     # Map thread x to column for coalesced access in B.
-    var col = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var row = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var col = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var row = BlockIdx.y * BlockDim.y + ThreadIdx.y
 
     # Local index in the c sub-matrix updated by current block.
-    var localCol = ThreadIdx.x()
-    var localRow = ThreadIdx.y()
+    var localCol = ThreadIdx.x
+    var localRow = ThreadIdx.y
 
     # Result of current thread in C.
     var result = Scalar[s_type](0)
@@ -229,8 +229,8 @@ fn matmul_kernel_naive[
     n: Int,
     k: Int,
 ):
-    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
-    var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
+    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
 
     if x >= m or y >= n:
         return
