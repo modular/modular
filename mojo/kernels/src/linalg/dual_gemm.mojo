@@ -4,23 +4,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from ._multistage_gemm_gpu import multistage_gemm_kernel
-from .utils import GemmShape, elementwise_epilogue_type
-from .utils_gpu import (
-    MatmulConfig,
-    MatmulKernels,
-    block_swizzle,
-    select_config,
-    _bk_base,
-)
+from collections import OptionalReg
+from math import ceildiv, exp
+from os import abort
+from sys import alignof, is_defined, simdwidthof
+
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from collections import OptionalReg
 from gpu import (
+    WARP_SIZE,
     BlockIdx,
     GridDim,
     ThreadIdx,
-    WARP_SIZE,
     barrier,
     lane_id,
     warp_broadcast,
@@ -54,15 +49,23 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from math import ceildiv, exp
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
-from os import abort
-from sys import alignof, simdwidthof, is_defined
+
 from utils.index import Index, IndexList
+
+from ._multistage_gemm_gpu import multistage_gemm_kernel
+from .utils import GemmShape, elementwise_epilogue_type
+from .utils_gpu import (
+    MatmulConfig,
+    MatmulKernels,
+    _bk_base,
+    block_swizzle,
+    select_config,
+)
 
 
 @always_inline

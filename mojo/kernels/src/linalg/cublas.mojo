@@ -3,51 +3,50 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from sys import sizeof
+
 from buffer import DimList, NDBuffer
 from gpu.cublas.cublas import (
     Algorithm,
     ComputeType,
     _convert_to_cublas_datatype,
     _convert_to_cublas_transpose,
+    check_cublas_error,
     cublasContext,
     cublasGemmEx,
-    check_cublas_error,
     cublasOperation_t,
 )
-from gpu.host import DeviceContext
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from layout import Layout
-
 from gpu.cublas.cublaslt import (
     Context,
-    cublasLtMatmulDesc_t,
-    cublasLtMatrixLayout_t,
-    cublasLtMatmulDescAttributes_t,
-    cublasLtMatmulPreference_t,
-    cublasLtMatmulHeuristicResult_t,
     MatmulAlgorithm,
     Preference,
-    cublasLtMatmul,
     cublasLtCreate,
     cublasLtDestroy,
+    cublasLtGetVersion,
+    cublasLtMatmul,
+    cublasLtMatmulAlgoGetHeuristic,
+    cublasLtMatmulAlgoInit,
+    cublasLtMatmulDesc_t,
+    cublasLtMatmulDescAttributes_t,
     cublasLtMatmulDescCreate,
     cublasLtMatmulDescDestroy,
+    cublasLtMatmulDescSetAttribute,
+    cublasLtMatmulHeuristicResult_t,
+    cublasLtMatmulPreference_t,
+    cublasLtMatmulPreferenceCreate,
+    cublasLtMatmulPreferenceDestroy,
+    cublasLtMatmulPreferenceSetAttribute,
+    cublasLtMatrixLayout_t,
     cublasLtMatrixLayoutCreate,
     cublasLtMatrixLayoutDestroy,
-    cublasLtMatmulAlgoInit,
-    cublasLtMatmulDescSetAttribute,
-    cublasLtMatmulPreferenceCreate,
-    cublasLtMatmulPreferenceSetAttribute,
-    cublasLtMatmulAlgoGetHeuristic,
-    cublasLtMatmulPreferenceDestroy,
-    cublasLtGetVersion,
 )
-
 from gpu.cublas.dtype import DataType
 from gpu.cublas.result import Result
-from memory import UnsafePointer
+from gpu.host import DeviceContext
 from gpu.host.nvidia_cuda import CUDA
-from sys import sizeof
+from layout import Layout
+from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from memory import UnsafePointer
 
 
 fn cublas_matmul[

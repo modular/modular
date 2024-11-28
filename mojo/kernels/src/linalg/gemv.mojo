@@ -14,15 +14,15 @@ from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import (
+    DeviceAttribute,
     DeviceContext,
     FuncAttribute,
     LaunchAttribute,
-    DeviceAttribute,
 )
-from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.host._compile import _get_gpu_target
+from gpu.host.launch_attribute import AccessPolicyWindow, AccessProperty
 from gpu.memory import AddressSpace, CacheOperation, load
-from gpu.shuffle import ReductionMethod, warp_sum, warp_broadcast
+from gpu.shuffle import ReductionMethod, warp_broadcast, warp_sum
 from gpu.tensor_ops import tc_reduce_gevm_4x, tc_reduce_gevm_8x
 from memory import UnsafePointer, bitcast, memset_zero, stack_allocation
 

@@ -5,9 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import sizeof
+from sys import env_get_bool, env_get_int, env_get_string, sizeof
 
 from gpu import WARP_SIZE
+from gpu.host import DeviceContext
 from gpu.host.info import A100, DEFAULT_GPU_ARCH, _get_info_from_target
 from layout.tensor_core import (
     TensorCore,
@@ -15,10 +16,8 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from gpu.host import DeviceContext
 
 from utils.index import Index, IndexList
-from sys import env_get_string, env_get_int, env_get_bool
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling

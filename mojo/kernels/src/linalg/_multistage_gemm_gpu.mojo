@@ -21,11 +21,11 @@ from gpu import (
 )
 from gpu.host import FuncAttribute
 from gpu.memory import (
+    CacheEviction,
+    Fill,
     async_copy_commit_group,
     async_copy_wait_group,
     external_memory,
-    Fill,
-    CacheEviction,
 )
 from gpu.mma import ld_matrix, mma
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple

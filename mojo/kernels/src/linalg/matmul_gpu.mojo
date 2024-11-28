@@ -6,28 +6,25 @@
 from collections import InlineArray, OptionalReg
 from math import align_down, align_up, ceildiv
 from os import abort
+from pathlib import Path
 from sys import (
     alignof,
+    bitwidthof,
+    env_get_bool,
+    env_get_int,
+    has_nvidia_gpu,
+    is_defined,
     llvm_intrinsic,
     simdwidthof,
-    bitwidthof,
-    is_defined,
-    env_get_int,
-    env_get_bool,
-    has_nvidia_gpu,
 )
-from pathlib import Path
+
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
-from gpu.host import (
-    DeviceContext,
-    FuncAttribute,
-    LaunchAttribute,
-)
-from gpu.host.info import A100
+from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
+from gpu.host.info import A100, DEFAULT_GPU_ARCH
 from gpu.memory import (
     AddressSpace,
     CacheOperation,
@@ -60,7 +57,6 @@ from utils import IndexList
 from utils.index import Index
 from utils.numerics import get_accum_type
 from utils.static_tuple import StaticTuple
-from gpu.host.info import DEFAULT_GPU_ARCH
 
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
@@ -68,7 +64,7 @@ from ._multistage_gemm_gpu import (
 )
 from .gemv import gemv_gpu
 from .utils import GemmShape, apply_epilogue, elementwise_epilogue_type
-from .utils_gpu import MatmulConfig, MatmulKernels, select_config, _bk_base
+from .utils_gpu import MatmulConfig, MatmulKernels, _bk_base, select_config
 
 
 @always_inline
