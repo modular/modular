@@ -42,10 +42,6 @@ static void buildLowerLITPipeline(mlir::PassManager &pm,
 
   pm.addPass(createLowerLIT(
       {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
-#ifndef MODULAR_PRODUCTION
-  pm.addPass(createVerifyParameters());
-#endif
-
   pm.addPass(createLowerLITTypes());
 #ifndef MODULAR_PRODUCTION
   pm.addPass(createVerifyParameters());
