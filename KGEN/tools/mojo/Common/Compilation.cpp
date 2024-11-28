@@ -186,7 +186,7 @@ ErrorOrSuccess M::parseTargetOptions(
     compilationOptions.targetAccelerator = targetAccelerator.str();
 
   if (!mcmodel.empty()) {
-    if (!llvm::is_contained({"small", "medium", "larget"}, mcmodel)) {
+    if (!llvm::is_contained({"small", "medium", "large"}, mcmodel)) {
       return Error("invalid mcmodel'" + mcmodel +
                    "', expected one of: `small`, `medium` or `large`");
     }
