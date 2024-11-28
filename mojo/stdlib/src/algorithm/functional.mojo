@@ -14,16 +14,11 @@ from algorithm import map
 
 from math import align_down, ceildiv
 from os import abort
-from sys import (
-    bitwidthof,
-    num_physical_cores,
-    simdwidthof,
-    is_nvidia_gpu,
-)
+from sys import bitwidthof, is_nvidia_gpu, num_physical_cores, simdwidthof
 
 from bit import is_power_of_two
 from buffer import NDBuffer
-from gpu import BlockIdx, GridDim, ThreadIdx, BlockDim
+from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx
 from gpu.host import DeviceContext
 from gpu.host.info import Info
 from runtime import tracing
