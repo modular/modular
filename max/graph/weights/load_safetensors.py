@@ -47,6 +47,8 @@ class SafetensorWeights:
     _filepaths: Sequence[PathLike]
     _tensors: Set[str]
     _tensors_to_file_idx: Mapping[str, int]
+    _allocated: dict[str, npt.NDArray]
+    _st_weight_map: dict[str, "torch.Tensor"]
 
     def __init__(
         self,
@@ -56,6 +58,7 @@ class SafetensorWeights:
         prefix: str = "",
         allocated=None,
         gguf_name_map: Mapping[str, str] | None = None,
+        _st_weight_map: dict[str, "torch.Tensor"] | None = None,
     ):
         if safe_open is None:
             raise ImportError(
@@ -82,6 +85,7 @@ class SafetensorWeights:
                     self._tensors_to_file_idx |= {k: idx for k in f.keys()}
         self._prefix = prefix
         self._allocated = {} if allocated is None else allocated
+        self._st_weight_map = {} if _st_weight_map is None else _st_weight_map
         self._gguf_name_map = gguf_name_map
 
     @classmethod
@@ -140,6 +144,7 @@ class SafetensorWeights:
                         prefix=name,
                         allocated=self._allocated,
                         gguf_name_map=self._gguf_name_map,
+                        _st_weight_map=self._st_weight_map,
                     ),
                 )
 
@@ -159,23 +164,16 @@ class SafetensorWeights:
             prefix=full_path,
             allocated=self._allocated,
             gguf_name_map=self._gguf_name_map,
+            _st_weight_map=self._st_weight_map,
         )
 
     def __getitem__(self, idx: int | str) -> SafetensorWeights:
         return self.__getattr__(str(idx))
 
-    def allocate(
-        self,
-        dtype: Optional[DType] = None,
-        shape: Optional[ShapeLike] = None,
-        quantization_encoding: Optional[QuantizationEncoding] = None,
-    ) -> Weight:
-        """Creates a Weight that can be added to a graph."""
-        if quantization_encoding is not None:
-            raise ValueError(
-                "Quantization encodings are not supported in safetensor"
-                f" format. Got: {quantization_encoding}"
-            )
+    def _load_tensor(self):
+        if self._prefix in self._st_weight_map:
+            return self._st_weight_map[self._prefix]
+
         if self._prefix not in self._tensors_to_file_idx:
             valid_tensors = "\n\t".join(
                 [
@@ -191,6 +189,23 @@ class SafetensorWeights:
         filepath = self._filepaths[self._tensors_to_file_idx[self._prefix]]
         with safe_open(filepath, framework="pt") as f:
             tensor = f.get_tensor(self._prefix)
+
+        self._st_weight_map[self._prefix] = tensor
+        return tensor
+
+    def allocate(
+        self,
+        dtype: Optional[DType] = None,
+        shape: Optional[ShapeLike] = None,
+        quantization_encoding: Optional[QuantizationEncoding] = None,
+    ) -> Weight:
+        """Creates a Weight that can be added to a graph."""
+        if quantization_encoding is not None:
+            raise ValueError(
+                "Quantization encodings are not supported in safetensor"
+                f" format. Got: {quantization_encoding}"
+            )
+        tensor = self._load_tensor()
         if tensor.dtype == torch.bfloat16:
             np_tensor = tensor.view(torch.float16).numpy()
             weight_dtype = DType.bfloat16
@@ -217,6 +232,27 @@ class SafetensorWeights:
                 f"Did not get expected dtype for weight {self._prefix}"
                 f"\n\tExpected dtype: {dtype}, got: {weight.dtype}"
             )
+        return weight
+
+    def allocate_as_bytes(self) -> Weight:
+        """Create a Weight that can be added to the graph. Has a uint8
+        representation, instead of the original data type. Last dimension of
+        the scale gets scaled by number of bytes it takes to represent the
+        original data type. For example, [512, 256] float32 weights become
+        [512, 1024] uint8 weights. Scalar weights will be interpreted as
+        weights with shape [1]."""
+
+        tensor = self._load_tensor()
+        if tensor.ndim == 0:
+            tensor = tensor.view([1])
+        tensor = tensor.view(torch.uint8)
+        np_tensor = tensor.numpy()
+        weight_dtype = DType.from_numpy(np_tensor.dtype)
+
+        weight = Weight(
+            name=self._prefix, dtype=weight_dtype, shape=tensor.shape
+        )
+        self._allocated[self._prefix] = np_tensor
         return weight
 
     @property

@@ -78,3 +78,30 @@ def test_load_same_weight(testdata_directory) -> None:
         a = graph.add_weight(weights[1].a.allocate())
         with pytest.raises(ValueError, match="already exists"):
             a2 = graph.add_weight(weights[1]["a"].allocate())
+
+
+def test_load_allocate_as_bytes(testdata_directory) -> None:
+    weights = SafetensorWeights(
+        [testdata_directory / "example_data_1.safetensors"]
+    )
+    with Graph("test_load_safetensors1") as graph:
+        data = {
+            key: graph.add_weight(weight.allocate_as_bytes())
+            for key, weight in weights.items()
+        }
+        assert len(data) == 5
+        assert data["1.a"].type == TensorType(
+            DType.uint8, [5, 8]
+        )  # originally int32
+        assert data["1.b"].type == TensorType(
+            DType.uint8, [1, 2, 24]
+        )  # originally float64
+        assert data["1.c"].type == TensorType(
+            DType.uint8, [4]
+        )  # originally float32
+        assert data["1.fancy/name"].type == TensorType(
+            DType.uint8, [24]
+        )  # originally int64
+        assert data["1.bf16"].type == TensorType(
+            DType.uint8, [4]
+        )  # originally bfloat16
