@@ -50,7 +50,7 @@ fn async_copy_kernel[
     BM: Int,
     BN: Int,
 ](input: LayoutTensor[DType.float32, input_layout]):
-    var input_tile = input.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
+    var input_tile = input.tile[BM, BN](BlockIdx.y, BlockIdx.x)
 
     var smem_tile = LayoutTensor[
         DType.float32,
@@ -61,8 +61,8 @@ fn async_copy_kernel[
     smem_tile.copy_from_async(input_tile)
     async_copy_wait_all()
 
-    var tx = ThreadIdx.x()
-    var ty = ThreadIdx.y()
+    var tx = ThreadIdx.x
+    var ty = ThreadIdx.y
     smem_tile[tx, ty] += ty
 
     input_tile.copy_from(smem_tile)
@@ -124,8 +124,8 @@ fn async_dynamic_copy_kernel[
         ),
     )
 
-    var input_tile = masked_input.tile[BM, BN](BlockIdx.x(), BlockIdx.y())
-    var output_tile = output.tile[BM, BN](BlockIdx.x(), BlockIdx.y())
+    var input_tile = masked_input.tile[BM, BN](BlockIdx.x, BlockIdx.y)
+    var output_tile = output.tile[BM, BN](BlockIdx.x, BlockIdx.y)
 
     var smem_tile = LayoutTensor[
         DType.float32,
@@ -162,20 +162,20 @@ fn swizzle_copy[
 
     copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=True,](
         a_smem_tile.vectorize[1, simd_size](),
-        a.tile[BM, BK](BlockIdx.x(), 0).vectorize[1, simd_size](),
+        a.tile[BM, BK](BlockIdx.x, 0).vectorize[1, simd_size](),
     )
 
     async_copy_wait_all()
     barrier()
 
     # Write current stage to global memory.
-    var b_gmem_tile = b.tile[BM, BK](BlockIdx.x(), 0)
+    var b_gmem_tile = b.tile[BM, BK](BlockIdx.x, 0)
     var b_gmem_frag = b_gmem_tile.vectorize[1, simd_size]().distribute[
         thread_layout
-    ](ThreadIdx.x())
+    ](ThreadIdx.x)
     var a_smem_frag = a_smem_tile.vectorize[1, simd_size]().distribute[
         thread_layout
-    ](ThreadIdx.x())
+    ](ThreadIdx.x)
     b_gmem_frag.copy_from(a_smem_frag)
 
 

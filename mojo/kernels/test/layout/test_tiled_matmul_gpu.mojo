@@ -34,13 +34,13 @@ fn naive_matmul[
     lhs: LayoutTensor[DType.float32, layout_dst],
     rhs: LayoutTensor[DType.float32, layout_dst],
 ):
-    var dst_tile = dst.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
-    dst_tile[ThreadIdx.y(), ThreadIdx.x()] = 0
+    var dst_tile = dst.tile[BM, BN](BlockIdx.y, BlockIdx.x)
+    dst_tile[ThreadIdx.y, ThreadIdx.x] = 0
     for k in range(dst.shape[0]()):
-        var lhs_tile = rhs.tile[BM, 1](BlockIdx.y(), k)
-        var rhs_tile = lhs.tile[1, BN](k, BlockIdx.x())
-        dst_tile[ThreadIdx.y(), ThreadIdx.x()] += (
-            lhs_tile[ThreadIdx.y(), k] * rhs_tile[k, ThreadIdx.x()]
+        var lhs_tile = rhs.tile[BM, 1](BlockIdx.y, k)
+        var rhs_tile = lhs.tile[1, BN](k, BlockIdx.x)
+        dst_tile[ThreadIdx.y, ThreadIdx.x] += (
+            lhs_tile[ThreadIdx.y, k] * rhs_tile[k, ThreadIdx.x]
         )
 
 
@@ -117,7 +117,7 @@ fn sram_blocked_matmul[
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
-    var dst_tile = dst.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
+    var dst_tile = dst.tile[BM, BN](BlockIdx.y, BlockIdx.x)
 
     # Distribute thread layout into a block of size [BM, BN], It repeats the
     # layout accross the BMxBN block, e.g row major layout will repeate as the
@@ -132,7 +132,7 @@ fn sram_blocked_matmul[
     # |  TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N    |  TH_0 TH_1     ... TH_N
     # |      .        .      ...   |     .         ...   .     |    .
     # |      .        .      ...   |     .         ...   .     |    .
-    var dst_local_tile = dst_tile.distribute[thread_layout](ThreadIdx.x())
+    var dst_local_tile = dst_tile.distribute[thread_layout](ThreadIdx.x)
 
     # Allocate a register tile for the dst matrix with the same layout.
     var dst_register_tile = stack_allocation_like(dst_local_tile).fill(0)
@@ -140,17 +140,17 @@ fn sram_blocked_matmul[
     # Loop over tiles in K dim.
     for k in range(lhs.shape[1]() // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
-        var lhs_tile = lhs.tile[BM, BK](BlockIdx.y(), k)
-        var rhs_tile = rhs.tile[BK, BN](k, BlockIdx.x())
+        var lhs_tile = lhs.tile[BM, BK](BlockIdx.y, k)
+        var rhs_tile = rhs.tile[BK, BN](k, BlockIdx.x)
 
         # Distribute layout of threads into DRAM and SRAM to perform the copy.
-        var lhs_tile_local = lhs_tile.distribute[thread_layout](ThreadIdx.x())
-        var rhs_tile_local = rhs_tile.distribute[thread_layout](ThreadIdx.x())
+        var lhs_tile_local = lhs_tile.distribute[thread_layout](ThreadIdx.x)
+        var rhs_tile_local = rhs_tile.distribute[thread_layout](ThreadIdx.x)
         var lhs_sram_tile_local = lhs_sram_tile.distribute[thread_layout](
-            ThreadIdx.x()
+            ThreadIdx.x
         )
         var rhs_sram_tile_local = rhs_sram_tile.distribute[thread_layout](
-            ThreadIdx.x()
+            ThreadIdx.x
         )
         lhs_sram_tile_local.copy_from(lhs_tile_local)
         rhs_sram_tile_local.copy_from(rhs_tile_local)
@@ -162,10 +162,10 @@ fn sram_blocked_matmul[
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
-                ThreadIdx.x()
+                ThreadIdx.x
             )
             var rhs_frags = rhs_row.distribute[thread_layout, axis=1](
-                ThreadIdx.x()
+                ThreadIdx.x
             )
             outer_product_acc(dst_register_tile, lhs_frags, rhs_frags)
 
@@ -249,8 +249,8 @@ fn single_warp_mma_sync_m16n8k8[
     var mat_b_mma = mat_b.transpose().composition[layout_b_mma]()
     var mat_c_mma = mat_c.composition[layout_c_mma]()
 
-    var thread_y: UInt = ThreadIdx.x() // 4
-    var thread_x: UInt = ThreadIdx.x() % 4
+    var thread_y: UInt = ThreadIdx.x // 4
+    var thread_x: UInt = ThreadIdx.x % 4
 
     var vec_a_layout = SIMD[DType.float32, 4](
         rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 0]),
@@ -368,7 +368,7 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     ].stack_allocation()
 
     # Block the dst matrix with [BM, BN] tile size.
-    var dst_tile = dst.tile[BM, BN](IndexList[2](BlockIdx.y(), BlockIdx.x()))
+    var dst_tile = dst.tile[BM, BN](IndexList[2](BlockIdx.y, BlockIdx.x))
 
     # Distribute thread layout into a block of size [BM, BN], It repeats the
     # layout accross the BMxBN block, e.g row major layout will repeate as the
@@ -393,22 +393,22 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
     # Loop over tiles in K dim.
     for k in range(lhs.dim(1) // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
-        var lhs_tile = lhs.tile[BM, BK](IndexList[2](BlockIdx.y(), k))
-        var rhs_tile = rhs.tile[BK, BN](IndexList[2](k, BlockIdx.x()))
+        var lhs_tile = lhs.tile[BM, BK](IndexList[2](BlockIdx.y, k))
+        var rhs_tile = rhs.tile[BK, BN](IndexList[2](k, BlockIdx.x))
 
         # Distribute layout of threads into DRAM and SRAM to perform the copy.
         var lhs_sram_tile_local = lhs_sram_tile.distribute[thread_layout](
-            ThreadIdx.x()
+            ThreadIdx.x
         )
         copy_from_nd_buffer[thread_layout=thread_layout](
-            lhs_sram_tile_local, lhs_tile, ThreadIdx.x()
+            lhs_sram_tile_local, lhs_tile, ThreadIdx.x
         )
 
         var rhs_sram_tile_local = rhs_sram_tile.distribute[thread_layout](
-            ThreadIdx.x()
+            ThreadIdx.x
         )
         copy_from_nd_buffer[thread_layout=thread_layout](
-            rhs_sram_tile_local, rhs_tile, ThreadIdx.x()
+            rhs_sram_tile_local, rhs_tile, ThreadIdx.x
         )
 
         barrier()
@@ -418,16 +418,16 @@ fn sram_blocked_matmul_dynamic_nd_buffer[
             var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
             var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
             var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
-                ThreadIdx.x()
+                ThreadIdx.x
             )
             var rhs_frags = rhs_row.distribute[thread_layout, axis=1](
-                ThreadIdx.x()
+                ThreadIdx.x
             )
             outer_product_acc(dst_register_tile, lhs_frags, rhs_frags)
 
     # Move data from register tile to DRAM
     copy_to_nd_buffer[thread_layout=thread_layout](
-        dst_tile, dst_register_tile, ThreadIdx.x()
+        dst_tile, dst_register_tile, ThreadIdx.x
     )
 
 

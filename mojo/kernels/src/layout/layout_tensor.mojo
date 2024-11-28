@@ -1541,8 +1541,8 @@ struct LayoutTensor[
                 alias fragments_stride_i: UInt = to_int(
                     fragments_layout_stride[i]
                 ).value
-                alias shape_i: UInt = to_int(thread_projected_shape[i]).value
-                alias stride_i: UInt = to_int(thread_projected_stride[i]).value
+                alias shape_i: UInt = to_int(thread_projected_shape[i])
+                alias stride_i: UInt = to_int(thread_projected_stride[i])
                 var thread_coord_i: UInt = (thread_id // stride_i) % shape_i
                 offset += thread_coord_i * fragments_stride_i
 
@@ -2266,9 +2266,9 @@ fn copy_dram_to_sram[
         "dst address space must be SHARED.",
     ]()
 
-    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
+    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x)
     var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
-        ThreadIdx.x()
+        ThreadIdx.x
     )
     dst_fragments.copy_from(src_fragments)
 
@@ -2331,8 +2331,8 @@ fn copy_dram_to_sram_async[
         OptionalReg[Swizzle](make_ldmatrix_swizzle[dst.dtype, row_size]())
     )
 
-    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
+    var src_fragments = src.distribute[src_thread_layout](ThreadIdx.x)
+    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x)
 
     var dst_frag_offset = rebind[dst_fragments.uint_type](
         dst_fragments.distance(dst.ptr) if swizzle else 0
@@ -2416,8 +2416,8 @@ fn copy_sram_to_dram[
         src.layout.all_dims_known(), "Shared memory must have static layout"
     ]()
 
-    var src_fragments = src.distribute[thread_layout](ThreadIdx.x())
-    var dst_fragments = dst.distribute[thread_layout](ThreadIdx.x())
+    var src_fragments = src.distribute[thread_layout](ThreadIdx.x)
+    var dst_fragments = dst.distribute[thread_layout](ThreadIdx.x)
 
     # TODO: copy_from only allows static layout
     @parameter
@@ -2551,10 +2551,10 @@ fn copy_sram_to_local[
     if axis:
         var src_fragments = src.distribute[
             src_warp_layout, axis = axis.value()
-        ](ThreadIdx.x())
+        ](ThreadIdx.x)
         dst.copy_from(src_fragments)
     else:
-        var src_fragments = src.distribute[src_warp_layout](ThreadIdx.x())
+        var src_fragments = src.distribute[src_warp_layout](ThreadIdx.x)
         dst.copy_from(src_fragments)
 
 
@@ -2578,7 +2578,7 @@ fn copy_local_to_dram[
         "dst address space must be GENERIC.",
     ]()
 
-    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x())
+    var dst_fragments = dst.distribute[dst_thread_layout](ThreadIdx.x)
 
     @parameter
     if not dst_fragments.masked:
@@ -2646,7 +2646,7 @@ fn copy_local_to_sram[
         "src address space must be LOCAL.",
     ]()
 
-    var dst_frag = dst.distribute[thread_layout](ThreadIdx.x())
+    var dst_frag = dst.distribute[thread_layout](ThreadIdx.x)
 
     constrained[
         src.dtype == dst.dtype

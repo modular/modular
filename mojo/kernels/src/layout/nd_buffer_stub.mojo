@@ -1326,9 +1326,9 @@ fn copy_from_nd_buffer_async[
     src_buffer: NDBuffer[dtype, src_rank, src_buff_shape],
 ):
     copy_from_nd_buffer[thread_layout=thread_layout, is_async=True](
-        dst_tensor.distribute[thread_layout](ThreadIdx.x()),
+        dst_tensor.distribute[thread_layout](ThreadIdx.x),
         src_buffer,
-        int(ThreadIdx.x()),
+        int(ThreadIdx.x),
     )
 
 

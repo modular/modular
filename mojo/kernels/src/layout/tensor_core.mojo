@@ -704,7 +704,7 @@ struct TensorCore[
         ](0, mma_tile_coordk)
 
         var vec = bitcast[DType.int32, 4](
-            mma_tile.vectorize[1, 4]()[ThreadIdx.x() % WARP_SIZE]
+            mma_tile.vectorize[1, 4]()[ThreadIdx.x % WARP_SIZE]
         )
 
         @parameter
