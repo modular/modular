@@ -4,7 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
+# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | FileCheck %s
+# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
+
+from builtin.coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
+
 
 @explicit_destroy("Must use consume!")
 struct EmptyExplicit:
@@ -37,6 +41,7 @@ struct ImplicitlyDestructibleContainerOfExplicitWithIncompleteDel:
 fn foo[T: UnknownDestructibility](owned x: T):
     pass
 
+
 # TODO(MOCO-1468): Require error message for @explicit_destroy
 @explicit_destroy
 trait LinearCopyable:
@@ -56,3 +61,15 @@ struct LinearCopyableStruct(LinearCopyable):
 # CHECK-LABEL: @"upcastLinearCopyable
 fn upcastLinearCopyable(owned x: LinearCopyableStruct):
     receiveLinearCopyable(x)
+
+
+# CHECK-LABEL: lit.func @"callsWith
+fn callsWith():
+  # expected-error @below {{Unhandled explicit_destroy type Coroutine}}
+  x = testAsyncVoid()
+  # CHECK-NOT: lit.call {{.*}}__del__
+
+
+# CHECK-LABEL: lit.struct.decl @Coroutine
+# CHECK-NOT: destructor :!lit.signature
+async fn testAsyncVoid(): pass

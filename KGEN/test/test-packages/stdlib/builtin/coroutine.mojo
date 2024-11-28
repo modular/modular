@@ -7,7 +7,7 @@
 alias AnyCoroutine = __mlir_type.`!co.routine`
 
 
-@value
+@explicit_destroy
 @register_passable
 struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
     var value: __mlir_type.`!co.routine`
@@ -17,15 +17,21 @@ struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
         self.value = handle
 
     fn __await__(owned self) -> T:
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
         while __mlir_attr.true:
             pass
 
 
-@value
+@explicit_destroy
 @register_passable
 struct RaisingCoroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
     var value: __mlir_type.`!co.routine`
 
+    @implicit
+    fn __init__(out self, handle: AnyCoroutine):
+        self.value = handle
+
     fn __await__(owned self) raises -> T:
+        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
         while __mlir_attr.true:
             pass
