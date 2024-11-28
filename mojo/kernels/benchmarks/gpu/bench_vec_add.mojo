@@ -22,7 +22,7 @@ fn vec_func(
     out: UnsafePointer[Float32],
     len: Int,
 ):
-    var tid: UInt = ThreadIdx.x() + BlockDim.x() * BlockIdx.x()
+    var tid: UInt = ThreadIdx.x + BlockDim.x * BlockIdx.x
     if int(tid) >= len:
         return
     out[tid] = in0[tid] + in1[tid]
