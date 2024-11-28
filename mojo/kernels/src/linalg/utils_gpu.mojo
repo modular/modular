@@ -104,7 +104,8 @@ struct MatmulConfig[
     alias ACCUM_PRECISION = 1
 
     # TODO: output precision will break the integration test.
-    alias split_k_reduction_type = c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
+    # alias split_k_reduction_type = Self.accum_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else c_type
+    alias split_k_reduction_type = Self.accum_type
 
     fn __init__(
         inout self,
