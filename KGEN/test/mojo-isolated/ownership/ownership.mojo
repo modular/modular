@@ -1328,8 +1328,9 @@ fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample,
   _ = t1
   _ = t2
 
-# CHECK-LABEL: lit.func @"my_min
-fn my_min(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [__origin_of(x, y)] Int:
+# CHECK-LABEL: lit.func @"my_min1
+# CHECK-SAME: !lit.ref<!Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
+fn my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [__origin_of(x, y)] Int:
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %x
   # CHECK-NEXT:    hlcf.yield [[TMP]]
@@ -1338,6 +1339,24 @@ fn my_min(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [__origin_of(x, y
   # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
   # CHECK-NEXT: }
 
-  # CHECK-NEXT:    [[TMP:%.*]]  = kgen.rebind [[IF]]
-  # CHECK-NEXT: kgen.return [[TMP]]
+  # CHECK-NEXT: kgen.return [[IF]]
   return x if cond else y
+
+# CHECK-LABEL: lit.func @"my_min2
+fn my_min2[T: AnyType](ref a: T, ref b: T) -> ref [__origin_of(a, b)] T:
+    return a
+
+# CHECK-LABEL: lit.func @"test_min2
+# https://github.com/modularml/mojo/issues/3815
+fn test_min2(a: String):
+    # CHECK: lit.call {{.*}}String::@"__init__
+    var x = String()
+    # CHECK: lit.call {{.*}}String::@"__init__
+    var y = String()
+    # CHECK: [[REF:%.*]] = lit.call {{.*}}my_min2
+    # CHECK-NEXT: lit.call {{.*}}String::@"__iadd__{{.*}}([[REF]], %a)
+    my_min2(x, y) += a
+    # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%x)
+    # CHECK-NEXT: lit.var.lifetime.end %x
+    # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%y)
+    # CHECK-NEXT: lit.var.lifetime.end %y
