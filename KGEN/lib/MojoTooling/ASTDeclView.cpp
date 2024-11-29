@@ -89,9 +89,9 @@ static std::string generatePValueString(SharedState &shared, PValue value) {
 
 /// Unpack a origin into a printable name when it is uttered in a signature
 /// position.
-static std::string getSignatureLifetime(SharedState &shared, TypedAttr origin,
-                                        LITSignatureType signature,
-                                        bool isRefResult) {
+static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
+                                      LITSignatureType signature,
+                                      bool isRefResult) {
 
   // Check to see if the origin is a parameter on this signature.  If so, it
   // will have a depth of zero.
@@ -121,8 +121,25 @@ static std::string getSignatureLifetime(SharedState &shared, TypedAttr origin,
   // Handle an extract out of an Origin type.
   if (auto extract = dyn_cast<LIT::StructExtractAttr>(origin)) {
     if (extract.getField() == ORIGIN_FIELD_NAME)
-      return getSignatureLifetime(shared, extract.getStructValue(), signature,
-                                  isRefResult);
+      return getSignatureOrigin(shared, extract.getStructValue(), signature,
+                                isRefResult);
+  }
+
+  // Ignore MutCasts.
+  if (auto mutCast = dyn_cast<OriginMutCastAttr>(origin))
+    return getSignatureOrigin(shared, mutCast.getOperand(), signature,
+                              isRefResult);
+
+  // Combine unions into comma separated string.
+  if (auto unionAttr = dyn_cast<OriginUnionAttr>(origin)) {
+    std::string result;
+    llvm::interleave(
+        unionAttr.getOperands(),
+        [&](TypedAttr elt) {
+          result += getSignatureOrigin(shared, elt, signature, isRefResult);
+        },
+        [&]() { result += ", "; });
+    return result;
   }
 
   // Otherwise, just print as normal.
@@ -135,16 +152,7 @@ static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
                                         LITSignatureType signature,
                                         bool isRefResult) {
   std::string signatureLifetime =
-      getSignatureLifetime(shared, refType.getOrigin(), signature, isRefResult);
-
-  // If the lifetime is inferred, don't print a [_] specifier unless there is an
-  // address space.
-  if (signatureLifetime.empty()) {
-    if (refType.isDefaultAddrSpace())
-      return "";
-    // Print as _ with an address space.
-    signatureLifetime = "_";
-  }
+      getSignatureOrigin(shared, refType.getOrigin(), signature, isRefResult);
 
   // Include the address space if it is non-default.
   if (!refType.isDefaultAddrSpace()) {
@@ -157,8 +165,13 @@ static std::string getRefPrefixAsString(SharedState &shared, RefType refType,
         addrSpace = extractAttr2.getStructValue();
       }
     }
-    signatureLifetime += ", " + generatePValueString(shared, addrSpace);
+    if (!signatureLifetime.empty())
+      signatureLifetime += ", ";
+    signatureLifetime += generatePValueString(shared, addrSpace);
   }
+
+  if (signatureLifetime.empty())
+    return std::string();
 
   return "[" + signatureLifetime + "] ";
 }

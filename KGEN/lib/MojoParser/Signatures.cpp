@@ -51,35 +51,63 @@ static RefType processOriginSpecifier(const ExprNode *origExpr, ASTType type,
 
   ExprEmitter emitter(paramList.declScope, EC_Origin);
 
-  // If the specified PValue is a !lit.origin or an Origin struct that wraps it,
-  // return the !lit.origin, otherwise return null.
-  auto digOutLitOrigin = [&](PValue value) -> PValue {
-    // A raw !lit.origin always works.
-    if (isa<OriginType>(value.getRValueType()))
-      return value;
-
+  // Given a value of a well known type, extract the specified field.  This
+  // returns null if the field doesn't exist.
+  auto digOutSingleField = [&](TypedAttr value,
+                               StringRef fieldName) -> TypedAttr {
     // TODO: This is generating a StructExtractAttr the hard way.  It would be
     // way nicer to form a call to `o.__mlir_origin__()` or something like we do
     // for bools, but unfortunately that won't get inlined and simplified by the
-    // call emission because Origin is parametric.
-
-    // The builtin Origin type can have a field extracted from it.
-    ASTDecl *typeDecl = value.getRValueType().getDecl(shared);
-    if (!typeDecl || !isa<LIT::StructType>(value.getRValueType()))
+    // call emission because Origin is parametric.  Therefore it will break
+    // parameter inference.
+    ASTDecl *typeDecl = ASTType(value.getType()).getDecl(shared);
+    if (!typeDecl || !isa<LIT::StructType>(value.getType()))
       return {};
 
     // Check to see if it has the expected field of Origin.
-    LookupResult lookup = shared.lookupAndResolveDecl(
-        ORIGIN_FIELD_NAME, origExpr->getLoc(), *typeDecl,
-        /*searchParentScopes=*/false);
+    LookupResult lookup =
+        shared.lookupAndResolveDecl(fieldName, origExpr->getLoc(), *typeDecl,
+                                    /*searchParentScopes=*/false);
     if (lookup.getIfSuccess().size() != 1)
       return {};
     auto fieldOp = dyn_cast<StructFieldOp>(lookup.getIfSuccess()[0]);
     if (!fieldOp)
       return {};
 
-    auto extractVal = LIT::StructExtractAttr::get(value, fieldOp);
+    return LIT::StructExtractAttr::get(value, fieldOp);
+  };
+
+  // If the specified PValue is a !lit.origin or an Origin struct that wraps it,
+  // return the !lit.origin, otherwise return null.
+  auto digOutLitOrigin = [&](PValue value) -> TypedAttr {
+    // A raw !lit.origin always works.
+    if (isa<OriginType>(value.getRValueType()))
+      return value;
+
+    auto extractVal = digOutSingleField(value, ORIGIN_FIELD_NAME);
+    if (!extractVal)
+      return {};
     return isa<OriginType>(extractVal.getType()) ? extractVal : TypedAttr();
+  };
+
+  // Check to see if this is a value address space specifier.  If so, return
+  // true, otherwise return false.
+  auto digOutAddressSpace = [&](TypedAttr value) -> TypedAttr {
+    // If the value has index type, then it is good to go.
+    if (value.getType().isIndex())
+      return value;
+
+    // Check to see if this is the well-known AddressSpace struct.  If so,
+    // dig out the index from within it.
+    auto extractInt = digOutSingleField(value, "_value");
+    if (!extractInt)
+      return {};
+    auto extractIndex = digOutSingleField(extractInt, "value");
+    if (!extractIndex)
+      return {};
+    if (extractIndex.getType().isIndex())
+      return extractIndex;
+    return {};
   };
 
   // If the origin expression is syntactically a multi-element tuple, then
@@ -97,24 +125,6 @@ static RefType processOriginSpecifier(const ExprNode *origExpr, ASTType type,
     // Ignore _'s.
     if (expr->kind == ExprNode::kDiscardLiteral)
       continue;
-
-    // Check to see if this is a value address space specifier.  If so, return
-    // true, otherwise return false.
-    auto handleAddressSpace = [&](const ExprNode *expr,
-                                  TypedAttr value) -> bool {
-      // If we already had an address space, reject.
-      if (addrSpace)
-        return false;
-
-      // If the value has index type, then it is good to go.
-      if (value.getType().isIndex()) {
-        addrSpace = value;
-        return true;
-      }
-
-      // TODO: Enable support for direct use of AddressSpace.
-      return false;
-    };
 
     // The origin expression may be any of:
     //   1) an MValue, which we take the origin from.
@@ -135,8 +145,15 @@ static RefType processOriginSpecifier(const ExprNode *origExpr, ASTType type,
               return;
 
             // Check to see if it is an address space.
-            if (handleAddressSpace(expr, pv.get()))
+            if (auto as = digOutAddressSpace(pv.get())) {
+              if (addrSpace) {
+                emitter.emitError(expr->getLoc())
+                    << "multiple specification of address space isn't valid"
+                    << expr->getRange();
+              }
+              addrSpace = as;
               return;
+            }
           }
           emitter.emitError(expr->getLoc())
               << "value of type " << result.getRValueType()
