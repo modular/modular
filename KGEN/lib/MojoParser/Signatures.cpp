@@ -32,7 +32,7 @@ using namespace LIT;
 
 /// Process the origin expression in a `ref [...] T` reference specifier.
 /// T is specified as 'type' and this returns the result !lit.ref type.
-static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
+static RefType processOriginSpecifier(const ExprNode *origExpr, ASTType type,
                                       StringRef valueName,
                                       TypeCheckedParamList &paramList,
                                       bool isResult) {
@@ -50,22 +50,6 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
     return hadError();
 
   ExprEmitter emitter(paramList.declScope, EC_Origin);
-
-  // If the origin expression is syntactically a 2-element tuple, then
-  // take it apart into a origin and address space.
-  ExprNode *addrSpaceExpr = nullptr;
-  if (auto *tuple = dyn_cast_if_present<TupleNode>(originExpr)) {
-    if (tuple->exprs.size() != 2) {
-      emitter.emitError(tuple->getLoc())
-          << "expected specifier with one origin or a origin and an "
-             "address space"
-          << originExpr->getRange();
-      return hadError();
-    }
-
-    originExpr = tuple->exprs[0];
-    addrSpaceExpr = tuple->exprs[1];
-  }
 
   // If the specified PValue is a !lit.origin or an Origin struct that wraps it,
   // return the !lit.origin, otherwise return null.
@@ -86,7 +70,7 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
 
     // Check to see if it has the expected field of Origin.
     LookupResult lookup = shared.lookupAndResolveDecl(
-        ORIGIN_FIELD_NAME, originExpr->getLoc(), *typeDecl,
+        ORIGIN_FIELD_NAME, origExpr->getLoc(), *typeDecl,
         /*searchParentScopes=*/false);
     if (lookup.getIfSuccess().size() != 1)
       return {};
@@ -98,34 +82,80 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
     return isa<OriginType>(extractVal.getType()) ? extractVal : TypedAttr();
   };
 
+  // If the origin expression is syntactically a multi-element tuple, then
+  // take it apart.
+  ArrayRef<const ExprNode *> originExprElts;
+  if (auto *tuple = dyn_cast_if_present<TupleNode>(origExpr))
+    originExprElts = tuple->exprs;
+  else if (origExpr)
+    originExprElts = origExpr;
+
   // Emit the origin expression if it is a normal expression.
-  PValue origin;
-  if (originExpr && originExpr->kind != ExprNode::kDiscardLiteral) {
+  TypedAttr origin;
+  TypedAttr addrSpace;
+  for (const ExprNode *expr : originExprElts) {
+    // Ignore _'s.
+    if (expr->kind == ExprNode::kDiscardLiteral)
+      continue;
+
+    // Check to see if this is a value address space specifier.  If so, return
+    // true, otherwise return false.
+    auto handleAddressSpace = [&](const ExprNode *expr,
+                                  TypedAttr value) -> bool {
+      // If we already had an address space, reject.
+      if (addrSpace)
+        return false;
+
+      // If the value has index type, then it is good to go.
+      if (value.getType().isIndex()) {
+        addrSpace = value;
+        return true;
+      }
+
+      // TODO: Enable support for direct use of AddressSpace.
+      return false;
+    };
+
     // The origin expression may be any of:
     //   1) an MValue, which we take the origin from.
     //   2) a value of !lit.origin or Origin[Mut] type.
     //  In the former case, we want to evaluate the expression without
     // evaluating it, because it may involve complex nested expressions and we
     // may be in a PValue expression.
+    TypedAttr thisOrigin;
     emitter.emitExpressionWithOutEvaluatingIt(
-        originExpr, EC_Origin, [&](CValue result) {
+        expr, EC_Origin, [&](CValue result) {
           if (result.isMValue()) { // We can get the origin of an MValue.
-            origin = result.getMValueType().getOrigin();
+            thisOrigin = result.getMValueType().getOrigin();
             return;
           }
           // Check for !lit.origin and Origin struct.
-          if (auto pv = result.getIfPValue())
-            if ((origin = digOutLitOrigin(pv)))
+          if (auto pv = result.getIfPValue()) {
+            if ((thisOrigin = digOutLitOrigin(pv)))
               return;
 
-          emitter.emitError(originExpr->getLoc())
+            // Check to see if it is an address space.
+            if (handleAddressSpace(expr, pv.get()))
+              return;
+          }
+          emitter.emitError(expr->getLoc())
               << "value of type " << result.getRValueType()
-              << " doesn't have a memory origin" << originExpr->getRange();
+              << " doesn't have a memory origin" << expr->getRange();
         });
-  } else {
-    // If no origin is specified, then it is inferred from the callsite. Add two
-    // parameters to this function: one for the mutability of type Bool and one
-    // for the origin.
+
+    // If we found an origin, add it to our set.
+    if (!thisOrigin)
+      continue;
+    if (!origin)
+      origin = thisOrigin;
+    else
+      origin = OriginUnionAttr::get(origin.getContext(), {origin, thisOrigin});
+  }
+
+  // If no origin is specified, then it is inferred from the callsite. Add two
+  // parameters to this function: one for the mutability of type Bool and one
+  // for the origin.
+  if (!origin) {
     auto addParam = [&](const Twine &name, Type type) -> TypedAttr {
       auto paramDecl =
           ParamDeclAttr::get(paramList.declScope.mangleParamName(name), type);
@@ -136,9 +166,9 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
     };
 
     if (isResult) {
-      emitter.emitError(originExpr->getLoc())
+      emitter.emitError(origExpr->getLoc())
           << "cannot infer origin for a function result"
-          << originExpr->getRange();
+          << origExpr->getRange();
       return hadError();
     }
 
@@ -150,34 +180,12 @@ static RefType processOriginSpecifier(const ExprNode *originExpr, ASTType type,
     return hadError();
 
   if (!isa<OriginType>(origin.getType())) {
-    emitter.emitError(originExpr->getLoc())
+    emitter.emitError(origExpr->getLoc())
         << "result reference origin has unexpected type " << origin.getType()
-        << originExpr->getRange();
+        << origExpr->getRange();
     return hadError();
   }
 
-  // If we have an address space, emit it.
-  TypedAttr addrSpace;
-  if (addrSpaceExpr) {
-    auto addrSpaceCValue = emitter.emitExprCValue(addrSpaceExpr, EC_Origin);
-    // Invoke __mlir_index__ to get Int/AddressSpace to what we need.
-    if (addrSpaceCValue && !isa<IndexType>(addrSpaceCValue.getRValueType())) {
-      ValueDest dest(EC_Origin);
-      addrSpaceCValue = emitter.emitNamedMethodCall(
-          "__mlir_index__", {{{addrSpaceCValue, addrSpaceExpr}}}, dest,
-          CallSyntax::kMethodCall, addrSpaceExpr);
-    }
-
-    addrSpace =
-        emitter.emitPValue({addrSpaceCValue, addrSpaceExpr}, EC_Origin).get();
-
-    if (addrSpace && !isa<IndexType>(addrSpace.getType())) {
-      emitter.emitError(addrSpaceExpr->getLoc())
-          << "INTERNAL ERROR: __mlir_index didn't return a value of index type"
-          << addrSpace.getType() << addrSpaceExpr->getRange();
-      return hadError();
-    }
-  }
   if (!addrSpace)
     addrSpace = IntegerAttr::get(IndexType::get(shared.getContext()), 0);
 
