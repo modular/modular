@@ -618,10 +618,10 @@ struct Pointer[
 
     @staticmethod
     @always_inline("nodebug")
-    fn address_of(ref [origin, address_space._value.value]value: type) -> Self:
+    fn address_of(ref [origin, address_space]value: type) -> Self:
         return Pointer(_mlir_value=__get_mvalue_as_litref(value))
 
-    fn __getitem__(self) -> ref [origin, address_space._value.value] type:
+    fn __getitem__(self) -> ref [origin, address_space] type:
         return __get_litref_as_mvalue(self._value)
 
     @__unsafe_disable_nested_origin_exclusivity
@@ -665,18 +665,16 @@ struct UnsafePointer[
         self.address = value
 
     @staticmethod
-    fn address_of(ref [_, address_space._value.value]arg: T) -> Self:
+    fn address_of(ref [address_space]arg: T) -> Self:
         return Self(__mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(arg)))
 
     fn __getitem__(
         self,
-    ) -> ref [Self.origin, address_space._value.value] T:
+    ) -> ref [Self.origin, address_space] T:
         while __mlir_attr.true:
             pass
 
-    fn __getitem__(
-        self, offset: Int
-    ) -> ref [Self.origin, address_space._value.value] T:
+    fn __getitem__(self, offset: Int) -> ref [Self.origin, address_space] T:
         while __mlir_attr.true:
             pass
 
@@ -687,7 +685,7 @@ struct UnsafePointer[
         self_origin: ImmutableOrigin
     ](ref [self_origin]self, offset: Int = 0) -> ref [
         _lit_mut_cast[_lit_indirect_origin[self_origin].result, True].result,
-        address_space._value.value,
+        address_space,
     ] T:
         while __mlir_attr.true:
             pass

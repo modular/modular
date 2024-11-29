@@ -533,6 +533,15 @@ fn fn_with_origins[
     pass
 
 
+# MOTO-870: Improve doc gen of struct Origin parameters
+# CHECK-LABEL: "name": "fn_with_mult_result_origins",
+# CHECK:     "signature": "fn_with_mult_result_origins(ref arg1: Int, ref arg2: Int) -> ref [arg1, arg2] Int",
+fn fn_with_mult_result_origins(
+    ref arg1: Int, ref arg2: Int
+) -> ref [arg1, arg2] Int:
+    pass
+
+
 # CHECK: "kind": "function"
 # CHECK: "overloads":
 # CHECK:    "deprecated": "deprecated function"
@@ -590,12 +599,12 @@ struct HMyUnsafePointer[
     # CHECK: "signature": "__getitem__(self) -> ref [MutableAnyOrigin, address_space] T",
     fn __getitem__(
         self,
-    ) -> ref [MutableAnyOrigin, address_space._value.value] T:
+    ) -> ref [MutableAnyOrigin, address_space] T:
         pass
 
-    # CHECK: "signature": "address_of(ref [_, address_space] arg: T) -> Self",
+    # CHECK: "signature": "address_of(ref [address_space] arg: T) -> Self",
     @staticmethod
-    fn address_of(ref [_, address_space._value.value]arg: T) -> Self:
+    fn address_of(ref [address_space]arg: T) -> Self:
         pass
 
 

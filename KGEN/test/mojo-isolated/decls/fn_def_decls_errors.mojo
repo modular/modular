@@ -185,3 +185,7 @@ async fn borrowed_generic_arg[T: AnyType](value: T):
 
 fn valid_sbvalue_borrow(value: SBValue):
     _ = borrowed_generic_arg(value)
+
+# expected-error @+1 {{multiple specification of address space isn't valid}}
+fn bad_ref_as[a: AddressSpace](ref [a, a] x: Int):
+    pass
