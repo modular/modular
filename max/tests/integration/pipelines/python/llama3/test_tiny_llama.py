@@ -13,9 +13,8 @@ from uuid import uuid4
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.llama3 import Llama3
-from llama3.llama3_token_gen import Llama3TokenGenerator
-from max.pipelines import PipelineConfig, TextTokenizer
+from llama3.model import Llama3Model
+from max.pipelines import PipelineConfig, TextTokenizer, TextGenerationPipeline
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, run_model
@@ -57,17 +56,18 @@ def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
 
 
 @pytest.fixture(scope="session")
-def tinyllama_model(
+def tinyllama_pipeline(
     pipeline_config: PipelineConfig, pipeline_tokenizer: TextTokenizer
-):
-    return Llama3TokenGenerator(
-        pipeline_config,
-        pipeline_tokenizer.delegate.eos_token_id,
+) -> TextGenerationPipeline:
+    return TextGenerationPipeline(
+        pipeline_config=pipeline_config,
+        pipeline_model=Llama3Model,
+        eos_token_id=pipeline_tokenizer.eos,
     )
 
 
 @pytest.mark.parametrize("pipeline_config", [TestParams(2048)], indirect=True)
-def test_tiny_llama(tinyllama_model, pipeline_tokenizer):
+def test_tiny_llama(tinyllama_pipeline, pipeline_tokenizer):
     """Runs Llama3.1 on a tiny checkpoint and compares it to previously generated
     golden values.
 
@@ -75,7 +75,7 @@ def test_tiny_llama(tinyllama_model, pipeline_tokenizer):
     weights were randomly initialized.
     """
     _ = run_model(
-        tinyllama_model.model,
+        tinyllama_pipeline._pipeline_model,
         pipeline_tokenizer,
         prompts=PROMPTS[:1],
     )
@@ -85,7 +85,8 @@ def test_tiny_llama(tinyllama_model, pipeline_tokenizer):
     "pipeline_config", [TestParams(512, naive_batching=True)], indirect=True
 )
 def test_tiny_llama_naive_kv_cache(
-    tinyllama_model: Llama3, pipeline_tokenizer
+    tinyllama_pipeline: TextGenerationPipeline,
+    pipeline_tokenizer: TextTokenizer,
 ) -> None:
     """Runs tiny Llama with naive KV cache.
 
@@ -93,10 +94,13 @@ def test_tiny_llama_naive_kv_cache(
     weights were randomly initialized.
     """
     # Check that we indeed have a naive KV cache Llama model.
-    assert tinyllama_model.config.cache_strategy == KVCacheStrategy.NAIVE
+    assert (
+        tinyllama_pipeline._pipeline_config.cache_strategy
+        == KVCacheStrategy.NAIVE
+    )
 
     _ = run_model(
-        tinyllama_model.model,  # type: ignore
+        tinyllama_pipeline._pipeline_model,
         pipeline_tokenizer,
         prompts=PROMPTS[:1],
     )
@@ -115,9 +119,9 @@ def prompt_fixture(request):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("pipeline_config", [TestParams(512)], indirect=True)
 async def test_tinyllama_create_context(
-    tinyllama_model,
-    prompt_fixture,
-    pipeline_tokenizer,
+    tinyllama_pipeline: TextGenerationPipeline,
+    prompt_fixture: str,
+    pipeline_tokenizer: TextTokenizer,
 ):
     context = await pipeline_tokenizer.new_context(
         TokenGeneratorRequest(
@@ -134,7 +138,7 @@ async def test_tinyllama_create_context(
     # Check that TextContext.seq_len is the prompt size for context encoding.
     assert context.seq_len == prompt_len
 
-    assert context.max_tokens == tinyllama_model.config.max_length
+    assert context.max_tokens == tinyllama_pipeline._pipeline_config.max_length
     assert context.next_tokens is not None
 
 
@@ -143,7 +147,9 @@ async def test_tinyllama_create_context(
     "pipeline_config", [TestParams(2), TestParams(4)], indirect=True
 )
 async def test_tinyllama_context_exceeding_max_tokens_throws(
-    tinyllama_model, prompt_fixture, pipeline_tokenizer
+    tinyllama_pipeline: TextGenerationPipeline,
+    prompt_fixture: str,
+    pipeline_tokenizer: TextTokenizer,
 ):
     with pytest.raises(ValueError, match="max model context length"):
         _ = await pipeline_tokenizer.encode(prompt_fixture)
@@ -154,7 +160,7 @@ async def test_tinyllama_context_exceeding_max_tokens_throws(
                 id="", index=0, prompt=prompt_fixture, model_name="llama3"
             )
         )
-        tinyllama_model.release(context)
+        tinyllama_pipeline.release(context)
 
 
 @pytest.fixture(params=[None, 64, 256, 512, 555, 1024])
@@ -167,7 +173,10 @@ def max_new_tokens_fixture(request):
     "pipeline_config", [TestParams(512, -1), TestParams(512, 64)], indirect=True
 )
 async def test_tinyllama_max_new_tokens(
-    tinyllama_model, prompt_fixture, max_new_tokens_fixture, pipeline_tokenizer
+    tinyllama_pipeline: TextGenerationPipeline,
+    prompt_fixture: str,
+    max_new_tokens_fixture: int,
+    pipeline_tokenizer: TextTokenizer,
 ):
     context = await pipeline_tokenizer.new_context(
         TokenGeneratorRequest(
@@ -181,12 +190,12 @@ async def test_tinyllama_max_new_tokens(
     prompt_size = len(context.tokens)
 
     # Max tokens of the context is set to prompt-size + max_new_tokens
-    max_model_tokens = tinyllama_model.config.max_length
+    max_model_tokens = tinyllama_pipeline._pipeline_config.max_length
     max_model_tokens_after_prompt = max_model_tokens - prompt_size
     requested_max_new_tokens = (
         max_new_tokens_fixture
         if max_new_tokens_fixture
-        else tinyllama_model.config.max_new_tokens
+        else tinyllama_pipeline._pipeline_config.max_new_tokens
     )
     configured_max_new_tokens = (
         max_model_tokens_after_prompt
@@ -199,9 +208,9 @@ async def test_tinyllama_max_new_tokens(
     tokens = []
     request_id = str(uuid4())
     while True:
-        response = tinyllama_model.next_token({request_id: context})[0]
+        response = tinyllama_pipeline.next_token({request_id: context})[0]
         if request_id not in response:
-            tinyllama_model.release(context)
+            tinyllama_pipeline.release(context)
             break
         token = response[request_id]
         tokens.append(token)
@@ -224,9 +233,9 @@ async def test_tinyllama_max_new_tokens(
     tokens = []
     request_id = str(uuid4())
     while True:
-        response = tinyllama_model.next_token({request_id: context})[0]
+        response = tinyllama_pipeline.next_token({request_id: context})[0]
         if request_id not in response:
-            tinyllama_model.release(context)
+            tinyllama_pipeline.release(context)
             break
         token = response[request_id]
         tokens.append(token)
@@ -240,7 +249,7 @@ async def test_tinyllama_max_new_tokens(
     "pipeline_config", [TestParams(512, -1)], indirect=True
 )
 async def test_tinyllama_multistep_execution(
-    tinyllama_model: Llama3,
+    tinyllama_pipeline: TextGenerationPipeline,
     prompt_fixture: str,
     max_new_tokens_fixture: int,
     pipeline_tokenizer: TextTokenizer,
@@ -268,23 +277,23 @@ async def test_tinyllama_multistep_execution(
     # Run the model with singlestep
     single_step_tokens = []
     single_step_request_id = str(uuid4())
-    for i in range(num_steps):
-        response = tinyllama_model.next_token(  # type: ignore
+    for _ in range(num_steps):
+        response = tinyllama_pipeline.next_token(
             {single_step_request_id: single_step_context}
         )[0]
         assert single_step_request_id in response
         token = response[single_step_request_id]
         single_step_tokens.append(token)
 
-    tinyllama_model.release(single_step_context)  # type: ignore
+    tinyllama_pipeline.release(single_step_context)
 
     multistep_request_id = str(uuid4())
-    response = tinyllama_model.next_token(  # type: ignore
+    multistep_response = tinyllama_pipeline.next_token(
         {multistep_request_id: multistep_context}, num_steps=num_steps
     )
-    tinyllama_model.release(multistep_context)  # type: ignore
+    tinyllama_pipeline.release(multistep_context)
 
-    assert len(response) == num_steps
+    assert len(multistep_response) == num_steps
 
-    multistep_tokens = [d[multistep_request_id] for d in response]
+    multistep_tokens = [d[multistep_request_id] for d in multistep_response]
     assert multistep_tokens == single_step_tokens

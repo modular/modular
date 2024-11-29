@@ -10,8 +10,13 @@ from typing import Any, Literal
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.llama3_token_gen import Llama3TokenGenerator
-from max.pipelines import PipelineConfig, SupportedEncoding, TextTokenizer
+from llama3.model import Llama3Model
+from max.pipelines import (
+    PipelineConfig,
+    SupportedEncoding,
+    TextTokenizer,
+    TextGenerationPipeline,
+)
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, next_token_with_logits
@@ -57,17 +62,18 @@ def pipeline_config(testdata_directory, request):
 
 
 @pytest.fixture(scope="session")
-def pipeline_tokenizer(pipeline_config):
+def pipeline_tokenizer(pipeline_config) -> TextTokenizer:
     return TextTokenizer(pipeline_config)
 
 
 @pytest.fixture(scope="session")
-def pipeline_model(
+def pipeline(
     pipeline_config: PipelineConfig, pipeline_tokenizer: TextTokenizer
-):
-    return Llama3TokenGenerator(
-        pipeline_config,
-        pipeline_tokenizer.delegate.eos_token_id,
+) -> TextGenerationPipeline:
+    return TextGenerationPipeline(
+        pipeline_config=pipeline_config,
+        pipeline_model=Llama3Model,
+        eos_token_id=pipeline_tokenizer.eos,
     )
 
 
@@ -82,7 +88,7 @@ def pipeline_model(
     indirect=True,
 )
 async def test_pipeline_static_batch_same_prompt_same_output(
-    pipeline_model, pipeline_tokenizer
+    pipeline, pipeline_tokenizer
 ):
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
@@ -93,7 +99,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 
     """
     prompt = "Repeat this sentence forever and forever."
-    batch_size = pipeline_model.config.max_cache_batch_size
+    batch_size = pipeline._pipeline_config.max_cache_batch_size
     context_batch = {}
     for i in range(batch_size):
         context = await pipeline_tokenizer.new_context(
@@ -111,7 +117,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 
     # Execute these batches until they are complete
     for _ in range(cur_tokens, max_tokens):
-        response = pipeline_model.next_token(context_batch)[0]
+        response = pipeline.next_token(context_batch)[0]
         assert context_batch.keys() == response.keys()
         response_tokens = list(response.values())
         assert all(response_tokens[0] == t for t in response_tokens)
@@ -120,12 +126,12 @@ async def test_pipeline_static_batch_same_prompt_same_output(
 
     # The last execution must complete all batches
     assert len(context_batch) == batch_size
-    last = pipeline_model.next_token(context_batch)[0]
+    last = pipeline.next_token(context_batch)[0]
     assert not last
 
     # We should be resetting the cache
     for context in context_batch.values():
-        pipeline_model.release(context)
+        pipeline.release(context)
 
 
 @pytest.mark.skip("flaky")
@@ -140,7 +146,7 @@ async def test_pipeline_static_batch_same_prompt_same_output(
     indirect=True,
 )
 async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
-    pipeline_model, pipeline_tokenizer
+    pipeline, pipeline_tokenizer
 ):
     """Execute a batch which matches the batch-size of the model
     HOWEVER, we set different max-new-tokens for each batch
@@ -151,13 +157,13 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     encodings we should expect this test to run with is tinyllama/fp32.
     """
     prompt = "Repeat this sentence forever and forever."
-    batch_size = pipeline_model.config.max_cache_batch_size
+    batch_size = pipeline._pipeline_config.max_cache_batch_size
 
     print(batch_size)
     context_batch = {}
     for i in range(batch_size):
         max_new_tokens = int(
-            (pipeline_model.config.max_length / batch_size) * (i + 1)
+            (pipeline._pipeline_config.max_length / batch_size) * (i + 1)
         )
         print(f"Batch: {i}, MaxNewTokens: {max_new_tokens}")
         context = await pipeline_tokenizer.new_context(
@@ -184,7 +190,7 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
             batch_id: len(c.tokens) for batch_id, c in context_batch.items()
         }
         print(f"{i}-Input: {batch_ids_with_lengths}")
-        response = pipeline_model.next_token(context_batch)[0]
+        response = pipeline.next_token(context_batch)[0]
         print(f"{i}-Output: {response}")
         completed_batch_ids = context_batch.keys() - response.keys()
         for batch_id in completed_batch_ids:
@@ -199,11 +205,11 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
     # The last execution must complete all batches
     # print(f"Remaining: {context_batch.keys()}")
     assert len(context_batch) == 1
-    last = pipeline_model.next_token(context_batch)[0]
+    last = pipeline.next_token(context_batch)[0]
     assert not last
 
     for context in context_batch.values():
-        pipeline_model.release(context)
+        pipeline.release(context)
 
 
 @pytest.fixture(scope="session")
@@ -228,7 +234,7 @@ def batch_sizes(request):
     indirect=True,
 )
 async def test_pipeline_dynamic_batch_same_prompt_same_output(
-    pipeline_model, pipeline_tokenizer, batch_sizes
+    pipeline, pipeline_tokenizer, batch_sizes
 ):
     """Execute a batch which matches the batch-size of the model
     Expects tokens to be generated for all contexts in lock-step
@@ -238,7 +244,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
     batching.
     """
     prompt = "Repeat this sentence forever and forever."
-    max_batch_size = pipeline_model.config.max_cache_batch_size
+    max_batch_size = pipeline._pipeline_config.max_cache_batch_size
     print(f"MaxBatchSize: {max_batch_size}")
 
     for batch_size in batch_sizes:
@@ -267,7 +273,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 
         # Execute these batches until they are complete
         for _ in range(cur_tokens, max_tokens):
-            response = pipeline_model.next_token(context_batch)[0]
+            response = pipeline.next_token(context_batch)[0]
             assert context_batch.keys() == response.keys()
             response_tokens = list(response.values())
             assert all(response_tokens[0] == t for t in response_tokens)
@@ -276,7 +282,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 
         # The last execution must complete all batches
         assert len(context_batch) == batch_size
-        last = pipeline_model.next_token(context_batch)[0]
+        last = pipeline.next_token(context_batch)[0]
         assert not last
 
         # for batch_id, batch_context in context_batch.items():
@@ -288,7 +294,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
         )
 
         for context in context_batch.values():
-            pipeline_model.release(context)
+            pipeline.release(context)
 
 
 @pytest.mark.asyncio
@@ -307,7 +313,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
     indirect=True,
 )
 async def test_pipeline_heterogeneous_batch_logits(
-    pipeline_model, pipeline_tokenizer
+    pipeline, pipeline_tokenizer
 ):
     """Execute a batch with prompts with different lengths and validates the
     logits.
@@ -316,8 +322,7 @@ async def test_pipeline_heterogeneous_batch_logits(
     As such, it should only work with tinyllama/fp32 on CPU.
     """
 
-    llama3 = pipeline_model.model
-    kv_manager = pipeline_model._kv_manager
+    llama3 = pipeline._pipeline_model
     prompt_a = PROMPTS[0]
     prompt_b = PROMPTS[1]
     prompt_c = PROMPTS[2]
@@ -366,6 +371,6 @@ async def test_pipeline_heterogeneous_batch_logits(
         stored_logits,
     )
 
-    pipeline_model.release(context_a)
-    pipeline_model.release(context_b)
-    pipeline_model.release(context_c)
+    pipeline.release(context_a)
+    pipeline.release(context_b)
+    pipeline.release(context_c)

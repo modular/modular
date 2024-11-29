@@ -13,13 +13,16 @@ from uuid import uuid4
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.llama3 import Llama3
-from llama3.llama3_token_gen import Llama3TokenGenerator
-from max.pipelines import PipelineConfig, TextContext
+from llama3.model import Llama3Model
+from max.pipelines import (
+    PipelineConfig,
+    TextContext,
+    TextGenerationPipeline,
+    TextTokenizer,
+)
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.driver import DeviceSpec
 from max.pipelines.kv_cache import KVCacheStrategy
-from max.pipelines import TextTokenizer
 from test_common.evaluate import PROMPTS
 
 
@@ -57,12 +60,13 @@ def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
 
 
 @pytest.fixture(scope="session")
-def tinyllama_model(
+def tinyllama_pipeline(
     pipeline_config: PipelineConfig, pipeline_tokenizer: TextTokenizer
-):
-    return Llama3TokenGenerator(
-        pipeline_config,
-        pipeline_tokenizer.delegate.eos_token_id,
+) -> TextGenerationPipeline:
+    return TextGenerationPipeline(
+        pipeline_config=pipeline_config,
+        pipeline_model=Llama3Model,
+        eos_token_id=pipeline_tokenizer.eos,
     )
 
 
@@ -76,7 +80,7 @@ def max_new_tokens_fixture(request):
     "pipeline_config", [TestParams(512, -1)], indirect=True
 )
 async def test_tinyllama_multistep_execution_gpu(
-    tinyllama_model: Llama3,
+    tinyllama_pipeline: TextGenerationPipeline,
     max_new_tokens_fixture: int,
     pipeline_tokenizer: TextTokenizer,
 ):
@@ -121,37 +125,37 @@ async def test_tinyllama_multistep_execution_gpu(
 
     # Run the model with singlestep
     single_step_tokens: dict[str, list[int]] = {
-        k: [] for k, v in single_step_contexts
+        k: [] for k, _ in single_step_contexts
     }
     for i in range(num_steps):
         # randomize the order of the contexts to test continuous batch reordering
         random.shuffle(single_step_contexts)
         single_step_context_dict = dict(single_step_contexts)
 
-        response = tinyllama_model.next_token(single_step_context_dict)[0]  # type: ignore
+        response = tinyllama_pipeline.next_token(single_step_context_dict)[0]
         for k, v in response.items():
             single_step_tokens[k].append(v)
 
     for _, v in single_step_contexts:
-        tinyllama_model.release(v)  # type: ignore
+        tinyllama_pipeline.release(v)
 
     multistep_tokens: dict[str, list[int]] = {
-        k: [] for k, v in multistep_contexts
+        k: [] for k, _ in multistep_contexts
     }
     for i in range(0, num_steps, num_multisteps):
         # randomize the order of the contexts to test continuous batch reordering
         random.shuffle(multistep_contexts)
         multistep_context_dict = dict(multistep_contexts)
-        response = tinyllama_model.next_token(  # type: ignore
+        multistep_response = tinyllama_pipeline.next_token(
             multistep_context_dict, num_steps=num_multisteps
         )
 
-        for i in range(len(response)):
-            for k, v in response[i].items():
+        for i in range(len(multistep_response)):
+            for k, v in multistep_response[i].items():
                 multistep_tokens[k].append(v)
 
     for _, v in multistep_contexts:
-        tinyllama_model.release(v)  # type: ignore
+        tinyllama_pipeline.release(v)
 
     for id in multistep_tokens.keys():
         assert multistep_tokens[id] == single_step_tokens[id]
