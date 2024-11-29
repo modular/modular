@@ -764,3 +764,8 @@ fn test_signature():
 
   # Ok!
   var z : fn(out x: HasIntParam[1])->None = HasIntParam[1].__init__
+
+fn bad_union[ao: Origin[True]](ref [ao] a: String, inout b: String) -> ref [__origin_of(a, b)] String:
+    var c: String
+    # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{ao._mlir_origin, b}'}}
+    return c

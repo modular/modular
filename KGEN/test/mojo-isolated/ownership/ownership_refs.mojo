@@ -488,3 +488,10 @@ fn test_higher_order_capture(owned x: MemExample, owned y: MemExample):
 # CHECK-SAME: !lit.ref<!Int, mut #lit.struct.extract<{{.*}}@Origin<:!Bool {:i1 1}> our_origin, "_mlir_origin">> mutref)
 fn test_origin_ref_spec[our_origin: Origin[True]](ref[our_origin] a: Int):
     pass
+
+# CHECK-LABEL: lit.func @"another_min
+fn another_min[is_mutable: Bool, //, ao: Origin[is_mutable], bo: Origin[is_mutable]](ref [ao]a: Int, ref [bo]b: Int) -> ref [__origin_of(a, b)] Int:
+    if a < b:
+        return a
+    else: # This failed due to union canonicalization problems.
+        return b
