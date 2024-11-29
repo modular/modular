@@ -1301,11 +1301,10 @@ floatLiteralConvertOpHelper(FloatLiteralSpecialValues special,
     exponentLength = 5;
     bias = 15;
     semantics = llvm::APFloatBase::S_Float8E5M2;
-  }
-  if (outType.isFloat8E5M2FNUZ()) {
+  } else if (outType.isFloat8E5M2FNUZ()) {
     totalLength = 8;
     exponentLength = 5;
-    bias = 15;
+    bias = 16;
     semantics = llvm::APFloatBase::S_Float8E5M2FNUZ;
   } else if (outType.isFloat8E4M3()) {
     totalLength = 8;
@@ -1315,7 +1314,7 @@ floatLiteralConvertOpHelper(FloatLiteralSpecialValues special,
   } else if (outType.isFloat8E4M3FNUZ()) {
     totalLength = 8;
     exponentLength = 4;
-    bias = 7;
+    bias = 8;
     semantics = llvm::APFloatBase::S_Float8E4M3FNUZ;
   } else if (outType.isFloat8E3M4()) {
     totalLength = 8;
@@ -1382,7 +1381,8 @@ floatLiteralConvertOpHelper(FloatLiteralSpecialValues special,
         inRat.value(), totalLength, exponentLength, bias);
     resultValue =
         APFloat(llvm::APFloatBase::EnumToSemantics(semantics), floatBits);
-  } break;
+    break;
+  }
   }
   return FloatAttr::get(outType, resultValue);
 }
