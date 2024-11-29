@@ -1330,7 +1330,7 @@ fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample,
 
 # CHECK-LABEL: lit.func @"my_min1
 # CHECK-SAME: !lit.ref<!Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
-fn my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [__origin_of(x, y)] Int:
+fn my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [x, y] Int:
   # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
   # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %x
   # CHECK-NEXT:    hlcf.yield [[TMP]]
@@ -1343,7 +1343,7 @@ fn my_min1(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [__origin_of(x, 
   return x if cond else y
 
 # CHECK-LABEL: lit.func @"my_min2
-fn my_min2[T: AnyType](ref a: T, ref b: T) -> ref [__origin_of(a, b)] T:
+fn my_min2[T: AnyType](ref a: T, ref b: T) -> ref [a, b] T:
     return a
 
 # CHECK-LABEL: lit.func @"test_min2

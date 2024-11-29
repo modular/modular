@@ -490,7 +490,7 @@ fn test_origin_ref_spec[our_origin: Origin[True]](ref[our_origin] a: Int):
     pass
 
 # CHECK-LABEL: lit.func @"another_min
-fn another_min[is_mutable: Bool, //, ao: Origin[is_mutable], bo: Origin[is_mutable]](ref [ao]a: Int, ref [bo]b: Int) -> ref [__origin_of(a, b)] Int:
+fn another_min[is_mutable: Bool, //, ao: Origin[is_mutable], bo: Origin[is_mutable]](ref [ao]a: Int, ref [bo]b: Int) -> ref [a, b] Int:
     if a < b:
         return a
     else: # This failed due to union canonicalization problems.
