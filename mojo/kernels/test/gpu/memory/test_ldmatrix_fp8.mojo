@@ -54,16 +54,16 @@ fn test_ldmatrix_fp8[
 
     barrier()
 
-    var a_reg = ld_matrix[input_type, a_frag_size](
+    var a_reg = ld_matrix[a_frag_size](
         a_shared + int((lane_id() % 16) * 32 + (lane_id() // 16) * 16)
     )
 
-    var b_reg = ld_matrix[input_type, b_frag_size](
+    var b_reg = ld_matrix[b_frag_size](
         b_shared + int((lane_id() % 8) * 32 + (lane_id() // 8) * 16)
     )
 
     mma(d, a_reg, b_reg, d)
-    store_matrix_d[DType.float32, M, N, K](
+    store_matrix_d[M, N, K](
         c_ptr,
         # Store matrix is hardcoded to store 4 elements.
         rebind[SIMD[DType.float32, 4]](d),

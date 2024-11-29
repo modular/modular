@@ -71,9 +71,7 @@ fn mma_kernel_fp32_fp32(
 
     var c_tile_row = BlockIdx.x * mma_m
     var c_tile_col = BlockIdx.y * mma_n
-    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
-        c_ptr, d_reg, c_tile_row, c_tile_col, n
-    )
+    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
 fn mma_kernel_fp32_fp16(

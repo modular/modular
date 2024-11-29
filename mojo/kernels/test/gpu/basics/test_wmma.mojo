@@ -53,9 +53,7 @@ fn mma_kernel_fp32_tf32(
 
     var c_tile_row = BlockIdx.x * mma_m
     var c_tile_col = BlockIdx.y * mma_n
-    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
-        c_ptr, d_reg, c_tile_row, c_tile_col, n
-    )
+    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k8
@@ -92,9 +90,7 @@ fn mma_kernel_fp32_bf16(
 
     var c_tile_row = BlockIdx.x * mma_m
     var c_tile_col = BlockIdx.y * mma_n
-    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
-        c_ptr, d_reg, c_tile_row, c_tile_col, n
-    )
+    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
 # FP32-BF16 (mixed precision) Tensor core Matmul with shape m16n8k16
@@ -131,9 +127,7 @@ fn mma_kernel_fp32_bf16_2(
 
     var c_tile_row = BlockIdx.x * mma_m
     var c_tile_col = BlockIdx.y * mma_n
-    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
-        c_ptr, d_reg, c_tile_row, c_tile_col, n
-    )
+    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
 # FP32-FP16 (mixed precision) Tensor core Matmul with shape m16n8k8
@@ -170,9 +164,7 @@ fn mma_kernel_fp32_fp16(
 
     var c_tile_row = BlockIdx.x * mma_m
     var c_tile_col = BlockIdx.y * mma_n
-    store_matrix_d[DType.float32, mma_m, mma_n, mma_k](
-        c_ptr, d_reg, c_tile_row, c_tile_col, n
-    )
+    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
 # FP16 Tensor core Matmul with shape m16n8k8
@@ -209,9 +201,7 @@ fn mma_kernel_fp16_fp16(
 
     var c_tile_row = BlockIdx.x * mma_m
     var c_tile_col = BlockIdx.y * mma_n
-    store_matrix_d[DType.float16, mma_m, mma_n, mma_k](
-        c_ptr, d_reg, c_tile_row, c_tile_col, n
-    )
+    store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
 fn run_mma_fp32_tf32(
