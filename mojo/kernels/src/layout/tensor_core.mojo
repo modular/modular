@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module provides abstractions for using Tensor Cores do to arithmetic and matrix operations
+"""This module provides abstractions for using Tensor Cores do to arithmetic and
+matrix operations.
 """
 
 from math import align_down
@@ -824,7 +825,7 @@ fn _load_matrix_frag[
         int(lane), offset
     ) * simd_size
 
-    return ld_matrix[mma_tile.dtype, __output_width, transposed](
+    return ld_matrix[__output_width, transpose=transposed](
         mma_tile.ptr + lane_offset
     )
 
