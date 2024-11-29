@@ -1179,7 +1179,9 @@ public:
     rewriter.replaceOpWithNewOp<LLVM::AtomicCmpXchgOp>(
         op, adaptor.getPtr(), adaptor.getCmp(), adaptor.getVal(),
         getAtomicOrdering(op.getSuccessOrdering()),
-        getAtomicOrdering(op.getFailureOrdering()));
+        getAtomicOrdering(op.getFailureOrdering()),
+        adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
+                               : StringRef());
     return success();
   }
 };
@@ -1198,7 +1200,9 @@ public:
     KGENDType dtype = *cast<SIMDType>(op.getType()).getResolvedDType();
     rewriter.replaceOpWithNewOp<LLVM::AtomicRMWOp>(
         op, getAtomicBinOp(dtype, adaptor.getBinOp()), adaptor.getPtr(),
-        adaptor.getVal(), getAtomicOrdering(op.getOrdering()));
+        adaptor.getVal(), getAtomicOrdering(op.getOrdering()),
+        adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
+                               : StringRef());
     return success();
   }
 

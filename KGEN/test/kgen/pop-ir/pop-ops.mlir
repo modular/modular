@@ -968,27 +968,33 @@ kgen.func @usesAGlobal() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @atomic_cmpxchg
+// CHECK-LABEL: kgen.generator @atomic_cmpxchg
 // CHECK-SAME: %[[PTR:.*]]: !kgen.pointer<scalar<index>>,
 // CHECK-SAME: %[[CMP:.*]]: !pop.scalar<index>,
 // CHECK-SAME: %[[NEW:.*]]: !pop.scalar<index>
-kgen.func @atomic_cmpxchg(%ptr: !kgen.pointer<scalar<index>>,
-                          %cmp: !pop.scalar<index>,
-                          %new: !pop.scalar<index>) {
+kgen.generator @atomic_cmpxchg<scope: string>(%ptr: !kgen.pointer<scalar<index>>,
+                                              %cmp: !pop.scalar<index>,
+                                              %new: !pop.scalar<index>) {
   // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] monotonic monotonic
   %0 = pop.atomic.cmpxchg %ptr, %cmp, %new monotonic monotonic :
                     !kgen.pointer<scalar<index>>
   // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] seq_cst acq_rel
   %1 = pop.atomic.cmpxchg %ptr, %cmp, %new seq_cst acq_rel :
                     !kgen.pointer<scalar<index>>
+  // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] syncscope(scope) seq_cst acq_rel
+  %2 = pop.atomic.cmpxchg %ptr, %cmp, %new syncscope(scope) seq_cst acq_rel :
+                    !kgen.pointer<scalar<index>>
+  // CHECK: pop.atomic.cmpxchg %[[PTR]], %[[CMP]], %[[NEW]] syncscope("agent") seq_cst acq_rel
+  %3 = pop.atomic.cmpxchg %ptr, %cmp, %new syncscope("agent") seq_cst acq_rel :
+                    !kgen.pointer<scalar<index>>
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @atomic_rmw
+// CHECK-LABEL: kgen.generator @atomic_rmw
 // CHECK-SAME: %[[PTR:.*]]: !kgen.pointer<scalar<index>>,
 // CHECK-SAME: %[[VAL:.*]]: !pop.scalar<index>
-kgen.func @atomic_rmw(%ptr: !kgen.pointer<scalar<index>>,
-                      %val: !pop.scalar<index>) {
+kgen.generator @atomic_rmw<scope: string>(%ptr: !kgen.pointer<scalar<index>>,
+                                          %val: !pop.scalar<index>) {
   // CHECK: pop.atomic.rmw add(%[[PTR]], %[[VAL]]) monotonic
   %0 = pop.atomic.rmw add(%ptr, %val) monotonic : !kgen.pointer<scalar<index>>
   // CHECK: pop.atomic.rmw sub(%[[PTR]], %[[VAL]]) monotonic
@@ -999,6 +1005,12 @@ kgen.func @atomic_rmw(%ptr: !kgen.pointer<scalar<index>>,
   %3 = pop.atomic.rmw min(%ptr, %val) monotonic : !kgen.pointer<scalar<index>>
   // CHECK: pop.atomic.rmw max(%[[PTR]], %[[VAL]]) monotonic
   %4 = pop.atomic.rmw max(%ptr, %val) monotonic : !kgen.pointer<scalar<index>>
+  // CHECK: pop.atomic.rmw max(%[[PTR]], %[[VAL]]) syncscope(scope) monotonic
+  %5 = pop.atomic.rmw max(%ptr, %val) syncscope(scope)
+                                      monotonic : !kgen.pointer<scalar<index>>
+  // CHECK: pop.atomic.rmw max(%[[PTR]], %[[VAL]]) syncscope("agent") monotonic
+  %6 = pop.atomic.rmw max(%ptr, %val) syncscope("agent")
+                                      monotonic : !kgen.pointer<scalar<index>>
   kgen.return
 }
 
