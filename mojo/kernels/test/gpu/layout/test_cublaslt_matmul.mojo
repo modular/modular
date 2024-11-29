@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: GPU-H100
+# REQUIRES: H100-GPU
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from gpu.cublas.cublas import check_cublas_error

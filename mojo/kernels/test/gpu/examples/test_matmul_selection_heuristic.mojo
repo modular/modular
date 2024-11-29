@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: GPU-A100
+# REQUIRES: A100-GPU
 # RUN: %mojo-no-debug --target-accelerator=nvidia:80 %s | FileCheck %s
 
 from gpu.host import DeviceContext
