@@ -10,6 +10,7 @@ from collections import List, Optional
 from pathlib import Path
 from sys import env_get_int, env_get_string, external_call, sizeof
 from sys.info import _get_arch, is_triple
+from builtin._location import __call_location, _SourceLocation
 
 from gpu.host._compile import (
     _compile_code,
@@ -69,14 +70,25 @@ fn not_implemented_yet[msg: StringLiteral]():
     abort(msg)
 
 
-fn _checked(err_msg: _CharPtr) raises:
-    if err_msg:
-        err_str = String(StringRef(ptr=err_msg))
-        # void AsyncRT_DeviceContext_strfree(const char* ptr)
-        external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](
-            err_msg
-        )
-        raise Error(err_str)
+@always_inline
+fn _checked(
+    err: _CharPtr,
+    *,
+    msg: String = "",
+    location: OptionalReg[_SourceLocation] = None,
+) raises:
+    if err:
+        _raise_checked_impl(err, msg, location.or_else(__call_location[2]()))
+
+
+@no_inline
+fn _raise_checked_impl(
+    err_msg: _CharPtr, msg: String, location: _SourceLocation
+) raises:
+    var err = String(StringRef(ptr=err_msg))
+    # void AsyncRT_DeviceContext_strfree(const char* ptr)
+    external_call["AsyncRT_DeviceContext_strfree", NoneType, _CharPtr](err_msg)
+    raise Error(location.prefix(err + ((" " + msg) if msg else "")))
 
 
 struct _DeviceTimer:
@@ -105,6 +117,7 @@ struct DeviceBufferV2[type: DType](Sized):
     var _device_ptr: UnsafePointer[Scalar[type]]
     var _handle: _DeviceBufferPtr
 
+    @always_inline
     fn __init__(
         inout self,
         ctx: DeviceContextV2,
@@ -235,6 +248,7 @@ struct DeviceBufferV2[type: DType](Sized):
             self._handle
         )
 
+    @always_inline
     fn create_sub_buffer[
         view_type: DType
     ](self, offset: Int, size: Int) raises -> DeviceBufferV2[view_type]:
@@ -289,6 +303,7 @@ struct DeviceBufferV2[type: DType](Sized):
 struct DeviceStreamV2:
     var _handle: _DeviceStreamPtr
 
+    @always_inline
     fn __init__(out self, ctx: DeviceContextV2) raises:
         var result = _DeviceStreamPtr()
         # const char *AsyncRT_DeviceContext_stream(const DeviceStream **result, const DeviceContext *ctx)
@@ -323,6 +338,7 @@ struct DeviceStreamV2:
             self._handle,
         )
 
+    @always_inline
     fn synchronize(self) raises:
         # const char *AsyncRT_DeviceStream_synchronize(const DeviceStream *stream)
         _checked(
@@ -379,6 +395,7 @@ struct DeviceFunctionV2[
             _DeviceFunctionPtr,
         ](self._handle)
 
+    @always_inline
     fn __init__(
         inout self,
         ctx: DeviceContextV2,
@@ -451,6 +468,7 @@ struct DeviceFunctionV2[
         )
         self._handle = result
 
+    @always_inline
     fn _copy_to_constant_memory(
         self, borrowed mapping: ConstantMemoryMapping
     ) raises:
@@ -672,6 +690,7 @@ struct DeviceFunctionV2[
     fn test_only_num_captures(self) -> Int:
         return self._func_impl.num_captures
 
+    @always_inline
     fn test_only_get_attribute(self, attr: Attribute) raises -> Int:
         var result: Int32 = 0
         # const char *AsyncRT_DeviceFunction_TEST_ONLY_getAttribute(int32_t *result, const DeviceFunction *func, int32_t attr_code)
@@ -703,6 +722,7 @@ struct DeviceContextV2:
 
     var _handle: _DeviceContextPtr
 
+    @always_inline
     fn __init__(
         inout self, device_id: Int = 0, *, api: String = Self.device_api
     ) raises:
@@ -788,6 +808,7 @@ struct DeviceContextV2:
         )
         return String(api_ptr)
 
+    @always_inline
     fn malloc_host[
         type: AnyType
     ](self, size: Int) raises -> UnsafePointer[type]:
@@ -809,6 +830,7 @@ struct DeviceContextV2:
         )
         return result
 
+    @always_inline
     fn free_host[type: AnyType](self, ptr: UnsafePointer[type]) raises:
         # const char * AsyncRT_DeviceContext_freeHost(const DeviceContext *ctx, void *ptr)
         _checked(
@@ -837,6 +859,7 @@ struct DeviceContextV2:
         self.synchronize()
         return result
 
+    @always_inline
     fn compile_function[
         func_type: AnyTrivialRegType, //,
         func: func_type,
@@ -887,6 +910,7 @@ struct DeviceContextV2:
         )
 
     @parameter
+    @always_inline
     fn enqueue_function[
         *Ts: AnyType
     ](
@@ -914,6 +938,7 @@ struct DeviceContextV2:
         )
 
     @parameter
+    @always_inline
     fn _enqueue_function[
         *Ts: AnyType
     ](
@@ -939,6 +964,7 @@ struct DeviceContextV2:
             constant_memory=constant_memory^,
         )
 
+    @always_inline
     fn execution_time[
         func: fn (Self) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
@@ -975,6 +1001,7 @@ struct DeviceContextV2:
         )
         return elapsed_nanos
 
+    @always_inline
     fn execution_time_iter[
         func: fn (Self, Int) raises capturing [_] -> None
     ](self, num_iters: Int) raises -> Int:
@@ -1011,6 +1038,7 @@ struct DeviceContextV2:
         )
         return elapsed_nanos
 
+    @always_inline
     fn enqueue_copy_to_device[
         type: DType
     ](self, buf: DeviceBufferV2[type], ptr: UnsafePointer[Scalar[type]]) raises:
@@ -1029,6 +1057,7 @@ struct DeviceContextV2:
             )
         )
 
+    @always_inline
     fn enqueue_copy_from_device[
         type: DType
     ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBufferV2[type]) raises:
@@ -1047,6 +1076,7 @@ struct DeviceContextV2:
             )
         )
 
+    @always_inline
     fn enqueue_copy_device_to_device[
         type: DType
     ](self, dst: DeviceBufferV2[type], src: DeviceBufferV2[type]) raises:
@@ -1065,6 +1095,7 @@ struct DeviceContextV2:
             )
         )
 
+    @always_inline
     fn enqueue_copy_device_to_device[
         type: DType
     ](
@@ -1078,6 +1109,7 @@ struct DeviceContextV2:
         var src_buf = DeviceBufferV2(self, src, size, owning=False)
         self.enqueue_copy_device_to_device[type](dst_buf, src_buf)
 
+    @always_inline
     fn copy_to_device_sync[
         type: DType
     ](self, buf: DeviceBufferV2[type], ptr: UnsafePointer[Scalar[type]]) raises:
@@ -1096,6 +1128,7 @@ struct DeviceContextV2:
             )
         )
 
+    @always_inline
     fn copy_from_device_sync[
         type: DType
     ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBufferV2[type]) raises:
@@ -1114,6 +1147,7 @@ struct DeviceContextV2:
             )
         )
 
+    @always_inline
     fn copy_device_to_device_sync[
         type: DType
     ](self, dst: DeviceBufferV2[type], src: DeviceBufferV2[type]) raises:
@@ -1132,6 +1166,7 @@ struct DeviceContextV2:
             )
         )
 
+    @always_inline
     fn enqueue_memset[
         type: DType
     ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
@@ -1167,6 +1202,7 @@ struct DeviceContextV2:
             )
         )
 
+    @always_inline
     fn memset_sync[
         type: DType
     ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
@@ -1210,6 +1246,7 @@ struct DeviceContextV2:
     fn stream(self) raises -> DeviceStreamV2:
         return DeviceStreamV2(self)
 
+    @always_inline
     fn synchronize(self) raises:
         # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
         _checked(
@@ -1222,6 +1259,7 @@ struct DeviceContextV2:
             )
         )
 
+    @always_inline
     fn get_driver_version(self) raises -> Int:
         var value: Int32 = 0
         # const char * AsyncRT_DeviceContext_getDriverVersion(int *result, const DeviceContext *ctx)
@@ -1238,6 +1276,7 @@ struct DeviceContextV2:
         )
         return int(value)
 
+    @always_inline
     fn get_attribute(self, attr: DeviceAttribute) raises -> Int:
         var value: Int32 = 0
         # const char * AsyncRT_DeviceContext_getAttribute(int *result, const DeviceContext *ctx, int attr)
@@ -1256,6 +1295,7 @@ struct DeviceContextV2:
         )
         return int(value)
 
+    @always_inline
     fn is_compatible(self) raises:
         # const char * AsyncRT_DeviceContext_isCompatibleWithMAX(const DeviceContext *ctx)
         _checked(
@@ -1268,6 +1308,7 @@ struct DeviceContextV2:
             )
         )
 
+    @always_inline
     fn compute_capability(self) raises -> Int:
         var compute_capability: Int32 = 0
         # const char * AsyncRT_DeviceContext_computeCapability(int32_t *result, const DeviceContext *ctx)
@@ -1281,6 +1322,7 @@ struct DeviceContextV2:
         )
         return int(compute_capability)
 
+    @always_inline
     fn get_memory_info(self) raises -> (_SizeT, _SizeT):
         var free = _SizeT(0)
         var total = _SizeT(0)
@@ -1301,6 +1343,7 @@ struct DeviceContextV2:
 
         return (free, total)
 
+    @always_inline
     fn can_access(self, peer: DeviceContextV2) raises -> Bool:
         var result: Bool = False
         # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
@@ -1319,6 +1362,7 @@ struct DeviceContextV2:
         )
         return result
 
+    @always_inline
     fn enable_peer_access(self, peer: DeviceContextV2) raises:
         # const char *AsyncRT_DeviceContext_enablePeerAccess(const DeviceContext *ctx, const DeviceContext *peer)
         _checked(
@@ -1334,6 +1378,7 @@ struct DeviceContextV2:
         )
 
     @staticmethod
+    @always_inline
     fn number_of_devices(*, api: String = Self.device_api) raises -> Int:
         # const char *AsyncRT_DeviceContext_numberOfDevices(int32_t *result, const char* kind)
         var num_devices: Int32 = 0
