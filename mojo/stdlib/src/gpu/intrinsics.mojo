@@ -6,7 +6,7 @@
 """This module includes NVIDIA GPUs intrinsics operations."""
 
 from sys._assembly import inlined_assembly
-from sys.info import alignof, bitwidthof
+from sys.info import alignof, bitwidthof, _current_arch
 from sys.intrinsics import llvm_intrinsic
 
 from builtin.dtype import _int_type_of_width
@@ -14,7 +14,7 @@ from memory import UnsafePointer
 from memory.unsafe import bitcast
 
 from .memory import AddressSpace, _int_to_str
-from .sys import is_sm_greater_equal
+from .host.info import Info, H100
 
 # ===----------------------------------------------------------------------===#
 # ldg
@@ -52,6 +52,11 @@ fn ldg[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline("nodebug")
+fn _get_sm_name() -> StringLiteral:
+    return _current_arch()
+
+
 fn warpgroup_reg_alloc[count: Int]():
     """Provides a hint to the system to update the maximum number of per-thread
     registers owned by the executing warp to the value specified by the
@@ -72,7 +77,7 @@ fn warpgroup_reg_alloc[count: Int]():
     ]()
 
     @parameter
-    if is_sm_greater_equal["sm_90a"]():
+    if Info.from_name[_get_sm_name()]() >= H100:
         inlined_assembly[
             "llvm.nvvm.setmaxnreg.inc.sync.aligned.u32",
             NoneType,
@@ -100,7 +105,7 @@ fn warpgroup_reg_dealloc[count: Int]():
     ]()
 
     @parameter
-    if is_sm_greater_equal["sm_90a"]():
+    if Info.from_name[_get_sm_name()]() >= H100:
         inlined_assembly[
             "llvm.nvvm.setmaxnreg.dec.sync.aligned.u32",
             NoneType,
