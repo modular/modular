@@ -146,9 +146,9 @@ fn load_matrix_a_amd[
 ) -> SIMD[DType.float32, 1]:
     constrained[m == 16 and n == 16 and k == 4]()
     var lane = lane_id()
-    var threadx = lane & 15
-    var thready = lane >> 4
-    return a_ptr[ldm * (tile_row + threadx) + tile_col + thready]
+    var thread_x = lane & 15
+    var thread_y = lane >> 4
+    return a_ptr[ldm * (tile_row + thread_x) + tile_col + thread_y]
 
 
 @always_inline
@@ -162,13 +162,13 @@ fn load_matrix_a_amd[
 ) -> SIMD[DType.float16, 4]:
     constrained[m == 16 and n == 16 and k == 16]()
     var lane = lane_id()
-    var threadx = lane & 15
-    var thready = lane >> 4
+    var thread_x = lane & 15
+    var thread_y = lane >> 4
     var a = SIMD[DType.float16, 4]()
 
     @parameter
     for i in range(4):
-        var a_idx = ldm * (tile_row + threadx) + tile_col + i + 4 * thready
+        var a_idx = ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
         a[i] = a_ptr[a_idx]
 
     return a
@@ -185,11 +185,13 @@ fn load_matrix_a_amd[
 ) -> SIMD[DType.bfloat16, 4]:
     constrained[m == 16 and n == 16 and k == 16]()
     var lane = lane_id()
-    var threadx = lane & 15
-    var thready = lane >> 4
+    var thread_x = lane & 15
+    var thread_y = lane >> 4
     var a = SIMD[DType.bfloat16, 4]()
+
+    @parameter
     for i in range(4):
-        var a_idx = ldm * (tile_row + threadx) + tile_col + i + 4 * thready
+        var a_idx = ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
         a[i] = a_ptr[a_idx]
 
     return a
@@ -307,9 +309,9 @@ fn load_matrix_b_amd[
     ldm: Int,
 ) -> SIMD[DType.float32, 1]:
     var lane = lane_id()
-    var threadx = lane & 15
-    var thready = lane >> 4
-    return b_ptr[ldm * (tile_row + thready) + tile_col + threadx]
+    var thread_x = lane & 15
+    var thread_y = lane >> 4
+    return b_ptr[ldm * (tile_row + thread_y) + tile_col + thread_x]
 
 
 @always_inline
@@ -322,14 +324,14 @@ fn load_matrix_b_amd[
     ldm: Int,
 ) -> SIMD[DType.float16, 4]:
     var lane = lane_id()
-    var threadx = lane & 15
-    var thready = lane >> 4
+    var thread_x = lane & 15
+    var thread_y = lane >> 4
 
     var b = SIMD[DType.float16, 4]()
 
     @parameter
     for i in range(4):
-        var b_idx = ldm * (tile_row + 4 * thready + i) + tile_col + threadx
+        var b_idx = ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
         b[i] = b_ptr[b_idx]
 
     return b
@@ -345,14 +347,14 @@ fn load_matrix_b_amd[
     ldm: Int,
 ) -> SIMD[DType.bfloat16, 4]:
     var lane = lane_id()
-    var threadx = lane & 15
-    var thready = lane >> 4
+    var thread_x = lane & 15
+    var thread_y = lane >> 4
 
     var b = SIMD[DType.bfloat16, 4]()
 
     @parameter
     for i in range(4):
-        var b_idx = ldm * (tile_row + 4 * thready + i) + tile_col + threadx
+        var b_idx = ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
         b[i] = b_ptr[b_idx]
 
     return b
@@ -360,7 +362,7 @@ fn load_matrix_b_amd[
 
 @always_inline
 fn _store_matrix_d_nvidia[
-    dtype: DType, m: Int, n: Int, k: Int
+    dtype: DType, //, m: Int, n: Int, k: Int
 ](
     d_ptr: UnsafePointer[Scalar[dtype]],
     d: SIMD[dtype, 4],
@@ -391,7 +393,7 @@ fn _store_matrix_d_nvidia[
 
 @always_inline
 fn _store_matrix_d_amd[
-    dtype: DType, m: Int, n: Int, k: Int
+    dtype: DType, //, m: Int, n: Int, k: Int
 ](
     d_ptr: UnsafePointer[Scalar[dtype]],
     d: SIMD[dtype, 4],
@@ -400,17 +402,17 @@ fn _store_matrix_d_amd[
     ldm: Int,
 ):
     var lane = lane_id()
-    var threadx = lane & 15
-    var thready = lane >> 4
+    var thread_x = lane & 15
+    var thread_y = lane >> 4
 
     @parameter
     for i in range(4):
-        d_ptr[ldm * (tile_row + 4 * thready + i) + tile_col + threadx] = d[i]
+        d_ptr[ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x] = d[i]
 
 
 @always_inline
 fn store_matrix_d[
-    dtype: DType, m: Int, n: Int, k: Int
+    dtype: DType, //, m: Int, n: Int, k: Int
 ](
     d_ptr: UnsafePointer[Scalar[dtype]],
     d: SIMD[dtype, 4],
@@ -425,8 +427,6 @@ fn store_matrix_d[
 
     @parameter
     if is_nvidia_gpu():
-        _store_matrix_d_nvidia[dtype, m, n, k](
-            d_ptr, d, tile_row, tile_col, ldm
-        )
+        _store_matrix_d_nvidia[m, n, k](d_ptr, d, tile_row, tile_col, ldm)
     else:
-        _store_matrix_d_amd[dtype, m, n, k](d_ptr, d, tile_row, tile_col, ldm)
+        _store_matrix_d_amd[m, n, k](d_ptr, d, tile_row, tile_col, ldm)

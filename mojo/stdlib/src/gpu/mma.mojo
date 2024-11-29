@@ -401,7 +401,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 @always_inline
 fn ld_matrix[
-    type: DType, simd_width: Int, transpose: Bool = False
+    type: DType, //, simd_width: Int, *, transpose: Bool = False
 ](
     ptr: UnsafePointer[Scalar[type], address_space = AddressSpace.SHARED]
 ) -> SIMD[type, simd_width]:
