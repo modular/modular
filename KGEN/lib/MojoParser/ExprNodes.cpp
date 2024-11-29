@@ -1736,13 +1736,13 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   // Helper to emit an SValue or PValue to the destination.
-  auto emitSOrPValueResult = [&](AnyValue value) -> AnyValue {
+  auto emitResult = [&](CValue value) -> AnyValue {
     return emitter.emitResult(value, &call, dest);
   };
 
   // If we succeeded and have no types, then install a None value.
   if (resultOp->getNumResults() == 0)
-    return emitSOrPValueResult(PValue(emitter.shared.getNoneAttr()));
+    return emitResult(PValue(emitter.shared.getNoneAttr()));
 
   if (resultOp->getNumResults() == 1) {
     OpResult res = resultOp->getResult(0);
@@ -1759,32 +1759,32 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     if (succeeded(resultOp->fold(constOperands, foldResults)) &&
         foldResults.size() == 1) {
       auto folded = PointerUnion<Attribute, Value>(foldResults[0]);
-      ASTType foldedType;
+      CValue result;
       // If the result was some other value that already exists, use it.
       if (auto val = dyn_cast<Value>(folded)) {
-        if (val.getType() == resType) {
-          resultOp->erase();
-          return emitSOrPValueResult(SRValue(val));
-        }
-        foldedType = val.getType();
+        result = SRValue(val);
       } else {
         // If it is a constant, make an PValue result.
-        auto attr = cast<TypedAttr>(cast<Attribute>(folded));
-        if (attr.getType() == resType) {
-          resultOp->erase();
-          return emitSOrPValueResult(PValue(attr));
-        }
-        foldedType = attr.getType();
+        if (auto attr = dyn_cast<TypedAttr>(cast<Attribute>(folded)))
+          result = PValue(attr);
+        // If it isn't a TypedAttr, then we cannot fold to it.
       }
-      emitter.emitError(call.getLoc())
-          << unboundOp.getName() << " operation folded to result type "
-          << foldedType << " but we expected it to be " << resType
-          << call.getRange();
-      return {};
+
+      if (result) {
+        if (result.getRValueType().isEqualCanon(resType)) {
+          resultOp->erase();
+          return emitResult(result);
+        }
+        emitter.emitError(call.getLoc())
+            << unboundOp.getName() << " operation folded to result type "
+            << result.getRValueType() << " but we expected it to be " << resType
+            << call.getRange();
+        return {};
+      }
     }
 
     // If folding failed, return the operation's result normally.
-    return emitSOrPValueResult(SRValue(res));
+    return emitResult(SRValue(res));
   }
 
   // Pack results into a tuple and return it.

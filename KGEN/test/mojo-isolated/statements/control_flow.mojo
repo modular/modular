@@ -546,6 +546,13 @@ fn parameter_for[a: Int](owned value: MyType):
         use(value)
         # CHECK: kgen.param.for.continue
 
+# CHECK-LABEL: lit.func @"weird_llvm_dialect_op
+# https://github.com/modularml/mojo/issues/3805
+fn weird_llvm_dialect_op():
+    # CHECK: %0 = llvm.mlir.zero : !llvm.ptr
+   x = __mlir_op.`llvm.mlir.zero`[_type = __mlir_type.`!llvm.ptr<0>`]()
+
+
 ##===----------------------------------------------------------------------===##
 
 # TODO(Issue #6139)
