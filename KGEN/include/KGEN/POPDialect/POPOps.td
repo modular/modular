@@ -1941,6 +1941,9 @@ def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
     ```mlir
     %b0 = pop.atomic.cmpxchg %ptr, %cmp, %val monotonic monotonic :
         !kgen.pointer<scalar<index>>
+
+    %b1 = pop.atomic.cmpxchg %ptr, %cmp, %val scyncscope("singlethread")
+        monotonic monotonic : !kgen.pointer<scalar<index>>
     ```
   }];
 
@@ -1948,12 +1951,14 @@ def POP_AtomicCmpXchgOp : POPOp<"atomic.cmpxchg", [
                        UnboundOrIndexOrInt:$cmp,
                        UnboundOrIndexOrInt:$val,
                        POP_AtomicOrderingAttr:$success_ordering,
-                       POP_AtomicOrderingAttr:$failure_ordering);
+                       POP_AtomicOrderingAttr:$failure_ordering,
+                       OptionalAttr<AttrOfType<KGEN_StringType>>:$syncscope);
   let results = (outs POP_AtomicCmpXchgResultType:$result);
 
   let assemblyFormat = [{
-    $ptr `,` $cmp `,` $val `` $success_ordering `` $failure_ordering
-    attr-dict `:` qualified(type($ptr))
+    $ptr `,` $cmp `,` $val
+    (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? `` $success_ordering
+    `` $failure_ordering attr-dict `:` qualified(type($ptr))
   }];
 }
 
@@ -1991,18 +1996,22 @@ def POP_AtomicRMWOp : POPOp<"atomic.rmw", [
 
     ```mlir
     %0 = pop.atomic.rmw add(%ptr, %val) monotonic : !kgen.pointer<scalar<index>>
+    %0 = pop.atomic.rmw add(%ptr, %val) syncscope(singlethread") monotonic :
+                                        !kgen.pointer<scalar<index>>
     ```
   }];
 
   let arguments = (ins POP_AtomicBinOpAttr:$bin_op,
                        PointerOf<UnboundOrArithmeticScalar>:$ptr,
                        UnboundOrArithmeticScalar:$val,
-                       POP_AtomicOrderingAttr:$ordering);
+                       POP_AtomicOrderingAttr:$ordering,
+                       OptionalAttr<AttrOfType<KGEN_StringType>>:$syncscope);
   let results = (outs UnboundOrArithmeticScalar:$result);
 
   let assemblyFormat = [{
-    `` $bin_op `(` $ptr `,` $val `)` `` $ordering attr-dict `:`
-    qualified(type($ptr))
+    `` $bin_op `(` $ptr `,` $val `)`
+    (`syncscope` `(` custom<StringParam>($syncscope)^ `)`)? `` $ordering
+    attr-dict `:` qualified(type($ptr))
   }];
 }
 

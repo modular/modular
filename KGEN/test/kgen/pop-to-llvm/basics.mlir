@@ -729,6 +729,10 @@ kgen.func @atomic_cmpxchg(%ptr: !kgen.pointer<scalar<index>>,
   %1 = pop.atomic.cmpxchg %ptr, %cmp, %new acq_rel monotonic :
                     !kgen.pointer<scalar<index>>
 
+  // CHECK: llvm.cmpxchg {{.*}} syncscope("singlethread") acq_rel monotonic
+  %2 = pop.atomic.cmpxchg %ptr, %cmp, %new syncscope("singlethread")
+                    acq_rel monotonic : !kgen.pointer<scalar<index>>
+
   kgen.return
 }
 
@@ -749,12 +753,13 @@ kgen.func @atomic_rmw(%ptr0: !kgen.pointer<scalar<index>>,
   %3 = pop.atomic.rmw min(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
   // CHECK: llvm.atomicrmw max {{.*}} monotonic
   %4 = pop.atomic.rmw max(%ptr0, %val0) monotonic : !kgen.pointer<scalar<index>>
-
   // CHECK: llvm.atomicrmw fadd {{.*}} monotonic
   %5 = pop.atomic.rmw add(%ptr1, %val1) monotonic : !kgen.pointer<scalar<f32>>
-
   // CHECK: llvm.atomicrmw umax {{.*}} monotonic
   %6 = pop.atomic.rmw max(%ptr2, %val2) monotonic : !kgen.pointer<scalar<ui32>>
+  // CHECK: llvm.atomicrmw umax {{.*}} syncscope("singlethread") monotonic
+  %7 = pop.atomic.rmw max(%ptr2, %val2) syncscope("singlethread")
+                                        monotonic : !kgen.pointer<scalar<ui32>>
   kgen.return
 }
 
