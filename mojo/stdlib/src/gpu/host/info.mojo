@@ -595,15 +595,31 @@ struct Info:
         )
 
     fn __lt__(self, other: Self) -> Bool:
+        debug_assert(
+            self.vendor == other.vendor,
+            "the vendors must be the same to perform the comparison",
+        )
         return self.compute < other.compute
 
     fn __le__(self, other: Self) -> Bool:
+        debug_assert(
+            self.vendor == other.vendor,
+            "the vendors must be the same to perform the comparison",
+        )
         return self.compute <= other.compute
 
     fn __gt__(self, other: Self) -> Bool:
+        debug_assert(
+            self.vendor == other.vendor,
+            "the vendors must be the same to perform the comparison",
+        )
         return self.compute > other.compute
 
     fn __ge__(self, other: Self) -> Bool:
+        debug_assert(
+            self.vendor == other.vendor,
+            "the vendors must be the same to perform the comparison",
+        )
         return self.compute >= other.compute
 
     fn __eq__(self, other: Self) -> Bool:
