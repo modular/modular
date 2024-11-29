@@ -44,6 +44,11 @@ struct MemPair:
 struct RegExample:
   fn __init__(out self):
     return
+
+  @implicit
+  fn __init__(out self, value: Int):
+    pass
+
   fn __copyinit__(out self, existing: Self): # CHECK: lit.func @"__copyinit__
     return
 
@@ -987,21 +992,27 @@ fn overwrite(y: MemExample, x: Bool) raises:
 fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegExample:
     # CHECK-NEXT: lit.call {{.*}}__mlir_i1__
     # CHECK-NEXT: [[RES:%.*]] = hlcf.if
-    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
-    # CHECK-NEXT:    lit.ref.immut %a
-    # CHECK-NEXT:    kgen.param.declare *"anonymous
     # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
-    # CHECK-NEXT:    [[A:%.*]] = lit.load.consume [[TMP]]
-    # CHECK-NEXT:    hlcf.yield [[A]]
+    # CHECK-NEXT:    hlcf.yield [[TMP]]
     # CHECK-NEXT:  } else {
-    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%a)
-    # CHECK-NEXT:    lit.ref.immut %b
-    # CHECK-NEXT:    kgen.param.declare *"anonymous
     # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %b
-    # CHECK-NEXT:    [[B:%.*]] = lit.load.consume [[TMP]]
-    # CHECK-NEXT:    hlcf.yield [[B]]
+    # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
     # CHECK-NEXT:  }
-    # CHECK-NEXT:  kgen.return [[RES]]
+
+    # Copy into a local temporary.
+    # CHECK-NEXT:  [[TMP:%.*]] = lit.var.decl "anonymous
+    # CHECK-NEXT:  [[IRES:%.*]] = lit.ref.immut [[RES]]
+    # CHECK-NEXT:  lit.var.lifetime.start [[TMP]]
+    # CHECK-NEXT:  lit.call {{.*}}__copyinit__{{.*}}([[TMP]], [[IRES]])
+
+    # Last use of both x and b.
+    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%a)
+    # CHECK-NEXT:    lit.call {{.*}}__del__{{.*}}(%b)
+    
+    # Load the result to return it.
+    # CHECK-NEXT:    [[OUT:%.*]] = lit.load.consume [[TMP]]
+    # CHECK-NEXT: lit.var.lifetime.end [[TMP]]
+    # CHECK-NEXT:  kgen.return [[OUT]]
     return a if x else b
 
 
@@ -1194,3 +1205,139 @@ fn test_origin_ctor_folding[orig1: Origin[_]](abcdef: A):
     # MOCO-1467: Origin type equality problem.
     # CHECK-NEXT: lit.alias.decl {{.*}} = <orig1>
     alias y = Origin(orig1._mlir_origin)
+
+
+fn useMemory(a: MemExample): pass
+
+# CHECK-LABEL: lit.func @"testConds1
+fn testConds1(cond: __mlir_type.i1, reg: RegExample, i: Int):
+  # Implicit conversions.
+  # Mojo Issue #49: https://github.com/modularml/mojo/issues/49
+
+  # CHECK-NEXT: hlcf.if %cond -> !RegExample {
+  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %reg)
+  # CHECK:        hlcf.yield
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[INTTMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT:   lit.var.lifetime.start [[INTTMP]]
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}({{.*}}, %i)
+  # CHECK-NEXT:   [[V:%.*]] = lit.load.consume [[INTTMP]]
+  # CHECK-NEXT:   lit.var.lifetime.end [[INTTMP]]
+  # CHECK-NEXT:   hlcf.yield [[V]]
+  # CHECK-NEXT: }
+  _ = reg if cond else i
+
+  # CHECK: hlcf.if %cond -> !RegExample {
+  # CHECK:        lit.call {{.*}}__init__{{.*}}({{.*}}, %i)
+  # CHECK:        hlcf.yield
+  # CHECK-NEXT: } else {
+  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %reg)
+  # CHECK:        hlcf.yield
+  # CHECK-NEXT: }
+  _ = i if cond else reg
+
+  _ = reg
+  _ = i
+
+# Memory only conds. Issue (#13379)
+# CHECK-LABEL: lit.func @"testConds2
+fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
+  # CHECK:      [[IF:%.*]] = hlcf.if %cond
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %a
+  # CHECK-NEXT:   hlcf.yield [[TMP]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %b
+  # CHECK-NEXT:   hlcf.yield [[TMP]]{{.*}}
+  # CHECK-NEXT: }
+  # CHECK-NEXT: lit.call {{.*}}useMemory{{.*}}([[IF]])
+  useMemory(a if cond else b)
+
+  # Handle a local temp correctly.
+  # TODO: The moveinit doesn't seem necessary, could direct construct into the
+  # dest and elide the temp.
+
+  # CHECK-NEXT: [[IF:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT: hlcf.if %cond
+  # CHECK-NEXT:   [[TMP:%.*]] = lit.var.decl "anonymous
+  # CHECK-NEXT:   lit.var.lifetime.start [[TMP]]
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[TMP]])
+  # CHECK-NEXT:   lit.var.lifetime.start [[IF]]
+  # CHECK-NEXT:   lit.call {{.*}}__moveinit__{{.*}}([[IF]], [[TMP]])
+  # CHECK-NEXT:   lit.var.lifetime.end [[TMP]]
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   lit.var.lifetime.start [[IF]]
+  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[IF]], %b)
+  # CHECK-NEXT:   hlcf.yield
+  # CHECK-NEXT: }
+  # CHECK-NEXT: [[IFI:%.*]] = lit.ref.immut [[IF]]
+  # CHECK-NEXT: lit.call {{.*}}useMemory{{.*}}([[IFI]])
+  useMemory(MemExample() if cond else b)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[IF]])
+  # CHECK-NEXT: lit.var.lifetime.end [[IF]]
+
+
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond 
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %a
+  # CHECK-NEXT:   hlcf.yield [[TMP]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %b
+  # CHECK-NEXT:   hlcf.yield [[TMP]]{{.*}}
+  # CHECK-NEXT: }
+  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%__result__, [[IF]])
+  # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
+  return a if cond else b
+
+# CHECK-LABEL: lit.func @"testConds3
+fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample, 
+              owned m: RegExample, owned n: RegExample):
+  # CHECK-NEXT: %t1 = lit.var.decl
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
+  # CHECK-NEXT:    lit.ownership.use %a
+  # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %a
+  # CHECK-NEXT:    hlcf.yield [[TMP]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:    lit.ownership.use %b
+  # CHECK-NEXT:    [[TMP:%.*]]  = kgen.rebind %b
+  # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
+  # CHECK-NEXT: }
+  # CHECK-NEXT: [[IFI:%.*]] = lit.ref.immut [[IF]]
+  # CHECK-NEXT: lit.var.lifetime.start %t1
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%t1, [[IFI]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%a)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%b)
+  var t1 = a^ if cond else b^
+
+  # CHECK-NEXT: %t2 = lit.var.decl
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
+  # CHECK-NEXT:    lit.ownership.use %m
+  # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %m
+  # CHECK-NEXT:    hlcf.yield [[TMP]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:    lit.ownership.use %n
+  # CHECK-NEXT:    [[TMP:%.*]]  = kgen.rebind %n
+  # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
+  # CHECK-NEXT: }
+  # CHECK-NEXT: [[IFI:%.*]] = lit.ref.immut [[IF]]
+  # CHECK-NEXT: lit.var.lifetime.start %t2
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%t2, [[IFI]])
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%m)
+  # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%n)
+  var t2 = m^ if cond else n^
+
+  _ = t1
+  _ = t2
+
+# CHECK-LABEL: lit.func @"my_min
+fn my_min(cond: __mlir_type.i1, ref x: Int, ref y: Int) -> ref [__origin_of(x, y)] Int:
+  # CHECK-NEXT: [[IF:%.*]] = hlcf.if %cond
+  # CHECK-NEXT:    [[TMP:%.*]] = kgen.rebind %x
+  # CHECK-NEXT:    hlcf.yield [[TMP]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:    [[TMP:%.*]]  = kgen.rebind %y
+  # CHECK-NEXT:    hlcf.yield [[TMP]]{{.*}}
+  # CHECK-NEXT: }
+
+  # CHECK-NEXT:    [[TMP:%.*]]  = kgen.rebind [[IF]]
+  # CHECK-NEXT: kgen.return [[TMP]]
+  return x if cond else y

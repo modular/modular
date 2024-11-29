@@ -1475,9 +1475,16 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   //   Origins with identical mutability will be uniqued and already handled.
   //   Conversion from any mutability to KNOWN immutable is fine.
   //   Conversion from KNOWN mutable to any mutability is fine.
+  //   Conversion from with mutability "X" to "X&Y" is known to be fine.
+  // We allow KGEN to fold the true and false cases for us.
   if (auto fromLife = dyn_cast<OriginType>(fromType))
-    if (auto toLife = dyn_cast<OriginType>(toType))
-      return toLife.isMutableKnown(false) || fromLife.isMutableKnown(true);
+    if (auto toLife = dyn_cast<OriginType>(toType)) {
+      auto toMut = toLife.getIsMutable();
+      auto result =
+          ParamOperatorAttr::get(POC::And, toMut, fromLife.getIsMutable());
+      if (result == toMut)
+        return true;
+    }
 
   // Check reference downcasting.  The only thing allowed to disagree is the
   // origin set / mutability.

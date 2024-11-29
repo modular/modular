@@ -1594,14 +1594,16 @@ static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
       POC::And, operands, [](auto a, auto b) { return a & b; }, {},
       /*identityCst*/ [](auto cst) { return cst.isAllOnes(); },
-      /*destructiveCst*/ [](auto cst) { return cst.isZero(); });
+      /*destructiveCst*/ [](auto cst) { return cst.isZero(); },
+      /*shouldDeduplicateOperands=*/true);
 }
 
 static Attribute simplifyOr(SmallVectorImpl<TypedAttr> &operands) {
   return simplifyAssocOp(
       POC::Or, operands, [](auto a, auto b) { return a | b; }, {},
       /*identityCst*/ [](auto cst) { return cst.isZero(); },
-      /*destructiveCst*/ [](auto cst) { return cst.isAllOnes(); });
+      /*destructiveCst*/ [](auto cst) { return cst.isAllOnes(); },
+      /*shouldDeduplicateOperands=*/true);
 }
 
 static Attribute simplifyXor(SmallVectorImpl<TypedAttr> &operands) {
