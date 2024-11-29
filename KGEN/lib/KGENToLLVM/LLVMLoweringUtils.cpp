@@ -743,6 +743,11 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
 
+static bool isFP8(Type fpType) {
+  return fpType.isFloat8E5M2() || fpType.isFloat8E5M2FNUZ() ||
+         fpType.isFloat8E4M3() || fpType.isFloat8E4M3FNUZ();
+}
+
 /// Convert a SIMD vector constant.
 static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
                              const mlir::LLVMTypeConverter &tc,
@@ -771,7 +776,7 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
 
     FloatType fpType = getEquivalentFloatType(b.getContext(), dtype);
     FloatAttr attrVal = b.getFloatAttr(fpType, value.getFloatVal());
-    if (fpType.isFloat8E5M2() || fpType.isFloat8E4M3())
+    if (isFP8(fpType))
       return b.create<LLVM::ConstantOp>(b.getI8Type(), attrVal);
 
     return asConst(attrVal);
@@ -816,7 +821,7 @@ static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
   auto attrVal = cast<TypedAttr>(FloatArrayElementsAttr::get(
       VectorType::get(values.size(), fpType), values));
 
-  if (fpType.isFloat8E5M2() || fpType.isFloat8E4M3()) {
+  if (isFP8(fpType)) {
     return b.create<LLVM::ConstantOp>(
         VectorType::get(values.size(), b.getI8Type()), attrVal);
   }
@@ -915,9 +920,7 @@ Value KGEN::convertParameterToLLVM(
 
   if (auto fltCst = dyn_cast<FloatAttr>(attr)) {
     Type type = fltCst.getType();
-    bool isFP8 =
-        type.isFloat8E3M4() || type.isFloat8E4M3() || type.isFloat8E5M2();
-    if (isFP8) {
+    if (isFP8(type)) {
       return b.create<LLVM::ConstantOp>(tc.convertType(type),
                                         fltCst.getValue().bitcastToAPInt());
     }
