@@ -1356,31 +1356,27 @@ floatLiteralConvertOpHelper(FloatLiteralSpecialValues special,
         loc, Error("float literal conversion: unsupported output type"));
   }
 
-  APFloat resultValue =
-      APFloat::getNaN(llvm::APFloatBase::EnumToSemantics(semantics));
+  const llvm::fltSemantics &fltSemantics =
+      llvm::APFloatBase::EnumToSemantics(semantics);
+  APFloat resultValue(fltSemantics, APFloat::uninitialized);
   switch (special) {
   case FloatLiteralSpecialValues::Nan:
-    resultValue =
-        APFloat::getNaN(llvm::APFloatBase::EnumToSemantics(semantics));
+    resultValue = APFloat::getNaN(fltSemantics);
     break;
   case FloatLiteralSpecialValues::Inf:
-    resultValue = APFloat::getInf(llvm::APFloatBase::EnumToSemantics(semantics),
-                                  /*negative=*/false);
+    resultValue = APFloat::getInf(fltSemantics, /*negative=*/false);
     break;
   case FloatLiteralSpecialValues::NegInf:
-    resultValue = APFloat::getInf(llvm::APFloatBase::EnumToSemantics(semantics),
-                                  /*negative=*/true);
+    resultValue = APFloat::getInf(fltSemantics, /*negative=*/true);
     break;
   case FloatLiteralSpecialValues::NegZero:
-    resultValue = APFloat::getZero(
-        llvm::APFloatBase::EnumToSemantics(semantics), /*negative=*/true);
+    resultValue = APFloat::getZero(fltSemantics, /*negative=*/true);
     break;
   case FloatLiteralSpecialValues::Normal: {
     assert(inRat.has_value() && "normal FloatLiteral values have a rational");
     APInt floatBits = floatLiteralConvertGetBitstring(
         inRat.value(), totalLength, exponentLength, bias);
-    resultValue =
-        APFloat(llvm::APFloatBase::EnumToSemantics(semantics), floatBits);
+    resultValue = APFloat(fltSemantics, floatBits);
     break;
   }
   }
