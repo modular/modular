@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """This module provides abstractions for doing matrix-multiply-accumulate (mma)
 using tensor cores.
-PTX documentation => https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-1688
+PTX Documentation => https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-1688
+AMD Documentation => https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-cores-readme/
 """
 
 
@@ -19,8 +20,8 @@ fn load_matrix_a[
     ldm: Int,
 ) -> SIMD[DType.float32, 4]:
     """
-    For shape m16n8k8 type tf32 loads matrix A tile from memory to registers in specific order to be used
-    by tensor cores to perform a warp sync mma op.
+    For shape m16n8k8 type tf32 loads matrix A tile from memory to registers in
+    specific order to be used by tensor cores to perform a warp sync mma op.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -50,8 +51,8 @@ fn load_matrix_a[
     ldm: Int,
 ) -> SIMD[DType.float16, 4]:
     """
-    For shape m16n8k8 & type fp16 loads matrix A tile from memory to registers in specific order to be used
-    by tensor cores to perform a warp sync mma op.
+    For shape m16n8k8 & type fp16 loads matrix A tile from memory to registers
+    in specific order to be used by tensor cores to perform a warp sync mma op.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -83,8 +84,8 @@ fn load_matrix_a[
     ldm: Int,
 ) -> SIMD[DType.bfloat16, k // 2]:
     """
-    For type bfp16 loads matrix A tile from memory to registers in specific order to be used
-    by tensor cores to perform a warp sync mma op.
+    For type bfp16 loads matrix A tile from memory to registers in specific
+    order to be used by tensor cores to perform a warp sync mma op.
     """
 
     @parameter
@@ -207,8 +208,8 @@ fn load_matrix_b[
     ldm: Int,
 ) -> SIMD[DType.float32, 2]:
     """
-    For shape m16n8k8 & type tf32 loads matrix B tile from memory to registers in specific order to be used
-    by tensor cores to perform a warp sync mma op.
+    For shape m16n8k8 & type tf32 loads matrix B tile from memory to registers
+    in specific order to be used by tensor cores to perform a warp sync mma op.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -235,8 +236,8 @@ fn load_matrix_b[
     ldm: Int,
 ) -> SIMD[DType.float16, 2]:
     """
-    For shape m16n8k8 & type fp16 loads matrix B tile from memory to registers in specific order to be used
-    by tensor cores to perform a warp sync mma op.
+    For shape m16n8k8 & type fp16 loads matrix B tile from memory to registers
+    in specific order to be used by tensor cores to perform a warp sync mma op.
     """
 
     constrained[m == 16 and n == 8 and k == 8]()
@@ -263,8 +264,8 @@ fn load_matrix_b[
     ldm: Int,
 ) -> SIMD[DType.bfloat16, k // 4]:
     """
-    For type bfp16 loads matrix B tile from memory to registers in specific order to be used
-    by tensor cores to perform a warp sync mma op.
+    For type bfp16 loads matrix B tile from memory to registers in specific
+    order to be used by tensor cores to perform a warp sync mma op.
     """
 
     @parameter
@@ -371,8 +372,8 @@ fn _store_matrix_d_nvidia[
     ldm: Int,
 ):
     """
-    For shape m16n8k8 stores matrix D tile from registers to memory in specific order after performing
-    tensor core based warp sync mma op.
+    For shape m16n8k8 stores matrix D tile from registers to memory in specific
+    order after performing tensor core based warp sync mma op.
     """
 
     var group_id = lane_id() >> 2
@@ -421,8 +422,8 @@ fn store_matrix_d[
     ldm: Int,
 ):
     """
-    Stores matrix D tile from registers to memory in specific order after performing
-    tensor core based warp sync mma op.
+    Stores matrix D tile from registers to memory in specific order after
+    performing tensor core based warp sync mma op.
     """
 
     @parameter
