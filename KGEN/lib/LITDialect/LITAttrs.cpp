@@ -847,17 +847,15 @@ TypedAttr OriginUnionAttr::get(MLIRContext *ctx, ArrayRef<TypedAttr> origins) {
     return ::cast<OriginType>(origin.getType()).getIsMutable();
   };
 
-  // If all the parametric mutabilities of the origins are the same, then use
-  // that mutability. Otherwise, the overall origin is immutable.
+  // The resultant mutability is the worst case of the input mutabilities.
   TypedAttr mutability = getMut(origins.front());
   bool needMutCast = false;
   for (TypedAttr other : origins.drop_front()) {
     TypedAttr otherMut = getMut(other);
     if (otherMut == mutability)
       continue;
-    mutability = BoolAttr::get(ctx, false);
+    mutability = ParamOperatorAttr::get(POC::And, mutability, otherMut);
     needMutCast = true;
-    break;
   }
 
   SmallVector<TypedAttr> newOrigins;

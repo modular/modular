@@ -304,6 +304,9 @@ struct String(KeyElement):
     fn __contains__(self, substr: String) -> Bool:
         return True
 
+    fn __iadd__(inout self, rhs: String):
+        pass
+
     fn unsafe_ptr(self) -> UnsafePointer[UInt8]:
         return UnsafePointer[UInt8]()
 
