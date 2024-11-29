@@ -296,7 +296,7 @@ kgen.func @float_literal_convert()
   %r5 = kgen.float_literal.convert %inf : to f64
   // CHECK: kgen.param.constant: f64 = <0xFFF0000000000000>
   %r6 = kgen.float_literal.convert %ninf : to f64
-  // CHECK: kgen.param.constant: f64 = <0x7FF8000000000000>
+  // CHECK: kgen.param.constant: f64 = <0x7FFFFFFFFFFFFFFF>
   %r7 = kgen.float_literal.convert %nan : to f64
 
   kgen.return %r1, %r2, %r3, %r4, %r5, %r6, %r7
