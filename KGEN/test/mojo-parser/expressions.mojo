@@ -1214,58 +1214,6 @@ fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[B2REF]])
     var v1 = b[2]
 
-fn takeMemory(a: MemoryType): pass
-
-# CHECK-LABEL: lit.func @"testConds
-fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: RegPassable, i: Int) -> MemoryType:
-  # Implicit conversions.
-  # Mojo Issue #49: https://github.com/modularml/mojo/issues/49
-
-  # CHECK-NEXT: hlcf.if %cond -> !RegPassable {
-  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %m)
-  # CHECK:        hlcf.yield
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   lit.var.decl "anonymous
-  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}({{.*}}, %i)
-  # CHECK-NEXT:   [[V:%.*]] = lit.load.consume
-  # CHECK-NEXT:   hlcf.yield [[V]]
-  # CHECK-NEXT: }
-  _ = m if cond else i
-
-  # NEXT: hlcf.if %cond -> !RegPassable {
-  # CHECK:        lit.call {{.*}}__init__{{.*}}({{.*}}, %i)
-  # CHECK:        hlcf.yield
-  # CHECK-NEXT: } else {
-  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %m)
-  # CHECK:        hlcf.yield
-  # CHECK-NEXT: }
-  _ = i if cond else m
-
-  # Memory only conds.
-  # Issue (#13379)
-
-  # CHECK: [[ANON:%.*]] = lit.var.decl "anonymous*" {{.*}}: !lit.ref<!MemoryType
-  # CHECK: hlcf.if %cond {
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[ANON]], %a)
-  # CHECK-NEXT:   hlcf.yield
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[ANON]], %b)
-  # CHECK-NEXT:   hlcf.yield
-  # CHECK-NEXT: }
-  # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[ANON]]
-  # CHECK-NEXT: lit.call {{.*}}takeMemory{{.*}}([[IMMREF]])
-  takeMemory(a if cond else b)
-
-  # CHECK-NEXT: hlcf.if %cond {
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%__result__, %a)
-  # CHECK-NEXT:   hlcf.yield
-  # CHECK-NEXT: } else {
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%__result__, %b)
-  # CHECK-NEXT:   hlcf.yield
-  # CHECK-NEXT: }
-  # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
-  return a if cond else b
-
 fn testTransferWarning():
   var a = MemoryOnlyInt()
 

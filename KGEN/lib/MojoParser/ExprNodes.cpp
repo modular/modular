@@ -2843,6 +2843,111 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
   }
 
+  auto deadCodeCheck = [&]() {
+    if (PValue condPVal = condRVal.getIfPValue()) {
+      // Warn about dead code and remove it.
+      IntegerAttr asIntAttr = dyn_cast<IntegerAttr>(condPVal.get());
+      if (!asIntAttr)
+        return;
+      Region *deadRegion = &ifOp.getElseRegion();
+      if (asIntAttr.getValue().isZero()) {
+        deadRegion = &ifOp.getThenRegion();
+        emitter.emitWarning(this->getLoc())
+            << "left hand side expression of 'if False' is dead";
+      } else {
+        emitter.emitWarning(this->getLoc())
+            << "right hand side expression of 'if True' is dead";
+      }
+      markRegionUnreachable(deadRegion, ifOp.getLoc());
+    }
+  };
+
+  // If both results were M values and both sides agree with the result type,
+  // then we can propagate the result as an MValue that has a merged lifetime.
+  auto handleTwoMValues = [&]() -> AnyValue {
+    if (!falseVal.isMValue() || !trueVal.isMValue())
+      return {};
+
+    Value falseMVal = falseVal.getMValueReference();
+    Value trueMVal = trueVal.getMValueReference();
+
+    // See if the true and false values directly union together.  This
+    // requires the rvalue types to be the same but allows the reference
+    // types to be different.
+    ASTType commonRefType =
+        emitter.getZeroCostCommonType(falseMVal.getType(), trueMVal.getType());
+    if (!commonRefType)
+      return {};
+
+    // Check to see if the two values dominate the 'if'.  We don't want to form
+    // an union'ed origin that includes an origin for something in the else
+    // block, like an RValue temporary.  Such things will require a copy.
+    //
+    // The ideal thing to do would be to have use-def chains on the origin
+    // itself, which would allow us to handle ref results from functions, but
+    // we don't have that.  Instead, find the underlying values and see if we
+    // can reason about them from the IR tree.
+    auto isAcceptableOrigin = [&](Value origin) -> bool {
+      // Strip off GERs and Rebinds and RefImmutOp, and the get the block that
+      // defines the operation or block argument.
+      origin = OriginTrackable::findUnderlyingValueFromField(origin);
+      if (!origin)
+        return false;
+      Block *originBlock = origin.getParentBlock();
+      Operation *curOp = ifOp;
+      // Scan up the region tree.
+      do {
+        if (curOp->getBlock() == originBlock)
+          return true; // Found a dominating block containing the origin.
+        curOp = curOp->getParentOp();
+      } while (curOp);
+      return false;
+    };
+
+    if (!isAcceptableOrigin(trueMVal) || !isAcceptableOrigin(falseMVal))
+      return {};
+
+    // If this succeeded, we can emit a conversion to the common type in each
+    // branch and produce the result as the right MValue type.
+    auto handleBlock = [&](Block &block, const ExprNode *expr,
+                           Value value) -> LogicalResult {
+      emitter.builder->setInsertionPointToEnd(&block);
+      auto conv =
+          emitter.emitZeroCostConvert({SRValue(value), expr}, commonRefType);
+      if (!conv)
+        return failure();
+      auto convVal = conv.getIfSRValue();
+      assert(convVal && "zero cost convert changed value type");
+      emitter.builder->create<HLCF::YieldOp>(ifLoc, convVal);
+      return success();
+    };
+    if (failed(handleBlock(ifOp.getThenBlock(), trueExpr, trueMVal)) ||
+        failed(handleBlock(ifOp.getElseBlock(), falseExpr, falseMVal)))
+      return {};
+    emitter.builder->setInsertionPointAfter(ifOp);
+
+    // Ensure the correct type is used.
+    ifOp->getResult(0).setType(commonRefType);
+    deadCodeCheck();
+
+    // Compute the right IRValue type based on what we were given, we know the
+    // inputs are some kind of MValue.
+    AnyValue result;
+    // TODO: CheckLifetimes cannot handle consumption of indirect RValues.
+    // if (falseVal.getIfMRValue() && trueVal.getIfMRValue())
+    //   result = MRValue(ifOp.getResult(0));
+    if (falseVal.getIfMLValue() && trueVal.getIfMLValue())
+      result = MLValue(ifOp.getResult(0));
+    else if (falseVal.getIfMBPValue() && trueVal.getIfMBPValue())
+      result = MBPValue(ifOp.getResult(0));
+    else
+      result = MBValue(ifOp.getResult(0));
+    return emitter.emitResult(result, this, dest);
+  };
+
+  if (AnyValue result = handleTwoMValues())
+    return result;
+
   /// If the types disagree, then we need to emit a conversion to a common
   /// type. See if one is convertible to the other, and if so, emit a
   /// conversion to get to a common type.
@@ -2865,25 +2970,6 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   auto resultType = trueVal.getRValueType();
-
-  auto deadCodeCheck = [&]() {
-    if (PValue condPVal = condRVal.getIfPValue()) {
-      // Warn about dead code and remove it.
-      IntegerAttr asIntAttr = dyn_cast<IntegerAttr>(condPVal.get());
-      if (!asIntAttr)
-        return;
-      Region *deadRegion = &ifOp.getElseRegion();
-      if (asIntAttr.getValue().isZero()) {
-        deadRegion = &ifOp.getThenRegion();
-        emitter.emitWarning(this->getLoc())
-            << "left hand side expression of 'if False' is dead";
-      } else {
-        emitter.emitWarning(this->getLoc())
-            << "right hand side expression of 'if True' is dead";
-      }
-      markRegionUnreachable(deadRegion, ifOp.getLoc());
-    }
-  };
 
   // Ok, we now know if the types were register_passable or not, so finish up
   // the logic.  register_passable values get merged together as SSA registers
