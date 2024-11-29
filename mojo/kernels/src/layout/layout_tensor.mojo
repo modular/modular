@@ -2789,15 +2789,17 @@ struct LayoutTensorIter[
     The returned layout tensor is NOT vectorized. User should explicitly vectorize.
     """
 
+    alias uint_type = Scalar[_get_unsigned_type(layout, address_space)]
+
     var ptr: UnsafePointer[
         Scalar[type], address_space=address_space, alignment=alignment
     ]
-    var offset: Scalar[_get_unsigned_type(layout, address_space)]
-    var stride: Scalar[_get_unsigned_type(layout, address_space)]
-    var bound: Scalar[_get_unsigned_type(layout, address_space)]
+    var offset: Self.uint_type
+    var stride: Self.uint_type
+    var bound: Self.uint_type
     var runtime_layout: RuntimeLayout[layout, bitwidth=layout_bitwidth]
-    var dimension_bound: Scalar[_get_unsigned_type(layout, address_space)]
-    var idx: Scalar[_get_unsigned_type(layout, address_space)]
+    var dimension_bound: Self.uint_type
+    var idx: Self.uint_type
 
     @always_inline
     fn __init__(out self):
@@ -2822,9 +2824,9 @@ struct LayoutTensorIter[
     fn __init__(
         inout self,
         ptr: __type_of(self.ptr),
-        bound: __type_of(self.offset),
-        stride: __type_of(self.stride) = layout.size(),
-        offset: __type_of(self.offset) = 0,
+        bound: Self.uint_type,
+        stride: Self.uint_type = layout.size(),
+        offset: Self.uint_type = 0,
     ):
         constrained[
             layout.all_dims_known(),
@@ -2843,14 +2845,12 @@ struct LayoutTensorIter[
     fn __init__(
         inout self,
         ptr: __type_of(self.ptr),
-        bound: __type_of(self.offset),
+        bound: Self.uint_type,
         runtime_layout: RuntimeLayout[layout, **_],
-        stride: __type_of(
-            self.stride
-        ) = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
-        offset: __type_of(self.offset) = 0,
-        dimension_bound: __type_of(self.offset) = 0,
-        idx: __type_of(self.offset) = 0,
+        stride: Self.uint_type = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
+        offset: Self.uint_type = 0,
+        dimension_bound: Self.uint_type = 0,
+        idx: Self.uint_type = 0,
     ):
         constrained[
             runtime_layout.bitwidth == layout_bitwidth,
@@ -2915,11 +2915,20 @@ struct LayoutTensorIter[
         This function is unsafe. It omits bound checking for performance reasons.
         Caller must make sure index doesn't go out-of-bound.
         """
-        self.offset += int(rhs) * self.stride
+        self += Self.uint_type(int(rhs))
+
+    @always_inline
+    fn __iadd__(inout self, rhs: Self.uint_type):
+        """Increment the iterator.
+
+        This function is unsafe. It omits bound checking for performance reasons.
+        Caller must make sure index doesn't go out-of-bound.
+        """
+        self.offset += rhs * self.stride
 
         @parameter
         if axis:
-            self.idx += int(rhs)
+            self.idx += rhs
 
         @parameter
         if masked:
@@ -2943,24 +2952,15 @@ struct LayoutTensorIter[
             )
 
     @always_inline
-    fn __iadd__(inout self, rhs: UInt):
-        """Increment the iterator.
-
-        This function is unsafe. It omits bound checking for performance reasons.
-        Caller must make sure index doesn't go out-of-bound.
-        """
-        self += int(rhs)
-
-    @always_inline
     fn next[T: Intable](self, rhs: T) -> Self:
         """Return an iterator pointing to the next `rhs` layout tensor."""
 
-        var next_idx = 0
+        var next_idx = Self.uint_type(0)
         var next_offset = self.offset + int(rhs) * self.stride
 
         @parameter
         if axis:
-            next_idx = int(self.idx) + int(rhs)
+            next_idx = self.idx + int(rhs)
 
         @parameter
         if masked:
@@ -2983,11 +2983,11 @@ struct LayoutTensorIter[
         )
 
     @always_inline
-    fn next(self, rhs: UInt = 1) -> Self:
+    fn next(self, rhs: Self.uint_type = 1) -> Self:
         return self.next(int(rhs))
 
     @always_inline
-    fn next_unsafe(self, rhs: UInt = 1) -> Self:
+    fn next_unsafe(self, rhs: Self.uint_type = 1) -> Self:
         """Return an iterator pointing to the next `rhs` layout tensor.
         This is the unsafe version and user must ensure rhs < bound / stride.
         """
@@ -2995,7 +2995,7 @@ struct LayoutTensorIter[
             not masked, "Cannot use unsafe increment for masked iterator."
         ]()
 
-        var next_offset = self.offset + int(rhs) * self.stride
+        var next_offset = self.offset + rhs * self.stride
 
         @parameter
         if circular:
@@ -3008,7 +3008,7 @@ struct LayoutTensorIter[
             self.ptr,
             self.bound,
             stride=self.stride,
-            offset=int(next_offset),
+            offset=next_offset,
         )
 
     @always_inline
