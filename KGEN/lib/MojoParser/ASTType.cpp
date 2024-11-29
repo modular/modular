@@ -633,6 +633,14 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     os << '.' << originField.getField().str();
     return;
   }
+  if (auto originUnion = dyn_cast<OriginUnionAttr>(param)) {
+    os << '{';
+    llvm::interleaveComma(originUnion.getOperands(), os, [&](TypedAttr param) {
+      printDemangledParam(os, param, diagShared);
+    });
+    os << '}';
+    return;
+  }
 
   if (auto indirect = dyn_cast<IndirectOriginAttr>(param)) {
     printDemangledParam(os, indirect.getBase(), diagShared);

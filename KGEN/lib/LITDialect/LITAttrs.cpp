@@ -882,6 +882,13 @@ bool OriginUnionAttr::isConstant() const {
 // OriginMutCastAttr
 //===----------------------------------------------------------------------===//
 
+std::optional<bool> OriginMutCastAttr::isLessThan(Attribute rhs) const {
+  // Compare the underlying references.
+  if (auto cast = ::dyn_cast<OriginMutCastAttr>(rhs))
+    rhs = cast;
+  return ParameterAttr::compare(getOperand(), rhs);
+}
+
 OriginMutCastAttr OriginMutCastAttr::getFromBytecode(TypedAttr operand,
                                                      OriginType type) {
   return Base::get(type.getContext(), operand, type);
@@ -1253,6 +1260,17 @@ ErrorOr<TypedAttr> LIT::createUninitializedValueOf(Type type,
 //===----------------------------------------------------------------------===//
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
+
+bool LIT::StructExtractAttr::isConstant() const { return false; }
+
+std::optional<bool> LIT::StructExtractAttr::isLessThan(Attribute rhs) const {
+  // Compare the underlying references if the fields are the same.
+  if (auto rhsExtract = ::dyn_cast<LIT::StructExtractAttr>(rhs))
+    if (getField() == rhsExtract.getField())
+      return ParameterAttr::compare(getStructValue(),
+                                    rhsExtract.getStructValue());
+  return false;
+}
 
 LIT::StructExtractAttr
 LIT::StructExtractAttr::getFromBytecode(TypedAttr structValue, StringAttr field,

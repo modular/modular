@@ -598,7 +598,7 @@ def OriginUnionAttr : LITTypedAttr<"OriginUnion", "origin.union", [
 //===----------------------------------------------------------------------===//
 
 def OriginMutCastAttr : LITTypedAttr<"OriginMutCast", "origin.mutcast", [
-    DeclareAttrInterfaceMethods<ParameterAttrInterface>
+    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
   ]> {
   let summary = "Cast a !lit.origin value to a different mutability";
   let description = [{
@@ -887,7 +887,8 @@ def LIT_StructAttr : LITAttr<"LITStruct", "struct", [TypedAttrInterface,
 //===----------------------------------------------------------------------===//
 
 def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
-    TypedAttrInterface
+    TypedAttrInterface, 
+    DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
   ]> {
   let summary = "Extract an element from a struct value";
   let description = [{
