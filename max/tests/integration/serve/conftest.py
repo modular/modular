@@ -10,9 +10,7 @@ import os
 from pathlib import Path
 
 import pytest
-from llama3.llama3 import (
-    load_llama3_and_kv_manager,
-)
+from llama3 import Llama3Model
 from max.pipelines import (
     PipelineConfig,
     PreTrainedPipelineTokenizer,
@@ -96,5 +94,5 @@ def tinyllama_model(testdata_directory, request, session):
         device_spec=request.param.device_spec,
     )
 
-    model, _ = load_llama3_and_kv_manager(config, session)
+    model = Llama3Model(pipeline_config=config, session=session)
     return model

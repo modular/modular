@@ -17,7 +17,7 @@ from typing import Literal, Optional
 import click
 from huggingface_hub import hf_hub_download
 from llama3.config import get_llama_huggingface_file
-from llama3.llama3 import load_llama3_and_kv_manager
+from llama3 import Llama3Model
 from max.driver import DeviceSpec
 from max.engine import InferenceSession
 from max.pipelines import PipelineConfig, SupportedEncoding, TextTokenizer
@@ -123,7 +123,7 @@ class SupportedTestModels:
             raise ValueError(f"version {self.version} not supported.")
 
         config = PipelineConfig(
-            architecture="llama",
+            architecture="LlamaForCausalLM",
             version=self.version,
             quantization_encoding=self.encoding,
             **kwargs,
@@ -216,7 +216,7 @@ def main(model, encoding, verbose):
             tokenizer = TextTokenizer(config)
 
             session = InferenceSession(devices=[config.device])
-            llama3, _ = load_llama3_and_kv_manager(config, session)
+            llama3 = Llama3Model(pipeline_config=config, session=session)
             results = run_model(llama3, tokenizer, PROMPTS)
 
             output_full_path = os.path.join(

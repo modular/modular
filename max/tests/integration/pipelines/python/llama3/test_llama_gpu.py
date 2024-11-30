@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.llama3 import load_llama3_and_kv_manager
+from llama3 import Llama3Model
 from max.engine import InferenceSession
 from max.pipelines import TextContext, TextTokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
@@ -40,7 +40,7 @@ def test_llama(
     config = test_model.build_config(max_length=512)
     tokenizer = TextTokenizer(config)
     session = InferenceSession(devices=[config.device])
-    model, _ = load_llama3_and_kv_manager(config, session)
+    model = Llama3Model(pipeline_config=config, session=session)
     actual = run_model(
         model,
         tokenizer,
@@ -80,7 +80,7 @@ async def test_llama_ragged(model: str, encoding: str) -> None:
     config = test_model.build_config(max_cache_batch_size=4)
     tokenizer = TextTokenizer(config)
     session = InferenceSession(devices=[config.device])
-    llama, _ = load_llama3_and_kv_manager(config, session)
+    llama = Llama3Model(pipeline_config=config, session=session)
 
     def request(prompt: str, idx: int) -> TokenGeneratorRequest:
         return TokenGeneratorRequest(

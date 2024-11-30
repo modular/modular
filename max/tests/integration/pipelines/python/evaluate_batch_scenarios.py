@@ -13,16 +13,20 @@ from pathlib import Path
 from typing import Any, List, Optional, TextIO
 
 import click
-from llama3.config import get_llama_huggingface_file
-from llama3.llama3 import load_llama3_and_kv_manager
-from max.driver import CPU, CUDA
-from max.engine import InferenceSession
+from architectures import register_all_models
+from max.driver import DeviceSpec
 from max.pipelines import (
+    TokenGeneratorRequest,
+    PipelineTokenizer,
+    PIPELINE_REGISTRY,
     PipelineConfig,
     SupportedEncoding,
     TokenGenerator,
 )
-from max.serve.pipelines.echo_gen import EchoTokenGenerator
+from max.serve.pipelines.echo_gen import (
+    EchoTokenGenerator,
+    EchoPipelineTokenizer,
+)
 
 from cli import DevicesOptionType, config_to_flag
 
@@ -113,7 +117,9 @@ def generate_simple_requests() -> List[RequestInstance]:
 
 
 async def run_batch_scenario(
-    model: TokenGenerator,
+    pipeline: TokenGenerator,
+    tokenizer: PipelineTokenizer,
+    model_name: str,
     prompts: list[str],
     batch_mode: str,
     batch_max_size: int,
@@ -218,6 +224,7 @@ async def run_batch_scenario(
                     )
 
                     encoded_count = 0
+                    start_idx = 0
                     while context_encoding_queue:
                         context_encoding_batch = {}  # type: ignore
                         while (
@@ -232,7 +239,14 @@ async def run_batch_scenario(
                             batch_id, prompt, max_new_tokens = (
                                 context_encoding_queue.pop(0)
                             )
-                            context = model.new_context(prompt, max_new_tokens)  # type: ignore
+                            request = TokenGeneratorRequest(
+                                id=batch_id,
+                                index=start_idx,
+                                prompt=prompt,
+                                model_name=model_name,
+                            )
+                            context = await tokenizer.new_context(request)
+                            start_idx += 1
                             context_encoding_batch[batch_id] = context
                             batch_out_file = get_batch_output_file(batch_id)
                             if batch_out_file:
@@ -249,7 +263,7 @@ async def run_batch_scenario(
                             len(context_encoding_queue),
                         )
 
-                        context_encoding_results = model.next_token(
+                        context_encoding_results = pipeline.next_token(
                             context_encoding_batch
                         )[0]
                         assert (
@@ -307,7 +321,7 @@ async def run_batch_scenario(
                     ",".join(token_gen_batch.keys()),
                 )
                 batch_log.append(step_current, [x for x in token_gen_batch])
-                results = model.next_token(token_gen_batch)[0]
+                results = pipeline.next_token(token_gen_batch)[0]
                 for batch_id, token in results.items():
                     assert token is not None
                     batch_completions[batch_id] += token
@@ -411,6 +425,8 @@ def main(
     scenario: str,
     **config_kwargs,
 ):
+    register_all_models()
+
     logging.basicConfig(
         level=logging.INFO,
         encoding="utf-8",
@@ -422,12 +438,12 @@ def main(
     if use_gpu:
         config_kwargs.update(
             {
-                "device": CUDA(id=use_gpu[0]),
+                "device_spec": DeviceSpec.cuda(id=use_gpu[0]),
                 "quantization_encoding": SupportedEncoding.bfloat16,
             }
         )
     else:
-        config_kwargs.update({"device": CPU()})
+        config_kwargs.update({"device_spec": DeviceSpec.cpu()})
 
     if config_kwargs["architecture"] is None:
         config_kwargs["architecture"] = "LlamaForCausalLM"
@@ -445,23 +461,12 @@ def main(
             raise ValueError(msg)
 
     config = PipelineConfig(**config_kwargs)
-    # By default, use the Modular HF repository as a reference for tokenizer
-    # configuration, etc. when no repository is specified.
-    assert config.version is not None
-    hf_file = get_llama_huggingface_file(
-        config.version,
-        config.quantization_encoding,  # type: ignore
-    )
-    config.weight_path = [hf_file.download()]
 
-    batch_max_size = 4
     if model_name == "rev-echo":
-        model = EchoTokenGenerator()
-    elif model_name == "llama3":
-        session = InferenceSession(devices=[config.device])
-        model, _ = load_llama3_and_kv_manager(config, session)  # type: ignore
+        tokenizer: PipelineTokenizer = EchoPipelineTokenizer()
+        pipeline: TokenGenerator = EchoTokenGenerator()
     else:
-        raise ValueError("invalid model name")
+        tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
 
     logger.info(
         "Loaded model %s, %s on %s",
@@ -498,7 +503,14 @@ def main(
 
     asyncio.run(
         run_batch_scenario(
-            model, prompt, batch_mode, batch_max_size, output_path, requests
+            pipeline=pipeline,
+            tokenizer=tokenizer,
+            model_name=model_name,
+            prompts=prompt,
+            batch_mode=batch_mode,
+            batch_max_size=config.max_cache_batch_size,
+            output_path=output_path,
+            request_list=requests,
         )
     )
 

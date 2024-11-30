@@ -16,12 +16,13 @@ from typing import Any, Literal
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3.llama3 import Llama3, load_llama3_and_kv_manager
-from max.engine import InferenceSession
+from architectures import register_all_models
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
     TextTokenizer,
+    TextGenerationPipeline,
+    PIPELINE_REGISTRY,
 )
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
@@ -74,14 +75,13 @@ def pipeline_tokenizer(pipeline_config: PipelineConfig) -> TextTokenizer:
 
 
 @pytest.fixture(scope="session")
-def pipeline_model(
+def pipeline(
     pipeline_config: PipelineConfig,
-) -> Llama3:
-    model, _ = load_llama3_and_kv_manager(
-        pipeline_config,
-        InferenceSession(devices=[pipeline_config.device]),
-    )
-    return model
+) -> TextGenerationPipeline:
+    register_all_models()
+    _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
+    assert isinstance(pipeline, TextGenerationPipeline)
+    return pipeline
 
 
 @pytest.mark.asyncio
@@ -100,7 +100,7 @@ def pipeline_model(
     indirect=True,
 )
 async def test_pipeline_heterogeneous_batch_logits(
-    pipeline_model: Llama3,
+    pipeline: TextGenerationPipeline,
     pipeline_tokenizer: TextTokenizer,
 ) -> None:
     """Executes batch of prompts with different lengths and validates logits.
@@ -108,6 +108,7 @@ async def test_pipeline_heterogeneous_batch_logits(
     NOTE: Intentionally don't compare results with "goldens" because TinyLlama
     weights were randomly initialized.
     """
+
     prompt_a = PROMPTS[0]
     prompt_b = PROMPTS[1]
     prompt_c = PROMPTS[2]
@@ -120,7 +121,9 @@ async def test_pipeline_heterogeneous_batch_logits(
             id="", index=0, prompt=prompt_a, model_name="llama3"
         )
     )
-    next_token_with_logits(pipeline_model, {"A": context_a}, stored_logits)
+    next_token_with_logits(
+        pipeline._pipeline_model, {"A": context_a}, stored_logits
+    )
 
     # Send in B for context encoding
     context_b = await pipeline_tokenizer.new_context(
@@ -128,11 +131,13 @@ async def test_pipeline_heterogeneous_batch_logits(
             id="", index=1, prompt=prompt_b, model_name="llama3"
         )
     )
-    next_token_with_logits(pipeline_model, {"B": context_b}, stored_logits)
+    next_token_with_logits(
+        pipeline._pipeline_model, {"B": context_b}, stored_logits
+    )
 
     # Send in both A and B for token generation
     next_token_with_logits(
-        pipeline_model,
+        pipeline._pipeline_model,
         {"A": context_a, "B": context_b},
         stored_logits,
     )
@@ -143,15 +148,17 @@ async def test_pipeline_heterogeneous_batch_logits(
             id="", index=2, prompt=prompt_c, model_name="llama3"
         )
     )
-    next_token_with_logits(pipeline_model, {"C": context_c}, stored_logits)
+    next_token_with_logits(
+        pipeline._pipeline_model, {"C": context_c}, stored_logits
+    )
 
     # Send in both B and C for token generation
     next_token_with_logits(
-        pipeline_model,
+        pipeline._pipeline_model,
         {"B": context_b, "C": context_c},
         stored_logits,
     )
 
-    pipeline_model._kv_manager.release(context_a.cache_seq_id)
-    pipeline_model._kv_manager.release(context_b.cache_seq_id)
-    pipeline_model._kv_manager.release(context_c.cache_seq_id)
+    pipeline.release(context_a)
+    pipeline.release(context_b)
+    pipeline.release(context_c)

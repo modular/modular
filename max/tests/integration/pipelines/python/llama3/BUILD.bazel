@@ -32,6 +32,7 @@ modular_py_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
+        "//SDK/public/max-repo/pipelines/python/architectures",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/llama_vision",
         requirement("click"),
@@ -116,6 +117,7 @@ modular_py_binary(
             "//SDK/integration-test/pipelines/python/test_common",
             "//SDK/lib/API/python/max/engine",
             "//SDK/lib/API/python/max/serve",
+            "//SDK/public/max-repo/pipelines/python/architectures",
             "//SDK/public/max-repo/pipelines/python/cli",
             "//SDK/public/max-repo/pipelines/python/dataprocessing",
             "//SDK/public/max-repo/pipelines/python/llama3",
@@ -190,6 +192,7 @@ modular_py_test(
         ":evaluate_llama",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/lib/API/python/max/engine",
+        "//SDK/public/max-repo/pipelines/python/architectures",
         "//SDK/public/max-repo/pipelines/python/dataprocessing",
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/llama_vision",
