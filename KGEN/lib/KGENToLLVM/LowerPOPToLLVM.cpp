@@ -521,7 +521,8 @@ struct ConvertPOPSelect : public ConvertPOPToLLVMPattern<SelectOp> {
 //===----------------------------------------------------------------------===//
 
 /// A `pop.stack_allocation` is lowered by converting it to an `llvm.alloca`
-/// with lifetime markers and hoisting it to the top of the enclosing function.
+/// with lifetime markers and hoisting it to the top of the enclosing
+/// function.
 class ConvertPOPStackAllocation
     : public ConvertPOPToLLVMPattern<StackAllocationOp> {
 public:
@@ -1285,7 +1286,30 @@ struct ConvertPOPStringAddress
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPStringAddress
+// ConvertPOPStringConcat
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPStringConcat : public ConvertPOPToLLVMPattern<StringConcatOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(StringConcatOp op, StringConcatOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // FIXME: This op should not exist.
+    // See https://github.com/modularml/mojo/issues/3820
+    auto diag = mlir::emitError(
+        op.getLoc(),
+        "cannot use StringLiteral append methods at runtime, only in an alias");
+    diag.attachNote(op.getLoc())
+        << "see https://github.com/modularml/mojo/issues/3820 for more "
+           "information";
+    rewriter.replaceOp(op, adaptor.getOperands().front());
+    return failure();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPStringSize
 //===----------------------------------------------------------------------===//
 
 struct ConvertPOPStringSize : public ConvertPOPToLLVMPattern<StringSizeOp> {
@@ -1662,6 +1686,7 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPSIMDXOr,
       ConvertPOPStore,
       ConvertPOPStringAddress,
+      ConvertPOPStringConcat,
       ConvertPOPStringSize,
       ConvertPOPSub,
       ConvertPOPUnionBitcast,

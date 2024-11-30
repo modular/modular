@@ -94,6 +94,8 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   /// !kgen.string, used to convert comp-time String (and related types) to
   /// StringLiteral.
   I32EnumAttrCase<"DataToStr", 39, "data_to_str">,
+  /// Concatenate two values of !kgen.string type.
+  I32EnumAttrCase<"StrConcat", 40, "str_concat">,
 ]>;
 
 //===----------------------------------------------------------------------===//
