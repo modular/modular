@@ -561,6 +561,11 @@ public:
   CValue emitBool(ASTExprAnd<PValue> value, ValueDest &dest);
   CValue emitBool(ASTExprAnd<PValue> value, ExprContext context);
 
+  /// Given an expression that can be used in __origin_of or a ref expression,
+  /// analyze it to determine which origin it represents.  If it doesn't work,
+  /// emit an error and return null.
+  TypedAttr extractOriginOf(const ExprNode *expr, CValue value);
+
   //===--------------------------------------------------------------------===//
   // Return emission helpers.
 
