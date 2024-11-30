@@ -204,6 +204,8 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: declare env_str: string = <get_env("PROC_NAME")>
   kgen.param.declare env_str: string = <get_env("PROC_NAME")>
 
+  // CHECK: declare concat_str: string = <"hello world">
+  kgen.param.declare concat_str: string = <str_concat("hello ", "world")>
   kgen.return
 }
 

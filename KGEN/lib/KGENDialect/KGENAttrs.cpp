@@ -1345,6 +1345,11 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'data_to_str' expects two operands, one 'index' "
                             "length and one pointer";
     break;
+  case POC::StrConcat:
+    // Already checked the input/result types all match.
+    if (operands.size() != 2 || !::isa<StringType>(operands[0].getType()))
+      return emitError() << "'str_concat' expects two !kgen.string operands";
+    break;
   }
   return success();
 }
@@ -2513,6 +2518,21 @@ static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
   return VariadicAttr::get(results, cast<VariadicType>(resultType));
 }
 
+static TypedAttr simplifyStrConcat(TypedAttr lhs, TypedAttr rhs) {
+  auto lhsS = dyn_cast<StringAttr>(lhs);
+  if (!lhsS)
+    return {};
+
+  auto rhsS = dyn_cast<StringAttr>(rhs);
+  if (!rhsS)
+    return {};
+  SmallString<80> buffer;
+  buffer.reserve(lhsS.size() + rhsS.size());
+  buffer.append(lhsS.strref());
+  buffer.append(rhsS.strref());
+  return StringAttr::get(buffer, lhs.getType());
+}
+
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
@@ -2578,6 +2598,10 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::AcceleratorArch:
   case POC::DataToStr:
+    resultType = StringType::get(ctx);
+    break;
+  case POC::StrConcat:
+    result = simplifyStrConcat(operands[0], operands[1]);
     resultType = StringType::get(ctx);
     break;
   case POC::In:
