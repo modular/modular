@@ -30,12 +30,64 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
+// Given a value of a well known type, extract the specified field.  This
+// returns null if the field doesn't exist.
+static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
+                                   SMLoc loc, SharedState &shared) {
+  // TODO: This is generating a StructExtractAttr the hard way.  It would be
+  // way nicer to form a call to `o.__mlir_origin__()` or something like we do
+  // for bools, but unfortunately that won't get inlined and simplified by the
+  // call emission because Origin is parametric.  Therefore it will break
+  // parameter inference.
+  ASTDecl *typeDecl = ASTType(value.getType()).getDecl(shared);
+  if (!typeDecl || !isa<LIT::StructType>(value.getType()))
+    return {};
+
+  // Check to see if it has the expected field of Origin.
+  LookupResult lookup =
+      shared.lookupAndResolveDecl(fieldName, loc, *typeDecl,
+                                  /*searchParentScopes=*/false);
+  if (lookup.getIfSuccess().size() != 1)
+    return {};
+  auto fieldOp = dyn_cast<StructFieldOp>(lookup.getIfSuccess()[0]);
+  if (!fieldOp)
+    return {};
+
+  return LIT::StructExtractAttr::get(value, fieldOp);
+};
+
+/// Given an expression that can be used in __origin_of or a ref expression,
+/// analyze it to determine which origin it represents.  If it doesn't work,
+/// emit an error and return null.
+TypedAttr ExprEmitter::extractOriginOf(const ExprNode *expr, CValue value) {
+  if (value.isMValue()) // We can get the origin of an MValue.
+    return value.getMValueType().getOrigin();
+
+  // Check for !lit.origin and Origin struct.
+  if (auto pv = value.getIfPValue()) {
+    // A raw !lit.origin always works.
+    if (isa<OriginType>(pv.getType()))
+      return pv.get();
+
+    // If this is a value of Origin type, process it.
+    if (auto extractVal = digOutSingleField(pv.get(), ORIGIN_FIELD_NAME,
+                                            expr->getLoc(), shared))
+      if (isa<OriginType>(extractVal.getType()))
+        return extractVal;
+  }
+
+  emitError(expr->getLoc())
+      << "value of type " << value.getRValueType()
+      << " doesn't have a memory origin" << expr->getRange();
+  return {};
+}
+
 /// Process the origin expression in a `ref [...] T` reference specifier.
 /// T is specified as 'type' and this returns the result !lit.ref type.
-static RefType processOriginSpecifier(const ExprNode *origExpr, ASTType type,
-                                      StringRef valueName,
-                                      TypeCheckedParamList &paramList,
-                                      bool isResult) {
+static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
+                                         StringRef valueName,
+                                         TypeCheckedParamList &paramList,
+                                         bool isResult) {
   SharedState &shared = paramList.shared;
 
   // For errors, return "RefType(TypeCheckErrorType)" to maintain the invariant
@@ -51,58 +103,19 @@ static RefType processOriginSpecifier(const ExprNode *origExpr, ASTType type,
 
   ExprEmitter emitter(paramList.declScope, EC_Origin);
 
-  // Given a value of a well known type, extract the specified field.  This
-  // returns null if the field doesn't exist.
-  auto digOutSingleField = [&](TypedAttr value,
-                               StringRef fieldName) -> TypedAttr {
-    // TODO: This is generating a StructExtractAttr the hard way.  It would be
-    // way nicer to form a call to `o.__mlir_origin__()` or something like we do
-    // for bools, but unfortunately that won't get inlined and simplified by the
-    // call emission because Origin is parametric.  Therefore it will break
-    // parameter inference.
-    ASTDecl *typeDecl = ASTType(value.getType()).getDecl(shared);
-    if (!typeDecl || !isa<LIT::StructType>(value.getType()))
-      return {};
-
-    // Check to see if it has the expected field of Origin.
-    LookupResult lookup =
-        shared.lookupAndResolveDecl(fieldName, origExpr->getLoc(), *typeDecl,
-                                    /*searchParentScopes=*/false);
-    if (lookup.getIfSuccess().size() != 1)
-      return {};
-    auto fieldOp = dyn_cast<StructFieldOp>(lookup.getIfSuccess()[0]);
-    if (!fieldOp)
-      return {};
-
-    return LIT::StructExtractAttr::get(value, fieldOp);
-  };
-
-  // If the specified PValue is a !lit.origin or an Origin struct that wraps it,
-  // return the !lit.origin, otherwise return null.
-  auto digOutLitOrigin = [&](PValue value) -> TypedAttr {
-    // A raw !lit.origin always works.
-    if (isa<OriginType>(value.getRValueType()))
-      return value;
-
-    auto extractVal = digOutSingleField(value, ORIGIN_FIELD_NAME);
-    if (!extractVal)
-      return {};
-    return isa<OriginType>(extractVal.getType()) ? extractVal : TypedAttr();
-  };
-
   // Check to see if this is a value address space specifier.  If so, return
   // true, otherwise return false.
-  auto digOutAddressSpace = [&](TypedAttr value) -> TypedAttr {
+  auto digOutAddressSpace = [&](TypedAttr value, SMLoc loc) -> TypedAttr {
     // If the value has index type, then it is good to go.
     if (value.getType().isIndex())
       return value;
 
     // Check to see if this is the well-known AddressSpace struct.  If so,
     // dig out the index from within it.
-    auto extractInt = digOutSingleField(value, "_value");
+    auto extractInt = digOutSingleField(value, "_value", loc, shared);
     if (!extractInt)
       return {};
-    auto extractIndex = digOutSingleField(extractInt, "value");
+    auto extractIndex = digOutSingleField(extractInt, "value", loc, shared);
     if (!extractIndex)
       return {};
     if (extractIndex.getType().isIndex())
@@ -135,17 +148,9 @@ static RefType processOriginSpecifier(const ExprNode *origExpr, ASTType type,
     TypedAttr thisOrigin;
     emitter.emitExpressionWithOutEvaluatingIt(
         expr, EC_Origin, [&](CValue result) {
-          if (result.isMValue()) { // We can get the origin of an MValue.
-            thisOrigin = result.getMValueType().getOrigin();
-            return;
-          }
-          // Check for !lit.origin and Origin struct.
+          // Check to see if it is an address space first.
           if (auto pv = result.getIfPValue()) {
-            if ((thisOrigin = digOutLitOrigin(pv)))
-              return;
-
-            // Check to see if it is an address space.
-            if (auto as = digOutAddressSpace(pv.get())) {
+            if (auto as = digOutAddressSpace(pv.get(), expr->getLoc())) {
               if (addrSpace) {
                 emitter.emitError(expr->getLoc())
                     << "multiple specification of address space isn't valid"
@@ -155,9 +160,8 @@ static RefType processOriginSpecifier(const ExprNode *origExpr, ASTType type,
               return;
             }
           }
-          emitter.emitError(expr->getLoc())
-              << "value of type " << result.getRValueType()
-              << " doesn't have a memory origin" << expr->getRange();
+          // Otherwise it must be a !lit.origin and Origin struct.
+          thisOrigin = emitter.extractOriginOf(expr, result);
         });
 
     // If we found an origin, add it to our set.
@@ -1109,8 +1113,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       arg.vararg = VarArgKind::None;
     }
     auto refType =
-        processOriginSpecifier(arg.refOriginExpr, type, arg.name,
-                               tcSignature.paramList, /*isResult=*/false);
+        processRefOriginSpecifier(arg.refOriginExpr, type, arg.name,
+                                  tcSignature.paramList, /*isResult=*/false);
     type = refType;
     if (refType.isMutableKnown(true))
       arg.kgenConvention = ArgConvention::MutRef;
@@ -1359,7 +1363,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
           << "TODO: ref results aren't supported in async functions yet";
       resultArg.refOriginExpr = nullptr;
     } else {
-      resultType = processOriginSpecifier(
+      resultType = processRefOriginSpecifier(
           resultArg.refOriginExpr, resultType,
           // TODO: Use the name of the return slot if present.
           "__result__", tcSignature.paramList, /*isResult*/ true);

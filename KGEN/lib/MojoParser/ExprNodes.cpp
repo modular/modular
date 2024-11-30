@@ -3350,12 +3350,8 @@ AnyValue MagicFunctionNode::emitOriginOf(ValueDest &dest,
   for (ExprNode *subExpr : subExprs) {
     emitter.emitExpressionWithOutEvaluatingIt(
         subExpr, EC_Origin, [&](CValue result) {
-          // We can only get the origin of an MValue.
-          if (result.isMValue())
-            origins.push_back(result.getMValueType().getOrigin());
-          else
-            emitter.emitError(subExpr->getLoc())
-                << "value doesn't have a memory type" << subExpr->getRange();
+          if (auto origin = emitter.extractOriginOf(subExpr, result))
+            origins.push_back(origin);
         });
   }
 
