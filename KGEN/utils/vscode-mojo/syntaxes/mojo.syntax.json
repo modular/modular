@@ -1025,7 +1025,7 @@
           "patterns": [
             {
               "name": "storage.modifier",
-              "match": "\\b(owned|borrowed|inout)\\b"
+              "match": "\\b(owned|borrowed|inout|out|ref)\\b"
             },
             {
               "name": "keyword.operator.positional.parameter.python",
@@ -1194,7 +1194,7 @@
       "patterns": [
         {
           "name": "storage.modifier",
-          "match": "\\b(owned|borrowed|inout)\\b"
+          "match": "\\b(owned|borrowed|inout|out|ref)\\b"
         },
         {
           "name": "keyword.operator.positional.parameter.python",
@@ -1649,7 +1649,7 @@
     },
     "builtin-types": {
       "name": "support.type.python",
-      "match": "(?x)\n  (?<!\\.) \\b(\n    __mlir_attr | __mlir_op | __mlir_type | bool | bytearray | bytes | classmethod | complex | dict\n    | float | frozenset | int | list | object | property\n    | set | slice | staticmethod | str | tuple | type\n\n    (?# Although 'super' is not a type, it's related to types,\n        and is special enough to be highlighted differently from\n        other built-ins)\n    | super\n  )\\b\n"
+      "match": "(?x)\n  (?<!\\.) \\b(\n    __mlir_attr | __mlir_op | __mlir_type | bool | bytearray | bytes | classmethod | complex | dict\n    | float | frozenset | int | SIMD | list | object | property\n    | set | slice | staticmethod | always_inline | capturing | parameter | throws | escaping | str | tuple | type\n\n    (?# Although 'super' is not a type, it's related to types,\n        and is special enough to be highlighted differently from\n        other built-ins)\n    | super\n  )\\b\n"
     },
     "magic-function-names": {
       "comment": "these methods have magic interpretation by python and are generally called\nindirectly through syntactic constructs\n",
