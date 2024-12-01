@@ -164,7 +164,7 @@ struct Batch(CollectionElement):
         """
         self = other
 
-    fn _mark_as_significant(inout self):
+    fn _mark_as_significant(mut self):
         self._is_significant = True
 
     fn mean(self, unit: String = Unit.s) -> Float64:
@@ -383,7 +383,7 @@ struct _RunOptions[timing_fn: fn (num_iters: Int) raises capturing [_] -> Int]:
     var min_warmuptime_secs: Float64
 
     fn __init__(
-        inout self,
+        mut self,
         max_batch_size: Int = 0,
         max_iters: Int = 1_000_000_000,
         min_runtime_secs: Float64 = 2,

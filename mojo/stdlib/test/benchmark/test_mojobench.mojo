@@ -20,7 +20,7 @@ from benchmark import (
 
 
 @parameter
-fn bench1(inout b: Bencher):
+fn bench1(mut b: Bencher):
     @parameter
     fn to_bench():
         print("hello")
@@ -29,7 +29,7 @@ fn bench1(inout b: Bencher):
 
 
 @parameter
-fn bench2(inout b: Bencher, mystr: String) raises:
+fn bench2(mut b: Bencher, mystr: String) raises:
     @parameter
     fn to_bench():
         print(mystr)

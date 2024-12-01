@@ -86,7 +86,7 @@ struct Progress:
         self._percentage = other._percentage
         self._term_dims = (other._term_dims[0], other._term_dims[1])
 
-    fn advance(inout self, steps: Int = 1):
+    fn advance(mut self, steps: Int = 1):
         alias BLOCK = str("▇")
         alias PLACE_HOLDER = str(" ")
 

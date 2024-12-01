@@ -131,7 +131,7 @@ struct ThroughputMeasure(CollectionElement):
     """Measured count of throughput metric."""
 
     fn __init__(
-        inout self,
+        mut self,
         name: String,
         value: Int,
         reference: List[BenchMetric] = BenchMetric.DEFAULTS,
@@ -238,7 +238,7 @@ struct BenchConfig(CollectionElement):
     # TODO: to add median and stddev to verbose-timing
 
     fn __init__(
-        inout self,
+        mut self,
         /,
         out_file: Optional[Path] = None,
         min_runtime_secs: Float64 = 1.0,
@@ -353,7 +353,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
     """Whether to print verbose timing results."""
 
     fn __init__(
-        inout self,
+        mut self,
         name: String,
         result: Report,
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
@@ -503,7 +503,7 @@ struct Bench:
     """A list containing the bencmark info."""
 
     fn __init__(
-        inout self,
+        mut self,
         config: Optional[BenchConfig] = None,
         mode: Mode = Mode.Benchmark,
     ) raises:
@@ -531,9 +531,9 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyType,
-        bench_fn: fn (inout Bencher, T) raises capturing [_] -> None,
+        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
     ](
-        inout self,
+        mut self,
         bench_id: BenchId,
         input: T,
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
@@ -551,7 +551,7 @@ struct Bench:
         """
 
         @parameter
-        fn input_closure(inout b: Bencher) raises:
+        fn input_closure(mut b: Bencher) raises:
             """Executes benchmark for a target function.
 
             Args:
@@ -564,9 +564,9 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyType,
-        bench_fn: fn (inout Bencher, T) raises capturing [_] -> None,
+        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
     ](
-        inout self,
+        mut self,
         bench_id: BenchId,
         input: T,
         *measures: ThroughputMeasure,
@@ -589,9 +589,9 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyTrivialRegType,
-        bench_fn: fn (inout Bencher, T) raises capturing [_] -> None,
+        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
     ](
-        inout self,
+        mut self,
         bench_id: BenchId,
         input: T,
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
@@ -609,7 +609,7 @@ struct Bench:
         """
 
         @parameter
-        fn input_closure(inout b: Bencher) raises:
+        fn input_closure(mut b: Bencher) raises:
             """Executes benchmark for a target function.
 
             Args:
@@ -622,9 +622,9 @@ struct Bench:
 
     fn bench_with_input[
         T: AnyTrivialRegType,
-        bench_fn: fn (inout Bencher, T) raises capturing [_] -> None,
+        bench_fn: fn (mut Bencher, T) raises capturing [_] -> None,
     ](
-        inout self,
+        mut self,
         bench_id: BenchId,
         input: T,
         *measures: ThroughputMeasure,
@@ -646,9 +646,9 @@ struct Bench:
         self.bench_with_input[T, bench_fn](bench_id, input, measures_list)
 
     fn bench_function[
-        bench_fn: fn (inout Bencher) capturing [_] -> None
+        bench_fn: fn (mut Bencher) capturing [_] -> None
     ](
-        inout self,
+        mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
     ) raises:
@@ -669,8 +669,8 @@ struct Bench:
             self._test[bench_fn]()
 
     fn bench_function[
-        bench_fn: fn (inout Bencher) capturing [_] -> None
-    ](inout self, bench_id: BenchId, *measures: ThroughputMeasure) raises:
+        bench_fn: fn (mut Bencher) capturing [_] -> None
+    ](mut self, bench_id: BenchId, *measures: ThroughputMeasure) raises:
         """Benchmarks or Tests an input function.
 
         Parameters:
@@ -687,9 +687,9 @@ struct Bench:
 
     # TODO (#31795): overload should not be needed
     fn bench_function[
-        bench_fn: fn (inout Bencher) raises capturing [_] -> None
+        bench_fn: fn (mut Bencher) raises capturing [_] -> None
     ](
-        inout self,
+        mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
     ) raises:
@@ -704,7 +704,7 @@ struct Bench:
         """
 
         @parameter
-        fn abort_on_err(inout b: Bencher):
+        fn abort_on_err(mut b: Bencher):
             """Aborts benchmark in case of an error.
 
             Args:
@@ -721,8 +721,8 @@ struct Bench:
         self.bench_function[abort_on_err](bench_id, measures)
 
     fn bench_function[
-        bench_fn: fn (inout Bencher) raises capturing [_] -> None
-    ](inout self, bench_id: BenchId, *measures: ThroughputMeasure,) raises:
+        bench_fn: fn (mut Bencher) raises capturing [_] -> None
+    ](mut self, bench_id: BenchId, *measures: ThroughputMeasure,) raises:
         """Benchmarks or Tests an input function.
 
         Parameters:
@@ -737,9 +737,7 @@ struct Bench:
             measures_list.append(m[])
         self.bench_function[bench_fn](bench_id, measures_list)
 
-    fn _test[
-        bench_fn: fn (inout Bencher) capturing [_] -> None
-    ](inout self) raises:
+    fn _test[bench_fn: fn (mut Bencher) capturing [_] -> None](mut self) raises:
         """Tests an input function by executing it only once.
 
         Parameters:
@@ -750,9 +748,9 @@ struct Bench:
         bench_fn(b)
 
     fn _bench[
-        user_bench_fn: fn (inout Bencher) capturing [_] -> None
+        user_bench_fn: fn (mut Bencher) capturing [_] -> None
     ](
-        inout self,
+        mut self,
         bench_id: BenchId,
         measures: List[ThroughputMeasure] = List[ThroughputMeasure](),
     ) raises:
@@ -767,7 +765,7 @@ struct Bench:
         """
 
         @parameter
-        fn bench_fn(inout b: Bencher):
+        fn bench_fn(mut b: Bencher):
             """Executes benchmark for a target function.
 
             Args:
@@ -935,7 +933,7 @@ struct Bencher:
         self.num_iters = num_iters
         self.elapsed = 0
 
-    fn iter[iter_fn: fn () capturing [_] -> None](inout self):
+    fn iter[iter_fn: fn () capturing [_] -> None](mut self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
 
@@ -952,7 +950,7 @@ struct Bencher:
     fn iter_preproc[
         iter_fn: fn () capturing [_] -> None,
         preproc_fn: fn () capturing [_] -> None,
-    ](inout self):
+    ](mut self):
         """Returns the total elapsed time by running a target function a particular
         number of times.
 
@@ -968,7 +966,7 @@ struct Bencher:
             var stop = time.perf_counter_ns()
             self.elapsed += stop - start
 
-    fn iter_custom[iter_fn: fn (Int) capturing [_] -> Int](inout self):
+    fn iter_custom[iter_fn: fn (Int) capturing [_] -> Int](mut self):
         """Times a target function with custom number of iterations.
 
         Parameters:
@@ -979,7 +977,7 @@ struct Bencher:
 
     fn iter_custom[
         kernel_launch_fn: fn (DeviceContext) raises capturing [_] -> None
-    ](inout self, ctx: DeviceContext):
+    ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
         Parameters:
@@ -995,7 +993,7 @@ struct Bencher:
 
     fn iter_custom[
         kernel_launch_fn: fn (DeviceContext, Int) raises capturing [_] -> None
-    ](inout self, ctx: DeviceContext):
+    ](mut self, ctx: DeviceContext):
         """Times a target GPU function with custom number of iterations via DeviceContext ctx.
 
         Parameters:
@@ -1011,7 +1009,7 @@ struct Bencher:
         except e:
             abort(e)
 
-    fn iter[iter_fn: fn () capturing raises -> None](inout self) raises:
+    fn iter[iter_fn: fn () capturing raises -> None](mut self) raises:
         """Returns the total elapsed time by running a target function a particular
         number of times.
 
@@ -1026,7 +1024,7 @@ struct Bencher:
         self.elapsed = stop - start
 
     # TODO (#31795):  overload should not be needed
-    fn iter_custom[iter_fn: fn (Int) capturing raises -> Int](inout self):
+    fn iter_custom[iter_fn: fn (Int) capturing raises -> Int](mut self):
         """Times a target function with custom number of iterations.
 
         Parameters:

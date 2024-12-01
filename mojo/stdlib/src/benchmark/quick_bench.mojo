@@ -29,7 +29,7 @@ struct QuickBench:
     fn run[
         T_out: AnyTrivialRegType
     ](
-        inout self,
+        mut self,
         func: fn () -> T_out,
         *,
         bench_id: BenchId,
@@ -49,7 +49,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -64,7 +64,7 @@ struct QuickBench:
     fn run[
         T0: AnyTrivialRegType, /, T_out: AnyTrivialRegType
     ](
-        inout self,
+        mut self,
         func: fn (T0) -> T_out,
         x0: T0,
         *,
@@ -87,7 +87,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -105,7 +105,7 @@ struct QuickBench:
         /,
         T_out: AnyTrivialRegType,
     ](
-        inout self,
+        mut self,
         func: fn (T0, T1) -> T_out,
         x0: T0,
         x1: T1,
@@ -131,7 +131,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -150,7 +150,7 @@ struct QuickBench:
         /,
         T_out: AnyTrivialRegType,
     ](
-        inout self,
+        mut self,
         func: fn (T0, T1, T2) -> T_out,
         x0: T0,
         x1: T1,
@@ -179,7 +179,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -199,7 +199,7 @@ struct QuickBench:
         /,
         T_out: AnyTrivialRegType,
     ](
-        inout self,
+        mut self,
         func: fn (T0, T1, T2, T3) -> T_out,
         x0: T0,
         x1: T1,
@@ -231,7 +231,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -252,7 +252,7 @@ struct QuickBench:
         /,
         T_out: AnyTrivialRegType,
     ](
-        inout self,
+        mut self,
         func: fn (T0, T1, T2, T3, T4) -> T_out,
         x0: T0,
         x1: T1,
@@ -287,7 +287,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -309,7 +309,7 @@ struct QuickBench:
         /,
         T_out: AnyTrivialRegType,
     ](
-        inout self,
+        mut self,
         func: fn (T0, T1, T2, T3, T4, T5) -> T_out,
         x0: T0,
         x1: T1,
@@ -347,7 +347,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -370,7 +370,7 @@ struct QuickBench:
         /,
         T_out: AnyTrivialRegType,
     ](
-        inout self,
+        mut self,
         func: fn (T0, T1, T2, T3, T4, T5, T6) -> T_out,
         x0: T0,
         x1: T1,
@@ -411,7 +411,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -435,7 +435,7 @@ struct QuickBench:
         /,
         T_out: AnyTrivialRegType,
     ](
-        inout self,
+        mut self,
         func: fn (T0, T1, T2, T3, T4, T5, T6, T7) -> T_out,
         x0: T0,
         x1: T1,
@@ -479,7 +479,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -504,7 +504,7 @@ struct QuickBench:
         /,
         T_out: AnyTrivialRegType,
     ](
-        inout self,
+        mut self,
         func: fn (T0, T1, T2, T3, T4, T5, T6, T7, T8) -> T_out,
         x0: T0,
         x1: T1,
@@ -551,7 +551,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():
@@ -577,7 +577,7 @@ struct QuickBench:
         /,
         T_out: AnyTrivialRegType,
     ](
-        inout self,
+        mut self,
         func: fn (T0, T1, T2, T3, T4, T5, T6, T7, T8, T9) -> T_out,
         x0: T0,
         x1: T1,
@@ -627,7 +627,7 @@ struct QuickBench:
 
         @parameter
         @always_inline
-        fn bench_iter(inout b: Bencher):
+        fn bench_iter(mut b: Bencher):
             @parameter
             @always_inline
             fn call_func():

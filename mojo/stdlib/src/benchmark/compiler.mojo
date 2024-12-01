@@ -114,7 +114,7 @@ fn keep[type: AnyType](val: UnsafePointer[type]):
 
 
 @always_inline
-fn keep[type: AnyTrivialRegType](inout val: type):
+fn keep[type: AnyTrivialRegType](mut val: type):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
