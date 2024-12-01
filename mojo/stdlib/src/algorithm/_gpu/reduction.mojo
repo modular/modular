@@ -168,7 +168,7 @@ fn row_reduce[
     rank: Int,
     accum_type: DType = get_accum_type[type](),
 ](
-    inout row_coords: IndexList[rank],
+    mut row_coords: IndexList[rank],
     axis: Int,
     init: Scalar[type],
     row_size: Int,
@@ -212,7 +212,7 @@ fn row_reduce[
     rank: Int,
     accum_type: DType = get_accum_type[type](),
 ](
-    inout row_coords: IndexList[rank],
+    mut row_coords: IndexList[rank],
     axis: Int,
     init: StaticTuple[Scalar[type], num_reductions],
     row_size: Int,
