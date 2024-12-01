@@ -40,7 +40,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[type: Intable](inout self, value: type):
+    fn __init__[type: Intable](mut self, value: type):
         """Creates a statically-known dimension.
 
         Parameters:
@@ -53,7 +53,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[type: IntLike](inout self, value: type):
+    fn __init__[type: IntLike](mut self, value: type):
         """Creates a statically-known dimension.
 
         Parameters:
@@ -166,7 +166,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         return Dim(self.get() * rhs.get())
 
     @always_inline("nodebug")
-    fn __imul__(inout self, rhs: Dim):
+    fn __imul__(mut self, rhs: Dim):
         """Inplace multiplies two dimensions.
 
         If either are unknown, the result is unknown as well.
@@ -253,7 +253,7 @@ struct Dim(Intable, Stringable, Writable, ImplicitlyBoolable):
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this DimList to the provided Writer.
 
@@ -303,7 +303,7 @@ struct DimList(
 
     @always_inline("nodebug")
     @implicit
-    fn __init__[Intable: Intable](inout self, values: (Intable,)):
+    fn __init__[Intable: Intable](mut self, values: (Intable,)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -315,7 +315,7 @@ struct DimList(
         self.value = VariadicList[Dim](int(values[0]))
 
     @always_inline("nodebug")
-    fn __init__[Intable: Intable](inout self, values: (Intable, Intable)):
+    fn __init__[Intable: Intable](mut self, values: (Intable, Intable)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -329,7 +329,7 @@ struct DimList(
     @always_inline("nodebug")
     fn __init__[
         Intable: Intable
-    ](inout self, values: (Intable, Intable, Intable)):
+    ](mut self, values: (Intable, Intable, Intable)):
         """Creates a dimension list from the given list of values.
 
         Parameters:
@@ -570,7 +570,7 @@ struct DimList(
 
         return True
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this DimList to the provided Writer.
 

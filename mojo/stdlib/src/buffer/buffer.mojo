@@ -103,7 +103,7 @@ struct Buffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[type], address_space=address_space],
         in_size: Int,
     ):
@@ -534,7 +534,7 @@ struct NDBuffer[
     @always_inline
     @implicit
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[type], address_space=address_space, **_],
     ):
         """Constructs an NDBuffer with statically known rank, shapes and
@@ -557,7 +557,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[
             __mlir_type[`!pop.scalar<`, type.value, `>`],
             address_space=address_space,
@@ -587,7 +587,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[type], address_space=address_space],
         dynamic_shape: IndexList[rank, **_],
     ):
@@ -614,7 +614,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[type], address_space=address_space],
         dynamic_shape: DimList,
     ):
@@ -632,7 +632,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[type], address_space=address_space],
         dynamic_shape: IndexList[rank, **_],
         dynamic_stride: IndexList[rank, **_],
@@ -668,7 +668,7 @@ struct NDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[type], address_space=address_space],
         dynamic_shape: DimList,
         dynamic_stride: IndexList[rank, **_],
@@ -781,7 +781,7 @@ struct NDBuffer[
         """
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this buffer to the provided Writer.
 
@@ -1324,7 +1324,7 @@ struct NDBuffer[
         prefetch[params](self._offset(indices))
 
     @always_inline("nodebug")
-    fn __imul__(inout self, rhs: Float32):
+    fn __imul__(mut self, rhs: Float32):
         """In-place multiplies a scalar.
 
         Args:
@@ -1349,7 +1349,7 @@ struct NDBuffer[
                 self.data.store(idx, vec * rhs.cast[type]())
 
     @always_inline("nodebug")
-    fn __imul__(inout self, rhs: NDBuffer):
+    fn __imul__(mut self, rhs: NDBuffer):
         """In-place multiplies a NDBuffer.
 
         Args:
@@ -1377,7 +1377,7 @@ struct NDBuffer[
                 self.data.store(idx, vec * rhs_vec)
 
     @always_inline("nodebug")
-    fn __itruediv__(inout self, rhs: NDBuffer):
+    fn __itruediv__(mut self, rhs: NDBuffer):
         """In-place divides a NDBuffer.
 
         Args:
@@ -1635,7 +1635,7 @@ struct DynamicRankBuffer:
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         data: UnsafePointer[NoneType],
         rank: Int,
         shape: IndexList[_MAX_RANK],
