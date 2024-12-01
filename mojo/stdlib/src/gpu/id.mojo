@@ -9,6 +9,7 @@ from os import abort
 from sys import is_nvidia_gpu, llvm_intrinsic
 
 from gpu import WARP_SIZE
+from math import fma
 
 # ===----------------------------------------------------------------------===#
 # ThreadIdx
@@ -208,6 +209,39 @@ struct _GridDim:
 
 
 alias GridDim = _GridDim()
+
+# ===----------------------------------------------------------------------===#
+# GridDim
+# ===----------------------------------------------------------------------===#
+
+
+@register_passable("trivial")
+struct _GlobalIdx:
+    """Global provides static methods for getting the x/y/z global offset of
+    the kernel launch."""
+
+    @always_inline("nodebug")
+    fn __init__(out self):
+        return
+
+    @always_inline("nodebug")
+    fn __getattr__[dim: StringLiteral](self) -> UInt:
+        """Gets the `x`, `y`, or `z` dimension of the program.
+
+        Returns:
+            The `x`, `y`, or `z` dimension of the program.
+        """
+        constrained[
+            dim in ("x", "y", "z"), "the accessor must be either x, y, or z"
+        ]()
+        var thread_idx = ThreadIdx.__getattr__[dim]()
+        var block_idx = BlockIdx.__getattr__[dim]()
+        var block_dim = BlockDim.__getattr__[dim]()
+
+        return fma(block_idx, block_dim, thread_idx)
+
+
+alias GlobalIdx = _GlobalIdx()
 
 # ===----------------------------------------------------------------------===#
 # lane_id
