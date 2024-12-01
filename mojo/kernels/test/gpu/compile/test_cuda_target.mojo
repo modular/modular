@@ -16,6 +16,7 @@ from gpu import (
     BlockDim,
     BlockIdx,
     ThreadIdx,
+    GlobalIdx,
     barrier,
     lane_id,
     shuffle_down,
@@ -105,8 +106,7 @@ def test_hello_mojo_sm90():
 fn erf_elementwise(buf: UnsafePointer[Float32], len: Int, ctx: DeviceContext):
     # Each thread will process 4 * simd_width elements.
     alias granularity = 4 * simdwidthof[DType.float32]()
-
-    var tid = granularity * int(ThreadIdx.x + BlockDim.x * BlockIdx.x)
+    var tid = granularity * GlobalIdx.x
 
     @always_inline
     @__copy_capture(tid)
