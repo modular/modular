@@ -56,7 +56,7 @@ struct HostNDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
     ):
         constrained[
             shape.all_known[rank](),
@@ -71,7 +71,7 @@ struct HostNDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         dynamic_shape: IndexList[rank, **_],
     ):
         self.tensor = NDBuffer[type, rank, shape](
@@ -81,7 +81,7 @@ struct HostNDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         dynamic_shape: DimList,
     ):
         self.__init__(_make_tuple[rank](dynamic_shape))
@@ -112,7 +112,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         *,
         ctx: DeviceContext,
     ) raises:
@@ -131,7 +131,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         dynamic_shape: IndexList[rank, **_],
         *,
         ctx: DeviceContext,
@@ -146,7 +146,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         dynamic_shape: DimList,
         *,
         ctx: DeviceContext,
@@ -155,7 +155,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         dynamic_shape: IndexList[rank] = _make_tuple[rank](shape),
         *,
         stride: IndexList[rank],
@@ -171,7 +171,7 @@ struct DeviceNDBuffer[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         dynamic_shape: DimList,
         *,
         stride: IndexList[rank],
@@ -188,7 +188,7 @@ struct TestTensor[type: DType, rank: Int]:
     var num_elements: Int
 
     fn __init__(
-        inout self,
+        mut self,
         shape: DimList,
         values: List[Scalar[type]] = List[Scalar[type]](),
     ):
@@ -250,13 +250,13 @@ fn bench_compile_time[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     emission_kind: StringLiteral = "asm",
-](inout m: Bench, name: String) raises:
+](mut m: Bench, name: String) raises:
     constrained[emission_kind in ("asm", "llvm", "ptx")]()
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
     @always_inline
     @parameter
-    fn bench_call(inout b: Bencher) raises:
+    fn bench_call(mut b: Bencher) raises:
         @always_inline
         @parameter
         fn bench_iter() raises:
