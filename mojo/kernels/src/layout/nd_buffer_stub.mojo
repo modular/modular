@@ -36,7 +36,7 @@ struct TileMask[
     var offset: IndexList[rank]
 
     fn __init__(
-        inout self,
+        mut self,
         max_dim: IndexList[rank],
         offset: IndexList[rank] = IndexList[rank](0),
     ):
@@ -333,7 +333,7 @@ struct ElementLayout[rank: Int, shape: IndexList[rank]](
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write(shape, ":", self.stride)
 
 

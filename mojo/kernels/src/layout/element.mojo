@@ -80,7 +80,7 @@ struct Element[
         self.runtime_layout = RuntimeLayout[layout, bitwidth=bitwidth]()
 
     fn __init__(
-        inout self,
+        mut self,
         element_data: Self.element_data_type,
         runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth],
     ):
@@ -459,7 +459,7 @@ struct Element[
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write(self.element_data)
 
 
@@ -482,7 +482,7 @@ struct MemoryElement[
     var runtime_layout: RuntimeLayout[layout, bitwidth=bitwidth]
 
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[
             Scalar[dtype], address_space=address_space, alignment=alignment
         ],

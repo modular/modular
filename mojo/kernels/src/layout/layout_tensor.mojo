@@ -245,7 +245,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[dtype], address_space=address_space],
         runtime_layout: RuntimeLayout[layout, **_],
     ):
@@ -274,7 +274,7 @@ struct LayoutTensor[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[dtype], address_space=address_space],
         runtime_layout: RuntimeLayout[layout, bitwidth = Self.layout_bitwidth],
         element_runtime_layout: RuntimeLayout[element_layout],
@@ -2186,7 +2186,7 @@ struct LayoutTensor[
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """Format 2D tensor in 2D, otherwise print all values in column major
         coordinate order."""
 
@@ -2822,7 +2822,7 @@ struct LayoutTensorIter[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: __type_of(self.ptr),
         bound: Self.uint_type,
         stride: Self.uint_type = layout.size(),
@@ -2843,7 +2843,7 @@ struct LayoutTensorIter[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ptr: __type_of(self.ptr),
         bound: Self.uint_type,
         runtime_layout: RuntimeLayout[layout, **_],
@@ -2909,7 +2909,7 @@ struct LayoutTensorIter[
         return RuntimeLayout(new_shape, self.runtime_layout.stride)
 
     @always_inline
-    fn __iadd__[T: Intable](inout self, rhs: T):
+    fn __iadd__[T: Intable](mut self, rhs: T):
         """Increment the iterator.
 
         This function is unsafe. It omits bound checking for performance reasons.
@@ -2918,7 +2918,7 @@ struct LayoutTensorIter[
         self += Self.uint_type(int(rhs))
 
     @always_inline
-    fn __iadd__(inout self, rhs: Self.uint_type):
+    fn __iadd__(mut self, rhs: Self.uint_type):
         """Increment the iterator.
 
         This function is unsafe. It omits bound checking for performance reasons.
@@ -2939,7 +2939,7 @@ struct LayoutTensorIter[
             self.offset = self.offset % self.bound
 
     @always_inline
-    fn _incr(inout self):
+    fn _incr(mut self):
         """Increment the iterator by 1. Equivalent to `iter += 1` but w/o the division.
         """
         self.offset += self.stride

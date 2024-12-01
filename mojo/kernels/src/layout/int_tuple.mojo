@@ -31,7 +31,7 @@ struct IntDelegate(ElementDelegate):
     @staticmethod
     fn format_element_to[
         T: CollectionElement, W: Writer
-    ](inout writer: W, a: Variant[T]):
+    ](mut writer: W, a: Variant[T]):
         if a.isa[Int]():
             writer.write(a[Int])
         else:
@@ -132,7 +132,7 @@ fn to_unknown(t: IntTuple) -> IntTuple:
 
 fn _insertion_sort[
     cmp: fn (IntTuple, IntTuple) -> Bool
-](inout tuple: IntTuple, start: Int, end: Int):
+](mut tuple: IntTuple, start: Int, end: Int):
     for i in range(start + 1, end):
         var value = tuple[i]
         var j = i

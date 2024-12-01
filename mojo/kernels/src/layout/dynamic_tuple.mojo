@@ -22,7 +22,7 @@ trait ElementDelegate:
     @staticmethod
     fn format_element_to[
         T: CollectionElement, W: Writer
-    ](inout writer: W, a: Variant[T]):
+    ](mut writer: W, a: Variant[T]):
         pass
 
 
@@ -34,7 +34,7 @@ struct DefaultDelegate(ElementDelegate):
     @staticmethod
     fn format_element_to[
         T: CollectionElement, W: Writer
-    ](inout writer: W, a: Variant[T]):
+    ](mut writer: W, a: Variant[T]):
         writer.write("#")
 
 
@@ -64,7 +64,7 @@ struct DynamicTupleBase[
         self._elements = existing._elements
 
     @always_inline
-    fn append(inout self, value: Self.Element):
+    fn append(mut self, value: Self.Element):
         self._elements.append(value)
 
     @always_inline
@@ -90,7 +90,7 @@ struct DynamicTupleBase[
         return result
 
     @always_inline
-    fn __setitem__(inout self, _idx: Int, val: Self.Element):
+    fn __setitem__(mut self, _idx: Int, val: Self.Element):
         var idx = len(self) + _idx if _idx < 0 else _idx
 
         if idx < 0 or idx >= len(self._elements):
@@ -102,7 +102,7 @@ struct DynamicTupleBase[
         return len(self._elements)
 
     @staticmethod
-    fn format_element_to[W: Writer, //](inout writer: W, v: Self.Element):
+    fn format_element_to[W: Writer, //](mut writer: W, v: Self.Element):
         if v.isa[T]():
             return D.format_element_to[T](writer, v[T])
         else:
@@ -135,7 +135,7 @@ struct DynamicTupleBase[
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer, //](self, inout writer: W):
+    fn write_to[W: Writer, //](self, mut writer: W):
         Self.format_element_to(writer, self)
 
     @always_inline
@@ -155,7 +155,7 @@ struct _DynamicTupleIter[
     var src: DynamicTuple[T, D]
 
     @always_inline
-    fn __next__(inout self) -> DynamicTuple[T, D]:
+    fn __next__(mut self) -> DynamicTuple[T, D]:
         self.idx += 1
         return self.src[self.idx - 1]
 
@@ -228,7 +228,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         self._value = Self.BaseType(v1._value, v2._value, v3._value, v4._value)
 
     @always_inline
-    fn __init__(inout self, v1: Self, v2: Self, v3: Self, v4: Self, v5: Self):
+    fn __init__(mut self, v1: Self, v2: Self, v3: Self, v4: Self, v5: Self):
         self._value = Self.BaseType(
             v1._value, v2._value, v3._value, v4._value, v5._value
         )
@@ -290,7 +290,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         return r
 
     @always_inline
-    fn __setitem__(inout self, _idx: Int, val: Self):
+    fn __setitem__(mut self, _idx: Int, val: Self):
         var idx = len(self) + _idx if _idx < 0 else _idx
 
         if self.is_value() and val.is_value():
@@ -307,7 +307,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
             self._value = new_value
 
     @always_inline
-    fn append(inout self, owned v1: Self):
+    fn append(mut self, owned v1: Self):
         var new_value: Self.BaseType
         if self.is_tuple():
             new_value = self.tuple()
@@ -332,7 +332,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer, //](self, inout writer: W):
+    fn write_to[W: Writer, //](self, mut writer: W):
         Self.BaseType.format_element_to(writer, self._value)
 
 
@@ -348,7 +348,7 @@ struct _ZipIter2[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
     var b: DynamicTuple[T, D]
 
     @always_inline
-    fn __next__(inout self) -> DynamicTuple[T, D]:
+    fn __next__(mut self) -> DynamicTuple[T, D]:
         self.index += 1
         return DynamicTuple[T, D](
             self.a[self.index - 1], self.b[self.index - 1]
@@ -387,7 +387,7 @@ struct _ZipIter3[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
     var c: DynamicTuple[T, D]
 
     @always_inline
-    fn __next__(inout self) -> DynamicTuple[T, D]:
+    fn __next__(mut self) -> DynamicTuple[T, D]:
         self.index += 1
         return DynamicTuple[T, D](
             self.a[self.index - 1],
@@ -450,7 +450,7 @@ struct _ProductIter2[
     var b: DynamicTuple[T, D]
 
     @always_inline
-    fn __next__(inout self) -> DynamicTuple[T, D]:
+    fn __next__(mut self) -> DynamicTuple[T, D]:
         var res = DynamicTuple[T, D](self.a[self.a_index], self.b[self.b_index])
         self.b_index += 1
         if self.b_index == len(self.b):
@@ -508,7 +508,7 @@ struct _ProductIter3[
     var c: DynamicTuple[T, D]
 
     @always_inline
-    fn __next__(inout self) -> DynamicTuple[T, D]:
+    fn __next__(mut self) -> DynamicTuple[T, D]:
         self.offset += 1
         var idx = _get_start_indices_of_nth_subvolume[0](
             self.offset - 1, Index(len(self.a), len(self.b), len(self.c))
@@ -594,7 +594,7 @@ struct _ProductIterN[
         self.tuples_shape = _get_shapes(tuples)
 
     @always_inline
-    fn __next__(inout self) -> DynamicTuple[T, D]:
+    fn __next__(mut self) -> DynamicTuple[T, D]:
         self.offset += 1
         var idx = _lift(self.offset - 1, self.tuples_shape)
         var res = DynamicTuple[T, D]()

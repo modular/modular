@@ -285,7 +285,7 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
     fn has_shape() -> Bool:
         return False
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("(")
         writer.write(str(self.bits))
         writer.write(",")

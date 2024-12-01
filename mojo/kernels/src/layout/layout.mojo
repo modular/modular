@@ -108,7 +108,7 @@ struct _LayoutIter:
     var index: Int
     var layout: Layout
 
-    fn __next__(inout self) -> Layout:
+    fn __next__(mut self) -> Layout:
         self.index += 1
         return Layout(
             self.layout.shape[self.index - 1],
@@ -248,7 +248,7 @@ struct Layout(
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("(", self.shape, ":", self.stride, ")")
 
     fn __eq__(self, other: Layout) -> Bool:
@@ -292,7 +292,7 @@ struct Layout(
         return crd2idx(idx, self.shape, self.stride)
 
     @always_inline
-    fn append(inout self, item: Layout):
+    fn append(mut self, item: Layout):
         self.shape.append(item.shape)
         self.stride.append(item.stride)
 
@@ -559,7 +559,7 @@ fn print_layout(layout: Layout):
     format_layout(layout, stdout)
 
 
-fn format_layout[W: Writer](layout: Layout, inout writer: W):
+fn format_layout[W: Writer](layout: Layout, mut writer: W):
     @parameter
     fn _write_divider(column_count: Int, cell_width: Int):
         for _ in range(column_count):

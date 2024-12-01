@@ -96,7 +96,7 @@ struct TensorCore[
 
     @always_inline
     fn load_a(
-        inout self,
+        mut self,
         a: LayoutTensor,
     ) -> Self.a_reg_tile_type as res:
         @parameter
@@ -107,7 +107,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_a_amd(
-        inout self,
+        mut self,
         a: LayoutTensor,
     ) -> Self.a_reg_tile_type as res:
         alias mma_m = shape[0]
@@ -149,7 +149,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_a_nvidia(
-        inout self,
+        mut self,
         a: LayoutTensor,
     ) -> Self.a_reg_tile_type as res:
         alias mma_m = shape[0]
@@ -207,7 +207,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn load_b(
-        inout self,
+        mut self,
         b: LayoutTensor,
     ) -> Self.b_reg_tile_type as res:
         @parameter
@@ -219,7 +219,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn _load_b_amd(
-        inout self,
+        mut self,
         b: LayoutTensor,
     ) -> Self.b_reg_tile_type as res:
         alias mma_n = shape[1]
@@ -255,7 +255,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn _load_b_nvidia(
-        inout self,
+        mut self,
         b: LayoutTensor,
     ) -> Self.b_reg_tile_type as res:
         alias mma_n = shape[1]
@@ -305,7 +305,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn load_c(
-        inout self,
+        mut self,
         c: LayoutTensor,
     ) -> Self.c_reg_tile_type as res:
         @parameter
@@ -316,7 +316,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_c_amd(
-        inout self,
+        mut self,
         c: LayoutTensor,
     ) -> Self.c_reg_tile_type as res:
         alias mma_m = shape[0]
@@ -342,7 +342,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_c_nvidia(
-        inout self,
+        mut self,
         c: LayoutTensor,
     ) -> Self.c_reg_tile_type as res:
         alias mma_m = shape[0]

@@ -36,7 +36,7 @@ struct GeneralDelegate(ElementDelegate):
     @staticmethod
     fn format_element_to[
         T: CollectionElement, W: Writer
-    ](inout writer: W, a: Variant[T]):
+    ](mut writer: W, a: Variant[T]):
         if not a.isa[General]():
             abort("Unexpected data type.")
 

@@ -37,7 +37,7 @@ from utils import Index, IndexList, StaticTuple
 
 fn linspace_fill[
     dtype: DType, rank: Int, shape: DimList
-](inout buff: NDBuffer[dtype, rank, shape]):
+](mut buff: NDBuffer[dtype, rank, shape]):
     for i in range(buff.size()):
         buff.data[i] = i
 

@@ -78,7 +78,7 @@ struct RuntimeTuple[
 
     @always_inline
     @implicit
-    fn __init__[l: Int](inout self, values: IndexList[l, **_]):
+    fn __init__[l: Int](mut self, values: IndexList[l, **_]):
         """Initialize a RuntimeTuple from an IndexList.
 
         Args:
@@ -129,7 +129,7 @@ struct RuntimeTuple[
         return res
 
     @always_inline
-    fn __setitem__[i: Int](inout self, val: Scalar[Self.int_type]):
+    fn __setitem__[i: Int](mut self, val: Scalar[Self.int_type]):
         alias offset = Self.offset_until[i]()
         self.value[offset] = int(val)
 
@@ -178,7 +178,7 @@ struct RuntimeTuple[
     ] as result:
         return __type_of(result)(self.value)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         @parameter
         if S.is_value():
             writer.write(self.value[0])

@@ -35,7 +35,7 @@ struct Dim(Stringable):
 trait TiledOp:
     @staticmethod
     fn op(
-        inout dst: LayoutTensor,
+        mut dst: LayoutTensor,
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -46,7 +46,7 @@ trait TiledOp:
 struct MMA(TiledOp):
     @staticmethod
     fn op(
-        inout dst: LayoutTensor,
+        mut dst: LayoutTensor,
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -68,7 +68,7 @@ struct MMA(TiledOp):
 struct MMA_Vec(TiledOp):
     @staticmethod
     fn op(
-        inout dst: LayoutTensor,
+        mut dst: LayoutTensor,
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):

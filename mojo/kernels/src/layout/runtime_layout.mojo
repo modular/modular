@@ -42,7 +42,7 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         shape: RuntimeTuple[
             layout.shape, element_bitwidth=bitwidth, unsigned=True
         ],
@@ -113,7 +113,7 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         return __type_of(result)(shape, stride)
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("(")
         writer.write(self.shape)
         writer.write(":")

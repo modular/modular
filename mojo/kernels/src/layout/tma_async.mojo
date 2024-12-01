@@ -44,7 +44,7 @@ struct TMABarrier(CollectionElement):
     ]
 
     @always_inline
-    fn __init__(inout self):
+    fn __init__(mut self):
         self.mbar = stack_allocation[
             1, Int64, address_space = AddressSpace.SHARED
         ]()
@@ -66,11 +66,11 @@ struct TMATensorTile[
 ]:
     var descriptor: TMADescriptor
 
-    fn __init__(inout self, descriptor: TMADescriptor):
+    fn __init__(mut self, descriptor: TMADescriptor):
         self.descriptor = descriptor
 
     @always_inline
-    fn __copyinit__(inout self, other: Self):
+    fn __copyinit__(mut self, other: Self):
         self.descriptor = other.descriptor
 
     # Schedules an asynchronous load of tile at and returns the memory barrier for the operation.
