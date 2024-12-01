@@ -30,7 +30,7 @@ fn vec_func(
 
 @no_inline
 fn bench_vec_add(
-    inout b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
+    mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
 ) raises:
     alias dtype = DType.float32
     var in0_host = UnsafePointer[Scalar[dtype]].alloc(length)
@@ -65,7 +65,7 @@ fn bench_vec_add(
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:

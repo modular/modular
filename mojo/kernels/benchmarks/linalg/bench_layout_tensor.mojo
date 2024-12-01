@@ -48,7 +48,7 @@ struct Matrix[rows: Int, cols: Int]:
     fn __getitem__(self, y: Int, x: Int) -> SIMD[dtype, 1]:
         return self.load(y, x)
 
-    fn __setitem__(inout self, y: Int, x: Int, val: SIMD[dtype, 1]):
+    fn __setitem__(mut self, y: Int, x: Int, val: SIMD[dtype, 1]):
         self.store(y, x, val)
 
     fn load[nelts: Int = 1](self, y: Int, x: Int) -> SIMD[dtype, nelts]:
@@ -58,7 +58,7 @@ struct Matrix[rows: Int, cols: Int]:
         return self.data.store(y * self.cols + x, val)
 
 
-fn matmul_naive(inout C: Matrix, A: Matrix, B: Matrix):
+fn matmul_naive(mut C: Matrix, A: Matrix, B: Matrix):
     for m in range(C.rows):
         for k in range(A.cols):
             for n in range(C.cols):
@@ -73,7 +73,7 @@ fn tile[tiled_fn: Tile2DFunc, tile_x: Int, tile_y: Int](end_x: Int, end_y: Int):
 
 
 # Unroll the vectorized loop by a constant factor
-fn matmul_unrolled(inout C: Matrix, A: Matrix, B: Matrix):
+fn matmul_unrolled(mut C: Matrix, A: Matrix, B: Matrix):
     # simdwidth of = amount of `dtype` elements that fit into a single SIMD register
     # 2x multiplier will use multiple SIMD registers in parallel where possible
     alias nelts = simdwidthof[dtype]() * 2
@@ -116,7 +116,7 @@ fn matmul_unrolled(inout C: Matrix, A: Matrix, B: Matrix):
     sync_parallelize[calc_row](C.rows // tile_m)
 
 
-fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
+fn matmul_tiled_layout(mut C: Matrix, A: Matrix, B: Matrix):
     var dst = LayoutTensor[dtype, Layout.row_major(M, N)](C.data)
     var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
     var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
@@ -185,7 +185,7 @@ fn alloc_aligned_tile[
     )
 
 
-fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
+fn matmul_tiled_layout_cache(mut C: Matrix, A: Matrix, B: Matrix):
     var dst = LayoutTensor[dtype, Layout.row_major(M, N)](C.data)
     var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
     var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
@@ -247,7 +247,7 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
     sync_parallelize[calc_row](M // tile_m)
 
 
-fn matmul_layout_transposed(inout C: Matrix, A: Matrix, B: Matrix):
+fn matmul_layout_transposed(mut C: Matrix, A: Matrix, B: Matrix):
     var dst = LayoutTensor[dtype, Layout.row_major(M, N)](C.data)
     var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
     var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
@@ -311,7 +311,7 @@ fn matmul_layout_transposed(inout C: Matrix, A: Matrix, B: Matrix):
 
 @always_inline
 fn bench[
-    func: fn (inout Matrix, Matrix, Matrix) -> None, name: StringLiteral
+    func: fn (mut Matrix, Matrix, Matrix) -> None, name: StringLiteral
 ]() raises:
     var A = Matrix[M, K].rand()
     var B = Matrix[K, N].rand()
@@ -336,8 +336,8 @@ fn bench[
 
 @always_inline
 fn test_matrix_equal[
-    func: fn (inout Matrix, Matrix, Matrix) -> None
-](inout C: Matrix, A: Matrix, B: Matrix) raises -> Bool:
+    func: fn (mut Matrix, Matrix, Matrix) -> None
+](mut C: Matrix, A: Matrix, B: Matrix) raises -> Bool:
     """Runs a matmul function on A and B and tests the result for equality with
     C on every element.
     """

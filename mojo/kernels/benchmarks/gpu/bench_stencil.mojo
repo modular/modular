@@ -37,7 +37,7 @@ fn bench_stencil_avg_pool[
     pool_window_h: Int,
     pool_window_w: Int,
     num_channels: Int,
-](ctx: DeviceContext, inout m: Bench) raises:
+](ctx: DeviceContext, mut m: Bench) raises:
     alias rank = 4
     alias dilation = 1
     alias stencil_rank = 2
@@ -138,7 +138,7 @@ fn bench_stencil_avg_pool[
 
     @parameter
     @always_inline
-    fn bench_gpu(inout b: Bencher):
+    fn bench_gpu(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -181,7 +181,7 @@ fn bench_stencil_avg_pool[
 
     @parameter
     @always_inline
-    fn bench_cpu(inout b: Bencher):
+    fn bench_cpu(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch():
@@ -245,7 +245,7 @@ fn bench_stencil_max_pool[
     pool_window_h: Int,
     pool_window_w: Int,
     num_channels: Int,
-](ctx: DeviceContext, inout m: Bench) raises:
+](ctx: DeviceContext, mut m: Bench) raises:
     alias rank = 4
     alias dilation = 1
     alias stencil_rank = 2
@@ -345,7 +345,7 @@ fn bench_stencil_max_pool[
 
     @parameter
     @always_inline
-    fn bench_gpu(inout b: Bencher):
+    fn bench_gpu(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -387,7 +387,7 @@ fn bench_stencil_max_pool[
 
     @parameter
     @always_inline
-    fn bench_cpu(inout b: Bencher):
+    fn bench_cpu(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch():
@@ -449,7 +449,7 @@ fn bench_stencil_avg_pool_padded[
     pool_window_w: Int,
     pad_h: Int,
     pad_w: Int,
-](ctx: DeviceContext, inout m: Bench) raises:
+](ctx: DeviceContext, mut m: Bench) raises:
     alias rank = 4
     alias stencil_rank = 2
     alias simd_width = 1
@@ -552,7 +552,7 @@ fn bench_stencil_avg_pool_padded[
 
     @parameter
     @always_inline
-    fn bench_gpu(inout b: Bencher):
+    fn bench_gpu(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -595,7 +595,7 @@ fn bench_stencil_avg_pool_padded[
 
     @parameter
     @always_inline
-    fn bench_cpu(inout b: Bencher):
+    fn bench_cpu(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch():

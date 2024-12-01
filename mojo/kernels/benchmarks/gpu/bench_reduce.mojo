@@ -35,7 +35,7 @@ fn run_reduce[
     type: DType,
     rank: Int,
     num_reductions: Int = 1,
-](inout m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
+](mut m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
     print("run_reduce", shape)
     var axis = rank - 1
     var out_shape = shape
@@ -102,7 +102,7 @@ fn run_reduce[
     @__copy_capture(axis)
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:

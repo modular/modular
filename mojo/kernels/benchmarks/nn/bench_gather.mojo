@@ -19,10 +19,10 @@ from nn.gather_scatter import gather_elements
 from utils.index import Index
 
 
-fn bench_gather(inout m: Bench, spec: GatherSpec) raises:
+fn bench_gather(mut m: Bench, spec: GatherSpec) raises:
     @parameter
     @always_inline
-    fn bench_gather_wrapper(inout b: Bencher, concrete_spec: GatherSpec) raises:
+    fn bench_gather_wrapper(mut b: Bencher, concrete_spec: GatherSpec) raises:
         bench_gather(b, concrete_spec)
 
     m.bench_with_input[GatherSpec, bench_gather_wrapper](
@@ -31,7 +31,7 @@ fn bench_gather(inout m: Bench, spec: GatherSpec) raises:
 
 
 @parameter
-fn bench_gather(inout bencher: Bencher, spec: GatherSpec):
+fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
     var data = InlinedFixedVector[Float32](spec.m1 * spec.m2)
     var indices = InlinedFixedVector[Int32](spec.n1 * spec.n2)
 

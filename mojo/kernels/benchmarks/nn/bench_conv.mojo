@@ -28,7 +28,7 @@ from utils import IndexList
 from utils.index import Index
 
 
-fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
+fn bench_conv(mut m: Bench, spec: ConvSpec) raises:
     alias input_type = spec.static_info.input_type
     alias filter_type = spec.static_info.filter_type
     alias output_type = spec.static_info.output_type
@@ -134,7 +134,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
     @parameter
     @always_inline
     fn bench_conv_wrapper(
-        inout b: Bencher, concrete_spec: ConvSpec[spec.static_info]
+        mut b: Bencher, concrete_spec: ConvSpec[spec.static_info]
     ) raises:
         # Count the iteration to decide which input copy to use.
         var counter = 0

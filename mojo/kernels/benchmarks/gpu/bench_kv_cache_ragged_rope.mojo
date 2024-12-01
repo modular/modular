@@ -46,7 +46,7 @@ def execute_kv_cache_ragged_rope[
     dtype: DType, head_dim: Int, num_q_heads: Int, num_kv_heads: Int
 ](
     ctx: DeviceContext,
-    inout m: Bench,
+    mut m: Bench,
     batch_size: Int,
     seq_len: Int,
     use_random_seq_lengths: Bool,
@@ -155,7 +155,7 @@ def execute_kv_cache_ragged_rope[
         output_device,
     )
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:

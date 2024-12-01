@@ -114,7 +114,7 @@ fn run_elementwise[
     emulate_graph_compiler: Bool,
     use_aligned_memory: Bool,
 ](
-    inout m: Bench,
+    mut m: Bench,
     fn_name: String,
     dims: IndexList[rank],
     *,
@@ -155,7 +155,7 @@ fn run_elementwise[
     @parameter
     @__copy_capture(stride, N_cache)
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @__copy_capture(N, stride)
         @always_inline

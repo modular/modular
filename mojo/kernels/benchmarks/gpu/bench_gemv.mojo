@@ -45,7 +45,7 @@ fn bench_matmul[
     shape_b: DimList,
 ](
     ctx: DeviceContext,
-    inout h: Bench,
+    mut h: Bench,
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
@@ -56,7 +56,7 @@ fn bench_matmul[
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -91,7 +91,7 @@ fn bench_matmul_transpose[
     shape_b: DimList,
 ](
     ctx: DeviceContext,
-    inout h: Bench,
+    mut h: Bench,
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
@@ -102,7 +102,7 @@ fn bench_matmul_transpose[
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -137,7 +137,7 @@ fn bench_matmul_naive[
     shape_b: DimList,
 ](
     ctx: DeviceContext,
-    inout h: Bench,
+    mut h: Bench,
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
@@ -164,7 +164,7 @@ fn bench_matmul_naive[
     @always_inline
     @__copy_capture(M, N, K)
     @parameter
-    fn bench_func(inout b: Bencher) raises:
+    fn bench_func(mut b: Bencher) raises:
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -229,7 +229,7 @@ fn dynamic(d: Int) -> ValOrDim:
 fn create_matmul_bench[
     dtype: DType
 ](
-    ctx: DeviceContext, inout h: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
+    ctx: DeviceContext, mut h: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
 ) raises:
     bench_matmul[
         dtype,
@@ -242,7 +242,7 @@ fn create_matmul_bench[
 fn create_matmul_bench_t[
     dtype: DType
 ](
-    ctx: DeviceContext, inout h: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
+    ctx: DeviceContext, mut h: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
 ) raises:
     bench_matmul_transpose[
         dtype,
@@ -255,7 +255,7 @@ fn create_matmul_bench_t[
 fn create_matmul_bench_n[
     dtype: DType
 ](
-    ctx: DeviceContext, inout h: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
+    ctx: DeviceContext, mut h: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
 ) raises:
     bench_matmul_naive[
         dtype,

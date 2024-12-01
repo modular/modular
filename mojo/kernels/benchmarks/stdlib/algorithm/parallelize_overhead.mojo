@@ -13,7 +13,7 @@ from benchmark import Bench, Bencher, BenchId, keep
 
 
 @parameter
-fn bench_empty_sync_parallelize(inout b: Bencher) raises:
+fn bench_empty_sync_parallelize(mut b: Bencher) raises:
     @always_inline
     @parameter
     fn parallel_fn(thread_id: Int):
@@ -23,7 +23,7 @@ fn bench_empty_sync_parallelize(inout b: Bencher) raises:
 
 
 @parameter
-fn bench_empty_parallelize(inout b: Bencher) raises:
+fn bench_empty_parallelize(mut b: Bencher) raises:
     @always_inline
     @parameter
     fn parallel_fn(thread_id: Int):

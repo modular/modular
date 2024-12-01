@@ -25,7 +25,7 @@ fn add(x: SIMD, y: __type_of(x)) -> __type_of(x):
 
 
 @parameter
-fn bench_gather_reduce(inout b: Bencher):
+fn bench_gather_reduce(mut b: Bencher):
     alias type = DType.float32
     var num_rows = 500000
     var embedding_dim = 32

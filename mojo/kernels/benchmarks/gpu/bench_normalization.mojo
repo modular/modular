@@ -26,7 +26,7 @@ fn bench_layer_norm_gpu[
     type: DType, rank: Int
 ](
     ctx: DeviceContext,
-    inout b: Bench,
+    mut b: Bench,
     fn_name: String,
     shape: IndexList[rank],
 ) raises:
@@ -80,7 +80,7 @@ fn bench_layer_norm_gpu[
     @always_inline
     @__copy_capture(shape, beta, epsilon, data_buf)
     @parameter
-    fn bench_fn(inout b: Bencher) raises:
+    fn bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -112,7 +112,7 @@ fn bench_rms_norm_gpu[
     type: DType, rank: Int
 ](
     ctx: DeviceContext,
-    inout b: Bench,
+    mut b: Bench,
     fn_name: String,
     shape: IndexList[rank],
 ) raises:
@@ -153,7 +153,7 @@ fn bench_rms_norm_gpu[
     @always_inline
     @__copy_capture(shape, gamma, epsilon, data_buf)
     @parameter
-    fn bench_fn(inout b: Bencher) raises:
+    fn bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:

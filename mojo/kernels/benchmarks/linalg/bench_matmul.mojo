@@ -54,7 +54,7 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     c_ref_ptr.free()
 
 
-fn bench_matmul_spec(inout m: Bench, spec: MatmulSpec) raises:
+fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     # disatch to bench_matmul with concrete spec type
     m.bench_with_input[
         MatmulSpec[spec.static_info], bench_matmul[spec.static_info]
@@ -68,7 +68,7 @@ fn bench_matmul_spec(inout m: Bench, spec: MatmulSpec) raises:
 
 fn bench_matmul[
     static: MatmulSpecStatic
-](inout bencher: Bencher, spec: MatmulSpec[static]) raises capturing:
+](mut bencher: Bencher, spec: MatmulSpec[static]) raises capturing:
     alias a_type = spec.static_info.a_type
     alias b_type = spec.static_info.b_type
     alias c_type = spec.static_info.c_type

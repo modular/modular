@@ -41,7 +41,7 @@ fn run_mha[
     num_heads: Int,
     group: Int = 1,
 ](
-    inout m: Bench,
+    mut m: Bench,
     seq_len: Int,
     num_keys: Int,
     batch_size: Int,
@@ -136,7 +136,7 @@ fn run_mha[
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
         fn _kernel_launch(ctx: DeviceContext) raises:

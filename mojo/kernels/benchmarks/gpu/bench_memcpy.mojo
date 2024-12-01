@@ -75,7 +75,7 @@ struct Config:
 @no_inline
 fn bench_memcpy[
     config: Config
-](inout b: Bench, *, length: Int, context: DeviceContext) raises:
+](mut b: Bench, *, length: Int, context: DeviceContext) raises:
     alias dtype = DType.float32
     var mem_host = context.malloc_host[Scalar[dtype]](
         length
@@ -86,7 +86,7 @@ fn bench_memcpy[
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -119,7 +119,7 @@ fn bench_memcpy[
 
 @no_inline
 fn bench_p2p(
-    inout b: Bench, *, length: Int, ctx1: DeviceContext, ctx2: DeviceContext
+    mut b: Bench, *, length: Int, ctx1: DeviceContext, ctx2: DeviceContext
 ) raises:
     alias dtype = DType.float32
 
@@ -139,7 +139,7 @@ fn bench_p2p(
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:

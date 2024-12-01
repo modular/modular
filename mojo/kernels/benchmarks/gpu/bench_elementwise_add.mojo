@@ -19,7 +19,7 @@ from utils import IndexList
 
 fn bench_add[
     unroll_by: Int, rank: Int
-](inout b: Bench, shape: IndexList[rank], ctx: DeviceContext) raises:
+](mut b: Bench, shape: IndexList[rank], ctx: DeviceContext) raises:
     alias type = DType.float32
     var size = shape.flattened_length()
     var input0_ptr = ctx.enqueue_create_buffer[type](size)
@@ -51,7 +51,7 @@ fn bench_add[
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher, shape: IndexList[rank]) raises:
+    fn bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:

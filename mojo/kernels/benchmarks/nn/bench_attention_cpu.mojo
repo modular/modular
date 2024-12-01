@@ -43,7 +43,7 @@ struct AttentionSpec(Stringable):
 
 def bench_attention[
     type: DType, transpose_k: Bool
-](inout m: Bench, spec: AttentionSpec):
+](mut m: Bench, spec: AttentionSpec):
     var q_shape = Index(spec.batch_size, spec.seq_len, spec.depth_dim)
     var k_shape = Index(
         spec.batch_size, spec.kv_seq_len, spec.depth_dim
@@ -100,7 +100,7 @@ def bench_attention[
 
     @always_inline
     @parameter
-    fn flash_bench_fn(inout b: Bencher):
+    fn flash_bench_fn(mut b: Bencher):
         @always_inline
         @parameter
         fn iter_fn[depth_static_dim: Dim]():
@@ -136,7 +136,7 @@ def bench_attention[
 
     @always_inline
     @parameter
-    fn fused_bench_fn(inout b: Bencher):
+    fn fused_bench_fn(mut b: Bencher):
         @always_inline
         @parameter
         fn iter_fn():

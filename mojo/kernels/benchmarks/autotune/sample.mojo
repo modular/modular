@@ -26,10 +26,10 @@ from time import sleep
 
 fn bench_func[
     dtype: DType, M: Int, N: Int, K: Int, stages: Int
-](inout m: Bench, verify: Bool) raises:
+](mut m: Bench, verify: Bool) raises:
     @parameter
     @always_inline
-    fn bench_iter(inout b: Bencher):
+    fn bench_iter(mut b: Bencher):
         @parameter
         @always_inline
         fn call_fn():

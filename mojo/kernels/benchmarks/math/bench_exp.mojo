@@ -45,7 +45,7 @@ fn apply[
 def bench_unary[
     func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
     type: DType,
-](inout m: Bench, size_range: _StridedRange, op_name: String):
+](mut m: Bench, size_range: _StridedRange, op_name: String):
     for i in size_range:
         bench_unary[func, type](m, i, op_name)
 
@@ -53,7 +53,7 @@ def bench_unary[
 def bench_unary[
     func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
     type: DType,
-](inout m: Bench, size: Int, op_name: String):
+](mut m: Bench, size: Int, op_name: String):
     alias alignment = 64
     var input_ptr = UnsafePointer[Scalar[type], alignment=alignment].alloc(size)
     var output_ptr = UnsafePointer[Scalar[type], alignment=alignment].alloc(
@@ -66,7 +66,7 @@ def bench_unary[
         input_ptr[i] = f
 
     @parameter
-    fn bench(inout b: Bencher, size: Int) raises:
+    fn bench(mut b: Bencher, size: Int) raises:
         @parameter
         fn iter_fn():
             apply[func](

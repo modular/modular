@@ -77,7 +77,7 @@ fn bench_matmul[
     transpose_b: Bool = False,
 ](
     ctx: DeviceContext,
-    inout b: Bench,
+    mut b: Bench,
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
@@ -110,7 +110,7 @@ fn bench_matmul[
         cache_a, cache_b, cache_c, stride_a, stride_b, stride_c, cublas_handle
     )
     @always_inline
-    fn bench_func(inout b: Bencher):
+    fn bench_func(mut b: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
@@ -187,7 +187,7 @@ fn create_matmul_bench[
     cache_busting: Bool,
     use_cublas: Bool,
 ](
-    ctx: DeviceContext, inout b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
+    ctx: DeviceContext, mut b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
 ) raises:
     alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
         k.dim, n.dim

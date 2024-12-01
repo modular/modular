@@ -30,12 +30,12 @@ fn test[N: Int = 1024 * 1024]() -> UInt32:
 
 fn bench_func[
     func: fn[size: Int] () -> UInt32, size: Int
-](inout m: Bench, op_name: String) raises:
+](mut m: Bench, op_name: String) raises:
     alias num_elements = size * 1024 * 1024
 
     @parameter
     @always_inline
-    fn bench_iter(inout b: Bencher):
+    fn bench_iter(mut b: Bencher):
         @parameter
         @always_inline
         fn call_fn():

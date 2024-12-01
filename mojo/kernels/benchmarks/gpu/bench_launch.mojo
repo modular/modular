@@ -28,12 +28,12 @@ fn empty_kernel_many_params[
     pass
 
 
-fn bench_empty_launch_caller(inout m: Bench, ctx: DeviceContext) raises:
+fn bench_empty_launch_caller(mut m: Bench, ctx: DeviceContext) raises:
     var func = ctx.compile_function[empty_kernel]()
 
     @parameter
     @always_inline
-    fn bench_empty_launch(inout b: Bencher) raises:
+    fn bench_empty_launch(mut b: Bencher) raises:
         @parameter
         @always_inline
         fn launch(ctx: DeviceContext) raises:
@@ -46,7 +46,7 @@ fn bench_empty_launch_caller(inout m: Bench, ctx: DeviceContext) raises:
 
 
 fn bench_empty_launch_many_params_caller(
-    inout m: Bench, ctx: DeviceContext
+    mut m: Bench, ctx: DeviceContext
 ) raises:
     alias func_alias = empty_kernel_many_params[
         Layout(IntTuple(1, 2), IntTuple(3, 3)),
@@ -63,7 +63,7 @@ fn bench_empty_launch_many_params_caller(
 
     @parameter
     @always_inline
-    fn bench_empty_launch_many_params(inout b: Bencher) raises:
+    fn bench_empty_launch_many_params(mut b: Bencher) raises:
         @parameter
         fn launch() raises:
             ctx.enqueue_function(func, grid_dim=Dim(1), block_dim=Dim(1))

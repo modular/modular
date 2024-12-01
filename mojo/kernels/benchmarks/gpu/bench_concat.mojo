@@ -23,7 +23,7 @@ from utils import StaticTuple, IndexList
 fn bench_concat[
     num_inputs: Int, rank: Int
 ](
-    inout b: Bench,
+    mut b: Bench,
     shapes: List[IndexList[rank]],
     ctx: DeviceContext,
     axis: Int,
@@ -77,7 +77,7 @@ fn bench_concat[
 
     @parameter
     @always_inline
-    fn bench_func(inout b: Bencher, shape: IndexList[rank]) raises:
+    fn bench_func(mut b: Bencher, shape: IndexList[rank]) raises:
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
