@@ -1174,7 +1174,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // Okay, we definitely have a setter, and we might have a getter.  The problem
   // is that we don't know in which context this expression will be used - it
-  // could be loaded from, stored to, or both (with an inout argument), and it
+  // could be loaded from, stored to, or both (with a mut argument), and it
   // might even have computed contextual parameters.
 
   // If we have a getter, resolve it and get the element type from it.
@@ -1235,7 +1235,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     }
     elementType = sigType.getArguments()[setValueIdx];
     auto setValueConvention = sigType.getArgConvention(setValueIdx);
-    if (setValueConvention != ArgConvention::BorrowedInReg)
+    if (setValueConvention != ArgConvention::ReadReg)
       elementType = elementType.getReferenceElementType();
   }
 

@@ -378,7 +378,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
 
   SignatureType sig = func.getSignature();
   // TODO: What conventions do we use for captures.
-  SmallVector<ArgConvention> convs(i, ArgConvention::BorrowedInReg);
+  SmallVector<ArgConvention> convs(i, ArgConvention::ReadReg);
   convs.append(sig.getArgConventions().begin(), sig.getArgConventions().end());
   assert(body->getNumArguments() == convs.size());
 

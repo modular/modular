@@ -1424,7 +1424,7 @@ ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention) {
   StringRef effectStr;
   llvm::SMLoc loc = p.getCurrentLocation();
   // Parse an optional input convention specifier.
-  convention = ArgConvention::BorrowedInReg;
+  convention = ArgConvention::ReadReg;
   if (succeeded(p.parseOptionalKeyword(&effectStr))) {
     if (std::optional<ArgConvention> conv = symbolizeArgConvention(effectStr)) {
       convention = *conv;
@@ -1436,7 +1436,7 @@ ParseResult KGEN::parseArgConvention(AsmParser &p, ArgConvention &convention) {
 }
 
 void KGEN::printArgConvention(AsmPrinter &p, ArgConvention convention) {
-  if (convention != ArgConvention::BorrowedInReg)
+  if (convention != ArgConvention::ReadReg)
     p << ' ' << stringifyArgConvention(convention);
 }
 

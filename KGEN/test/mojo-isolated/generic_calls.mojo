@@ -39,7 +39,7 @@ fn test_owned(owned x: RegPassable):
     owned_generic(x^)
 
 
-# CHECK-LABEL: lit.func @"test_borrowed{{.*}}(%x: !lit.ref<!RegPassable, imm *"x`"> borrow_in_mem)
+# CHECK-LABEL: lit.func @"test_borrowed{{.*}}(%x: !lit.ref<!RegPassable, imm *"x`"> read_mem)
 fn test_borrowed(x: RegPassable):
     # CHECK-NEXT: lit.call @{{.*}}::@"borrowed_generic{{.*}}<{{.*}}>(%x)
     borrowed_generic(x)

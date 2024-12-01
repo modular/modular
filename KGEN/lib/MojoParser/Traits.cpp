@@ -91,7 +91,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl,
     // want check origins to insert a call to the real destructor here, if it
     // has one.
     auto [dtor, _] = gen.synthesizeMethodInStruct(
-        "__del__", selfRefType, ArgConvention::OwnedInMem,
+        "__del__", selfRefType, ArgConvention::OwnedMem,
         PogListAttr::get(ctx, {empty}, {PassingKind::PosOnly}),
         shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
         FnEffects(), "_thunk");
@@ -103,17 +103,17 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl,
     ArgConvention existingConv;
     switch (kind) {
     case SpecialFunctionKind::kCopyInit:
-      existingConv = ArgConvention::BorrowedInMem;
+      existingConv = ArgConvention::ReadMem;
       break;
     case SpecialFunctionKind::kMoveInit:
-      existingConv = ArgConvention::OwnedInMem;
+      existingConv = ArgConvention::OwnedMem;
       break;
     default:
       llvm_unreachable("unexpected special function kind to synthesize");
     }
     StringRef name = SpecialFunctionInfo::get(kind).name;
     Type existingType;
-    bool isMut = existingConv == ArgConvention::OwnedInMem;
+    bool isMut = existingConv == ArgConvention::OwnedMem;
     existingType =
         structDecl.getTypeDeclSelf().getRefForArgument("existing", isMut);
     auto [ctor, _] = gen.synthesizeMethodInStruct(

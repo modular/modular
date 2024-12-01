@@ -464,8 +464,8 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
   let description = [{
     The `!kgen.variadic` type represents a homogeneously typed variadic sequence
     of zero or more elements.  It also includes the original argument convention
-    so clients know if the input argument is supposed to be owned, borrowed,
-    inout, etc.
+    so clients know if the input argument is supposed to be owned, read,
+    mut, etc.
 
     Example:
 
@@ -488,7 +488,7 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
   let builders = [
     TypeBuilderWithInferredContext<(ins
         "Type":$elementType,
-        CArg<"ArgConvention", "ArgConvention::BorrowedInReg">:$convention), [{
+        CArg<"ArgConvention", "ArgConvention::ReadReg">:$convention), [{
       return $_get(elementType.getContext(), elementType, convention);
     }]>,
   ];

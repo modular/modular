@@ -147,7 +147,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
 }
 
 /// ```mojo
-/// fn __init__(inout self, f: fn_ptr_type):
+/// fn __init__(out self, f: fn_ptr_type):
 ///     self.field0 = f
 ///     self.dtor = __closure_wrapper_noop_dtor
 ///     self.copy = __closure_wrapper_noop_copy
@@ -172,8 +172,8 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   auto [func, _] = synthesizeFunction(
       decl, "__init__", /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(ctx),
       {selfType.getRefForArgument("self", /*isMut=*/true), fnPtrType},
-      {ArgConvention::InitSelf, ArgConvention::BorrowedInReg}, argListAttrs,
-      noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
+      {ArgConvention::InitSelf, ArgConvention::ReadReg}, argListAttrs, noneType,
+      SpecialFunctionKind::kInit, decl.getLoc(), b);
   func.setInlineLevel(InlineLevel::Always);
 
   Value self = func.getArgument(0);
@@ -201,7 +201,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
 
   // Generate the 'call_impl' function that performs the indirect call.
   LITSignatureType callImplType = addClosureSelfArgToFunctionSignature(
-      opaquePtrType, ArgConvention::BorrowedInReg, fnPtrType);
+      opaquePtrType, ArgConvention::ReadReg, fnPtrType);
   StringAttr lambdaName = b.getStringAttr("call_impl");
   auto [callImpl, callDecl] = synthesizeFunction(
       decl, lambdaName, /*params=*/{}, callImplType.getParamListAttrs(),
@@ -269,7 +269,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto dtorMetadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}));
   auto dtorSig = SignatureType::get(b.getFunctionType(opaquePtrType, noneType),
-                                    ArgConvention::BorrowedInReg,
+                                    ArgConvention::ReadReg,
                                     /*effects=*/{}, dtorMetadata);
   auto dtor = b.create<StructFieldOp>(declOp.getLoc(), dtorFieldAttr, dtorSig);
 
@@ -278,8 +278,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       b.getType<FunctionType>(ArrayRef<Type>{opaquePtrType}, opaquePtrType);
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly}));
-  auto cpySignatureType = SignatureType::get(
-      fnType, {ArgConvention::BorrowedInReg}, /*effects=*/{}, metadata);
+  auto cpySignatureType = SignatureType::get(fnType, {ArgConvention::ReadReg},
+                                             /*effects=*/{}, metadata);
   auto copy =
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
 
@@ -298,7 +298,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   // Add the call member
   LITSignatureType callMemberSignatureType =
       addClosureSelfArgToFunctionSignature(
-          opaquePtrType, ArgConvention::BorrowedInReg, signatureType);
+          opaquePtrType, ArgConvention::ReadReg, signatureType);
   auto callMember = b.create<StructFieldOp>(declOp.getLoc(), callFieldAttr,
                                             callMemberSignatureType);
 
@@ -390,7 +390,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto refToSelfType = selfType.getRefForArgument("self", /*isMut=*/false);
   LITSignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(
-          refToSelfType, ArgConvention::BorrowedInMem, signatureType);
+          refToSelfType, ArgConvention::ReadMem, signatureType);
   // The __call__ method is effectively the in-source body of the function. Mark
   // it as *not* synthetic so that debugging will step into the body.
   auto [callMethod, _] = synthesizeMethodInStruct(
@@ -491,12 +491,12 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   SmallVector<PogMetadataAttr> callPogs;
   callPogs.reserve(callArgCount);
 
-  // Currently Closure Impls are not register passable, so use BorrowedInMem
+  // Currently Closure Impls are not register passable, so use ReadMem
   // convention.
   ASTType structSelfType = structDecl.getTypeDeclSelf();
   callInputTypes.push_back(
       ASTType(structSelfType).getRefForArgument("self", /*isMut=*/false));
-  callConventions.push_back(ArgConvention::BorrowedInMem);
+  callConventions.push_back(ArgConvention::ReadMem);
   callPogs.emplace_back(
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
 
@@ -544,11 +544,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     // by-mut-ref.  Right now we type check var captures as mutable but codegen
     // them as immutable references!
     if (isRef && rvalueType.isTrivial(nestedFnDecl.getLoc(), shared)) {
-      initSigConventions.push_back(ArgConvention::BorrowedInReg);
+      initSigConventions.push_back(ArgConvention::ReadReg);
       initSigTypes.push_back(rvalueType);
     } else {
-      initSigConventions.push_back(isRef ? ArgConvention::BorrowedInMem
-                                         : ArgConvention::OwnedInMem);
+      initSigConventions.push_back(isRef ? ArgConvention::ReadMem
+                                         : ArgConvention::OwnedMem);
       initSigTypes.push_back(rvalueType.getRefForArgument(
           initSigNames.back().str(), /*isMut=*/!isRef));
     }
@@ -804,7 +804,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
 
   // Then build all other information needed for the __init__ signature.
   SmallVector<ArgConvention> argConventions{ArgConvention::InitSelf,
-                                            ArgConvention::OwnedInMem};
+                                            ArgConvention::OwnedMem};
   SmallVector<StringAttr> argNames{selfName, StringAttr::get(ctx, "impl")};
   SmallVector<PassingKind> argPassingKinds(2, PassingKind::PosOnly);
   SmallVector<PassingKind> paramPassingKindsOfInit(initParams.size(),
@@ -881,8 +881,8 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   auto [topLevelCopyInit, _] = synthesizeFunction(
       moduleDecl, generateName("_copyinit_"), topLevelParams, paramListAttrs,
-      {opaquePtrType}, {ArgConvention::BorrowedInReg}, argListAttrs,
-      opaquePtrType, SpecialFunctionKind::kNormal, loc, builder);
+      {opaquePtrType}, {ArgConvention::ReadReg}, argListAttrs, opaquePtrType,
+      SpecialFunctionKind::kNormal, loc, builder);
 
   SmallVector<TypedAttr> topLevelParamRefs;
   for (auto [i, p] : llvm::enumerate(totalParams))
@@ -937,7 +937,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   auto [topLevelDtor, dtorDecl] = synthesizeFunction(
       moduleDecl, generateName("_dtor_"), topLevelParams, paramListAttrs,
-      opaquePtrType, ArgConvention::BorrowedInReg,
+      opaquePtrType, ArgConvention::ReadReg,
       PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}), noneType,
       SpecialFunctionKind::kNormal, loc, builder);
 
@@ -980,7 +980,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
          "The closure signature should have been set at creation time");
   SignatureType functionSignature = *closureWrapper.getClosureSignature();
   LITSignatureType closureSignature = addClosureSelfArgToFunctionSignature(
-      opaquePtrType, ArgConvention::BorrowedInReg, functionSignature);
+      opaquePtrType, ArgConvention::ReadReg, functionSignature);
   assert(closureSignature.getResults().size() == 1);
   closureSignature = closureSignature.getSpecializedSignature(
       ArrayRef(topLevelParamRefs).take_front(wrapperParamDecls.size()),

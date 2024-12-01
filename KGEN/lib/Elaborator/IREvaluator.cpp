@@ -346,7 +346,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   auto noneType = KGEN::NoneType::get(ctx);
   auto populateFnType = SignatureType::get(
       b.getFunctionType(PointerType::get(noneType), noneType), {}, {},
-      {ArgConvention::BorrowedInReg}, FnEffects().setCapturing());
+      {ArgConvention::ReadReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it

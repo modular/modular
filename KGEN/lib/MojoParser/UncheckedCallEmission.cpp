@@ -54,7 +54,7 @@ static CValue emitVariadicPackConstructor(
   // Build the !lit.ref.pack or #lit.ref.pack value with the adjusted origin.
   CValue refPackValue = refPackBuilder(packType);
 
-  auto isOwned = declaredArgConvention == ArgConvention::OwnedInMem;
+  auto isOwned = declaredArgConvention == ArgConvention::OwnedMem;
   auto isOwnedAttr = BoolAttr::get(emitter.getContext(), isOwned);
   auto isOwnedVal = emitter.emitBool({isOwnedAttr, expr}, EC_PackArgument);
   assert(isOwnedVal && "Bool emission should always work");
@@ -160,7 +160,7 @@ private:
   LITSignatureType calleeSig;
 
   /// This struct accumulates information about IR to emit after the call, e.g.
-  /// writebacks for computed inout lvalues, and origin markers.
+  /// writebacks for computed mut lvalues, and origin markers.
   struct AfterCallActions {
     CallEmitter &callEmitter;
 
@@ -229,18 +229,18 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   }
 
   switch (convention) {
-  case ArgConvention::OwnedInReg:
+  case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
-  case ArgConvention::InOut:
+  case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
   case ArgConvention::InitSelf:
     // By-ref arguments, must be lvalues.
     assert(operand.ir.getIfLValue() && "Call should already be type checked");
     return operand.ir;
-  case ArgConvention::OwnedInMem:
+  case ArgConvention::OwnedMem:
     // Owned conventions pass rvalues.
-    if (convention == ArgConvention::OwnedInMem)
+    if (convention == ArgConvention::OwnedMem)
       expectedType = cast<RefType>(expectedType).getElementType();
     return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
 
@@ -296,11 +296,11 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     return CValue::getMValueForRef(refValue);
   }
 
-  case ArgConvention::BorrowedInMem:
+  case ArgConvention::ReadMem:
     // by-ref arguments are converted to the expected r-value type.
     expectedType = cast<RefType>(expectedType).getElementType();
     [[fallthrough]];
-  case ArgConvention::BorrowedInReg:
+  case ArgConvention::ReadReg:
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
   }
   llvm_unreachable("unknown argument convention");
@@ -623,7 +623,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // have a default argument for each missing operand.
     TypedAttr defaultOr = defaultHandler.getDefault(argIdx);
     assert(defaultOr);
-    assert(convention != ArgConvention::InOut &&
+    assert(convention != ArgConvention::Mut &&
            "by_ref argument cannot have defaults");
     argumentValues.push_back({PValue(defaultOr), callExpr});
     continue;
@@ -817,14 +817,14 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   };
 
   switch (convention) {
-  case ArgConvention::OwnedInReg:
+  case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
-  case ArgConvention::OwnedInMem:
+  case ArgConvention::OwnedMem:
     // Promote PValue's if needed.
     return checkMValueAddrSpace(
         emitter.emitMRValue(argValAndExpr, EC_CallArgValue));
     break;
-  case ArgConvention::BorrowedInReg:
+  case ArgConvention::ReadReg:
     if (auto pVal = argValAndExpr.ir.getIfPValue())
       return emitter.emitSRValue(argValAndExpr, EC_CallArgValue);
 
@@ -838,7 +838,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     assert(argValAndExpr.ir.isSValue() && "unknown irvalue");
     return argValAndExpr.ir.getSValueRegister();
 
-  case ArgConvention::BorrowedInMem: {
+  case ArgConvention::ReadMem: {
     // Promote PValue's if needed.
     Value result = checkMValueAddrSpace(
         emitter.emitMBValue(argValAndExpr, EC_CallArgValue));
@@ -878,7 +878,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   }
 
   case ArgConvention::ByRefResult:
-  case ArgConvention::InOut:
+  case ArgConvention::Mut:
   case ArgConvention::InitSelf: {
     // initself and byref_result can have a placeholder when there is no
     // specified destination, but can also have a destination specified
@@ -921,7 +921,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // box.  This is functionally correct, but weird and causes an additional
     // temporary to be generated because there is no MLValue.
     if (auto dlv = lv.getIfDLValue()) {
-      lv = dlv->prepareForInoutAccess(argValAndExpr.expr->getLoc(), emitter);
+      lv = dlv->prepareForMutAccess(argValAndExpr.expr->getLoc(), emitter);
       if (!lv)
         return {};
     }
@@ -1635,13 +1635,12 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // which is emitted as an SRValue instead of whatever the underlying type
     // is.
     if (calleeSig.isPosVarArg(argIdx))
-      convention = ArgConvention::BorrowedInReg;
+      convention = ArgConvention::ReadReg;
 
-    // Owned and borrowed packs are passed as expected, but inout and borrowed
+    // Owned and borrowed packs are passed as expected, but mut and read
     // are passed borrowed.
-    if (calleeSig.isPackVarArg(argIdx) &&
-        convention != ArgConvention::OwnedInMem)
-      convention = ArgConvention::BorrowedInMem;
+    if (calleeSig.isPackVarArg(argIdx) && convention != ArgConvention::OwnedMem)
+      convention = ArgConvention::ReadMem;
 
     if (SignatureType::isResultSlot(convention)) {
       // Async function signatures have results slots even though they are not

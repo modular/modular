@@ -60,7 +60,7 @@ export function defineCodeMirrorMode(codeMirror: ICodeMirror) {
 
     var delimiters = /^[\(\)\[\]\{\}@,:=;\.\\]/;
     var operators = [
-      /^([-+*/%\/&|^]=?|[<>=]+|\/\/=?|\*\*=?|!=|[~!@]|\.\.\.|borrowed|inout|owned)/
+      /^([-+*/%\/&|^]=?|[<>=]+|\/\/=?|\*\*=?|!=|[~!@]|\.\.\.|read|mut|owned)/
     ];
     for (var i = 0; i < operators.length; i++)
       if (!operators[i])

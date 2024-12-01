@@ -113,13 +113,13 @@ static LoweredSignature lowerSignature(SignatureType sig) {
   s.newResTypes.assign(sig.getResults().begin(), sig.getResults().end());
   for (auto [idx, argTy, convention] :
        llvm::enumerate(sig.getArguments(), oldConvs)) {
-    if (convention == ArgConvention::BorrowedInMem ||
-        convention == ArgConvention::OwnedInMem) {
+    if (convention == ArgConvention::ReadMem ||
+        convention == ArgConvention::OwnedMem) {
       if (Type newArgTy = lowerPointerType(argTy)) {
         // Update the info needed for the new signature.
-        newConvs[idx] = convention == ArgConvention::OwnedInMem
-                            ? ArgConvention::OwnedInReg
-                            : ArgConvention::BorrowedInReg;
+        newConvs[idx] = convention == ArgConvention::OwnedMem
+                            ? ArgConvention::OwnedReg
+                            : ArgConvention::ReadReg;
         newInputTypes[idx] = newArgTy;
         s.changedIndices.push_back(idx);
       }
@@ -154,7 +154,7 @@ static LoweredSignature lowerSignature(SignatureType sig) {
   }
 
   if (s.abiLowering != LoweredSignature::Neither || !s.changedIndices.empty()) {
-    // Erase inout results promoted to register results from the argument list.
+    // Erase mut results promoted to register results from the argument list.
     s.dropOperandsFrom(newInputTypes);
     s.dropOperandsFrom(newConvs);
 
@@ -240,7 +240,7 @@ static void lowerCallOpImpl(
         res.replaceAllUsesWith(none);
       }
 
-      // Then just store the new callee result into the old inout result.
+      // Then just store the new callee result into the old memory result.
       res.setType(newSig.getResults()[0]);
       b.create<POP::StoreOp>(res, oldOperands[s.valIdx]);
     }

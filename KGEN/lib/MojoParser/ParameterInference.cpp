@@ -719,7 +719,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
   // We'll bind the next provided value.
   switch (expectedConvention) {
-  case ArgConvention::OwnedInReg:
+  case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for type checking,
@@ -731,7 +731,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
                                   expectedType.getReferenceElementType());
       }
     [[fallthrough]];
-  case ArgConvention::InOut:
+  case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError: {
     // The actual value must be an lvalue if callee takes things by-ref, but we
@@ -758,7 +758,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       valueRefType = cast<RefType>(value.getMValueReference().getType());
       // If the IRValue type is MBValue or MRValue then we need infer an
       // immutable ref, to match behavior where we don't allow passing an
-      // MBValue or MRValue as inout.
+      // MBValue or MRValue as 'mut'.
       if (!argVal.getIfMLValue() && !argVal.getIfMBPValue() &&
           !valueRefType.isMutableKnown(false))
         valueRefType = valueRefType.getWithMutability(false);
@@ -791,13 +791,13 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     expectedType = expectedType.getReferenceElementType();
     break;
   }
-  case ArgConvention::OwnedInMem:
-  case ArgConvention::BorrowedInMem:
+  case ArgConvention::OwnedMem:
+  case ArgConvention::ReadMem:
     // Otherwise, we expect an r-value to match up, ignoring the reference type
     // from the convention.
     expectedType = expectedType.getReferenceElementType();
     break;
-  case ArgConvention::BorrowedInReg:
+  case ArgConvention::ReadReg:
     break;
   }
 
@@ -969,7 +969,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
 void ParameterInferenceState::inferOneParam(ASTExprAnd<AnyValue> binding,
                                             Type expectedType) {
-  (void)inferOneOperand(binding, expectedType, ArgConvention::BorrowedInReg);
+  (void)inferOneOperand(binding, expectedType, ArgConvention::ReadReg);
 }
 
 /// Given an incomplete parameter binding set for a parameter list, try to
@@ -1094,14 +1094,14 @@ ParameterInferenceState::infer(LITSignatureType signature,
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       auto refValType = RefType::getAnyOrigin(valTy, /*isMut=*/true);
       for (auto operand : variadicKwOperands) {
-        // TODO: Passing OwnedInMem is a hack that is needed because the value
+        // TODO: Passing OwnedMem is a hack that is needed because the value
         // type is not a reference type (and doesn't have a origin), but we
         // still want to type check it. So, passing it as if it was reg-passable
         // happens to just work, until we rectify this. Right now the reason the
         // value type cannot be a reference type is because `Pointer` does not
         // (and in fact cannot) conform to `CollectionElement`.
-        if (failed(inferOneOperand(operand, refValType,
-                                   ArgConvention::OwnedInMem)))
+        if (failed(
+                inferOneOperand(operand, refValType, ArgConvention::OwnedMem)))
           return failure();
       }
       // This is always last in the operand list.

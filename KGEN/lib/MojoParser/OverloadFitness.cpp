@@ -202,7 +202,7 @@ static void addTypeConversionDetail(InflightDiag &diag,
     diag.attachNote(loc) << "try resolving the overloaded function first";
     return;
   }
-  // Try to detect mismatched inout result type.
+  // Try to detect mismatched memory result type.
   auto lhsSig = dyn_cast<SignatureType>(operandType);
   auto rhsSig = dyn_cast<SignatureType>(argType);
   if (lhsSig && rhsSig) {
@@ -440,7 +440,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
 
   SharedState &shared = declScope.getShared();
   switch (expectedConvention) {
-  case ArgConvention::OwnedInReg:
+  case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for 'self' which will
@@ -460,7 +460,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         return {kWrongType, argElementType};
       }
     [[fallthrough]];
-  case ArgConvention::InOut:
+  case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError: {
     // The actual value must be an lvalue if callee takes things by-ref.
@@ -523,8 +523,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // implicit conversions etc.
     [[fallthrough]];
   }
-  case ArgConvention::BorrowedInMem:
-  case ArgConvention::OwnedInMem:
+  case ArgConvention::ReadMem:
+  case ArgConvention::OwnedMem:
     // Ignore the pointer type on memory conventions when matching types.
     // Note: We do not support overloading on borrow/owned currently,
     // but we could add this if there is a reason to.
@@ -533,7 +533,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     payload.numMismatchedConventions +=
         expectedType.isRegisterPassable(loc, shared);
     [[fallthrough]];
-  case ArgConvention::BorrowedInReg: {
+  case ArgConvention::ReadReg: {
     // Get the argument if it has a concrete type.
     CValue argVal = operand.ir.getIfCValue();
 
@@ -1054,7 +1054,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       expectedType = ASTType(expectedType).getKwargsDictRefValueType();
       auto refExpType = RefType::getAnyOrigin(expectedType, /*isMut=*/true);
       for (auto operand : variadicKwOperands) {
-        // TODO: Passing OwnedInMem is a hack that is needed because the value
+        // TODO: Passing OwnedMem is a hack that is needed because the value
         // type is not a reference type (and doesn't have a origin), but we
         // still want to type check it. So, passing it as if it was reg-passable
         // happens to just work, until we rectify this. Right now the reason the
@@ -1062,7 +1062,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         // (and in fact cannot) conform to `CollectionElement`.
         ssize_t operandIdx = -1;
         auto [kind, ty] = checkAnOperand(operand, operandIdx,
-                                         ArgConvention::OwnedInMem, refExpType);
+                                         ArgConvention::OwnedMem, refExpType);
         if (kind != kValidType)
           return emitDiagFor.argTypeMismatch(kind, ty, operand, operandIdx);
       }

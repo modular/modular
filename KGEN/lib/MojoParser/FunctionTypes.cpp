@@ -89,7 +89,7 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
     case ArgConvention::InitSelf:
     case ArgConvention::MutRef:
     case ArgConvention::Ref:
-    case ArgConvention::InOut:
+    case ArgConvention::Mut:
       // These conventions do not vary based on the register-passibility of the
       // type. They must always match
       if (actualConv != expectedConv)
@@ -98,20 +98,19 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
       rhs = rhs.getReferenceElementType();
       break;
 
-    case ArgConvention::BorrowedInMem:
-    case ArgConvention::BorrowedInReg:
-      if (!llvm::is_contained(
-              {ArgConvention::BorrowedInMem, ArgConvention::BorrowedInReg},
-              actualConv))
+    case ArgConvention::ReadMem:
+    case ArgConvention::ReadReg:
+      if (!llvm::is_contained({ArgConvention::ReadMem, ArgConvention::ReadReg},
+                              actualConv))
         return false;
       lhs = getFunctionArgumentRValueType(actualType, actualConv);
       rhs = getFunctionArgumentRValueType(expectedType, expectedConv);
       break;
 
-    case ArgConvention::OwnedInReg:
+    case ArgConvention::OwnedReg:
       llvm_unreachable("not used by the mojo parser");
-    case ArgConvention::OwnedInMem:
-      if (actualConv != ArgConvention::OwnedInMem)
+    case ArgConvention::OwnedMem:
+      if (actualConv != ArgConvention::OwnedMem)
         return false;
       lhs = getFunctionArgumentRValueType(actualType, actualConv);
       rhs = getFunctionArgumentRValueType(expectedType, expectedConv);
@@ -253,7 +252,7 @@ static LIT::FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
        llvm::zip(thunk.getArguments(), expected.getArgConventions())) {
     AnyValue value;
     switch (conv) {
-    case ArgConvention::OwnedInReg:
+    case ArgConvention::OwnedReg:
       llvm_unreachable("not used by the mojo parser");
     case ArgConvention::InitSelf:
       value = MLValue(arg);
@@ -262,17 +261,17 @@ static LIT::FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
     case ArgConvention::ByRefError:
       continue; // Ignore this, it will be assigned to later.
 
-    case ArgConvention::InOut:
+    case ArgConvention::Mut:
     case ArgConvention::MutRef:
       value = MLValue(arg);
       break;
-    case ArgConvention::OwnedInMem:
+    case ArgConvention::OwnedMem:
       value = MRValue(arg);
       break;
-    case ArgConvention::BorrowedInReg:
+    case ArgConvention::ReadReg:
       value = SRValue(arg);
       break;
-    case ArgConvention::BorrowedInMem:
+    case ArgConvention::ReadMem:
     case ArgConvention::Ref:
       value = MBValue(arg);
       break;

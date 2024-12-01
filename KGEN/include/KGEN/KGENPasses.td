@@ -736,7 +736,7 @@ def ArgPromotion : Pass<"arg-promotion", "ModuleOp"> {
     if and only if the pointer is not captured.
 
     If possible, this rewrites borrowed and owned in-memory arguments to pass in
-    the arguments by value, inout and ref arguments to return the result as an
+    the arguments by value, mut and ref arguments to return the result as an
     SSA result, and byref result arguments to return the new value as a result.
   }];
 

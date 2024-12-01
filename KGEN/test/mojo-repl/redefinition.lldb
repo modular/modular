@@ -19,7 +19,7 @@ var value = True
 # Check that we can redefine a function that has a return type defined in the
 # same expression.
 struct Struct:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 fn xoo() -> Struct:
     return Struct()
@@ -27,7 +27,7 @@ var abc = xoo()
 # CHECK: (Struct) abc =
 
 struct Struct:
-    fn __init__(inout self):
+    fn __init__(out self):
         pass
 fn xoo() -> Struct:
     return Struct()

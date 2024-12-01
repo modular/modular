@@ -139,9 +139,9 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
   // The expected signature is `fn(Pointer[None]) capturing -> None`.
   auto noneType = b.getType<KGEN::NoneType>();
   auto nonePtr = PointerType::get(noneType);
-  auto sig = SignatureType::get(b.getFunctionType(nonePtr, noneType),
-                                ArgConvention::BorrowedInReg,
-                                FnEffects().setCapturing());
+  auto sig =
+      SignatureType::get(b.getFunctionType(nonePtr, noneType),
+                         ArgConvention::ReadReg, FnEffects().setCapturing());
   OwningOpRef<FuncOp> func =
       b.create<FuncOp>(b.getStringAttr(name.getValue() + "_populate_captures"),
                        sig, InlineLevel::Always);

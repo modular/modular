@@ -486,7 +486,7 @@ static Value getIdentifiedVariable(Value value) {
   if (!func)
     return {};
   ArgConvention conv = func.getSignature().getArgConvention(arg.getArgNumber());
-  if (llvm::is_contained({ArgConvention::OwnedInMem, ArgConvention::InOut,
+  if (llvm::is_contained({ArgConvention::OwnedMem, ArgConvention::Mut,
                           ArgConvention::MutRef, ArgConvention::ByRefResult,
                           ArgConvention::ByRefError, ArgConvention::InitSelf},
                          conv))
@@ -551,9 +551,8 @@ void ModRefAnalysis::compute(ModuleOp module) {
           result.refEscaped = true;
           continue;
         }
-        if (llvm::is_contained(
-                {ArgConvention::BorrowedInMem, ArgConvention::Ref},
-                sig.getArgConvention(i)))
+        if (llvm::is_contained({ArgConvention::ReadMem, ArgConvention::Ref},
+                               sig.getArgConvention(i)))
           result.varReads.insert(arg);
         else
           result.varWrites.insert(arg);

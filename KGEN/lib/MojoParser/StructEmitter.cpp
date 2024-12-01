@@ -316,7 +316,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
-  // Emit a bunch of stores to fields indexing our 'inout self'.
+  // Emit a bunch of stores to fields indexing our 'out self'.
   BlockArgument selfArg = body->getArgument(0);
   assert(isa<RefType>(selfArg.getType()));
   for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
@@ -327,13 +327,13 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     switch (argConventions[idx + 1]) {
     default:
       llvm_unreachable("unknown convention");
-    case ArgConvention::BorrowedInReg:
+    case ArgConvention::ReadReg:
       argVal = SRValue(arg);
       break;
-    case ArgConvention::OwnedInMem:
+    case ArgConvention::OwnedMem:
       argVal = MRValue(arg);
       break;
-    case ArgConvention::BorrowedInMem:
+    case ArgConvention::ReadMem:
       argVal = MBValue(arg);
       break;
     }
@@ -399,12 +399,12 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 /// Given a struct and a list of arguments, generate a function. For example,
 /// given {
 ///  MyStruct, "prefix", [ParamType1, ParamType2],
-///  [borrow_in_mem, borrow_in_mem], ["x","b"]
+///  [read_mem, read_mem], ["x","b"]
 /// }, this function produces:
 ///
 /// ```
 /// lit.func @prefixParam1Param2(%self: !kgen.pointer<@MyStruct>
-///     init_self, %x: ParamType1 borrow_in_mem, %b : ParamType2 borrow_in_mem
+///     init_self, %x: ParamType1 read_mem, %b : ParamType2 read_mem
 /// ) -> !kgen.none  {
 ///   %0 = kgen.param.constant: none = <#kgen.none>
 ///   lit.return %0 : !kgen.none
@@ -458,7 +458,7 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
   // Create the FuncOp and ASTDecl for the method.
   StructEmitter emitter(shared);
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
-      "__del__", selfType.mlirType, ArgConvention::OwnedInMem,
+      "__del__", selfType.mlirType, ArgConvention::OwnedMem,
       PogListAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
       shared.getNoneType(), structDecl, structDecl.getLoc(),
       SpecialFunctionKind::kDel);
@@ -488,11 +488,10 @@ static LIT::FuncOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
   ArgConvention existingConv;
   if (cast<StructDeclOp>(structDecl).isRegisterPassableTrivial() && !isMove) {
     existingArgType = selfType;
-    existingConv = ArgConvention::BorrowedInReg;
+    existingConv = ArgConvention::ReadReg;
   } else {
     existingArgType = selfType.getRefForArgument("existing", isMove);
-    existingConv =
-        isMove ? ArgConvention::OwnedInMem : ArgConvention::BorrowedInMem;
+    existingConv = isMove ? ArgConvention::OwnedMem : ArgConvention::ReadMem;
   }
 
   Type selfArgType = selfType.getRefForArgument("self", /*isMut=*/true);
@@ -562,7 +561,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
     auto signature = func.getSignature();
     ArrayRef<Type> inputTypes = signature.getArguments();
     ArrayRef<ArgConvention> convs = signature.getArgConventions();
-    // Drop the 'inout self' argument.
+    // Drop the 'out self' argument.
     if (!convs.empty() && convs.front() == ArgConvention::InitSelf) {
       inputTypes = inputTypes.drop_front();
       convs = convs.drop_front();
@@ -619,7 +618,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     SmallVector<StringAttr> argNames;
     SmallVector<PassingKind> argPassingKinds;
 
-    // Add the 'inout self' argument.
+    // Add the 'out self' argument.
     argTypes.push_back(refToSelf);
     argConventions.push_back(ArgConvention::InitSelf);
     argNames.push_back(StringAttr::get(shared.getContext()));
@@ -638,10 +637,10 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       case TypeConvention::RegisterPassable:
         fieldType = fieldType.getRefForArgument(fieldOp.getName().str(),
                                                 /*isMut=*/true);
-        conv = ArgConvention::OwnedInMem;
+        conv = ArgConvention::OwnedMem;
         break;
       case TypeConvention::RegisterPassableTrivial:
-        conv = ArgConvention::BorrowedInReg;
+        conv = ArgConvention::ReadReg;
         break;
       }
       argTypes.push_back(fieldType);

@@ -360,7 +360,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   //  feature-overview/mojo_module.mojo#incr_int__wrapper(), i.e.
   //  for a Mojo function with a signature like:
   //
-  //      fn incr_int(inout value: Int):
+  //      fn incr_int(mut value: Int):
   //          value += 1
   //
   //  we must emit a wrapper that exposes that Mojo function to CPython:
@@ -392,12 +392,11 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   auto originalFuncName = func.getDeclName().str();
   auto wrapperFuncName = originalFuncName + "__wrapper";
 
-  auto [wrapperFunc, wrapperDecl] =
-      createFunction(wrapperFuncName, moduleDecl,
-                     /*argTypes=*/{pyObjType, tupleTypedPyObjType}, /*convs=*/
-                     {ArgConvention::BorrowedInMem,
-                      ArgConvention::BorrowedInMem}, // DO NOT SUBMIT
-                     /*resultType=*/pyObjType, FnEffects().setThrows());
+  auto [wrapperFunc, wrapperDecl] = createFunction(
+      wrapperFuncName, moduleDecl,
+      /*argTypes=*/{pyObjType, tupleTypedPyObjType},    /*convs=*/
+      {ArgConvention::ReadMem, ArgConvention::ReadMem}, // DO NOT SUBMIT
+      /*resultType=*/pyObjType, FnEffects().setThrows());
 
   mlir::ImplicitLocOpBuilder builder(
       shared.translateLocation(funcDecl.getLoc()),
@@ -646,7 +645,7 @@ BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
     argNames.push_back(b.getStringAttr("arg" + Twine(idx)));
     if (SignatureType::hasImplicitOrigin(conv)) {
       bool isMut =
-          llvm::is_contained({ArgConvention::OwnedInMem, ArgConvention::InOut,
+          llvm::is_contained({ArgConvention::OwnedMem, ArgConvention::Mut,
                               ArgConvention::MutRef, ArgConvention::InitSelf},
                              conv);
       type = makeRefType(type, "arg`" + Twine(idx), isMut);

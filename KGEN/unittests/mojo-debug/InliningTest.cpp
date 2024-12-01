@@ -40,7 +40,6 @@ TEST(InliningTest, testBreakingOnInlinedCalsite) {
 TEST(InliningTest, testInlinedVariableCalledFromNoDebug) {
   // Tests that debug functions inlined into no-debug functions are still
   // debuggable after being inlined again into a regular function.
-
   StopContext ctx = buildAndLaunch("inlined_variable.mojo");
 
   SBValue number = ctx.frame.FindVariable("nested_var");
@@ -48,9 +47,8 @@ TEST(InliningTest, testInlinedVariableCalledFromNoDebug) {
 }
 
 TEST(InliningTest, testLiftedInlinedInoutArgModification) {
-  // Tests that modifications to inlined inout args that are lifted by mem2reg
+  // Tests that modifications to inlined mut args that are lifted by mem2reg
   // show up.
-
   StopContext ctx = buildAndLaunch("inlined_argument.mojo");
 
   SBValue number = ctx.frame.FindVariable("m");
@@ -59,9 +57,8 @@ TEST(InliningTest, testLiftedInlinedInoutArgModification) {
 }
 
 TEST(InliningTest, testLiftedInlinedInoutArgPartialModification) {
-  // Tests that modifications to inlined inout args that are lifted by mem2reg
+  // Tests that modifications to inlined mut args that are lifted by mem2reg
   // show up when the argument is not the full variable from the caller side.
-
   StopContext ctx = buildAndLaunch("inlined_partial_argument.mojo");
 
   SBValue pair = ctx.frame.FindVariable("p");

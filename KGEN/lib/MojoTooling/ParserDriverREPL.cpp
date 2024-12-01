@@ -407,7 +407,7 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
   // Generate a wrapper function to handle the extracting function arguments as
   // references.
   exprOS << "fn " << wrappedFnName
-         << "(inout __mojo_repl_arg: __mojo_repl_context__):\n"
+         << "(mut __mojo_repl_arg: __mojo_repl_context__):\n"
             "  try:\n"
             "    __mojo_repl_expr_impl__(__mojo_repl_arg";
   for (auto &[name, type] : variables)
@@ -418,10 +418,10 @@ wrapExpressionText(MojoParserContext::REPLLocMapper::ExprLocMapper &locMapper,
             "    print(\"Error:\", error)\n\n";
 
   // Finally we can generate the actual expression function.
-  exprOS << "def __mojo_repl_expr_impl__(inout __mojo_repl_arg: "
+  exprOS << "def __mojo_repl_expr_impl__(mut __mojo_repl_arg: "
             "__mojo_repl_context__";
   for (auto &[name, type] : variables)
-    exprOS << llvm::formatv(", inout `{0}`: {1}", name,
+    exprOS << llvm::formatv(", mut `{0}`: {1}", name,
                             getPersistentVariableTypeName(name));
   exprOS << ") -> None:\n";
 

@@ -107,11 +107,11 @@ public:
   DefArgumentWrapperDLValue(ASTDecl *argDecl, CValue argRef, ASTType eltType,
                             size_t argIndex);
 
-  // This hook is called before an argument is passed inout.  The specified
+  // This hook is called before an argument is passed mut.  The specified
   // location indicates where diagnostics should be produced if this cannot be
   // done.  This returns null on failure.
-  LValue prepareForInoutAccess(llvm::SMLoc loc,
-                               ExprEmitter &emitter) const override;
+  LValue prepareForMutAccess(llvm::SMLoc loc,
+                             ExprEmitter &emitter) const override;
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;

@@ -630,7 +630,7 @@ struct ExoticDelExample:
 
 
 # CHECK-LABEL: lit.func @"def_borrowed
-# CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> borrow_in_mem
+# CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> read_mem
 def def_borrowed(a: MemExample) -> None:
   # CHECK: lit.ref.store %none, %__result__
   # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
@@ -734,7 +734,7 @@ fn test_or(a: MemExample) -> MemExample:
 
 # CHECK-LABEL: lit.func @"variadic_mems
 # CHECK-SAME: [imm *"mems`"](
-# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">, borrow_in_mem> var)
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, imm *"mems`">, read_mem> var)
 fn variadic_mems(*mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
@@ -793,7 +793,7 @@ fn variadic_field_sensitivity():
 
 # CHECK-LABEL: lit.func @"variadic_inout_mems
 # CHECK-SAME: [mut *"mems`"](
-# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, inout> var)
+# CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, mut> var)
 fn variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0

@@ -231,10 +231,10 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
     NamedAttrList &list = argAttrLists[i];
 
     switch (conv) {
-    case ArgConvention::OwnedInMem:
+    case ArgConvention::OwnedMem:
       list.set(ids.noalias, b.getUnitAttr());
       [[fallthrough]];
-    case ArgConvention::BorrowedInMem:
+    case ArgConvention::ReadMem:
       if (needsByVal) {
         list.set(StringAttr::get(func.getContext(),
                                  LLVM::LLVMDialect::getByValAttrName()),
@@ -244,7 +244,7 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
       list.set(ids.nonnull, b.getUnitAttr());
       list.set(ids.noundef, b.getUnitAttr());
       break;
-    case ArgConvention::InOut:
+    case ArgConvention::Mut:
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
     case ArgConvention::InitSelf:
@@ -259,8 +259,8 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
       list.set(ids.nonnull, b.getUnitAttr());
       [[fallthrough]];
 
-    case ArgConvention::BorrowedInReg:
-    case ArgConvention::OwnedInReg:
+    case ArgConvention::ReadReg:
+    case ArgConvention::OwnedReg:
       // The only thing we can say about values passed in-register is `noundef`,
       // which is equivalent to saying that they are known initialized. This
       // also applies to all the pointers passed for in-memory arguments.

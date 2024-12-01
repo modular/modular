@@ -49,7 +49,7 @@ struct MemoryOnlyPair:
   var y: Int
 
   # CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> init_self,
-  # CHECK-SAME: %other: !lit.ref<!MemoryOnlyPair, imm {{.*}}> borrow_in_mem)
+  # CHECK-SAME: %other: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem)
   fn __copyinit__(out self, other: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %other[x]
     # CHECK-NEXT: %1 = lit.ref.struct.ger %self[x]
@@ -680,7 +680,7 @@ fn patterns():
   var someSIMD : SIMD[DType.float64, 4]
   (someSIMD) += someSIMD
 
-# CHECK-LABEL: lit.func @"byval_byref_function(::Int,::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> inout) -> !kgen.none
+# CHECK-LABEL: lit.func @"byval_byref_function(::Int,::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> mut) -> !kgen.none
 fn byval_byref_function(a: Int, mut b: Int):
   # CHECK-NEXT: lit.ref.store %a, %b
   b = a
@@ -913,7 +913,7 @@ fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, owned moi: Memory
 struct MyInlineIntInit:
     var value: MemoryOnlyInt
     # CHECK-LABEL: lit.func @"__init__(expressions::MyInlineIntInit=&,expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%self: !lit.ref<!MyInlineIntInit, mut {{.*}}> init_self, %value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK-SAME: (%self: !lit.ref<!MyInlineIntInit, mut {{.*}}> init_self, %value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> read_mem) -> !kgen.none
     @implicit
     fn __init__(out self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.ref.struct.ger %self[value]
@@ -1130,13 +1130,13 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<[2]<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>(?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>(!lit.ref<@stdlib::@builtin::@builtin_list::@VariadicPack<:!Bool {:i1 0}, :origin<0> *[0,0], :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> borrow_in_mem|pack, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>(!lit.ref<@stdlib::@builtin::@builtin_list::@VariadicPack<:!Bool {:i1 0}, :origin<0> *[0,0], :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>, imm *[0,1]> read_mem|pack, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async
   p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |) -> !Int
   float0: fn(Int) -> Int,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, imm {{.*}}> borrow_in_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
+  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, imm {{.*}}> read_mem, |, ?, "__result__": !lit.ref<!MemoryType, mut {{.*}}> byref_result) -> !kgen.none
   float1: fn(MemoryType) -> MemoryType,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!RegType, mut *[0,0]> owned_in_mem, |) -> !RegType
@@ -1145,7 +1145,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!MemoryType, mut *[0,0]> owned_in_mem, |) -> !kgen.none
   float3: fn(owned MemoryType) -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> inout, |) -> !kgen.none
+  # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> mut, |) -> !kgen.none
   float4: fn(mut Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
@@ -1160,7 +1160,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int = {10}, !StringLiteral = {:string "foo"}, |) -> !kgen.none>
   float12: fn(Int = 10, StringLiteral = "foo") -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> borrow_in_mem) -> !Int>
+  # CHECK-SAME: %{{.*}}: {{.*}}<[1]("x": !lit.ref<!MemoryType, imm {{.*}}> read_mem) -> !Int>
   named: fn(x: MemoryType) -> Int
 ): pass
 

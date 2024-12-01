@@ -153,7 +153,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// (but notably not a memory-only type).
   ///
   /// The caller guarantees the value is live for the duration of the call.
-  I32EnumAttrCase<"BorrowedInReg", 0, "borrow">,
+  I32EnumAttrCase<"ReadReg", 0, "read">,
 
   /// This is an immutably borrowed memory-only value, which is passed
   /// indirectly.
@@ -161,14 +161,15 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// The MLIR type is always a PointerType, and the underlying type is a
   /// memory-only type.  The caller passes a reference to an initialized memory
   /// slot that may be read but not mutated by the callee.
-  I32EnumAttrCase<"BorrowedInMem", 1, "borrow_in_mem">,
+  I32EnumAttrCase<"ReadMem", 1, "read_mem">,
 
   /// This is an owned register-passable value an SSA register.  The MLIR type
   /// may be anything that can be lowered to LLVM (notably not a memory-only
-  /// type).
+  /// type).  The Mojo parser does not use this argument convention but
+  /// LowerArgConventions produces it.
   ///
   /// The callee is responsible for destroying the value before returning.
-  I32EnumAttrCase<"OwnedInReg", 2, "owned">,
+  I32EnumAttrCase<"OwnedReg", 2, "owned">,
 
   /// This is an owned memory-only value, which is passed indirectly.
   ///
@@ -177,14 +178,14 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// destroys it, returning with it uninitialized.
   ///
   /// The callee is responsible for destroying the value before returning.
-  I32EnumAttrCase<"OwnedInMem", 3, "owned_in_mem">,
+  I32EnumAttrCase<"OwnedMem", 3, "owned_in_mem">,
 
-  /// This is used for inout arguments like `fn x(inout a: Int)`.
+  /// This is used for mut arguments like `fn x(mut a: Int)`.
   ///
   /// The MLIR type is always a LIT::RefType or PointerType, and the underlying
   /// type can be anything.  The value is initialized before entry to the
   /// function and must be initialized when the function returns.
-  I32EnumAttrCase<"InOut", 4, "inout">,
+  I32EnumAttrCase<"Mut", 4, "mut">,
 
   /// This is used for ref arguments like:
   ///   `fn x[origin: X](ref [origin, addrspace] T)`
