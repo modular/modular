@@ -52,7 +52,7 @@ struct _Accumulator[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         other_storage: Buffer[type, num_rows * num_cols * simd_width],
     ):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
@@ -74,19 +74,19 @@ struct _Accumulator[
         return self._storage.load[width=simd_width](self._storage_index(m, n))
 
     @always_inline
-    fn __setitem__(inout self, m: Int, n: Int, value: SIMD[type, simd_width]):
+    fn __setitem__(mut self, m: Int, n: Int, value: SIMD[type, simd_width]):
         self._storage.store(self._storage_index(m, n), value)
 
     @always_inline
     fn _partial_set[
         partial_width: Int
-    ](inout self, offset: Int, value: SIMD[type, partial_width]):
+    ](mut self, offset: Int, value: SIMD[type, partial_width]):
         self._storage.store[width=partial_width](offset, value)
 
     @always_inline
     fn _partial_get[
         partial_width: Int
-    ](inout self, idx: Int) -> SIMD[type, partial_width]:
+    ](mut self, idx: Int) -> SIMD[type, partial_width]:
         return self._storage.load[width=partial_width](idx)
 
     # In c+=(a*b), each of a, b, and c can have different types.
@@ -94,7 +94,7 @@ struct _Accumulator[
     fn fma[
         a_type: DType, b_type: DType
     ](
-        inout self,
+        mut self,
         m: Int,
         n: Int,
         a: SIMD[a_type, simd_width],
@@ -108,7 +108,7 @@ struct _Accumulator[
         func: fn (
             m: Int, n: Int, ptr: UnsafePointer[Scalar[type]]
         ) capturing -> None
-    ](inout self, base_ptr: UnsafePointer[Scalar[type]], stride: Int):
+    ](mut self, base_ptr: UnsafePointer[Scalar[type]], stride: Int):
         var row_ptr = base_ptr
 
         @parameter
@@ -121,7 +121,7 @@ struct _Accumulator[
 
     # TODO: merge with load
     @always_inline
-    fn load(inout self, base_ptr: UnsafePointer[Scalar[type]], stride: Int):
+    fn load(mut self, base_ptr: UnsafePointer[Scalar[type]], stride: Int):
         @parameter
         @always_inline
         fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[type]]):
@@ -131,7 +131,7 @@ struct _Accumulator[
 
     @always_inline
     fn load(
-        inout self,
+        mut self,
         c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
@@ -144,7 +144,7 @@ struct _Accumulator[
 
     @always_inline
     fn store(
-        inout self,
+        mut self,
         c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
@@ -159,7 +159,7 @@ struct _Accumulator[
     fn _transfer[
         is_load: Bool
     ](
-        inout self,
+        mut self,
         c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
@@ -195,7 +195,7 @@ struct _Accumulator[
         column_count: Int,
         is_load: Bool,
     ](
-        inout self,
+        mut self,
         row_ptrs: UnsafePointer[UnsafePointer[Scalar[type]]],
         stride: Int,
     ):
@@ -243,7 +243,7 @@ struct _Accumulator[
     fn _transfer_loop[
         base_column: Int, is_load: Bool
     ](
-        inout self,
+        mut self,
         transfer_count: Int,
         row_ptrs: UnsafePointer[UnsafePointer[Scalar[type]]],
         stride: Int,
@@ -283,7 +283,7 @@ struct _Accumulator[
     fn _transfer_tail[
         base_column: Int, tail_size: Int, is_load: Bool
     ](
-        inout self,
+        mut self,
         transfer_count: Int,
         row_ptrs: UnsafePointer[UnsafePointer[Scalar[type]]],
         stride: Int,
@@ -314,7 +314,7 @@ struct _Accumulator[
     fn _transfer_tail_mask[
         base_column: Int, is_load: Bool
     ](
-        inout self,
+        mut self,
         transfer_count: Int,
         row_ptrs: UnsafePointer[UnsafePointer[Scalar[type]]],
         stride: Int,
@@ -343,7 +343,7 @@ struct _Accumulator[
 
     # TODO: merge with store
     @always_inline
-    fn store(inout self, base_ptr: UnsafePointer[Scalar[type]], stride: Int):
+    fn store(mut self, base_ptr: UnsafePointer[Scalar[type]], stride: Int):
         @parameter
         @always_inline
         fn do_transfer(m: Int, n: Int, ptr: UnsafePointer[Scalar[type]]):
@@ -356,7 +356,7 @@ struct _Accumulator[
     # ===----------------------------------------------------------------------===#
 
     @always_inline
-    fn init(inout self):
+    fn init(mut self):
         @parameter
         if type.is_floating_point():
             self.init(0.0)
@@ -364,7 +364,7 @@ struct _Accumulator[
             self.init(0)
 
     @always_inline
-    fn init(inout self, val: Scalar[type]):
+    fn init(mut self, val: Scalar[type]):
         # TODO: refactor with _transfer
         @parameter
         for m in range(num_rows):
@@ -378,7 +378,7 @@ struct _Accumulator[
         dt: DType, //,
         partial_load: Bool = False,
     ](
-        inout self,
+        mut self,
         input: UnsafePointer[Scalar[dt], **_],
         input_stride: Int,
         partial_load_size: OptionalReg[Int] = None,
@@ -416,7 +416,7 @@ struct _Accumulator[
         dt: DType, //,
         partial_store: Bool = False,
     ](
-        inout self,
+        mut self,
         output: UnsafePointer[Scalar[dt], **_],
         output_stride: Int,
         partial_store_size: OptionalReg[Int] = None,
@@ -459,7 +459,7 @@ struct _Accumulator[
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
-        inout self,
+        mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
         a_stride: Int,
@@ -517,7 +517,7 @@ struct _Accumulator[
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
-        inout self,
+        mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
         a_base_offsets: Buffer[DType.int32, num_rows],
@@ -630,7 +630,7 @@ struct _Accumulator[
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
-        inout self,
+        mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
         a_stride: Int,
@@ -692,7 +692,7 @@ struct _Accumulator[
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
-        inout self,
+        mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
         a_base_offsets: Buffer[DType.int32, num_rows],
@@ -795,7 +795,7 @@ struct _Accumulator[
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
-        inout self,
+        mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
         a_stride: Int,
@@ -852,7 +852,7 @@ struct _Accumulator[
         prefetch_offset: OptionalReg[Int] = None,
         partial_load_b: Bool = False,
     ](
-        inout self,
+        mut self,
         length: Int,
         a: UnsafePointer[Scalar[a_type], **_],
         a_base_offsets: Buffer[DType.int32, num_rows],

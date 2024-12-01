@@ -431,8 +431,8 @@ fn _fill_strides[
 fn _collapse_unpermuted_dims[
     rank: Int, tuple_size: Int
 ](
-    inout simplified_shape: IndexList[tuple_size],
-    inout simplified_perms: IndexList[tuple_size],
+    mut simplified_shape: IndexList[tuple_size],
+    mut simplified_perms: IndexList[tuple_size],
     dim: Int,
 ):
     var merged_dim = simplified_perms[dim]
@@ -456,8 +456,8 @@ fn _collapse_unpermuted_dims[
 fn _devare_size_1_dim[
     rank: Int, tuple_size: Int
 ](
-    inout simplified_shape: IndexList[tuple_size],
-    inout simplified_perms: IndexList[tuple_size],
+    mut simplified_shape: IndexList[tuple_size],
+    mut simplified_perms: IndexList[tuple_size],
     dim: Int,
 ):
     for i in range(dim, rank - 1):
@@ -480,9 +480,9 @@ fn _devare_size_1_dim[
 fn _simplify_transpose_perms_impl[
     rank: Int, tuple_size: Int
 ](
-    inout simplified_rank: Int,
-    inout simplified_shape: IndexList[tuple_size],
-    inout simplified_perms: IndexList[tuple_size],
+    mut simplified_rank: Int,
+    mut simplified_shape: IndexList[tuple_size],
+    mut simplified_perms: IndexList[tuple_size],
 ):
     @parameter
     if rank < 2:
@@ -512,9 +512,9 @@ fn _simplify_transpose_perms_impl[
 fn _simplify_transpose_perms[
     rank: Int
 ](
-    inout simplified_rank: Int,
-    inout simplified_shape: IndexList[rank],
-    inout simplified_perms: IndexList[rank],
+    mut simplified_rank: Int,
+    mut simplified_shape: IndexList[rank],
+    mut simplified_perms: IndexList[rank],
 ):
     """Simplify the given permutation pattern.
 

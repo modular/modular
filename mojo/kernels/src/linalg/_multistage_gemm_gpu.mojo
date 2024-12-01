@@ -105,7 +105,7 @@ fn multistage_mma[
     a_smem_iter_arg: LayoutTensorIter[
         a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
-    inout b_smem_iter: LayoutTensorIter[
+    mut b_smem_iter: LayoutTensorIter[
         b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
     num_iters: Int,
@@ -137,7 +137,7 @@ fn multistage_mma[
     var a_iter = a_iter_arg
     var b_iter = b_iter_arg
     var a_smem_iter = a_smem_iter_arg
-    # work around inout argument can't have default value.
+    # work around mut argument can't have default value.
     var next_b_iter = next_op_b_iter
 
     alias async_copy_a_layout = Layout.row_major(

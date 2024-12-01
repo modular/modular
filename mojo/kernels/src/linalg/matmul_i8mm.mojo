@@ -44,12 +44,12 @@ struct LoadStore_i8mm[
         self.skip_boundary_check = skip_boundary_check
 
     @always_inline
-    fn _initialize_c_tile(inout self):
+    fn _initialize_c_tile(mut self):
         self.output_tile.init(0)
 
     @always_inline
     fn _load_c_tile(
-        inout self,
+        mut self,
         c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
@@ -92,7 +92,7 @@ struct LoadStore_i8mm[
 
     @always_inline
     fn _store_c_tile(
-        inout self,
+        mut self,
         c_ptr: UnsafePointer[Scalar[type]],
         c_stride: Int,
         tile_n_idx: Int,
@@ -155,7 +155,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
         self,
         a: NDBuffer,
         b_packed: NDBuffer[_, 3, _],
-        inout c_local: _Accumulator[
+        mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
         global_offset: GemmShape,

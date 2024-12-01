@@ -54,7 +54,7 @@ struct KernelConfig:
     var packed_shape: DimList
 
     fn __init__(
-        inout self,
+        mut self,
         *,
         kernel_rows: Int,
         kernel_cols: Int,
@@ -134,7 +134,7 @@ struct GemmShape:
             return self.N
         return self.K
 
-    fn __setitem__(inout self, idx: Int, value: Int):
+    fn __setitem__(mut self, idx: Int, value: Int):
         if idx == 0:
             self.M = value
             return

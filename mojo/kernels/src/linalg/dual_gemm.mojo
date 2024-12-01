@@ -101,10 +101,10 @@ fn multistage_dual_mma[
     a_smem_iter_arg: LayoutTensorIter[
         a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
-    inout b0_smem_iter: LayoutTensorIter[
+    mut b0_smem_iter: LayoutTensorIter[
         b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
-    inout b1_smem_iter: LayoutTensorIter[
+    mut b1_smem_iter: LayoutTensorIter[
         b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
     num_iters: Int,

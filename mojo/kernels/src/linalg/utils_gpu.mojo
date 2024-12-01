@@ -107,7 +107,7 @@ struct MatmulConfig[
     alias split_k_reduction_type = Self.accum_type
 
     fn __init__(
-        inout self,
+        mut self,
         block_tile_shape: IndexList[3] = Index(128, 128, 32),
         warp_tile_shape: IndexList[3] = Index(64, 64, 32),
         num_pipeline_stages: UInt = 4,
@@ -162,7 +162,7 @@ struct MatmulConfig[
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("ampere_")
         writer.write(a_type, "_")
         writer.write(c_type, "_")

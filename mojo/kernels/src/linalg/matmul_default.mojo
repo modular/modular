@@ -32,7 +32,7 @@ struct Inner_matmul_default(InnerMatmulKernel):
         self,
         a: NDBuffer,
         b_packed: NDBuffer[_, 3, _],
-        inout c_local: _Accumulator[
+        mut c_local: _Accumulator[
             _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
         global_offset: GemmShape,
