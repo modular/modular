@@ -155,7 +155,7 @@ struct ContiguousKVCache[
     var batch_size: Int
 
     fn __init__(
-        inout self,
+        mut self,
         block: Self.BlockType,
         cache_lengths: NDBuffer[DType.uint32, 1],
         is_cache_empty: Bool,
@@ -373,7 +373,7 @@ struct ContinuousBatchingKVCache[
         )
 
     fn __init__(
-        inout self,
+        mut self,
         blocks: Self.BlocksType,
         cache_lengths: NDBuffer[DType.uint32, 1],
         lookup_table: NDBuffer[DType.uint32, 1],
@@ -505,7 +505,7 @@ struct ContinuousBatchingKVCache[
             block_pointer, block_dynamic_shape
         )
 
-    fn incr_cache_length(inout self, batch_idx: Int, inc: Int):
+    fn incr_cache_length(mut self, batch_idx: Int, inc: Int):
         debug_assert(
             batch_idx < self.batch_size, "KVCache batch_idx is out of bounds"
         )
@@ -748,7 +748,7 @@ struct ContiguousKVCacheCollection[
     var max_seq_len: Int
 
     fn __init__(
-        inout self,
+        mut self,
         key_cache: NDBuffer[type, 5],
         value_cache: NDBuffer[type, 5],
         cache_lengths: NDBuffer[DType.uint32, 1],
@@ -884,7 +884,7 @@ struct ContinuousBatchingKVCacheCollection[
     var batch_size: Int
 
     fn __init__(
-        inout self,
+        mut self,
         blocks: Self.CacheType.BlocksType,
         cache_lengths: NDBuffer[DType.uint32, 1],
         lookup_table: NDBuffer[DType.uint32, 1],
