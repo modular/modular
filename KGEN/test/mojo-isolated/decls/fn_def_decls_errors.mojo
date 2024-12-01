@@ -80,7 +80,7 @@ fn foo(x: fn[a: int] () -> None):
     pass
 
 # expected-error @below {{non-owned variadic keyword arguments are not supported yet}}
-fn borrowed_kwargs(borrowed **kwargs: int):
+fn borrowed_kwargs(read **kwargs: int):
     pass
 
 # expected-error @below {{'//' marker cannot be used at the start of the parameter list}}
@@ -123,16 +123,16 @@ def defTests() -> None:
 fn ref_result_invalid1() -> ref [4] MemoryType:
     pass
 
-fn ref_result_invalid2(inout a: MemoryType) -> ref [a] Int:
+fn ref_result_invalid2(mut a: MemoryType) -> ref [a] Int:
     # expected-error @+1 {{cannot return reference with incompatible origin: '*"anonymous*"' vs 'a'}}
     return 4
 
-fn ref_result_invalid3(inout a: MemoryType, inout b: MemoryType)
+fn ref_result_invalid3(mut a: MemoryType, mut b: MemoryType)
      -> ref [a] MemoryType:
     # expected-error @+1 {{cannot return reference with incompatible origin: 'b' vs 'a'}}
     return b
 
-fn ref_result_invalid4(inout a: MemoryType, b: Int) -> ref [a] MemoryType:
+fn ref_result_invalid4(mut a: MemoryType, b: Int) -> ref [a] MemoryType:
     # expected-error @+1 {{cannot implicitly convert 'Int' value to 'MemoryType'}}
     return b
 
@@ -141,7 +141,7 @@ fn ref_result_invalid5[T: AnyType](a: T) -> ref [a] T:
     return a
 
 # expected-error @+1 {{cannot return 'b's origin, because it has @register_passable type 'Int'}}
-fn ref_result_invalid6(inout a: MemoryType, inout b: Int) -> ref [b] Int:
+fn ref_result_invalid6(mut a: MemoryType, mut b: Int) -> ref [b] Int:
     pass
 
 # expected-error @+1 {{'ref' result requires an origin specifier}}
@@ -172,11 +172,11 @@ fn return_ref_type_error(a: fn (x: MemoryType) -> ref [x] MemoryType):
 struct SBValue:
     pass
 
-# expected-error @below {{TODO: borrowed non-trivial register-passable arguments are not yet supported in async functions}}
+# expected-error @below {{TODO: read-only non-trivial register-passable arguments are not yet supported in async functions}}
 async fn invalid_sb_value(value: SBValue):
     pass
 
-# expected-error @below {{TODO: borrowed non-trivial register-passable arguments are not yet supported in async functions}}
+# expected-error @below {{TODO: read-only non-trivial register-passable arguments are not yet supported in async functions}}
 async fn invalid_sb_value_variadic(*value: SBValue):
     pass
 

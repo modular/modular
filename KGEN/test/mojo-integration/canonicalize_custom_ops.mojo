@@ -74,19 +74,19 @@ struct OpArrayRef:
 struct ModRefAnalysis:
     var impl: UnsafePointer[NoneType]
 
-    fn rauw(inout self, src: List[Operation], dst: List[Operation]):
+    fn rauw(mut self, src: List[Operation], dst: List[Operation]):
         external_call["mlirCMRAnalysisRAUW", NoneType](
             UnsafePointer.address_of(self), OpArrayRef(src), OpArrayRef(dst)
         )
 
-    fn rauw(inout self, src: Operation, dst: Operation):
+    fn rauw(mut self, src: Operation, dst: Operation):
         srcOps = List[Operation]()
         srcOps.append(src)
         dstOps = List[Operation]()
         dstOps.append(dst)
         self.rauw(srcOps, dstOps)
 
-    fn get_next_modref(inout self, op: Operation) -> List[Operation]:
+    fn get_next_modref(mut self, op: Operation) -> List[Operation]:
         size = external_call["mlirCMRAnalysisGetNextModRefCount", Int](
             UnsafePointer.address_of(self), op
         )
@@ -100,7 +100,7 @@ struct ModRefAnalysis:
         ptr.free()
         return result^
 
-    fn get_prev_modref(inout self, op: Operation) -> List[Operation]:
+    fn get_prev_modref(mut self, op: Operation) -> List[Operation]:
         size = external_call["mlirCMRAnalysisGetPrevModRefCount", Int](
             UnsafePointer.address_of(self), op
         )
@@ -117,7 +117,7 @@ struct ModRefAnalysis:
 
 fn add_mul_two[
     x: Int
-](inout op: Operation, inout b: Rewriter, inout mr: ModRefAnalysis) -> Bool:
+](mut op: Operation, mut b: Rewriter, mut mr: ModRefAnalysis) -> Bool:
     var loc = op.location()
     var lhs = op.operand(0)
     var rhs = op.operand(1)
@@ -144,7 +144,7 @@ fn top(x: Int32) -> Int32:
 
 
 fn unused_str(
-    inout op: Operation, inout b: Rewriter, inout mr: ModRefAnalysis
+    mut op: Operation, mut b: Rewriter, mut mr: ModRefAnalysis
 ) -> Bool:
     nextOps = mr.get_next_modref(op)
     prevOps = mr.get_prev_modref(op)
@@ -195,7 +195,7 @@ fn str_attr[T: AnyTrivialRegType, //, value: T]() -> StringLiteral:
 
 fn opt_push_pop[
     T: Movable
-](inout op: Operation, inout b: Rewriter, inout mr: ModRefAnalysis) -> Bool:
+](mut op: Operation, mut b: Rewriter, mut mr: ModRefAnalysis) -> Bool:
     prevOps = mr.get_prev_modref(op)
     if len(prevOps) != 1:
         return False
@@ -235,12 +235,12 @@ fn opt_push_pop[
 struct Stack[T: Movable]:
     @no_inline
     @op
-    fn push(inout self, owned value: T):
+    fn push(mut self, owned value: T):
         pass
 
     @no_inline
     @op(opt_push_pop[T])
-    fn pop(inout self) -> T:
+    fn pop(mut self) -> T:
         while True:
             pass
 
@@ -256,7 +256,7 @@ fn unused():
 
 
 @no_inline
-fn capture(inout s: UnusedStr):
+fn capture(mut s: UnusedStr):
     keep(UnsafePointer.address_of(s))
 
 

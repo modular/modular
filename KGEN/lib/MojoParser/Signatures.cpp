@@ -222,8 +222,19 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   loc = p.getToken().getLoc();
   cursor = p.getLexer().getCursor();
 
-  // Any owned/borrowed/inout/ref keyword sets convention.
-  // TODO: Turn all of these into soft keywords.
+  auto handleContextualArgConvention = [&](StringRef str,
+                                           PAArgConvention conv) {
+    // Handle "out: Foo" as a name, not an argument convention.
+    if (p.getToken().isNot(Token::colon, Token::equal, Token::r_paren,
+                           Token::r_square)) {
+      convention = conv;
+    } else {
+      // Otherwise, the "out" is the argument name.
+      name = StringAttr::get(p.getContext(), str);
+    }
+  };
+
+  // Any owned/read/mut/ref keyword sets convention.
   if (p.consumeIf(Token::kw_owned))
     convention = kConventionOwned;
   else if (p.consumeIf(Token::kw_borrowed))
@@ -234,14 +245,11 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
     convention = kConventionRef;
   } else if (p.consumeIfSoftIdentifier("out")) {
-    // Handle "out foo:" as a name, not an argument convention.
-    if (p.getToken().isNot(Token::colon, Token::equal, Token::r_paren,
-                           Token::r_square)) {
-      convention = kConventionInitSelfResult;
-    } else {
-      // Otherwise, the "out" is the argument name.
-      name = StringAttr::get(p.getContext(), "out");
-    }
+    handleContextualArgConvention("out", kConventionInitSelfResult);
+  } else if (p.consumeIfSoftIdentifier("mut")) {
+    handleContextualArgConvention("mut", kConventionInOut);
+  } else if (p.consumeIfSoftIdentifier("read")) {
+    handleContextualArgConvention("read", kConventionBorrowed);
   }
 
   while (p.getToken().isAny(Token::kw_owned, Token::kw_borrowed,
@@ -337,7 +345,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     if (convention == kConventionInOut ||
         convention == kConventionInitSelfResult) {
       p.emitError(equalLoc)
-          << (convention == kConventionInitSelfResult ? "out" : "inout")
+          << (convention == kConventionInitSelfResult ? "'out'" : "'mut'")
           << " arguments may not have defaults" << initExpr->getRange();
       initExpr = nullptr;
     }
@@ -1063,7 +1071,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     }
   }
 
-  // If no convention was explicitly specified, default to 'borrowed'.
+  // If no convention was explicitly specified, default to 'read'.
   if (arg.convention == ParsedArgument::kConventionUnspec) {
     // TODO: enable other conventions for **kwargs.
     arg.convention = arg.vararg == VarArgKind::KWVarArg
@@ -1134,9 +1142,9 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     if (arg.vararg != VarArgKind::PackVarArg &&
         conv == TypeConvention::RegisterPassable &&
         tcSignature.argList.effects.isAsync()) {
-      shared.emitError(arg.loc,
-                       "TODO: borrowed non-trivial register-passable arguments "
-                       "are not yet supported in async functions");
+      shared.emitError(
+          arg.loc, "TODO: read-only non-trivial register-passable arguments "
+                   "are not yet supported in async functions");
     }
     // We can pass trivial register borrowed arguments in a register.  We cannot
     // pass non-trivial ones because we cannot diagnose ownership and have other
@@ -1398,7 +1406,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     for (auto [idx, parsedArg, fullType] : llvm::enumerate(
              tcSignature.argList.parsedArgs, tcSignature.fullArgTypes)) {
 
-      // Only look at inout, borrowed, owned arguments.  RegisterPassable args
+      // Only look at mut, read, owned arguments.  RegisterPassable args
       // won't have a origin, and `ref` args are not lowered by-reg.
       if (!SignatureType::hasAddress(parsedArg.kgenConvention) ||
           parsedArg.kgenConvention == ArgConvention::Ref ||
@@ -1564,9 +1572,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       fnInfo = SpecialFunctionInfo();
     }
 
-    // The self argument is actually passed with a special convention. It is
-    // written inout, but it isn't really.
-    // TODO: Introduce an 'init' convention, maybe even an 'init' keyword.
+    // TODO: Remove this legacy hack, to allow people to write inout/mut for
+    // self on init.
     if (!argList.parsedArgs.empty() &&
         argList.parsedArgs[0].convention == ParsedArgument::kConventionInOut) {
       auto &selfArg = argList.parsedArgs[0];
@@ -1673,7 +1680,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     return shared.emitError(funcOp.getLoc(), message);
   };
 
-  // If the argument list has a inout result or inout error, ignore it for type
+  // If the argument list has a mut result or mut error, ignore it for type
   // checking purposes.
   while (!parsedArgs.empty() && parsedArgs.back().convention ==
                                     ParsedArgument::kConventionByRefResult) {
@@ -1822,18 +1829,18 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     assert(!parsedArgs.empty() && "arg count already checked above");
     SMLoc selfArgLoc = parsedArgs[0].loc;
 
-    // __init__ methods must take their self argument 'inout' syntactically.
+    // __init__ methods must take their self argument 'mut' syntactically.
     if (parsedArgs[0].convention != ParsedArgument::kConventionInitSelfResult) {
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
-                  << name << " must be passed 'inout'";
+                  << name << " must be passed 'mut'";
       if (parsedArgs[0].convention == ParsedArgument::kConventionUnspec)
-        diag << FixIt::insertBeforeToken(selfArgLoc, "inout ");
+        diag << FixIt::insertBeforeToken(selfArgLoc, "mut ");
     }
 
     if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
       if (parsedArgs[1].convention != ParsedArgument::kConventionBorrowed)
         emitErrorLoc(parsedArgs[1].loc,
-                     "existing value argument must be passed as borrowed");
+                     "existing value argument must be passed as 'read'");
     } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
       if (parsedArgs[1].convention != ParsedArgument::kConventionOwned)
         emitErrorLoc(parsedArgs[1].loc,

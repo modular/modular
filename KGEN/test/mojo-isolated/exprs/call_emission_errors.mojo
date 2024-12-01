@@ -140,9 +140,9 @@ struct MemExample:
         pass
 
 
-fn mutateMem(inout a: MemExample):
+fn mutateMem(mut a: MemExample):
     pass
-fn mutateInt(inout a: Int):
+fn mutateInt(mut a: Int):
     pass
 
 fn initialize_in_addrspace(memptr: UnsafePointer[MemExample, AddressSpace(1)],
@@ -169,7 +169,7 @@ fn variadic_addr_space(memptr: UnsafePointer[MemExample, AddressSpace(1)],
 
 
 struct ParametricMutability:
-    fn take_inout(inout self):  # expected-note {{function declared here}}
+    fn take_inout(mut self):  # expected-note {{function declared here}}
         # This is ok
         self.take_parametric()
 
@@ -184,7 +184,7 @@ fn test_ref[
     pass
 
 
-fn call_test_ref(inout s: String):
+fn call_test_ref(mut s: String):
     # expected-error @+1 {{cannot use parameterized function of type 'fn[Bool, Origin[$0.value]](ref [$1] arg: String) -> None' without binding all its parameters}}
     var f1 = test_ref
 
@@ -211,9 +211,9 @@ struct MyStruct:
 
 fn exclusivity[
     spanlife: MutableOrigin
-](inout x: MyStruct, span: MyMutSpan[spanlife]):
+](mut x: MyStruct, span: MyMutSpan[spanlife]):
     # expected-error @below {{argument of implicit __copyinit__ call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
+    # expected-note @below {{'x' value is passed through aliasing 'read' argument}}
     x = x
 
     # expected-error @below {{argument of implicit __moveinit__ call allows writing a memory location previously writable through another aliased argument}}
@@ -221,7 +221,7 @@ fn exclusivity[
     x = x^
 
     # expected-error @below {{argument of '__copyinit__' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
+    # expected-note @below {{'x' value is passed through aliasing 'read' argument}}
     x.__copyinit__(x)
 
     # expected-error @below {{argument of 'take_two_spans' call allows writing a memory location previously writable through another aliased argument}}
@@ -229,7 +229,7 @@ fn exclusivity[
     take_two_spans(span, span)
 
 
-fn mutate_two[A: AnyType, B: AnyType](inout a: A, inout b: B):
+fn mutate_two[A: AnyType, B: AnyType](mut a: A, mut b: B):
     pass
 
 
@@ -239,24 +239,24 @@ fn mutate_two_AnyLifetime(
     pass
 
 
-fn inout_ref_exclusivity(inout a: Int, inout b: Int, inout s: MyStruct):
+fn inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     # This is ok.
     mutate_two(a, b)
 
     # This is not.
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'a' value is passed through aliasing 'inout' argument}}
+    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
     mutate_two(a, a)
 
     # This is ok: field sensitivity.
     mutate_two(s.a, s.b)
 
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s.a' value is passed through aliasing 'inout' argument}}
+    # expected-note @below {{'s.a' value is passed through aliasing 'mut' argument}}
     mutate_two(s.a, s.a)
 
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'s' value is passed through aliasing 'inout' argument}}
+    # expected-note @below {{'s' value is passed through aliasing 'mut' argument}}
     mutate_two(s.a, s)
 
     # expected-error @below {{argument of 'mutate_two' call allows writing a memory location previously writable through another aliased argument}}
@@ -274,7 +274,7 @@ fn capture_exclusivity(owned x: MemExample):
         _ = x^
 
     # expected-error @below {{argument of call allows writing a memory location previously writable through implicit closure captures}}
-    # expected-note @below {{'x' value is passed through aliasing 'borrowed' argument}}
+    # expected-note @below {{'x' value is passed through aliasing 'read' argument}}
     capture_and_read(x)
 
 
@@ -308,19 +308,19 @@ struct MyRPStruct2:
         pass
 
 
-fn take_owned_and_mutate_rp(owned a: MyRPStruct2, inout b: MyRPStruct2):
+fn take_owned_and_mutate_rp(owned a: MyRPStruct2, mut b: MyRPStruct2):
     pass
-fn rp_exclusivity(inout x: MyRPStruct2):
+fn rp_exclusivity(mut x: MyRPStruct2):
     # expected-error @below {{argument of 'take_owned_and_mutate_rp' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'x' value is passed through aliasing 'inout' argument}}
+    # expected-note @below {{'x' value is passed through aliasing 'mut' argument}}
     take_owned_and_mutate_rp(x^, x)
 
 
-fn take_and_mutate_rp(a: MyRPStruct, inout b: MyRPStruct2):
+fn take_and_mutate_rp(a: MyRPStruct, mut b: MyRPStruct2):
     pass
-fn rp_exclusivity2(inout x: MyRPStruct2):
+fn rp_exclusivity2(mut x: MyRPStruct2):
     # expected-error @below {{argument of 'take_and_mutate_rp' call allows writing a memory location previously readable through another aliased argument}}
-    # expected-note @below {{'x' value is passed through aliasing 'inout' argument}}
+    # expected-note @below {{'x' value is passed through aliasing 'mut' argument}}
     take_and_mutate_rp(x.b, x)
 
 

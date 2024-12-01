@@ -17,12 +17,12 @@ trait Trait:
 
     # CHECK: lit.func @"f1{{.*}}(%self: !lit.ref<{{.*}}> inout) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
-    fn f1(inout self):
+    fn f1(mut self):
         ...
 
     # CHECK: lit.func @"f2{{.*}}(%self: !lit.ref<{{.*}}> inout) -> !kgen.none attributes
     # CHECK-NEXT: lit.trait_func
-    fn f2(inout self):
+    fn f2(mut self):
         pass
 
     # CHECK: lit.func @"f3{{.*}}(%self: !lit.ref<{{.*}}> borrow_in_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
@@ -32,7 +32,7 @@ trait Trait:
 
     # CHECK: lit.func @"f4{{.*}}(%self: !lit.ref<{{.*}}> inout, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: lit.trait_func
-    def f4(inout self):
+    def f4(mut self):
         pass
 
     fn overloaded(self):
@@ -521,7 +521,7 @@ fn destroy[T: AnyType](x: T):
 
 # CHECK-LABEL: lit.func @"test_special_fn_traits
 fn test_special_fn_traits(
-    inout x: RegTrivialSpecial, inout y: RegSpecial, inout z: MemoryOnlySpecial
+    mut x: RegTrivialSpecial, mut y: RegSpecial, mut z: MemoryOnlySpecial
 ):
     # COM: Just check that the implicit conversion succeeds.
     # CHECK-COUNT-9: lit.call
@@ -740,7 +740,7 @@ struct ABCOptionalParamInt[dim_parametric: ABCDim]:
 
 
 struct ABCDim:
-    fn __init__[type: SomeTrait](inout self, value: type):
+    fn __init__[type: SomeTrait](mut self, value: type):
         pass
 
 
@@ -755,12 +755,12 @@ struct ConcreteType(TraitParameterized):
 
 
 trait KeysBuilder:
-    fn add[x: int](inout self):
+    fn add[x: int](mut self):
         ...
 
 
 struct KeysContainer[end: int](KeysBuilder):
-    fn add[x: int](inout self):
+    fn add[x: int](mut self):
         pass
 
 
@@ -889,7 +889,7 @@ struct Bar[T: EmptyTrait]:
 
 
 struct Foo[T: EmptyTrait]:
-    fn infer_sub_trait[OT: OtherEmptyTrait](inout self, existing: Bar[OT]):
+    fn infer_sub_trait[OT: OtherEmptyTrait](mut self, existing: Bar[OT]):
         pass
 
 

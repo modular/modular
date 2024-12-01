@@ -55,7 +55,7 @@ struct MTuple[T: CollectionElement](
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("(")
 
         for i in range(len(self.elts)):

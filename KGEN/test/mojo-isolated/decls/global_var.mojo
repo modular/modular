@@ -72,7 +72,7 @@ fn borrowGlobalReg(x: RegType):
     pass
 
 
-fn mutGlobalReg(inout x: RegType):
+fn mutGlobalReg(mut x: RegType):
     pass
 
 

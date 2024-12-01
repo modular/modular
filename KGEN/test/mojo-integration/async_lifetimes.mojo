@@ -12,7 +12,7 @@ from runtime.asyncrt import run
 # CHECK-NEXT: hello async
 
 
-async fn byref_capture(inout value: String):
+async fn byref_capture(mut value: String):
     value += " async"
     print(value)
 

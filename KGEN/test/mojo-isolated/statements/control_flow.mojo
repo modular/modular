@@ -423,7 +423,7 @@ fn test_simple(a: Bool):
 # This iterator returns elements by value.
 struct ValueIter:
     fn __init__(out self): pass
-    fn __next__(inout self) -> Int: return 0
+    fn __next__(mut self) -> Int: return 0
     fn __has_next__(self) -> Bool: return False
 
 struct ListValueIter:
@@ -459,7 +459,7 @@ fn for_range_loop():
 struct RefIter[list_mutability: Bool, //,
                list_origin: Origin[list_mutability].type]:
     fn __init__(out self): pass
-    fn __next__(inout self) -> ref [list_origin] Int: pass
+    fn __next__(mut self) -> ref [list_origin] Int: pass
     fn __has_next__(self) -> Bool: return False
 
 struct ListWithRefIter:
@@ -469,7 +469,7 @@ struct ListWithRefIter:
 
 # CHECK-LABEL: lit.func @"for_range_ref_loop
 fn for_range_ref_loop(imm_list_ref_iter: ListWithRefIter,
-                      inout mut_list_ref_iter: ListWithRefIter):
+                      mut mut_list_ref_iter: ListWithRefIter):
 
     # CHECK: [[ITEM:%.*]] = lit.var.decl "item"
     # CHECK-NEXT: %$RANGE = lit.var.decl "$RANGE" synth
@@ -512,7 +512,7 @@ struct IterRange:
     fn __has_next__(self) -> Bool:
         return self.value > 0
 
-    fn __next__(inout self) -> Int:
+    fn __next__(mut self) -> Int:
         return self.value
 
 

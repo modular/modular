@@ -473,7 +473,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (!argVal.getRValueType().isEqualCanon(elementType))
       return {kWrongLVType, expectedType};
     // Notice if a register-passable type is being passed in-memory. This allows
-    // 'inout' arguments overloads to be more expensive than borrowed.
+    // 'mut' arguments overloads to be more expensive than borrowed.
     payload.numMismatchedConventions +=
         elementType.isRegisterPassable(loc, shared);
     return {kValidType, expectedType};

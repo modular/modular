@@ -16,7 +16,7 @@ struct MyList[T: CollectionElement]:
     fn __init__(out self):
         self.data = UnsafePointer[T]()
 
-    fn mutate(inout self): pass
+    fn mutate(mut self): pass
 
     fn __getitem__(ref self, idx: Int) -> ref [self.data.get_unique_item_ref(idx)] T:
         return self.data.get_unique_item_ref(idx)

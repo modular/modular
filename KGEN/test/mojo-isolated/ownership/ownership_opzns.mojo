@@ -50,7 +50,7 @@ struct RegExample:
     fn __del__(owned self):
         pass
 
-    fn mutate(inout self):
+    fn mutate(mut self):
         pass
 
 

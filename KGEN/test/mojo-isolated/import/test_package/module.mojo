@@ -45,5 +45,5 @@ struct Wrapper:
 
     alias MyType = ParameterizedType[__mlir_attr.`42 : index`]
 
-    fn unused_method(inout self) -> Self.MyType:
+    fn unused_method(mut self) -> Self.MyType:
         return Self.MyType()

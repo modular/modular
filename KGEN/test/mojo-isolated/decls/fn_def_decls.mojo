@@ -190,13 +190,13 @@ def test_multi_tuple_def_value():
 
 
 # CHECK-LABEL: lit.func @"ref_result
-fn ref_result(inout x: MemoryOnly) -> ref [x] MemoryOnly:
+fn ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
     # CHECK-NEXT: lit.return %x : !lit.ref<!MemoryOnly, mut *"x`">
     return x
 
 
 # CHECK-LABEL: lit.func @"def_ref_result
-def def_ref_result(inout x: MemoryOnly) -> ref [x] MemoryOnly:
+def def_ref_result(mut x: MemoryOnly) -> ref [x] MemoryOnly:
     # CHECK-NEXT: lit.ref.store %x, %__result__
     # CHECK-NEXT: %0 = kgen.param.constant: i1 = <0>
     # CHECK-NEXT: lit.return %0

@@ -151,27 +151,27 @@ def fn_that_raises() -> Int:
 # CHECK:          "description": "This is an argument."
 # CHECK:          "name": "arg"
 # CHECK:          "type": "Int"
-# CHECK:          "convention": "inout"
-# CHECK:          "description": "This is an inout arg."
+# CHECK:          "convention": "mut"
+# CHECK:          "description": "This is an mut arg."
 # CHECK:          "name": "inoutArg"
 # CHECK:          "type": "Int"
 # CHECK:          "convention": "owned"
 # CHECK:          "description": "This is an owned arg."
 # CHECK:          "name": "ownedArg"
 # CHECK:          "type": "Int"
-# CHECK:          "convention": "borrowed"
+# CHECK:          "convention": "read"
 # CHECK:          "description": "This is a borrowedArg."
 # CHECK:          "name": "borrowedArg"
 # CHECK:          "type": "Int"
-# CHECK:      "signature": "fn_with_args(arg: Int, inout inoutArg: Int, owned ownedArg: Int, borrowedArg: Int)",
+# CHECK:      "signature": "fn_with_args(arg: Int, mut inoutArg: Int, owned ownedArg: Int, borrowedArg: Int)",
 # CHECK:      "summary": "This is a function summary."
 
 
 fn fn_with_args(
     arg: Int,
-    inout inoutArg: Int,
+    mut inoutArg: Int,
     owned ownedArg: Int,
-    borrowed borrowedArg: Int,
+    read borrowedArg: Int,
 ):
     """This is a function summary.
 
@@ -179,7 +179,7 @@ fn fn_with_args(
 
     Args:
         arg: This is an argument.
-        inoutArg: This is an inout arg.
+        inoutArg: This is an mut arg.
         ownedArg: This is an owned arg.
         borrowedArg: This is a borrowedArg.
     """
@@ -650,7 +650,7 @@ struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
 # CHECK:      "constraints": "This describes the method's constraints.",
 # CHECK:      "description": ""
 # CHECK:      "returnsDoc": "This is a by-ref return value.",
-# CHECK:      "signature": "fn_with_by_conventions(inout self, inout arg: Self, inout *args: Self) -> Self",
+# CHECK:      "signature": "fn_with_by_conventions(mut self, mut arg: Self, mut *args: Self) -> Self",
 # CHECK:      "summary": "This is a function summary."
 # CHECK:  "kind": "struct",
 # CHECK:  "name": "InMemoryStruct",
@@ -676,7 +676,7 @@ struct InMemoryStruct(Sized):
         return 0
 
     fn fn_with_by_conventions(
-        inout self, inout arg: InMemoryStruct, inout *args: InMemoryStruct
+        mut self, mut arg: InMemoryStruct, mut*args: InMemoryStruct
     ) -> InMemoryStruct:
         """This is a function summary.
 

@@ -549,7 +549,7 @@ llvm::json::Object ParameterDeclView::toJSON(MojoParserContext &ctx) const {
 //===----------------------------------------------------------------------===//
 
 static StringRef getConventionString(ArgumentDeclView::Convention conv) {
-  StringRef conventions[] = {"borrowed", "inout", "owned", "ref", "out"};
+  StringRef conventions[] = {"read", "mut", "owned", "ref", "out"};
   auto convIdx = static_cast<size_t>(conv);
   assert(convIdx < sizeof(conventions) / sizeof(conventions[0]) &&
          "enums added");
@@ -582,7 +582,7 @@ std::string ArgumentDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object ArgumentDeclView::toJSON(MojoParserContext &ctx) const {
-  StringRef conventions[] = {"borrowed", "inout", "owned", "ref", "out"};
+  StringRef conventions[] = {"read", "mut", "owned", "ref", "out"};
   assert(static_cast<size_t>(convention) <
              sizeof(conventions) / sizeof(conventions[0]) &&
          "enums added");

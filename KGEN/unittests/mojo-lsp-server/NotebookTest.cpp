@@ -149,7 +149,7 @@ function
       .hover(doc.getCells()[1], lsp::Position(1, 2),
              [](const lsp::Hover &hover) {
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(argument) inout function: PythonObject
+(argument) mut function: PythonObject
 ```)");
              })
       .execute();

@@ -25,7 +25,7 @@ struct MemExample:
 
     # expected-error @below {{'self.y' is uninitialized at the implicit return from this function}}
     fn __copyinit__(
-        inout self,  # expected-note {{'self' declared here}}
+        mut self,  # expected-note {{'self' declared here}}
         existing: Self,
     ):
         self.x = existing.x
@@ -44,7 +44,7 @@ fn use(x: MemExample):
     pass
 
 
-fn use_inout(inout x: MemExample):
+fn use_inout(mut x: MemExample):
     pass
 
 
@@ -127,13 +127,13 @@ fn uninit_lvalue_int():
 
 
 # Return-specific errors.
-fn return_error1(inout a: MemExample):  # expected-note {{'a' declared here}}
+fn return_error1(mut a: MemExample):  # expected-note {{'a' declared here}}
     a^.consume()
     return  # expected-error {{'a' is uninitialized at return from this function}}
 
 
 # expected-error @+1 {{'a' is uninitialized at the implicit return from this function}}
-fn return_error2(inout a: RegExample):  # expected-note {{'a' declared here}}
+fn return_error2(mut a: RegExample):  # expected-note {{'a' declared here}}
     a^.consume()
 
 
@@ -390,7 +390,7 @@ fn testStructWithNoDel():
 
 
 # expected-note @+1 {{'x' declared here}}
-fn inout_restored_at_throw(inout x: MemExample, err: Error) raises:
+fn inout_restored_at_throw(mut x: MemExample, err: Error) raises:
     # x is uninit after this point, needs to be restored if an
     # error is thrown.
     x^.consume()
@@ -415,7 +415,7 @@ struct TrivialRange:
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(inout self) -> Int:
+    fn __next__(mut self) -> Int:
         return 1
 
     @always_inline
@@ -488,14 +488,14 @@ fn test38421():
 # Computed LValues
 # ===----------------------------------------------------------------------=== #
 
-fn get_inout_ref(inout x: String) -> ref [x] String:
+fn get_inout_ref(mut x: String) -> ref [x] String:
     return x
 
 struct StrArray:
     fn __getitem__(self, x: Int) -> String: return String()
-    fn __setitem__(inout self, x: Int, owned value: String): pass
+    fn __setitem__(mut self, x: Int, owned value: String): pass
 
-fn test_inout_ref(inout v: StrArray, i: Int):
+fn test_inout_ref(mut v: StrArray, i: Int):
     # expected-note @below {{'(expression temporary)' declared here}}
     # expected-error @below {{use of uninitialized value '(expression temporary)'}}
     var r = Pointer.address_of(get_inout_ref(v[i]))

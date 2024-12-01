@@ -23,7 +23,7 @@ struct TalkativeMem(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("talkative ", self.state)
 
 
@@ -43,7 +43,7 @@ struct TalkativeReg(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("talkative ", self.state)
 
 
@@ -67,7 +67,7 @@ struct TalkativeCopableReg(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("talkative ", self.state)
 
 
@@ -94,7 +94,7 @@ struct TalkativeCopableMovableMem(Stringable, Writable, CollectionElement):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("talkative ", self.state)
 
 
@@ -104,13 +104,13 @@ struct TalkativeCopableMovableMem(Stringable, Writable, CollectionElement):
 
 
 fn test_inout_varargs():
-    # CHECK: -- Testing inout varargs
-    print("-- Testing inout varargs")
+    # CHECK: -- Testing mut varargs
+    print("-- Testing mut varargs")
     var s1: String = "hello"
     var s2: String = "konnichiwa"
     var s3: String = "bonjour"
 
-    fn make_worldly(inout *strs: String):
+    fn make_worldly(mut*strs: String):
         for i in range(len(strs)):
             strs[i] += " world"
 
@@ -119,12 +119,12 @@ fn test_inout_varargs():
     print(s2)  # CHECK-NEXT: konnichiwa world
     print(s3)  # CHECK-NEXT: bonjour world
 
-    # CHECK: -- Testing inout varargs destructors
-    print("-- Testing inout varargs destructors")
+    # CHECK: -- Testing mut varargs destructors
+    print("-- Testing mut varargs destructors")
     var v1 = TalkativeMem(1)  # CHECK-NEXT: initializing 1
     var v2 = TalkativeMem(2)  # CHECK-NEXT: initializing 2
 
-    fn double(inout *tm: TalkativeMem):
+    fn double(mut*tm: TalkativeMem):
         for i in range(len(tm)):
             tm[i].state *= 2
 
@@ -275,8 +275,8 @@ fn test_owned_variadic_pack():
     print("done three")
 
 
-fn inout_variadic_pack[*Ts: Writable](inout *pack: *Ts):
-    print("-- testing inout variadic pack with", len(pack), "elements")
+fn inout_variadic_pack[*Ts: Writable](mut*pack: *Ts):
+    print("-- testing mut variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
     @parameter
@@ -287,7 +287,7 @@ fn inout_variadic_pack[*Ts: Writable](inout *pack: *Ts):
 
 
 fn test_inout_variadic_pack():
-    # CHECK: -- testing inout variadic pack with 2 elements
+    # CHECK: -- testing mut variadic pack with 2 elements
     # CHECK: hello foo
     # CHECK: hello 42
     var string = "foo"
@@ -297,7 +297,7 @@ fn test_inout_variadic_pack():
 
     # CHECK: initializing 1
     # CHECK: initializing 2
-    # CHECK: -- testing inout variadic pack with 2 elements
+    # CHECK: -- testing mut variadic pack with 2 elements
     # CHECK: hello talkative 1
     # CHECK: hello talkative 2
     # CHECK: destroying 1
@@ -312,7 +312,7 @@ fn test_inout_variadic_pack():
 
 
 fn borrowed_variadic_pack[*Ts: Writable](*pack: *Ts):
-    print("-- testing borrowed variadic pack with", len(pack), "elements")
+    print("-- testing read-only variadic pack with", len(pack), "elements")
 
     @parameter
     fn process[T: Writable](a: T):
@@ -322,7 +322,7 @@ fn borrowed_variadic_pack[*Ts: Writable](*pack: *Ts):
 
 
 fn test_borrowed_variadic_pack():
-    # CHECK: -- testing borrowed variadic pack with 2 elements
+    # CHECK: -- testing read-only variadic pack with 2 elements
     # CHECK: hello foo
     # CHECK: hello 42
     borrowed_variadic_pack("foo", 42)
@@ -330,7 +330,7 @@ fn test_borrowed_variadic_pack():
 
     # CHECK: initializing 2
     # CHECK: initializing 1
-    # CHECK: -- testing borrowed variadic pack with 2 elements
+    # CHECK: -- testing read-only variadic pack with 2 elements
     # CHECK: hello talkative 1
     # CHECK: hello talkative 2
     # CHECK: destroying 1

@@ -230,7 +230,7 @@ struct Int(Copyable):
         return __mlir_op.`index.mul`(lhs.value, rhs.value)
 
     @always_inline("nodebug")
-    fn __iadd__(inout self, rhs: Int):
+    fn __iadd__(mut self, rhs: Int):
         self = self + rhs
 
     @always_inline("nodebug")
@@ -304,7 +304,7 @@ struct String(KeyElement):
     fn __contains__(self, substr: String) -> Bool:
         return True
 
-    fn __iadd__(inout self, rhs: String):
+    fn __iadd__(mut self, rhs: String):
         pass
 
     fn unsafe_ptr(self) -> UnsafePointer[UInt8]:
@@ -349,7 +349,7 @@ struct Slice:
 
     fn __init__[
         T0: AnyTrivialRegType, T1: AnyTrivialRegType, T2: AnyTrivialRegType
-    ](inout self, start: T0, end: T1, step: T2):
+    ](mut self, start: T0, end: T1, step: T2):
         pass
 
 
@@ -449,7 +449,7 @@ struct _VariadicListMemIter[
     var index: Int
     var src: Pointer[Self.variadic_list_type, list_origin]
 
-    fn __next__(inout self) -> Self.variadic_list_type.reference_type:
+    fn __next__(mut self) -> Self.variadic_list_type.reference_type:
         while True:
             pass
 
@@ -469,7 +469,7 @@ struct VariadicListMem[
     alias reference_type = Pointer[element_type, origin]
 
     fn __init__(
-        inout self,
+        mut self,
         value: __mlir_type[
             `!kgen.variadic<`, Self._mlir_type, `, borrow_in_mem>`
         ],
@@ -477,13 +477,13 @@ struct VariadicListMem[
         pass
 
     fn __init__(
-        inout self,
+        mut self,
         value: __mlir_type[`!kgen.variadic<`, Self._mlir_type, `, inout>`],
     ):
         pass
 
     fn __init__(
-        inout self,
+        mut self,
         value: __mlir_type[
             `!kgen.variadic<`, Self._mlir_type, `, owned_in_mem>`
         ],
@@ -712,7 +712,7 @@ struct _StridedRangeIterator:
             return 0
 
     @always_inline
-    fn __next__(inout self) -> Int:
+    fn __next__(mut self) -> Int:
         var result = self.start
         self.start += self.step
         return result
@@ -724,7 +724,7 @@ struct _StridedRangeIterator:
 
 
 trait _IntNext(Copyable):
-    fn __next__(inout self) -> Int:
+    fn __next__(mut self) -> Int:
         ...
 
 

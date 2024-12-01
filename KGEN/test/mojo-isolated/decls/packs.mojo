@@ -108,7 +108,7 @@ fn test_owned_trait():
 # CHECK-LABEL: lit.func @"takeInoutSomeTraitPack
 # CHECK-SAME: (%rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 1}, :origin<1> *"rest`"
 # CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>, imm *"rest`1"> inout|pack)
-fn takeInoutSomeTraitPack[*Ts: SomeTrait](inout *rest: *Ts):
+fn takeInoutSomeTraitPack[*Ts: SomeTrait](mut *rest: *Ts):
     pass
 
 
@@ -154,7 +154,7 @@ fn test_inout():
 
 struct not_nested_struct[*Ts: AnyType]:
     @implicit
-    fn __init__(out self, inout *args: *Ts):
+    fn __init__(out self, mut *args: *Ts):
         pass
 
 
