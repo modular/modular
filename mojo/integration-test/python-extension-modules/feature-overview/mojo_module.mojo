@@ -175,7 +175,7 @@ struct Person:
         return PythonObject(self0[].name).steal_data()
 
 
-fn add_person_type(inout module: TypedPythonObject["Module"]):
+fn add_person_type(mut module: TypedPythonObject["Module"]):
     # ----------------------------------------------
     # Construct a 'type' object describing `Person`
     # ----------------------------------------------
@@ -210,7 +210,7 @@ fn add_person_type(inout module: TypedPythonObject["Module"]):
 # ====================================
 
 
-fn add_int_type(inout module: TypedPythonObject["Module"]):
+fn add_int_type(mut module: TypedPythonObject["Module"]):
     try:
         var type_obj = python_type_object[Int, "Int"](
             methods=List[PyMethodDef]()
@@ -221,11 +221,11 @@ fn add_int_type(inout module: TypedPythonObject["Module"]):
         abort("error adding object: " + str(e))
 
 
-fn incr_int(inout arg: Int):
+fn incr_int(mut arg: Int):
     arg += 1
 
 
-fn add_to_int(inout arg: Int, owned value: Int):
+fn add_to_int(mut arg: Int, owned value: Int):
     arg += value
 
 
@@ -244,7 +244,7 @@ fn incr_int__wrapper(
         "incr_int", "Int", py_args, 0
     )
 
-    # Note: Pass an `inout` reference to the wrapped function
+    # Note: Pass an `mut` reference to the wrapped function
     incr_int(arg_0[])
 
     return PythonObject(None)
@@ -267,7 +267,7 @@ fn add_to_int__wrapper(
         1,
     )
 
-    # Note: Pass an `inout` reference to the wrapped function
+    # Note: Pass an `mut` reference to the wrapped function
     add_to_int(arg_0[], arg_1[])
 
     return PythonObject(None)
@@ -278,7 +278,7 @@ fn add_to_int__wrapper(
 # ====================================
 
 
-fn add_string_type(inout module: TypedPythonObject["Module"]):
+fn add_string_type(mut module: TypedPythonObject["Module"]):
     try:
         var type_obj = python_type_object[String, "String"](
             methods=List[PyMethodDef]()
