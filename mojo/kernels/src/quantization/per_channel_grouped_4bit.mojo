@@ -184,7 +184,7 @@ struct Q4sym[
         return lo_hi[0] | (lo_hi[1] << 4)
 
     @always_inline
-    fn _decode_bits(inout self) -> SIMD[DType.uint8, group_size]:
+    fn _decode_bits(mut self) -> SIMD[DType.uint8, group_size]:
         # Extract the lower 4 bits of all bits in the `l_bits` format
         var bits_simd = _to_SIMD[DType.uint8, group_size // 2](self.bits)
         var bits_upper = (bits_simd & 0xF0) >> 4
@@ -194,7 +194,7 @@ struct Q4sym[
         )
 
     @always_inline
-    fn decode_scale(inout self) -> Float16:
+    fn decode_scale(mut self) -> Float16:
         """
         Obtain the scale factor.
 
@@ -217,7 +217,7 @@ struct Q4sym[
         return scale_decoded
 
     @always_inline
-    fn decode_unsigned(inout self) -> SIMD[DType.uint8, group_size]:
+    fn decode_unsigned(mut self) -> SIMD[DType.uint8, group_size]:
         """
         Decode the stored uint4 numbers to uint8.
 
@@ -229,7 +229,7 @@ struct Q4sym[
         return self._decode_bits()
 
     @always_inline
-    fn decode_signed(inout self) -> SIMD[DType.int8, group_size]:
+    fn decode_signed(mut self) -> SIMD[DType.int8, group_size]:
         """
         Decode the stored uint4 numbers to requantized int4 numbers.
 
@@ -244,7 +244,7 @@ struct Q4sym[
         return decoded_result.cast[DType.int8]() - 8
 
     @always_inline
-    fn decode_fully(inout self) -> SIMD[float_dtype, group_size]:
+    fn decode_fully(mut self) -> SIMD[float_dtype, group_size]:
         """
         Decode the stored numbers into floating point representation.
 

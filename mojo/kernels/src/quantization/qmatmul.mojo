@@ -307,8 +307,8 @@ fn _scale_and_accumulate[
 ](
     a_scale_ptr: UnsafePointer[Float32],
     b_scale_ptr: UnsafePointer[Scalar[b_scale_type]],
-    inout c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
-    inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
     var b_scale = InlineArray[SIMD[DType.float32, simd_width], tile_n](0)
 
@@ -391,7 +391,7 @@ trait _MatmulQInt4Kernel:
         a_ptr: UnsafePointer[Int8],
         a_scale_ptr: UnsafePointer[Float32],
         b_ptr: UnsafePointer[Int8],
-        inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         ...
 
@@ -404,7 +404,7 @@ trait _MatmulQInt4Kernel:
         b_base_ptr: UnsafePointer[Int8],
         b_ptr: UnsafePointer[Float32],
         b_correction_ptr: UnsafePointer[Int32],
-        inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         ...
 
@@ -438,7 +438,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         a_ptr: UnsafePointer[Int8],
         a_scale_ptr: UnsafePointer[Float32],
         b_ptr: UnsafePointer[Int8],
-        inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
 
@@ -510,7 +510,7 @@ struct _MatmulQInt4Kernel_x86_vnni(_MatmulQInt4Kernel):
         b_ptr: UnsafePointer[Int8],
         b_scale_ptr: UnsafePointer[Float32],
         b_correction_ptr: UnsafePointer[Int32],
-        inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
 
@@ -582,7 +582,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         a_ptr: UnsafePointer[Int8],
         a_scale_ptr: UnsafePointer[Float32],
         b_ptr: UnsafePointer[Int8],
-        inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
 
@@ -674,7 +674,7 @@ struct _MatmulQInt4Kernel_x86_avx(_MatmulQInt4Kernel):
         b_ptr: UnsafePointer[Int8],
         b_scale_ptr: UnsafePointer[Float32],
         b_correction_ptr: UnsafePointer[Int32],
-        inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
 
@@ -751,7 +751,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         a_ptr: UnsafePointer[Int8],
         a_scale_ptr: UnsafePointer[Float32],
         b_ptr: UnsafePointer[Int8],
-        inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, 1, tile_n, simd_width]()
 
@@ -804,7 +804,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         b_ptr: UnsafePointer[Int8],
         b_scale_ptr: UnsafePointer[Float32],
         b_correction_ptr: UnsafePointer[Int32],
-        inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
 
@@ -871,7 +871,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         a_ptr: UnsafePointer[Int8],
         a_scale_ptr: UnsafePointer[Float32],
         b_ptr: UnsafePointer[Int8],
-        inout c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, 1, tile_n, simd_width],
     ):
         # The data layout for quantized A data is identical for the NEON dot
         # product kernel when M=1, so delegate to that implementation.
@@ -889,7 +889,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         b_ptr: UnsafePointer[Int8],
         b_scale_ptr: UnsafePointer[Float32],
         b_correction_ptr: UnsafePointer[Int32],
-        inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+        mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
     ):
         alias block_m = max(tile_m // 2, 1)
         var c_int32_block = _Accumulator[

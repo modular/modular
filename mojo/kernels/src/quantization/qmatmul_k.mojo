@@ -596,13 +596,13 @@ fn _matmul_group_stream_x86[
     simd_width: Int, //,
     group_size: Int,
     stream_b_vals_fn: fn (
-        inout b_vals: InlineArray[
+        mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
     ) capturing [_] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
-    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
     var b_vals = InlineArray[
         SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
@@ -644,13 +644,13 @@ fn _matmul_group_stream_neon_dotprod[
     simd_width: Int, //,
     group_size: Int,
     stream_b_vals_fn: fn (
-        inout b_vals: InlineArray[
+        mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
     ) capturing [_] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
-    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
     var b_vals = InlineArray[
         SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
@@ -691,13 +691,13 @@ fn _matmul_group_stream[
     simd_width: Int, //,
     group_size: Int,
     stream_b_vals_fn: fn (
-        inout b_vals: InlineArray[
+        mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
     ) capturing [_] -> None,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
-    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
     constrained[is_power_of_two(tile_k) and tile_k <= 4]()
 
@@ -722,8 +722,8 @@ fn _matmul_group_unpacked[
     group_size: Int,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
-    inout b_q_bits_ptr: UnsafePointer[UInt8],
-    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut b_q_bits_ptr: UnsafePointer[UInt8],
+    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
     """Streaming matrix multiplication where the B matrix has been unpacked to
     local storage.
@@ -731,7 +731,7 @@ fn _matmul_group_unpacked[
 
     @parameter
     fn stream_b_vals(
-        inout b_vals: InlineArray[SIMD[DType.uint8, simd_width * 4], tile_n * 1]
+        mut b_vals: InlineArray[SIMD[DType.uint8, simd_width * 4], tile_n * 1]
     ):
         @parameter
         for col in range(tile_n):
@@ -747,7 +747,7 @@ fn _apply_base_scales[
 ](
     b_base_scales_ptr: UnsafePointer[Float16],
     c_int32_block: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
-    inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
     # Convert to floating point and apply the block scale of matrix B.
     @parameter
@@ -770,7 +770,7 @@ fn _apply_zero_point_correction[
     a_group_sums_ptr: UnsafePointer[Int16],
     b_q_mins_ptr: UnsafePointer[UInt8],
     b_base_mins_ptr: UnsafePointer[Float16],
-    inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
     """Applies the zero point correction to the running float accumulator."""
     alias block_n = tile_n * simd_width
@@ -870,7 +870,7 @@ fn _apply_a_scales[
     tile_m: Int, tile_n: Int, simd_width: Int
 ](
     a_scales_ptr: UnsafePointer[Float32],
-    inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
     @parameter
     if has_neon():
@@ -904,7 +904,7 @@ fn _accumulate_and_store[
     c_ptr: UnsafePointer[Float32],
     N: Int,
     accumulate: Bool,
-    inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
+    mut c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
     if accumulate:
         var c_existing = _Accumulator[
@@ -930,15 +930,15 @@ fn _matmul_group_packed_Q4_K[
     simd_width: Int, //,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
-    inout b_q_bits_ptr: UnsafePointer[UInt8],
-    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut b_q_bits_ptr: UnsafePointer[UInt8],
+    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
     alias group_size = _block_Q4_K.group_size
     alias tile_k = 2
 
     @parameter
     fn stream_b_vals(
-        inout b_vals: InlineArray[
+        mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
     ):
@@ -962,7 +962,7 @@ fn _matmul_Q4_K_tile[
     simd_width: Int, //,
     matmul_group_fn: fn (
         a_ptr: UnsafePointer[Int8],
-        inout c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+        mut c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     ) capturing [_] -> None,
 ](
     a_ptr: UnsafePointer[_block_Q8_K_packed[_block_Q4_K.group_size]],
@@ -1064,9 +1064,7 @@ fn _matmul_Q4_K_columns[
         @parameter
         fn matmul_group_packed(
             a_q_bits_ptr: UnsafePointer[Int8],
-            inout c_int32_group: _Accumulator[
-                DType.int32, 1, tile_n, simd_width
-            ],
+            mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
         ):
             _matmul_group_packed_Q4_K(a_q_bits_ptr, b_q_bits_ptr, c_int32_group)
 
@@ -1092,7 +1090,7 @@ fn _matmul_Q4_K_columns[
         @parameter
         fn matmul_group_unpacked(
             a_ptr: UnsafePointer[Int8],
-            inout c_int32_group: _Accumulator[
+            mut c_int32_group: _Accumulator[
                 DType.int32, tile_m, tile_n, simd_width
             ],
         ):
@@ -1120,15 +1118,15 @@ fn _matmul_group_packed_Q6_K[
     zero_point: UInt8,
 ](
     a_q_bits_ptr: UnsafePointer[Int8],
-    inout b_q_bits_ptr: UnsafePointer[UInt8],
-    inout c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
+    mut b_q_bits_ptr: UnsafePointer[UInt8],
+    mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
     alias group_size = _block_Q6_K.group_size
     alias tile_k = 4
 
     @parameter
     fn stream_b_vals(
-        inout b_vals: InlineArray[
+        mut b_vals: InlineArray[
             SIMD[DType.uint8, simd_width * 4], tile_n * tile_k
         ]
     ):
@@ -1158,7 +1156,7 @@ fn _matmul_Q6_K_tile[
     simd_width: Int, //,
     matmul_group_fn: fn (
         a_ptr: UnsafePointer[Int8],
-        inout c_int32_group: _Accumulator[
+        mut c_int32_group: _Accumulator[
             DType.int32, tile_m, tile_n, simd_width
         ],
     ) capturing [_] -> None,
@@ -1269,9 +1267,7 @@ fn _matmul_Q6_K_columns[
         @parameter
         fn matmul_group_packed(
             a_q_bits_ptr: UnsafePointer[Int8],
-            inout c_int32_group: _Accumulator[
-                DType.int32, 1, tile_n, simd_width
-            ],
+            mut c_int32_group: _Accumulator[DType.int32, 1, tile_n, simd_width],
         ):
             _matmul_group_packed_Q6_K[zero_point=b_zero_point](
                 a_q_bits_ptr, b_q_bits_ptr, c_int32_group
@@ -1299,7 +1295,7 @@ fn _matmul_Q6_K_columns[
         @parameter
         fn matmul_group_unpacked(
             a_ptr: UnsafePointer[Int8],
-            inout c_int32_group: _Accumulator[
+            mut c_int32_group: _Accumulator[
                 DType.int32, tile_m, tile_n, simd_width
             ],
         ):

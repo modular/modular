@@ -494,7 +494,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
         self.c = Self._build_float_buffer(M, N)
         self.c_golden = Self._build_float_buffer(M, N)
 
-    def free(inout self):
+    def free(mut self):
         self.a.data.free()
         self.b.data.free()
         self.b_packed.data.free()
