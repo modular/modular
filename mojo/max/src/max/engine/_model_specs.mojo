@@ -53,7 +53,7 @@ struct TensorNamesIterator(Sized):
         self.length = length
         self.lib = lib
 
-    fn __next__(inout self) raises -> String:
+    fn __next__(mut self) raises -> String:
         var next = self.ptr.get_name_at(self.current, self.lib)
         self.current += 1
         return next
@@ -74,7 +74,7 @@ struct TensorNames(Sized):
     var length: Int
 
     fn __init__(
-        inout self,
+        mut self,
         fn_name: String,
         ptr: CCompiledModel,
         length: Int,
@@ -115,7 +115,7 @@ struct InputTensorNames(Sized):
     alias GetInputTensorNamesFnName = "M_getInputNames"
 
     fn __init__(
-        inout self,
+        mut self,
         ptr: CCompiledModel,
         length: Int,
         lib: DLHandle,
@@ -142,7 +142,7 @@ struct OutputTensorNames(Sized):
     alias GetOutputTensorNamesFnName = "M_getOutputNames"
 
     fn __init__(
-        inout self,
+        mut self,
         ptr: CCompiledModel,
         length: Int,
         lib: DLHandle,

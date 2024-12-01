@@ -77,7 +77,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         self._device_memory_impl_ptr = tmp^._steal_impl_ptr()
 
     fn __init__(
-        inout self, shape: TensorShape, device: Optional[Device] = None
+        mut self, shape: TensorShape, device: Optional[Device] = None
     ) raises:
         """Creates tensor with given shape on the given device. If device is
         not given tensor will be created on cpu.
@@ -135,7 +135,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         return self._spec.get_tensor_spec()
 
     @always_inline
-    fn __getitem__(inout self, *indices: Int) -> ref [self] Scalar[type]:
+    fn __getitem__(mut self, *indices: Int) -> ref [self] Scalar[type]:
         """Gets the value at the specified indices.
 
         Args:
@@ -258,7 +258,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
         """
         return rebind[UnsafePointer[Scalar[__type]]](self._ptr)
 
-    fn take(inout self) raises -> Self:
+    fn take(mut self) raises -> Self:
         """Takes self's resources and replaces them with default
         initialized values.
 
@@ -279,7 +279,7 @@ struct Tensor[type: DType, rank: Int](CollectionElement, TensorLike):
 
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this Tensor to the provided Writer.
 

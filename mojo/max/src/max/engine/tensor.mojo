@@ -50,7 +50,7 @@ struct NamedTensor:
 
     fn __init__[
         dtype: DType
-    ](inout self, owned name: String, owned tensor: Tensor[dtype]):
+    ](mut self, owned name: String, owned tensor: Tensor[dtype]):
         """Creates a `NamedTensor` owning the tensor with a reference count.
 
         Parameters:
@@ -90,7 +90,7 @@ struct EngineTensorView:
     var _data_ptr: UnsafePointer[NoneType]
     var _dtype: DType
 
-    fn __init__[type: DType](inout self, tensor: Tensor[type]):
+    fn __init__[type: DType](mut self, tensor: Tensor[type]):
         """Creates a non-owning view of given Tensor.
 
         Parameters:

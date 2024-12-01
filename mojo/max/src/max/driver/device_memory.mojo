@@ -32,7 +32,7 @@ trait DeviceBuffer:
         """
         ...
 
-    fn copy_into(self, inout dst_memory: Self) raises:
+    fn copy_into(self, mut dst_memory: Self) raises:
         """Copies the contents of self into a preallocated DeviceBuffer.
 
         Args:
@@ -85,7 +85,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         )
 
     fn __init__(
-        inout self,
+        mut self,
         num_bytes: Int,
         device: Device,
         name: Optional[String] = None,
@@ -114,7 +114,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
 
     @doc_private
     fn __init__(
-        inout self,
+        mut self,
         owned_impl_ptr: UnsafePointer[NoneType],
         num_bytes: Int,
         device: Device,
@@ -139,7 +139,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
 
     fn __init__[
         type: DType, rank: Int
-    ](inout self, owned tensor: Tensor[type, rank]) raises:
+    ](mut self, owned tensor: Tensor[type, rank]) raises:
         """Creates a DeviceMemory from the existing `tensor` storage.
 
         Args:
@@ -225,7 +225,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
         _ = self^
         return data
 
-    fn copy_into(self, inout dst_memory: DeviceMemory) raises:
+    fn copy_into(self, mut dst_memory: DeviceMemory) raises:
         """Copies the contents of self into preallocated DeviceMemory.
 
         Args:
@@ -291,7 +291,7 @@ struct DeviceMemory(DeviceBuffer, StringableRaising, CollectionElement):
 
         return self._device._lib.value().get_data_fn(self._impl_ptr)
 
-    fn take(inout self) raises -> Self:
+    fn take(mut self) raises -> Self:
         """Takes and returns the contents of `self`, leaving `self` in an empty but destructible state.
         """
         var tmp = Self()
@@ -304,7 +304,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
     var spec: TensorSpec
 
     fn __init__(
-        inout self, spec: TensorSpec, device: Device, name: Optional[String]
+        mut self, spec: TensorSpec, device: Device, name: Optional[String]
     ) raises:
         """Allocates a DeviceTensor in the Device's address space.
 
@@ -328,9 +328,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         self.spec = TensorSpec()
         self._storage = DeviceMemory()
 
-    fn __init__(
-        inout self, owned storage: DeviceMemory, spec: TensorSpec
-    ) raises:
+    fn __init__(mut self, owned storage: DeviceMemory, spec: TensorSpec) raises:
         """Constructs a DeviceTensor from an existing storage buffer and spec.
 
         Args:
@@ -360,7 +358,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         var t = Self(self._storage.copy_to(dev, name), self.spec)
         return t
 
-    fn copy_into(self, inout dst_tensor: Self) raises:
+    fn copy_into(self, mut dst_tensor: Self) raises:
         """Copies the contents of self into a preallocated DeviceTensor.
 
         Args:
@@ -442,7 +440,7 @@ struct DeviceTensor(DeviceBuffer, StringableRaising, CollectionElement):
         """Returns the number of bytes in the DeviceTensor."""
         return self.spec.bytecount()
 
-    fn take(inout self) -> Self:
+    fn take(mut self) -> Self:
         """Takes and returns the contents of `self`, leaving `self` in an empty but destructible state.
         """
         var tmp = Self()

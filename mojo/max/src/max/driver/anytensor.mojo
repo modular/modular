@@ -92,7 +92,7 @@ struct AnyTensor:
     @implicit
     fn __init__[
         type: DType, rank: Int
-    ](inout self, owned tensor: Tensor[type, rank]) raises:
+    ](mut self, owned tensor: Tensor[type, rank]) raises:
         """Creates AnyTensor from a Tensor.
 
         Args:
@@ -144,7 +144,7 @@ struct AnyTensor:
         """
         return self^.to_device_tensor().to_tensor[type, rank]()
 
-    fn take(inout self) raises -> Self:
+    fn take(mut self) raises -> Self:
         """The returned value takes self's resources and replaces them with default
         initialized values.
 
@@ -171,7 +171,7 @@ struct AnyTensor:
 
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this Tensor to the provided Writer.
 
@@ -277,7 +277,7 @@ struct _CMojoValue:
         self._ptr = UnsafePointer[NoneType]()
         self._destroy_func = Self._destroy_pointee_wrapper[NoneType]
 
-    fn __init__[T: Movable](inout self, ptr: UnsafePointer[T]):
+    fn __init__[T: Movable](mut self, ptr: UnsafePointer[T]):
         self._ptr = ptr.bitcast[NoneType]()
         self._destroy_func = Self._destroy_pointee_wrapper[T]
 
@@ -320,7 +320,7 @@ struct AnyMojoValue:
     fn __init__(out self, impl: _CMojoValue):
         self._impl = impl
 
-    fn __init__[T: Movable](inout self, owned val: T):
+    fn __init__[T: Movable](mut self, owned val: T):
         """Creates Type erased Mojo Value from T.
 
         Args:
@@ -345,7 +345,7 @@ struct AnyMojoValue:
         """
         self._impl = existing._impl
 
-    fn take(inout self) -> Self:
+    fn take(mut self) -> Self:
         """Returns the current value and initializes this object to default
         state.
 
@@ -402,7 +402,7 @@ struct AnyMemory:
     @implicit
     fn __init__[
         type: DType, rank: Int
-    ](inout self, owned tensor: Tensor[type, rank]) raises:
+    ](mut self, owned tensor: Tensor[type, rank]) raises:
         """Creates AnyMemory from a Tensor.
 
         Args:
@@ -436,7 +436,7 @@ struct AnyMemory:
         """
         return self._value.isa[AnyTensor]()
 
-    fn take_tensor(inout self) raises -> AnyTensor:
+    fn take_tensor(mut self) raises -> AnyTensor:
         """Take tensor from object. Further access to this object is
             undefined behavior.
 
@@ -445,7 +445,7 @@ struct AnyMemory:
         """
         return self._value[AnyTensor].take()
 
-    fn take(inout self) -> Self:
+    fn take(mut self) -> Self:
         """The returned value takes self's resources and replaces them with
         default initialized values.
 
@@ -478,7 +478,7 @@ struct AnyMemory:
         var value = tmp.take_value()
         return value.to[T]()
 
-    fn take_value(inout self) -> AnyMojoValue:
+    fn take_value(mut self) -> AnyMojoValue:
         """Take value from object. Further access to this object is undefined
         behavior.
 
@@ -492,7 +492,7 @@ struct AnyMemory:
         """Gets this value as a string."""
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """
         Formats the string representation of this value to the provided
         Writer.

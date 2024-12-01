@@ -46,7 +46,7 @@ struct TensorSlice[
 
     @doc_private
     fn __init__(
-        inout self,
+        mut self,
         ref [origin]tensor: Tensor[type, rank],
         slices: InlineArray[Slice, rank],
     ):

@@ -57,7 +57,7 @@ struct Diagnostic(Stringable, Writable):
             self.c
         )
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write(str(self))
 
     fn get_severity(self) -> DiagnosticSeverity:
@@ -107,7 +107,7 @@ struct DiagnosticHandler[handler: fn (Diagnostic) -> Bool]:
 @value
 struct DiagnosticHandlerWithData[
     UserDataType: AnyType,
-    handler: fn (Diagnostic, inout UserDataType) -> Bool,
+    handler: fn (Diagnostic, mut UserDataType) -> Bool,
     delete_user_data: fn (UnsafePointer[UserDataType]) -> None,
 ]:
     """Deals with attaching and detaching diagnostic funcions along with user data to an MLIRContext.
@@ -166,7 +166,7 @@ struct ErrorCapturingDiagnosticHandler:
         self.ctx = ctx
         self.handler = None
 
-    fn __enter__(inout self) raises:
+    fn __enter__(mut self) raises:
         self.error = "MLIR raised but didn't set an error"
         if self.handler:
             raise "The same ErrorCapturingDiagnosticHandler instance cannot be entered multiple times at once."
@@ -175,11 +175,11 @@ struct ErrorCapturingDiagnosticHandler:
             self.ctx, UnsafePointer.address_of(self.error)
         )
 
-    fn __exit__(inout self) raises:
+    fn __exit__(mut self) raises:
         self.handler.unsafe_take().detach()
         self.handler = None
 
-    fn __exit__(inout self, error: Error) raises -> Bool:
+    fn __exit__(mut self, error: Error) raises -> Bool:
         self.handler.unsafe_take().detach()
         self.handler = None
         raise str("MLIR Diagnostic: {}\nError: {}").format(
@@ -187,7 +187,7 @@ struct ErrorCapturingDiagnosticHandler:
         )
 
     @staticmethod
-    fn set_error(diagnostic: Diagnostic, inout error: String) -> Bool:
+    fn set_error(diagnostic: Diagnostic, mut error: String) -> Bool:
         if diagnostic.get_severity() == DiagnosticSeverity.ERROR:
             error = str(diagnostic)
         return True

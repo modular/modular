@@ -40,7 +40,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
     alias _DeleteTensorMapKeysFnName = "M_deleteTensorMapKeys"
 
     fn __init__(
-        inout self,
+        mut self,
         ctx: CRuntimeContext,
         lib: DLHandle,
         owned session: InferenceSession,
@@ -63,7 +63,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
         self._session = session^
 
     fn __init__(
-        inout self,
+        mut self,
         ptr: CTensorMap,
         lib: DLHandle,
         owned session: InferenceSession,

@@ -71,7 +71,7 @@ struct EngineTensor(Sized):
     var session: InferenceSession
 
     fn __init__(
-        inout self,
+        mut self,
         ptr: CTensor,
         lib: DLHandle,
         owned session: InferenceSession,

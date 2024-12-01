@@ -117,7 +117,7 @@ struct _InferenceSessionImpl(Movable):
         # but internally C APi will take ownership of compile_config ptr
         # and mutates it to null. This will convey the intention that we are
         # mutating something we own. There is no need for caller of this
-        # to have the mutated value now. That negates the need for inout.
+        # to have the mutated value now. That negates the need for mut.
         _ = config^
 
         return model^
@@ -199,7 +199,7 @@ struct _InferenceSessionImpl(Movable):
     ](
         self, owned session: InferenceSession, tensor: Tensor[type]
     ) raises -> Value:
-        """Create a new Value representing data borrowed from given tensor."""
+        """Create a new Value representing data read-only from given tensor."""
         var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create tensor value"
@@ -274,9 +274,7 @@ struct InputSpec(CollectionElement):
         self._dynamic = None
         self._dtype = spec.dtype()
 
-    fn __init__(
-        inout self, spec: Optional[List[Optional[Int64]]], dtype: DType
-    ):
+    fn __init__(mut self, spec: Optional[List[Optional[Int64]]], dtype: DType):
         """
         Create specifications for one input tensor, as a list of integers.
         Only applicable for TorchScript models.
@@ -360,7 +358,7 @@ struct _TorchLoadOptions(CollectionElement):
         self._custom_ops_paths = List[Path]()
         self._input_specs = List[InputSpec]()
 
-    fn set_model_source(inout self, graph: Graph) raises:
+    fn set_model_source(mut self, graph: Graph) raises:
         """Specifies the MAX Graph to load model from.
            Use either this function or `set_model_path` function
            to specify model source.
@@ -373,7 +371,7 @@ struct _TorchLoadOptions(CollectionElement):
             FrameworkFormat.MAXGraph,
         )
 
-    fn set_model_path(inout self, path: Path):
+    fn set_model_path(mut self, path: Path):
         """Specifies the loaction in filesystem to load model from.
            Use either this function or `set_model_source` function
            to specify model source.
@@ -384,7 +382,7 @@ struct _TorchLoadOptions(CollectionElement):
         """
         self._model_path = path
 
-    fn set_pipeline_name(inout self, graph: Graph) raises:
+    fn set_pipeline_name(mut self, graph: Graph) raises:
         """Specifies the given MAX Graph name i.e. llama3.
         Used for telemetry.
 
@@ -393,7 +391,7 @@ struct _TorchLoadOptions(CollectionElement):
         """
         self._pipeline_name = graph._name()
 
-    fn set_custom_ops_paths(inout self, paths: List[Path]) raises:
+    fn set_custom_ops_paths(mut self, paths: List[Path]) raises:
         """Replace Modular kernels in given model with user-defined kernels.
 
         Args:
@@ -401,7 +399,7 @@ struct _TorchLoadOptions(CollectionElement):
         """
         self._custom_ops_paths = paths
 
-    fn set_input_specs(inout self, specs: List[InputSpec]):
+    fn set_input_specs(mut self, specs: List[InputSpec]):
         """Set input specs to the given list of specs.
 
         Args:
@@ -427,7 +425,7 @@ struct SessionOptions:
         """Creates a new SessionOptions object with a device set."""
         self._device = device
 
-    fn _set_device(inout self, device: Device):
+    fn _set_device(mut self, device: Device):
         self._device = device
 
 
@@ -579,7 +577,7 @@ struct InferenceSession:
     fn new_borrowed_tensor_value[
         type: DType
     ](self, tensor: Tensor[type]) raises -> Value:
-        """Create a new Value representing data borrowed from given tensor.
+        """Create a new Value representing data read-only from given tensor.
 
         The user must ensure the tensor stays live through the lifetime of the
         value.
@@ -615,7 +613,7 @@ struct InferenceSession:
         return self._ptr[].new_list_value(self)
 
     fn set_debug_print_options(
-        inout self,
+        mut self,
         style: PrintStyle = PrintStyle.COMPACT,
         precision: UInt = 6,
         output_directory: String = "",

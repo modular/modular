@@ -33,22 +33,22 @@ struct Rewriter:
     fn context(self) -> Context:
         return Context(_c.Rewrite.mlirRewriterBaseGetContext(self.c))
 
-    fn clear_insertion_point(inout self):
+    fn clear_insertion_point(mut self):
         _c.Rewrite.mlirRewriterBaseClearInsertionPoint(self.c)
 
-    fn set_insertion_point_before(inout self, op: Operation):
+    fn set_insertion_point_before(mut self, op: Operation):
         _c.Rewrite.mlirRewriterBaseSetInsertionPointBefore(self.c, op.c)
 
-    fn set_insertion_point_after(inout self, op: Operation):
+    fn set_insertion_point_after(mut self, op: Operation):
         _c.Rewrite.mlirRewriterBaseSetInsertionPointAfter(self.c, op.c)
 
-    fn set_insertion_point_after(inout self, val: Value):
+    fn set_insertion_point_after(mut self, val: Value):
         _c.Rewrite.mlirRewriterBaseSetInsertionPointAfterValue(self.c, val.c)
 
-    fn set_insertion_point_to_start(inout self, b: Block):
+    fn set_insertion_point_to_start(mut self, b: Block):
         _c.Rewrite.mlirRewriterBaseSetInsertionPointToStart(self.c, b.c)
 
-    fn set_insertion_point_to_end(inout self, b: Block):
+    fn set_insertion_point_to_end(mut self, b: Block):
         _c.Rewrite.mlirRewriterBaseSetInsertionPointToEnd(self.c, b.c)
 
     fn get_insertion_block(self) -> Block:
@@ -58,7 +58,7 @@ struct Rewriter:
         return Block(_c.Rewrite.mlirRewriterBaseGetBlock(self.c))
 
     fn create_block_before(
-        inout self,
+        mut self,
         insert_before: Block,
         args: List[Type],
         locations: List[Location],
@@ -76,43 +76,43 @@ struct Rewriter:
             )
         )
 
-    fn insert(inout self, op: Operation) -> Operation:
+    fn insert(mut self, op: Operation) -> Operation:
         return Operation(_c.Rewrite.mlirRewriterBaseInsert(self.c, op.c))
 
-    fn clone(inout self, op: Operation) -> Operation:
+    fn clone(mut self, op: Operation) -> Operation:
         return Operation(_c.Rewrite.mlirRewriterBaseClone(self.c, op.c))
 
-    fn clone_without_regions(inout self, op: Operation) -> Operation:
+    fn clone_without_regions(mut self, op: Operation) -> Operation:
         return Operation(
             _c.Rewrite.mlirRewriterBaseCloneWithoutRegions(self.c, op.c)
         )
 
-    fn clone_region_before(inout self, region: Region, before: Block):
+    fn clone_region_before(mut self, region: Region, before: Block):
         _c.Rewrite.mlirRewriterBaseCloneRegionBefore(self.c, region.c, before.c)
 
-    fn inline_region_before(inout self, region: Region, before: Block):
+    fn inline_region_before(mut self, region: Region, before: Block):
         _c.Rewrite.mlirRewriterBaseInlineRegionBefore(
             self.c, region.c, before.c
         )
 
-    fn replace_op_with(inout self, op: Operation, values: List[Value]):
+    fn replace_op_with(mut self, op: Operation, values: List[Value]):
         _c.Rewrite.mlirRewriterBaseReplaceOpWithValues(
             self.c, op.c, len(values), values.data.bitcast[Value.cType]()
         )
 
-    fn replace_op_with(inout self, op: Operation, new_op: Operation):
+    fn replace_op_with(mut self, op: Operation, new_op: Operation):
         _c.Rewrite.mlirRewriterBaseReplaceOpWithOperation(
             self.c, op.c, new_op.c
         )
 
-    fn erase_op(inout self, op: Operation):
+    fn erase_op(mut self, op: Operation):
         _c.Rewrite.mlirRewriterBaseEraseOp(self.c, op.c)
 
-    fn erase_block(inout self, block: Block):
+    fn erase_block(mut self, block: Block):
         _c.Rewrite.mlirRewriterBaseEraseBlock(self.c, block.c)
 
     fn inline_block_before(
-        inout self, source: Block, op: Operation, arg_values: List[Value]
+        mut self, source: Block, op: Operation, arg_values: List[Value]
     ):
         _c.Rewrite.mlirRewriterBaseInlineBlockBefore(
             self.c,
@@ -123,7 +123,7 @@ struct Rewriter:
         )
 
     fn merge_blocks(
-        inout self, source: Block, dest: Block, arg_values: List[Value]
+        mut self, source: Block, dest: Block, arg_values: List[Value]
     ):
         _c.Rewrite.mlirRewriterBaseMergeBlocks(
             self.c,
@@ -133,30 +133,30 @@ struct Rewriter:
             arg_values.data.bitcast[Value.cType](),
         )
 
-    fn move_op_before(inout self, op: Operation, existing_op: Operation):
+    fn move_op_before(mut self, op: Operation, existing_op: Operation):
         _c.Rewrite.mlirRewriterBaseMoveOpBefore(self.c, op.c, existing_op.c)
 
-    fn move_op_after(inout self, op: Operation, existing_op: Operation):
+    fn move_op_after(mut self, op: Operation, existing_op: Operation):
         _c.Rewrite.mlirRewriterBaseMoveOpAfter(self.c, op.c, existing_op.c)
 
-    fn move_block_before(inout self, block: Block, existing_block: Block):
+    fn move_block_before(mut self, block: Block, existing_block: Block):
         _c.Rewrite.mlirRewriterBaseMoveBlockBefore(
             self.c, block.c, existing_block.c
         )
 
-    fn start_op_modification(inout self, op: Operation):
+    fn start_op_modification(mut self, op: Operation):
         _c.Rewrite.mlirRewriterBaseStartOpModification(self.c, op.c)
 
-    fn finalize_op_modification(inout self, op: Operation):
+    fn finalize_op_modification(mut self, op: Operation):
         _c.Rewrite.mlirRewriterBaseFinalizeOpModification(self.c, op.c)
 
-    fn cancel_op_modification(inout self, op: Operation):
+    fn cancel_op_modification(mut self, op: Operation):
         _c.Rewrite.mlirRewriterBaseCancelOpModification(self.c, op.c)
 
-    fn replace_all_uses_with(inout self, value: Value, to: Value):
+    fn replace_all_uses_with(mut self, value: Value, to: Value):
         _c.Rewrite.mlirRewriterBaseReplaceAllUsesWith(self.c, value.c, to.c)
 
-    fn replace_all_uses_with(inout self, values: List[Value], to: List[Value]):
+    fn replace_all_uses_with(mut self, values: List[Value], to: List[Value]):
         debug_assert(
             len(values) == len(to),
             (
@@ -171,18 +171,18 @@ struct Rewriter:
             to.data.bitcast[Value.cType](),
         )
 
-    fn replace_all_uses_with(inout self, op: Operation, to: List[Value]):
+    fn replace_all_uses_with(mut self, op: Operation, to: List[Value]):
         _c.Rewrite.mlirRewriterBaseReplaceAllOpUsesWithValueRange(
             self.c, op.c, len(to), to.data.bitcast[Value.cType]()
         )
 
-    fn replace_all_uses_with(inout self, op: Operation, to: Operation):
+    fn replace_all_uses_with(mut self, op: Operation, to: Operation):
         _c.Rewrite.mlirRewriterBaseReplaceAllOpUsesWithOperation(
             self.c, op.c, to.c
         )
 
     fn replace_op_uses_within_block(
-        inout self, op: Operation, new_values: List[Value], block: Block
+        mut self, op: Operation, new_values: List[Value], block: Block
     ):
         _c.Rewrite.mlirRewriterBaseReplaceOpUsesWithinBlock(
             self.c,
@@ -193,7 +193,7 @@ struct Rewriter:
         )
 
     fn replace_all_uses_except(
-        inout self, val: Value, to: Value, excepted_user: Operation
+        mut self, val: Value, to: Value, excepted_user: Operation
     ):
         _c.Rewrite.mlirRewriterBaseReplaceAllUsesExcept(
             self.c, val.c, to.c, excepted_user.c

@@ -187,9 +187,7 @@ struct Model:
         input_map.borrow(name, input)
         return self.execute(input_map)
 
-    fn execute(
-        self, name: String, inout input: PythonObject
-    ) raises -> TensorMap:
+    fn execute(self, name: String, mut input: PythonObject) raises -> TensorMap:
         """Execute model with given input.
 
         Args:
@@ -235,9 +233,9 @@ struct Model:
     fn execute(
         self,
         name1: String,
-        inout input1: PythonObject,
+        mut input1: PythonObject,
         name2: String,
-        inout input2: PythonObject,
+        mut input2: PythonObject,
     ) raises -> TensorMap:
         """Execute model with given inputs.
 
@@ -293,11 +291,11 @@ struct Model:
     fn execute(
         self,
         name1: String,
-        inout input1: PythonObject,
+        mut input1: PythonObject,
         name2: String,
-        inout input2: PythonObject,
+        mut input2: PythonObject,
         name3: String,
-        inout input3: PythonObject,
+        mut input3: PythonObject,
     ) raises -> TensorMap:
         """Execute model with given inputs.
 

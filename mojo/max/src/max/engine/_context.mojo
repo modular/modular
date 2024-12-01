@@ -70,7 +70,7 @@ struct RuntimeConfig:
     alias NewRuntimeConfigFnName = "M_newRuntimeConfig"
 
     fn __init__(
-        inout self,
+        mut self,
         lib: DLHandle,
         device: Device,
         allocator_type: AllocatorType = AllocatorType.CACHING,
@@ -161,7 +161,7 @@ struct RuntimeContext:
         _ = self.lib
 
     fn set_debug_print_options(
-        inout self,
+        mut self,
         style: PrintStyle,
         precision: UInt,
         output_directory: String,

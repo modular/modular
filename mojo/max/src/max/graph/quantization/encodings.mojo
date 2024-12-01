@@ -142,7 +142,7 @@ struct _BlockQ40:
     """Nibbles / quants."""
 
     def __init__(
-        inout self,
+        mut self,
         d: Float16,
         qs: InlineArray[UInt8, Self.QK4_0 // 2],
     ):
@@ -618,7 +618,7 @@ struct _BlockQ4K:
     """4-bit quants."""
 
     def __init__(
-        inout self,
+        mut self,
         d: Float16,
         dmin: Float16,
         scales: InlineArray[UInt8, K_SCALE_SIZE],
@@ -653,8 +653,8 @@ def _quantize_superblock_params[
     num_subblocks: Int
 ](
     *,
-    inout scales: InlineArray[Float32, num_subblocks],
-    inout mins: InlineArray[Float32, num_subblocks],
+    mut scales: InlineArray[Float32, num_subblocks],
+    mut mins: InlineArray[Float32, num_subblocks],
 ) -> Tuple[Float16, Float16, InlineArray[UInt8, K_SCALE_SIZE]]:
     constrained[
         num_subblocks == 8, "K scale packing only designed for 8 subblocks"
@@ -881,7 +881,7 @@ struct _BlockQ5K:
     """Lower 4 bits of quants."""
 
     def __init__(
-        inout self,
+        mut self,
         d: Float16,
         dmin: Float16,
         scales: InlineArray[UInt8, K_SCALE_SIZE],
@@ -1052,7 +1052,7 @@ struct _BlockQ6K:
     """Super-block scale."""
 
     def __init__(
-        inout self,
+        mut self,
         ql: InlineArray[UInt8, QK_K // 2],
         qh: InlineArray[UInt8, QK_K // 4],
         scales: InlineArray[Int8, QK_K // 16],
@@ -1256,7 +1256,7 @@ struct Q6_KEncoding(QuantizationEncoding):
     @staticmethod
     def _quantize_superblock_params[
         count: Int
-    ](inout scales: InlineArray[Float32, count]) -> Tuple[
+    ](mut scales: InlineArray[Float32, count]) -> Tuple[
         Float16, InlineArray[Int8, count]
     ]:
         scales_amax, scales_amax_nonabs = _find_amax[count](scales.unsafe_ptr())

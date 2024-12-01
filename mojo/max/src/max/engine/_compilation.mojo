@@ -145,7 +145,7 @@ struct TorchInputSpec(Movable):
         self.torch_lib = lib
 
     fn __init__(
-        inout self,
+        mut self,
         shape: List[ShapeElement],
         dtype: DType,
         lib: DLHandle,
@@ -183,7 +183,7 @@ struct TorchInputSpec(Movable):
         self.torch_lib = lib
 
     fn __init__(
-        inout self,
+        mut self,
         shape: NoneType,
         dtype: DType,
         lib: DLHandle,
@@ -288,13 +288,13 @@ struct CompileConfig:
             inner_spec.append(spec_ptr[].ptr)
         self._ptr[].set_torch_input_specs(self.torch_lib.value(), inner_spec)
 
-    fn add_input_spec(inout self, spec: TensorSpec) raises:
+    fn add_input_spec(mut self, spec: TensorSpec) raises:
         self.input_specs.emplace_back(
             TorchInputSpec(spec, self.torch_lib.value())
         )
 
     fn add_input_spec(
-        inout self,
+        mut self,
         shape_or: Optional[List[ShapeElement]],
         dtype: DType,
     ) raises:

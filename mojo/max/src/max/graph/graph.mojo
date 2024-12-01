@@ -51,7 +51,7 @@ struct _OwnedGraph(Movable):
     var parameters: Set[String]
 
     fn __init__(
-        inout self,
+        mut self,
         owned ctx: _mlir.Context,
         owned op: _mlir.Operation,
         in_types: List[Type],
@@ -90,7 +90,7 @@ struct _OwnedGraph(Movable):
             current_layer.op_count,
         )
 
-    fn inc_op_count(inout self):
+    fn inc_op_count(mut self):
         self.layers[-1].op_count += 1
 
     @no_inline
@@ -120,10 +120,10 @@ struct _GraphLayerContext:
     var graph: _GraphRef
     var name: String
 
-    fn __enter__(inout self):
+    fn __enter__(mut self):
         self.graph[].layers.append(LayerInfo(self.name, 0))
 
-    fn __exit__(inout self):
+    fn __exit__(mut self):
         var name = self.graph[].layers.pop().name
         self.graph[].inc_op_count()
         debug_assert(name == self.name, "non-hiercharchical graph layers")
@@ -187,7 +187,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         self.__init__("graph", List[Type](in_type))
 
     fn __init__(
-        inout self,
+        mut self,
         in_types: List[Type],
         out_types: List[Type] = List[Type](),
     ):
@@ -209,7 +209,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         self.__init__("graph", in_types, out_types)
 
     fn __init__(
-        inout self,
+        mut self,
         name: String,
         in_types: List[Type],
         out_types: List[Type] = List[Type](),
@@ -291,7 +291,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         """
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write(self._module())
 
     @always_inline
@@ -313,7 +313,7 @@ struct Graph(CollectionElement, Stringable, Writable):
             if not self._graph[].op.verify():
                 raise error(self, "graph did not verify")
 
-    fn layer(inout self, name: String) -> _GraphLayerContext:
+    fn layer(mut self, name: String) -> _GraphLayerContext:
         """Creates a context manager for a graph layer.
 
         Graph layers don't have a functional meaning for graph execution.
@@ -865,7 +865,7 @@ struct Graph(CollectionElement, Stringable, Writable):
             dims, location or __call_location()
         )
 
-    fn output(inout self, outputs: List[Symbol]) raises:
+    fn output(mut self, outputs: List[Symbol]) raises:
         """Adds an output for the graph.
 
         This is a special node that all graphs must have in order to deliver

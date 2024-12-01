@@ -86,7 +86,7 @@ struct Device(Stringable):
 
     @doc_private
     fn __init__(
-        inout self, lib: DriverLibrary, *, owned owned_ptr: _CDevice
+        mut self, lib: DriverLibrary, *, owned owned_ptr: _CDevice
     ) raises:
         self._lib = lib
         self._cdev = owned_ptr

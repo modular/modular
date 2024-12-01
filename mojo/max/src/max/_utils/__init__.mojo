@@ -45,7 +45,7 @@ struct CString:
 
 
 @always_inline("nodebug")
-fn exchange[T: AnyTrivialRegType](inout old_var: T, owned new_value: T) -> T:
+fn exchange[T: AnyTrivialRegType](mut old_var: T, owned new_value: T) -> T:
     """
     Assign `new_value` to `old_var` and returns the value previously
     contained in `old_var`.
@@ -112,7 +112,7 @@ struct OwningVector[T: Movable](Sized):
         self.size = existing.size
         self.capacity = existing.capacity
 
-    fn emplace_back(inout self, owned value: T):
+    fn emplace_back(mut self, owned value: T):
         if self.size < self.capacity:
             (self.ptr + self.size).init_pointee_move(value^)
             self.size += 1

@@ -15,7 +15,7 @@ from .device import Device, cpu_device
 fn _steal_device_memory_impl_ptr(
     owned memory: AnyTensor,
 ) raises -> UnsafePointer[NoneType]:
-    """This takes `memory` as inout and not owned because it is called on
+    """This takes `memory` as mut and not owned because it is called on
     References owned by a List (returned by List.__getitem__()).
     """
     var tmp_device_tensor = memory^.to_device_tensor()

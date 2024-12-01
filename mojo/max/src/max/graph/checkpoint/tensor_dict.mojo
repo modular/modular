@@ -18,7 +18,7 @@ struct _CheckpointTensor:
     var spec: TensorSpec
 
     fn __init__(
-        inout self,
+        mut self,
         owned ptr: UnsafePointer[UInt8],
         owned spec: TensorSpec,
     ):
@@ -87,7 +87,7 @@ struct TensorDict(Sized):
     def __init__(out self):
         self._items = Dict[String, _CheckpointTensor]()
 
-    fn __setitem__[T: DType](inout self, key: String, value: Tensor[T]):
+    fn __setitem__[T: DType](mut self, key: String, value: Tensor[T]):
         """Supports setting items with the bracket accessor.
 
         For example:
@@ -103,7 +103,7 @@ struct TensorDict(Sized):
         """
         self._items._insert(key, _CheckpointTensor.from_tensor(value))
 
-    fn set[T: DType](inout self, key: String, value: Tensor[T]):
+    fn set[T: DType](mut self, key: String, value: Tensor[T]):
         """Adds or updates a tensor in the dictionary.
 
         Args:
@@ -132,7 +132,7 @@ struct TensorDict(Sized):
         except e:
             raise "Error when getting key '" + key + "': " + str(e)
 
-    fn _set(inout self, key: String, value: _CheckpointTensor):
+    fn _set(mut self, key: String, value: _CheckpointTensor):
         """Adds or updates a tensor in the dictionary.
 
         Args:
@@ -149,7 +149,7 @@ struct TensorDict(Sized):
         """
         return self._items[key]
 
-    fn pop[type: DType](inout self, key: String) raises -> Tensor[type]:
+    fn pop[type: DType](mut self, key: String) raises -> Tensor[type]:
         """Removes a tensor from the dictionary.
 
         This function moves the Tensor pointer out of the dictionary and returns

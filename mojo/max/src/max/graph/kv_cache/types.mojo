@@ -35,24 +35,24 @@ from collections import Optional
 trait KVCacheManagerT:
     alias CollectionType: KVCollectionT
 
-    fn claim(inout self, batch_size: Int) raises -> List[Int]:
+    fn claim(mut self, batch_size: Int) raises -> List[Int]:
         ...
 
     fn fetch[
         collection_t: KVCollectionT
-    ](inout self, seq_ids: List[Int]) raises -> collection_t:
+    ](mut self, seq_ids: List[Int]) raises -> collection_t:
         ...
 
     fn step[
         collection_t: KVCollectionT
     ](
-        inout self,
+        mut self,
         valid_lengths: List[Int],
         owned inflight_cache: collection_t,
     ) raises:
         ...
 
-    fn release(inout self, seq_id: Int) raises:
+    fn release(mut self, seq_id: Int) raises:
         ...
 
 
@@ -94,12 +94,12 @@ struct ContiguousKVCacheManager[
     # TODO currently we allocate the exact right amount, we should
     # extend this to allow for over-allocation
     fn __init__(
-        inout self,
+        mut self,
         max_batch_size: Int,
         max_seq_len: Int,
         num_layers: Int,
-        inout other_device: Device,
-        inout this_device: Device,
+        mut other_device: Device,
+        mut this_device: Device,
     ) raises:
         self.max_batch_size = max_batch_size
         self.max_seq_len = max_seq_len
@@ -131,7 +131,7 @@ struct ContiguousKVCacheManager[
             TensorSpec(DType.uint32, (max_batch_size))
         )
 
-    fn claim(inout self, batch_size: Int) raises -> List[Int]:
+    fn claim(mut self, batch_size: Int) raises -> List[Int]:
         """Assign `batch_size` blocks for incoming requests.
 
         This returns a List of seq_ids, which can be passed to `fetch` to
@@ -156,7 +156,7 @@ struct ContiguousKVCacheManager[
 
     fn fetch[
         collection_t: KVCollectionT
-    ](inout self, seq_ids: List[Int]) raises -> collection_t:
+    ](mut self, seq_ids: List[Int]) raises -> collection_t:
         """Retrieves the pre-assigned blocks for the given seq_ids.
 
         if any of the seq_ids are not valid (e.g. no assigned blocks) then
@@ -227,7 +227,7 @@ struct ContiguousKVCacheManager[
     fn step[
         collection_t: KVCollectionT
     ](
-        inout self,
+        mut self,
         valid_lengths: List[Int],
         owned inflight_cache: collection_t,
     ) raises:
@@ -251,7 +251,7 @@ struct ContiguousKVCacheManager[
             var new_seq_len = valid_lengths[bs]
             self.cache_lengths[bs] += new_seq_len
 
-    fn release(inout self, seq_id: Int) raises:
+    fn release(mut self, seq_id: Int) raises:
         """Marks `seq_id` as no longer necessary, their blocks are reintroduced
         to the pool.
 
@@ -267,7 +267,7 @@ struct _ContinuousBatchingInflightBatchHandle(CollectionElement):
     var lookup_table: DeviceTensor
 
     fn __init__(
-        inout self,
+        mut self,
         owned cache_lengths: DeviceTensor,
         owned lookup_table: DeviceTensor,
     ):
@@ -324,7 +324,7 @@ struct ContinuousBatchingKVCacheManager[
 
     # extend this to allow for over-allocation
     fn __init__(
-        inout self,
+        mut self,
         max_batch_size: Int,
         max_seq_len: Int,
         num_layers: Int,
@@ -365,7 +365,7 @@ struct ContinuousBatchingKVCacheManager[
         self.other_device = other_device
         self.inflight_batch = None
 
-    fn claim(inout self, batch_size: Int) raises -> List[Int]:
+    fn claim(mut self, batch_size: Int) raises -> List[Int]:
         """Assign `batch_size` blocks for incoming requests.
 
         This returns a List of seq_ids, which can be passed to `fetch` to
@@ -402,7 +402,7 @@ struct ContinuousBatchingKVCacheManager[
 
     fn fetch[
         collection_t: KVCollectionT
-    ](inout self, seq_ids: List[Int]) raises -> collection_t:
+    ](mut self, seq_ids: List[Int]) raises -> collection_t:
         """Retrieves the pre-assigned blocks for the given seq_ids.
 
         if any of the seq_ids are not valid (e.g. no assigned blocks) then
@@ -469,7 +469,7 @@ struct ContinuousBatchingKVCacheManager[
     fn step[
         collection_t: KVCollectionT
     ](
-        inout self,
+        mut self,
         valid_lengths: List[Int],
         owned inflight_cache: collection_t,
     ) raises:
@@ -494,7 +494,7 @@ struct ContinuousBatchingKVCacheManager[
         # invalidate our inflight batch
         self.inflight_batch = None
 
-    fn release(inout self, seq_id: Int) raises:
+    fn release(mut self, seq_id: Int) raises:
         """Marks `seq_id` as no longer necessary, their blocks are reintroduced
         to the pool.
 

@@ -66,7 +66,7 @@ struct DialectRegistry:
         # We only want to do this for objects which are not added to a context
         pass  # _c.IR.mlirDialectRegistryDestroy(self.c)
 
-    fn insert(inout self, handle: DialectHandle):
+    fn insert(mut self, handle: DialectHandle):
         _c.IR.mlirDialectHandleInsertDialect(handle.c, self.c)
 
     fn load_modular_dialects(self):
@@ -113,16 +113,16 @@ struct Context:
         self.c = _c.IR.mlirContextCreateWithThreading(threading_enabled)
 
     fn __init__(
-        inout self, owned registry: DialectRegistry, threading_enabled: Bool
+        mut self, owned registry: DialectRegistry, threading_enabled: Bool
     ):
         self.c = _c.IR.mlirContextCreateWithRegistry(
             registry.c, threading_enabled
         )
 
-    fn __enter__(inout self) -> Self:
+    fn __enter__(mut self) -> Self:
         return self
 
-    fn __exit__(inout self):
+    fn __exit__(mut self):
         _c.IR.mlirContextDestroy(self.c)
 
     fn __exit__(self, err: Error) -> Bool:
@@ -132,21 +132,21 @@ struct Context:
     fn __eq__(self, other: Self) -> Bool:
         return _c.IR.mlirContextEqual(self.c, other.c)
 
-    fn append(inout self, owned registry: DialectRegistry):
+    fn append(mut self, owned registry: DialectRegistry):
         return _c.IR.mlirContextAppendDialectRegistry(self.c, registry.c)
 
-    fn register(inout self, handle: DialectHandle):
+    fn register(mut self, handle: DialectHandle):
         _c.IR.mlirDialectHandleRegisterDialect(handle.c, self.c)
 
     fn load(self, handle: DialectHandle) -> Dialect:
         return _c.IR.mlirDialectHandleLoadDialect(handle.c, self.c)
 
-    fn load_modular_dialects(inout self):
+    fn load_modular_dialects(mut self):
         var registry = DialectRegistry()
         registry.load_modular_dialects()
         self.append(registry^)
 
-    fn allow_unregistered_dialects(inout self, allow: Bool = True):
+    fn allow_unregistered_dialects(mut self, allow: Bool = True):
         _c.IR.mlirContextSetAllowUnregisteredDialects(self.c, allow)
 
     fn allows_unregistered_dialects(self) -> Bool:
@@ -164,10 +164,10 @@ struct Context:
         )
         return Optional(Dialect(result)) if result.ptr else None
 
-    fn enable_multithreading(inout self, enable: Bool = True):
+    fn enable_multithreading(mut self, enable: Bool = True):
         _c.IR.mlirContextEnableMultithreading(self.c, enable)
 
-    fn load_all_available_dialects(inout self):
+    fn load_all_available_dialects(mut self):
         _c.IR.mlirContextLoadAllAvailableDialects(self.c)
 
     fn is_registered_operation(self, opname: String) -> Bool:
@@ -201,9 +201,7 @@ struct Location(CollectionElement, Stringable):
     alias cType = _c.IR.MlirLocation
     var c: Self.cType
 
-    fn __init__(
-        inout self, ctx: Context, filename: String, line: Int, col: Int
-    ):
+    fn __init__(mut self, ctx: Context, filename: String, line: Int, col: Int):
         self.c = _c.IR.mlirLocationFileLineColGet(
             ctx.c, StringRef(ptr=filename.unsafe_ptr()), line, col
         )
@@ -281,7 +279,7 @@ struct Module(Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write(self.as_op())
 
 
@@ -345,7 +343,7 @@ struct Operation(CollectionElement, Stringable, Writable):
         self.c = op
 
     fn __init__(
-        inout self,
+        mut self,
         name: String,
         location: Location,
         *,
@@ -369,7 +367,7 @@ struct Operation(CollectionElement, Stringable, Writable):
         self.c = _c.IR.mlirOperationCreate(UnsafePointer.address_of(state))
 
     fn __init__(
-        inout self,
+        mut self,
         name: String,
         location: Location,
         *,
@@ -564,7 +562,7 @@ struct Operation(CollectionElement, Stringable, Writable):
     fn operand(self, idx: Int) -> Value:
         return _c.IR.mlirOperationGetOperand(self.c, idx)
 
-    fn set_inherent_attr(inout self, name: String, attr: Attribute):
+    fn set_inherent_attr(mut self, name: String, attr: Attribute):
         _c.IR.mlirOperationSetInherentAttributeByName(
             self.c, StringRef(ptr=name.unsafe_ptr()), attr.c
         )
@@ -575,7 +573,7 @@ struct Operation(CollectionElement, Stringable, Writable):
         )
         return result
 
-    fn set_discardable_attr(inout self, name: String, attr: Attribute):
+    fn set_discardable_attr(mut self, name: String, attr: Attribute):
         _c.IR.mlirOperationSetDiscardableAttributeByName(
             self.c, StringRef(ptr=name.unsafe_ptr()), attr.c
         )
@@ -598,7 +596,7 @@ struct Operation(CollectionElement, Stringable, Writable):
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         # TODO: Avoid this intermediate String allocation.
         var string = _to_string[Self.cType, _c.IR.mlirOperationPrint](self.c)
 
@@ -631,11 +629,11 @@ struct Type(CollectionElement, Stringable, Writable):
     var c: Self.cType
 
     @implicit
-    fn __init__[T: DialectType](inout self, type: T):
+    fn __init__[T: DialectType](mut self, type: T):
         self = type.to_mlir()
 
     @implicit
-    fn __init__(inout self, type: Self.cType):
+    fn __init__(mut self, type: Self.cType):
         self.c = type
 
     @staticmethod
@@ -653,7 +651,7 @@ struct Type(CollectionElement, Stringable, Writable):
     fn __str__(self) -> String:
         return _to_string[Self.cType, _c.IR.mlirTypePrint](self.c)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         # TODO: Avoid this intermediate String allocation.
         writer.write(str(self))
 
@@ -683,7 +681,7 @@ struct Value(CollectionElement, Stringable):
     fn is_op_result(self) -> Bool:
         return _c.IR.mlirValueIsAOpResult(self.c)
 
-    fn set_type(inout self, type: Type):
+    fn set_type(mut self, type: Type):
         return _c.IR.mlirValueSetType(self.c, type.c)
 
     fn _block(self) -> Block:
@@ -712,7 +710,7 @@ struct Attribute(CollectionElement, Stringable):
     var c: Self.cType
 
     @implicit
-    fn __init__[T: DialectAttribute](inout self, attr: T):
+    fn __init__[T: DialectAttribute](mut self, attr: T):
         self = attr.to_mlir()
 
     fn context(self) -> Context:
@@ -746,7 +744,7 @@ struct Block(CollectionElement, Stringable):
         self.__init__(args, locations)
 
     fn __init__(
-        inout self,
+        mut self,
         args: List[Type],
         locations: List[Location],
     ):
