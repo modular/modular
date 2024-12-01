@@ -75,7 +75,7 @@ struct Level:
             return Self.CRITICAL
         return Self.NOTSET
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.NOTSET:
             writer.write("NOTSET")
         elif self is Self.DEBUG:
