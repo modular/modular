@@ -36,7 +36,7 @@ alias llama_num_q_heads = 32
 def _initialize_ragged_inputs[
     type: DType, hidden_size: Int
 ](
-    inout input_row_offset_host: HostNDBuffer[DType.uint32, 1],
+    mut input_row_offset_host: HostNDBuffer[DType.uint32, 1],
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,

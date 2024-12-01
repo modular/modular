@@ -299,7 +299,7 @@ fn matmul_naive(
 
 
 # CHECK-LABEL: run_matmul_kernel_10
-fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
+fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     print("== run_matmul_kernel_10")
 
     alias M = 4096
@@ -445,7 +445,7 @@ fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_matmul_10(inout b: Bencher):
+    fn bench_matmul_10(mut b: Bencher):
         @parameter
         @always_inline
         fn run_func(ctx: DeviceContext) raises:
@@ -481,7 +481,7 @@ fn bench_matmuls(inout m: Bench, ctx: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_naive(inout b: Bencher):
+    fn bench_naive(mut b: Bencher):
         @parameter
         @always_inline
         fn run_func_naive(ctx: DeviceContext) raises:

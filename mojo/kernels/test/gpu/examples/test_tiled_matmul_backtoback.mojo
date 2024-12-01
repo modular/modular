@@ -97,7 +97,7 @@ struct BackToBackMatmulConfig[
         return Index(int(self.num_threads()), 1, 1)
 
     fn __init__(
-        inout self,
+        mut self,
         block_tile_shape: IndexList[3, unsigned=True],
         warp_tile_shape: IndexList[3, unsigned=True],
         num_pipeline_stages: UInt = 2,

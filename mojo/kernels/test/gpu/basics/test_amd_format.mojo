@@ -27,7 +27,7 @@ struct Buffer[capacity: Int](Writer):
         self.data = InlineArray[UInt8, capacity](fill=0)
         self.pos = 0
 
-    fn write_bytes(inout self, bytes: Span[Byte, _]):
+    fn write_bytes(mut self, bytes: Span[Byte, _]):
         len_bytes = len(bytes)
         # If empty then return
         if len_bytes == 0:
@@ -36,7 +36,7 @@ struct Buffer[capacity: Int](Writer):
         memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
         self.pos += len_bytes
 
-    fn write[*Ts: Writable](inout self, *args: *Ts):
+    fn write[*Ts: Writable](mut self, *args: *Ts):
         @parameter
         fn write_arg[T: Writable](arg: T):
             arg.write_to(self)

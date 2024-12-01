@@ -45,10 +45,10 @@ alias NRUN = 1
 
 fn time_kernel[
     func: fn (DeviceContext) raises capturing -> None
-](inout m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
+](mut m: Bench, ctx: DeviceContext, size: Int, kernel_name: String) raises:
     @parameter
     @always_inline
-    fn bench_func(inout m: Bencher):
+    fn bench_func(mut m: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
@@ -64,7 +64,7 @@ fn time_kernel[
 fn run_cublas[
     dtype: DType, enable_tc: Bool = False
 ](
-    inout m: Bench,
+    mut m: Bench,
     ctx: DeviceContext,
     M: Int,
     N: Int,
@@ -84,7 +84,7 @@ fn run_cublas[
     check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
 
     @parameter
-    fn bench_func(inout m: Bencher):
+    fn bench_func(mut m: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
@@ -161,7 +161,7 @@ fn run_gemm_kernel_1[
     BM: Int,
     BN: Int,
 ](
-    inout m: Bench,
+    mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
@@ -246,7 +246,7 @@ fn run_gemm_kernel_2[
     BM: Int,
     BN: Int,
 ](
-    inout m: Bench,
+    mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
@@ -347,7 +347,7 @@ fn run_gemm_kernel_3[
     BN: Int,
     BK: Int,
 ](
-    inout m: Bench,
+    mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
@@ -459,7 +459,7 @@ fn run_gemm_kernel_4[
     BK: Int,
     TM: Int,
 ](
-    inout m: Bench,
+    mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
@@ -580,7 +580,7 @@ fn run_gemm_kernel_5[
     TM: Int,
     TN: Int,
 ](
-    inout m: Bench,
+    mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
@@ -709,7 +709,7 @@ fn run_gemm_kernel_6[
     TM: Int,
     TN: Int,
 ](
-    inout m: Bench,
+    mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
@@ -867,7 +867,7 @@ fn run_gemm_kernel_tc[
     WM: Int,
     WN: Int,
 ](
-    inout m: Bench,
+    mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,

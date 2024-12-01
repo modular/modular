@@ -63,8 +63,8 @@ fn _get_test_name[
 fn _split_k_reduce_verify[
     type: DType, a_shape: DimList, b_shape: DimList
 ](
-    inout A: NDBuffer[type, 2, a_shape],
-    borrowed B: NDBuffer[type, 2, b_shape],
+    mut A: NDBuffer[type, 2, a_shape],
+    B: NDBuffer[type, 2, b_shape],
     num_partition: UInt,
 ):
     var M = A.dim[0]()

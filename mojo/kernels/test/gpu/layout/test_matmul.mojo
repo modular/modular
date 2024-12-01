@@ -36,7 +36,7 @@ from matmul_kernels import (
 from memory import UnsafePointer
 
 alias run_gemm_kernel_type = fn (
-    inout m: Bench,
+    mut m: Bench,
     ctx: DeviceContext,
     a: LayoutTensor,
     b: LayoutTensor,
@@ -66,7 +66,7 @@ struct test_matmul[
     var c_device_buffer: DeviceBuffer[dtype]
     var c_device_buffer_ref: DeviceBuffer[dtype]
 
-    fn __init__(out self, inout m: Bench, ctx: DeviceContext) raises:
+    fn __init__(out self, mut m: Bench, ctx: DeviceContext) raises:
         self.ctx = ctx
         self.M = a_layout.shape[0].value()
         self.N = b_layout.shape[1].value()
@@ -121,7 +121,7 @@ struct test_matmul[
             self.c_host_ref.tensor.data, self.c_device_buffer_ref
         )
 
-    fn run_test[gemm: run_gemm_kernel_type](self, inout m: Bench) raises:
+    fn run_test[gemm: run_gemm_kernel_type](self, mut m: Bench) raises:
         print("=== test_matmul")
 
         var ctx = self.ctx

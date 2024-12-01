@@ -138,7 +138,7 @@ fn multistage_mma_q[
     a_smem_iter_arg: LayoutTensorIter[
         a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
-    inout b_smem_iter: LayoutTensorIter[
+    mut b_smem_iter: LayoutTensorIter[
         b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
     ],
     scales_smem_iter_arg: LayoutTensorIter[
@@ -173,7 +173,7 @@ fn multistage_mma_q[
     var scales_iter = scales_iter_arg
     var a_smem_iter = a_smem_iter_arg
     var scales_smem_iter = scales_smem_iter_arg
-    # work around inout argument can't have default value.
+    # work around mut argument can't have default value.
     alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
     )
