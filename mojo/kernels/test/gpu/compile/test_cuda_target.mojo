@@ -56,7 +56,7 @@ fn _verify_parameterized_on_cuda(asm: String) raises -> None:
 
 def test_parameterized_on_cuda_sm80():
     alias asm = _compile_code_asm[
-        parameterized_on_cuda, target = _get_gpu_target()
+        parameterized_on_cuda, target = _get_gpu_target["sm_80"]()
     ]()
     _verify_parameterized_on_cuda(asm)
 
@@ -84,7 +84,9 @@ fn _verify_hello(asm: String) raises -> None:
 
 
 def test_hello_mojo_sm80():
-    alias asm = _compile_code_asm[hello_mojo, target = _get_gpu_target()]()
+    alias asm = _compile_code_asm[
+        hello_mojo, target = _get_gpu_target["sm_80"]()
+    ]()
     _verify_hello(asm)
 
 
@@ -128,7 +130,9 @@ def _verify_erf_elementwise(asm: String):
 
 
 def test_erf_elementwise_sm80():
-    alias asm = _compile_code_asm[erf_elementwise, target = _get_gpu_target()]()
+    alias asm = _compile_code_asm[
+        erf_elementwise, target = _get_gpu_target["sm_80"]()
+    ]()
     _verify_erf_elementwise(asm)
 
 
@@ -162,7 +166,9 @@ fn _verify_erf_kernel(asm: String) raises -> None:
 
 
 def test_erf_kernel_sm80():
-    alias asm = _compile_code_asm[erf_kernel, target = _get_gpu_target()]()
+    alias asm = _compile_code_asm[
+        erf_kernel, target = _get_gpu_target["sm_80"]()
+    ]()
     _verify_erf_kernel(asm)
 
 
@@ -194,7 +200,7 @@ fn _verify_shared_stack_allocation(asm: String) raises -> None:
 
 def test_shared_stack_allocation_sm80():
     alias asm = _compile_code_asm[
-        test_shared_stack_allocation, target = _get_gpu_target()
+        test_shared_stack_allocation, target = _get_gpu_target["sm_80"]()
     ]()
     _verify_shared_stack_allocation(asm)
 
@@ -222,7 +228,9 @@ fn _verify_barrier(asm: String) raises -> None:
 
 
 def test_barrier_sm80():
-    alias asm = _compile_code_asm[test_barrier, target = _get_gpu_target()]()
+    alias asm = _compile_code_asm[
+        test_barrier, target = _get_gpu_target["sm_80"]()
+    ]()
     _verify_barrier(asm)
 
 
@@ -337,7 +345,7 @@ def _verify_gemm(asm: String):
 
 
 def test_gemm_sm80():
-    alias asm = _compile_code_asm[gemm, target = _get_gpu_target()]()
+    alias asm = _compile_code_asm[gemm, target = _get_gpu_target["sm_80"]()]()
     _verify_gemm(asm)
 
 
@@ -379,7 +387,9 @@ fn _verify_shuffle_up(asm: String) raises -> None:
 
 
 def test_shuffle_up_sm80():
-    alias asm = _compile_code_asm[test_shuffle_up, target = _get_gpu_target()]()
+    alias asm = _compile_code_asm[
+        test_shuffle_up, target = _get_gpu_target["sm_80"]()
+    ]()
     _verify_shuffle_up(asm)
 
 
@@ -409,7 +419,7 @@ fn _verify_shuffle_down(asm: String) raises -> None:
 
 def test_shuffle_down_sm80():
     alias asm = _compile_code_asm[
-        test_shuffle_down, target = _get_gpu_target()
+        test_shuffle_down, target = _get_gpu_target["sm_80"]()
     ]()
     _verify_shuffle_down(asm)
 
@@ -444,7 +454,9 @@ fn _verify_warp_sum_reduce(asm: String) raises -> None:
 
 
 def test_warp_sum_reduce_sm80():
-    alias asm = _compile_code_asm[warp_sum_reduce, target = _get_gpu_target()]()
+    alias asm = _compile_code_asm[
+        warp_sum_reduce, target = _get_gpu_target["sm_80"]()
+    ]()
     _verify_warp_sum_reduce(asm)
 
 
@@ -484,7 +496,9 @@ fn _verify_block_reduce(asm: String) raises -> None:
 
 
 def test_block_reduce_sm80():
-    alias asm = _compile_code_asm[block_reduce, target = _get_gpu_target()]()
+    alias asm = _compile_code_asm[
+        block_reduce, target = _get_gpu_target["sm_80"]()
+    ]()
     _verify_block_reduce(asm)
 
 
