@@ -124,6 +124,11 @@ ArrayAttr KGEN::attachTargetPassthroughAttrs(OpBuilder &b,
 // POPToLLVMTypeConverter
 //===----------------------------------------------------------------------===//
 
+static bool isFP8(Type fpType) {
+  return fpType.isFloat8E5M2() || fpType.isFloat8E5M2FNUZ() ||
+         fpType.isFloat8E4M3() || fpType.isFloat8E4M3FNUZ();
+}
+
 std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
                                                  KGENDType dtype,
                                                  size_t indexBitwidth) {
@@ -142,7 +147,7 @@ std::optional<Type> M::KGEN::getMLIRTypeForDType(MLIRContext *ctx,
 
   if (dtype.isFloat()) {
     if (FloatType fpType = getEquivalentFloatType(ctx, dtype)) {
-      if (fpType.isFloat8E5M2() || fpType.isFloat8E4M3())
+      if (isFP8(fpType))
         return IntegerType::get(ctx, 8);
       return fpType;
     }
@@ -742,11 +747,6 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
 //===----------------------------------------------------------------------===//
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
-
-static bool isFP8(Type fpType) {
-  return fpType.isFloat8E5M2() || fpType.isFloat8E5M2FNUZ() ||
-         fpType.isFloat8E4M3() || fpType.isFloat8E4M3FNUZ();
-}
 
 /// Convert a SIMD vector constant.
 static Value convertSIMDAttr(ImplicitLocOpBuilder &b,
