@@ -275,7 +275,7 @@ struct Task[type: AnyType, origins: OriginSet]:
 
 @register_passable("trivial")
 struct TaskGroupContext:
-    alias tg_callback_fn_type = fn (inout TaskGroup) -> None
+    alias tg_callback_fn_type = fn (mut TaskGroup) -> None
 
     var callback: Self.tg_callback_fn_type
     var task_group: UnsafePointer[TaskGroup]
@@ -287,7 +287,7 @@ struct _TaskGroupBox(CollectionElement):
 
     var handle: AnyCoroutine
 
-    fn __init__[type: AnyType](inout self, owned coro: Coroutine[type]):
+    fn __init__[type: AnyType](mut self, owned coro: Coroutine[type]):
         var handle = coro._handle
         __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(coro))
         self.handle = handle
@@ -327,20 +327,20 @@ struct TaskGroup:
         _del_asyncrt_chain(UnsafePointer[Chain].address_of(self.chain))
 
     @always_inline
-    fn _counter_decr(inout self) -> Int:
+    fn _counter_decr(mut self) -> Int:
         var prev: Int = self.counter.fetch_sub(1).value
         return prev - 1
 
     @staticmethod
-    fn _task_complete_callback(inout tg: TaskGroup):
+    fn _task_complete_callback(mut tg: TaskGroup):
         tg._task_complete()
 
-    fn _task_complete(inout self):
+    fn _task_complete(mut self):
         if self._counter_decr() == 0:
             _async_complete(UnsafePointer[Chain].address_of(self.chain))
 
     fn create_task(
-        inout self,
+        mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
         owned task: Coroutine[NoneType._mlir_type],
     ):
@@ -349,7 +349,7 @@ struct TaskGroup:
     # Deprecated, use create_task() instead
     # Only sync_parallelize() uses this to pass desired_worker_id
     fn _create_task(
-        inout self,
+        mut self,
         # FIXME(MSTDL-722): Avoid accessing ._mlir_type here, use `NoneType`.
         owned task: Coroutine[NoneType._mlir_type],
         desired_worker_id: Int = -1,
@@ -365,12 +365,12 @@ struct TaskGroup:
         self.tasks.append(_TaskGroupBox(task^))
 
     @staticmethod
-    fn await_body_impl(hdl: AnyCoroutine, inout task_group: Self):
+    fn await_body_impl(hdl: AnyCoroutine, mut task_group: Self):
         _async_and_then(hdl, UnsafePointer[Chain].address_of(task_group.chain))
         task_group._task_complete()
 
     @always_inline
-    fn __await__(inout self):
+    fn __await__(mut self):
         @always_inline
         @parameter
         fn await_body(cur_hdl: AnyCoroutine):
@@ -378,7 +378,7 @@ struct TaskGroup:
 
         _suspend_async[await_body]()
 
-    fn wait[origins: OriginSet = __origin_of()](inout self):
+    fn wait[origins: OriginSet = __origin_of()](mut self):
         self._task_complete()
         _async_wait(UnsafePointer[Chain].address_of(self.chain))
 
@@ -451,7 +451,7 @@ struct DeviceContextPtr:
 
     var handle_: UnsafePointer[NoneType]
 
-    fn __init__(inout self, handle: UnsafePointer[NoneType]):
+    fn __init__(mut self, handle: UnsafePointer[NoneType]):
         self.handle_ = handle
 
     fn __getitem__(self) raises -> DeviceContext:

@@ -298,7 +298,7 @@ struct Trace[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         name: Variant[String, StringLiteral],
         detail: String = "",
         parent_id: Int = 0,
@@ -342,7 +342,7 @@ struct Trace[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         name: Variant[String, StringLiteral],
         task_id: Int,
         detail: String = "",
@@ -388,7 +388,7 @@ struct Trace[
             self.int_payload = None
 
     @always_inline
-    fn __enter__(inout self):
+    fn __enter__(mut self):
         """Enters the trace context.
 
         This begins recording of the trace event.
@@ -524,11 +524,11 @@ struct Trace[
         else:
             return ""
 
-    fn start(inout self):
+    fn start(mut self):
         """Start recording trace event."""
         self.__enter__()
 
-    fn end(inout self):
+    fn end(mut self):
         """End recording trace event."""
         self.__exit__()
 
