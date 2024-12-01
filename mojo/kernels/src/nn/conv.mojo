@@ -139,7 +139,7 @@ struct Naive2dConvolution[
         naive2d_convolution._outer_loop()
 
     fn __init__(
-        inout self,
+        mut self,
         output: UnsafePointer[Scalar[output_type]],
         input: UnsafePointer[Scalar[input_type]],
         filter: UnsafePointer[Scalar[filter_type]],
@@ -1009,7 +1009,7 @@ struct ConvDirectNHWC[
         c_tile_size: Int,
         input: UnsafePointer[Scalar[input_type]],
         filter: UnsafePointer[Scalar[filter_type]],
-        inout acc: _Accumulator[
+        mut acc: _Accumulator[
             output_type,
             micro_kernel_height,
             micro_kernel_width,
@@ -1049,7 +1049,7 @@ struct ConvDirectNHWC[
         input_stride: Int,
         input_base: UnsafePointer[Scalar[input_type]],
         filter_base: UnsafePointer[Scalar[filter_type]],
-        inout acc_in: _Accumulator[
+        mut acc_in: _Accumulator[
             output_type, micro_kernel_height, micro_kernel_width, simd_size
         ],
     ):
@@ -1895,7 +1895,7 @@ fn accumulate_wo_tile_1d[
 ](
     c_tile_size: Int,
     S: Int,
-    inout acc: _Accumulator,
+    mut acc: _Accumulator,
     input: UnsafePointer[Scalar[input_dt]],
     input_stride: Int,
     input_stride_to_nbr: Int,
@@ -2089,7 +2089,7 @@ fn accumulate_wo_tile_2d[
 ](
     c_tile_size: Int,
     RS: IndexList[2],
-    inout acc: _Accumulator,
+    mut acc: _Accumulator,
     input: UnsafePointer[Scalar[input_dt]],
     input_stride: Int,
     input_stride_to_nbr: IndexList[2],
@@ -2272,7 +2272,7 @@ fn accumulate_wo_tile_3d[
 ](
     c_tile_size: Int,
     QRS: IndexList[3],
-    inout acc: _Accumulator,
+    mut acc: _Accumulator,
     input: UnsafePointer[Scalar[input_dt]],
     input_stride: Int,
     input_stride_to_nbr: IndexList[3],

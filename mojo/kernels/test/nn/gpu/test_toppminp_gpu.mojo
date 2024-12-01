@@ -38,7 +38,7 @@ struct TestCase[_type: DType, _out_idx_type: DType, _is_top_p: Bool]:
     var p_threshold: Scalar[_type]
 
     fn __init__(
-        inout self,
+        mut self,
         batch_size: Int,
         vocab_size: Int,
         temperature: Scalar[_type] = Scalar[_type](1.0),
@@ -52,10 +52,10 @@ struct TestCase[_type: DType, _out_idx_type: DType, _is_top_p: Bool]:
 
 fn time_kernel[
     func: fn (DeviceContext) raises capturing -> None
-](inout m: Bench, ctx: DeviceContext, kernel_name: String) raises:
+](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
     @parameter
     @always_inline
-    fn bench_func(inout m: Bencher):
+    fn bench_func(mut m: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
@@ -67,7 +67,7 @@ fn time_kernel[
 
 
 @parameter
-fn fill_random[rank: Int, dtype: DType](inout buffer: NDBuffer[dtype, rank]):
+fn fill_random[rank: Int, dtype: DType](mut buffer: NDBuffer[dtype, rank]):
     alias min_val = -1e6
     alias max_val = 1e6
     var total_elements = buffer.num_elements()
@@ -77,13 +77,13 @@ fn fill_random[rank: Int, dtype: DType](inout buffer: NDBuffer[dtype, rank]):
 
 
 @parameter
-fn fill_iota[rank: Int, type: DType](inout buf: NDBuffer[type, rank]):
+fn fill_iota[rank: Int, type: DType](mut buf: NDBuffer[type, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
 fn merge[
     type: DType, rank: Int
-](inout buf: NDBuffer[type, rank], start: Int, mid: Int, end: Int):
+](mut buf: NDBuffer[type, rank], start: Int, mid: Int, end: Int):
     """Merge two sorted subarrays into one sorted array."""
     var left_size = mid - start
     var right_size = end - mid
@@ -130,7 +130,7 @@ fn merge[
 
 fn merge_sort_recursive[
     type: DType, rank: Int
-](inout buf: NDBuffer[type, rank], start: Int, end: Int):
+](mut buf: NDBuffer[type, rank], start: Int, end: Int):
     """Recursive merge sort implementation."""
     if end - start > 1:
         var mid = start + (end - start) // 2
@@ -141,7 +141,7 @@ fn merge_sort_recursive[
 
 fn sort_buf_descending[
     type: DType, rank: Int
-](inout buf: NDBuffer[type, rank], vocab_size: Int):
+](mut buf: NDBuffer[type, rank], vocab_size: Int):
     """Sort each batch separately in descending order using parallel merge sort.
     """
     constrained[rank == 2, "rank must be 2"]()
@@ -155,7 +155,7 @@ fn sort_buf_descending[
 
 fn test_is_sorted_descending[
     type: DType, rank: Int
-](inout buf: NDBuffer[type, rank], vocab_size: Int) -> Bool:
+](mut buf: NDBuffer[type, rank], vocab_size: Int) -> Bool:
     constrained[rank == 2, "rank must be 2"]()
     var batch_size = buf.num_elements() // vocab_size
     var sorted_flag = UnsafePointer[Bool].alloc(batch_size)
@@ -223,7 +223,7 @@ fn print_test_case(test_case: TestCase):
 
 fn test_case_sampling[
     fill_fn: fn[rank: Int, type: DType] (
-        inout NDBuffer[type, rank]
+        mut NDBuffer[type, rank]
     ) capturing -> None,
 ](ctx: DeviceContext, test_case: TestCase) raises:
     print_test_case(test_case)
@@ -395,7 +395,7 @@ fn test_toppminp_gpu[
     type: DType,
     out_idx_type: DType,
     fill_fn: fn[rank: Int, type: DType] (
-        inout NDBuffer[type, rank]
+        mut NDBuffer[type, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     alias test_case1 = TestCase[type, out_idx_type, _is_top_p=True](
@@ -419,7 +419,7 @@ fn test_toppminp_gpu[
 fn test_all_out_idx_types[
     type: DType,
     fill_fn: fn[rank: Int, type: DType] (
-        inout NDBuffer[type, rank]
+        mut NDBuffer[type, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     test_toppminp_gpu[type, DType.int32, fill_fn](ctx)
@@ -429,7 +429,7 @@ fn test_all_out_idx_types[
 
 fn test_all_types[
     fill_fn: fn[rank: Int, type: DType] (
-        inout NDBuffer[type, rank]
+        mut NDBuffer[type, rank]
     ) capturing -> None,
 ](ctx: DeviceContext) raises:
     print("\n=== Testing Float32 ===")

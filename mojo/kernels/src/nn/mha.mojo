@@ -125,7 +125,7 @@ struct MHAConfig:
         return num_smem_elements
 
     fn __init__(
-        inout self,
+        mut self,
         type: DType,
         num_heads: UInt,
         depth: UInt,
@@ -156,7 +156,7 @@ struct MHAConfig:
     fn __str__(self) -> String:
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("ampere_")
         writer.write(self.type, "_")
         # Use BNxBM to match MatmulConfig, which matches cublas

@@ -29,10 +29,10 @@ alias PRINT_OUTPUT = False
 
 fn time_kernel[
     func: fn (DeviceContext) raises capturing -> None
-](inout m: Bench, ctx: DeviceContext, kernel_name: String) raises:
+](mut m: Bench, ctx: DeviceContext, kernel_name: String) raises:
     @parameter
     @always_inline
-    fn bench_func(inout m: Bencher):
+    fn bench_func(mut m: Bencher):
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
@@ -49,7 +49,7 @@ fn time_kernel[
 
 fn test_case_batched[
     type: DType,
-    fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
+    fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
         _
     ] -> None,
     out_idx_type: DType = DType.index,
@@ -231,7 +231,7 @@ fn test_case_batched[
 
 fn test_case_multi_rank[
     type: DType,
-    fill_fn: fn[rank: Int, type: DType] (inout NDBuffer[type, rank]) capturing [
+    fill_fn: fn[rank: Int, type: DType] (mut NDBuffer[type, rank]) capturing [
         _
     ] -> None,
     rank: Int,
@@ -316,7 +316,7 @@ fn test_case_multi_rank[
 @parameter
 fn fill_random[
     rank: Int, dtype: DType
-](inout buffer: NDBuffer[dtype, rank],):
+](mut buffer: NDBuffer[dtype, rank],):
     alias min_val = -1e9
     alias max_val = 1e9
     var total_elements = buffer.num_elements()
@@ -326,7 +326,7 @@ fn fill_random[
 
 
 @parameter
-fn fill_iota[rank: Int, type: DType](inout buf: NDBuffer[type, rank]):
+fn fill_iota[rank: Int, type: DType](mut buf: NDBuffer[type, rank]):
     iota(buf.data, buf.get_shape().flattened_length())
 
 
@@ -341,7 +341,7 @@ struct TestCase[_sampling: Bool, _largest: Bool = True]:
     var num_blocks_per_input: OptionalReg[Int]
 
     fn __init__(
-        inout self,
+        mut self,
         N: Int,
         K: Int,
         block_size: Int,
@@ -364,7 +364,7 @@ struct TestCaseMultiRank[_sampling: Bool, rank: Int, _largest: Bool = True]:
     var num_blocks_per_input: OptionalReg[Int]
 
     fn __init__(
-        inout self,
+        mut self,
         input_shape: IndexList[rank],
         K: Int,
         block_size: OptionalReg[Int] = None,

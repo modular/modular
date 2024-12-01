@@ -58,7 +58,7 @@ struct TopK_2[T: DType, largest: Bool = True]:
         self.p = -1
         self.u = _topk_dead_val[T, largest]()
 
-    fn insert(inout self, elem: Scalar[T], elem_id: Int):
+    fn insert(mut self, elem: Scalar[T], elem_id: Int):
         @parameter
         if largest:
             if elem > self.u:

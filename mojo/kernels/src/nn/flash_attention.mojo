@@ -38,7 +38,7 @@ struct _MatmulConfig:
     var pack_sizes: VariadicList[Int]
 
     fn __init__(
-        inout self,
+        mut self,
         *,
         col_sizes: VariadicList[Int],
         row_sizes: VariadicList[Int],
@@ -96,7 +96,7 @@ struct _Matmul[
         a_stride: Int,
         b_ptr: UnsafePointer[Scalar[type]],
         b_stride: Int,
-        inout c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
+        mut c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
     ):
         var ak_ptr = a_ptr
         var bk_ptr = b_ptr
@@ -137,7 +137,7 @@ struct _Matmul[
         a_stride: Int,
         b_ptr: UnsafePointer[Scalar[type]],
         b_stride: Int,
-        inout c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
+        mut c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
     ):
         var ak_ptr = a_ptr
         var bk_ptr = b_ptr
@@ -330,7 +330,7 @@ struct _Matmul[
             ](
                 start: Int,
                 end: Int,
-                inout accum: InlineArray[SIMD[type, _simd_width], tile_n],
+                mut accum: InlineArray[SIMD[type, _simd_width], tile_n],
             ):
                 for k in range(start, end, _simd_width):
                     var a_data = a_ptr.load[width=_simd_width](k)

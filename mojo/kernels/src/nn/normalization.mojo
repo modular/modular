@@ -81,9 +81,9 @@ fn welford_update[
     type: DType, //
 ](
     val: Scalar[type],
-    inout mean: Scalar[type],
-    inout m2: Scalar[type],
-    inout count: Scalar[type],
+    mut mean: Scalar[type],
+    mut m2: Scalar[type],
+    mut count: Scalar[type],
 ):
     count += 1
     var d1 = val - mean
@@ -98,9 +98,9 @@ fn welford_combine[
     mean: Scalar[type],
     m2: Scalar[type],
     count: Scalar[type],
-    inout res_mean: Scalar[type],
-    inout res_m2: Scalar[type],
-    inout res_count: Scalar[type],
+    mut res_mean: Scalar[type],
+    mut res_m2: Scalar[type],
+    mut res_count: Scalar[type],
 ):
     if count == 0:
         return
@@ -118,9 +118,9 @@ fn welford_warp_reduce[
     thread_mean: Scalar[type],
     thread_m2: Scalar[type],
     thread_count: Scalar[type],
-    inout res_mean: Scalar[type],
-    inout res_m2: Scalar[type],
-    inout res_count: Scalar[type],
+    mut res_mean: Scalar[type],
+    mut res_m2: Scalar[type],
+    mut res_count: Scalar[type],
 ):
     res_mean = thread_mean
     res_m2 = thread_m2
@@ -142,9 +142,9 @@ fn welford_warp_all_reduce[
     thread_mean: Scalar[type],
     thread_m2: Scalar[type],
     thread_count: Scalar[type],
-    inout res_mean: Scalar[type],
-    inout res_m2: Scalar[type],
-    inout res_count: Scalar[type],
+    mut res_mean: Scalar[type],
+    mut res_m2: Scalar[type],
+    mut res_count: Scalar[type],
 ):
     welford_warp_reduce(
         thread_mean, thread_m2, thread_count, res_mean, res_m2, res_count
@@ -161,9 +161,9 @@ fn welford_block_all_reduce[
     thread_mean: Scalar[type],
     thread_m2: Scalar[type],
     thread_count: Scalar[type],
-    inout res_mean: Scalar[type],
-    inout res_m2: Scalar[type],
-    inout res_count: Scalar[type],
+    mut res_mean: Scalar[type],
+    mut res_m2: Scalar[type],
+    mut res_count: Scalar[type],
 ):
     var mean_shared = stack_allocation[
         WARP_SIZE, type, address_space = AddressSpace.SHARED

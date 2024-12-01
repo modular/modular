@@ -289,7 +289,7 @@ def test_load_store[
 
     # TODO: replace the following with simd.mojo:insert (after resolving its issue).
     @always_inline
-    fn simd_insert(inout x: SIMD[type, _], y: SIMD[type, _]):
+    fn simd_insert(mut x: SIMD[type, _], y: SIMD[type, _]):
         constrained[x.size >= y.size]()
 
         @parameter

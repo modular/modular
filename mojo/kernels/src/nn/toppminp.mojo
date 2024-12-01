@@ -193,8 +193,8 @@ fn sort_buf_descending[
     out_idx_type: DType,
     rank: Int, //,
 ](
-    inout buf_keys: NDBuffer[type, rank],
-    inout buf_ids: NDBuffer[out_idx_type, rank],
+    mut buf_keys: NDBuffer[type, rank],
+    mut buf_ids: NDBuffer[out_idx_type, rank],
     vocab_size: Int,
 ):
     """Sort each batch separately in descending order using parallel merge sort.
@@ -211,8 +211,8 @@ fn sort_buf_descending[
 fn merge_sort_recursive[
     type: DType, out_idx_type: DType, rank: Int
 ](
-    inout buf_keys: NDBuffer[type, rank],
-    inout buf_ids: NDBuffer[out_idx_type, rank],
+    mut buf_keys: NDBuffer[type, rank],
+    mut buf_ids: NDBuffer[out_idx_type, rank],
     start: Int,
     end: Int,
 ):
@@ -228,8 +228,8 @@ fn merge_sort_recursive[
 fn merge[
     type: DType, out_idx_type: DType, rank: Int
 ](
-    inout buf_keys: NDBuffer[type, rank],
-    inout buf_ids: NDBuffer[out_idx_type, rank],
+    mut buf_keys: NDBuffer[type, rank],
+    mut buf_ids: NDBuffer[out_idx_type, rank],
     start: Int,
     mid: Int,
     end: Int,

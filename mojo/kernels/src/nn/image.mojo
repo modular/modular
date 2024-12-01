@@ -60,7 +60,7 @@ struct ImageData[
     var dynamic_layout: Image2DLayout
 
     fn __init__(
-        inout self, data: NDBuffer[type, 4, shape], layout: Image2DLayout
+        mut self, data: NDBuffer[type, 4, shape], layout: Image2DLayout
     ):
         """Construct of an image data instance with dynamic layout param.
 
@@ -267,7 +267,7 @@ struct ImageShape:
         shape: DimList,
         type: DType,
         layout: Image2DLayout,
-    ](inout self, image_data: ImageData[shape, type, layout]):
+    ](mut self, image_data: ImageData[shape, type, layout]):
         """Constructor of an ImageShape instance from an ImageData.
 
         Args:

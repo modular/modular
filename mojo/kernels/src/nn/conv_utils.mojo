@@ -516,7 +516,7 @@ struct ConvInfoStatic[rank: Int]:
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         pad: DimList,
         stride: DimList,
         dilation: DimList,
@@ -529,7 +529,7 @@ struct ConvInfoStatic[rank: Int]:
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         pad: DimList,
         stride: DimList,
         dilation: DimList,

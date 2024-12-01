@@ -471,10 +471,10 @@ fn run_radix_sort_pairs_gpu[
     NUM_BITS_PER_PASS: Int = 4,
 ](
     ctx: DeviceContext,
-    inout input_keys: NDBuffer[type, rank],  # modifies input
-    inout output_keys: NDBuffer[type, rank],  # modifies output
-    inout input_key_ids: NDBuffer[out_idx_type, rank],  # modifies input
-    inout output_key_ids: NDBuffer[out_idx_type, rank],  # modifies output
+    mut input_keys: NDBuffer[type, rank],  # modifies input
+    mut output_keys: NDBuffer[type, rank],  # modifies output
+    mut input_key_ids: NDBuffer[out_idx_type, rank],  # modifies input
+    mut output_key_ids: NDBuffer[out_idx_type, rank],  # modifies output
     skip_sort: NDBuffer[DType.bool, rank],
 ) raises:
     var in_shape = input_keys.get_shape()

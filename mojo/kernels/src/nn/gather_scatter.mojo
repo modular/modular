@@ -71,7 +71,7 @@ struct Axis(Intable, Indexer):
     @always_inline
     fn __init__[
         type: DType
-    ](inout self, axis_unnormalized: Scalar[type], rank: Int):
+    ](mut self, axis_unnormalized: Scalar[type], rank: Int):
         self.axis = int(normalize_neg_index(axis_unnormalized, rank))
 
     @always_inline
