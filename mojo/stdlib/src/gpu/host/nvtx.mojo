@@ -169,7 +169,7 @@ struct EventAttributes:
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         *,
         message: String = "",
         category: Int = _TraceType_MAX,
@@ -293,7 +293,7 @@ struct Range:
     var _end_fn: fn (RangeID) -> NoneType
 
     fn __init__(
-        inout self,
+        mut self,
         *,
         message: String = "",
         color: Optional[Color] = None,
@@ -308,7 +308,7 @@ struct Range:
         self._end_fn = _nvtxRangeEnd.load()
 
     @always_inline
-    fn __enter__(inout self):
+    fn __enter__(mut self):
         self._id = self._start_fn(UnsafePointer.address_of(self._info._value))
 
     @always_inline
@@ -337,7 +337,7 @@ struct RangeStack:
     var _pop_fn: fn () -> Int32
 
     fn __init__(
-        inout self,
+        mut self,
         *,
         message: String = "",
         color: Optional[Color] = None,
@@ -351,7 +351,7 @@ struct RangeStack:
         self._pop_fn = _nvtxRangePop.load()
 
     @always_inline
-    fn __enter__(inout self):
+    fn __enter__(mut self):
         _ = self._push_fn(UnsafePointer.address_of(self._info._value))
 
     @always_inline

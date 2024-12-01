@@ -41,7 +41,7 @@ struct Vendor:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Vendor.NO_GPU:
             writer.write("no_gpu")
             return
@@ -406,7 +406,7 @@ struct Flops:
     var i4: Float64
 
     fn __init__(
-        inout self,
+        mut self,
         *,
         fp16: Float64,
         i8: Float64,
@@ -423,7 +423,7 @@ struct Flops:
         self.i4 = i4
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self.fp8:
             writer.write("flops_fp8: ", self.fp8, "\n")
             writer.write("flops_fp16: ", self.fp16, "\n")
@@ -635,7 +635,7 @@ struct Info:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("name: ", self.name, "\n")
         writer.write("vendor: ", self.vendor, "\n")
         writer.write("api: ", self.api, "\n")

@@ -119,7 +119,7 @@ struct DeviceBufferV2[type: DType](Sized):
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ctx: DeviceContextV2,
         size: Int,
         sync_mode: DeviceSyncMode,
@@ -174,7 +174,7 @@ struct DeviceBufferV2[type: DType](Sized):
         self._handle = cpp_handle
 
     fn __init__(
-        inout self,
+        mut self,
         handle: _DeviceBufferPtr,
         device_ptr: UnsafePointer[Scalar[type]],
     ):
@@ -182,7 +182,7 @@ struct DeviceBufferV2[type: DType](Sized):
         self._handle = handle
 
     fn __init__(
-        inout self,
+        mut self,
         ctx: DeviceContextV2,
         ptr: UnsafePointer[Scalar[type]],
         size: Int,
@@ -397,7 +397,7 @@ struct DeviceFunctionV2[
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         ctx: DeviceContextV2,
         *,
         max_registers: OptionalReg[Int] = None,
@@ -469,9 +469,7 @@ struct DeviceFunctionV2[
         self._handle = result
 
     @always_inline
-    fn _copy_to_constant_memory(
-        self, borrowed mapping: ConstantMemoryMapping
-    ) raises:
+    fn _copy_to_constant_memory(self, mapping: ConstantMemoryMapping) raises:
         # const char *AsyncRT_DeviceFunction_copyToConstantMemory(const DeviceFunction *func, const char *name,
         #                                                         const void *data, size_t byte_size)
         _checked(
@@ -724,7 +722,7 @@ struct DeviceContextV2:
 
     @always_inline
     fn __init__(
-        inout self, device_id: Int = 0, *, api: String = Self.device_api
+        mut self, device_id: Int = 0, *, api: String = Self.device_api
     ) raises:
         # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *api, int id)
         var result = _DeviceContextPtr()

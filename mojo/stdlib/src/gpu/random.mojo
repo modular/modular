@@ -23,7 +23,7 @@ struct Random[rounds: Int = 6]:
     var _counter: SIMD[DType.uint32, 4]
 
     fn __init__(
-        inout self,
+        mut self,
         *,
         seed: UInt64 = 0,
         subsequence: UInt64 = 0,
@@ -35,7 +35,7 @@ struct Random[rounds: Int = 6]:
         )
 
     @always_inline
-    fn step(inout self) -> SIMD[DType.uint32, 4]:
+    fn step(mut self) -> SIMD[DType.uint32, 4]:
         alias K_PHILOX_10 = SIMD[DType.uint32, 2](0x9E3779B9, 0xBB67AE85)
 
         @parameter
@@ -45,13 +45,13 @@ struct Random[rounds: Int = 6]:
         return self._single_round(self._counter, self._key)
 
     @always_inline
-    fn step_uniform(inout self) -> SIMD[DType.float32, 4]:
+    fn step_uniform(mut self) -> SIMD[DType.float32, 4]:
         # The inverse of 2^32
         alias INV_2_32 = 2.3283064e-10
         return self.step().cast[DType.float32]() * INV_2_32
 
     @always_inline
-    fn _incrn(inout self, n: Int64):
+    fn _incrn(mut self, n: Int64):
         var hilo = bitcast[DType.uint32, 2](n)
         var hi = hilo[0]
         var lo = hilo[1]

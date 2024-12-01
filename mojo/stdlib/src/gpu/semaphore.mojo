@@ -31,7 +31,7 @@ struct Semaphore:
         self._state = -1
 
     @always_inline
-    fn fetch(inout self):
+    fn fetch(mut self):
         if self._wait_thread:
             self._state = load_acquire[scope = Scope.GPU](self._lock)
 
@@ -40,7 +40,7 @@ struct Semaphore:
         return self._state
 
     @always_inline
-    fn wait(inout self, status: Int = 0):
+    fn wait(mut self, status: Int = 0):
         while llvm_intrinsic["llvm.nvvm.barrier0.and", Int32](
             Int32(1) if self._state != status else Int32(0)
         ):
@@ -48,7 +48,7 @@ struct Semaphore:
         barrier()
 
     @always_inline
-    fn release(inout self, status: Int32 = 0):
+    fn release(mut self, status: Int32 = 0):
         barrier()
         if self._wait_thread:
             store_release[scope = Scope.GPU](self._lock, status)

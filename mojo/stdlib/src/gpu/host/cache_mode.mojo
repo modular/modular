@@ -57,5 +57,5 @@ struct CacheMode:
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         return writer.write(self._value)

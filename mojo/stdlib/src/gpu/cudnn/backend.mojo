@@ -117,7 +117,7 @@ struct cudnnBackendKnobType_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_KNOB_TYPE_SPLIT_K:
             return writer.write("CUDNN_KNOB_TYPE_SPLIT_K")
         if self is Self.CUDNN_KNOB_TYPE_SWIZZLE:
@@ -280,7 +280,7 @@ struct cudnnPointwiseMode_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_POINTWISE_ADD:
             return writer.write("CUDNN_POINTWISE_ADD")
         if self is Self.CUDNN_POINTWISE_ADD_SQUARE:
@@ -455,7 +455,7 @@ struct cudnnBackendDescriptorType_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_BACKEND_POINTWISE_DESCRIPTOR:
             return writer.write("CUDNN_BACKEND_POINTWISE_DESCRIPTOR")
         if self is Self.CUDNN_BACKEND_CONVOLUTION_DESCRIPTOR:
@@ -616,7 +616,7 @@ struct cudnnBackendBehaviorNote_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION:
             return writer.write("CUDNN_BEHAVIOR_NOTE_RUNTIME_COMPILATION")
         if self is Self.CUDNN_BEHAVIOR_NOTE_REQUIRES_FILTER_INT8x32_REORDER:
@@ -670,7 +670,7 @@ struct cudnnBackendLayoutType_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_LAYOUT_TYPE_PREFERRED_NCHW:
             return writer.write("CUDNN_LAYOUT_TYPE_PREFERRED_NCHW")
         if self is Self.CUDNN_LAYOUT_TYPE_PREFERRED_NHWC:
@@ -719,7 +719,7 @@ struct cudnnBackendNormFwdPhase_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_NORM_FWD_INFERENCE:
             return writer.write("CUDNN_NORM_FWD_INFERENCE")
         if self is Self.CUDNN_NORM_FWD_TRAINING:
@@ -765,7 +765,7 @@ struct cudnnBackendHeurMode_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_HEUR_MODE_INSTANT:
             return writer.write("CUDNN_HEUR_MODE_INSTANT")
         if self is Self.CUDNN_HEUR_MODE_B:
@@ -828,7 +828,7 @@ struct cudnnBackendNumericalNote_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_NUMERICAL_NOTE_TENSOR_CORE:
             return writer.write("CUDNN_NUMERICAL_NOTE_TENSOR_CORE")
         if self is Self.CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS:
@@ -929,7 +929,7 @@ struct cudnnBackendAttributeType_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_TYPE_HANDLE:
             return writer.write("CUDNN_TYPE_HANDLE")
         if self is Self.CUDNN_TYPE_DATA_TYPE:
@@ -1029,7 +1029,7 @@ struct cudnnRngDistribution_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_RNG_DISTRIBUTION_BERNOULLI:
             return writer.write("CUDNN_RNG_DISTRIBUTION_BERNOULLI")
         if self is Self.CUDNN_RNG_DISTRIBUTION_UNIFORM:
@@ -1081,7 +1081,7 @@ struct cudnnBackendTensorReordering_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_TENSOR_REORDERING_NONE:
             return writer.write("CUDNN_TENSOR_REORDERING_NONE")
         if self is Self.CUDNN_TENSOR_REORDERING_INT8x32:
@@ -1338,7 +1338,7 @@ struct cudnnBackendAttributeName_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_ATTR_POINTWISE_MODE:
             return writer.write("CUDNN_ATTR_POINTWISE_MODE")
         if self is Self.CUDNN_ATTR_POINTWISE_MATH_PREC:
@@ -1898,7 +1898,7 @@ struct cudnnBackendNormMode_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_LAYER_NORM:
             return writer.write("CUDNN_LAYER_NORM")
         if self is Self.CUDNN_INSTANCE_NORM:
@@ -1947,7 +1947,7 @@ struct cudnnSignalMode_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_SIGNAL_SET:
             return writer.write("CUDNN_SIGNAL_SET")
         if self is Self.CUDNN_SIGNAL_WAIT:
@@ -1993,7 +1993,7 @@ struct cudnnBnFinalizeStatsMode_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_BN_FINALIZE_STATISTICS_TRAINING:
             return writer.write("CUDNN_BN_FINALIZE_STATISTICS_TRAINING")
         if self is Self.CUDNN_BN_FINALIZE_STATISTICS_INFERENCE:
@@ -2035,7 +2035,7 @@ struct cudnnGenStatsMode_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_GENSTATS_SUM_SQSUM:
             return writer.write("CUDNN_GENSTATS_SUM_SQSUM")
         abort("invalid cudnnGenStatsMode_t entry")
@@ -2104,7 +2104,7 @@ struct cudnnResampleMode_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_RESAMPLE_NEAREST:
             return writer.write("CUDNN_RESAMPLE_NEAREST")
         if self is Self.CUDNN_RESAMPLE_BILINEAR:
@@ -2187,7 +2187,7 @@ struct cudnnPaddingMode_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_ZERO_PAD:
             return writer.write("CUDNN_ZERO_PAD")
         if self is Self.CUDNN_NEG_INF_PAD:

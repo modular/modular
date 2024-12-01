@@ -16,7 +16,7 @@ from utils import StaticTuple
 
 
 @always_inline
-fn _mma_amd(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+fn _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
@@ -97,7 +97,7 @@ fn _mma_amd(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 
 @always_inline
-fn _mma_nvidia(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
     # ===------------------------------------------------------------------===#
@@ -383,7 +383,7 @@ fn _mma_nvidia(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
 
 @always_inline
-fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+fn mma(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """Performs warp sync Tensor Core based Matrix-multiply and accumulate(MMA) operation.
     """
 

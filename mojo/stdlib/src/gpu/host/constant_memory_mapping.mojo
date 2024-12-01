@@ -13,7 +13,7 @@ struct ConstantMemoryMapping:
     var byte_count: Int
 
     fn __init__(
-        inout self,
+        mut self,
         name: StringLiteral,
         ptr: UnsafePointer[NoneType],
         byte_count: Int,

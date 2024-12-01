@@ -31,14 +31,14 @@ struct ProfileBlock[enabled: Bool = False]:
             self.loc = _SourceLocation(0, 0, "")
 
     @always_inline
-    fn __enter__(inout self):
+    fn __enter__(mut self):
         @parameter
         if not enabled:
             return
         self.start_time = clock64()
 
     @always_inline
-    fn __exit__(inout self):
+    fn __exit__(mut self):
         @parameter
         if not enabled:
             return

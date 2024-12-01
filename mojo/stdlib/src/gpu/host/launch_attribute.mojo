@@ -144,7 +144,7 @@ struct LaunchAttributeID:
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         return writer.write(self._value)
 
 
@@ -216,7 +216,7 @@ struct AccessProperty:
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.NORMAL:
             return writer.write("NORMAL")
         if self is Self.STREAMING:
@@ -287,7 +287,7 @@ struct AccessPolicyWindow:
     fn __init__[
         T: AnyType
     ](
-        inout self,
+        mut self,
         *,
         base_ptr: UnsafePointer[T, **_],
         count: Int,
@@ -308,7 +308,7 @@ struct AccessPolicyWindow:
         return String.write(self)
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         return writer.write(
             "base_ptr: ",
             self.base_ptr,

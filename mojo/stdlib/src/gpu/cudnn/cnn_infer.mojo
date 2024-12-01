@@ -369,7 +369,7 @@ struct cudnnFusedOpsConstParamLabel_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_PARAM_XDESC:
             return writer.write("CUDNN_PARAM_XDESC")
         if self is Self.CUDNN_PARAM_XDATA_PLACEHOLDER:
@@ -498,7 +498,7 @@ struct cudnnReorderType_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_DEFAULT_REORDER:
             return writer.write("CUDNN_DEFAULT_REORDER")
         if self is Self.CUDNN_NO_REORDER:
@@ -645,7 +645,7 @@ struct cudnnFusedOps_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS:
             return writer.write(
                 "CUDNN_FUSED_SCALE_BIAS_ACTIVATION_CONV_BNSTATS"
@@ -721,7 +721,7 @@ struct cudnnFusedOpsPointerPlaceHolder_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_PTR_NULL:
             return writer.write("CUDNN_PTR_NULL")
         if self is Self.CUDNN_PTR_ELEM_ALIGNED:
@@ -859,7 +859,7 @@ struct cudnnFusedOpsVariantParamLabel_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_PTR_XDATA:
             return writer.write("CUDNN_PTR_XDATA")
         if self is Self.CUDNN_PTR_BN_EQSCALE:
@@ -1348,7 +1348,7 @@ struct cudnnConvolutionMode_t:
         return self != other
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         if self is Self.CUDNN_CONVOLUTION:
             return writer.write("CUDNN_CONVOLUTION")
         if self is Self.CUDNN_CROSS_CORRELATION:
