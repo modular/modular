@@ -35,7 +35,7 @@ struct Counter(Movable):
     fn __del__(owned self):
         print("counter del")
 
-    fn bump(inout self):
+    fn bump(mut self):
         self.a += 1
         self.b += self.a
         print("bumped", self.a, self.b)
@@ -55,7 +55,7 @@ fn make_counter() -> Counter:
 
 # TODO(MSDK-950): Avoid DCE in the graph compiler and remove return value.
 @register_internal("bump_counter")
-fn bump_counter(inout c: Counter, output: NDBuffer[DType.bool, 1, DimList(1)]):
+fn bump_counter(mut c: Counter, output: NDBuffer[DType.bool, 1, DimList(1)]):
     print("bumping")
     c.bump()
     output[0] = True
