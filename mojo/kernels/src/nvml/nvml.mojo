@@ -565,7 +565,7 @@ struct Device(Writable):
         return self.__repr__()
 
     @no_inline
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         writer.write("Device(", self.idx, ")")
 
     @no_inline
