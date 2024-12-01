@@ -1292,24 +1292,10 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
   DeclIRValue argIRValue;
-  switch (arg.kgenConvention) {
-  case ArgConvention::OwnedReg:
-    llvm_unreachable("not used by the mojo parser");
-  case ArgConvention::ByRefResult:
-  case ArgConvention::ByRefError:
-    llvm_unreachable("should never need to handle result slots");
-  case ArgConvention::Mut:
-  case ArgConvention::InitSelf:
-  case ArgConvention::OwnedMem:
-  case ArgConvention::ReadMem:
-  case ArgConvention::Ref:
-  case ArgConvention::MutRef:
-    argIRValue = CValue::getMValueForRef(bbArg);
-    break;
-  case ArgConvention::ReadReg:
+  if (arg.kgenConvention == ArgConvention::ReadReg)
     argIRValue = SRValue(bbArg);
-    break;
-  }
+  else // Everything else is passed in memory.
+    argIRValue = CValue::getMValueForRef(bbArg);
 
   // FIXME: This is not setting the correct type for Variadics.  We shouldn't
   // expose something like !kgen.variadic to subsequent arguments, we should

@@ -79,13 +79,15 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
     // extracting the actual type to compare. This also doesn't check for
     // passing convention, since those are trivially convertible.
     switch (expectedConv) {
+    case ArgConvention::OwnedReg:
+      llvm_unreachable("not used by the mojo parser");
     case ArgConvention::ByRefError:
       // We checked that the function effects line up, so if we see
       // `byref_error`, then the other function must have it as well.
       assert(actualConv == ArgConvention::ByRefError &&
              "both functions must be throwing");
       [[fallthrough]];
-
+    case ArgConvention::OwnedMem:
     case ArgConvention::InitSelf:
     case ArgConvention::MutRef:
     case ArgConvention::Ref:
@@ -102,15 +104,6 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
     case ArgConvention::ReadReg:
       if (!llvm::is_contained({ArgConvention::ReadMem, ArgConvention::ReadReg},
                               actualConv))
-        return false;
-      lhs = getFunctionArgumentRValueType(actualType, actualConv);
-      rhs = getFunctionArgumentRValueType(expectedType, expectedConv);
-      break;
-
-    case ArgConvention::OwnedReg:
-      llvm_unreachable("not used by the mojo parser");
-    case ArgConvention::OwnedMem:
-      if (actualConv != ArgConvention::OwnedMem)
         return false;
       lhs = getFunctionArgumentRValueType(actualType, actualConv);
       rhs = getFunctionArgumentRValueType(expectedType, expectedConv);

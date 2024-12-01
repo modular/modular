@@ -50,7 +50,7 @@ namespace M::KGEN {
 namespace {
 class LowerCustomOpsPass : public impl::LowerCustomOpsBase<LowerCustomOpsPass> {
 public:
-  LowerCustomOpsPass(const LibraryOptConfig &lib = {}) : lib(lib) {};
+  LowerCustomOpsPass(const LibraryOptConfig &lib = {}) : lib(lib) {}
 
   void runOnOperation() override;
 
@@ -486,10 +486,7 @@ static Value getIdentifiedVariable(Value value) {
   if (!func)
     return {};
   ArgConvention conv = func.getSignature().getArgConvention(arg.getArgNumber());
-  if (llvm::is_contained({ArgConvention::OwnedMem, ArgConvention::Mut,
-                          ArgConvention::MutRef, ArgConvention::ByRefResult,
-                          ArgConvention::ByRefError, ArgConvention::InitSelf},
-                         conv))
+  if (SignatureType::hasAddress(conv))
     return arg;
   return {};
 }
