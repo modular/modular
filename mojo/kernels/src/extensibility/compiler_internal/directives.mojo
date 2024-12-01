@@ -70,7 +70,7 @@ struct StaticTensorSpec[
     var out_lambda: OptionalReg[Self.out_lambda_t]
 
     fn __init__(
-        inout self,
+        mut self,
         shape: DimList,
         strides: DimList,
         alignment: Int,

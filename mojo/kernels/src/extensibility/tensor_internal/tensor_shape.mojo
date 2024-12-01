@@ -173,7 +173,7 @@ struct _Rep16(Stringable, Writable, EqualityComparable):
         return int(self.dims[index])
 
     @always_inline
-    fn __setitem__(inout self, index: Int, val: Int):
+    fn __setitem__(mut self, index: Int, val: Int):
         """Sets the dimension at the specified index.
 
         Args:
@@ -201,7 +201,7 @@ struct _Rep16(Stringable, Writable, EqualityComparable):
         """
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         for i in range(self.get_rank()):
             if i != 0:
                 writer.write("x")
@@ -311,7 +311,7 @@ struct _Rep32(Writable, EqualityComparable):
             return int(self.dims012[index])
 
     @always_inline
-    fn __setitem__(inout self, index: Int, val: Int):
+    fn __setitem__(mut self, index: Int, val: Int):
         """Sets the dimension at the specified index.
 
         Args:
@@ -343,7 +343,7 @@ struct _Rep32(Writable, EqualityComparable):
 
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         for i in range(self.get_rank()):
             if i != 0:
                 writer.write("x")
@@ -434,7 +434,7 @@ struct _RepOutOfLine(Writable, EqualityComparable):
         return int(self.dims.load(index))
 
     @always_inline
-    fn __setitem__(inout self, index: Int, val: Int):
+    fn __setitem__(mut self, index: Int, val: Int):
         """Sets the dimension at the specified index.
 
         Args:
@@ -496,7 +496,7 @@ struct _RepOutOfLine(Writable, EqualityComparable):
 
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         for i in range(self.get_rank()):
             if i != 0:
                 writer.write("x")
@@ -701,7 +701,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
 
     @always_inline
     @implicit
-    fn __init__[*Ts: CollectionElement](inout self, shapes: Tuple[*Ts]):
+    fn __init__[*Ts: CollectionElement](mut self, shapes: Tuple[*Ts]):
         """Initializes a TensorShape from the values provided.
 
         Args:
@@ -840,7 +840,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
 
     @always_inline
     @implicit
-    fn __init__[rank: Int](inout self, shapes: IndexList[rank]):
+    fn __init__[rank: Int](mut self, shapes: IndexList[rank]):
         """Initializes a TensorShape from the values provided.
 
         Parameters:
@@ -1041,7 +1041,7 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
 
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this TensorShape to the provided Writer.
 

@@ -53,7 +53,7 @@ struct ManagedTensorSlice[
     var _strides: IndexList[rank]
 
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[type]],
         slices: InlineArray[Slice, rank],
         slicer_spec: RuntimeTensorSpec[type, rank],
@@ -94,7 +94,7 @@ struct ManagedTensorSlice[
         self = Self(ptr, slice_spec, start_offset, strides)
 
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[type]],
         shape: IndexList[rank],
     ):
@@ -104,7 +104,7 @@ struct ManagedTensorSlice[
         self._start_offset = 0
 
     fn __init__(
-        inout self,
+        mut self,
         ptr: UnsafePointer[Scalar[type]],
         shape: IndexList[rank],
         strides: IndexList[rank],

@@ -197,7 +197,7 @@ struct TensorSpec(
         """
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this TensorSpec to the provided Writer.
 

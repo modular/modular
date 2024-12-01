@@ -276,7 +276,7 @@ struct Tensor[type: DType](
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         owned shape: TensorShape,
         owned ptr: UnsafePointer[Scalar[type]],
     ):
@@ -291,7 +291,7 @@ struct Tensor[type: DType](
 
     @always_inline
     fn __init__(
-        inout self,
+        mut self,
         owned spec: TensorSpec,
         owned ptr: UnsafePointer[Scalar[type]],
     ):
@@ -339,7 +339,7 @@ struct Tensor[type: DType](
 
     @always_inline
     fn __init__(
-        inout self, shape: TensorShape, owned list: List[Scalar[type], *_]
+        mut self, shape: TensorShape, owned list: List[Scalar[type], *_]
     ):
         """Initializes a 1-dimensional Tensor from the provided list.
 
@@ -424,7 +424,7 @@ struct Tensor[type: DType](
         randn(tensor.unsafe_ptr(), tensor.num_elements(), mean, variance)
         return tensor
 
-    fn _take_data_ptr(inout self) -> UnsafePointer[Scalar[type]]:
+    fn _take_data_ptr(mut self) -> UnsafePointer[Scalar[type]]:
         """Return ownership of the data pointer from within the Tensor.
         Returns:
             A pointer that owns the underlying buffer.
@@ -435,7 +435,7 @@ struct Tensor[type: DType](
         return result
 
     @always_inline
-    fn ireshape(inout self, new_shape: TensorShape) raises -> None:
+    fn ireshape(mut self, new_shape: TensorShape) raises -> None:
         """(Inplace) Reshapes the tensor by assigning it a new shape.
 
         Args:
@@ -447,7 +447,7 @@ struct Tensor[type: DType](
         self._spec = TensorSpec(type, new_shape)
 
     @always_inline
-    fn reshape(inout self, new_shape: TensorShape) raises -> Tensor[type]:
+    fn reshape(mut self, new_shape: TensorShape) raises -> Tensor[type]:
         """Returns a reshaped tensor.
 
         Args:
@@ -667,7 +667,7 @@ struct Tensor[type: DType](
         return _elementwise[_div](other, self)
 
     @always_inline
-    fn __ipow__(inout self, exponent: Int) -> None:
+    fn __ipow__(mut self, exponent: Int) -> None:
         """In-place pow operator.
 
         Raises each element of the tensor to the power of `exponent` in place.
@@ -859,7 +859,7 @@ struct Tensor[type: DType](
 
         return String.write(self)
 
-    fn write_to[W: Writer](self, inout writer: W):
+    fn write_to[W: Writer](self, mut writer: W):
         """
         Formats this Tensor to the provided Writer.
 
@@ -1016,7 +1016,7 @@ struct Tensor[type: DType](
         return self._ptr.load[width=width](self._compute_linear_offset(indices))
 
     @always_inline
-    fn __setitem__(inout self, index: Int, val: Scalar[type]):
+    fn __setitem__(mut self, index: Int, val: Scalar[type]):
         """Sets the value at the specified index.
 
         Args:
@@ -1027,7 +1027,7 @@ struct Tensor[type: DType](
         self.store[width=1](index, val)
 
     @always_inline
-    fn __setitem__(inout self, indices: VariadicList[Int], val: Scalar[type]):
+    fn __setitem__(mut self, indices: VariadicList[Int], val: Scalar[type]):
         """Sets the value at the specified indices.
 
         Args:
@@ -1039,7 +1039,7 @@ struct Tensor[type: DType](
     @always_inline
     fn __setitem__[
         len: Int
-    ](inout self, indices: IndexList[len], val: Scalar[type]):
+    ](mut self, indices: IndexList[len], val: Scalar[type]):
         """Sets the value at the specified indices.
 
         Parameters:
@@ -1052,7 +1052,7 @@ struct Tensor[type: DType](
         self.store[len, width=1](indices, val)
 
     @always_inline
-    fn store[*, width: Int = 1](inout self, index: Int, val: SIMD[type, width]):
+    fn store[*, width: Int = 1](mut self, index: Int, val: SIMD[type, width]):
         """Sets the SIMD value at the specified index.
 
         Parameters:
@@ -1068,7 +1068,7 @@ struct Tensor[type: DType](
     @always_inline
     fn store[
         *, width: Int = 1
-    ](inout self, indices: VariadicList[Int], val: SIMD[type, width]):
+    ](mut self, indices: VariadicList[Int], val: SIMD[type, width]):
         """Sets the SIMD value at the specified indices.
 
         Parameters:
@@ -1084,7 +1084,7 @@ struct Tensor[type: DType](
     @always_inline
     fn store[
         len: Int, /, *, width: Int = 1
-    ](inout self, indices: IndexList[len], val: SIMD[type, width]):
+    ](mut self, indices: IndexList[len], val: SIMD[type, width]):
         """Sets the SIMD value at the specified indices.
 
         Parameters:
@@ -1173,7 +1173,7 @@ struct Tensor[type: DType](
         self._to_buffer().tofile(path)
 
     @always_inline
-    fn _steal_ptr(inout self) -> UnsafePointer[Scalar[type]]:
+    fn _steal_ptr(mut self) -> UnsafePointer[Scalar[type]]:
         """Transfer ownership of pointer to the underlying memory.
         The caller is responsible for freeing up the memory.
 
@@ -1332,7 +1332,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
 
     @always_inline("nodebug")
     fn _copy_bytes(
-        inout dest: Tensor[DType.uint8], offset: Int, src: Tensor[DType.uint8]
+        mut dest: Tensor[DType.uint8], offset: Int, src: Tensor[DType.uint8]
     ) -> Int:
         var size = src.num_elements()
         memcpy(
