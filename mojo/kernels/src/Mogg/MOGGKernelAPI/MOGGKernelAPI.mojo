@@ -4147,7 +4147,7 @@ fn statictuple_setitem__[
     size: Int,
     index: Int,
     val: element_type,
-](inout static_tuple: StaticTuple[element_type, size]):
+](mut static_tuple: StaticTuple[element_type, size]):
     constrained[index < size]()
     var tmp = static_tuple
     _set_array_elem[index, size, element_type](val, tmp.array)

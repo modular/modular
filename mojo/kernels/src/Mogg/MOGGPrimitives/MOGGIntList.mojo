@@ -95,7 +95,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             self.stack_alloc_data = IndexList[Self._safe_len]()
 
     @always_inline
-    fn __init__[rank: Int](inout self, shape: IndexList[rank]):
+    fn __init__[rank: Int](mut self, shape: IndexList[rank]):
         constrained[rank == len(static_values)]()
         self.length = rank
         self.data = UnsafePointer[Int]()
@@ -210,7 +210,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         return num_elms
 
     @always_inline("nodebug")
-    fn __setitem__(inout self, index: Int, value: Int):
+    fn __setitem__(mut self, index: Int, value: Int):
         constrained[
             not Self.is_fully_static(),
             "Fully static int lists can't be modified",

@@ -616,7 +616,7 @@ fn shape_to_managed_tensor_slice[
     shape_rank: Int, buf_rank: Int, type: DType
 ](
     shape: IndexList[shape_rank],
-    inout tensor: ManagedTensorSlice[type, buf_rank],
+    mut tensor: ManagedTensorSlice[type, buf_rank],
 ):
     @parameter
     for i in range(shape_rank):
