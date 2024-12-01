@@ -904,7 +904,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     auto convention = conventionX;
     ASTType argType = argTypeX;
 
-    // We do not mangle inout results into the signature.
+    // We do not mangle results into the signature.
     if (SignatureType::isResultSlot(convention))
       continue;
 
@@ -928,7 +928,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       continue;
     } else if (fullSig.isKwVarArg(argNo)) {
       // TODO: Propagate convention correctly.
-      convention = ArgConvention::BorrowedInReg;
+      convention = ArgConvention::ReadReg;
       argType = argType.getKwargsDictRefValueType();
       numStars = 2;
     }
@@ -941,13 +941,13 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
 
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {
-    case ArgConvention::OwnedInReg:
+    case ArgConvention::OwnedReg:
       llvm_unreachable("not used by the parser");
-    case ArgConvention::OwnedInMem:
-    case ArgConvention::BorrowedInReg:
-    case ArgConvention::BorrowedInMem:
+    case ArgConvention::OwnedMem:
+    case ArgConvention::ReadReg:
+    case ArgConvention::ReadMem:
       break;
-    case ArgConvention::InOut:
+    case ArgConvention::Mut:
       mangledName += '&';
       break;
     case ArgConvention::Ref:

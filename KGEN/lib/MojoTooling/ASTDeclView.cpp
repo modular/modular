@@ -877,12 +877,12 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
     std::string prefix;
     auto declConvention = ArgumentDeclView::Convention::kBorrowed;
     switch (convention) {
-    case ArgConvention::BorrowedInReg:
-    case ArgConvention::BorrowedInMem:
+    case ArgConvention::ReadReg:
+    case ArgConvention::ReadMem:
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
       break; // already handled.
-    case ArgConvention::InOut:
+    case ArgConvention::Mut:
       declConvention = ArgumentDeclView::Convention::kInOut;
       break;
     case ArgConvention::InitSelf:
@@ -894,8 +894,8 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
       prefix = getRefPrefixAsString(shared, cast<RefType>(sigType), signature,
                                     /*isRefResult*/ false);
       break;
-    case ArgConvention::OwnedInMem:
-    case ArgConvention::OwnedInReg:
+    case ArgConvention::OwnedMem:
+    case ArgConvention::OwnedReg:
       declConvention = ArgumentDeclView::Convention::kOwned;
       break;
     }

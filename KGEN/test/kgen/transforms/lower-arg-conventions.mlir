@@ -11,11 +11,11 @@ kgen.func @reg_passable(%arg0: si32 owned, %arg1: si32) -> si32 {
 kgen.func @lower_args(
   // CHECK-SAME: %arg0: index owned,
   // CHECK-SAME: %arg1: !kgen.struct<(index, index)>,
-  // CHECK-SAME: %arg2: !kgen.pointer<struct<(index, index) memoryOnly>> borrow_in_mem,
+  // CHECK-SAME: %arg2: !kgen.pointer<struct<(index, index) memoryOnly>> read_mem,
   // CHECK-SAME: %arg3: !kgen.pointer<index> owned
   %arg0: !kgen.pointer<index> owned_in_mem,
-  %arg1: !kgen.pointer<struct<(index, index)>> borrow_in_mem,
-  %arg2: !kgen.pointer<struct<(index, index) memoryOnly>> borrow_in_mem,
+  %arg1: !kgen.pointer<struct<(index, index)>> read_mem,
+  %arg2: !kgen.pointer<struct<(index, index) memoryOnly>> read_mem,
   %arg3: !kgen.pointer<index> owned
 ) {
   // CHECK: %[[P0:.*]] = pop.stack_allocation 1 x index
@@ -29,8 +29,8 @@ kgen.func @lower_args(
 
 !lower_args_sig = !kgen.signature<(
   !kgen.pointer<index> owned_in_mem,
-  !kgen.pointer<struct<(index, index)>> borrow_in_mem,
-  !kgen.pointer<struct<(index, index) memoryOnly>> borrow_in_mem,
+  !kgen.pointer<struct<(index, index)>> read_mem,
+  !kgen.pointer<struct<(index, index) memoryOnly>> read_mem,
   !kgen.pointer<index> owned
 ) -> ()>
 
@@ -48,7 +48,7 @@ kgen.func @test_lower_args(%arg0: !lower_args_sig) {
   // CHECK: kgen.call @lower_args(%[[VAL0]], %[[VAL1]], %[[P2]], %[[P0]]) : (
   // CHECK-SAME: index owned,
   // CHECK-SAME: !kgen.struct<(index, index)>,
-  // CHECK-SAME: !kgen.pointer<struct<(index, index) memoryOnly>> borrow_in_mem,
+  // CHECK-SAME: !kgen.pointer<struct<(index, index) memoryOnly>> read_mem,
   // CHECK-SAME: !kgen.pointer<index> owned) -> ()
   kgen.call @lower_args(%0, %1, %2, %0) : !lower_args_sig
 
@@ -57,7 +57,7 @@ kgen.func @test_lower_args(%arg0: !lower_args_sig) {
   // CHECK: kgen.call_indirect %arg0(%[[VAL0]], %[[VAL1]], %[[P2]], %[[P0]]) : (
   // CHECK-SAME: index owned,
   // CHECK-SAME: !kgen.struct<(index, index)>,
-  // CHECK-SAME: !kgen.pointer<struct<(index, index) memoryOnly>> borrow_in_mem,
+  // CHECK-SAME: !kgen.pointer<struct<(index, index) memoryOnly>> read_mem,
   // CHECK-SAME: !kgen.pointer<index> owned) -> ()
   kgen.call_indirect %arg0(%0, %1, %2, %0) : !lower_args_sig
   kgen.return
@@ -217,7 +217,7 @@ kgen.func @test_byref_throws(%arg0: !byref_throws_sig) {
 
 // CHECK-LABEL: @self_result_and_arg
 // CHECK-SAME: (%arg0: !kgen.struct<()>, %arg1: i8) -> !kgen.struct<()>
-kgen.func @self_result_and_arg(%arg1: !kgen.pointer<struct<()>> borrow_in_mem,
+kgen.func @self_result_and_arg(%arg1: !kgen.pointer<struct<()>> read_mem,
                                %arg2: i8,
                                %arg0: !kgen.pointer<struct<()>> byref_result) -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
@@ -226,12 +226,12 @@ kgen.func @self_result_and_arg(%arg1: !kgen.pointer<struct<()>> borrow_in_mem,
 
 // CHECK-LABEL: @call_it_self_result_and_arg
 // CHECK-SAME: %arg0: !kgen.struct<()>
-kgen.func @call_it_self_result_and_arg(%arg0: !kgen.pointer<struct<()>> borrow_in_mem) -> !kgen.none {
+kgen.func @call_it_self_result_and_arg(%arg0: !kgen.pointer<struct<()>> read_mem) -> !kgen.none {
   %0 = pop.stack_allocation 1 x struct<()>
   // CHECK: %[[CST:.*]] = kgen.param.constant: i8 = <4>
   %1 = kgen.param.constant: i8 = <4>
   // CHECK: call @self_result_and_arg(%{{.*}}, %[[CST]]) : (!kgen.struct<()>, i8) -> !kgen.struct<()>
-  %2 = kgen.call @self_result_and_arg(%arg0, %1, %0) : (!kgen.pointer<struct<()>> borrow_in_mem, i8, !kgen.pointer<struct<()>> byref_result) -> !kgen.none
+  %2 = kgen.call @self_result_and_arg(%arg0, %1, %0) : (!kgen.pointer<struct<()>> read_mem, i8, !kgen.pointer<struct<()>> byref_result) -> !kgen.none
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -323,7 +323,7 @@ kgen.func @initself_value(
 }
 
 // CHECK-LABEL: @dont_alter_async_results(%arg0: index, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async
-kgen.func @dont_alter_async_results(%arg0: !kgen.pointer<index> borrow_in_mem, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async {
+kgen.func @dont_alter_async_results(%arg0: !kgen.pointer<index> read_mem, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async {
   kgen.return
 }
 

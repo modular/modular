@@ -1065,9 +1065,9 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     p << signature.getArguments()[i];
     ArgConvention argConv = signature.getArgConvention(i);
     if (variadicness[i] == Variadicness::kPack) {
-      assert(argConv == ArgConvention::BorrowedInMem ||
-             argConv == ArgConvention::OwnedInMem ||
-             argConv == ArgConvention::OwnedInReg);
+      assert(argConv == ArgConvention::ReadMem ||
+             argConv == ArgConvention::OwnedMem ||
+             argConv == ArgConvention::OwnedReg);
       argConv = signature.getPackVarArgConvention(i);
     }
     printConventionAndVariadicness(p, argConv, variadicness[i]);
@@ -1185,7 +1185,7 @@ bool LITSignatureType::isPosVarArg(size_t index) {
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(inout *args: Int) is declared 'mut'.
+/// example: fn x(mut *args: Int) is declared 'mut'.
 ArgConvention LITSignatureType::getPosVarArgConvention(size_t index) {
   assert(isPosVarArg(index) && "isn't a positional vararg");
   return ::cast<VariadicType>(getArguments()[index]).getConvention();
@@ -1212,7 +1212,7 @@ Type LITSignatureType::getIfVariadicPack(size_t index) {
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(inout *args: Int) is declared 'mut'.
+/// example: fn x(mut *args: Int) is declared 'mut'.
 ArgConvention LITSignatureType::getPackVarArgConvention(size_t index) {
   assert(getMetadata().isPackVarArg(index));
   return *getArgListAttrs().getOrigPackConvention();

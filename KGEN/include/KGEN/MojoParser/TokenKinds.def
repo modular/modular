@@ -108,7 +108,7 @@ TOK_KEYWORD(as)
 TOK_KEYWORD(assert)
 TOK_KEYWORD(async)
 TOK_KEYWORD(await)
-TOK_KEYWORD(borrowed) // Mojo extension.
+TOK_KEYWORD(borrowed) // Mojo extension.   FIXME: Remove.
 TOK_KEYWORD(break)
 TOK_KEYWORD(case)
 TOK_KEYWORD(class)
@@ -127,7 +127,7 @@ TOK_KEYWORD(global)
 TOK_KEYWORD(if)
 TOK_KEYWORD(import)
 TOK_KEYWORD(in)
-TOK_KEYWORD(inout) // Mojo extension.
+TOK_KEYWORD(inout) // Mojo extension.  FIXME: Remove.
 TOK_KEYWORD(is)
 TOK_KEYWORD(lambda)
 TOK_KEYWORD(match)

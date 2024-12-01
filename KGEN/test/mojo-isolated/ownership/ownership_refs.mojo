@@ -228,13 +228,13 @@ fn testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
 
 
 # CHECK-LABEL: lit.func @"testLifetimeOf1
-# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
+# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
 # CHECK-SAME: Pointer <{{.*}}, :origin<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
 fn testLifetimeOf1(a: MemExample) -> Pointer[MemExample, __origin_of(a)]:
   return Pointer.address_of(a)
 
 # CHECK-LABEL: lit.func @"testLifetimeOf2
-# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
+# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> read_mem) ->
 # CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
 fn testLifetimeOf2(a: MemExample) -> Pointer[MemExample, __origin_of(a)]._mlir_type:
 

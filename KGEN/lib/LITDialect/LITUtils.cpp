@@ -220,7 +220,7 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
     // Parameters don't really have ArgConvention's.
     if (packIndex == ssize_t(idx - 1))
-      origPackConvention = ArgConvention::BorrowedInReg;
+      origPackConvention = ArgConvention::ReadReg;
 
     TypedAttr defaultVal;
     if (failed(parseOptionalDefaultValue(p, defaultVal, decl.getType())))
@@ -267,7 +267,7 @@ ParseResult LIT::parseConventionAndVariadicness(
     std::optional<ArgConvention> &origArgPackConvention, size_t idx) {
   mlir::SMLoc loc = p.getCurrentLocation();
   StringRef str;
-  convention = ArgConvention::BorrowedInReg;
+  convention = ArgConvention::ReadReg;
   if (succeeded(p.parseOptionalKeyword(&str))) {
     if (std::optional<ArgConvention> conv = symbolizeArgConvention(str)) {
       convention = *conv;
@@ -281,8 +281,8 @@ ParseResult LIT::parseConventionAndVariadicness(
       if (argPackIndex == ssize_t(idx)) {
         argPackIndex = idx;
         origArgPackConvention = convention;
-        if (convention != ArgConvention::OwnedInMem)
-          convention = ArgConvention::BorrowedInMem;
+        if (convention != ArgConvention::OwnedMem)
+          convention = ArgConvention::ReadMem;
       }
       return success();
     }
@@ -293,8 +293,8 @@ ParseResult LIT::parseConventionAndVariadicness(
         return p.emitError(loc, "multiple packs not supported");
       argPackIndex = idx;
       origArgPackConvention = convention;
-      if (convention != ArgConvention::OwnedInMem)
-        convention = ArgConvention::BorrowedInMem;
+      if (convention != ArgConvention::OwnedMem)
+        convention = ArgConvention::ReadMem;
     } else
       return p.emitError(loc, "expected convention|variadicness, got: ") << str;
   }
@@ -319,7 +319,7 @@ static void printVariadicness(AsmPrinter &p, Variadicness variadicness,
 void LIT::printConventionAndVariadicness(AsmPrinter &p,
                                          ArgConvention convention,
                                          Variadicness variadicness) {
-  if (convention == ArgConvention::BorrowedInReg)
+  if (convention == ArgConvention::ReadReg)
     return printVariadicness(p, variadicness);
 
   p << ' ' << stringifyArgConvention(convention);

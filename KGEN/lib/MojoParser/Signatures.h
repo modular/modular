@@ -84,15 +84,15 @@ enum VarArgKind {
 struct ParsedArgument {
   SMLoc loc;
   LexerCursor cursor;
-  // Specify argument passing convention, e.g. owned/inout etc.
+  // Specify argument passing convention, e.g. owned/mut etc.
   enum PAArgConvention {
     kConventionUnspec = 0,         // Nothing specified
-    kConventionInOut = 1,          // inout x
+    kConventionMut = 1,            // mut x
     kConventionOwned = 2,          // owned x
-    kConventionBorrowed = 3,       // borrowed x
+    kConventionRead = 3,           // read x
     kConventionRef = 4,            // ref [origin, addrspace] x
     kConventionByRefResult = 5,    // No syntax: result slot
-    kConventionInitSelfResult = 6, // No syntax: __init__(inout self) argument
+    kConventionInitSelfResult = 6, // __init__(out self) argument
   } convention = kConventionUnspec;
 
   // After type checking, this will hold the KGEN convention to use.

@@ -241,7 +241,7 @@ public:
   ///    "kind": "argument",
   ///    "name": string,
   ///    "description": string,
-  ///    "convention": string, // "read", "inout", "owned"
+  ///    "convention": string, // "read", "mut", "owned"
   ///    "type": string
   ///    "passingKind": string,
   ///    "defaultValue": string?

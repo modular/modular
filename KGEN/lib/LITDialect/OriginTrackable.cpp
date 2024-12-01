@@ -145,12 +145,12 @@ OriginTrackable::OriginTrackable(Value v) {
 
   unsigned argIdx = bbArg.getArgNumber();
   switch (signature.getArgConvention(argIdx)) {
-  case ArgConvention::BorrowedInReg:
+  case ArgConvention::ReadReg:
     // This is immutable so don't need to be tracked.
     return;
 
-  case ArgConvention::BorrowedInMem:
-  case ArgConvention::InOut:
+  case ArgConvention::ReadMem:
+  case ArgConvention::Mut:
   case ArgConvention::MutRef:
   case ArgConvention::Ref:
     isIndirect = true;
@@ -158,12 +158,12 @@ OriginTrackable::OriginTrackable(Value v) {
     endInitState = EndsInit;
     break;
 
-  case ArgConvention::OwnedInReg:
+  case ArgConvention::OwnedReg:
     isIndirect = false;
     startsUninit = false;
     endInitState = EndsUninit;
     break;
-  case ArgConvention::OwnedInMem:
+  case ArgConvention::OwnedMem:
     isIndirect = true;
     startsUninit = false;
     endInitState = EndsUninit;
@@ -330,18 +330,18 @@ static void getCallOpEffects(
   auto getOperandEffectForConvention = [](ArgConvention conv,
                                           Type argType) -> OperandEffect {
     switch (conv) {
-    case ArgConvention::OwnedInReg:
+    case ArgConvention::OwnedReg:
       return OperandEffect::regConsume;
-    case ArgConvention::OwnedInMem:
+    case ArgConvention::OwnedMem:
       return OperandEffect::memConsume;
-    case ArgConvention::BorrowedInReg:
+    case ArgConvention::ReadReg:
       return OperandEffect::regUse;
-    case ArgConvention::BorrowedInMem:
-    case ArgConvention::InOut:
+    case ArgConvention::ReadMem:
+    case ArgConvention::Mut:
     case ArgConvention::MutRef:
     case ArgConvention::Ref: {
       bool isMut = cast<RefType>(argType).isMutableKnown(true);
-      return isMut ? OperandEffect::memInOut : OperandEffect::memLoad;
+      return isMut ? OperandEffect::memMut : OperandEffect::memLoad;
     }
     case ArgConvention::ByRefError:
     case ArgConvention::ByRefResult:
@@ -373,8 +373,8 @@ static void getCallOpEffects(
       return;
 
     // If this is a memConsume or memStoreOwned, then the origin of the
-    // reference is handled directly, strip it off.  Otherwise handle borrowed,
-    // inout, etc operands as just any-old reference use.
+    // reference is handled directly, strip it off.  Otherwise handle read,
+    // mut, etc operands as just any-old reference use.
     if (SignatureType::hasAddress(conv))
       argType = cast<RefType>(argType).getElementType();
 
@@ -399,7 +399,7 @@ static void getCallOpEffects(
     //      argument conventions which consume the operand, something origin
     //      accesses cannot model (because it requires field sensitivity).
     //   2) it allows us to reason about the varargs uses field-sensitively,
-    //      e.g. you can pass `a.x` through varargs and `a.y` through an inout
+    //      e.g. you can pass `a.x` through varargs and `a.y` through a 'mut'
     //      without the compiler imagining a conflict on "a" just like other
     //      arguments.
     // TODO(field-sensitive origins): remove this hack.
@@ -433,7 +433,7 @@ static void getCallOpEffects(
           // don't redundantly process them.  Doing so is a problem for owned
           // operands.
           addArgument(arg, convention, /*noIndirect=*/true);
-          if (argConvention != ArgConvention::OwnedInMem)
+          if (argConvention != ArgConvention::OwnedMem)
             typesAccessibleByCallee.push_back(arg.getType());
           continue;
         }

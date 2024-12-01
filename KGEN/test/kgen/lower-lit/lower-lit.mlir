@@ -74,12 +74,12 @@ lit.func @decorated_fn()
 // CHECK-LABEL: @generic_types_retain_convention
 lit.func @generic_types_retain_convention<T: type>[imm a](
   // CHECK: %arg0: !kgen.paramref<T>,
-  // CHECK: %arg1: !kgen.pointer<T> inout,
+  // CHECK: %arg1: !kgen.pointer<T> mut,
   // CHECK: %arg2: !kgen.paramref<T> owned,
   // CHECK: %arg3: index,
   // CHECK: %arg4: !kgen.pointer<index> owned
   %p: !kgen.paramref<T>,
-  %q: !lit.ref<T, imm a> inout,
+  %q: !lit.ref<T, imm a> mut,
   %r: !kgen.paramref<T> owned,
   %s1: index,
   %s2: !kgen.pointer<index> owned
@@ -316,8 +316,8 @@ lit.func @return_raise_or(%cond: i1, %err: !lit.struct<@Error>) -> !kgen.variant
 }
 
 // CHECK-LABEL: kgen.generator @removeMetadata
-// CHECK-SAME: (%arg0:  !kgen.pointer<index> inout) throws ->
-lit.func @removeMetadata[imm a](%arg0: !lit.ref<index, imm a> inout) throws -> !kgen.variant<@Error, index> {
+// CHECK-SAME: (%arg0:  !kgen.pointer<index> mut) throws ->
+lit.func @removeMetadata[imm a](%arg0: !lit.ref<index, imm a> mut) throws -> !kgen.variant<@Error, index> {
   %0 = index.constant 0
   %1 = kgen.variant.create %0, 1 : <@Error, index>
   kgen.return %1 : !kgen.variant<@Error, index>
@@ -510,7 +510,7 @@ lit.func @callThing[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |)
 
 // CHECK-LABEL: kgen.generator @testLifetimeOf2
 // Verify that we remap the returns as well as the operands.
-lit.func @testLifetimeOf2[imm *"a`"](%a: !lit.ref<!Mem, imm *"a`"> borrow_in_mem) -> !lit.ref<!Mem, imm *"a`">{
+lit.func @testLifetimeOf2[imm *"a`"](%a: !lit.ref<!Mem, imm *"a`"> read_mem) -> !lit.ref<!Mem, imm *"a`">{
   // CHECK-NEXT: kgen.return %arg0
   kgen.return %a : !lit.ref<!Mem, imm *"a`">
 }

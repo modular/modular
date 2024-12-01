@@ -14,7 +14,7 @@ lit.struct.decl @S attributes {
   }
 }
 
-lit.func @print(%borrowMe: !lit.ref<@S, mut #lit.any.origin> borrow_in_mem) -> !kgen.none {
+lit.func @print(%borrowMe: !lit.ref<@S, mut #lit.any.origin> read_mem) -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
 }

@@ -32,9 +32,8 @@ DLValue &DLValue::operator=(const DLValue &existing) {
 
 BaseDLValue::~BaseDLValue() = default; // vtable anchor.
 
-// This hook is called before an argument is passed inout.
-LValue BaseDLValue::prepareForInoutAccess(SMLoc loc,
-                                          ExprEmitter &emitter) const {
+// This hook is called before an argument is passed mut.
+LValue BaseDLValue::prepareForMutAccess(SMLoc loc, ExprEmitter &emitter) const {
   return DLValue(RCRef<BaseDLValue>::copy(const_cast<BaseDLValue *>(this)));
 }
 
@@ -347,10 +346,10 @@ void DefArgumentWrapperDLValue::print(raw_ostream &os) const {
   os << "def argument wrapper of type " << elementType;
 }
 
-// This hook is called before an argument is passed inout.
+// This hook is called before an argument is passed mut.
 LValue
-DefArgumentWrapperDLValue::prepareForInoutAccess(SMLoc loc,
-                                                 ExprEmitter &emitter) const {
+DefArgumentWrapperDLValue::prepareForMutAccess(SMLoc loc,
+                                               ExprEmitter &emitter) const {
   // Okay, if the by-reg def argument is mutated, we need to snap into action
   // and lazily build a shadow in the function entry.
   auto func = cast<FuncOp>(argDecl->getParentDecl());
@@ -390,7 +389,7 @@ CValue DefArgumentWrapperDLValue::emitStore(ASTExprAnd<CValue> value,
                                             ExprEmitter &emitter) const {
   // Okay, if the def argument is mutated, we need to snap into action and
   // lazily build a shadow in the function entry.
-  LValue newVal = prepareForInoutAccess(value.expr->getLoc(), emitter);
+  LValue newVal = prepareForMutAccess(value.expr->getLoc(), emitter);
   if (!newVal)
     return BValue();
 

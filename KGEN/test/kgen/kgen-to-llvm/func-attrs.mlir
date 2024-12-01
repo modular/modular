@@ -8,12 +8,12 @@ kgen.func @addrspace(%arg0: !kgen.pointer<i32, 7>) {
 }
 
 // CHECK-LABEL: @borrow(ptr noundef %0)
-kgen.func @borrow(%arg0: !kgen.pointer<i32> borrow) {
+kgen.func @borrow(%arg0: !kgen.pointer<i32> read) {
   kgen.return
 }
 
-// CHECK-LABEL: @borrow_in_mem(ptr noundef nonnull %0)
-kgen.func @borrow_in_mem(%arg0: !kgen.pointer<i32> borrow_in_mem) {
+// CHECK-LABEL: @read_mem(ptr noundef nonnull %0)
+kgen.func @read_mem(%arg0: !kgen.pointer<i32> read_mem) {
   kgen.return
 }
 
@@ -27,8 +27,8 @@ kgen.func @owned_in_mem(%arg0: !kgen.pointer<i32> owned_in_mem) {
   kgen.return
 }
 
-// CHECK-LABEL: @inout(ptr noalias noundef nonnull %0)
-kgen.func @inout(%arg0: !kgen.pointer<i32> inout) {
+// CHECK-LABEL: @mut(ptr noalias noundef nonnull %0)
+kgen.func @mut(%arg0: !kgen.pointer<i32> mut) {
   kgen.return
 }
 

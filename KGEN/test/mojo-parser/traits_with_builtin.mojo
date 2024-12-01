@@ -60,7 +60,7 @@ struct AsyncStructReg(AsyncTrait):
 
 # CHECK-LABEL: lit.func @"async_trait
 fn async_trait[T: AsyncTrait](value: T):
-    # CHECK: lit.async.call[!lit.signature<[2]("self": {{.*}} borrow_in_mem, ?, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) async -> !kgen.none>: get_vtable_entry
+    # CHECK: lit.async.call[!lit.signature<[2]("self": {{.*}} read_mem, ?, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) async -> !kgen.none>: get_vtable_entry
     _ = value.foo()
 
 

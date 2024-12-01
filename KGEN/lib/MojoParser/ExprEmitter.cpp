@@ -2027,7 +2027,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
   }
 
   // Otherwise, we'll need to invoke the copyinit method which will take the
-  // destination as inout, so we're dealing with a memory case.
+  // destination by reference, so we're dealing with a memory case.
 
   // Memory-only copyinit will take the destination as address space zero, so
   // we need to reject ValueDest's expecting it in GPU memory.
@@ -2038,7 +2038,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return {};
   }
 
-  // __copyinit__ has signature: `(inout self, existing: Self)`.
+  // __copyinit__ has signature: `(out self, existing: Self)`.
   MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
   if (!destBuffer)
     return {};
@@ -2162,7 +2162,7 @@ CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
   // to use __moveinit__ if present.
   if (shared.typeHasMember(valueType, "__moveinit__", value.expr->getLoc())) {
-    // `__moveinit__(inout self, owned existing: Self)`.
+    // `__moveinit__(out self, owned existing: Self)`.
     ASTExprAnd<AnyValue> operands[] = {
         ASTExprAnd<AnyValue>{destRef, value.expr}, value};
     ValueDest moveDest(context);

@@ -21,7 +21,7 @@ trait TestTrait:
 struct Foo[
     *Ts: AnyTrivialRegType
     ](TestTrait):
-  fn __init__(inout self):
+  fn __init__(out self):
     pass
   fn foo(self):
     print("called foo")
@@ -33,7 +33,7 @@ Foo[Int]().foo()
 @register_passable
 struct \
   Bar:
-  fn __init__(inout self):
+  fn __init__(out self):
     return
   fn bar(self):
     print("called bar")

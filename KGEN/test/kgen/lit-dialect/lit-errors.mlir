@@ -147,7 +147,7 @@ lit.func @slashAfterStar(%a: index, *, |, %b: index) {
 // -----
 
 // expected-error @+1 {{expected 'var' or 'pack', got: stuff}}
-lit.func @incorrect_arg_variadicness(%a: index borrow|stuff) {
+lit.func @incorrect_arg_variadicness(%a: index read|stuff) {
   kgen.return
 }
 
@@ -347,8 +347,8 @@ lit.func @f() -> !kgen.none {
 
 // -----
 
-// expected-error @below {{argument #0 with convention 'borrow_in_mem' in signature type should be a `!kgen.pointer` or `!lit.ref` but got: 'index'}}
-!type = !lit.signature<(index borrow_in_mem) -> ()>
+// expected-error @below {{argument #0 with convention 'read_mem' in signature type should be a `!kgen.pointer` or `!lit.ref` but got: 'index'}}
+!type = !lit.signature<(index read_mem) -> ()>
 
 // -----
 

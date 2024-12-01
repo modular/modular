@@ -238,18 +238,18 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   if (p.consumeIf(Token::kw_owned))
     convention = kConventionOwned;
   else if (p.consumeIf(Token::kw_borrowed))
-    convention = kConventionBorrowed;
+    convention = kConventionRead;
   else if (p.consumeIf(Token::kw_inout))
-    convention = kConventionInOut;
+    convention = kConventionMut;
   else if (p.getToken().is(Token::kw_ref)) {
     (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
     convention = kConventionRef;
   } else if (p.consumeIfSoftIdentifier("out")) {
     handleContextualArgConvention("out", kConventionInitSelfResult);
   } else if (p.consumeIfSoftIdentifier("mut")) {
-    handleContextualArgConvention("mut", kConventionInOut);
+    handleContextualArgConvention("mut", kConventionMut);
   } else if (p.consumeIfSoftIdentifier("read")) {
-    handleContextualArgConvention("read", kConventionBorrowed);
+    handleContextualArgConvention("read", kConventionRead);
   }
 
   while (p.getToken().isAny(Token::kw_owned, Token::kw_borrowed,
@@ -342,7 +342,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     if (p.parseExpression(initExpr))
       return failure();
 
-    if (convention == kConventionInOut ||
+    if (convention == kConventionMut ||
         convention == kConventionInitSelfResult) {
       p.emitError(equalLoc)
           << (convention == kConventionInitSelfResult ? "'out'" : "'mut'")
@@ -742,7 +742,7 @@ TypeCheckedParamList::TypeCheckedParamList(
 
     if (vararg == VarArgKind::VarArg && !type.isTypeCheckErrorType()) {
       // TODO: What convention should we use for parameter varargs?
-      type = VariadicType::get(type, ArgConvention::BorrowedInReg);
+      type = VariadicType::get(type, ArgConvention::ReadReg);
       // We add the indices of all parameters to be marked as varargs. Use the
       // current number of elements in `names`, because it also includes
       // implicitly added autoparams.
@@ -944,7 +944,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   }
 
   // The reference is immutable when borrowing, mutable otherwise.
-  bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed &&
+  bool isMutable = arg.convention != ParsedArgument::kConventionRead &&
                    arg.convention != ParsedArgument::kConventionUnspec;
 
   // Arguments passed by memory need an associated origin parameter, and need
@@ -1076,7 +1076,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     // TODO: enable other conventions for **kwargs.
     arg.convention = arg.vararg == VarArgKind::KWVarArg
                          ? ParsedArgument::kConventionOwned
-                         : ParsedArgument::kConventionBorrowed;
+                         : ParsedArgument::kConventionRead;
   }
 
   // Emit default argument values if present.
@@ -1111,7 +1111,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     // Owned arguments are always passed in memory, allowing us to check for
     // exclusivity and other requirements.  Register passable arguments are
     // promoted to being passed in registers after elaboration.
-    arg.kgenConvention = ArgConvention::OwnedInMem;
+    arg.kgenConvention = ArgConvention::OwnedMem;
     break;
   case ParsedArgument::kConventionRef: {
     if (arg.vararg != VarArgKind::None) {
@@ -1133,8 +1133,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       arg.isErroneous = true;
     break;
   }
-  case ParsedArgument::kConventionBorrowed: {
-    arg.kgenConvention = ArgConvention::BorrowedInMem;
+  case ParsedArgument::kConventionRead: {
+    arg.kgenConvention = ArgConvention::ReadMem;
     TypeConvention conv = type.getRegisterPassability(arg.loc, shared);
     // FIXME(MOCO-725): Borrows of non-trivial register-passable values don't
     // have origins and can't be correctly tracked if captured in an async
@@ -1150,11 +1150,11 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     // pass non-trivial ones because we cannot diagnose ownership and have other
     // lifetime issues.
     if (conv == TypeConvention::RegisterPassableTrivial)
-      arg.kgenConvention = ArgConvention::BorrowedInReg;
+      arg.kgenConvention = ArgConvention::ReadReg;
     break;
   }
-  case ParsedArgument::kConventionInOut:
-    arg.kgenConvention = ArgConvention::InOut;
+  case ParsedArgument::kConventionMut:
+    arg.kgenConvention = ArgConvention::Mut;
     break;
   case ParsedArgument::kConventionInitSelfResult:
     arg.kgenConvention = ArgConvention::InitSelf;
@@ -1163,7 +1163,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       shared.emitError(arg.loc,
                        "'out' convention only supported on the first argument");
       arg.isErroneous = true;
-      arg.kgenConvention = ArgConvention::InOut;
+      arg.kgenConvention = ArgConvention::Mut;
       break;
     }
     if (arg.vararg != VarArgKind::None) {
@@ -1188,16 +1188,16 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     case ParsedArgument::kConventionInitSelfResult:
       llvm_unreachable("not a pack arg convention");
     case ParsedArgument::kConventionOwned:
-      arg.kgenVariadicConvention = ArgConvention::OwnedInMem;
-      arg.kgenConvention = ArgConvention::OwnedInMem;
+      arg.kgenVariadicConvention = ArgConvention::OwnedMem;
+      arg.kgenConvention = ArgConvention::OwnedMem;
       break;
-    case ParsedArgument::kConventionBorrowed:
-      arg.kgenVariadicConvention = ArgConvention::BorrowedInMem;
-      arg.kgenConvention = ArgConvention::BorrowedInMem;
+    case ParsedArgument::kConventionRead:
+      arg.kgenVariadicConvention = ArgConvention::ReadMem;
+      arg.kgenConvention = ArgConvention::ReadMem;
       break;
-    case ParsedArgument::kConventionInOut:
-      arg.kgenVariadicConvention = ArgConvention::InOut;
-      arg.kgenConvention = ArgConvention::BorrowedInMem;
+    case ParsedArgument::kConventionMut:
+      arg.kgenVariadicConvention = ArgConvention::Mut;
+      arg.kgenConvention = ArgConvention::ReadMem;
       break;
     }
   }
@@ -1207,7 +1207,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   Type fullType;
   if (SignatureType::hasImplicitOrigin(arg.kgenConvention) &&
       arg.vararg != VarArgKind::KWVarArg) {
-    bool isMutable = arg.kgenConvention != ArgConvention::BorrowedInMem;
+    bool isMutable = arg.kgenConvention != ArgConvention::ReadMem;
     fullType =
         makeImplicitRefTypeForArg(arg, idx, type, isMutable, tcSignature);
   } else {
@@ -1219,7 +1219,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // value, we're passing the array of pointers by value.
   if (arg.vararg == VarArgKind::VarArg) {
     fullType = VariadicType::get(fullType, arg.kgenConvention);
-    arg.kgenConvention = ArgConvention::BorrowedInReg;
+    arg.kgenConvention = ArgConvention::ReadReg;
   } else if (arg.vararg == VarArgKind::KWVarArg) {
     // We build OwnedKwargsDict[ValType].
     ASTType dictType = shared.getOwnedKwargsDictType(arg.loc);
@@ -1265,7 +1265,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
     // OwnedKwargsDict is memory only and since only the callee can access it,
     // we pass it as owned.
-    arg.kgenConvention = ArgConvention::OwnedInMem;
+    arg.kgenConvention = ArgConvention::OwnedMem;
     fullType = makeImplicitRefTypeForArg(arg, idx, fullType, /*isMutable*/ true,
                                          tcSignature);
   }
@@ -1293,20 +1293,20 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
   DeclIRValue argIRValue;
   switch (arg.kgenConvention) {
-  case ArgConvention::OwnedInReg:
+  case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     llvm_unreachable("should never need to handle result slots");
-  case ArgConvention::InOut:
+  case ArgConvention::Mut:
   case ArgConvention::InitSelf:
-  case ArgConvention::OwnedInMem:
-  case ArgConvention::BorrowedInMem:
+  case ArgConvention::OwnedMem:
+  case ArgConvention::ReadMem:
   case ArgConvention::Ref:
   case ArgConvention::MutRef:
     argIRValue = CValue::getMValueForRef(bbArg);
     break;
-  case ArgConvention::BorrowedInReg:
+  case ArgConvention::ReadReg:
     argIRValue = SRValue(bbArg);
     break;
   }
@@ -1575,7 +1575,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     // TODO: Remove this legacy hack, to allow people to write inout/mut for
     // self on init.
     if (!argList.parsedArgs.empty() &&
-        argList.parsedArgs[0].convention == ParsedArgument::kConventionInOut) {
+        argList.parsedArgs[0].convention == ParsedArgument::kConventionMut) {
       auto &selfArg = argList.parsedArgs[0];
       selfArg.convention = ParsedArgument::kConventionInitSelfResult;
     }
@@ -1838,7 +1838,7 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     }
 
     if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
-      if (parsedArgs[1].convention != ParsedArgument::kConventionBorrowed)
+      if (parsedArgs[1].convention != ParsedArgument::kConventionRead)
         emitErrorLoc(parsedArgs[1].loc,
                      "existing value argument must be passed as 'read'");
     } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {

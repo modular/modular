@@ -64,7 +64,7 @@ struct OriginTrackable {
   enum ExitInitState {
     /// Value is never initialized upon function exit.
     EndsUninit,
-    /// Value is always initialized upon function exit (e.g. as with a inout
+    /// Value is always initialized upon function exit (e.g. as with a mut
     /// argument).
     EndsInit,
     /// Value is initialized upon a normal function exit (e.g. as with a
@@ -131,9 +131,9 @@ enum class OperandEffect {
   /// operands all do this.
   memStoreOwned,
 
-  /// inout arg to a function call.  Value must be initialized before the
+  /// mut arg to a function call.  Value must be initialized before the
   /// operation, may be mutated, but then is still live afterward.
-  memInOut,
+  memMut,
 
   /// This loads a value from the operand and takes ownership of the result, for
   /// example, owned operands (e.g. __del__) and LoadConsume.

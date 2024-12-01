@@ -18,7 +18,7 @@ struct Reg:
 
 # CHECK-LABEL: lit.struct.decl @"fn(Mem
 # CHECK-LABEL: lit.func @"__init__
-# CHECK-SAME: (%self: {{.*}}, %other: {{.*}}[1](!lit.ref<!Mem{{[0-9]*}}, imm *[0,0]> borrow_in_mem, |) -> !Int>
+# CHECK-SAME: (%self: {{.*}}, %other: {{.*}}[1](!lit.ref<!Mem{{[0-9]*}}, imm *[0,0]> read_mem, |) -> !Int>
 # CHECK-NEXT: [[OPAQUE:%.*]] = pop.pointer.bitcast %other
 # CHECK-NEXT: [[FIELD0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT: store [[OPAQUE]], [[FIELD0]]
@@ -28,7 +28,7 @@ struct Reg:
 # CHECK-NEXT: store [[DTOR]], [[DTOR_FIELD]]
 # CHECK-NEXT: [[COPY_FIELD:%.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT: store [[COPY]], [[COPY_FIELD]]
-# CHECK-NEXT: lit.func call_impl[[[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none>, [[ARG:%.*]][*""]: !lit.ref<!Mem, [[LT]]> borrow_in_mem, |) -> !Int
+# CHECK-NEXT: lit.func call_impl[[[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none>, [[ARG:%.*]][*""]: !lit.ref<!Mem, [[LT]]> read_mem, |) -> !Int
 # CHECK-NEXT:   [[CALLEE:%.*]] = pop.pointer.bitcast [[FN_PTR]]
 # CHECK-NEXT:   [[RES:%.*]] = lit.call_indirect [[CALLEE]][[[LT]]]([[ARG]])
 # CHECK-NEXT:   lit.return [[RES]]
@@ -42,7 +42,7 @@ struct Reg:
 # CHECK-LABEL: lit.func @"__init__
 # CHECK-SAME: (%self: {{.*}}, %other: {{.*}}({{.*}}"__error__": !lit.ref<!Error, mut *[0,1]> byref_error, "__result__": !lit.ref<!Mem, mut *[0,2]> byref_result) throws -> i1>
 # CHECK:      lit.func call_impl[imm [[REG:.*]], mut [[ELT:.*]], mut [[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none>,
-# CHECK-SAME: [[ARG:%.*]][*""]: !lit.ref<!Reg, imm [[REG]]> borrow_in_mem, |, ?, [[ERR:%.*]]: !lit.ref<!Error, mut [[ELT]]> byref_error, [[SLOT:%.*]]: !lit.ref<!Mem, mut [[LT]]> byref_result) throws -> i1
+# CHECK-SAME: [[ARG:%.*]][*""]: !lit.ref<!Reg, imm [[REG]]> read_mem, |, ?, [[ERR:%.*]]: !lit.ref<!Error, mut [[ELT]]> byref_error, [[SLOT:%.*]]: !lit.ref<!Mem, mut [[LT]]> byref_result) throws -> i1
 # CHECK:        [[RES:%.*]] = lit.call_indirect %{{.*}}[imm [[REG]], mut [[ELT]], mut [[LT]]]([[ARG]], [[ERR]], [[SLOT]])
 # CHECK-NEXT:   lit.return [[RES]]
 

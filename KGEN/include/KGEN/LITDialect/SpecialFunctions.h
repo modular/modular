@@ -60,7 +60,7 @@ public:
     /// This method must return Self.
     kSelfResult = 1 << 5,
 
-    /// This method is a struct initializer, it takes 'inout self'
+    /// This method is a struct initializer, it takes 'out self'
     /// and returns None.
     kInitializer = (1 << 6) | kInstMethod | kNoneResult,
 

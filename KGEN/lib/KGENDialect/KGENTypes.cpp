@@ -27,16 +27,16 @@ using namespace KGEN;
 // ArgConvention
 //===----------------------------------------------------------------------===//
 
-/// Return a string like "read" or "inout".
+/// Return a string like "read" or "mut".
 const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
-  case ArgConvention::BorrowedInReg:
-  case ArgConvention::BorrowedInMem:
+  case ArgConvention::ReadReg:
+  case ArgConvention::ReadMem:
     return "read";
-  case ArgConvention::OwnedInReg:
-  case ArgConvention::OwnedInMem:
+  case ArgConvention::OwnedReg:
+  case ArgConvention::OwnedMem:
     return "owned";
-  case ArgConvention::InOut:
+  case ArgConvention::Mut:
     return "mut";
   case ArgConvention::Ref:
     return "ref";
@@ -309,15 +309,15 @@ SignatureType SignatureType::getWithMetadata(FnMetadataAttrInterface metadata) {
 
 bool SignatureType::hasAddress(ArgConvention conv) {
   switch (conv) {
-  case ArgConvention::OwnedInReg:
-  case ArgConvention::BorrowedInReg:
+  case ArgConvention::OwnedReg:
+  case ArgConvention::ReadReg:
     return false;
   case ArgConvention::Ref:
   case ArgConvention::MutRef:
     // The conventions above differ from hasImplicitOrigin.
-  case ArgConvention::OwnedInMem:
-  case ArgConvention::BorrowedInMem:
-  case ArgConvention::InOut:
+  case ArgConvention::OwnedMem:
+  case ArgConvention::ReadMem:
+  case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::InitSelf:
   case ArgConvention::ByRefError:
@@ -333,12 +333,12 @@ bool SignatureType::hasImplicitOrigin(ArgConvention conv) {
   case ArgConvention::Ref:
   case ArgConvention::MutRef:
   // The conventions above differ from hasAddress.
-  case ArgConvention::OwnedInReg:
-  case ArgConvention::BorrowedInReg:
+  case ArgConvention::OwnedReg:
+  case ArgConvention::ReadReg:
     return false;
-  case ArgConvention::OwnedInMem:
-  case ArgConvention::BorrowedInMem:
-  case ArgConvention::InOut:
+  case ArgConvention::OwnedMem:
+  case ArgConvention::ReadMem:
+  case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::InitSelf:
   case ArgConvention::ByRefError:
@@ -1005,14 +1005,14 @@ ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
 
 static void printVariadicConvention(AsmPrinter &p, ArgConvention conv) {
   // Default to borrowed_in_reg
-  if (conv != ArgConvention::BorrowedInReg)
+  if (conv != ArgConvention::ReadReg)
     p << ", " << stringifyArgConvention(conv);
 }
 
 static ParseResult parseVariadicConvention(AsmParser &p, ArgConvention &conv) {
   // Default to borrowed_in_reg
   if (!succeeded(p.parseOptionalComma())) {
-    conv = ArgConvention::BorrowedInReg;
+    conv = ArgConvention::ReadReg;
     return success();
   }
 

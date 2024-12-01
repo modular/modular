@@ -68,7 +68,7 @@ struct Foo:
   var x: Bool
   var y: StringLiteral
   var z: SIMD[DType.float32, 4]
-  fn __init__(inout self):
+  fn __init__(out self):
     self.v = -101
     self.w = SIMD[DType.int8, 2](-50, 31)
     self.x = True

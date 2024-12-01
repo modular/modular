@@ -1575,19 +1575,19 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
           contextRVType, "__enter__", enterOperands, contextExp,
           CallSyntax::kMethodCall, enterEmitter)) {
     // If there is no exit method, we can pass the argument as an RValue so the
-    // enter method can consume the value... unless __enter__ takes self inout.
+    // enter method can consume the value... unless __enter__ takes self 'mut'.
     if (auto signature = dyn_cast<SignatureType>(enterMethod.getType());
         signature && !signature.getArgConventions().empty()) {
       auto firstArgConvention = signature.getArgConventions()[0];
-      if (firstArgConvention != ArgConvention::InOut && !hasExitMethod)
+      if (firstArgConvention != ArgConvention::Mut && !hasExitMethod)
         contextVal = MRValue(contextMgrDecl);
 
       // One error that people hit is defining a context manager with both an
       // owned enter method and an exit method.  This will generate a terrible
       // error message in CheckLifetimes, so cut that off here.
-      assert(firstArgConvention != ArgConvention::OwnedInReg &&
+      assert(firstArgConvention != ArgConvention::OwnedReg &&
              "not used by the mojo parser");
-      if (firstArgConvention == ArgConvention::OwnedInMem && hasExitMethod) {
+      if (firstArgConvention == ArgConvention::OwnedMem && hasExitMethod) {
         auto diag =
             emitError(contextExp->getLoc(), "context manager of type ")
             << contextRVType

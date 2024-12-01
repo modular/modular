@@ -783,7 +783,7 @@ lit.func @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
 // COM: When cloning the finally block, we must uniquely mangle parameters to
 // COM: avoid duplicate parameter name errors.
 // CHECK-LABEL: lit.func @mangle_params_finally_1
-lit.func @mangle_params_finally_1<x>(%c: i1 borrow) -> !kgen.none {
+lit.func @mangle_params_finally_1<x>(%c: i1 read) -> !kgen.none {
   lit.try {
     // CHECK: hlcf.if %c
     hlcf.if %c {
@@ -818,7 +818,7 @@ lit.func @mangle_params_finally_1<x>(%c: i1 borrow) -> !kgen.none {
 
 
 // CHECK-LABEL: lit.func @mangle_params_finally_2
-lit.func @mangle_params_finally_2<x>(%c: i1 borrow) -> !kgen.none {
+lit.func @mangle_params_finally_2<x>(%c: i1 read) -> !kgen.none {
   lit.try {
     // CHECK: hlcf.if %c
     hlcf.if %c {
@@ -869,7 +869,7 @@ lit.func @mangle_params_finally_2<x>(%c: i1 borrow) -> !kgen.none {
 
 
 // CHECK-LABEL: lit.func @mangle_params_finally_3
-lit.func @mangle_params_finally_3<x>(%c: i1 borrow) -> !kgen.none {
+lit.func @mangle_params_finally_3<x>(%c: i1 read) -> !kgen.none {
   lit.try {
     // CHECK: lit.func nested()
     lit.func nested() -> !kgen.none {

@@ -15,5 +15,5 @@ fn call_it() -> Int:
     # CHECK-SAME: !lit.ref<!Int1, mut {{.*}}> byref_result
     # CHECK-NEXT: %2 = lit.ref.immut %anonymous2A
     # CHECK-NEXT: lit.call {{.*}}__call__{{.*}}(%2)
-    # CHECK-SAME: (!lit.ref<!Int1, imm {{.*}}> borrow_in_mem, |) -> !Int
+    # CHECK-SAME: (!lit.ref<!Int1, imm {{.*}}> read_mem, |) -> !Int
     return pass_int(50)()

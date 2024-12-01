@@ -34,7 +34,7 @@ fn use(y: MemType, z: Int, u: int):
 
 # CHECK-LABEL: lit.func @"__copyinit__(
 # CHECK-SAME:   %self: !lit.ref<{{.*}}> init_self,
-# CHECK-SAME:   %other: !lit.ref<{{.*}}> borrow_in_mem
+# CHECK-SAME:   %other: !lit.ref<{{.*}}> read_mem
 # CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 3 : i8
 # CHECK-NEXT:   [[V0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[V1:%.*]] = lit.ref.struct.ger %other[field0]

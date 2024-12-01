@@ -1137,7 +1137,7 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   if (!callee)
     return callee.isErroneous() ? FailureOr<PValue>(failure()) : PValue();
 
-  // Initializers take 'inout self' as the first argument.
+  // Initializers take 'out self' as the first argument.
   // TODO: We should add a new magic InferSelfLValue() IRValue type.  This
   // would make the inference and overload resolution logic more consistent
   // because the selfexpr should really be an LValue.

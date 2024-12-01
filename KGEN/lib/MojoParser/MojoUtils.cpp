@@ -101,18 +101,18 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
 
 ASTType LIT::getFunctionArgumentRValueType(ASTType type, ArgConvention conv) {
   switch (conv) {
-  case ArgConvention::OwnedInReg:
+  case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::ByRefError:
   case ArgConvention::ByRefResult:
   case ArgConvention::InitSelf:
   case ArgConvention::MutRef:
   case ArgConvention::Ref:
-  case ArgConvention::InOut:
-  case ArgConvention::BorrowedInMem:
-  case ArgConvention::OwnedInMem:
+  case ArgConvention::Mut:
+  case ArgConvention::ReadMem:
+  case ArgConvention::OwnedMem:
     return type.getReferenceElementType();
-  case ArgConvention::BorrowedInReg:
+  case ArgConvention::ReadReg:
     return type;
   }
 }

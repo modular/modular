@@ -12,7 +12,7 @@ struct MemType:
         return MemType()
 
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %q: !lit.ref<!Int
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> read_mem, |, %q: !lit.ref<!Int
 # CHECK-NEXT: %[[V0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: %[[V0REF:.*]] = kgen.rebind %[[V0]]
 # CHECK-NEXT: %[[V1:.*]] = lit.ref.struct.ger %[[SELF]][field1]
@@ -26,14 +26,14 @@ struct MemType:
 # CHECK-NEXT: kgen.param.constant: none
 # CHECK-NEXT: lit.return
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %p: !Int) -> !kgen.none
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> read_mem, |, %p: !Int) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: %[[W0CAST:.*]] = kgen.rebind %[[W0]] : !lit.ref<!MemType, imm *"self`"->field0> to !lit.ref<!MemType, imm *"m`">
 # CHECK-NEXT: lit.call @{{.*}}::@"use{{.*}}(%[[W0CAST]])
 # CHECK-NEXT: kgen.param.constant: none
 # CHECK-NEXT: lit.return
 
-# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |) -> index
+# CHECK: lit.func @"__call__({{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> read_mem, |) -> index
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: %[[W1:.*]] = lit.ref.load %[[W0]]
 # CHECK-NEXT: %[[W2:.*]] = lit.ref.struct.ger %[[SELF]][field1]
@@ -43,7 +43,7 @@ struct MemType:
 # CHECK-NEXT: %[[W5:.*]] = index.mul %[[W1]], %[[W4]]
 # CHECK-NEXT: lit.return %[[W5]] : index
 
-# CHECK: lit.func @"__call__{{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> borrow_in_mem, |, %y: !lit.ref<{{.*}}> borrow_in_mem, ?, [[RESULT:%.*]]: !lit.ref<!MemType,{{.*}}> byref_result) -> !kgen.none
+# CHECK: lit.func @"__call__{{.*}}_CI_{{.*}}(%[[SELF:.*]][{{.*}}]: !lit.ref<{{.*}}> read_mem, |, %y: !lit.ref<{{.*}}> read_mem, ?, [[RESULT:%.*]]: !lit.ref<!MemType,{{.*}}> byref_result) -> !kgen.none
 # CHECK-NEXT: %[[W0:.*]] = lit.ref.struct.ger %[[SELF]][field0]
 # CHECK-NEXT: %[[W0REF:.*]] = kgen.rebind %[[W0]]
 # CHECK-NEXT: lit.call @{{.*}}__add__{{.*}}(%[[W0REF]], %y, [[RESULT]])

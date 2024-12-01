@@ -386,9 +386,9 @@ void LowerAsyncBuildContext::takeSlicedFirstStateFrom(FuncOp hotRamp,
   Type closureType = opaqueCoTypes.typeForField(ClosureState);
   Type callbackType = opaqueCoTypes.typeForField(CallbackFn);
   inputs.push_back(callbackType);
-  conventions.push_back(ArgConvention::BorrowedInReg);
+  conventions.push_back(ArgConvention::ReadReg);
   inputs.push_back(closureType);
-  conventions.push_back(ArgConvention::BorrowedInReg);
+  conventions.push_back(ArgConvention::ReadReg);
   llvm::append_range(inputs, fromFuncOp.getArgumentTypes());
   llvm::append_range(conventions,
                      fromFuncOp.getSignature().getArgConventions());
@@ -552,9 +552,9 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
   Type closureType = opaqueCoTypes.typeForField(M::KGEN::ClosureState);
   Type callbackType = opaqueCoTypes.typeForField(M::KGEN::CallbackFn);
   inputs.push_back(callbackType);
-  conventions.push_back(ArgConvention::BorrowedInReg);
+  conventions.push_back(ArgConvention::ReadReg);
   inputs.push_back(closureType);
-  conventions.push_back(ArgConvention::BorrowedInReg);
+  conventions.push_back(ArgConvention::ReadReg);
   llvm::append_range(inputs, fromFuncOp.getArgumentTypes());
   llvm::append_range(conventions,
                      fromFuncOp.getSignature().getArgConventions());

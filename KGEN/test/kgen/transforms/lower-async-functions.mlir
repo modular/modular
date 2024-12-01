@@ -616,9 +616,9 @@ kgen.func @throwing_coroutine(%__error__: !kgen.pointer<index> byref_error,
   // CHECK-NEXT: [[RES:%.*]] = pop.load [[RESSLOT]] : !kgen.pointer<pointer<none>>
   // CHECK-NEXT: [[RESTYPED:%.*]] = pop.pointer.bitcast [[RES]] : !kgen.pointer<none> to !kgen.pointer<index>
   // CHECK-NEXT: [[V4:%.*]] = kgen.call @populate([[RESTYPED]]) : (!kgen.pointer<index> byref_result) -> i1
-  // CHECK-NEXT: kgen.call @use([[RESTYPED]]) : (!kgen.pointer<index> borrow_in_mem) -> i1
+  // CHECK-NEXT: kgen.call @use([[RESTYPED]]) : (!kgen.pointer<index> read_mem) -> i1
   %0 = kgen.call @populate(%__result__) : (!kgen.pointer<index> byref_result) -> i1
-  %2 = kgen.call @use(%__result__) : (!kgen.pointer<index> borrow_in_mem) -> i1
+  %2 = kgen.call @use(%__result__) : (!kgen.pointer<index> read_mem) -> i1
   hlcf.if %0 {
     // CHECK: hlcf.if [[V4]] {
     // CHECK-NEXT: [[ERRSLOT:%.*]] = kgen.struct.gep %arg0[[[#ERROR:]]]
@@ -1559,7 +1559,7 @@ kgen.func @triggerCold(%arg0: i1, %arg1: index, %arg3: index, %arg4: i1) {
 // COM: Co.Suspend Has Correct Predecessors Set
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  kgen.func @foo(%arg0: index borrow, %arg1: !kgen.pointer<none> byref_result) async no_inline {
+  kgen.func @foo(%arg0: index read, %arg1: !kgen.pointer<none> byref_result) async no_inline {
     co.suspend (%hdl) {
       co.suspend.end
     }
@@ -1577,7 +1577,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   }
 
   kgen.func @triggerCold(%arg0: index) {
-   %coro = co.invoke[(index borrow, !kgen.pointer<none> byref_result) async -> ():@foo](%arg0)
+   %coro = co.invoke[(index read, !kgen.pointer<none> byref_result) async -> ():@foo](%arg0)
    kgen.return
   }
 }
@@ -1697,7 +1697,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
         // CHECK-NEXT: }
         // CHECK:      [[V8:%.*]] = kgen.struct.gep %arg0[[[#FRAME9:]]]
         // CHECK-NEXT: [[V9:%.*]] = kgen.call @batch_size([[V8]])
-        %2 = kgen.call @batch_size(%0) : (!kgen.pointer<struct<(pointer<none>, pointer<none>) memoryOnly>> borrow_in_mem) -> index
+        %2 = kgen.call @batch_size(%0) : (!kgen.pointer<struct<(pointer<none>, pointer<none>) memoryOnly>> read_mem) -> index
         hlcf.continue
       }
       kgen.return
@@ -1768,7 +1768,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: kgen.func @foo_resume
-  kgen.func @foo(%arg0: i1 borrow, %arg1: !kgen.pointer<none> byref_result) async no_inline {
+  kgen.func @foo(%arg0: i1 read, %arg1: !kgen.pointer<none> byref_result) async no_inline {
     %idx1 = index.constant 1
     co.suspend (%hdl) {
       co.suspend.end
@@ -1779,7 +1779,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     kgen.return
   }
   // CHECK-LABEL: kgen.func @needsLift_resume
-  kgen.func @needsLift(%arg0: i1 borrow, %arg1: !kgen.pointer<none> byref_result) async no_inline {
+  kgen.func @needsLift(%arg0: i1 read, %arg1: !kgen.pointer<none> byref_result) async no_inline {
     %idx1 = index.constant 1
     co.suspend (%hdl) {
       co.suspend.end
@@ -1806,8 +1806,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   }
 
   kgen.func @triggerCold(%arg0: i1) {
-     %coro = co.invoke[(i1 borrow, !kgen.pointer<none> byref_result) async -> ():@foo](%arg0)
-     %coro2 = co.invoke[(i1 borrow, !kgen.pointer<none> byref_result) async -> ():@needsLift](%arg0)
+     %coro = co.invoke[(i1 read, !kgen.pointer<none> byref_result) async -> ():@foo](%arg0)
+     %coro2 = co.invoke[(i1 read, !kgen.pointer<none> byref_result) async -> ():@needsLift](%arg0)
      kgen.return
   }
 }
@@ -1818,7 +1818,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // COM: Frame Addresses Are Not Stored In Frame
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  kgen.func @gep(%arg0: i1 borrow, %arg1: !kgen.pointer<none> byref_result) async no_inline {
+  kgen.func @gep(%arg0: i1 read, %arg1: !kgen.pointer<none> byref_result) async no_inline {
     %0 = pop.stack_allocation 1 x !kgen.struct<(index, index)> marked
     pop.stack_alloc.lifetime.start(%0) : !kgen.pointer<struct<(index, index)>>
     %1 = kgen.call @fillMe(%0) : (!kgen.pointer<struct<(index, index)>> byref_result) -> index
@@ -1838,7 +1838,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     pop.stack_alloc.lifetime.end(%0) : !kgen.pointer<struct<(index, index)>>
     kgen.return
   }
-  kgen.func @offset(%arg0: i1 borrow, %arg1: !kgen.pointer<none> byref_result) async no_inline {
+  kgen.func @offset(%arg0: i1 read, %arg1: !kgen.pointer<none> byref_result) async no_inline {
     // CHECK:      [[V1:%.*]] = index.constant 1
     // CHECK-NEXT: [[V3:%.*]] = kgen.struct.gep %arg0[[[#FRAME8:]]]
     // CHECK-NEXT: [[V4:%.*]] = pop.pointer.bitcast [[V3]]
@@ -1879,8 +1879,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   }
 
   kgen.func @triggerCold(%arg0: i1) {
-     %coro = co.invoke[(i1 borrow, !kgen.pointer<none> byref_result) async -> (): @offset](%arg0)
-     %coro2 = co.invoke[(i1 borrow, !kgen.pointer<none> byref_result) async -> (): @gep](%arg0)
+     %coro = co.invoke[(i1 read, !kgen.pointer<none> byref_result) async -> (): @offset](%arg0)
+     %coro2 = co.invoke[(i1 read, !kgen.pointer<none> byref_result) async -> (): @gep](%arg0)
      kgen.return
   }
 

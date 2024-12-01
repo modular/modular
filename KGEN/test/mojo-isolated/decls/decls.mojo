@@ -71,7 +71,7 @@ fn variadic_trait_elt[T: Copyable](*xs: T):
 
 # CHECK-LABEL: lit.func @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
-# CHECK-SAME: %rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, :origin<0> *"rest`1", :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>, imm *"rest`2"> borrow_in_mem|pack)
+# CHECK-SAME: %rest: !lit.ref<@stdlib::@builtin::@stubs::@VariadicPack<:!Bool {:i1 0}, :origin<0> *"rest`1", :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>, imm *"rest`2"> read_mem|pack)
 fn trait_pack[T: Copyable, *Ts: Copyable](first: T, *rest: *Ts):
     pass
 
@@ -361,7 +361,7 @@ fn testContextSensitiveKeyword(out x: Int, out: Int):
 
 # CHECK-LABEL: lit.func @"ownedConventionMem
 # CHECK-SAME: (%a: !lit.ref<!StructWithInit, mut {{.*}}> owned_in_mem,
-# CHECK-SAME:  %b: !lit.ref<!StructWithInit, imm {{.*}}> borrow_in_mem)
+# CHECK-SAME:  %b: !lit.ref<!StructWithInit, imm {{.*}}> read_mem)
 fn ownedConventionMem(owned a: StructWithInit, b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: %1 = lit.ref.load [[AX]]
@@ -390,7 +390,7 @@ struct RPStructWithInitTrivial:
 
 # CHECK-LABEL: lit.func @"ownedConventionReg
 # CHECK-SAME: (%a: !lit.ref<!RPStructWithInit, mut *"a`"> owned_in_mem,
-# CHECK-SAME:  %b: !lit.ref<!RPStructWithInit, imm *"b`1"> borrow_in_mem,
+# CHECK-SAME:  %b: !lit.ref<!RPStructWithInit, imm *"b`1"> read_mem,
 # CHECK-SAME:  %triv: !RPStructWithInitTrivial)
 fn ownedConventionReg(
     owned a: RPStructWithInit,
@@ -419,7 +419,7 @@ struct BorrowStruct:
 
 
 # CHECK-LABEL: callerFn
-# CHECK-SAME: (%arg0: !lit.ref<{{.*}}> borrow_in_mem)
+# CHECK-SAME: (%arg0: !lit.ref<{{.*}}> read_mem)
 fn callerFn(arg0: BorrowStruct):
     # CHECK-NEXT: lit.call {{.*}}testMethod{{.*}}(%arg0)
     arg0.testMethod()
@@ -490,7 +490,7 @@ fn defaultArgumentReferencesParameter[p: Int](a: Int = p + 87) -> Int:
 
 
 # CHECK-LABEL: lit.func @"defaultArgumentUntyped
-# CHECK-SAME: borrow_in_mem = apply_result_slot({{.*}}object::@"__init__
+# CHECK-SAME: read_mem = apply_result_slot({{.*}}object::@"__init__
 def defaultArgumentUntyped(a=1):
     pass
 
@@ -509,7 +509,7 @@ struct MemoryType:
 
 
 # CHECK-LABEL: lit.func @"defaultArgumentNonRegisterType
-# CHECK-SAME: borrow_in_mem = apply_result_slot({{.*}}__init__
+# CHECK-SAME: read_mem = apply_result_slot({{.*}}__init__
 fn defaultArgumentNonRegisterType(a: MemoryType = 1):
     pass
 
@@ -609,7 +609,7 @@ fn variadic_mem_only(*values: MemStruct) -> Int:
 # CHECK-LABEL: lit.func @"test_variadic_mem_only{{.*}}"<x: !MemStruct, y: !MemStruct>
 fn test_variadic_mem_only[x: MemStruct, y: MemStruct]():
     # CHECK: lit.alias.decl {{.*}}: !Int = <apply(
-    # CHECK-SAME: :!lit.signature<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, borrow_in_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
+    # CHECK-SAME: :!lit.signature<[1]("values": !kgen.variadic<!lit.ref<!MemStruct, imm {}>, read_mem> var) -> !Int> {{.*}}::@"variadic_mem_only({{.*}}::MemStruct*)"
     # CHECK-SAME: [store_to_mem(x), store_to_mem(y)]
     alias b = variadic_mem_only(x, y)
 
@@ -788,7 +788,7 @@ struct StructExample:
         StructExample.maybe_static(4)
         pass
 
-    # CHECK: lit.func @"mutatingMethod{{.*}}(%self: !lit.ref<!StructExample, mut {{.*}}> inout) -> !kgen.none
+    # CHECK: lit.func @"mutatingMethod{{.*}}(%self: !lit.ref<!StructExample, mut {{.*}}> mut) -> !kgen.none
     fn mutatingMethod(mut self):
         pass
 
@@ -876,7 +876,7 @@ struct ValueMem:
 
 # CHECK: lit.func @"__copyinit__(
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
-# CHECK-SAME:  %other: !lit.ref<!ValueMem, imm {{.*}}> borrow_in_mem, |)
+# CHECK-SAME:  %other: !lit.ref<!ValueMem, imm {{.*}}> read_mem, |)
 # CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
@@ -923,7 +923,7 @@ struct ValueMemHasMove:
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
 # CHECK-SAME: (!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable) register_passable_trivial
 
-# CHECK: lit.func @"__copyinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> borrow_in_mem, |) -> !kgen.none always_inline_no_debug
+# CHECK: lit.func @"__copyinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem, |) -> !kgen.none always_inline_no_debug
 # CHECK-NEXT: [[V0:%.*]] = lit.ref.load %1 : <!ValueRegTrivial
 # CHECK-NEXT: lit.ref.store [[V0]], %0
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
@@ -951,7 +951,7 @@ struct ValueReg:
 
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-SAME: (%self: !lit.ref<!ValueReg, mut *"self`"> init_self, %other: !lit.ref<!ValueReg, imm *"existing`"> borrow_in_mem, |
+# CHECK-SAME: (%self: !lit.ref<!ValueReg, mut *"self`"> init_self, %other: !lit.ref<!ValueReg, imm *"existing`"> read_mem, |
 # CHECK-SAME: attributes {{.*}}specialFnKind = 3 : i8
 # CHECK-NEXT: [[SELFA:%.*]] = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: [[OTHERA:%.*]] = lit.ref.struct.ger %other[a]
@@ -1001,7 +1001,7 @@ struct TraitMember[T: Copyable]:
     # CHECK: call{{.*}}__copyinit__
 
 
-# CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> borrow_in_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
+# CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> read_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
 # CHECK: lit.func @"__moveinit__{{.*}}isSynthetic
 # CHECK: lit.func @"__copyinit__{{.*}}isSynthetic
 # CHECK: lit.func @"__init__{{.*}}isSynthetic
@@ -1019,7 +1019,7 @@ struct NotSynthetic:
 struct VarArgInit:
     var a: Int
 
-    # CHECK: lit.func @"__init__(decls::VarArgInit=&,decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> var)
+    # CHECK: lit.func @"__init__(decls::VarArgInit=&,decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, read_mem> var)
     # The argument is intentionally memory-only.
     @implicit
     fn __init__(out self, *values: ValueMem):
@@ -1163,7 +1163,7 @@ fn coroutine_origins():
     # CHECK: var.decl "y" var : {{.*}}mut [[Y_LT:.*]]>
     var y: Awaitable
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
-    # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> inout, "y": !lit.ref<!Awaitable, imm *[0,1]> borrow_in_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
+    # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> read_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
     # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>(%coro, [[CORO]])
     var coro = capture_byref(x, y)

@@ -677,7 +677,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
                           .getVariadicPackInfo()
                           .getVariadicElementType();
       type = ParamRefType::get(UnknownAttr::get(metatype));
-      conv = ArgConvention::BorrowedInReg;
+      conv = ArgConvention::ReadReg;
     }
     if (SignatureType::hasAddress(conv))
       type = ASTType(type).getReferenceElementType();
@@ -1231,18 +1231,18 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // business.
     if (convention == ArgConvention::Ref ||
         convention == ArgConvention::MutRef ||
-        convention == ArgConvention::OwnedInMem ||
-        convention == ArgConvention::InOut ||
+        convention == ArgConvention::OwnedMem ||
+        convention == ArgConvention::Mut ||
         convention == ArgConvention::InitSelf) {
       setDecl(CValue::getMValueForRef(bbArg));
       continue;
     }
 
     CValue argValue;
-    if (convention == ArgConvention::BorrowedInMem)
+    if (convention == ArgConvention::ReadMem)
       argValue = MBValue(bbArg); // borrowed
     else {
-      assert(convention == ArgConvention::BorrowedInReg);
+      assert(convention == ArgConvention::ReadReg);
       // borrowed_in_reg is used for @register_passable("trivial") types, where
       // borrowed vs owned doesn't matter so we use SRValue.
       argValue = SRValue(bbArg);

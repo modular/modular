@@ -1382,7 +1382,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
         checkDef(operand, op, /*isDeref=*/true);
         definedOrigins.push_back(cast<RefType>(operand.getType()).getOrigin());
         break;
-      case OperandEffect::memInOut:
+      case OperandEffect::memMut:
         hasAnyOrigin |=
             isa<AnyOriginAttr>(cast<RefType>(operand.getType()).getOrigin());
         checkUse(operand, op, /*isDeref=*/true);
@@ -2180,8 +2180,8 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       //    consume(%tmp)   <= eventually consume it.
       auto convention =
           callUser.getCalleeType().getArgConvention(operand.getOperandNumber());
-      if (convention != ArgConvention::OwnedInMem &&
-          convention != ArgConvention::BorrowedInMem)
+      if (convention != ArgConvention::OwnedMem &&
+          convention != ArgConvention::ReadMem)
         return false;
       userOfTmp.insert(callUser);
     }
@@ -2284,12 +2284,12 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   if (!moveCtor)
     return CopyInitSuccess::Failed;
 
-    // moveCtor must have __moveinit__(inout self, owned: Self) type.
+    // moveCtor must have __moveinit__(out self, owned: Self) type.
 #ifndef NDEBUG
   auto moveSig = cast<SignatureType>(moveCtor.getType());
   assert(moveSig.getNumArguments() == 2);
   assert(moveSig.getArgConvention(0) == ArgConvention::InitSelf);
-  assert(moveSig.getArgConvention(1) == ArgConvention::OwnedInMem);
+  assert(moveSig.getArgConvention(1) == ArgConvention::OwnedMem);
   auto moveArgs = moveSig.getArguments();
   auto moveValue1Ref = cast<RefType>(moveArgs[1]);
   // srcRefType is immutable here because it was passed to a copy.
@@ -2565,7 +2565,7 @@ void DestructorInsertion::scanBlock(Block &block) {
       case OperandEffect::memStoreOwned:
         checkDef(operand, op, /*isDeref=*/true, dtorInserter);
         break;
-      case OperandEffect::memInOut:
+      case OperandEffect::memMut:
         // It is sufficient to just check that we're using the input operation,
         // and if this is the last use of the operation, we should insert a
         // destructor for the value.  checkDef would mark the value as
@@ -2653,7 +2653,7 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
   consumedValues.set(0); // Slot 0 indicates that this block is reachable.
 
   for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
-    // If this value must be live on exit from the function (e.g. an inout
+    // If this value must be live on exit from the function (e.g. a mut
     // argument) demand it.
     if (isUninitializedAtExit(valueInfo, op))
       continue;

@@ -404,11 +404,11 @@ void ParsedArgument::print(raw_indented_ostream &os) const {
     switch (convention) {
     case ParsedArgument::kConventionUnspec:
       return "Unspec";
-    case ParsedArgument::kConventionInOut:
-      return "InOut";
+    case ParsedArgument::kConventionMut:
+      return "Mut";
     case ParsedArgument::kConventionOwned:
       return "Owned";
-    case ParsedArgument::kConventionBorrowed:
+    case ParsedArgument::kConventionRead:
       return "Borrowed";
     case ParsedArgument::kConventionRef:
       return "Ref";

@@ -64,7 +64,7 @@ fn test_owned(owned x: RegPassable, owned y: MemOnly):
 
 # CHECK: kgen.func export @test_borrowed(
 # CHECK-SAME: %arg0: !kgen.struct<(scalar<f32>, scalar<f32>)>,
-# CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> borrow_in_mem)
+# CHECK-SAME: %arg1: !kgen.pointer<struct<(index, index) memoryOnly>> read_mem)
 @export
 fn test_borrowed(x: RegPassable, y: MemOnly):
     # CHECK: kgen.call @"{{.*}}borrowed_generic{{.*}}"(%arg0)

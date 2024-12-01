@@ -205,17 +205,17 @@ State Graph::doAnalysis(BlockArgument arg) {
 /// arguments are both.
 static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   switch (conv) {
-  case ArgConvention::BorrowedInReg:
-  case ArgConvention::OwnedInReg:
+  case ArgConvention::ReadReg:
+  case ArgConvention::OwnedReg:
     llvm_unreachable("these conventions should be treated as capturing");
 
   // 'read' and 'owned' arguments convey no side-effects to callees.
-  case ArgConvention::BorrowedInMem:
-  case ArgConvention::OwnedInMem:
+  case ArgConvention::ReadMem:
+  case ArgConvention::OwnedMem:
     return {true, false};
 
   // 'mut' can read and write. Pessimistically treat 'ref' as 'mut'.
-  case ArgConvention::InOut:
+  case ArgConvention::Mut:
   case ArgConvention::MutRef:
   case ArgConvention::Ref:
     return {true, true};
@@ -234,8 +234,8 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
 /// ownedness of the convention.
 static ArgConvention getByValueConvention(ArgConvention conv) {
   assert(SignatureType::hasAddress(conv));
-  return conv == ArgConvention::OwnedInMem ? ArgConvention::OwnedInReg
-                                           : ArgConvention::BorrowedInReg;
+  return conv == ArgConvention::OwnedMem ? ArgConvention::OwnedReg
+                                         : ArgConvention::ReadReg;
 }
 
 void Graph::doRewrite(const Node *node) {

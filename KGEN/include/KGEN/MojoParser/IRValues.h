@@ -715,9 +715,9 @@ public:
   virtual ~BaseDLValue();
   virtual void print(raw_ostream &os) const = 0;
 
-  // This hook is called before an argument is passed inout.
-  virtual LValue prepareForInoutAccess(llvm::SMLoc loc,
-                                       ExprEmitter &emitter) const;
+  // This hook is called before an argument is passed 'mut'.
+  virtual LValue prepareForMutAccess(llvm::SMLoc loc,
+                                     ExprEmitter &emitter) const;
 
   virtual CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const = 0;
   virtual CValue emitStore(ASTExprAnd<CValue> value,

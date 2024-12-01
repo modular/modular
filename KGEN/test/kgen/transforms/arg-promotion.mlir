@@ -3,8 +3,8 @@
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func export @exported
-// CHECK-SAME: %arg0: !kgen.pointer<index> borrow_in_mem
-kgen.func export @exported(%arg0: !kgen.pointer<index> borrow_in_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
+kgen.func export @exported(%arg0: !kgen.pointer<index> read_mem) {
   kgen.return
 }
 
@@ -15,29 +15,29 @@ kgen.func @inreg_args(%arg0: index owned) {
 }
 
 // CHECK-LABEL: kgen.func @indirectly_referenced
-// CHECK-SAME: %arg0: !kgen.pointer<index> borrow_in_mem
-kgen.func @indirectly_referenced(%arg0: !kgen.pointer<index> borrow_in_mem) {
-  kgen.create_closure[(!kgen.pointer<index> borrow_in_mem) -> (): @indirectly_referenced]()
+// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
+kgen.func @indirectly_referenced(%arg0: !kgen.pointer<index> read_mem) {
+  kgen.create_closure[(!kgen.pointer<index> read_mem) -> (): @indirectly_referenced]()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @too_large
-// CHECK-SAME: %arg0: !kgen.pointer<array<64, f64>> borrow_in_mem
-kgen.func @too_large(%arg0: !kgen.pointer<array<64, f64>> borrow_in_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<array<64, f64>> read_mem
+kgen.func @too_large(%arg0: !kgen.pointer<array<64, f64>> read_mem) {
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @used_as_store_arg
-// CHECK-SAME: %arg0: !kgen.pointer<index> borrow_in_mem
-kgen.func @used_as_store_arg(%arg0: !kgen.pointer<index> borrow_in_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
+kgen.func @used_as_store_arg(%arg0: !kgen.pointer<index> read_mem) {
   %0 = pop.stack_allocation 1 x pointer<index>
   pop.store %arg0, %0 : !kgen.pointer<pointer<index>>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @captured_pointer
-// CHECK-SAME: %arg0: !kgen.pointer<index> borrow_in_mem
-kgen.func @captured_pointer(%arg0: !kgen.pointer<index> borrow_in_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
+kgen.func @captured_pointer(%arg0: !kgen.pointer<index> read_mem) {
   %0 = kgen.struct.create(%arg0) : !kgen.struct<(pointer<index>)>
   kgen.return
 }
@@ -49,15 +49,15 @@ kgen.func @capture_pointer(%arg0: !kgen.pointer<index>) {
 }
 
 // CHECK-LABEL: kgen.func @captured_by_call
-// CHECK-SAME: %arg0: !kgen.pointer<index> borrow_in_mem
-kgen.func @captured_by_call(%arg0: !kgen.pointer<index> borrow_in_mem) {
+// CHECK-SAME: %arg0: !kgen.pointer<index> read_mem
+kgen.func @captured_by_call(%arg0: !kgen.pointer<index> read_mem) {
   kgen.call @capture_pointer(%arg0) : (!kgen.pointer<index>) -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @projection_access
 // CHECK-SAME: %arg0: index
-kgen.func @projection_access(%arg0: !kgen.pointer<index> inout) {
+kgen.func @projection_access(%arg0: !kgen.pointer<index> mut) {
   %0 = pop.load %arg0 : !kgen.pointer<index>
   pop.store %0, %arg0 : !kgen.pointer<index>
 
@@ -94,8 +94,8 @@ kgen.func @projection_access(%arg0: !kgen.pointer<index> inout) {
 }
 
 // CHECK-LABEL: kgen.func @projection_capture
-// CHECK-SAME: %arg0: !kgen.pointer<i64> inout
-kgen.func @projection_capture(%arg0: !kgen.pointer<i64> inout) {
+// CHECK-SAME: %arg0: !kgen.pointer<i64> mut
+kgen.func @projection_capture(%arg0: !kgen.pointer<i64> mut) {
   %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<i64> to !kgen.pointer<index>
   kgen.call @capture_pointer(%0) : (!kgen.pointer<index>) -> ()
   kgen.return
@@ -103,14 +103,14 @@ kgen.func @projection_capture(%arg0: !kgen.pointer<i64> inout) {
 
 // CHECK-LABEL: kgen.func @call_use
 // CHECK-SAME: %arg0: i64
-kgen.func @call_use(%arg0: !kgen.pointer<i64> inout) {
+kgen.func @call_use(%arg0: !kgen.pointer<i64> mut) {
   %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<i64> to !kgen.pointer<index>
-  kgen.call @projection_access(%0) : (!kgen.pointer<index> inout) -> ()
+  kgen.call @projection_access(%0) : (!kgen.pointer<index> mut) -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @borrowed_in_mem(%arg0: index) {
-kgen.func @borrowed_in_mem(%arg0: !kgen.pointer<index> borrow_in_mem) {
+kgen.func @borrowed_in_mem(%arg0: !kgen.pointer<index> read_mem) {
   // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
   // CHECK-NEXT: store %arg0, %0
 
@@ -129,8 +129,8 @@ kgen.func @owned_in_mem(%arg0: !kgen.pointer<index> owned_in_mem) {
   kgen.return
 }
 
-// CHECK: kgen.func @inout(%arg0: index) -> index {
-kgen.func @inout(%arg0: !kgen.pointer<index> inout) {
+// CHECK: kgen.func @mut(%arg0: index) -> index {
+kgen.func @mut(%arg0: !kgen.pointer<index> mut) {
   // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
   // CHECK-NEXT: store %arg0, %0
 
@@ -194,9 +194,9 @@ kgen.func @init_self(%arg0: !kgen.pointer<index> init_self) {
 // CHECK-LABEL: kgen.func @all_of_them
 // CHECK-SAME: (%arg0: i1, %arg1: i2 owned, %arg2: i3, %arg3: i4) throws -> (i3, i4, i5, i6)
 kgen.func @all_of_them(
-    %arg0: !kgen.pointer<i1> borrow_in_mem,
+    %arg0: !kgen.pointer<i1> read_mem,
     %arg1: !kgen.pointer<i2> owned_in_mem,
-    %arg2: !kgen.pointer<i3> inout,
+    %arg2: !kgen.pointer<i3> mut,
     %arg3: !kgen.pointer<i4> ref,
     %arg4: !kgen.pointer<i5> byref_error,
     %arg5: !kgen.pointer<i6> byref_result) throws {
@@ -221,7 +221,7 @@ kgen.func @all_of_them(
 
 // CHECK-LABEL: kgen.func @only_one_promoted
 // CHECK-SAME: %arg0: index, %arg1: index
-kgen.func @only_one_promoted(%arg0: !kgen.pointer<index> borrow_in_mem, %arg1: index) {
+kgen.func @only_one_promoted(%arg0: !kgen.pointer<index> read_mem, %arg1: index) {
   kgen.return
 }
 
@@ -246,9 +246,9 @@ kgen.func @all_of_them_calls() {
   // CHECK-NEXT: [[I4_IN:%.*]] = pop.load [[I4]]
   // CHECK-NEXT: [[R:%.*]]:4 = kgen.call @all_of_them([[I1_IN]], [[I2_IN]], [[I3_IN]], [[I4_IN]]) : (i1, i2 owned, i3, i4) throws -> (i3, i4, i5, i6)
   kgen.call @all_of_them(%0, %1, %2, %3, %4, %5) : (
-    !kgen.pointer<i1> borrow_in_mem,
+    !kgen.pointer<i1> read_mem,
     !kgen.pointer<i2> owned_in_mem,
-    !kgen.pointer<i3> inout,
+    !kgen.pointer<i3> mut,
     !kgen.pointer<i4> ref,
     !kgen.pointer<i5> byref_error,
     !kgen.pointer<i6> byref_result) throws -> ()
@@ -261,12 +261,12 @@ kgen.func @all_of_them_calls() {
 
 // CHECK-LABEL: kgen.func @recursion
 // CHECK-SAME: (%arg0: index) -> index
-kgen.func @recursion(%arg0: !kgen.pointer<index> inout) {
+kgen.func @recursion(%arg0: !kgen.pointer<index> mut) {
   // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
   // CHECK-NEXT: store %arg0, %0
   // CHECK-NEXT: %1 = pop.load %0
   // CHECK-NEXT: %2 = kgen.call @recursion(%1) : (index) -> index
-  kgen.call @recursion(%arg0) : (!kgen.pointer<index> inout) -> ()
+  kgen.call @recursion(%arg0) : (!kgen.pointer<index> mut) -> ()
   // CHECK-NEXT: store %2, %0
   // CHECK-NEXT: %3 = pop.load %0
   // CHECK-NEXT: return %3

@@ -135,7 +135,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
                                     Twine(nameCounter++));
   // TODO: What conventions do we use for captures.
   SmallVector<ArgConvention> conventions(captures.size(),
-                                         ArgConvention::BorrowedInReg);
+                                         ArgConvention::ReadReg);
   // Add the appropriate byref conventions for the result slots.
   if (numByRefResults == 2)
     conventions.push_back(ArgConvention::ByRefError);
@@ -245,7 +245,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   SignatureType oldSig = op.getType();
   // TODO: What conventions do we use for captures.
   SmallVector<ArgConvention> newConventions(
-      body.getArguments().size() - numArgs, ArgConvention::BorrowedInReg);
+      body.getArguments().size() - numArgs, ArgConvention::ReadReg);
   ArrayRef<ArgConvention> oldConventions = oldSig.getArgConventions();
   assert(oldConventions.size() == numArgs);
   newConventions.append(oldConventions.begin(), oldConventions.end());

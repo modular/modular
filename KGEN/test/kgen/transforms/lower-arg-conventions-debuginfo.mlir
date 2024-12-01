@@ -5,7 +5,7 @@
 #loc = loc(fused<#sp>["a":0:0])
 
 // CHECK-LABEL: kgen.func @rewrite_me
-kgen.func @rewrite_me(%arg1: !kgen.pointer<index> loc("a":0:0) borrow_in_mem, %arg0: !kgen.pointer<index> loc("a":0:0) byref_result) -> !kgen.none {
+kgen.func @rewrite_me(%arg1: !kgen.pointer<index> loc("a":0:0) read_mem, %arg0: !kgen.pointer<index> loc("a":0:0) byref_result) -> !kgen.none {
   // CHECK: stack_allocation {{.*}} loc([[LOCSP:#.*]])
   // CHECK-NEXT: store {{.*}} loc([[LOCSP]])
   // CHECK-NEXT: stack_allocation {{.*}} loc([[LOCSP]])
