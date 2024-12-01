@@ -302,11 +302,11 @@ fn pleaseInline() -> __mlir_type.index:
 # https://github.com/modularml/modular/issues/8500
 struct AlwaysInlineByRef:
     @always_inline("nodebug")
-    fn doByRef(inout self):
+    fn doByRef(mut self):
         pass
 
 
-fn testInlineByRef(inout a: AlwaysInlineByRef):
+fn testInlineByRef(mut a: AlwaysInlineByRef):
     a.doByRef()
 
 
@@ -337,7 +337,7 @@ fn kernel[x: Int]():
 # https://github.com/modularml/mojo/issues/1152
 # Allow mutable self argument when overloading operators using dunder methods
 struct MutatingAdd:
-    fn __add__(inout self, x: MutatingAdd):
+    fn __add__(mut self, x: MutatingAdd):
         pass
 
 
@@ -693,7 +693,7 @@ struct RaisingGetterSetter:
     fn __getitem__(self, i: Int) raises -> FloatDyn:
         return 1.0
 
-    fn __setitem__(inout self, i: Int, v: FloatDyn) raises:
+    fn __setitem__(mut self, i: Int, v: FloatDyn) raises:
         pass
 
 
@@ -789,7 +789,7 @@ struct StructExample:
         pass
 
     # CHECK: lit.func @"mutatingMethod{{.*}}(%self: !lit.ref<!StructExample, mut {{.*}}> inout) -> !kgen.none
-    fn mutatingMethod(inout self):
+    fn mutatingMethod(mut self):
         pass
 
 
@@ -844,7 +844,7 @@ struct ShadowsOuterName:
 struct LegacyInOutInit:
     # This should be accepted for compatibility, but "out" is the preferred
     # spelling.
-    fn __init__(inout self):
+    fn __init__(mut self):
         pass
 
 
@@ -1117,7 +1117,7 @@ struct Awaitable:
     fn __init__(out self):
         pass
 
-    fn __await__(inout self) -> Int:
+    fn __await__(mut self) -> Int:
         return 0
 
 
@@ -1142,7 +1142,7 @@ async fn use_inline_async() -> Int:
     return await inline_async()
 
 
-async fn capture_byref(inout x: Awaitable, y: Awaitable):
+async fn capture_byref(mut x: Awaitable, y: Awaitable):
     pass
 
 
@@ -1316,7 +1316,7 @@ struct CapturingStructTrait(CapturingTrait):
 # CHECK-LABEL: lit.func @"inferCaptureOrigins
 fn inferCaptureOrigins[
     lt: MutableOrigin, param: HasLifetimeParam[lt]
-](inout x: int, inout y: int, arg: HasParam):
+](mut x: int, mut y: int, arg: HasParam):
     @parameter
     fn bareFunc():
         pass
@@ -1361,7 +1361,7 @@ fn inferCaptureOrigins[
 
 
 # CHECK-LABEL: lit.func @"testParameterCapture
-fn testParameterCapture(inout x: int, inout y: int):
+fn testParameterCapture(mut x: int, mut y: int):
     # CHECK: lit.func *"capture()":{mut *"x`"}
     @parameter
     fn capture():

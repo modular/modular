@@ -123,8 +123,8 @@ fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int'}}
 fn defaultArgumentBadType(a: Int = 1.0): pass
 
-# expected-error @+1 {{inout arguments may not have defaults}}
-fn byref_default(inout x: Int = 2): pass
+# expected-error @+1 {{'mut' arguments may not have defaults}}
+fn byref_default(mut x: Int = 2): pass
 
 # expected-error @below {{'**' marker must be at end of argument list}}
 fn starStarLast(**a: Int, b: Int): pass
@@ -143,7 +143,7 @@ fn exampleVariadic(a: FloatLiteral, *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn exampleVariadicAndKeyword(*a: Int, b: Int): pass
 # expected-note @+1 {{function declared here}}
-fn exampleByRefVariadic(a: FloatLiteral, inout *b: Int): pass
+fn exampleByRefVariadic(a: FloatLiteral, mut *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
 
@@ -233,7 +233,7 @@ fn invalidParameterPack[*Ts: AnyType]():
 fn invalidArgumentUnpack[*Ts: AnyType](x: *Ts): pass
 
 # expected-error @+1 {{argument already has a convention specified}}
-fn invalidOwned(owned inout x: Int): pass
+fn invalidOwned(owned owned x: Int): pass
 
 # expected-note @+1 {{function declared here}}
 fn examplePack[*Ts: AnyType](*args: *Ts):
@@ -305,12 +305,12 @@ fn overloadIntFloat32(a: Int, b: Int): pass
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'b'}}
 # expected-note @below {{argument #1 must be mutable in order to pass to a mutating argument}}
-fn overloadIntFloat32(a: Int, inout b: FloatDyn): pass
+fn overloadIntFloat32(a: Int, mut b: FloatDyn): pass
 
 # expected-note @below {{candidate not viable: missing 2 required positional arguments: 'b', 'c'}}
 # expected-note @below {{candidate not viable: missing 1 required positional argument: 'c'}}
 # expected-note @below {{candidate declared here}}
-fn overloadIntFloat32(a: Int, inout b: FloatDyn, c: Int, *args: Int): pass
+fn overloadIntFloat32(a: Int, mut b: FloatDyn, c: Int, *args: Int): pass
 
 struct TestOverloading:
   var a: Int   # expected-note {{cannot overload with this non-function definition}}
@@ -334,7 +334,7 @@ struct StructWithStaticMethod:
 
     # expected-note @+2 {{function declared here}}
     @staticmethod
-    fn bar(inout f: StructWithStaticMethod): pass
+    fn bar(mut f: StructWithStaticMethod): pass
 
 
 fn test_static_overload():
@@ -529,7 +529,7 @@ struct Rec[param: Rec]:
   pass
 
 # expected-error @+1 {{'def' statement must be on its own line}}
-struct Struct: def foo(inout self): pass
+struct Struct: def foo(mut self): pass
 
 struct ReturnFromStruct:
   # expected-error @+1 {{cannot return from this context}}
@@ -556,7 +556,7 @@ struct SpecialFunctions:
   fn __iadd__(a: SpecialFunctions, b: SpecialFunctions): pass
 
   # expected-error @+1 {{'__iadd__' result type must be elided (or None)}}
-  fn __iadd__(inout self, rhs: SpecialFunctions) -> SpecialFunctions: pass
+  fn __iadd__(mut self, rhs: SpecialFunctions) -> SpecialFunctions: pass
 
   fn failures(self):
     self+self # Supports this, even though it isn't valid.  Shouldn't crash.
@@ -568,14 +568,14 @@ struct SpecialFunctions:
 
 @register_passable
 struct WrongType:
-  # expected-error @+1 {{'self' in struct '__init__' must be passed 'inout'}}
+  # expected-error @+1 {{'self' in struct '__init__' must be passed 'mut'}}
   def __init__(self): pass
 
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}
   fn __init__(out self: Int): pass
 
-  # expected-error @+1 {{existing value argument must be passed as borrowed}}
-  fn __copyinit__(out self, inout existing: Self): pass
+  # expected-error @+1 {{existing value argument must be passed as 'read'}}
+  fn __copyinit__(out self, mut existing: Self): pass
 
   # TODO: Should err.
   fn __copyinit__(out self, existing: Int): pass
@@ -587,7 +587,7 @@ struct WrongType:
 struct WrongSelfType[a: Int]:
   # expected-error @+1 {{'self' argument must have type 'WrongSelfType[a]', but actually has type 'Int'}}
   fn badMethod(self: Int): pass
-  fn goodMethod(inout self: WrongSelfType[a]): pass
+  fn goodMethod(mut self: WrongSelfType[a]): pass
 
   # Issue #13358
   # expected-error @+1 {{'__copyinit__' requires 2 operands}}
@@ -760,15 +760,15 @@ struct OkayStruct:
 
 struct CheckImplicit:
   @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
-  fn foo(inout self): pass
+  fn foo(mut self): pass
   @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
-  fn __init__(inout self): pass
+  fn __init__(mut self): pass
   @implicit
-  fn __init__(inout self, x: Int): pass
+  fn __init__(mut self, x: Int): pass
   @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
-  fn __init__(inout self, x: Int, y: Int): pass
+  fn __init__(mut self, x: Int, y: Int): pass
   @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
-  fn __copyinit__(inout self, other: Self): pass
+  fn __copyinit__(mut self, other: Self): pass
 
 
 
@@ -991,7 +991,7 @@ struct OtherBadStruct:
     var b: int
     alias b = `0`  # expected-error {{invalid redefinition of 'b'}}
 
-    fn b(inout self):  # expected-error {{invalid redefinition of 'b'}}
+    fn b(mut self):  # expected-error {{invalid redefinition of 'b'}}
         pass
 
 

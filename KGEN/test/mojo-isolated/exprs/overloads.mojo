@@ -87,7 +87,7 @@ struct StaticOverloadStruct:
     fn __init__(out self):
         pass
 
-    fn foo(inout self):
+    fn foo(mut self):
         pass
 
     @staticmethod

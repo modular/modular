@@ -76,7 +76,7 @@ fn inferred_function_with_memory_result[
   width: Int](x: SIMD[DType.float32, width]) -> MemoryOnlyInt: pass
 
 # CHECK-LABEL: lit.func @"memoryOnlyOps
-fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
+fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v1 = lit.var.decl {{.*}} var : !lit.ref<!MemoryOnlyPair,
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[IMMREF]])
@@ -681,7 +681,7 @@ fn patterns():
   (someSIMD) += someSIMD
 
 # CHECK-LABEL: lit.func @"byval_byref_function(::Int,::Int&)"{{.*}}(%a: !Int, %b: !lit.ref<!Int, mut {{.*}}> inout) -> !kgen.none
-fn byval_byref_function(a: Int, inout b: Int):
+fn byval_byref_function(a: Int, mut b: Int):
   # CHECK-NEXT: lit.ref.store %a, %b
   b = a
 
@@ -875,11 +875,11 @@ world"
 
 # This is an array that has elements of MemoryOnlyInt.
 struct MemoryOnlyIntArray:
-  fn __getitem__(inout self, x: Int) -> MemoryOnlyInt: pass
-  fn __setitem__(inout self, x: Int, owned value: MemoryOnlyInt): pass
+  fn __getitem__(mut self, x: Int) -> MemoryOnlyInt: pass
+  fn __setitem__(mut self, x: Int, owned value: MemoryOnlyInt): pass
 
 # CHECK-LABEL: lit.func @"testMemoryOnlyIntArray
-fn testMemoryOnlyIntArray(inout arr: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
+fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, owned moi: MemoryOnlyInt):
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, %moi)
   arr[x] = moi^
   # CHECK: [[ANON:%.*]] = lit.var.decl "anonymous*"
@@ -1041,8 +1041,8 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   var mixedChain = 0 < 1 < a < 10 < 11 < b < 20 < 21 < c < 30 < 31
 
 # CHECK-LABEL: lit.func @"ref_utilities
-fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
-                 inout c: MemoryOnlyInt,
+fn ref_utilities(a: MemoryOnlyInt, mut b: MemoryOnlyInt,
+                 mut c: MemoryOnlyInt,
                  cond: __mlir_type.i1):
   # Get the address of the specified physical bvalue or lvalue as a lit.ref.
 
@@ -1146,7 +1146,7 @@ fn function_types[
   float3: fn(owned MemoryType) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> inout, |) -> !kgen.none
-  float4: fn(inout Int) -> None,
+  float4: fn(mut Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   float5: fn(Int) raises -> None,
@@ -1246,7 +1246,7 @@ struct IndexList[size: Int]:
     fn __init__(out self, *elements: Int):
         pass
 
-    fn __setitem__(inout self, val: Int):
+    fn __setitem__(mut self, val: Int):
         pass
 
 # Issue 23233 https://github.com/modularml/modular/issues/23233
@@ -1318,7 +1318,7 @@ fn thing_taking_ref2[type: AnyType](ref arg: type): pass
 fn thing_taking_pointer2[type: AnyType](arg: Pointer[type, _]): pass
 
 # CHECK-LABEL: lit.func @"test_thing_taking_reference
-fn test_thing_taking_reference(inout x: String):
+fn test_thing_taking_reference(mut x: String):
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref{{.*}}(%x)
   thing_taking_ref(x)
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref2{{.*}}(%x)

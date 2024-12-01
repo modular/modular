@@ -20,7 +20,7 @@ struct MemExample:
   fn __copyinit__(out self, existing: Self): pass
   fn __del__(owned self): pass
   fn noop(self): pass
-  fn mutate(inout self): pass
+  fn mutate(mut self): pass
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: origin<0>>(%a: !lit.ref<!MemExample, imm lt>)
 fn borrow[lt: ImmutableOrigin](a: Pointer[MemExample, lt]._mlir_type):
@@ -35,7 +35,7 @@ fn implicit_borrow(a: MemExample):
   pass
 
 # CHECK-LABEL: lit.func @"implicit_inout
-fn implicit_inout(inout a: MemExample):
+fn implicit_inout(mut a: MemExample):
   pass
 
 # CHECK-LABEL: lit.func @"implicit_owned
@@ -52,7 +52,7 @@ fn parametricMut[isMut: Bool,
   return a
 
 # CHECK-LABEL: lit.func @"testParametricMut
-fn testParametricMut(i: MemExample, inout m: MemExample):
+fn testParametricMut(i: MemExample, mut m: MemExample):
   # This infers an immutable reference.
   # CHECK:  lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, imm *"i`">
   _ = parametricMut(__get_mvalue_as_litref(i))
@@ -217,7 +217,7 @@ struct SelfRefTest:
       return Pointer.address_of(self)
 
 # CHECK-LABEL: lit.func @"testSelfRef
-fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
+fn testSelfRef(a: SelfRefTest, mut b: SelfRefTest):
   # Bind immutably to a
   # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :!AnyType #SelfRefTest1, :origin<0> *"a`"
   _ = a.method()
@@ -242,7 +242,7 @@ fn testLifetimeOf2(a: MemExample) -> Pointer[MemExample, __origin_of(a)]._mlir_t
   return Pointer.address_of(a)._value
 
 # CHECK-LABEL: lit.func @"callByRefResultLifetime
-fn callByRefResultLifetime(inout x: MemExample, inout y: MemExample, z: MemExample):
+fn callByRefResultLifetime(mut x: MemExample, mut y: MemExample, z: MemExample):
   # CHECK: lit.var.decl "l1" var : !lit.ref<@ownership_refs::@OneLifetime<:origin<0> (mutcast mut *"x`")>
   var l1 = returnOneArgLifetime(x)
 
@@ -319,7 +319,7 @@ fn ref_copyability[*element_types: Copyable](*args: *element_types):
 # FIXME (Patch #48185): need to support implicit conversions to immutable reference.
 
 #fn thing_taking_immutable_ref[T: AnyType, value_origin: ImmutableOrigin](a: Pointer[T, value_origin]): pass
-#fn test_passing_mutable_ref(inout i: String):
+#fn test_passing_mutable_ref(mut i: String):
 #    thing_taking_immutable_ref(Pointer.address_of(i))
 
 # Verify that we can propagate parametric mutability through field accesses.
@@ -349,7 +349,7 @@ fn testMethodRef(a: SomeStructWithReferenceSelfArgument):
 
 
 # CHECK-LABEL: lit.func @"variadic_inout_mems_iter
-fn variadic_inout_mems_iter(inout *mems: MemExample):
+fn variadic_inout_mems_iter(mut *mems: MemExample):
   # Verify the iterator keeps the VariadicListMem alive.
   # CHECK-NEXT: %mems_0 = lit.var.decl
 
@@ -439,7 +439,7 @@ struct RaisingInitWrapper:
       self.immfield = ImmovableRaisingInit()
 
 # CHECK-LABEL: lit.func @"test_inout_raising_init
-fn test_inout_raising_init(inout a: HasRaisingInit, inout b: RaisingInitWrapper) raises:
+fn test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) raises:
   # These init calls need a temporary instead of direct assignment into the dest
   # to avoid invalidating a value on the error path.
   # CHECK-NEXT: [[TEMP:%.*]] = lit.var.decl

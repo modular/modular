@@ -23,7 +23,7 @@ fn use(a: MemExample):
     pass
 
 
-fn use_mut(inout a: MemExample):
+fn use_mut(mut a: MemExample):
     pass
 
 
@@ -422,7 +422,7 @@ struct TrivialRange:
     fn __iter__(self) -> Self:
         return self
 
-    fn __next__(inout self) -> Int:
+    fn __next__(mut self) -> Int:
         return 1
 
     @always_inline

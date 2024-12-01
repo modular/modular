@@ -35,7 +35,7 @@ fn noalias(a0: UnsafePointer[Float32], b: UnsafePointer[Float32]) -> Float32:
 # CHECK-SAME: ptr noalias nocapture noundef nonnull readnone %0,
 # CHECK-SAME: ptr noalias nocapture noundef nonnull readnone %1)
 @export
-fn any_life[life: MutableOrigin](ref [life]r: Int, inout x: Int):
+fn any_life[life: MutableOrigin](ref [life]r: Int, mut x: Int):
     pass
 
 
@@ -43,5 +43,5 @@ fn any_life[life: MutableOrigin](ref [life]r: Int, inout x: Int):
 # CHECK-SAME: ptr nocapture noundef nonnull readnone %0,
 # CHECK-SAME: ptr noalias nocapture noundef nonnull readnone %1)
 @export
-fn imm_life[life: ImmutableOrigin](ref [life]r: Int, inout x: Int):
+fn imm_life[life: ImmutableOrigin](ref [life]r: Int, mut x: Int):
     pass

@@ -126,7 +126,7 @@ fn testTestParamStruct(a: TestParamStruct[4]):
 # CHECK-LABEL: lit.func @"testSIMD(
 fn testSIMD(a: SIMD[DType.float32, 1],
             b: SIMD[DType.int32, 1],
-            inout reff: SIMD[DType.int32, 1]):
+            mut reff: SIMD[DType.int32, 1]):
   # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<f32>,
   var field1 = a.value
   # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<si32>,
@@ -793,7 +793,7 @@ fn form_reference_to_overloaded():
 
 @register_passable("trivial")
 struct StaticVec[size: Int]:
-  fn __init__[type: __mlir_type.`!kgen.dtype`](inout self, v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]):
+  fn __init__[type: __mlir_type.`!kgen.dtype`](mut self, v: __mlir_type[`!pop.simd<`, size.value, `, `, type, `>`]):
       pass
 
   @staticmethod
@@ -1032,7 +1032,7 @@ struct MixedInferAndPosParam[size: Int]:
 
     # CHECK-LABEL: lit.func @"__init__[{{.*}}ToInt]({{.*}}::MixedInferAndPosParam
     # CHECK-SAME: T0: !ToInt, T1: !ToInt
-    fn __init__[T0: ToInt, T1: ToInt, //](inout self, a: T0, b: T1):
+    fn __init__[T0: ToInt, T1: ToInt, //](mut self, a: T0, b: T1):
         self.f0 = a.to_int()
 
 @value
@@ -1042,7 +1042,7 @@ struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int]:
 
     # CHECK-LABEL: lit.func @"__init__[{{.*}}ToInt]({{.*}}::MixedInferAndPosParam
     # CHECK-SAME: T0: !ToInt, T1: !ToInt
-    fn __init__[T0: ToInt, T1: ToInt, //](inout self, z: ST, a: T0, b: T1):
+    fn __init__[T0: ToInt, T1: ToInt, //](mut self, z: ST, a: T0, b: T1):
         self.f0 = a.to_int()
 
 # CHECK-LABEL: lit.func @"useMixedInferAndPosParam()"
@@ -1085,7 +1085,7 @@ struct OriginStructInferencePar[is_mutable: Bool, //, origin: Origin[is_mutable]
     fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
 
 # CHECK-LABEL: lit.func @"test_origin_struct_inf
-fn test_origin_struct_inf(inout data: Int):
+fn test_origin_struct_inf(mut data: Int):
    # This needs to infer the origin through an implicit conversion
    # CHECK: %0 = lit.ref.immut %data
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceImm::@"__init__
@@ -1469,7 +1469,7 @@ struct StructWithSpecificSelfInitTypes[size: Int]:
 
 struct DependentSpecificInitSelf[T: AnyType]:
     @implicit
-    fn __init__[U: Movable](inout self: DependentSpecificInitSelf[U], owned value: U):
+    fn __init__[U: Movable](mut self: DependentSpecificInitSelf[U], owned value: U):
         pass
 
 fn implicit_convert_specific_Self(value: StructWithSpecificSelfInitTypes[1]):
@@ -1561,7 +1561,7 @@ struct MOCO1065[
     T: CollectionElement,
     o: Origin[is_mutable].type,
 ]:
-    fn __init__(inout self: MOCO1065[UInt8, o], ref [o] string: Empty):
+    fn __init__(mut self: MOCO1065[UInt8, o], ref [o] string: Empty):
         pass
 
 fn test_MOCO1065[p: Empty](t: Empty):

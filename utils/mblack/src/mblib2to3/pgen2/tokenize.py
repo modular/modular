@@ -468,8 +468,10 @@ def generate_tokens(
         "var": VAR,
         "__mlir_region": MLIR_REGION,
         "owned": OWNED,
-        "borrowed": BORROWED,
-        "inout": INOUT,
+        "borrowed": READ,
+        "read": READ,
+        "inout": MUT,
+        "mut": MUT,
         "out": OUT,
         "trait": TRAIT,
         "ref": REF,
@@ -596,8 +598,9 @@ def generate_tokens(
         # handled properly as soft tokens.  This returns true if this can be
         # handled as a normal Mojo token.
         def check_mojo_token():
-            # "out" is only a keyword if followed by an identifier letter.
-            if token != "out":
+            # Context sensitive arg conventions are only a keyword if followed
+            # by an identifier letter.
+            if token not in ["out", "read", "mut"]:
                 return True
             next_token = line[end:].lstrip()
             return next_token and next_token[0].isidentifier()

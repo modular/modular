@@ -47,7 +47,7 @@ struct StaticTensorSpec[type: DType, rank: Int]:
     var out_lambda: OptionalReg[Self.out_lambda_t]
 
     fn __init__(
-        inout self,
+        mut self,
         shape: Self._dims_type,
         strides: Self._dims_type,
         in_lambda: OptionalReg[Self.in_lambda_t],

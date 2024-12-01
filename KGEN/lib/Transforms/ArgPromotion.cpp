@@ -201,7 +201,7 @@ State Graph::doAnalysis(BlockArgument arg) {
 /// 'out' argument, respective. An 'in' argument is one that does not reflect
 /// side-effects within the function back to callees, whereas 'out' arguments
 /// are the opposite: they are uninitialized on entry and cannot be used to
-/// observe the callee, but side-effects flow through to callees. 'inout'
+/// observe the callee, but side-effects flow through to callees. 'mut'
 /// arguments are both.
 static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   switch (conv) {
@@ -209,12 +209,12 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   case ArgConvention::OwnedInReg:
     llvm_unreachable("these conventions should be treated as capturing");
 
-  // 'borrowed' and 'owned' arguments convey no side-effects to callees.
+  // 'read' and 'owned' arguments convey no side-effects to callees.
   case ArgConvention::BorrowedInMem:
   case ArgConvention::OwnedInMem:
     return {true, false};
 
-  // 'inout' can read and write. Pessimistically treat 'ref' as 'inout'.
+  // 'mut' can read and write. Pessimistically treat 'ref' as 'mut'.
   case ArgConvention::InOut:
   case ArgConvention::MutRef:
   case ArgConvention::Ref:

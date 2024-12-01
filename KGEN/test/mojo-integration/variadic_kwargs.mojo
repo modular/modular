@@ -22,7 +22,7 @@ fn takes_int_variadic_kwargs(**kwargs: Int) raises:
 
 
 trait Resetable(CollectionElement):
-    fn reset(inout self):
+    fn reset(mut self):
         ...
 
     fn get(self) -> Int:
@@ -36,7 +36,7 @@ struct MemOnly(Resetable):
     fn get(self) -> Int:
         return self.value
 
-    fn reset(inout self):
+    fn reset(mut self):
         self.value = 0
 
 

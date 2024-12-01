@@ -86,7 +86,7 @@ inline StreamT &operator<<(StreamT &os, ArgConvention convention) {
   return os;
 }
 
-/// Return a string like "borrowed" or "inout".
+/// Return a string like "read" or "inout".
 const char *getUserSyntax(ArgConvention convention);
 
 } // namespace M::KGEN

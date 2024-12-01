@@ -59,19 +59,19 @@ struct OpArrayRef:
 struct ModRefAnalysis:
     var impl: UnsafePointer[NoneType]
 
-    fn rauw(inout self, src: List[Operation], dst: List[Operation]):
+    fn rauw(mut self, src: List[Operation], dst: List[Operation]):
         external_call["mlirCMRAnalysisRAUW", NoneType](
             UnsafePointer.address_of(self), OpArrayRef(src), OpArrayRef(dst)
         )
 
-    fn rauw(inout self, src: Operation, dst: Operation):
+    fn rauw(mut self, src: Operation, dst: Operation):
         srcOps = List[Operation]()
         srcOps.append(src)
         dstOps = List[Operation]()
         dstOps.append(dst)
         self.rauw(srcOps, dstOps)
 
-    fn get_next_modref(inout self, op: Operation) -> List[Operation]:
+    fn get_next_modref(mut self, op: Operation) -> List[Operation]:
         size = external_call["mlirCMRAnalysisGetNextModRefCount", Int](
             UnsafePointer.address_of(self), op
         )
@@ -85,7 +85,7 @@ struct ModRefAnalysis:
         ptr.free()
         return result^
 
-    fn get_prev_modref(inout self, op: Operation) -> List[Operation]:
+    fn get_prev_modref(mut self, op: Operation) -> List[Operation]:
         size = external_call["mlirCMRAnalysisGetPrevModRefCount", Int](
             UnsafePointer.address_of(self), op
         )
@@ -99,12 +99,12 @@ struct ModRefAnalysis:
         ptr.free()
         return result^
 
-    fn get_symtab(inout self) -> _mlir._c.IR.MlirSymbolTable:
+    fn get_symtab(mut self) -> _mlir._c.IR.MlirSymbolTable:
         return external_call[
             "mlirCMRAnalysisGetSymbolTable", _mlir._c.IR.MlirSymbolTable
         ](UnsafePointer.address_of(self))
 
-    fn lookup_function(inout self, attr: Attribute) -> Operation:
+    fn lookup_function(mut self, attr: Attribute) -> Operation:
         symbol = external_call[
             "mlirSymbolConstantGetSymbolRef", _mlir._c.IR.MlirAttribute
         ](attr.c)
@@ -113,7 +113,7 @@ struct ModRefAnalysis:
         )
         return _mlir._c.IR.mlirSymbolTableLookup(self.get_symtab(), strref)
 
-    fn insert_function(inout self, op: Operation):
+    fn insert_function(mut self, op: Operation):
         _ = _mlir._c.IR.mlirSymbolTableInsert(self.get_symtab(), op.c)
 
 
@@ -128,7 +128,7 @@ fn isa[T: AnyTrivialRegType, //, func: T](op: Operation) -> Bool:
 
 
 fn test_pattern(
-    inout op: Operation, inout b: Rewriter, inout mr: ModRefAnalysis
+    mut op: Operation, mut b: Rewriter, mut mr: ModRefAnalysis
 ) -> Bool:
     closure = op.operand(0)
     alloc = closure._defining_op()
@@ -156,9 +156,7 @@ fn test_pattern(
         return False
 
 
-fn print_me(
-    inout op: Operation, inout b: Rewriter, inout mr: ModRefAnalysis
-) -> Bool:
+fn print_me(mut op: Operation, mut b: Rewriter, mut mr: ModRefAnalysis) -> Bool:
     p = op
     while str(p.name()) != "builtin.module":
         p = p.parent()

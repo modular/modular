@@ -20,7 +20,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
 
     fn __init__(
         out self,
-        borrowed borrowed_input: Int,
+        read borrowed_input: Int,
         init_arg: Int,
         owned owned_input: Int,
         *init_kargs: Int,
@@ -28,7 +28,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
         """Init documentation.
 
         Args:
-            borrowed_input: A borrowed argument.
+            borrowed_input: A read argument.
             init_arg: An Int argument.
             owned_input: An owned argument.
             init_kargs: Multiple arguments.
@@ -41,11 +41,11 @@ struct SomeStruct[size: Int, other_param: Bool]:
     fn static_method() -> Int:
         return 420
 
-    fn bar(inout self):
+    fn bar(mut self):
         fn non_capturing_nested_function():
             pass
 
-    async fn async_function(inout self):
+    async fn async_function(mut self):
         @parameter
         fn parameter_nested_function():
             pass
@@ -54,7 +54,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
             pass
 
     fn function_that_raises(
-        inout self, arg_in_function_that_raises: Int
+        mut self, arg_in_function_that_raises: Int
     ) raises -> String:
         """A function that raises.
 
@@ -63,7 +63,7 @@ struct SomeStruct[size: Int, other_param: Bool]:
         """
         return "foo"
 
-    fn function_with_param[Param1: Int, Param2: Int](inout self):
+    fn function_with_param[Param1: Int, Param2: Int](mut self):
         """A function with param.
 
         Parameters:

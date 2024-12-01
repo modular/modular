@@ -1185,7 +1185,7 @@ bool LITSignatureType::isPosVarArg(size_t index) {
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(inout *args: Int) is declared 'inout'.
+/// example: fn x(inout *args: Int) is declared 'mut'.
 ArgConvention LITSignatureType::getPosVarArgConvention(size_t index) {
   assert(isPosVarArg(index) && "isn't a positional vararg");
   return ::cast<VariadicType>(getArguments()[index]).getConvention();
@@ -1212,7 +1212,7 @@ Type LITSignatureType::getIfVariadicPack(size_t index) {
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For
-/// example: fn x(inout *args: Int) is declared 'inout'.
+/// example: fn x(inout *args: Int) is declared 'mut'.
 ArgConvention LITSignatureType::getPackVarArgConvention(size_t index) {
   assert(getMetadata().isPackVarArg(index));
   return *getArgListAttrs().getOrigPackConvention();

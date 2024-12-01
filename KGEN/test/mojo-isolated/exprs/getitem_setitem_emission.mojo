@@ -93,29 +93,29 @@ fn test_getitem_slice(a: WeirdArray, i: int, j: int, k: int):
 
 
 struct IndexArray:
-    fn __getitem__(inout self, x: int) -> int:
+    fn __getitem__(mut self, x: int) -> int:
         pass
 
-    fn __setitem__(inout self, x: int, value: int):
+    fn __setitem__(mut self, x: int, value: int):
         pass
 
 
 struct IndexArrayArray:
-    fn __getitem__(inout self, x: int) -> IndexArray:
+    fn __getitem__(mut self, x: int) -> IndexArray:
         pass
 
-    fn __setitem__(inout self, x: int, owned value: IndexArray):
+    fn __setitem__(mut self, x: int, owned value: IndexArray):
         pass
 
 
-fn takes_inout_int(inout a: int):
+fn takes_inout_int(mut a: int):
     pass
 
 
 # CHECK-LABEL: lit.func @"test_writeback1
 fn test_writeback1[
     x: int, y: int
-](inout a: IndexArray, inout b: IndexArrayArray):
+](mut a: IndexArray, mut b: IndexArrayArray):
     # CHECK: %[[LT:.*]] = lit.var.decl "anonymous*" synth
     # CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <x>
     # CHECK-NEXT: %[[V1:.*]] = lit.call {{.*}}__getitem__{{.*}}(%a, %[[V0]])
@@ -129,7 +129,7 @@ fn test_writeback1[
 # CHECK-LABEL: lit.func @"test_writeback2
 fn test_writeback2[
     x: int, y: int
-](inout a: IndexArray, inout b: IndexArrayArray):
+](mut a: IndexArray, mut b: IndexArrayArray):
     # CHECK-NEXT: %[[LT1:.*]] = lit.var.decl
     # CHECK-NEXT: %[[LT2:.*]] = lit.var.decl {{.*}}!IndexArray
     # CHECK-NEXT: %[[C1:.*]] = kgen.param.constant = <x>
@@ -199,15 +199,15 @@ fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
 
 @value
 struct VariadicIndexList:
-    fn __getitem__(inout self, *indices: Int) -> Int:
+    fn __getitem__(mut self, *indices: Int) -> Int:
         pass
 
-    fn __setitem__(inout self, *indices: Int, val: Int):
+    fn __setitem__(mut self, *indices: Int, val: Int):
         pass
 
 # CHECK-LABEL: lit.func @"testVariadicIndexList
 # MOCO-696: Support variadic length keys in __setitem__
-fn testVariadicIndexList(inout foo: VariadicIndexList, i: Int, the_value: Int):
+fn testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
     # Getter is straight-forward.
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.splat 2, %i
     # CHECK: lit.call {{.*}}VariadicIndexList::@"__getitem__{{.*}}(%foo, [[VARIADIC]])
@@ -226,10 +226,10 @@ struct RefResultInOverloaded:
   fn __getitem__(self) raises -> ref[self.x] String:
     return self.x
 
-  fn __setitem__(inout self, owned x: String): pass
+  fn __setitem__(mut self, owned x: String): pass
 
 # CHECK-LABEL: lit.func @"testRefResultInOverloaded
-fn testRefResultInOverloaded(inout rrio: RefResultInOverloaded, owned str: String) raises:
+fn testRefResultInOverloaded(mut rrio: RefResultInOverloaded, owned str: String) raises:
   # CHECK: lit.call {{.*}}__getitem__
   # CHECK: lit.call {{.*}}unsafe_ptr
   _ = rrio[].unsafe_ptr()

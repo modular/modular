@@ -39,22 +39,22 @@ struct MutatingCM:
     fn __init__(out self):
         pass
 
-    fn __enter__(inout self) -> Int:
+    fn __enter__(mut self) -> Int:
         return 42
 
-    fn __exit__(inout self):
+    fn __exit__(mut self):
         pass  # normal
 
 
 @value
 struct NoExitCMReg:
-    fn __enter__(inout self) -> Int:
+    fn __enter__(mut self) -> Int:
         pass
 
 
 @value
 struct NoExitCMMem:
-    fn __enter__(inout self) -> Self:
+    fn __enter__(mut self) -> Self:
         pass
 
 
@@ -364,7 +364,7 @@ struct CMUnconditionalExit:
     fn __enter__(self):
         pass
 
-    fn __exit__(inout self):
+    fn __exit__(mut self):
         pass
 
 

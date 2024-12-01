@@ -790,7 +790,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     if (conv == ArgConvention::OwnedInMem)
       os << "owned ";
     else if (conv == ArgConvention::InOut)
-      os << "inout ";
+      os << "mut ";
     else if (conv == ArgConvention::InitSelf)
       os << "out ";
   };

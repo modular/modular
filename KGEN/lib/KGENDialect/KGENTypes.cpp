@@ -27,17 +27,17 @@ using namespace KGEN;
 // ArgConvention
 //===----------------------------------------------------------------------===//
 
-/// Return a string like "borrowed" or "inout".
+/// Return a string like "read" or "inout".
 const char *KGEN::getUserSyntax(ArgConvention convention) {
   switch (convention) {
   case ArgConvention::BorrowedInReg:
   case ArgConvention::BorrowedInMem:
-    return "borrowed";
+    return "read";
   case ArgConvention::OwnedInReg:
   case ArgConvention::OwnedInMem:
     return "owned";
   case ArgConvention::InOut:
-    return "inout";
+    return "mut";
   case ArgConvention::Ref:
     return "ref";
   case ArgConvention::MutRef:
@@ -45,7 +45,7 @@ const char *KGEN::getUserSyntax(ArgConvention convention) {
   case ArgConvention::ByRefResult:
   case ArgConvention::InitSelf:
   case ArgConvention::ByRefError:
-    return "init";
+    return "out";
   }
   llvm_unreachable("invalid convention");
 }

@@ -6,7 +6,7 @@
 
 
 @always_inline
-fn modify(inout x: Int):
+fn modify(mut x: Int):
     x = 42
 
 

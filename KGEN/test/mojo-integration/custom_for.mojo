@@ -25,7 +25,7 @@ struct my_iter:
         self.end = list.size
         self.list = list
 
-    fn __next__(inout self: my_iter) -> Int:
+    fn __next__(mut self: my_iter) -> Int:
         var result: Int = self.start
         self.start += 1
         return self.list[result]
@@ -52,15 +52,15 @@ struct MyList:
         self.start = ptr
         self.size = size
 
-    fn __setitem__(inout self, idx: Int, val: Int):
+    fn __setitem__(mut self, idx: Int, val: Int):
         var ptr = self.start + idx
         ptr[] = val
 
-    fn __getitem__(inout self, idx: Int) -> Int:
+    fn __getitem__(mut self, idx: Int) -> Int:
         var ptr = self.start + idx
         return ptr[]
 
-    fn __iter__(inout self) -> my_iter:
+    fn __iter__(mut self) -> my_iter:
         return my_iter(self)
 
 

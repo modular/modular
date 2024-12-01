@@ -257,7 +257,7 @@ fn test_param_refitem[a: SomeRefItemStruct]():
     alias x = a[]
 
 
-# Passing non-default address space through inout arg, must use temporary.
+# Passing non-default address space through mut arg, must use temporary.
 # CHECK-LABEL: lit.func @"mutate_in_addrspace
 fn mutate_in_addrspace(
     a: ExampleRegPassable,
@@ -283,7 +283,7 @@ struct ExampleRegPassable:
     fn __init__(out self):
         pass
 
-    fn mutateArg(self, inout other: Self):
+    fn mutateArg(self, mut other: Self):
         pass
 
 
@@ -294,20 +294,20 @@ struct Matrix[rows: int, cols: int]:
     pass
 
 
-fn matmul_unrolled[I: int](inout C: Matrix):
+fn matmul_unrolled[I: int](mut C: Matrix):
     pass
 
 
 @always_inline
 fn test_matrix_equal[
-    func: fn (inout Matrix) -> None
-](inout C: Matrix) raises -> Bool:
+    func: fn (mut Matrix) -> None
+](mut C: Matrix) raises -> Bool:
     func(C)
     return True
 
 
 # CHECK-LABEL: lit.func @"partialBind
-fn partialBind(inout C: Matrix[`1`, `2`]) raises:
+fn partialBind(mut C: Matrix[`1`, `2`]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
     # CHECK-NEXT: lit.call @{{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
     # CHECK-SAME: <:!lit.signature<[1]<?, index, index>(!lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> inout, |) -> !kgen.none>
@@ -412,7 +412,7 @@ fn complex_ref_box_emission[p: Int](a: Int):
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[VAR]]
     # CHECK-NEXT: lit.call {{.*}}test_int_ref{{.*}}([[TMP]])
 
-    # RValues infer as immutable, just like you can't pass them to inout.
+    # RValues infer as immutable, just like you can't pass them to mut.
     _ = test_int_ref(Int())
     # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
     # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[VAR]])

@@ -75,7 +75,7 @@ enum VarArgKind {
 /// argument           ::= "/" | "*"
 /// argument           ::= [argument_convention] [argument_variadic] identifier
 ///                        [argument_type] ["=" expression]
-/// argument_convention ::= "owned" | "borrowed" | "inout"
+/// argument_convention ::= "owned" | "read" | "mut"
 /// argument_variadic  ::= "*" | "**"
 /// argument_type      ::= ":" star_expression
 ///
@@ -85,7 +85,7 @@ struct ParsedArgument {
   SMLoc loc;
   LexerCursor cursor;
   // Specify argument passing convention, e.g. owned/inout etc.
-  enum {
+  enum PAArgConvention {
     kConventionUnspec = 0,         // Nothing specified
     kConventionInOut = 1,          // inout x
     kConventionOwned = 2,          // owned x

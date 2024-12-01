@@ -60,15 +60,15 @@ fn test_setitem_overload(b: MultiSetItem, x: int):
 
 @value
 struct VariadicIndexList:
-    fn __getitem__(inout self, *indices: Int) -> Int:
+    fn __getitem__(mut self, *indices: Int) -> Int:
         pass
 
-    fn __setitem__(inout self, *indices: Int, val: Int):
+    fn __setitem__(mut self, *indices: Int, val: Int):
         pass
 
 # CHECK-LABEL: lit.func @"testVariadicIndexList
 # MOCO-696: Support variadic length keys in __setitem__
-fn testVariadicIndexList(inout foo: VariadicIndexList, i: Int, the_value: Int):
+fn testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
     # Getter is straight-forward.
     # CHECK: [[VARIADIC:%.*]] = pop.variadic.splat 2, %i
     # CHECK: lit.call {{.*}}VariadicIndexList::@"__getitem__{{.*}}(%foo, [[VARIADIC]])
@@ -82,7 +82,7 @@ fn testVariadicIndexList(inout foo: VariadicIndexList, i: Int, the_value: Int):
 struct Issue3142IntList:
     fn __getitem__[idx: Int](self) -> Int: pass
     # expected-note @+1 {{function declared here}}
-    fn __setitem__[idx: Int](inout self, value: Int): pass
+    fn __setitem__[idx: Int](mut self, value: Int): pass
 
 fn test(lst: Issue3142IntList):
     # expected-error @+2 {{invalid call to '__setitem__': could not deduce parameter 'idx' of callee '__setitem__'}}

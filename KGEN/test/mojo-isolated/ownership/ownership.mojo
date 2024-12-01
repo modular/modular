@@ -60,7 +60,7 @@ struct RegExample:
   fn __del__(owned self):
     pass
 
-  fn mutate(inout self):
+  fn mutate(mut self):
     pass
 
 fn consume(owned a: RegExample): pass
@@ -292,7 +292,7 @@ struct FieldSensitiveMemExample:
     self = Self(existing.f1, existing.f2)
 
   # CHECK-LABEL: lit.func @"mutate
-  fn mutate(inout self):
+  fn mutate(mut self):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}(%0)
 
@@ -302,7 +302,7 @@ struct FieldSensitiveMemExample:
     # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
  # CHECK-LABEL: lit.func @"mutate2
-  fn mutate2(inout self):
+  fn mutate2(mut self):
     # Disable the dtor of 'self' before we overwrite it to show we can do this,
     # both F1 and F2 need to be destroyed before being overwritten
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
@@ -353,8 +353,8 @@ fn regpassable_owned_args_mutable(owned x: RegExample):
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
 
 # Result optimization cannot emit directly into a value that is passed as an
-# argument, because this forms a mutable reference to something immutably
-# borrowed implicitly.  We must invoke the copy ctor.
+# argument, because this forms a mutable reference to something immutable
+# implicitly.  We must invoke the copy ctor.
 # CHECK-LABEL: lit.func @"use_and_return
 fn use_and_return(a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
   # This will read from 'a' and write into the result slot in an arbitrary
@@ -364,10 +364,10 @@ fn use_and_return(a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
 fn use_and_return2(a: FieldSensitiveMemExample) -> MemExample:
   return a.f2
 
-fn use_inout_and_return(inout a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
+fn use_inout_and_return(mut a: FieldSensitiveMemExample) -> FieldSensitiveMemExample:
   return a
 
-fn return_ref(inout a: FieldSensitiveMemExample) -> ref [a] FieldSensitiveMemExample:
+fn return_ref(mut a: FieldSensitiveMemExample) -> ref [a] FieldSensitiveMemExample:
   return a
 
 # CHECK-LABEL: lit.func @"test_result_optimization
@@ -431,7 +431,7 @@ fn test_result_optimization():
   # CHECK-NEXT: kgen.param.constant: none = <#kgen.none>
 
 # CHECK-LABEL: lit.func @"impl_mutable_arg
-def impl_mutable_arg(a: FieldSensitiveMemExample, inout b: FieldSensitiveMemExample) -> None:
+def impl_mutable_arg(a: FieldSensitiveMemExample, mut b: FieldSensitiveMemExample) -> None:
   # CHECK-NEXT: lit.call {{.*}}@"__del__{{.*}}(%b)
   # CHECK-NEXT: %a_0 = lit.var.decl "a" arg(0)
   # CHECK-NEXT: lifetime.start %a_0
@@ -794,7 +794,7 @@ fn variadic_field_sensitivity():
 # CHECK-LABEL: lit.func @"variadic_inout_mems
 # CHECK-SAME: [mut *"mems`"](
 # CHECK-SAME: %mems: !kgen.variadic<!lit.ref<!MemExample, mut *"mems`">, inout> var)
-fn variadic_inout_mems(inout *mems: MemExample):
+fn variadic_inout_mems(mut *mems: MemExample):
   # CHECK-NEXT: %mems_0 = lit.var.decl
   # CHECK-NEXT: lifetime.start %mems_0
   # CHECK-NEXT: lit.call {{.*}}@VariadicListMem::@"__init__
@@ -887,7 +887,7 @@ fn maybeMemExample() raises -> MemExample:
 struct HasMemExample:
   var fh: MemExample
   # CHECK: lit.func @"destroyPotentiallyOverwrittenValueRegardlessOfOutcome
-  fn destroyPotentiallyOverwrittenValueRegardlessOfOutcome(inout self):
+  fn destroyPotentiallyOverwrittenValueRegardlessOfOutcome(mut self):
     # CHECK-NEXT: %__try_error__ = lit.var.dec
     # CHECK-NEXT: lit.try {
     try:

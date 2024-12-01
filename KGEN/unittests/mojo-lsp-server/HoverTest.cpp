@@ -75,7 +75,7 @@ TEST(HoverTest, testHoverFunctionDecls) {
 Init documentation.
 
 #### Args:
-&nbsp;&nbsp;borrowed_input: A borrowed argument.
+&nbsp;&nbsp;borrowed_input: A read argument.
 \
 &nbsp;&nbsp;init_arg: An Int argument.
 \
@@ -103,7 +103,7 @@ Init documentation.
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeAsyncFunction);
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(function) async fn async_function(inout self)
+(function) async fn async_function(mut self)
 ```)");
              })
       .hover(doc, rangeParameterNestedFunction.start,
@@ -124,7 +124,7 @@ Init documentation.
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeFunctionThatRaises);
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(function) fn function_that_raises(inout self, arg_in_function_that_raises: Int) raises -> String
+(function) fn function_that_raises(mut self, arg_in_function_that_raises: Int) raises -> String
 ```
 ---
 
@@ -140,7 +140,7 @@ A function that raises.
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeFunctionWithParam);
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(function) fn function_with_param[Param1: Int, Param2: Int](inout self)
+(function) fn function_with_param[Param1: Int, Param2: Int](mut self)
 ```
 ---
 
@@ -334,7 +334,7 @@ TEST(HoverTest, testHoverArgument) {
 ---
 
 ###
-A borrowed argument.
+A read argument.
 
 )");
              })

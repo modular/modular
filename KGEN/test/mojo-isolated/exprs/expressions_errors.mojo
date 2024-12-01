@@ -101,11 +101,11 @@ fn test_takes_mem_type():
     # expected-error @below {{use of unknown declaration 'takes_type'}}
     takes_type(SomeType)
 
-# MOCO-56: Mojo produces weird error when inout function is used in non mutating function
+# MOCO-56: Mojo produces weird error when mut function is used in non mutating function
 struct SomethingWithInferredParam[T: CollectionElement]:
   pass
 # expected-note @+1 {{function declared here}}
-fn SomethingWithInferredParamCallee(inout v: SomethingWithInferredParam):
+fn SomethingWithInferredParamCallee(mut v: SomethingWithInferredParam):
   pass
  
 fn SomethingWithInferredParamCaller(v: SomethingWithInferredParam):
@@ -152,16 +152,16 @@ fn test_func_type():
     alias float2: fn[a: Int]() -> MemType = test_func_type
     # expected-error @below {{fn[Int](owned Int) -> MemType}}
     alias float3: fn[a: Int](owned Int) -> MemType = test_func_type
-    # expected-error @below {{fn[Int](inout *Int) -> None}}
-    alias float4: fn[a: Int](inout *Int) -> None = test_func_type
+    # expected-error @below {{fn[Int](mut *Int) -> None}}
+    alias float4: fn[a: Int](mut *Int) -> None = test_func_type
     # expected-error @below {{fn(*MemType) raises capturing -> None}}
     alias float5: def(*MemType) capturing -> None = test_func_type
     # expected-error @below {{'fn[*AnyType](owned * *$0) capturing -> None'}}
     alias float6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'fn[*AnyType](owned * *$0) capturing -> None'}}
     alias float6a: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
-    # expected-error @below {{fn[AnyTrivialRegType](inout *$0) capturing -> None}}
-    alias float7: fn[T: AnyTrivialRegType](inout *T) capturing -> None = test_func_type
+    # expected-error @below {{fn[AnyTrivialRegType](mut *$0) capturing -> None}}
+    alias float7: fn[T: AnyTrivialRegType](mut *T) capturing -> None = test_func_type
 
     # expected-error @below {{unnamed argument cannot follow named argument}}
     alias f1: fn (a: Int, StringLiteral) -> Int
@@ -197,9 +197,9 @@ struct LValuesRvalues:
 
   def normalMethod(self): pass
   # expected-note @+1 {{function declared here}}
-  def mutatingMethod(inout self) -> None: pass
+  def mutatingMethod(mut self) -> None: pass
   # expected-note @+1 {{function declared here}}
-  def takesByRef(self, inout x: LValuesRvalues): pass
+  def takesByRef(self, mut x: LValuesRvalues): pass
 
   def normalMethod3(self, a: FloatDyn): pass
 
@@ -254,7 +254,7 @@ def testLValuesRvalues() -> None:
   alias T: AnyTrivialRegType = MemoryOnlyPair
 
 # expected-note @+1 {{function declared here}}
-fn badRef(inout val: Int):
+fn badRef(mut val: Int):
   var x = FloatDyn(1.0)
   # expected-error @+1 {{invalid call to 'badRef': l-value of type 'FloatDyn' cannot be converted to reference of type 'Int'}}
   badRef(x)
@@ -599,7 +599,7 @@ fn transfer_diags[param: String](borrowed_arg: CopyAndInitMemType, obj: SomeNonT
   someInt2 = 4
   _ = someInt2^ # expected-warning {{transfer from a value of trivial register type 'Int' has no effect and can be removed}}
 
-  # MOCO-757: Transfer ^ of borrowed arg leads to double free
+  # MOCO-757: Transfer ^ of read-only arg leads to double free
   # expected-error @+1 {{cannot transfer out of immutable reference}}
   _ = borrowed_arg^
 
@@ -626,7 +626,7 @@ fn testSomeThing(a: SomeThing):
 
 # Test invalid references that cannot bind to potentially-register_passable
 # argument values.
-# Issue #32603: References to borrowed args in generics miscompile when instantiated on regpassable types
+# Issue #32603: References to read-only args in generics miscompile when instantiated on regpassable types
 fn get_ref_to_bad_argument[T: AnyType](a: T, *args: T):
   # These are all fine since they are not returned.
   _ = Pointer.address_of(a)
@@ -711,7 +711,7 @@ fn unbound_function_type():
 # Crash converting mvalue of #lit.any.origin origin to Pointer with specific one.
 # https://github.com/modularml/mojo/issues/1921
 struct SomeStruct:
-  fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
+  fn refBindingToImmortal(mut self, ptr: UnsafePointer[Int])
       -> Pointer[Int, __origin_of(self)]:
     # expected-error @below {{cannot implicitly convert 'Pointer[Int, MutableAnyOrigin]' value to 'Pointer[Int, self]'}}
     return Pointer.address_of(ptr[])
@@ -765,7 +765,7 @@ fn test_signature():
   # Ok!
   var z : fn(out x: HasIntParam[1])->None = HasIntParam[1].__init__
 
-fn bad_union[ao: Origin[True]](ref [ao] a: String, inout b: String) -> ref [a, b] String:
+fn bad_union[ao: Origin[True]](ref [ao] a: String, mut b: String) -> ref [a, b] String:
     var c: String
     # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{ao._mlir_origin, b}'}}
     return c

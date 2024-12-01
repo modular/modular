@@ -31,7 +31,7 @@ struct RegExample:
         return
 
     fn __copyinit__(
-        inout self, existing: Self
+        mut self, existing: Self
     ):  # CHECK: lit.func @"__copyinit__
         return
 
@@ -49,7 +49,7 @@ struct RegExample:
     fn __del__(owned self):
         pass
 
-    fn mutate(inout self):
+    fn mutate(mut self):
         pass
 
 
