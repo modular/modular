@@ -672,3 +672,26 @@ struct Transpose2DOp:
         view_copy_impl[synchronous, target, view_strides=view_strides](
             z, x_view, ctx
         )
+
+
+@compiler.register("elementwise_print_shape")
+@compiler.elementwise
+struct ElementwisePrintShape:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](z: ManagedTensorSlice, x: ManagedTensorSlice):
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
+            return rebind[SIMD[z.type, width]](x._fused_load[width](idx))
+
+        print("input.shape =", x._spec.shape)
+        print("output.shape =", z._spec.shape)
+
+        foreach[func](z)
+
+    @staticmethod
+    fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
+        return x.get_runtime_spec().shape
