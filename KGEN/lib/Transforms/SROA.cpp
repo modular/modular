@@ -71,7 +71,7 @@ struct Replacer {
     builder.setInsertionPointAfter(alloc);
     derived->createScalarAllocs();
 
-    // For each user of the allocation replace it with the scalar equivilent.
+    // For each user of the allocation replace it with the scalar equivalent.
     for (Operation *user : llvm::make_early_inc_range(alloc->getUsers())) {
       builder.setInsertionPointAfter(user);
       derived->replaceUser(user, toDelete);
@@ -100,7 +100,7 @@ struct Replacer {
         builder.create<StoreOp>(store.getLoc(), extract, newAlloc);
         ++index;
 
-        // Stack of >1 stores are implicity only a reference to the first
+        // Stack of >1 stores are implicitly only a reference to the first
         // element so we can stop after the first store.
         if constexpr (std::is_same_v<ContainerType, POP::StackAllocationOp>)
           break;

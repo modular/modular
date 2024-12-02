@@ -175,7 +175,7 @@ void DebugInfo::sinkDebugKills(Operation *op) {
       // The kill Debug Value Ops corresponding to the current line at each
       // inlined scope.
       CallStackWith<SmallVector<KillOp>> pendingKillsByLoc;
-      // The debug kills that have been superceded by a non-kill debug value.
+      // The debug kills that have been superseded by a non-kill debug value.
       // This ensures we never change the order of values for a variable.
       DenseSet<DILocalVariableAttr> staleKills;
       for (Operation &op : llvm::make_early_inc_range(block.getOperations())) {
