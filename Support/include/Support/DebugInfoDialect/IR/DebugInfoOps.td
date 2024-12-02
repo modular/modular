@@ -62,7 +62,7 @@ def DebugInfo_ValueOp : DebugInfoOp<"value"> {
   let summary = "debug variable value definition";
   let description = [{
     The `debuginfo.value` operation provides information when a debug info
-    variable is set to a new value. Note that this operation decribes the value
+    variable is set to a new value. Note that this operation describes the value
     of a variable directly, not its address.
 
     The location expression specifies how this value relates to a source

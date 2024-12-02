@@ -327,7 +327,7 @@ def DebugInfo_DILocalVariableAttr : DIAttr<"DILocalVariable", "local_variable", 
 //===----------------------------------------------------------------------===//
 
 def DebugInfo_DICallLocAttr : DIAttr<"DICallLoc", "call_loc", []> {
-  let summary = "Holds callLoc for INlinedSubprogramScoped interface";
+  let summary = "Holds callLoc for InlinedSubprogramScoped interface";
   let description = [{
     Helper for InlinedSubprogramScoped interface, to store data in a location
     rather than the attribute dictionary (to allow CSE).
