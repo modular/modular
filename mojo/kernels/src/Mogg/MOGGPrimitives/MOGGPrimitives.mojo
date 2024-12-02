@@ -975,7 +975,7 @@ fn mgp_sync[
 
 @register_internal("mgp.debug.print")
 @always_inline
-fn mg_debug_print[
+fn mgp_debug_print[
     aDebugString: StringLiteral,
     bLabel: StringLiteral,
 ](ctx: StateContext,) raises -> Int:
