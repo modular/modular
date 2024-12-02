@@ -32,7 +32,7 @@ fn stencil1d(
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
 
-    if 0 < int(tid) < arr_size - 1:
+    if 0 < tid < arr_size - 1:
         b[tid] = coeff0 * a[(tid - 1)] + coeff1 * a[tid] + coeff2 * a[(tid + 1)]
 
 
@@ -63,7 +63,7 @@ fn stencil1d_smem(
 
     barrier()
 
-    if 0 < int(tid) < arr_size - 1:
+    if 0 < tid < arr_size - 1:
         b[tid] = (
             coeff0 * a_shared[lindex - 1]
             + coeff1 * a_shared[lindex]
