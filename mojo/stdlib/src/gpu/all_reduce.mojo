@@ -70,7 +70,7 @@ fn naive_reduce_kernel[
 
     Each thread handles multiple elements with striding for coalesced memory access.
     """
-    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var tid = GlobalIdx.x
     var stride = GridDim.x * BlockDim.x
 
     # Each thread handles multiple elements with striding
