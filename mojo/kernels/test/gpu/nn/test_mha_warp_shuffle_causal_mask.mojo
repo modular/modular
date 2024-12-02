@@ -21,6 +21,7 @@ from nn.mha_warp_shuffle import (
     run_mha_decoding_cpu,
     run_mha_decoding_warp_shuffle,
 )
+from nn.mha_operand import NDBufferMHAOperand
 from testing import assert_almost_equal
 
 from utils.index import Index
@@ -72,7 +73,13 @@ fn test[
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
     var k_device_ptr = ctx.enqueue_create_buffer[qkv_type](k_size)
+    var k_ndbuffer = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
+    ](k_device_ptr.ptr, (batch_size, num_keys, kv_num_heads, depth))
     var v_device_ptr = ctx.enqueue_create_buffer[qkv_type](v_size)
+    var v_ndbuffer = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), kv_num_heads, depth)
+    ](v_device_ptr.ptr, (batch_size, num_keys, kv_num_heads, depth))
     var output_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
 
     # Copy from host to device
@@ -88,8 +95,8 @@ fn test[
         ](
             ctx,
             q_device_ptr.ptr,
-            k_device_ptr.ptr,
-            v_device_ptr.ptr,
+            k_ndbuffer,
+            v_ndbuffer,
             output_device_ptr.ptr,
             scale,
             num_keys,
