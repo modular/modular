@@ -9,7 +9,7 @@
 from math import ceildiv
 
 from buffer import DimList, NDBuffer
-from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu import BlockDim, BlockIdx, ThreadIdx, GlobalIdx, barrier
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, stack_allocation
@@ -27,7 +27,7 @@ fn stencil1d(
     coeff1: Int,
     coeff2: Int,
 ):
-    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var tid = GlobalIdx.x
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))
     var b = NDBuffer[DType.float32, 1](b_ptr, Index(arr_size))
@@ -44,7 +44,7 @@ fn stencil1d_smem(
     coeff1: Int,
     coeff2: Int,
 ):
-    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var tid = GlobalIdx.x
     var lindex = ThreadIdx.x + 1
 
     var a = NDBuffer[DType.float32, 1](a_ptr, Index(arr_size))

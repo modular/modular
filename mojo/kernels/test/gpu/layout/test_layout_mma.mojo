@@ -14,6 +14,7 @@ from gpu import (
     BlockIdx,
     GridDim,
     ThreadIdx,
+    GlobalIdx,
     barrier,
     lane_id,
 )
@@ -57,8 +58,8 @@ fn matmul_naive[
     mat_a: LayoutTensor[in_type, layout_a],
     mat_b: LayoutTensor[in_type, layout_b],
 ):
-    var x: UInt = BlockIdx.x * BlockDim.x + ThreadIdx.x
-    var y: UInt = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var x = GlobalIdx.x
+    var y = GlobalIdx.y
 
     if int(x) >= mat_c.shape[0]() or int(y) >= mat_c.shape[1]():
         return

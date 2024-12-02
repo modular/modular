@@ -10,7 +10,7 @@ from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import BlockDim, BlockIdx, ThreadIdx
+from gpu import BlockDim, BlockIdx, ThreadIdx, GlobalIdx
 from gpu.host import DeviceContext
 from memory import UnsafePointer, memcpy
 
@@ -34,7 +34,7 @@ fn scatter_nd_gpu[
     last_index_dimension: Int,
     num_updates_elements: Int,
 ):
-    var id: UInt = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var id: UInt = GlobalIdx.x
     if id >= num_indices:
         return
 

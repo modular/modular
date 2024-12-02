@@ -288,7 +288,7 @@ fn gemm(
     ]()
 
     # Thread indexing offsets.
-    var row = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var row = GlobalIdx.x
     var col = BlockIdx.y * TILE_SZ_B
 
     # Privatization of the C matrix.

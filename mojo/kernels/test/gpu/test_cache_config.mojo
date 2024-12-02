@@ -6,13 +6,13 @@
 # RUN: %mojo-no-debug %s
 
 from gpu.host import CacheConfig, DeviceContext
-from gpu.id import BlockDim, BlockIdx, ThreadIdx
+from gpu.id import BlockDim, BlockIdx, ThreadIdx, GlobalIdx
 from memory import UnsafePointer
 from testing import *
 
 
 fn gpu_kernel(buff: UnsafePointer[Int64]):
-    var idx = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var idx = GlobalIdx.x
     buff[idx] = idx
 
 

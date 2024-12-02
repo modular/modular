@@ -9,7 +9,7 @@ from math import align_down, ceildiv
 
 from algorithm.functional import tile_and_unswitch
 from buffer import DimList, NDBuffer
-from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu import BlockDim, BlockIdx, ThreadIdx, GlobalIdx, barrier
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace
 from memory import UnsafePointer, stack_allocation
@@ -58,8 +58,8 @@ fn matmul_sram(
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.
     # Map thread x to column for coalesced access in B.
-    var col = BlockIdx.x * BlockDim.x + ThreadIdx.x
-    var row = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var col = GlobalIdx.x
+    var row = GlobalIdx.y
 
     # Local index in the c sub-matrix updated by current block.
     var localCol = ThreadIdx.x

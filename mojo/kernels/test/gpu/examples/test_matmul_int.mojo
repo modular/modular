@@ -8,7 +8,7 @@
 from math import ceildiv
 
 from buffer import DimList, NDBuffer
-from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, GlobalIdx, barrier
 from gpu.host import DeviceContext
 from memory import UnsafePointer, memset_zero, stack_allocation
 
@@ -48,7 +48,7 @@ fn matmul(
     ]()
 
     # Thread indexing offsets.
-    var row: UInt = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var row: UInt = GlobalIdx.x
     var col: UInt = BlockIdx.y * TILE_SZ_B
 
     # Privatization of the C matrix.

@@ -14,7 +14,7 @@ from sys.info import alignof
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 from buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
+from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, GlobalIdx, barrier
 from gpu.host import DeviceContext
 from gpu.intrinsics import ldg
 from gpu.memory import AddressSpace
@@ -282,8 +282,8 @@ fn matmul_naive(
     n: Int,
     k: Int,
 ):
-    var x: UInt = BlockIdx.x * BlockDim.x + ThreadIdx.x
-    var y: UInt = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var x: UInt = GlobalIdx.x
+    var y: UInt = GlobalIdx.y
 
     if x >= m or y >= n:
         return
