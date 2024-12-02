@@ -39,7 +39,7 @@ trait ScoreModTrait:
 
 
 @value
-@register_passable("trivial")  # No effect MOCO-1205
+@register_passable("trivial")
 struct AlibiScoreMod(ScoreModTrait):
     """AlibiScoreMod adds the appropriate ALiBi constant bias to attention score.
     """
@@ -107,7 +107,7 @@ struct AlibiScoreMod(ScoreModTrait):
 
 
 @value
-@register_passable("trivial")  # No effect MOCO-1205
+@register_passable("trivial")
 struct IdentityScoreMod(ScoreModTrait):
     """IdentityScoreMod simply returns attention score."""
 
@@ -129,7 +129,7 @@ struct IdentityScoreMod(ScoreModTrait):
 
 
 @value
-@register_passable("trivial")  # No effect MOCO-1205
+@register_passable("trivial")
 struct AddFactorMod[factor: Float32](ScoreModTrait):
     """AddFactorMod adds a constant bias to attention score for q_idx >= k_idx.
     """

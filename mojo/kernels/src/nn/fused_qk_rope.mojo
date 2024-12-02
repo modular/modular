@@ -7,19 +7,13 @@
 from collections import Optional
 from math import gcd
 from sys.info import _current_target, simdwidthof
-from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import elementwise
 from buffer import NDBuffer
 from complex import ComplexSIMD
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from kv_cache.types import (
-    ContiguousKVCache,
-    ContinuousBatchingKVCache,
-    KVCacheT,
-    KVCollectionT,
-)
+from kv_cache.types import KVCacheT, KVCollectionT
 from nn._ragged_utils import get_batch_from_row_offsets
 from runtime.asyncrt import MojoCallContextPtr
 
@@ -61,12 +55,8 @@ fn fused_qk_rope[
 
     @always_inline
     @parameter
-    @__copy_capture(freqs_cis, q_proj, output)
-    fn rope_fn_common[
-        rank: Int,
-        cache_t_: KVCacheT, //,
-        width: Int,
-    ](k_cache: cache_t_, idx_arg: IndexList[rank]):
+    @__copy_capture(k_cache)
+    fn rope_fn[width: Int, rank: Int](idx_arg: IndexList[rank]):
         constrained[rank == 4, "Invalid rank passed to rope kernel"]()
 
         @parameter
@@ -117,57 +107,15 @@ fn fused_qk_rope[
     alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
-    # TODO this is necessary due to traits not having a notion of being register_passable
-    # remove this forking after MOCO-1205 (or after we get rid of mo.opaque)
     @parameter
-    if _type_is_eq[cache_t, ContiguousKVCache[type, kv_params]]():
-        # cast to a register passable type so the function closure works on GPU
-        var k_cache_reg = rebind[ContiguousKVCache[type, kv_params]](k_cache)
-
-        @parameter
-        @__copy_capture(k_cache_reg)
-        fn rope_fn_contig[
-            width: Int,
-            rank: Int,
-        ](idx: IndexList[rank]):
-            rope_fn_common[width](k_cache_reg, idx)
-
-        @parameter
-        if target == "cpu":
-            elementwise[
-                func=rope_fn_contig, simd_width=kernel_simd_width, target=target
-            ](launch_shape)
-        else:
-            elementwise[
-                func=rope_fn_contig, simd_width=kernel_simd_width, target=target
-            ](launch_shape, context.value())
-    elif _type_is_eq[cache_t, ContinuousBatchingKVCache[type, kv_params]]():
-        # cast to a register passable type so the function closure works on GPU
-        var k_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](
-            k_cache
+    if target == "cpu":
+        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
+            launch_shape
         )
-
-        @parameter
-        @__copy_capture(k_cache_reg)
-        fn rope_fn_continuous[
-            width: Int,
-            rank: Int,
-        ](idx: IndexList[rank]):
-            rope_fn_common[width](k_cache_reg, idx)
-
-        @parameter
-        if target == "cpu":
-            elementwise[
-                func=rope_fn_continuous,
-                simd_width=kernel_simd_width,
-                target=target,
-            ](launch_shape)
-        else:
-            elementwise[
-                func=rope_fn_continuous,
-                simd_width=kernel_simd_width,
-                target=target,
-            ](launch_shape, context.value())
+    else:
+        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
+            launch_shape, context.value()
+        )
 
 
 @always_inline
@@ -196,12 +144,8 @@ fn fused_qk_rope_ragged[
 
     @always_inline
     @parameter
-    @__copy_capture(freqs_cis, q_proj, output, input_row_offset, batch_size)
-    fn rope_fn_common[
-        rank: Int,
-        cache_t_: KVCacheT, //,
-        width: Int,
-    ](k_cache: cache_t_, idx_arg: IndexList[rank]):
+    @__copy_capture(k_cache, batch_size)
+    fn rope_fn[width: Int, rank: Int](idx_arg: IndexList[rank]):
         constrained[rank == 3, "Invalid rank passed to rope kernel"]()
 
         @parameter
@@ -256,54 +200,12 @@ fn fused_qk_rope_ragged[
     alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
-    # TODO this is necessary due to traits not having a notion of being register_passable
-    # remove this forking after MOCO-1205 (or after we get rid of mo.opaque)
     @parameter
-    if _type_is_eq[cache_t, ContiguousKVCache[type, kv_params]]():
-        # cast to a register passable type so the function closure works on GPU
-        var k_cache_reg = rebind[ContiguousKVCache[type, kv_params]](k_cache)
-
-        @parameter
-        @__copy_capture(k_cache_reg)
-        fn rope_fn_contig[
-            width: Int,
-            rank: Int,
-        ](idx: IndexList[rank]):
-            rope_fn_common[width](k_cache_reg, idx)
-
-        @parameter
-        if target == "cpu":
-            elementwise[
-                func=rope_fn_contig, simd_width=kernel_simd_width, target=target
-            ](launch_shape)
-        else:
-            elementwise[
-                func=rope_fn_contig, simd_width=kernel_simd_width, target=target
-            ](launch_shape, context.value())
-    elif _type_is_eq[cache_t, ContinuousBatchingKVCache[type, kv_params]]():
-        # cast to a register passable type so the function closure works on GPU
-        var k_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](
-            k_cache
+    if target == "cpu":
+        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
+            launch_shape
         )
-
-        @parameter
-        @__copy_capture(k_cache_reg)
-        fn rope_fn_continuous[
-            width: Int,
-            rank: Int,
-        ](idx: IndexList[rank]):
-            rope_fn_common[width](k_cache_reg, idx)
-
-        @parameter
-        if target == "cpu":
-            elementwise[
-                func=rope_fn_continuous,
-                simd_width=kernel_simd_width,
-                target=target,
-            ](launch_shape)
-        else:
-            elementwise[
-                func=rope_fn_continuous,
-                simd_width=kernel_simd_width,
-                target=target,
-            ](launch_shape, context.value())
+    else:
+        elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
+            launch_shape, context.value()
+        )

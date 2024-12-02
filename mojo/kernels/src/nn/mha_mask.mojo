@@ -89,7 +89,7 @@ trait MHAMask:
 
 
 @value
-@register_passable("trivial")  # No effect MOCO-1205
+@register_passable("trivial")
 struct CausalMask(MHAMask):
     """MHA causal mask ensures a token is only affected by previous tokens."""
 
@@ -159,7 +159,7 @@ struct CausalMask(MHAMask):
 
 
 @value
-@register_passable("trivial")  # No effect MOCO-1205
+@register_passable("trivial")
 struct NullMask(MHAMask):
     """Mask that's effectively a noop."""
 

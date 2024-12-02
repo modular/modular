@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional, OptionalReg
-from sys.intrinsics import _type_is_eq
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
@@ -406,15 +405,10 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
     var batch_size = input_row_offset.dim[0]() - 1
 
     @parameter
-    @__copy_capture(output, input_row_offset, q_dim, qk_offset, batch_size)
-    fn write_to_cache_common[
-        type_: DType, width: Int, cache_t_: KVCacheT, *, alignment: Int = 1
-    ](
-        k_cache: cache_t_,
-        v_cache: cache_t_,
-        idx: IndexList[2],
-        val: SIMD[type_, width],
-    ):
+    @__copy_capture(q_dim, qk_offset, batch_size)
+    fn write_to_cache[
+        type_: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[type_, width]):
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
                 idx,
@@ -432,7 +426,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
 
         var h_idx: UInt
         var hd_idx: UInt
-        var cache: cache_t_
+        var cache: cache_t
         var output_val = val
         if idx[1] < qk_offset:
             cache = k_cache
@@ -453,47 +447,9 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             rebind[SIMD[kv_type, width]](output_val),
         )
 
-    # TODO this is necessary due to traits not having a notion of being register_passable
-    # remove this forking after MOCO-1205 (or after we get rid of mo.opaque)
-    @parameter
-    if _type_is_eq[cache_t, ContiguousKVCache[type, kv_params]]():
-        # cast to a register passable type so the function closure works on GPU
-        var k_cache_reg = rebind[ContiguousKVCache[type, kv_params]](k_cache)
-        var v_cache_reg = rebind[ContiguousKVCache[type, kv_params]](v_cache)
-
-        @parameter
-        @__copy_capture(k_cache_reg, v_cache_reg)
-        fn write_to_cache_contig[
-            type_: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[type_, width]):
-            write_to_cache_common[alignment=alignment,](
-                k_cache_reg, v_cache_reg, idx, val
-            )
-
-        _matmul_common[
-            target=target, elementwise_lambda_fn=write_to_cache_contig
-        ](hidden_state, weight, context)
-    elif _type_is_eq[cache_t, ContinuousBatchingKVCache[type, kv_params]]():
-        # cast to a register passable type so the function closure works on GPU
-        var k_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](
-            k_cache
-        )
-        var v_cache_reg = rebind[ContinuousBatchingKVCache[type, kv_params]](
-            v_cache
-        )
-
-        @parameter
-        @__copy_capture(k_cache_reg, v_cache_reg)
-        fn write_to_cache_continuous[
-            type_: DType, width: Int, *, alignment: Int = 1
-        ](idx: IndexList[2], val: SIMD[type_, width]):
-            write_to_cache_common[alignment=alignment,](
-                k_cache_reg, v_cache_reg, idx, val
-            )
-
-        _matmul_common[
-            target=target, elementwise_lambda_fn=write_to_cache_continuous
-        ](hidden_state, weight, context)
+    _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
+        hidden_state, weight, context
+    )
 
 
 @always_inline

@@ -7,7 +7,6 @@ from collections import InlineArray, Optional, OptionalReg
 from math import gcd, isqrt
 from os import abort
 from sys.info import _current_target, simdwidthof
-from sys.intrinsics import _type_is_eq
 
 from algorithm.functional import elementwise
 from buffer import Dim, DimList, NDBuffer
@@ -761,15 +760,10 @@ fn _fused_qkv_matmul_kv_cache_impl[
     var v_cache = kv_collection.get_value_cache[cache_t](int(layer_idx))
 
     @parameter
-    @__copy_capture(output, q_dim, qk_offset, SEQ_LEN)
-    fn write_to_cache_common[
-        type_: DType, width: Int, cache_t_: KVCacheT, //, *, alignment: Int = 1
-    ](
-        k_cache: cache_t_,
-        v_cache: cache_t_,
-        idx: IndexList[2],
-        val: SIMD[type_, width],
-    ):
+    @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache)
+    fn write_to_cache[
+        type_: DType, width: Int, *, alignment: Int = 1
+    ](idx: IndexList[2], val: SIMD[type_, width],):
         b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
         if idx[1] < q_dim:
             output.store[width=width, alignment=alignment](
@@ -780,7 +774,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
 
         var h_idx: UInt
         var hd_idx: UInt
-        var cache: cache_t_
+        var cache: cache_t
         var output_val = val
         if idx[1] < qk_offset:
             cache = k_cache
@@ -802,14 +796,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
             rebind[SIMD[type, width]](output_val),
         )
 
-    @parameter
-    @__copy_capture(k_cache, v_cache)
-    fn write_to_cache_contig[
-        type_: DType, width: Int, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[type_, width]):
-        write_to_cache_common[alignment=alignment](k_cache, v_cache, idx, val)
-
-    _matmul_common[target=target, elementwise_lambda_fn=write_to_cache_contig](
+    _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
         hidden_state, weight, context
     )
 
