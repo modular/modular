@@ -9,7 +9,6 @@ import * as vscode from 'vscode';
 
 import { MAXSDKManager } from './sdk/sdkManager';
 import { get } from './utils/config';
-import { readFile, writeFile } from './utils/files';
 
 export function registerFormatter(maxSDKManager: MAXSDKManager) {
   return vscode.languages.registerDocumentFormattingEditProvider('mojo', {
@@ -24,22 +23,6 @@ export function registerFormatter(maxSDKManager: MAXSDKManager) {
 
       if (!sdk) {
         return [];
-      }
-
-      const mblackPath = sdk.config.mojoMBlackPath;
-      // We try to fix the exec invocation within mblack if needed.
-      // There's currently an issue in which mblack has an internal
-      // path that is not escaped and creates issues when white
-      // spaces are present.
-      // TODO(SI-668): remove this when SI-668 gets fixed.
-
-      const contents = await readFile(mblackPath);
-      if (contents !== undefined) {
-        const newContents = contents.replace(
-          /'''exec' (\/.*) "\$0" "\$@"/i,
-          `'''exec' '$1' "\$0" "\$@"`,
-        );
-        await writeFile(mblackPath, newContents);
       }
 
       let env = sdk.getProcessEnv();
