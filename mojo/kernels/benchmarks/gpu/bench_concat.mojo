@@ -132,18 +132,15 @@ fn main() raises:
     alias Y1 = env_get_int["Y1", 1]()
     alias Z1 = env_get_int["Z1", 1]()
 
-    try:
-        var b = Bench()
-        with DeviceContext() as ctx:
-            bench_concat[num_inputs=num_inputs](
-                b,
-                List(
-                    IndexList[4](W0, X0, Y0, Z0),
-                    IndexList[4](W1, X1, Y1, Z1),
-                ),
-                ctx,
-                axis=axis,
-            )
-            b.dump_report()
-    except e:
-        print("CUDA_ERROR:", e)
+    var b = Bench()
+    with DeviceContext() as ctx:
+        bench_concat[num_inputs=num_inputs](
+            b,
+            List(
+                IndexList[4](W0, X0, Y0, Z0),
+                IndexList[4](W1, X1, Y1, Z1),
+            ),
+            ctx,
+            axis=axis,
+        )
+        b.dump_report()

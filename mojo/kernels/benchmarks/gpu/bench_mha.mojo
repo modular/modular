@@ -263,17 +263,13 @@ fn main() raises:
     )
 
     var m = Bench()
-    try:
-        with DeviceContext() as ctx:
-            run_mha[
-                cfg.qkv_type,
-                cfg.mask_type,
-                cfg.depth,
-                cfg.num_heads,
-                cfg.group,
-            ](m, seq_len, num_keys, batch_size, ctx)
-
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        run_mha[
+            cfg.qkv_type,
+            cfg.mask_type,
+            cfg.depth,
+            cfg.num_heads,
+            cfg.group,
+        ](m, seq_len, num_keys, batch_size, ctx)
 
     m.dump_report()

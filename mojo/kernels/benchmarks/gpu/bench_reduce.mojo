@@ -147,15 +147,12 @@ def main():
     alias K = env_get_int["K", 4096]()
 
     var m = Bench()
-    try:
-        with DeviceContext() as ctx:
-            alias dims = IndexList[3](M, N, K)
-            run_reduce[reduce_add, dtype](
-                m,
-                dims,
-                ctx,
-            )
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        alias dims = IndexList[3](M, N, K)
+        run_reduce[reduce_add, dtype](
+            m,
+            dims,
+            ctx,
+        )
 
     m.dump_report()

@@ -267,25 +267,21 @@ def main():
     seed(0)
 
     var m = Bench()
-    try:
-        with DeviceContext() as ctx:
-            # benchmarking flash attention
-            execute_kv_cache_ragged_flash_attention[
-                dtype,
-                head_dim,
-                num_q_heads,
-                num_kv_heads,
-            ](
-                ctx,
-                m,
-                batch_size,
-                seq_len,
-                use_random_seq_lengths,
-                cache_len,
-                use_random_cache_lengths,
-            )
-
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        # benchmarking flash attention
+        execute_kv_cache_ragged_flash_attention[
+            dtype,
+            head_dim,
+            num_q_heads,
+            num_kv_heads,
+        ](
+            ctx,
+            m,
+            batch_size,
+            seq_len,
+            use_random_seq_lengths,
+            cache_len,
+            use_random_cache_lengths,
+        )
 
     m.dump_report()

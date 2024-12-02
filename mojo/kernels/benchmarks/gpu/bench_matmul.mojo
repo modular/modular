@@ -220,23 +220,19 @@ fn main() raises:
     alias use_cublas = False
 
     var m = Bench()
-    try:
-        with DeviceContext() as ctx:
-            # benchmarking matmul
-            create_matmul_bench[
-                dtype,
-                transpose_b=transpose_b,
-                cache_busting=cache_busting,
-                use_cublas=use_cublas,
-            ](
-                ctx,
-                m,
-                dynamic(M),
-                static[N](),
-                static[K](),
-            )
-
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        # benchmarking matmul
+        create_matmul_bench[
+            dtype,
+            transpose_b=transpose_b,
+            cache_busting=cache_busting,
+            use_cublas=use_cublas,
+        ](
+            ctx,
+            m,
+            dynamic(M),
+            static[N](),
+            static[K](),
+        )
 
     m.dump_report()

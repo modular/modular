@@ -95,10 +95,7 @@ def main():
     alias block_dim = env_get_int["block_dim", 32]()
     var m = Bench()
 
-    try:
-        with DeviceContext() as ctx:
-            bench_vec_add(m, block_dim=block_dim, length=32 * 1024, context=ctx)
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        bench_vec_add(m, block_dim=block_dim, length=32 * 1024, context=ctx)
 
     m.dump_report()
