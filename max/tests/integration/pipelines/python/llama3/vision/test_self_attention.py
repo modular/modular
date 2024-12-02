@@ -10,7 +10,6 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
-from llama_vision.self_attention_decoder import SelfSdpaAttention
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -21,7 +20,7 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from modular_graph_test import modular_graph_test
-from nn import Linear, OptimizedRotaryEmbedding
+from nn import AttentionWithRopeQKV, Linear, OptimizedRotaryEmbedding
 from torch import nn
 from transformers import DynamicCache
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
@@ -76,7 +75,7 @@ def _attention_layer(
     head_dim = dim // n_heads
 
     dtype = DType.float32
-    input_type = TensorType(dtype, [BATCH_SIZE, seq_len, dim])
+    input_type = TensorType(dtype, [BATCH_SIZE * seq_len, dim])
     wq_type = TensorType(dtype, [n_heads * head_dim, config.hidden_size])
     wk_type = TensorType(dtype, [n_kv_heads * head_dim, config.hidden_size])
     wv_type = TensorType(dtype, [n_kv_heads * head_dim, config.hidden_size])
@@ -136,7 +135,7 @@ def _attention_layer(
             # TODO: Figure out how we want to pass this
             # rope_scaling=params.rope_scaling,
         )
-        attention = SelfSdpaAttention(
+        attention = AttentionWithRopeQKV(
             n_heads=config.num_attention_heads,
             kv_params=KVCacheParams(
                 dtype=dtype,
@@ -154,7 +153,7 @@ def _attention_layer(
         graph.output(
             attention(
                 x=x,  # type: ignore
-                kv_collection=kv_collection,  # type: ignore
+                kv_collection=kv_collection,
                 input_row_offset=input_row_offset,
             )[0]
         )
@@ -240,8 +239,12 @@ def test_self_attention(session, start_pos, seq_len):
             BATCH_SIZE, 1, seq_len, dtype=torch.bfloat16
         )
         positional_embeddings = [partial_tensor, partial_tensor]
+
+        # Reshape to match reference implementation with input rank of 3.
+        x = x.reshape(BATCH_SIZE, seq_len, test_config.hidden_size)
+        expected = torch_attention(x, wq, wk, wv, wo, positional_embeddings)
         expected = (
-            torch_attention(x, wq, wk, wv, wo, positional_embeddings)
+            expected.reshape(BATCH_SIZE * seq_len, test_config.hidden_size)
             .detach()
             .numpy()
         )

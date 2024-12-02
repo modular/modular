@@ -22,7 +22,6 @@ from llama_vision.language_model import (
     TextModel,
     instantiate_language_model,
 )
-from llama_vision.self_attention_decoder import SelfSdpaAttention
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -32,6 +31,7 @@ from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.kv_cache import KVCacheParams, load_kv_manager
 from nn import (
     MLP,
+    AttentionWithRopeQKV,
     Embedding,
     Linear,
     OptimizedRotaryEmbedding,
@@ -230,7 +230,7 @@ def self_attention_decoder_layer(
         weights_registry,
     )
 
-    attention = SelfSdpaAttention(
+    attention = AttentionWithRopeQKV(
         n_heads=num_attention_heads,
         kv_params=kv_params,
         layer_idx=layer_idx,
