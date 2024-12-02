@@ -25,16 +25,13 @@ fn test_gpu_printf() raises:
         # CHECK: printf printed 98 123.456!
         _printf["printf printed %ld %g!\n"](x, y)
 
-    try:
-        with DeviceContext() as ctx:
-            var func = ctx.compile_function[do_print]()
-            ctx.enqueue_function(
-                func, Int(98), Float64(123.456), grid_dim=1, block_dim=1
-            )
-            # Ensure queued function finished before proceeding.
-            ctx.synchronize()
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        var func = ctx.compile_function[do_print]()
+        ctx.enqueue_function(
+            func, Int(98), Float64(123.456), grid_dim=1, block_dim=1
+        )
+        # Ensure queued function finished before proceeding.
+        ctx.synchronize()
 
 
 # CHECK-LABEL: == test_gpu_print_formattable
@@ -54,7 +51,7 @@ fn test_gpu_print_formattable() raises:
         print("Printing Int zero  =", Int(0))
         print("Printing UInt zero =", UInt(0))
 
-        # CHECK UInt values are: 1 99 18446744073709551615 0
+        # CHECK: UInt values are: 1 99 18446744073709551615 0
         print("UInt values are:", UInt(1), UInt(99), UInt.MAX, UInt.MIN)
 
         #
@@ -64,10 +61,10 @@ fn test_gpu_print_formattable() raises:
         var simd = SIMD[DType.float64, 4](
             0.0, -1.0, Float64.MIN, Float64.MAX_FINITE
         )
-        # CHECK: [0.0, -1.0, -inf, 1.7976931348623157e+308]
+        # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:71:32
+        # CHECK: test_print.mojo:68:32
         print(__source_location())
 
         # ------------------------------
@@ -114,16 +111,13 @@ fn test_gpu_print_formattable() raises:
         # CHECK: layout from GPU: ((2, 3):(3, 1))
         print("layout from GPU: ", layout_str)
 
-    try:
-        with DeviceContext() as ctx:
-            var func = ctx.compile_function[do_print]()
-            ctx.enqueue_function(
-                func, Int(42), Float64(7.2), grid_dim=1, block_dim=1
-            )
-            # Ensure queued function finished before proceeding.
-            ctx.synchronize()
-    except e:
-        print("CUDA_ERROR:", e)
+    with DeviceContext() as ctx:
+        var func = ctx.compile_function[do_print]()
+        ctx.enqueue_function(
+            func, Int(42), Float64(7.2), grid_dim=1, block_dim=1
+        )
+        # Ensure queued function finished before proceeding.
+        ctx.synchronize()
 
 
 fn main() raises:
