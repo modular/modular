@@ -26,6 +26,7 @@ from gpu.shuffle import (
     warp_broadcast,
     warp_sum,
 )
+from layout.tensor_builder import LayoutTensorBuild as tb, static
 from layout import IntTuple
 from layout.element import Element
 from layout.fillers import arange
@@ -37,14 +38,35 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
-from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_builder import static
+from gpu.host import DeviceContext
+from memory import memset
+from gpu.memory import external_memory, AddressSpace
+from gpu.shuffle import (
+    lane_group_sum,
+    lane_group_max,
+    warp_sum,
+    _static_log2,
+    shuffle_down,
+    warp_broadcast,
+)
+from pathlib import Path
+from layout.element import Element
+from gpu import (
+    barrier,
+    ThreadIdx,
+    BlockIdx,
+    lane_id,
+    WARP_SIZE,
+    BlockDim,
+    GridDim,
+)
 from layout.tensor_core import get_accum_type
 from memory import UnsafePointer, memset
+from buffer import NDBuffer, DimList
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
-from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
-from python import Python
-from testing import assert_almost_equal
+from nn.mha_score_mod import ScoreModTrait, AlibiScoreMod, IdentityScoreMod
+from nn.mha_operand import MHAOperand, NDBufferMHAOperand
+from nn.softmax import softmax
 
 
 fn mha_decoding_cpu_seq[
@@ -232,8 +254,8 @@ fn inner_product[
 
 fn mha_decoding_single_batch_warp_shuffle[
     q_type: DType,
-    k_type: DType,
-    v_type: DType,
+    k_t: MHAOperand,
+    v_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -251,16 +273,19 @@ fn mha_decoding_single_batch_warp_shuffle[
     # vllm uses BHKD for k and BHDK for v, this kernel is slightly different
     # from vllm because of this
     # [B, K, H, D]
-    k_ptr: UnsafePointer[Scalar[k_type]],
+    k: k_t,
     # [B, K, H, D]
-    v_ptr: UnsafePointer[Scalar[v_type]],
+    v: v_t,
     # [B, S, H, D]
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
     num_keys: Int,
     mask: mask_t,
     score_mod: score_mod_t,
+    batch_idx: Int,
 ):
+    alias k_type = k_t.type
+    alias v_type = v_t.type
     alias accum_type = get_accum_type[q_type]()
     alias k_simdwidth = simdwidthof[k_type]()
     alias v_simdwidth = 4  # because one warp reads/writes head_size (= 128) elements, i.e. 4 elements per thread
@@ -295,18 +320,6 @@ fn mha_decoding_single_batch_warp_shuffle[
 
     var q = tb[q_type]().row_major[num_heads, head_size]().view(q_ptr)
 
-    var k = tb[k_type]().row_major(
-        num_keys,
-        static[kv_num_heads](),
-        static[head_size](),
-    ).view(k_ptr)
-
-    var v = tb[v_type]().row_major(
-        num_keys,
-        static[kv_num_heads](),
-        static[head_size](),
-    ).view(v_ptr)
-
     var q_gmem_tile = q.tile[group, head_size](kv_head_idx, 0).reshape[
         Layout.row_major(thread_group_size, num_elems_per_thread)
     ]()
@@ -338,9 +351,13 @@ fn mha_decoding_single_batch_warp_shuffle[
     for block_idx in range(warp_idx, nblocks, num_warps):
         # this memory is contiguous so we can use LayoutTensor
         var key_idx = thread_group_idx + block_idx * block_size
-        var k_gmem = k.tile[1, 1, num_elems_per_thread](
-            key_idx, kv_head_idx, thread_group_offset
-        ).reshape[Layout(num_elems_per_thread)]()
+        var k_ptr = k.block_paged_ptr[k_type, block_size](
+            batch_idx,
+            key_idx,
+            kv_head_idx,
+            thread_group_offset * num_elems_per_thread,
+        )
+        var k_gmem = LayoutTensor[k_type, Layout(num_elems_per_thread)](k_ptr)
 
         var k_register = tb[k_type]().layout[
             num_elems_per_thread
@@ -503,12 +520,14 @@ fn mha_decoding_single_batch_warp_shuffle[
 
             @parameter
             for i in range(num_rows_per_thread // v_simdwidth):
-                var v = v.tile[1, 1, num_rows_per_thread](
-                    int(min(Int32(key_idx), Int32(num_keys - 1))),
+                var v_ptr = v.block_paged_ptr[v_type, 1](
+                    batch_idx,
+                    int(min(key_idx, Int32(num_keys - 1))),
                     kv_head_idx,
-                    lane_id(),
-                ).reshape[Layout(head_size)]()
-                var v_vec = v.vectorize[v_simdwidth]()[i]
+                    lane_id() * num_rows_per_thread,
+                )
+                var v_tensor = LayoutTensor[v_type, Layout(head_size)](v_ptr)
+                var v_vec = v_tensor.vectorize[v_simdwidth]()[i]
                 var accumulator_vec = accumulator.vectorize[1, v_simdwidth]()
 
                 @parameter
@@ -582,7 +601,11 @@ fn mha_decoding_single_batch_warp_shuffle[
 fn mha_decoding_warp_shuffle[
     q_type: DType,
     k_type: DType,
+    k_rank: Int,
+    k_shape: DimList,
     v_type: DType,
+    v_rank: Int,
+    v_shape: DimList,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -600,9 +623,9 @@ fn mha_decoding_warp_shuffle[
     # vllm uses BHKD for k and BHDK for v, this kernel is slightly different
     # from vllm because of this
     # [B, K, H, D]
-    k_ptr: UnsafePointer[Scalar[k_type]],
+    k: NDBuffer[k_type, k_rank, k_shape],
     # [B, K, H, D]
-    v_ptr: UnsafePointer[Scalar[v_type]],
+    v: NDBuffer[v_type, v_rank, v_shape],
     # [B, S, H, D]
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
@@ -612,9 +635,8 @@ fn mha_decoding_warp_shuffle[
 ):
     var batch_idx = BlockIdx.z
     var q_batch_offset = head_size * num_heads * batch_idx
-    var kv_batch_offset = head_size * (
-        num_heads // group
-    ) * num_keys * batch_idx
+    var v_operand = NDBufferMHAOperand[v_type, v_rank, v_shape](v)
+    var k_operand = NDBufferMHAOperand[k_type, k_rank, k_shape](k)
     mha_decoding_single_batch_warp_shuffle[
         head_size=head_size,
         num_heads=num_heads,
@@ -624,20 +646,25 @@ fn mha_decoding_warp_shuffle[
         use_score_mod=use_score_mod,
     ](
         q_ptr.offset(q_batch_offset),
-        k_ptr.offset(kv_batch_offset),
-        v_ptr.offset(kv_batch_offset),
+        k_operand,
+        v_operand,
         output_ptr.offset(q_batch_offset),
         scale,
         num_keys,
         mask,
         score_mod,
+        batch_idx,
     )
 
 
 fn run_mha_decoding_warp_shuffle[
     q_type: DType,
     k_type: DType,
+    k_rank: Int,
+    k_shape: DimList,
     v_type: DType,
+    v_rank: Int,
+    v_shape: DimList,
     output_type: DType,
     mask_t: MHAMask,
     score_mod_t: ScoreModTrait,
@@ -651,9 +678,9 @@ fn run_mha_decoding_warp_shuffle[
     # [B, S, H, D]
     q_ptr: UnsafePointer[Scalar[q_type]],
     # [B, K, H, D]
-    k_ptr: UnsafePointer[Scalar[k_type]],
+    k_nd: NDBuffer[k_type, k_rank, k_shape],
     # [B, K, H, D]
-    v_ptr: UnsafePointer[Scalar[v_type]],
+    v_nd: NDBuffer[v_type, v_rank, v_shape],
     # [B, S, H, D]
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
@@ -668,7 +695,11 @@ fn run_mha_decoding_warp_shuffle[
         mha_decoding_warp_shuffle[
             q_type,
             k_type,
+            k_rank,
+            k_shape,
             v_type,
+            v_rank,
+            v_shape,
             output_type,
             mask_t,
             score_mod_t,
@@ -693,8 +724,8 @@ fn run_mha_decoding_warp_shuffle[
     ctx.enqueue_function(
         func,
         q_ptr,
-        k_ptr,
-        v_ptr,
+        k_nd,
+        v_nd,
         output_ptr,
         scale,
         num_keys,

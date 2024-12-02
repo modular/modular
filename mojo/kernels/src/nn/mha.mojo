@@ -49,6 +49,7 @@ from memory import UnsafePointer, stack_allocation
 from memory.pointer import AddressSpace as _AddressSpace
 from memory.unsafe import bitcast
 from nn.mha_mask import MHAMask, NullMask, TileMaskStatus
+from nn.mha_operand import MHAOperand, NDBufferMHAOperand, KVCacheMHAOperand
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod, ScoreModTrait
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -810,7 +811,11 @@ fn flash_attention[
                         mask.rank,
                         q.type,
                         k.type,
+                        k.rank,
+                        k.shape,
                         v.type,
+                        v.rank,
+                        v.shape,
                         mask.type,
                         output.type,
                         mask_t,
@@ -829,8 +834,8 @@ fn flash_attention[
                 ctx.enqueue_function(
                     func,
                     q.data,
-                    k.data,
-                    v.data,
+                    k,
+                    v,
                     mask.data,
                     output.data,
                     scale,
@@ -893,7 +898,11 @@ fn flash_attention[
                         mask.rank,
                         q.type,
                         k.type,
+                        k.rank,
+                        k.shape,
                         v.type,
+                        v.rank,
+                        v.shape,
                         mask.type,
                         output.type,
                         mask_t,
@@ -921,8 +930,8 @@ fn flash_attention[
                 ctx.enqueue_function(
                     func,
                     q.data,
-                    k.data,
-                    v.data,
+                    k,
+                    v,
                     mask.data,
                     output.data,
                     scale,
@@ -1121,15 +1130,8 @@ fn mha[
     var mask_batch_offset = batch_idx * max_seq_len * max_seq_len * (
         config.num_heads if mask_rank == 4 else 1
     )
-
-    var k_nd_buffer = k.block[k.get_type(), k.get_block_static_shape()](
-        batch_idx, seq_len
-    )
-    var v_nd_buffer = v.block[v.get_type(), v.get_block_static_shape()](
-        batch_idx, seq_len
-    )
-    var k_ptr = k_nd_buffer.data
-    var v_ptr = v_nd_buffer.data
+    var k_operand = KVCacheMHAOperand(k)
+    var v_operand = KVCacheMHAOperand(v)
     var key_length = seq_len + k.cache_length(batch_idx)  # cache_length = 0, CE
 
     mha_single_batch[
@@ -1140,8 +1142,8 @@ fn mha[
         use_score_mod=use_score_mod,
     ](
         q_ptr.offset(q_batch_offset),
-        k_ptr,
-        v_ptr,
+        k_operand,
+        v_operand,
         mask_ptr.offset(mask_batch_offset),
         output_ptr.offset(q_batch_offset),
         scale,
@@ -1149,6 +1151,7 @@ fn mha[
         max_seq_len,
         mask,
         score_mod,
+        batch_idx,
     )
 
 
@@ -1157,7 +1160,11 @@ fn mha[
     mask_rank: Int,
     q_type: DType,
     k_type: DType,
+    k_rank: Int,
+    k_shape: DimList,
     v_type: DType,
+    v_rank: Int,
+    v_shape: DimList,
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
@@ -1169,8 +1176,8 @@ fn mha[
     use_score_mod: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
-    k_ptr: UnsafePointer[Scalar[k_type]],
-    v_ptr: UnsafePointer[Scalar[v_type]],
+    k: NDBuffer[k_type, k_rank, k_shape],
+    v: NDBuffer[v_type, v_rank, v_shape],
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
@@ -1183,10 +1190,12 @@ fn mha[
     alias num_heads = config.num_heads
     var batch_idx = BlockIdx.z
     var q_batch_offset = depth * num_heads * seq_len * batch_idx
-    var kv_batch_offset = depth * (num_heads // group) * seq_len * batch_idx
     var mask_batch_offset = batch_idx * seq_len * seq_len * (
         config.num_heads if mask_rank == 4 else 1
     )
+
+    var k_operand = NDBufferMHAOperand[k.type, k.rank, k.shape](k)
+    var v_operand = NDBufferMHAOperand[v.type, v.rank, v.shape](v)
 
     mha_single_batch[
         mask_rank,
@@ -1196,8 +1205,8 @@ fn mha[
         use_score_mod=use_score_mod,
     ](
         q_ptr.offset(q_batch_offset),
-        k_ptr.offset(kv_batch_offset),
-        v_ptr.offset(kv_batch_offset),
+        k_operand,
+        v_operand,
         mask_ptr.offset(mask_batch_offset),
         output_ptr.offset(q_batch_offset),
         scale,
@@ -1205,6 +1214,7 @@ fn mha[
         seq_len,
         mask,
         score_mod,
+        batch_idx,
     )
 
 
@@ -1212,8 +1222,8 @@ fn mha[
 fn mha_single_batch[
     mask_rank: Int,
     q_type: DType,
-    k_type: DType,
-    v_type: DType,
+    k_t: MHAOperand,
+    v_t: MHAOperand,
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
@@ -1225,8 +1235,8 @@ fn mha_single_batch[
     use_score_mod: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
-    k_ptr: UnsafePointer[Scalar[k_type]],
-    v_ptr: UnsafePointer[Scalar[v_type]],
+    k: k_t,
+    v: v_t,
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
@@ -1234,6 +1244,7 @@ fn mha_single_batch[
     max_seq_len: Int,  # sequence length after padding.
     mask: mask_t,
     score_mod: score_mod_t,
+    batch_idx: Int,
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -1246,6 +1257,8 @@ fn mha_single_batch[
       TODO: use more optimized kernels for them
 
     """
+    alias k_type = k_t.type
+    alias v_type = v_t.type
     constrained[q_type == k_type and k_type == v_type]()
 
     alias simd_size = simdwidthof[q_type]()
@@ -1397,7 +1410,6 @@ fn mha_single_batch[
 
     # Account for group query.
     alias kv_num_heads = num_heads // group
-    var kv_offset = depth * (head_idx // group)
 
     alias num_pipeline_stages = config.num_pipeline_stages
 
@@ -1447,7 +1459,9 @@ fn mha_single_batch[
             kv_gmem_layout,
             masked = not not_last_iter,
         ](
-            k_ptr + int(kv_offset + kv_tile_start_row * kv_num_heads * depth),
+            k.block_paged_ptr[k_type, BN](
+                batch_idx, kv_tile_start_row, int(head_idx // group), 0
+            ),
             kv_runtime_layout,
         )
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
@@ -1457,7 +1471,9 @@ fn mha_single_batch[
             kv_gmem_layout,
             masked = not not_last_iter,
         ](
-            v_ptr + int(kv_offset + kv_tile_start_row * kv_num_heads * depth),
+            v.block_paged_ptr[v_type, BN](
+                batch_idx, kv_tile_start_row, int(head_idx // group), 0
+            ),
             kv_runtime_layout,
         )
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
@@ -1917,14 +1933,8 @@ fn mha_decoding[
         num_heads if mask_rank == 4 else 1
     )
 
-    var k_nd_buffer = k.block[k.get_type(), k.get_block_static_shape()](
-        batch_idx, seq_len
-    )
-    var v_nd_buffer = v.block[v.get_type(), v.get_block_static_shape()](
-        batch_idx, seq_len
-    )
-    var k_ptr = k_nd_buffer.data
-    var v_ptr = v_nd_buffer.data
+    var k_operand = KVCacheMHAOperand(k)
+    var v_operand = KVCacheMHAOperand(v)
 
     @parameter
     if use_mask_tensor or (not use_warp_shuffle_decoding):
@@ -1944,8 +1954,8 @@ fn mha_decoding[
             use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
-            k_ptr,
-            v_ptr,
+            k_operand,
+            v_operand,
             mask_ptr.offset(mask_batch_offset),
             output_ptr.offset(q_batch_offset),
             scale,
@@ -1953,6 +1963,7 @@ fn mha_decoding[
             max_cache_valid_length,
             mask,
             score_mod,
+            batch_idx,
         )
     else:
         mha_decoding_single_batch_warp_shuffle[
@@ -1965,13 +1976,14 @@ fn mha_decoding[
             use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
-            k_ptr,
-            v_ptr,
+            k_operand,
+            v_operand,
             output_ptr.offset(q_batch_offset),
             scale,
             num_keys,
             mask,
             score_mod,
+            batch_idx,
         )
 
 
@@ -1980,7 +1992,11 @@ fn mha_decoding[
     mask_rank: Int,
     q_type: DType,
     k_type: DType,
+    k_rank: Int,
+    k_shape: DimList,
     v_type: DType,
+    v_rank: Int,
+    v_shape: DimList,
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
@@ -2001,8 +2017,8 @@ fn mha_decoding[
     block_size_warp_shuffle: Int = 16,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
-    k_ptr: UnsafePointer[Scalar[k_type]],
-    v_ptr: UnsafePointer[Scalar[v_type]],
+    k_nd: NDBuffer[k_type, k_rank, k_shape],
+    v_nd: NDBuffer[v_type, v_rank, v_shape],
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
@@ -2013,10 +2029,11 @@ fn mha_decoding[
 ):
     var batch_idx = BlockIdx.z
     var q_batch_offset = depth * num_heads * batch_idx
-    var kv_batch_offset = depth * (num_heads // group) * num_keys * batch_idx
     var mask_batch_offset = batch_idx * num_keys * (
         num_heads if mask_rank == 4 else 1
     )
+    var k_operand = NDBufferMHAOperand[k_type, k_rank, k_shape](k_nd)
+    var v_operand = NDBufferMHAOperand[v_type, v_rank, v_shape](v_nd)
 
     @parameter
     if use_mask_tensor or (not use_warp_shuffle_decoding):
@@ -2036,8 +2053,8 @@ fn mha_decoding[
             use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
-            k_ptr.offset(kv_batch_offset),
-            v_ptr.offset(kv_batch_offset),
+            k_operand,
+            v_operand,
             mask_ptr.offset(mask_batch_offset),
             output_ptr.offset(q_batch_offset),
             scale,
@@ -2045,6 +2062,7 @@ fn mha_decoding[
             num_keys,
             mask,
             score_mod,
+            batch_idx,
         )
     else:
         mha_decoding_single_batch_warp_shuffle[
@@ -2057,13 +2075,14 @@ fn mha_decoding[
             use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
-            k_ptr.offset(kv_batch_offset),
-            v_ptr.offset(kv_batch_offset),
+            k_operand,
+            v_operand,
             output_ptr.offset(q_batch_offset),
             scale,
             num_keys,
             mask,
             score_mod,
+            batch_idx,
         )
 
 
@@ -2180,8 +2199,8 @@ fn scale_and_mask_helper[
 fn mha_decoding_single_batch[
     mask_rank: Int,
     q_type: DType,
-    k_type: DType,
-    v_type: DType,
+    k_t: MHAOperand,
+    v_t: MHAOperand,
     mask_type: DType,
     output_type: DType,
     mask_t: MHAMask,
@@ -2201,8 +2220,8 @@ fn mha_decoding_single_batch[
     use_score_mod: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
-    k_ptr: UnsafePointer[Scalar[k_type]],
-    v_ptr: UnsafePointer[Scalar[v_type]],
+    k: k_t,
+    v: v_t,
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
     scale: Float32,
@@ -2210,8 +2229,11 @@ fn mha_decoding_single_batch[
     max_cache_valid_length: UInt,  # longest KV cache entry
     mask: mask_t,
     score_mod: score_mod_t,
+    batch_idx: Int,
 ):
     """Flash attention v2 algorithm."""
+    alias k_type = k_t.type
+    alias v_type = v_t.type
     constrained[q_type == k_type and k_type == v_type]()
 
     alias simd_size = simdwidthof[q_type]()
@@ -2345,7 +2367,6 @@ fn mha_decoding_single_batch[
 
     # Account for group query.
     alias kv_num_heads = num_heads // group
-    var kv_offset = depth * kv_head_idx
 
     var q_offset = depth * kv_head_idx * group
 
@@ -2377,6 +2398,9 @@ fn mha_decoding_single_batch[
     barrier()
     # Loop over Key and Value tiles
     for kv_tile_start_row in range(0, num_keys, BN):
+        var k_ptr = k.block_paged_ptr[k_type, BN](
+            batch_idx, kv_tile_start_row, kv_head_idx, 0
+        )
         var k_gmem_block = LayoutTensor[
             k_type,
             Layout(
@@ -2384,7 +2408,7 @@ fn mha_decoding_single_batch[
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
             masked=True,
-        ](k_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
+        ](k_ptr)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
         var kv_tile_num_rows = min(BN, num_keys - kv_tile_start_row)
@@ -2446,6 +2470,9 @@ fn mha_decoding_single_batch[
             rowsum,
         )
 
+        var v_ptr = v.block_paged_ptr[v_type, BN](
+            batch_idx, kv_tile_start_row, kv_head_idx, 0
+        )
         var v_gmem_block = LayoutTensor[
             v_type,
             Layout(
@@ -2453,7 +2480,7 @@ fn mha_decoding_single_batch[
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
             masked=True,
-        ](v_ptr + kv_offset + kv_tile_start_row * kv_num_heads * depth)
+        ](v_ptr)
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
         copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
@@ -2724,9 +2751,6 @@ fn _bmm0_bs[
     var q = q_ptr + q_offset
 
     var kv_head = int(head // group)
-    var k = k_cache.block[k_type, k_cache.get_block_static_shape()](
-        batch, 0
-    )._offset(Index(0, kv_head, 0))
 
     var p = p_ptr + Int(p_offset)
 
@@ -2739,6 +2763,7 @@ fn _bmm0_bs[
 
     if x < cur_query_len + k_cache.cache_length(batch) and y < cur_query_len:
         var accum_vec = SIMD[p_type, simdwidthof[p_type]()](0)
+        var k_ptr = k_cache.block_paged_ptr[k_type, 1](batch, x, kv_head, 0)
 
         @parameter
         fn accum_fn[width: Int](offset: Int):
@@ -2746,9 +2771,7 @@ fn _bmm0_bs[
             var q_val = q.load[width=width, alignment=alignment](
                 y * num_heads * depth + offset
             ).cast[k_type]()
-            var k_val = k.load[width=width, alignment=alignment](
-                x * kv_num_heads * depth + offset
-            )
+            var k_val = k_ptr.load[width=width, alignment=alignment](offset)
             var qk_val = (q_val * k_val).cast[p_type]()
 
             @parameter
@@ -2848,19 +2871,15 @@ fn _bmm1_bs[
     var p = p_ptr + p_offset
 
     var kv_head = int(head // group)
-    var v = v_cache.block[v_type, v_cache.get_block_static_shape()](
-        batch, 0
-    )._offset(Index(0, kv_head, 0))
-
     var output = output_ptr + Int(output_offset)
 
     var accum = SIMD[DType.float32, 1](0.0)
 
     for i in range(cur_query_len + v_cache.cache_length(batch)):
-        accum += (
-            p[y * padded_num_keys + i].cast[v_type]()
-            * v[i * kv_num_heads * depth + x]
-        ).cast[DType.float32]()
+        var v_ptr = v_cache.block_paged_ptr[v_type, 1](batch, i, kv_head, x)
+        accum += (p[y * padded_num_keys + i].cast[v_type]() * v_ptr[0]).cast[
+            DType.float32
+        ]()
 
     output[y * num_heads * depth + x] = accum.cast[output_type]()
 
