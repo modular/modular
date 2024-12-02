@@ -19,6 +19,7 @@ from gpu import (
     BlockDim,
     BlockIdx,
     ThreadIdx,
+    GlobalIdx,
     barrier,
     lane_id,
     warp_reduce,
@@ -2683,9 +2684,9 @@ fn _bmm0_bs[
     mask_functor: mask_t,
 ):
     # total_context_length
-    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var x = GlobalIdx.x
     # prompt_length
-    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var y = GlobalIdx.y
 
     alias k_type = k_cache.get_type()
     alias kv_num_heads = k_cache.get_kv_params().num_heads
@@ -2815,9 +2816,9 @@ fn _bmm1_bs[
     alias kv_num_heads = v_cache.get_kv_params().num_heads
 
     # head_size
-    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var x = GlobalIdx.x
     # seq_len
-    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var y = GlobalIdx.y
 
     var batch_head = BlockIdx.z
     var batch: UInt
@@ -2982,8 +2983,8 @@ fn _bmm0[
     depth: Int,
     group: Int,
 ):
-    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
-    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var x = GlobalIdx.x
+    var y = GlobalIdx.y
     if x >= num_keys or y >= seq_len:
         return
 
@@ -3036,8 +3037,8 @@ fn _bmm1[
     depth: Int,
     group: Int,
 ):
-    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
-    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var x = GlobalIdx.x
+    var y = GlobalIdx.y
     if x >= depth or y >= seq_len:
         return
 
