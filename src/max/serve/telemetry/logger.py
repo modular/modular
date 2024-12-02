@@ -7,10 +7,9 @@
 
 import logging
 import os
-from typing import Union
+from typing import Optional, Union
 
-from max.serve.telemetry.common import otelBaseUrl, logs_resource
-
+from max.serve.telemetry.common import logs_resource, otelBaseUrl
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
@@ -38,9 +37,9 @@ def _getCloudProvider() -> str:
 # 3rd party imports whose logging you wish to capture.
 def configureLogging(
     console_level: Union[int, str],
-    file_path: str,
-    file_level: Union[int, str, None] = None,
-    otlp_level: Union[int, str, None] = None,
+    file_path: Optional[str] = None,
+    file_level: Optional[Union[int, str]] = None,
+    otlp_level: Optional[Union[int, str]] = None,
 ):
     logging_handlers: list[logging.Handler] = []
 
@@ -61,7 +60,7 @@ def configureLogging(
     console_handler.setLevel(console_level)
     logging_handlers.append(console_handler)
 
-    if file_level is not None:
+    if file_level is not None and file_path is not None:
         # Create a file handler
         file_handler = logging.FileHandler(file_path)
         file_formatter: logging.Formatter

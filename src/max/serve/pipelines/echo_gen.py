@@ -12,8 +12,8 @@ from max.pipelines.interfaces import (
     TokenGeneratorRequest,
     TokenGeneratorRequestMessage,
 )
-from max.pipelines import IdentityPipelineTokenizer
 from max.pipelines.response import TextResponse
+from max.pipelines.tokenizer import IdentityPipelineTokenizer
 
 
 @dataclass

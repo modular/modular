@@ -12,49 +12,42 @@ import queue
 import time
 import uuid
 from contextlib import asynccontextmanager
-from typing import Mapping, Optional
+from multiprocessing import Process
+from multiprocessing import get_context as mp_get_context
+from multiprocessing.synchronize import Event as MPEvent
+from typing import AsyncGenerator, Mapping, Optional
 
-from max.serve.telemetry.stopwatch import StopWatch
-from max.serve.telemetry.metrics import METRICS
-from max.pipelines.interfaces import TokenGeneratorFactoryMap
-from max.serve.multiprocessing.worker import (
-    MPQueue,
-    ProcessPoolWorker,
-    Worker,
-    all_events,
-    all_queues,
-    register_mp_queue,
-    running_workers,
-)
+from faster_fifo import Queue as MPQueue  # type: ignore
+from max.pipelines.interfaces import TokenGeneratorFactory
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
-from max.serve.scheduler.queues import STOP_STREAM, BatchInputs
+from max.serve.scheduler.queues import STOP_STREAM, BatchInputs, EngineQueue
+from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.stopwatch import StopWatch
 
 logger = logging.getLogger(__name__)
 
 
-register_mp_queue("MODEL_CANCEL")
-register_mp_queue("REQUEST")
-register_mp_queue("RESPONSE")
-
-
-async def run_model_worker_v2(
-    worker: Worker,
-    factories: TokenGeneratorFactoryMap,
-    configs: Mapping[str, TokenGeneratorPipelineConfig],
+def _model_worker_process_fn(
+    model_factory: TokenGeneratorFactory,
+    pipeline_config: TokenGeneratorPipelineConfig,
+    queues: Mapping[str, MPQueue],
+    events: Mapping[str, MPEvent],
 ):
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
-        worker.executor, model_worker_run_v2_sync, factories, configs
-    )
+    try:
+        asyncio.run(
+            model_worker_run_v2(model_factory, pipeline_config, queues, events)
+        )
+    except KeyboardInterrupt:
+        pass
 
 
 @asynccontextmanager
 async def start_model_worker(
-    factories: TokenGeneratorFactoryMap,
-    configs: Mapping[str, TokenGeneratorPipelineConfig],
+    model_factory: TokenGeneratorFactory,
+    pipeline_config: TokenGeneratorPipelineConfig,
     name: str = "MODEL_" + str(uuid.uuid4()),
     timeout_secs: float = 20 * 60.0,
-):
+) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
     Args:
@@ -67,91 +60,106 @@ async def start_model_worker(
     Yields:
         Iterator[AsyncIterator[Worker]]: _description_
     """
-    queues = all_queues()
-    worker = ProcessPoolWorker(
-        name,
-        max_workers=1,
-        queues={
-            "REQUEST": queues["REQUEST"],
-            "RESPONSE": queues["RESPONSE"],
-            "CANCEL": queues["MODEL_CANCEL"],
-        },
-    )
-    assert worker.executor
-    running = running_workers()
-    logger.info("Stopping existing workers: %s", running)
-    if name in running:
-        existing = running[name]
-        existing.shutdown()
+
+    mp_context = mp_get_context("spawn")
+    engine_queue: EngineQueue = EngineQueue()
+    queue_args = {
+        "REQUEST": engine_queue.request_q,
+        "RESPONSE": engine_queue.response_q,
+        "CANCEL": engine_queue.cancel_q,
+    }
+    started_event = mp_context.Event()
+    stopped_event = mp_context.Event()
+    shutdown_event = mp_context.Event()
+    event_args = {
+        "STARTED": started_event,
+        "STOPPED": stopped_event,
+        "SHUTDOWN": shutdown_event,
+    }
 
     logger.info("Starting worker: %s", name)
-    loop = asyncio.get_running_loop()
-    worker.task = loop.create_task(
-        run_model_worker_v2(worker, factories, configs),
-        name="model_worker",
+    worker = Process(
+        name=name,
+        target=_model_worker_process_fn,
+        daemon=True,
+        args=(
+            model_factory,
+            pipeline_config,
+            queue_args,
+            event_args,
+        ),
     )
-    running[name] = worker
+    worker.start()
+
+    async def worker_started():
+        while not started_event.is_set():
+            await asyncio.sleep(0.01)
+
+    async def worker_completed():
+        while worker.is_alive():
+            await asyncio.sleep(0.01)
 
     # Wait for one of the following tasks to complete.
     # 1. The worker signals started()
     # 2. The worker task completes - likely a failure
-    worker_started = loop.create_task(worker.started())
+    loop = asyncio.get_running_loop()
     completed_tasks, pending_tasks = await asyncio.wait(
-        [worker.task, worker_started],
+        [
+            loop.create_task(worker_started()),
+            loop.create_task(worker_completed()),
+        ],
         timeout=timeout_secs,
         return_when=asyncio.FIRST_COMPLETED,
     )
 
     # Handle timeout
     if not completed_tasks:
-        worker.shutdown_event.set()
+        shutdown_event.set()
         for p in pending_tasks:
             p.cancel()
         raise TimeoutError(f"Startup timed out for model worker {name}.")
 
     # Observe completed task result.
+    # This will either be the startup or the completed event
     for t in completed_tasks:
         await t
 
     try:
-        yield worker
+        yield engine_queue
     finally:
-        worker.shutdown()
-        if name in running:
-            del running[name]
+        if worker.is_alive():
+            worker.kill()
 
 
 # INTERNAL
 
 
 async def model_worker_run_v2(
-    factories: TokenGeneratorFactoryMap,
-    configs: Mapping[str, TokenGeneratorPipelineConfig],
+    model_factory: TokenGeneratorFactory,
+    pipeline_config: TokenGeneratorPipelineConfig,
+    queues: Mapping[str, MPQueue],
+    events: Mapping[str, MPEvent],
 ):
     try:
         pid = os.getpid()
         logger.info("Starting model worker on process %d!", pid)
 
-        # Global multiprocessing resources.
-        events = all_events()
+        # Multiprocessing resources.
         started = events["STARTED"]
         stopped = events["STOPPED"]
         shutdown = events["SHUTDOWN"]
 
-        queues = all_queues()
         request_queue = queues["REQUEST"]
         response_queue = queues["RESPONSE"]
         cancel_queue = queues["CANCEL"]
 
+        logger.info("Worker Queues: %s, Events: %s", queues, events)
+
         # Initialize all token generators.
-        assert (
-            len(factories) == 1 and len(configs) == 1
-        ), "We can host only one Pipeline right now"
-        ((_, model_factory),) = factories.items()
         with StopWatch() as timer:
             model = model_factory()
-            METRICS.modelLoadTime(timer.elapsed_ms)
-        ((_, config),) = configs.items()
+            METRICS.modelLoadTime(int(timer.elapsed_ms))
+        config = pipeline_config
         max_batch_size_tg = config.token_generation.size
         max_forward_steps_tg = config.token_generation.max_forward_steps
         if config.context_encoding:
@@ -191,7 +199,7 @@ async def model_worker_run_v2(
                     max_batch_size_ce, max_batch_size_tg - len(batch_continuous)
                 )
                 if len(
-                    batch_to_execute := await create_batch(
+                    batch_to_execute := create_batch(
                         request_queue,
                         max_batch_size_to_execute,
                         cache_indices,
@@ -211,7 +219,7 @@ async def model_worker_run_v2(
                     for req_id in batch_to_execute:
                         batch_continuous[req_id] = batch_to_execute[req_id]
 
-                    response_queue.queue.put_many_nowait(batch_responses)
+                    response_queue.put_many_nowait(batch_responses)
                     start_time[0] = None
 
             elif batch_continuous:
@@ -223,12 +231,12 @@ async def model_worker_run_v2(
                     batch_continuous, batch_responses, model, cache_indices
                 )
 
-                response_queue.queue.put_many_nowait(batch_responses)
+                response_queue.put_many_nowait(batch_responses)
 
             # Occasionally clear out contexts cancelled out API worker side.
-            if i % 20 == 0 and not cancel_queue.queue.empty():
+            if i % 20 == 0 and not cancel_queue.empty():
                 try:
-                    for req_id in cancel_queue.queue.get_many_nowait():
+                    for req_id in cancel_queue.get_many_nowait():
                         if req_id in batch_continuous:
                             model.release(batch_continuous[req_id])
                             cache_indices.add(
@@ -249,16 +257,6 @@ async def model_worker_run_v2(
         logger.info("Stopped model worker at process %d!", pid)
 
 
-def model_worker_run_v2_sync(
-    factories: TokenGeneratorFactoryMap,
-    configs: Mapping[str, TokenGeneratorPipelineConfig],
-):
-    try:
-        asyncio.run(model_worker_run_v2(factories, configs))
-    except KeyboardInterrupt:
-        pass
-
-
 def should_schedule_ce(
     batch_continuous: BatchInputs,
     request_queue: MPQueue,
@@ -267,8 +265,10 @@ def should_schedule_ce(
     batch_timeout_s: Optional[float],
 ):
     # The incoming request queue is empty; no CE to schedule
-    if request_queue.queue.empty():
+    if request_queue.empty():
         return False
+
+    # logger.info("Worker-Queue-Size: %d", request_queue.qsize())
 
     # At this point there are incoming requests, we start the batch clock if not yet
     if not start_time[0]:
@@ -289,7 +289,7 @@ def should_schedule_ce(
             return True
         else:
             messages_needed = max_batch_size_tg - len(batch_continuous)
-            if request_queue.queue.qsize() >= messages_needed:
+            if request_queue.qsize() >= messages_needed:
                 # If there are enough request to fill the TG batch then schedule CE
                 return True
             else:
@@ -299,7 +299,7 @@ def should_schedule_ce(
     return True
 
 
-async def create_batch(
+def create_batch(
     request_queue: MPQueue,
     max_batch_size: int,
     request_indices: set,
@@ -312,7 +312,7 @@ async def create_batch(
             max_messages_to_get = (
                 1 if target_sum_seq_len else max_batch_size - len(batch)
             )
-            for req_id, data in request_queue.queue.get_many_nowait(
+            for req_id, data in request_queue.get_many_nowait(
                 max_messages_to_get=max_messages_to_get
             ):
                 data.cache_seq_id = request_indices.pop()

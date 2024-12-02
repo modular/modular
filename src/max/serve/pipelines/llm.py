@@ -128,21 +128,18 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
 
     def __init__(
         self,
-        config: TokenGeneratorPipelineConfig,
         model_name: str,
         tokenizer: PipelineTokenizer,
+        engine_queue: EngineQueue,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info("%s: Constructed", model_name)
+        self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
 
         self.model_name = model_name
         self.tokenizer = tokenizer
-        self.config = config
+        self.engine_queue = engine_queue
         self.stats = TokenGeneratorStats()
-        self.debug_logging = self.logger.isEnabledFor(logging.DEBUG)
-
-        self.engine_queue: EngineQueue = EngineQueue()
-        self.max_queue_size = config.token_generation.size
 
         self._timers: dict[str, TokenGeneratorTimers] = {}
         self._background_tasks: set[asyncio.Task] = set()

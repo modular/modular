@@ -11,23 +11,19 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
-from httpx import AsyncClient
 from json.decoder import JSONDecodeError
 from typing import Any, AsyncGenerator, List, Literal, Optional, cast
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.applications import State
 from fastapi.responses import Response
+from httpx import AsyncClient
 from max.pipelines import (
     PipelineTokenizer,
     TokenGeneratorRequest,
     TokenGeneratorRequestMessage,
 )
-from max.serve.pipelines.deps import BatchedTokenGeneratorState
-from max.serve.pipelines.llm import (
-    TokenGeneratorOutput,
-    TokenGeneratorPipeline,
-)
+from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.schemas.openai import (  # type: ignore
     ChatCompletionResponseMessage,
     ChatCompletionStreamResponseDelta,
@@ -77,19 +73,14 @@ class OpenAIResponseGenerator(ABC):
         pass
 
 
-def get_pipeline(request: Request, model_name: str):
+def get_pipeline(request: Request, model_name: str) -> TokenGeneratorPipeline:
     app_state: State = request.app.state
-    try:
-        pipeline_state: BatchedTokenGeneratorState = app_state.pipelines[
-            model_name
-        ]
-        pipeline = pipeline_state.batched_generator
-        return pipeline
-    except KeyError:
+    pipeline: TokenGeneratorPipeline = app_state.pipeline
+    if pipeline.model_name != model_name:
         raise ValueError(
-            f"Unknown model '{model_name}'. Available models are"
-            f" '{list(app_state.pipelines.keys())}'."
+            f"Unknown model '{model_name}', currently serving '{pipeline.model_name}'."
         )
+    return pipeline
 
 
 class OpenAIChatResponseGenerator(OpenAIResponseGenerator):

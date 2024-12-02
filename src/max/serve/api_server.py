@@ -8,9 +8,12 @@
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import logging
 import os
-from typing import Mapping, Union
+from dataclasses import dataclass
+from typing import Union
 
 from max.serve.telemetry.logger import configureLogging
 from max.serve.telemetry.metrics import METRICS
@@ -35,26 +38,29 @@ if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
 configureLogging(console_level, file_path, file_level, otlp_level)
 METRICS.configure(otlp_level)
 
-import argparse
-import asyncio
-from contextlib import AsyncExitStack, asynccontextmanager
+
+from contextlib import asynccontextmanager
 from functools import partial
 
 from fastapi import FastAPI
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from prometheus_client import disable_created_metrics, make_asgi_app
-from pydantic_settings import CliSettingsSource
-from uvicorn import Config, Server
-
+from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorFactory
 from max.serve.config import APIType, Settings, api_prefix
 from max.serve.debug import DebugSettings, register_debug
-from max.serve.pipelines.deps import (
-    BatchedTokenGeneratorState,
-    echo_generator_pipeline,
+from max.serve.pipelines.echo_gen import (
+    EchoPipelineTokenizer,
+    EchoTokenGenerator,
+)
+from max.serve.pipelines.llm import (
+    TokenGeneratorPipeline,
+    TokenGeneratorPipelineConfig,
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from prometheus_client import disable_created_metrics, make_asgi_app
+from pydantic_settings import CliSettingsSource
+from uvicorn import Config, Server
 
 ROUTES = {
     APIType.KSERVE: kserve_routes,
@@ -64,39 +70,37 @@ ROUTES = {
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class ServingTokenGeneratorSettings:
+    model_name: str
+    model_factory: TokenGeneratorFactory
+    pipeline_config: TokenGeneratorPipelineConfig
+    tokenizer: PipelineTokenizer
+
+
 @asynccontextmanager
 async def lifespan(
-    app: FastAPI, pipelines: Mapping[str, BatchedTokenGeneratorState]
+    app: FastAPI, serving_settings: ServingTokenGeneratorSettings
 ):
-    async with AsyncExitStack() as stack:
-        contexts = []
-        model_factories = {}
-        model_configs = {}
-        for name, state in pipelines.items():
-            model_factories[name] = state.model_factory
-            model_configs[name] = state.batched_generator.config
-            if isinstance(state, BatchedTokenGeneratorState):
-                contexts.append(state.batched_generator)
-
-        await asyncio.gather(*map(stack.enter_async_context, contexts))
-        async with start_model_worker(model_factories, model_configs):
+    async with start_model_worker(
+        serving_settings.model_factory, serving_settings.pipeline_config
+    ) as engine_queue:
+        pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
+            model_name=serving_settings.model_name,
+            tokenizer=serving_settings.tokenizer,
+            engine_queue=engine_queue,
+        )
+        app.state.pipeline = pipeline
+        async with pipeline:
             yield
 
 
 def fastapi_app(
     settings: Settings,
     debug_settings: DebugSettings,
-    pipelines: Mapping[str, BatchedTokenGeneratorState] = {},
+    serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
-    if not pipelines:
-        # TODO@gaz: The name look up is awkward here.
-        default_echo_pipeline = echo_generator_pipeline()
-        pipelines = {
-            default_echo_pipeline.batched_generator.model_name: default_echo_pipeline
-        }
-
-    app = FastAPI(lifespan=partial(lifespan, pipelines=pipelines))
-    app.state.pipelines = pipelines
+    app = FastAPI(lifespan=partial(lifespan, serving_settings=serving_settings))
 
     app.mount("/metrics", make_metrics_app())
 
@@ -140,7 +144,17 @@ def make_metrics_app():
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    app = fastapi_app(parse_settings(parser), parse_debug_settings(parser))
+    serving_settings = ServingTokenGeneratorSettings(
+        model_name="echo",
+        model_factory=EchoTokenGenerator,
+        pipeline_config=TokenGeneratorPipelineConfig.dynamic_homogenous(
+            batch_size=1
+        ),
+        tokenizer=EchoPipelineTokenizer(),
+    )
+    app = fastapi_app(
+        parse_settings(parser), parse_debug_settings(parser), serving_settings
+    )
     config = fastapi_config(app=app)
     server = Server(config)
     await server.serve()

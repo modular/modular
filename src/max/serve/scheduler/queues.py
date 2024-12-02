@@ -7,12 +7,13 @@
 
 import asyncio
 import contextlib
+import logging
 import queue
 from dataclasses import dataclass
 from enum import Enum
-from typing import AsyncGenerator, Generic, Optional, TypeVar
+from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 
-from max.serve.multiprocessing.worker import MPQueue, all_queues
+from faster_fifo import Queue as MPQueue  # type: ignore
 
 BatchReqId = TypeVar("BatchReqId")
 BatchReqInput = TypeVar("BatchReqInput")
@@ -60,30 +61,30 @@ class BatchQueueConfig:
 
 
 class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
-        self.queue_request: MPQueue = all_queues()["REQUEST"]
-        self.queue_response: MPQueue = all_queues()["RESPONSE"]
-        self.queue_cancel: MPQueue = all_queues()["MODEL_CANCEL"]
-
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.request_q = MPQueue(max_size_bytes=10_000_000)
+        self.response_q = MPQueue(max_size_bytes=10_000_000)
+        self.cancel_q = MPQueue(max_size_bytes=1_000_000)
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
 
-    @contextlib.asynccontextmanager
-    async def open_channel(
+    @contextlib.contextmanager
+    def open_channel(
         self, req_id: ReqId, data: ReqInput
-    ) -> AsyncGenerator[asyncio.Queue, None]:
+    ) -> Generator[asyncio.Queue, None, None]:
         try:
-            queue: asyncio.Queue = asyncio.Queue()
-            self.pending_out_queues[req_id] = queue
-            self.queue_request.queue.put_nowait((req_id, data))
-            yield queue
+            out_queue: asyncio.Queue = asyncio.Queue()
+            self.pending_out_queues[req_id] = out_queue
+            self.request_q.put_nowait((req_id, data))
+            yield out_queue
         finally:
             del self.pending_out_queues[req_id]
 
     async def stream(
         self, req_id: ReqId, data: ReqInput
     ) -> AsyncGenerator[ReqOutput, None]:
-        async with self.open_channel(req_id, data) as queue:
+        with self.open_channel(req_id, data) as queue:
             while (item := await queue.get()) is not STOP_STREAM:
                 yield item
 
@@ -91,11 +92,11 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         try:
             while True:
                 try:
-                    while self.queue_response.queue.empty():
+                    while self.response_q.empty():
                         await asyncio.sleep(0)
 
                     cancelled = set()
-                    for batch in self.queue_response.queue.get_many_nowait():
+                    for batch in self.response_q.get_many_nowait():
                         for req_id, response in batch.items():
                             if req_id in self.pending_out_queues:
                                 await self.pending_out_queues[req_id].put(
@@ -105,7 +106,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                                 cancelled.add(req_id)
 
                     if cancelled:
-                        self.queue_cancel.queue.put_many_nowait(list(cancelled))
+                        self.cancel_q.put_many_nowait(list(cancelled))
 
                 except queue.Empty:
                     await asyncio.sleep(0)
