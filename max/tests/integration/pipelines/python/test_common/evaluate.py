@@ -11,7 +11,7 @@ from typing import Any, Iterable, Optional
 
 import numpy as np
 from max.driver import CPU
-from max.pipelines import ModelOutputs, PipelineModel
+from max.pipelines import PipelineModel
 from max.pipelines.interfaces import (
     TokenGeneratorRequest,
     PipelineTokenizer,

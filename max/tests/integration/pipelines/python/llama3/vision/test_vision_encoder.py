@@ -7,7 +7,6 @@
 package reference implementation.
 """
 
-import numpy as np
 import pytest
 from llama_vision.encoder import Attention, VisionEncoder, VisionEncoderLayer
 from llama_vision.mlp import MLP

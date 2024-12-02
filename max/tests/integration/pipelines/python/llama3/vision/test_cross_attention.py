@@ -22,7 +22,6 @@ from max.pipelines.kv_cache import (
 )
 from nn import Linear
 from nn.norm import RMSNorm
-from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (
     MllamaTextCrossSdpaAttention,
