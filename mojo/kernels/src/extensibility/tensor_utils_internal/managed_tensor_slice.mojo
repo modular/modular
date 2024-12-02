@@ -588,7 +588,11 @@ fn _get_tensor_specs_without_lambdas[
 # z is a kernel output, and x a view of the input.
 @no_inline
 fn view_copy_impl[
-    synchronous: Bool, target: StringLiteral, type: DType, rank: Int
+    synchronous: Bool,
+    target: StringLiteral,
+    type: DType,
+    rank: Int,
+    view_strides: DimList = DimList.create_unknown[rank](),
 ](
     z: ManagedTensorSlice[type, rank],
     x: ManagedTensorSlice[type, rank],
@@ -597,6 +601,6 @@ fn view_copy_impl[
     @parameter
     @always_inline
     fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
-        return x._simd_load_internal[width](idx)
+        return x._simd_load_internal[width, static_strides=view_strides](idx)
 
     foreach[func, synchronous, target](z, ctx)
