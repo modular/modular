@@ -7,23 +7,14 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/MOGGPreElab/Passes.h"
-#include "KGEN/POPDialect/POPAttrs.h"
-#include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
 #include "Support/AssertStream.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/AttrTypeSubElements.h"
-#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
-
-#include "UserLibraryChecker.h"
-
-#include "Helpers.h"
 
 #define DEBUG_TYPE "mogg-autospecialize"
 
