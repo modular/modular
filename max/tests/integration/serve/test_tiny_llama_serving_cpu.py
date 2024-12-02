@@ -12,9 +12,10 @@ import pytest
 from async_asgi_testclient import TestClient
 from evaluate_llama import SupportedTestModels
 from max.driver import DeviceSpec
+from max.pipelines.config import SupportedEncoding
+from max.pipelines.tokenizer import TextTokenizer
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import CreateChatCompletionResponse  # type: ignore
-from max.pipelines import SupportedEncoding, TextTokenizer
 from test_common.evaluate import PROMPTS
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
@@ -28,7 +29,7 @@ MAX_READ_SIZE = 10 * 1024
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "tinyllama_model",
+    "pipeline_model_config",
     [
         ModelParams(
             weight_path="tiny_llama.gguf",
@@ -56,7 +57,7 @@ async def test_tinyllama_serve_cpu(app):
 
 @pytest.mark.xfail(reason="SI-667")
 @pytest.mark.parametrize(
-    "tinyllama_model",
+    "pipeline_model_config",
     [
         ModelParams(
             weight_path="tiny_llama.gguf",
@@ -69,9 +70,7 @@ async def test_tinyllama_serve_cpu(app):
     indirect=True,
 )
 @pytest.mark.asyncio
-async def test_tinyllama_serve_cpu_stream(
-    app, testdata_directory, tinyllama_model
-):
+async def test_tinyllama_serve_cpu_stream(app, testdata_directory):
     NUM_TASKS = 16
     model_encoding = SupportedTestModels.get("tinyllama", "bfloat16")
     golden_data_path = find_runtime_path(
@@ -89,11 +88,9 @@ async def test_tinyllama_serve_cpu_stream(
         tokens.append(t)
 
     inference_config = model_encoding.build_config(testdata_directory)
+    # context = TextContext(prompt="", max_tokens=-1, cache_seq_id=0)
     tokenizer = TextTokenizer(inference_config)
-    expected_response = [
-        await tokenizer.decode(tinyllama_model, x)  # type: ignore
-        for x in tokens
-    ]
+    expected_response = [await tokenizer.delegate.decode(x) for x in tokens]
 
     def openai_completion_request(content):
         """Create the json request for /v1/completion (not chat)."""
@@ -140,5 +137,9 @@ async def test_tinyllama_serve_cpu_stream(
             tasks.append(
                 asyncio.create_task(main_stream(client, msg, expected))
             )
+        for t in tasks:  # type: ignore
+            resp.append(await t)  # type: ignore
+        for t in tasks:  # type: ignore
+            resp.append(await t)  # type: ignore
         for t in tasks:  # type: ignore
             resp.append(await t)  # type: ignore

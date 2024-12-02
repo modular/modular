@@ -12,7 +12,6 @@ import pytest
 from async_asgi_testclient import TestClient
 from evaluate_llama import SupportedTestModels
 from max.driver import DeviceSpec
-
 from max.pipelines import SupportedEncoding, TextTokenizer
 from max.serve.mocks.mock_api_requests import simple_openai_request
 from max.serve.schemas.openai import CreateChatCompletionResponse  # type: ignore
@@ -33,7 +32,7 @@ MAX_READ_SIZE = 10 * 1024
 )
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "tinyllama_model",
+    "pipeline_model_config",
     [
         ModelParams(
             weight_path="tiny_llama_bf16.gguf",
@@ -73,7 +72,7 @@ async def test_tinyllama_serve_gpu(app):
 
 @pytest.mark.skip("TODO(ylou): Fix!!")
 @pytest.mark.parametrize(
-    "tinyllama_model",
+    "pipeline_model_config",
     [
         ModelParams(
             weight_path="tiny_llama_bf16.gguf",
@@ -86,9 +85,7 @@ async def test_tinyllama_serve_gpu(app):
     indirect=True,
 )
 @pytest.mark.asyncio
-async def test_tinyllama_serve_gpu_stream(
-    app, testdata_directory, tinyllama_model
-):
+async def test_tinyllama_serve_gpu_stream(app, testdata_directory):
     NUM_TASKS = 16
     model_encoding = SupportedTestModels.get("tinyllama", "bfloat16")
     golden_data_path = find_runtime_path(
@@ -107,10 +104,7 @@ async def test_tinyllama_serve_gpu_stream(
 
     inference_config = model_encoding.build_config(testdata_directory)
     tokenizer = TextTokenizer(inference_config)
-    expected_response = [
-        await tokenizer.decode(tinyllama_model, x)  # type: ignore
-        for x in tokens
-    ]
+    expected_response = [await tokenizer.delegate.decode(x) for x in tokens]
 
     def openai_completion_request(content):
         """Create the json request for /v1/completion (not chat)."""

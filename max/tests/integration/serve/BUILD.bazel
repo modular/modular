@@ -40,7 +40,6 @@ modular_py_test(
         "//SDK/public/max-repo/pipelines/python/llama3",
         requirement("async-asgi-testclient"),
         requirement("pytest-asyncio"),
-        requirement("transformers"),
     ],
 )
 
