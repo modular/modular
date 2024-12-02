@@ -23,7 +23,7 @@ fn vec_func(
     len: Int,
 ):
     var tid = GlobalIdx.x
-    if int(tid) >= len:
+    if tid >= len:
         return
     out[tid] = in0[tid] + in1[tid]
 
