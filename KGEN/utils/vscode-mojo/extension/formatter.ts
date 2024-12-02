@@ -30,8 +30,8 @@ export function registerFormatter(maxSDKManager: MAXSDKManager) {
       return new Promise<vscode.TextEdit[]>(function (resolve, reject) {
         const originalDocumentText = document.getText();
         const process = execFile(
-          sdk.config.mojoDriverPath,
-          ['format', '--quiet', ...args, '-'],
+          sdk.config.mojoMBlackPath,
+          ['--fast', '--preview', '--quiet', '-t', 'mojo', ...args, '-'],
           { cwd, env },
           (error, stdout, stderr) => {
             // Process any errors/warnings during formatting. These aren't all
