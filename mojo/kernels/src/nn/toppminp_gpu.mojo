@@ -342,12 +342,12 @@ fn radix_sort_pairs_kernel[
             var key = input_keys[index]
             var normalized_key = normalize(key)
             var radix = (normalized_key >> current_bit) & (NUM_BUCKETS - 1)
-            counts[int(radix)] += 1
+            counts[radix] += 1
 
     # Store counts[NUM_BUCKETS] per thread into shared memory s_counts
     @parameter
     for i in range(NUM_BUCKETS):
-        s_counts[int(tid * NUM_BUCKETS + i)] = counts[i]
+        s_counts[tid * NUM_BUCKETS + i] = counts[i]
     barrier()
 
     # Compute total_counts[NUM_BUCKETS] by summing counts[NUM_BUCKETS] across threads
