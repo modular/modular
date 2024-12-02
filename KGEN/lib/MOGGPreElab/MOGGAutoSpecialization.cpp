@@ -318,12 +318,11 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
 
     // We now have unreachable calls because we are dealing with the cloned
     // calls.
-    auto itr = cg.nodes.find(calledFunc);
-    if (itr == cg.nodes.end())
+    if (!cg.lookup(calledFunc))
       return;
 
     // Specialize the node.
-    const CallGraphNode *calledFuncNode = &cg.nodes.find(calledFunc)->second;
+    const CallGraphNode *calledFuncNode = cg.lookup(calledFunc);
     if (!calledFuncNode->specialization)
       return;
 
@@ -423,7 +422,7 @@ class MOGGAutospecializePass
     : public M::KGEN::MOGGPreElab::impl::MOGGAutospecializeBase<
           MOGGAutospecializePass> {
 public:
-  ErrorOr<TensorSpecKGEN> getTensorSpecTemplate(ModuleOp &mod) {
+  static ErrorOr<TensorSpecKGEN> getTensorSpecTemplate(ModuleOp &mod) {
     TensorSpecKGEN specTemplate;
     for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
       if (gen->hasAttr(MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
@@ -447,7 +446,6 @@ public:
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     SymbolTable &symTab = analysis.getTopLevelSymbolTable();
 
-    // TensorSpecKGEN &specTemplate = maybeSpecTemplate.get();
     TensorSpecKGEN specTemplate;
     for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
       if (gen->hasAttr(MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
@@ -476,7 +474,7 @@ public:
       // If this is not an DPS kernel skip.
       if (!isDPSKernel(gen))
         continue;
-      CallGraphNode *node = &cg.nodes.find(gen)->second;
+      CallGraphNode *node = cg.lookup(gen);
 
       // Kernels always need a spec for all of their tensor arguments.
       node->argsNeedingSpec =
@@ -522,7 +520,7 @@ public:
             cast<FlatSymbolRefAttr>(edge.call.getCalleeSymbol()).getValue();
         auto g2 = cast<GeneratorOp>(symTab.lookup(calledSym));
 
-        CallGraphNode *calleeNode = &cg.nodes.find(g2)->second;
+        CallGraphNode *calleeNode = cg.lookup(g2);
         if (calleeNode->hasBeenProcessed) {
           // If the caller has tensor arguments needing specs add those
           // tensors to the set of tensor being tracked.
@@ -607,12 +605,12 @@ public:
 
         // We now have unreachable calls because we are dealing with the
         // cloned calls.
-        auto itr = cg.nodes.find(calledFunc);
-        if (itr == cg.nodes.end())
+        CallGraphNode *node = cg.lookup(calledFunc);
+        if (!node)
           return;
 
         // Specialize the node.
-        CallGraphNode *calledFuncNode = &cg.nodes.find(calledFunc)->second;
+        CallGraphNode *calledFuncNode = cg.lookup(calledFunc);
         if (calledFuncNode->specialization) {
           // If there's a specialized version then we should call it with the
           // new specs.
