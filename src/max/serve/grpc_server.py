@@ -10,13 +10,14 @@ import functools
 
 import click
 import max.serve.grpc_serve.grpc_serve as max_grpc
+from architectures import register_all_models
 from max.driver import DeviceSpec
 from max.pipelines import (
     PIPELINE_REGISTRY,
     PipelineConfig,
     SupportedEncoding,
-    TextTokenizer,
     TextGenerationPipeline,
+    TextTokenizer,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.pipelines.performance_fake import (
@@ -28,8 +29,8 @@ from transformers import AutoTokenizer
 
 def get_default_replit_config() -> PipelineConfig:
     pipeline_config = PipelineConfig(
-        huggingface_repo_id="modularai/replit-code-1.5",
         architecture="MPTForCausalLM",
+        huggingface_repo_id="modularai/replit-code-1.5",
         trust_remote_code=True,
         save_to_serialized_model_path="/tmp/replit_gpu_16.mef",
         quantization_encoding=SupportedEncoding.float32,
@@ -41,19 +42,13 @@ def get_default_replit_config() -> PipelineConfig:
 
 def get_default_llama31_config() -> PipelineConfig:
     return PipelineConfig(
-        architecture=None,
-        version="3.1",
+        architecture="LlamaForCausalLM",
+        # huggingface_repo_id="meta-llama/Meta-Llama-3.1-8B-Instruct",
         huggingface_repo_id="modularai/llama-3.1",
         device_spec=DeviceSpec(id=0, device_type="gpu"),
         quantization_encoding=SupportedEncoding.bfloat16,
-        max_length=512,
-        max_new_tokens=512,
-        max_cache_batch_size=16,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
-        max_num_steps=1,
-        pad_to_multiple_of=2,
-        top_k=None,
-        # save_to_serialized_model_path="/tmp/llama31_gpu_16.mef",
+        save_to_serialized_model_path="/tmp/llama31_gpu_16.mef",
         # serialized_model_path="/tmp/llama31_gpu_16.mef",
     )
 
@@ -78,22 +73,7 @@ def get_default_llama31_config() -> PipelineConfig:
 def serve(bypass_serve: bool, model: str, port: int):
     server_config = max_grpc.GRPCConfig(port=port, num_workers=10)
     if not bypass_serve:
-        if model == "llama31":
-            # works!
-            model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-            pipeline_config = get_default_llama31_config()
-            _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
-                pipeline_config
-            )
-            asyncio.run(
-                max_grpc.grpc_serve(
-                    server_config,
-                    model_name,
-                    pipeline_config,
-                    pipeline_factory,
-                )
-            )
-        elif model == "perf-fake":
+        if model == "perf-fake":
             # Doesn't work!
             model_name = "echo"
             pipeline_config = PipelineConfig(
@@ -118,11 +98,36 @@ def serve(bypass_serve: bool, model: str, port: int):
                     fake_model_factory,
                 )
             )
-        elif model == "replit":
-            model_name = "replit/replit-code-v1_5-3b"
-            pipeline_config = get_default_replit_config()
+        else:
+            if model == "llama31":
+                # works!
+                model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+                pipeline_config = get_default_llama31_config()
+            elif model == "replit":
+                model_name = "replit/replit-code-v1_5-3b"
+                pipeline_config = get_default_replit_config()
+            else:
+                # TODO arekay - better error handling
+                print(f"ERROR invalid model name {model}")
+                exit(-1)
+
+            if (
+                pipeline_config.architecture
+                not in PIPELINE_REGISTRY.architectures
+            ):
+                # TODO arekay - better error handling
+                print(
+                    f"ERROR {pipeline_config.architecture} not found in"
+                    f" registry {PIPELINE_REGISTRY.architectures}"
+                )
+                exit(-1)
+
+            # Retrieve tokenizer and pipeline.
+            pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(
+                pipeline_config
+            )
             _, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
-                pipeline_config,
+                pipeline_config
             )
             asyncio.run(
                 max_grpc.grpc_serve(
@@ -132,28 +137,8 @@ def serve(bypass_serve: bool, model: str, port: int):
                     pipeline_factory,
                 )
             )
-        else:
-            raise ValueError(f"invalid model name {model}")
-
     else:
-        if model == "llama31":
-            # Works!
-            model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-            pipeline_config = get_default_llama31_config()
-            llama_tokenizer, llama_pipeline = PIPELINE_REGISTRY.retrieve(
-                pipeline_config
-            )
-            llama_tokenizer, llama_pipeline = PIPELINE_REGISTRY.retrieve(
-                pipeline_config
-            )
-            assert isinstance(llama_tokenizer, TextTokenizer)
-            assert isinstance(llama_pipeline, TextGenerationPipeline)
-            asyncio.run(
-                max_grpc.grpc_serve_direct(
-                    server_config, model_name, llama_tokenizer, llama_pipeline
-                )
-            )
-        elif model == "perf-fake":
+        if model == "perf-fake":
             # Works
             model_name = "perf-fake"
             fake_tokenizer = PerformanceFakingPipelineTokenizer(
@@ -175,6 +160,20 @@ def serve(bypass_serve: bool, model: str, port: int):
                     model_name,
                     fake_tokenizer,
                     fake_pipeline,
+                )
+            )
+        elif model == "llama31":
+            # Works!
+            model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
+            pipeline_config = get_default_llama31_config()
+            llama_tokenizer, llama_pipeline = PIPELINE_REGISTRY.retrieve(
+                pipeline_config
+            )
+            assert isinstance(llama_tokenizer, TextTokenizer)
+            assert isinstance(llama_pipeline, TextGenerationPipeline)
+            asyncio.run(
+                max_grpc.grpc_serve_direct(
+                    server_config, model_name, llama_tokenizer, llama_pipeline
                 )
             )
         elif model == "replit":
@@ -200,4 +199,5 @@ def serve(bypass_serve: bool, model: str, port: int):
 
 
 if __name__ == "__main__":
+    register_all_models()
     serve()

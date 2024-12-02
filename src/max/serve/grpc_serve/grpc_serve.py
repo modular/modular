@@ -9,14 +9,15 @@ import time
 import uuid
 from concurrent import futures
 from dataclasses import dataclass
+from typing import Callable
 
 import grpc
 
 # mypy: disable-error-code="import-not-found"
 import ModelServing.proto.grpc_predict_v2_pb2 as pb2
-from typing import Callable
+from cli import TextGenerationMetrics
 from grpc_reflection.v1alpha import reflection
-from max.pipelines import PipelineConfig, TextTokenizer, PipelineTokenizer
+from max.pipelines import PipelineConfig, PipelineTokenizer, TextTokenizer
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
@@ -27,8 +28,6 @@ from ModelServing.proto.grpc_predict_v2_pb2_grpc import (
     GRPCInferenceServiceServicer,
     add_GRPCInferenceServiceServicer_to_server,
 )
-
-from cli import TextGenerationMetrics
 
 # logging.root.setLevel(logging.INFO)
 
@@ -74,12 +73,15 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
         self.logger.debug(f"Request fields : {request.ListFields()}")
         model_name = request.model_name
         model_version = request.model_version
+        max_tokens = 100
         if request.id:
             id = request.id
         else:
             id = str(uuid.uuid4())
         for name, param in request.parameters.items():
             print(f"PARAM:: name {name}, value : {param.string_param}")
+            if name == "max_tokens":
+                max_tokens = int(param.string_param)
 
         inputs = {}
         prompt_text = "what is the meaning of life?"
@@ -90,21 +92,21 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
         self.logger.info(f"Request data : {model_name}, {model_version}, {id}")
 
         try:
-            num_tokens = 100
             tg_request = TokenGeneratorRequest(
                 id=id,
                 index=0,
                 prompt=prompt_text,
                 model_name=self.model_name,
+                max_new_tokens=max_tokens,
             )
             text_context = await self.tokenizer.new_context(tg_request)
             batch = {id: text_context}
             text = ""
-            for i in range(num_tokens):
+            for i in range(max_tokens):
                 resp = self.pipeline.next_token(batch)
                 if id in resp[0]:
                     text += await self.tokenizer.decode(
-                        text_context, resp[0][id]
+                        text_context, resp[0][id].next_token
                     )
                 else:
                     break
