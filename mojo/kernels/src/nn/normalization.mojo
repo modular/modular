@@ -967,7 +967,13 @@ fn rms_norm[
 ) raises:
     # Note: we only support reduction along the last dimension
     if gamma.dynamic_shape[0] != shape[rank - 1]:
-        raise Error("Gamma size does not match dimension of reduction.")
+        raise Error(
+            "Gamma size "
+            + str(gamma.dynamic_shape[0])
+            + " does not match dimension of reduction "
+            + str(shape[rank - 1])
+            + "."
+        )
 
     if output.dynamic_shape.canonicalize() != shape.canonicalize():
         raise Error("Input and output buffers are not same shape")
