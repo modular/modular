@@ -117,6 +117,18 @@ struct CallGraphBase {
   /// Dump the callgraph. For debugging.
   void dump();
 
+  /// Lookup the NodeT corresponding to the given FuncOp.
+  NodeT *lookup(FuncOpT func) {
+    auto it = nodes.find(func);
+    return it == nodes.end() ? nullptr : &it->second;
+  }
+
+  /// Lookup the NodeT corresponding to the given FuncOp.
+  const NodeT *lookup(FuncOpT func) const {
+    auto it = nodes.find(func);
+    return it == nodes.end() ? nullptr : &it->second;
+  }
+
   /// The nodes in the graph. The map does not resize after it is constructed,
   /// so references always remain valid.
   llvm::MapVector<FuncOpT, NodeT> nodes;
