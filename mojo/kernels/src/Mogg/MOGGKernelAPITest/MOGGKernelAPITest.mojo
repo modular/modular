@@ -652,6 +652,11 @@ struct Transpose2DOp:
         return ManagedTensorSlice[type, 2](x._ptr, new_shape, new_stride)
 
     @staticmethod
+    fn get_view_strides(input_strides: DimList) -> DimList:
+        # transpose the strides of the input
+        return DimList(input_strides.at[1](), input_strides.at[0]())
+
+    @staticmethod
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
@@ -661,5 +666,9 @@ struct Transpose2DOp:
         x: ManagedTensorSlice[type, 2],
         ctx: MojoCallContextPtr,
     ):
+        alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
+        alias view_strides = Self.get_view_strides(x_strides)
         var x_view = Self.build_view(x)
-        view_copy_impl[synchronous, target](z, x_view, ctx)
+        view_copy_impl[synchronous, target, view_strides=view_strides](
+            z, x_view, ctx
+        )

@@ -146,7 +146,7 @@ from utils.index import Index
 from utils.numerics import isinf, isnan
 from compiler_internal import StaticTensorSpec
 
-from register import register_internal_override, uses_opaque
+from register import register_internal_override, uses_opaque, register_internal
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 
@@ -303,7 +303,7 @@ fn get_address_space() -> AddressSpace:
 
 
 # Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal_override("build_static_tensor_specs", 1)
+@register_internal("build_static_tensor_specs")
 fn build_static_tensor_specs[
     type: DType,
     rank: Int,
@@ -328,7 +328,7 @@ fn build_static_tensor_specs[
 
 
 # Rebuild the StaticTensorSpec parameter for the DPS kernels with different lambdas
-@register_internal_override("rebuild_static_tensor_specs_with_lambdas", 1)
+@register_internal("rebuild_static_tensor_specs_with_lambdas")
 fn rebuild_static_tensor_specs_with_lambdas[
     type: DType,
     rank: Int,
@@ -347,6 +347,30 @@ fn rebuild_static_tensor_specs_with_lambdas[
         spec.exclusive,
         in_lambda,
         out_lambda,
+    )
+
+
+# Rebuild the StaticTensorSpec parameter for the DPS kernels with different strides
+@register_internal("rebuild_static_tensor_specs_with_strides")
+fn rebuild_static_tensor_specs_with_strides[
+    type: DType,
+    rank: Int,
+](
+    spec: StaticTensorSpec[type, rank],
+    strides: DimList,
+) -> StaticTensorSpec[
+    type, rank
+]:
+    alias SpecType = StaticTensorSpec[type, rank]
+
+    return SpecType(
+        spec.shape,
+        strides,
+        spec.alignment,
+        spec.address_space,
+        spec.exclusive,
+        spec.in_lambda,
+        spec.out_lambda,
     )
 
 
