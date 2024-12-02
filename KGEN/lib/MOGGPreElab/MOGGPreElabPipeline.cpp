@@ -4,14 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/ADT/StringSet.h"
-
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/MOGGPreElab/Passes.h"
-#include "KGEN/POPDialect/POPAttrs.h"
-#include "KGEN/POPDialect/POPOps.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 
@@ -37,11 +32,13 @@ public:
   void runOnOperation() override {
     ModuleOp mod = getOperation();
 
-    bool hasKernels = false;
-    for (auto func : mod.getOps<GeneratorOp>())
-      hasKernels |=
-          MOGGPreElab::isKernel(func) || MOGGPreElab::isExecuteFunc(func) ||
-          MOGGPreElab::isShapeFunc(func) || MOGGPreElab::isDPSKernel(func);
+    bool hasKernels =
+        llvm::any_of(mod.getOps<GeneratorOp>(), [](GeneratorOp func) {
+          return MOGGPreElab::isKernel(func) ||
+                 MOGGPreElab::isExecuteFunc(func) ||
+                 MOGGPreElab::isShapeFunc(func) ||
+                 MOGGPreElab::isDPSKernel(func);
+        });
 
     if (hasKernels && !debugBuild) {
       mlir::OpPassManager pm(ModuleOp::getOperationName());
