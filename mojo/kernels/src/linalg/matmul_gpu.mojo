@@ -21,7 +21,15 @@ from sys import (
 from algorithm.functional import elementwise, tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.dimlist import DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
+from gpu import (
+    WARP_SIZE,
+    BlockDim,
+    BlockIdx,
+    ThreadIdx,
+    GlobalIdx,
+    barrier,
+    lane_id,
+)
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import A100, DEFAULT_GPU_ARCH
@@ -141,8 +149,8 @@ fn matmul_kernel[
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.
     # Map thread x to column for coalesced access in B.
-    var col = BlockIdx.x * BlockDim.x + ThreadIdx.x
-    var row = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var col = GlobalIdx.x
+    var row = GlobalIdx.y
 
     # Local index in the c sub-matrix updated by current block.
     var localCol = ThreadIdx.x
@@ -229,8 +237,8 @@ fn matmul_kernel_naive[
     n: Int,
     k: Int,
 ):
-    var x = BlockIdx.x * BlockDim.x + ThreadIdx.x
-    var y = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var x = GlobalIdx.x
+    var y = GlobalIdx.y
 
     if x >= m or y >= n:
         return

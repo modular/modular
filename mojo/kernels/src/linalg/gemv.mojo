@@ -12,7 +12,15 @@ from sys import alignof, bitwidthof, llvm_intrinsic, simdwidthof
 from algorithm.reduction import _reduce_generator
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
+from gpu import (
+    WARP_SIZE,
+    BlockDim,
+    BlockIdx,
+    ThreadIdx,
+    GlobalIdx,
+    barrier,
+    lane_id,
+)
 from gpu.host import (
     DeviceAttribute,
     DeviceContext,
@@ -86,7 +94,7 @@ fn gemv_kernel[
     n: Int,
     k: Int,
 ):
-    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var tid = GlobalIdx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     if warp_id >= m:
@@ -144,7 +152,7 @@ fn gemv_kernel_vector[
 ):
     alias align_a = alignof[SIMD[a_type, simd_width]]()
     alias align_b = alignof[SIMD[b_type, simd_width]]()
-    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var tid = GlobalIdx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     var a_ptr = (
@@ -339,7 +347,7 @@ fn gevm_kernel[
     var warp_id = ThreadIdx.x // WARP_SIZE
     var accum = Scalar[s_type]()
     var col = BlockIdx.x * WARP_SIZE + lane_id()
-    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var tid = GlobalIdx.x
     var global_warp_id = tid // WARP_SIZE
 
     var x_shared = stack_allocation[
@@ -396,7 +404,7 @@ fn gevm_tc_kernel_vector_8x[
     var warp_id = ThreadIdx.x // WARP_SIZE
     var accum = SIMD[s_type, simd_width]()
     var col = BlockIdx.x * WARP_SIZE * simd_width + lane_id() * simd_width
-    var tid = BlockIdx.x * BlockDim.x + ThreadIdx.x
+    var tid = GlobalIdx.x
     var global_warp_id = warp_broadcast(tid // WARP_SIZE)
 
     var x_shared = stack_allocation[
