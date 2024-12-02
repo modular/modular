@@ -5,25 +5,26 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import functools
 import logging
 from threading import Thread
 
 import pytest
 import pytest_asyncio
-from async_asgi_testclient import TestClient
+from async_asgi_testclient import TestClient as AsyncTestClient
 from fastapi.testclient import TestClient as SyncTestClient
-from max.serve.api_server import fastapi_app
+from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import simple_openai_request
-from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.pipelines.echo_gen import (
-    EchoTokenGenerator,
     EchoPipelineTokenizer,
+    EchoTokenGenerator,
 )
-from max.serve.pipelines.llm import (
-    TokenGeneratorPipeline,
-    TokenGeneratorPipelineConfig,
+from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
+from max.serve.pipelines.performance_fake import (
+    PerformanceFakingPipelineTokenizer,
+    get_performance_fake,
 )
 from max.serve.schemas.openai import CreateChatCompletionResponse  # type: ignore
 
@@ -31,43 +32,36 @@ logger = logging.getLogger(__name__)
 
 
 @pytest_asyncio.fixture(scope="function")
-def app(fixture_tokenizer):
+def app(fixture_tokenizer, model_name: str):
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
     pipeline_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
         batch_size=1
     )
-    return fastapi_app(
-        settings,
-        debug_settings,
-        {
-            # TODO(SI-741): Restore tunable_app OpenAI API tests
-            # "tunable_app": BatchedTokenGeneratorState(
-            #     TokenGeneratorPipeline(
-            #         pipeline_config,
-            #         "tunable_app",
-            #         PerformanceFakingPipelineTokenizer(fixture_tokenizer),
-            #     ),
-            #     functools.partial(get_performance_fake, "no-op"),
-            # ),
-            "echo_app": BatchedTokenGeneratorState(
-                TokenGeneratorPipeline(
-                    pipeline_config,
-                    "echo_app",
-                    EchoPipelineTokenizer(),
-                ),
-                EchoTokenGenerator,
-            ),
-        },
+    model_factory = (
+        EchoTokenGenerator
+        if model_name == "echo"
+        else functools.partial(get_performance_fake, "no-op")
     )
+    tokenizer = (
+        EchoPipelineTokenizer()
+        if model_name == "echo"
+        else PerformanceFakingPipelineTokenizer(fixture_tokenizer)
+    )
+    serving_settings = ServingTokenGeneratorSettings(
+        model_name=model_name,
+        model_factory=model_factory,
+        pipeline_config=pipeline_config,
+        tokenizer=tokenizer,
+    )
+    return fastapi_app(settings, debug_settings, serving_settings)
 
 
-@pytest.mark.asyncio
 # TODO(SI-741): Restore tunable_app OpenAI API tests
-# @pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
-@pytest.mark.parametrize("model_name", ["echo_app"])
-async def test_openai_chat_completion(app, model_name):
-    async with TestClient(app) as client:
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_name", ["perf_fake", "echo"])
+async def test_openai_chat_completion_single(app, model_name):
+    async with AsyncTestClient(app) as client:
         request_content = "test data"
         response_json = await client.post(
             "/v1/chat/completions",
@@ -88,8 +82,7 @@ async def test_openai_chat_completion(app, model_name):
 
 
 # TODO(SI-741): Restore tunable_app OpenAI API tests
-# @pytest.mark.parametrize("model_name", ["tunable_app", "echo_app"])
-@pytest.mark.parametrize("model_name", ["echo_app"])
+@pytest.mark.parametrize("model_name", ["perf_fake", "echo"])
 def test_openai_chat_completion_concurrent(app, model_name):
     request_contents: dict[int, str] = {}
     responses: dict[int, CreateChatCompletionResponse] = {}

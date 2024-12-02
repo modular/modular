@@ -8,13 +8,14 @@ import asyncio
 
 import pytest
 from max.serve.pipelines.echo_gen import (
-    EchoTokenGenerator,
     EchoPipelineTokenizer,
+    EchoTokenGenerator,
 )
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
+from max.serve.scheduler.queues import EngineQueue
 
 
 @pytest.fixture(params=[4, 8, 16, 32])
@@ -31,7 +32,7 @@ async def test_batched_requests_pipeline(num_requests):
     # Verify results afterwards.
     # This matches vLLM's benchmark_throughput method
     async with TokenGeneratorPipeline(
-        config, "echo", EchoPipelineTokenizer()
+        "echo", EchoPipelineTokenizer(), EngineQueue()
     ) as pipeline:
         request_params = []
         request_tasks = []

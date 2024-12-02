@@ -4,30 +4,24 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+
 """Unit tests for serve/pipelines/llm.py."""
 
 import json
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
-from max.pipelines import IdentityPipelineTokenizer
-from max.pipelines.interfaces import (
-    TokenGenerator,
-    TokenGeneratorRequest,
-)
-from max.serve.api_server import fastapi_app
+from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.pipelines.tokenizer import IdentityPipelineTokenizer
+from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import simple_openai_request
-from max.serve.pipelines.deps import BatchedTokenGeneratorState
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from max.serve.pipelines.llm import (
-    TokenGeneratorPipeline,
-    TokenGeneratorPipelineConfig,
-)
+from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +57,6 @@ class MockTokenGenerator(TokenGenerator[str]):
 
 
 @pytest.fixture
-def token_generator_pipeline():
-    """Fixture for a token generator pipeline."""
-    # NOTE(matt): The config here _shouldn't_ impact anything.
-    config = TokenGeneratorPipelineConfig.dynamic_homogenous(batch_size=1)
-    pipeline = TokenGeneratorPipeline(config, "test", MockTokenizer())  # type: ignore
-    return pipeline
-
-
-@pytest.fixture
 def token_generator(request):
     """Fixture for a pipeline's generator
     This is bound indirectly - hence the request.param pattern.
@@ -82,19 +67,20 @@ def token_generator(request):
 
 
 @pytest.fixture(scope="function")
-def app(token_generator_pipeline, token_generator):
+def app(token_generator):
     """Fixture for a FastAPI app using a given pipeline."""
-    token_generator_model_name, token_generator_model_factory = token_generator
-    pipelines = {
-        token_generator_model_name: BatchedTokenGeneratorState(
-            batched_generator=token_generator_pipeline,
-            model_factory=token_generator_model_factory,
-        )
-    }
+    model_name, model_factory = token_generator
+    config = TokenGeneratorPipelineConfig.dynamic_homogenous(batch_size=1)
+    serving_settings = ServingTokenGeneratorSettings(
+        model_name=model_name,
+        model_factory=model_factory,
+        pipeline_config=config,
+        tokenizer=MockTokenizer(),
+    )
     app = fastapi_app(
         Settings(api_types=[APIType.OPENAI]),
         DebugSettings(),
-        pipelines,
+        serving_settings,
     )
     yield app
 

@@ -10,10 +10,15 @@ import json
 
 import pytest
 from async_asgi_testclient import TestClient
-from max.serve.api_server import fastapi_app
+from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
 from max.serve.mocks.mock_api_requests import simple_openai_request
+from max.serve.pipelines.echo_gen import (
+    EchoPipelineTokenizer,
+    EchoTokenGenerator,
+)
+from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 
 MAX_CHUNK_TO_READ_BYTES: int = 1024 * 10
 
@@ -35,8 +40,15 @@ def decode_and_strip(text: bytes, prefix: str | None):
 def stream_app():
     settings = Settings(api_types=[APIType.OPENAI])
     debug_settings = DebugSettings()
-    # By default the echo pipeline is already registered.
-    fast_app = fastapi_app(settings, debug_settings)
+    serving_settings = ServingTokenGeneratorSettings(
+        model_name="echo",
+        model_factory=EchoTokenGenerator,
+        pipeline_config=TokenGeneratorPipelineConfig.dynamic_homogenous(
+            batch_size=1
+        ),
+        tokenizer=EchoPipelineTokenizer(),
+    )
+    fast_app = fastapi_app(settings, debug_settings, serving_settings)
     return fast_app
 
 
