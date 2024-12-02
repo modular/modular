@@ -3216,8 +3216,7 @@ struct GatherND:
 
 @compiler.register("mo.gather")
 struct Gather:
-    # TODO(GEX-1298): Re-enable fusion
-    # @compiler.enable_fusion_for("input", "output")
+    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         synchronous: Bool,
