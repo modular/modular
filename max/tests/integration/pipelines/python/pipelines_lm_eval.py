@@ -156,7 +156,10 @@ def main(
     lm_eval_args: Sequence[str],
 ) -> None:
     """Start pipelines server, run lm-eval, and then shut down server."""
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s: %(name)s: %(message)s",
+    )
 
     runfiles = python.runfiles.Create()
     if runfiles is None:
