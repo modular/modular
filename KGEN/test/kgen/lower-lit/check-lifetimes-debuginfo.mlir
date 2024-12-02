@@ -26,7 +26,8 @@ lit.struct.decl @S attributes {
 
   lit.struct.field a : index
 
-  lit.func @__init__(%self: !lit.ref<@S, mut selflife> init_self, %num: index) -> !kgen.none {
+  lit.func @__init__(%self: !lit.ref<@S, mut selflife> init_self, %num: index) -> !kgen.none
+      attributes {sourceName = "__init__", specialFnKind = 2 : i8} {
     %0 = lit.ref.struct.ger %self[a] : <@S, mut selflife> -> index
     lit.ref.store %num, %0 : !lit.ref<index, mut selflife->a>
 

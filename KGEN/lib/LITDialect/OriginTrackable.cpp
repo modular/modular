@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 
@@ -169,22 +170,23 @@ OriginTrackable::OriginTrackable(Value v) {
     endInitState = EndsUninit;
     break;
   case ArgConvention::ByRefResult:
+  case ArgConvention::InitSelf:
     isIndirect = true;
     startsUninit = true;
     endInitState = InitOnNormal;
+
+    // Initializers allow memberwise initialization of 'self' to construct a
+    // full value.
+    if (llvm::is_contained({SpecialFunctionKind::kInit,
+                            SpecialFunctionKind::kMoveInit,
+                            SpecialFunctionKind::kCopyInit},
+                           func.getSpecialFunctionKind()))
+      isFullObjectLiveOnEntry = true;
     break;
   case ArgConvention::ByRefError:
     isIndirect = true;
     startsUninit = true;
     endInitState = InitOnError;
-    break;
-  case ArgConvention::InitSelf:
-    // Unlike byref-result, we allow memberwise initialization of 'self' in an
-    // init method to construct a full value.
-    isIndirect = true;
-    startsUninit = true;
-    endInitState = InitOnNormal;
-    isFullObjectLiveOnEntry = true;
     break;
   }
 
