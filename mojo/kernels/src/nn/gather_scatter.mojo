@@ -677,6 +677,8 @@ fn gather[
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
+    alias compile_target = _current_target() if target == "cpu" else _get_gpu_target()
+
     gather_guards(axis, input_shape, indices_shape, output_shape)
     with Trace[TraceLevel.OP, target=target]("gather"):
         if (
@@ -717,7 +719,7 @@ fn gather[
         else:
             elementwise[
                 gather_elementwise_fn,
-                simd_width = simdwidthof[type](),
+                simd_width = simdwidthof[type, target=compile_target](),
                 use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](output_shape, context)
