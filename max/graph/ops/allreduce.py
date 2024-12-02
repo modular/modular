@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..graph import Graph
+from ..graph import Graph  # noqa
 from ..value import TensorValue
 from .elementwise import add
 from .transfer_to import transfer_to

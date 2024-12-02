@@ -5,10 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.engine supporting when graphs don't fit on a single-GPU."""
 
-import os
-import tempfile
-from pathlib import Path
-
 import numpy as np
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
