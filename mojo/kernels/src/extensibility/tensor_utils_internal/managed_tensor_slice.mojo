@@ -582,3 +582,21 @@ fn _get_tensor_specs_without_lambdas[
     type: DType, rank: Int
 ]() -> StaticTensorSpec[type, rank]:
     return StaticTensorSpec[type, rank]()
+
+
+# TensorCopy intrinsic used by view kernels.
+# z is a kernel output, and x a view of the input.
+@no_inline
+fn view_copy_impl[
+    synchronous: Bool, target: StringLiteral, type: DType, rank: Int
+](
+    z: ManagedTensorSlice[type, rank],
+    x: ManagedTensorSlice[type, rank],
+    ctx: MojoCallContextPtr,
+):
+    @parameter
+    @always_inline
+    fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
+        return x._simd_load_internal[width](idx)
+
+    foreach[func, synchronous, target](z, ctx)

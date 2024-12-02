@@ -4,5 +4,5 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .managed_tensor_slice import ManagedTensorSlice, foreach
+from .managed_tensor_slice import ManagedTensorSlice, foreach, view_copy_impl
 from .tensor_like import TensorLike
