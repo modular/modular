@@ -12,6 +12,7 @@ from nn.mha import fused_attention as cpu_fused_attention_impl
 from register import uses_opaque
 from runtime.asyncrt import MojoCallContextPtr
 from tensor_utils import ManagedTensorSlice, foreach
+from tensor_utils_internal import view_copy_impl
 
 from utils import IndexList, StaticTuple
 
@@ -353,6 +354,40 @@ struct PrintTensorSpecViewOp:
         return x.get_runtime_spec().shape
 
 
+@compiler.register("print_tensor_spec_fused")
+struct PrintTensorSpecFusedOp:
+    @compiler.elementwise
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](out: ManagedTensorSlice, x: ManagedTensorSlice):
+        alias x_shape = compiler.specsof[x.type, x.rank]("x").shape
+        alias x_strides = compiler.specsof[x.type, x.rank]("x").strides
+        alias x_alignment = compiler.specsof[x.type, x.rank]("x").alignment
+        alias x_address_space = compiler.specsof[x.type, x.rank](
+            "x"
+        ).address_space
+        alias x_exclusive = compiler.specsof[x.type, x.rank]("x").exclusive
+
+        print("x.shape =", x_shape)
+        print("x.strides =", x_strides)
+        print("x.alignment =", x_alignment)
+        print("x.address_space =", x_address_space)
+        print("x.exclusive =", x_exclusive)
+
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[out.rank]) -> SIMD[out.type, width]:
+            return rebind[SIMD[out.type, width]](x._fused_load[width](idx))
+
+        foreach[func](out)
+
+    @staticmethod
+    fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
+        return x.get_runtime_spec().shape
+
+
 @compiler.register("imposter_add_elementwise")
 @compiler.elementwise
 struct AddElementwise:
@@ -598,3 +633,33 @@ struct VariadicAdd:
             foreach[func](output)
 
         foo()
+
+
+@compiler.register("transpose_2d")
+@compiler.view_kernel
+struct Transpose2DOp:
+    @staticmethod
+    fn build_view[
+        type: DType,
+    ](x: ManagedTensorSlice[type, 2],) -> ManagedTensorSlice[type, 2]:
+        var new_stride = IndexList[2]()
+        var new_shape = IndexList[2]()
+        new_stride[0] = x._strides[1]
+        new_stride[1] = x._strides[0]
+        new_shape[0] = x._spec.shape[1]
+        new_shape[1] = x._spec.shape[0]
+
+        return ManagedTensorSlice[type, 2](x._ptr, new_shape, new_stride)
+
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+        type: DType,
+    ](
+        z: ManagedTensorSlice[type, 2],
+        x: ManagedTensorSlice[type, 2],
+        ctx: MojoCallContextPtr,
+    ):
+        var x_view = Self.build_view(x)
+        view_copy_impl[synchronous, target](z, x_view, ctx)
