@@ -8,7 +8,7 @@ import sys
 import os
 import unittest
 
-import max._mojo.mojo_importer
+import max._mojo.mojo_importer  # noqa
 
 # Put the current directory (containing mojo_module.mojo) on the Python module
 # lookup path.
