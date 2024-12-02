@@ -13,7 +13,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, ops
 from max.pipelines.kv_cache import (
-    ContinuousBatchingKVCacheCollection,
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,

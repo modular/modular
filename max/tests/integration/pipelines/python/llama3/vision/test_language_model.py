@@ -5,12 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 """Runs tests for the Llama3.2 vision language model layer."""
 
-import pytest
-import random
-from typing import Union
-from pathlib import Path
+from __future__ import annotations
 
-import numpy as np
+import random
+from pathlib import Path
+from typing import Union
+
+import pytest
 import torch
 from llama_vision.cross_attention_decoder import (
     CrossAttentionDecoderLayer,
@@ -69,6 +70,18 @@ def ids_tensor(shape, vocab_size, rng=None, name=None):
     )
 
 
+def weight(
+    name: str, weights_array: torch.tensor, weights_registry: dict
+) -> Weight:
+    """Creates a Linear layer backed by a weight."""
+    weights_registry[name] = weights_array
+    return Weight(
+        name=name,
+        dtype=DType.from_numpy(weights_array.numpy().dtype),
+        shape=weights_array.shape,
+    )
+
+
 def linear(name: str, weights_array, weights_registry) -> Linear:
     """Creates a Linear layer backed by a weight."""
     weights_registry[name] = weights_array
@@ -107,34 +120,29 @@ def norm(name: str, weights_array, eps, weights_registry) -> RMSNorm:
 
 
 def cross_attention_decoder_layer(
+    kv_params: KVCacheParams,
     num_attention_heads: int,
-    hidden_size: int,
-    num_key_value_heads: int,
     rms_norm_eps: float,
-    pytorch_layer,
+    pytorch_layer: torch.nn.Module,
     layer_idx: int,
     weights_registry: dict,
 ) -> CrossAttentionDecoderLayer:
     num_heads = num_attention_heads
-    head_dim = hidden_size // num_heads
-    num_key_value_groups = num_heads // num_key_value_heads
     sdpa_attn = CrossSdpaAttention(
-        num_heads=num_heads,
-        num_key_value_heads=num_key_value_heads,
-        head_dim=head_dim,
+        n_heads=num_heads,
+        kv_params=kv_params,
         layer_idx=layer_idx,
-        num_key_value_groups=num_key_value_groups,
         q_proj=linear(
             f"text.layers{layer_idx}.cross_attn.q_proj",
             pytorch_layer.cross_attn.q_proj.weight.data,
             weights_registry,
         ),
-        k_proj=linear(
+        wk=weight(
             f"text.layers{layer_idx}.cross_attn.k_proj",
             pytorch_layer.cross_attn.k_proj.weight.data,
             weights_registry,
         ),
-        v_proj=linear(
+        wv=weight(
             f"text.layers{layer_idx}.cross_attn.v_proj",
             pytorch_layer.cross_attn.v_proj.weight.data,
             weights_registry,
@@ -300,9 +308,8 @@ def language_model_given_pytorch_model(
         if layer_idx in cross_attention_layers:
             layers.append(
                 cross_attention_decoder_layer(
+                    kv_params=kv_params,
                     num_attention_heads=num_attention_heads,
-                    hidden_size=hidden_size,
-                    num_key_value_heads=num_key_value_heads,
                     rms_norm_eps=rms_norm_eps,
                     pytorch_layer=curr_layer,
                     layer_idx=layer_idx,

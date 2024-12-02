@@ -1,0 +1,263 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Test pipelines cross attention layer."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+import torch
+from llama_vision.cross_attention_decoder import CrossSdpaAttention
+from max.driver import CPU, Tensor
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph import Graph, TensorType, TensorValue, Weight
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+    load_kv_manager,
+)
+from nn import Linear
+from nn.norm import RMSNorm
+from test_common.distance_metrics import is_euclidean_distance_close
+from transformers.models.mllama.configuration_mllama import MllamaTextConfig
+from transformers.models.mllama.modeling_mllama import (
+    MllamaTextCrossSdpaAttention,
+)
+
+
+class CrossAttentionModel:
+    """Model containing fetch and cross attention layers."""
+
+    fetch: FetchContinuousBatchingKVCacheCollection
+    """Layer for fetching a kv cache collection."""
+
+    cross_attention: CrossSdpaAttention
+    """Layer for computing multimodal cross attention."""
+
+    dtype: DType
+    """DType of the model weights."""
+
+    def __init__(
+        self,
+        config: MllamaTextConfig,
+        kv_params: KVCacheParams,
+        torch_cross_attn: MllamaTextCrossSdpaAttention,
+        dtype: DType,
+    ) -> None:
+        """Inits fetch and cross attention layers using the torch model."""
+        self.dtype = dtype
+
+        self.fetch = FetchContinuousBatchingKVCacheCollection(kv_params)
+
+        # Use torch model weights to initialize MAX graph cross attention
+        # shapes.
+        self.cross_attention = CrossSdpaAttention(
+            config.num_attention_heads,
+            kv_params,
+            layer_idx=0,
+            q_proj=Linear(
+                Weight(
+                    name="wq",
+                    dtype=self.dtype,
+                    shape=torch_cross_attn.q_proj.weight.shape,
+                )
+            ),
+            wk=Weight(
+                name="wk",
+                dtype=self.dtype,
+                shape=torch_cross_attn.k_proj.weight.shape,
+            ),
+            wv=Weight(
+                name="wv",
+                dtype=self.dtype,
+                shape=torch_cross_attn.v_proj.weight.shape,
+            ),
+            o_proj=Linear(
+                Weight(
+                    name="wo",
+                    dtype=self.dtype,
+                    shape=torch_cross_attn.o_proj.weight.shape,
+                )
+            ),
+            q_norm=RMSNorm(
+                Weight(
+                    name="q_norm",
+                    dtype=self.dtype,
+                    shape=torch_cross_attn.q_norm.weight.shape,
+                )
+            ),
+            k_norm=RMSNorm(
+                Weight(
+                    name="k_norm",
+                    dtype=self.dtype,
+                    shape=torch_cross_attn.k_norm.weight.shape,
+                )
+            ),
+        )
+
+    def __call__(
+        self,
+        hidden_states: TensorValue,
+        cross_attention_states: TensorValue,
+        input_row_offset: TensorValue,
+        *fetch_args: TensorValue,
+    ) -> TensorValue:
+        """Builds the cross attention model graph."""
+        kv_collection = self.fetch(*fetch_args)
+        return self.cross_attention(
+            hidden_states,
+            cross_attention_states,
+            input_row_offset,
+            kv_collection,
+        )
+
+
+@pytest.mark.parametrize(
+    "seq_lens",
+    [
+        [10, 4],
+        [1, 2],
+    ],
+)
+def test_cross_attention(
+    session: InferenceSession, seq_lens: list[int]
+) -> None:
+    # Globally disable saving activations for backprop.
+    torch.set_grad_enabled(False)
+
+    config = MllamaTextConfig(
+        hidden_size=4096,
+        num_attention_heads=32,
+        num_key_value_heads=8,
+        rope_theta=10000.0,
+        max_position_embeddings=8192,
+    )
+    # Set up PyTorch attention layer.
+    torch_dtype = torch.float32
+    torch_cross_attn = MllamaTextCrossSdpaAttention(config, layer_idx=0)
+    torch_cross_attn.to(torch_dtype)
+
+    # Set up MAX graph attention layer.
+    n_heads = config.num_attention_heads
+    head_dim = config.hidden_size // n_heads
+    batch_size = len(seq_lens)
+
+    dtype = DType.float32
+    hidden_states_type = TensorType(
+        dtype, ["total_seq_len", config.hidden_size]
+    )
+    cross_attention_states_type = TensorType(
+        dtype, shape=[4 * 1025, config.hidden_size]
+    )
+
+    input_row_offset_type = TensorType(DType.uint32, [batch_size + 1])
+
+    kv_params = KVCacheParams(
+        dtype=dtype, n_kv_heads=config.num_key_value_heads, head_dim=head_dim
+    )
+    kv_manager = load_kv_manager(
+        params=kv_params,
+        max_cache_batch_size=batch_size,
+        max_seq_len=config.max_position_embeddings,
+        num_layers=config.num_hidden_layers,
+        session=session,
+        devices=[CPU()],
+    )
+
+    # Phase 1: op staging.
+
+    # Construct and compile the MAX graph cross attention.
+    graph = Graph(
+        "test_cross_attn",
+        forward=CrossAttentionModel(config, kv_params, torch_cross_attn, dtype),
+        input_types=[
+            hidden_states_type,
+            cross_attention_states_type,
+            input_row_offset_type,
+            *kv_manager.input_symbols()[0],
+        ],
+    )
+
+    # Phase 2: model compilation and weight initialization.
+
+    # Map torch weight values to their MAX graph counterparts.
+    weights_registry = {
+        "wq": torch_cross_attn.q_proj.weight.detach(),
+        "wk": torch_cross_attn.k_proj.weight.detach(),
+        "wv": torch_cross_attn.v_proj.weight.detach(),
+        "wo": torch_cross_attn.o_proj.weight.detach(),
+        "q_norm": torch_cross_attn.q_norm.weight.detach(),
+        "k_norm": torch_cross_attn.k_norm.weight.detach(),
+    }
+    cross_attn_model = session.load(graph, weights_registry=weights_registry)
+
+    # Phase 3: execution.
+
+    seq_ids = kv_manager.claim(n=batch_size)
+    kv_cache_inputs = kv_manager.fetch(seq_ids)[0]
+
+    # Initialize model inputs.
+    total_seq_len = sum(seq_lens)
+    hidden_states = torch.randn(
+        [total_seq_len, config.hidden_size], dtype=torch_dtype
+    )
+    cross_attention_states = torch.randn(
+        cross_attention_states_type.shape.static_dims, dtype=torch_dtype
+    )
+    input_row_offset = torch.tensor(
+        [0, *np.cumsum(seq_lens)], dtype=torch.uint32
+    )
+
+    predicted = cross_attn_model(
+        hidden_states,
+        cross_attention_states,
+        input_row_offset,
+        *kv_cache_inputs,
+    )[0]
+    assert isinstance(predicted, Tensor)
+
+    # Marshal extra inputs for torch.
+    # Create padded inputs since the torch model doesn't support ragged
+    # tensors.
+    hidden_states_padded = torch.zeros(
+        size=[batch_size, max(seq_lens), config.hidden_size],
+        dtype=torch_dtype,
+    )
+    # Convert to int since torch can't subtract uint32.
+    input_row_offset = input_row_offset.to(dtype=torch.int32)
+    for batch_idx, (start, stop) in enumerate(
+        zip(input_row_offset[:-1], input_row_offset[1:])
+    ):
+        hidden_states_padded[batch_idx, : stop - start] = hidden_states[
+            start:stop
+        ]
+
+    attention_mask = torch.ones([1, 1, max(seq_lens), 4100], dtype=torch.bool)
+    expected = (
+        torch_cross_attn(
+            hidden_states=hidden_states_padded,
+            cross_attention_states=cross_attention_states.broadcast_to(
+                [2, *cross_attention_states.shape]
+            ),
+            attention_mask=attention_mask,
+        )[0]
+        .detach()
+        .numpy()
+    )
+    expected_ragged = np.empty(
+        shape=[total_seq_len, config.hidden_size], dtype=dtype.to_numpy()
+    )
+    for batch_idx, (start, stop) in enumerate(
+        zip(input_row_offset[:-1], input_row_offset[1:])
+    ):
+        expected_ragged[start:stop] = expected[batch_idx, : stop - start]
+
+    # Compare the outputs.
+    # TODO(AIPIPE-227): re-enable after supporting !mo.opaque in ops.inplace_custom.
+    # assert is_euclidean_distance_close(
+    #     predicted.to_numpy(), expected_ragged, rtol=1e-4
+    # )
