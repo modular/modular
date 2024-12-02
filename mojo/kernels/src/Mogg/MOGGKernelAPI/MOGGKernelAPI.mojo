@@ -2145,6 +2145,26 @@ struct BroadcastShape:
         return IndexList[1](max(lhs_dim, rhs_dim))
 
 
+fn tuple_to_dimlist[size: Int](tuple: StaticTuple[Dim, size]) -> DimList:
+    @parameter
+    if size == 1:
+        return DimList(VariadicList[Dim](tuple[0]))
+    elif size == 2:
+        return DimList(VariadicList[Dim](tuple[0], tuple[1]))
+    elif size == 3:
+        return DimList(VariadicList[Dim](tuple[0], tuple[1], tuple[2]))
+    elif size == 4:
+        return DimList(
+            VariadicList[Dim](tuple[0], tuple[1], tuple[2], tuple[3])
+        )
+    elif size == 5:
+        return DimList(
+            VariadicList[Dim](tuple[0], tuple[1], tuple[2], tuple[3], tuple[4])
+        )
+
+    return DimList.create_unknown[size]()
+
+
 @compiler.register("mo.static.broadcast_to")
 @compiler.view_kernel
 struct StaticBroadcastTo:
@@ -2174,6 +2194,30 @@ struct StaticBroadcastTo:
         )
 
     @staticmethod
+    fn get_view_strides[
+        out_rank: Int,
+        in_rank: Int,
+    ](input_shape: DimList, input_strides: DimList) -> DimList:
+        var new_strides = StaticTuple[Dim, out_rank]()
+        alias delta = out_rank - in_rank
+
+        @parameter
+        for i in range(out_rank):
+
+            @parameter
+            if i < delta:
+                new_strides[i] = 0
+            else:
+                if input_shape.at[i - delta]().is_dynamic():
+                    new_strides[i] = Dim()
+                elif input_shape.get[i - delta]() <= 1:
+                    new_strides[i] = 0
+                else:
+                    new_strides[i] = input_strides.at[i - delta]()
+
+        return tuple_to_dimlist(new_strides)
+
+    @staticmethod
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
@@ -2188,13 +2232,39 @@ struct StaticBroadcastTo:
     ):
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
+
+        alias x_specs = compiler.specsof[x.type, x.rank]("x")
+        alias view_strides = Self.get_view_strides[z.rank, x.rank](
+            x_specs.shape, x_specs.strides
+        )
+
         var x_view = Self.build_view(x, output_shape)
-        view_copy_impl[synchronous, target](z, x_view, ctx)
+        view_copy_impl[synchronous, target, view_strides=view_strides](
+            z, x_view, ctx
+        )
 
 
 @compiler.register("mo.static.reshape")
 @compiler.view_kernel
 struct StaticReshape:
+    @staticmethod
+    fn get_view_strides[
+        out_rank: Int,
+    ](out_shape: DimList) -> DimList:
+        # reshape is a bit special as we assume the input is always contigous.
+        # So it will be the same with the output.
+        var new_strides = StaticTuple[Dim, out_rank]()
+
+        var stride = Dim(1)
+
+        @parameter
+        for i in reversed(range(out_rank)):
+            # Start from the back so we can accumulate the strides.
+            new_strides[i] = stride
+            stride *= out_shape.at[i]()
+
+        return tuple_to_dimlist(new_strides)
+
     @staticmethod
     fn execute[
         synchronous: Bool,
@@ -2213,7 +2283,15 @@ struct StaticReshape:
         var view_tensor = ManagedTensorSlice[type, output_rank](
             view_buffer.data, shape, view_buffer.get_strides()
         )
-        view_copy_impl[synchronous, target](output, view_tensor, ctx)
+        alias output_shape = compiler.specsof[output.type, output.rank](
+            "output"
+        ).shape
+        alias view_strides = Self.get_view_strides[output.rank](output_shape)
+        view_copy_impl[
+            synchronous,
+            target,
+            view_strides=view_strides,
+        ](output, view_tensor, ctx)
 
 
 @compiler.register("mo.reshape")
@@ -2262,9 +2340,28 @@ struct Transpose:
         )
 
     @staticmethod
+    fn get_view_strides[
+        permutations: DimList, rank: Int
+    ](input_strides: DimList) -> DimList:
+        var new_strides = StaticTuple[Dim, rank]()
+
+        @parameter
+        for i in range(rank):
+            alias perm = permutations.at[i]()
+
+            @parameter
+            if perm.is_dynamic():
+                new_strides[i] = Dim()
+            else:
+                new_strides[i] = input_strides.at[int(perm)]()
+
+        return tuple_to_dimlist(new_strides)
+
+    @staticmethod
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
+        static_permutations: DimList,
         type: DType,
         rank: Int,
     ](
@@ -2273,7 +2370,14 @@ struct Transpose:
         permutations: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ):
-        view_copy_impl[synchronous, target](
+        alias input_strides = compiler.specsof[input.type, input.rank](
+            "input"
+        ).strides
+        alias view_strides = Self.get_view_strides[static_permutations, rank](
+            input_strides
+        )
+
+        view_copy_impl[synchronous, target, view_strides=view_strides](
             output, Self.transpose_in_place(input, permutations), ctx
         )
 
@@ -2317,9 +2421,22 @@ struct Transpose:
 @compiler.view_kernel
 struct Slice:
     @staticmethod
+    fn get_view_strides[
+        rank: Int
+    ](input_strides: DimList, steps: DimList) -> DimList:
+        var new_strides = StaticTuple[Dim, rank]()
+
+        @parameter
+        for i in range(rank):
+            new_strides[i] = input_strides.at[i]() * steps.at[i]()
+
+        return tuple_to_dimlist(new_strides)
+
+    @staticmethod
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
+        static_steps: DimList,
         type: DType,
         rank: Int,
     ](
@@ -2341,7 +2458,16 @@ struct Slice:
             view_buffer.get_shape(),
             view_buffer.get_strides(),
         )
-        view_copy_impl[synchronous, target](output, view_tensor, ctx)
+
+        alias input_strides = compiler.specsof[input.type, input.rank](
+            "input"
+        ).strides
+        alias view_strides = Self.get_view_strides[rank](
+            input_strides, static_steps
+        )
+        view_copy_impl[synchronous, target, view_strides=view_strides](
+            output, view_tensor, ctx
+        )
 
     @staticmethod
     fn shape(
@@ -2391,12 +2517,29 @@ struct MutableStoreSlice:
 @compiler.view_kernel
 struct SliceDim:
     @staticmethod
+    fn get_view_strides[
+        rank: Int,
+        axis: Int,
+    ](input_strides: DimList, step: Dim) -> DimList:
+        var new_strides = StaticTuple[Dim, rank]()
+
+        @parameter
+        for i in range(rank):
+            if i == axis:
+                new_strides[i] = input_strides.at[i]() * step
+            else:
+                new_strides[i] = input_strides.at[i]()
+
+        return tuple_to_dimlist(new_strides)
+
+    @staticmethod
     fn execute[
         synchronous: Bool,
         target: StringLiteral,
         type: DType,
         rank: Int,
         axis: Int,
+        static_step: DimList,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
@@ -2416,7 +2559,15 @@ struct SliceDim:
             view_buffer.get_shape(),
             view_buffer.get_strides(),
         )
-        view_copy_impl[synchronous, target](output, view_tensor, ctx)
+        alias input_strides = compiler.specsof[input.type, input.rank](
+            "input"
+        ).strides
+        alias view_strides = Self.get_view_strides[rank, axis](
+            input_strides, static_step.at[0]()
+        )
+        view_copy_impl[synchronous, target, view_strides=view_strides](
+            output, view_tensor, ctx
+        )
 
 
 # ===----------------------------------------------------------------------===#
