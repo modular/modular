@@ -2519,6 +2519,7 @@ struct ArgNonZero:
 
 @compiler.register("mo.mean")
 struct Mean:
+    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         synchronous: Bool, target: StringLiteral
@@ -2570,6 +2571,7 @@ struct Mean:
 
 @compiler.register("mo.reduce.add")
 struct ReduceAdd:
+    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         synchronous: Bool, target: StringLiteral
@@ -2621,6 +2623,7 @@ struct ReduceAdd:
 
 @compiler.register("mo.reduce.mul")
 struct ReduceMul:
+    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         synchronous: Bool, target: StringLiteral
@@ -2672,6 +2675,7 @@ struct ReduceMul:
 
 @compiler.register("mo.reduce.max")
 struct ReduceMax:
+    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         synchronous: Bool, target: StringLiteral
@@ -2723,6 +2727,7 @@ struct ReduceMax:
 
 @compiler.register("mo.reduce.min")
 struct ReduceMin:
+    @compiler.enable_fusion_for("input", "output")
     @staticmethod
     fn execute[
         synchronous: Bool, target: StringLiteral
