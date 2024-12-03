@@ -7,7 +7,7 @@
 # This file contains wrappers around Intel AMX intrinsics. See
 # https://www.intel.com/content/www/us/en/docs/intrinsics-guide/index.html#expand=2206&techs=AMX
 #
-# ===----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------===#
 
 from sys import llvm_intrinsic
 

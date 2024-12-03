@@ -8,7 +8,7 @@
 # For information on the Apple AMX instruction set, see
 # https://www.notion.so/modularai/Apple-AMX-Resources-2cc523b9c851498787dfloat946ebb09930e.
 #
-# ===----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------===#
 
 from sys._assembly import inlined_assembly
 from sys.info import sizeof
