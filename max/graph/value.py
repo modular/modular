@@ -100,14 +100,25 @@ class Value:
     def tensor(self) -> TensorValue:
         """Returns the Value as a :obj:`TensorValue`.
 
-        Raise an exception if the Value is not a TensorValue.
+        Raises an exception if the Value is not a TensorValue.
         """
         if isinstance(self, TensorValue):
             return self
 
-        raise TypeError(
-            f"Value is not a TensorValue, was '{type(self).__name__}'"
-        )
+        msg = f"Value is not a TensorValue, was '{type(self).__name__}'"
+        raise TypeError(msg)
+
+    @property
+    def opaque(self) -> _OpaqueValue:
+        """Returns the Value as an :obj:`_OpaqueValue`.
+
+        Raises an exception if the Value is not a _OpaqueValue.
+        """
+        if isinstance(self, _OpaqueValue):
+            return self
+
+        msg = f"Value is not a TensorValue, was '{type(self).__name__}'"
+        raise TypeError(msg)
 
 
 class _ChainValue(Value):
