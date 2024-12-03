@@ -96,12 +96,12 @@ struct TestParamStruct[A: Int]:
   fn aliases(self, x: TestParamStruct[TestParamStruct[A].TypeLevelAlias]):
     # CHECK: lit.alias.decl [[B:.*]]: !Int = <apply({{.*}}__add__{{.*}}, apply({{.*}}__add__{{.*}}, [[A]], [[A]]), {{.*}}1{{.*}})>
     alias B = A+A+1
-    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <apply({{.*}}__add__{{.*}}, 
+    # CHECK: lit.alias.decl *"C{{.*}}: !Int = <apply({{.*}}__add__{{.*}},
     alias C = B+A
     # CHECK: lit.alias.decl [[D:.*]]: {{.*}}@TestParamStruct<:!Int {{.*}}1{{.*}}> =
     # CHECK-SAME: <apply_result_slot(:!lit.signature<{{.*}}TestParamStruct<:!Int {1}>, {{.*}}__init__({{.*}}"<:!Int {{.*}}1
     alias D = TestParamStruct[1]()
-    # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int 
+    # CHECK: %temp = lit.var.decl {{.*}} : {{.*}}@TestParamStruct<:!Int
     var temp: TestParamStruct[C]
 
     # CHECK: lit.alias.decl *"intVal{{.*}}": !Int = <{42}>
@@ -416,7 +416,7 @@ fn callMemoryValueParam():
     # CHECK: lit.alias.decl [[PARAM_VALUE1:.*]]: {{.*}}MemoryType = <apply_result_slot({{.*}}makeMemoryValue{{.*}}, {{.*}}1234
     alias paramValue = makeMemoryValue(1234)
     # CHECK: %dynamicLet = lit.var.decl
-    # CHECK: %[[PARAM_VALUE2:.*]] = kgen.param.materialize: !MemoryType = 
+    # CHECK: %[[PARAM_VALUE2:.*]] = kgen.param.materialize: !MemoryType =
     # CHECK: lit.ref.store %[[PARAM_VALUE2]], %dynamicLet
     var dynamicLet = paramValue
 
@@ -767,7 +767,7 @@ struct MyStringSlice[is_mutable: Bool, //, origin: Origin[is_mutable]]:  pass
 
 # This only binds to immutable things.
 # CHECK-LABEL: lit.func @"test_imm_string_slice
-# CHECK-SAME: (%a: !lit.ref<{{.*}}@MyStringSlice<:!Bool {:i1 0}, 
+# CHECK-SAME: (%a: !lit.ref<{{.*}}@MyStringSlice<:!Bool {:i1 0},
 fn test_imm_string_slice(a: ImmMyStringSlice):
     pass
 
@@ -1086,7 +1086,7 @@ struct Origin[is_mutable: Bool]:
 
     # Implicit ctor required to allow parameter inference happen.
     @implicit
-    fn __init__(out self, value: Self.type): 
+    fn __init__(out self, value: Self.type):
         self._mlir_origin = value
 
 
@@ -1095,9 +1095,13 @@ struct OriginStructInferenceImm[origin: Origin[False]]:
     fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
 struct OriginStructInferencePar[is_mutable: Bool, //, origin: Origin[is_mutable]]:
     fn __init__(out self, ref [origin._mlir_origin]data: Int):  pass
+struct OriginStructInferenceParWrapped[is_mutable: Bool, //, origin: Origin[is_mutable]]:
+    fn __init__(out self, ref [origin]data: Int):  pass
+struct OriginStructInferenceParSpecialized[is_mutable: Bool, //, origin: Origin[is_mutable]]:
+    fn __init__[O: Origin[False]](out self: OriginStructInferenceParSpecialized[O], ref [O]data: Int):  pass
 
 # CHECK-LABEL: lit.func @"test_origin_struct_inf
-fn test_origin_struct_inf(mut data: Int):
+fn test_origin_struct_inf[imm_data: Int](mut data: Int):
    # This needs to infer the origin through an implicit conversion
    # CHECK: %0 = lit.ref.immut %data
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceImm::@"__init__
@@ -1107,6 +1111,18 @@ fn test_origin_struct_inf(mut data: Int):
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferencePar::@"__init__
    # CHECK-SAME: {_mlir_origin: origin<1> = *"data`"}>(%parTest, %data)
    parTest = OriginStructInferencePar(data)
+
+   # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParWrapped::@"__init__
+   # CHECK-SAME: {_mlir_origin: origin<1> = *"data`"}>(%parWrappedTest, %data)
+   parWrappedTest = OriginStructInferenceParWrapped(data)
+
+   # CHECK: %[[IMMUT:.+]] = lit.ref.immut {{.*}} : <!Int, mut [[IMMUT_REF:.+]]>
+   # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParSpecialized::@"__init__
+   # CHECK-SAME: :!Bool {:i1 0},
+   # CHECK-SAME: :{{[^ ]*}}Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])},
+   # CHECK-SAME: :{{[^ ]*}}Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])}>
+   # CHECK-SAME: (%parSpecializedTest, %[[IMMUT]])
+   parSpecializedTest = OriginStructInferenceParSpecialized(imm_data)
 
 
 ##===----------------------------------------------------------------------===##
@@ -1188,7 +1204,7 @@ fn test_default_params():
 
 fn test_indirect_default_params[
     callee: fn[a: Int, b: Int = 7, c: StringLiteral = "woof"]()->None]():
-    
+
     # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> callee,
     # CHECK-SAME: {1}, {7}, {:string "woof"})]()
     callee[1]()
@@ -1579,4 +1595,3 @@ struct MOCO1065[
 fn test_MOCO1065[p: Empty](t: Empty):
     var s = MOCO1065(t)
     alias a = MOCO1065(p)
-    
