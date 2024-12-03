@@ -233,13 +233,6 @@ KGEN_CompilerRT_AsyncRT_ParallelismLevel(AsyncRTRuntimeRef rt) {
 // MojoCallContext
 //===----------------------------------------------------------------------===//
 
-/// Emplaces the chain in the given call context.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete(
-    AsyncRTMojoCallContextRef callContext) {
-  unwrap(callContext).complete();
-}
-
 /// Get cuda device from cuda runtime.
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext(
