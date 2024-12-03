@@ -196,7 +196,7 @@ fn _run_fake_memcpy_async(
 
 
 fn main() raises:
-    var ctx = create_test_device_context()
+    var ctx = create_test_device_context(buffer_cache_size=6 * 1024 * 1024)
 
     print("-------")
     print("Running test_copies(" + ctx.name() + "):")
