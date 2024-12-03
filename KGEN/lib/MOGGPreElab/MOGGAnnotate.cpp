@@ -34,6 +34,8 @@ static constexpr llvm::StringLiteral kPyTorchFallbackFuncName =
 
 static constexpr std::array<StringLiteral, 3> kMaxManagedTensorSlice = {
     "tensor_utils", "managed_tensor_slice", "ManagedTensorSlice"};
+static constexpr std::array<StringLiteral, 4> kMaxSIMD = {"stdlib", "builtin",
+                                                          "simd", "SIMD"};
 static constexpr std::array<StringLiteral, 4> kMaxStaticTuple = {
     "stdlib", "utils", "static_tuple", "StaticTuple"};
 static constexpr std::array<StringLiteral, 4> kMaxList = {
@@ -177,8 +179,8 @@ litTypeToParams(LIT::StructType structType) {
 /// tensor type struct
 static SmallVector<NamedAttribute>
 getUnboundParametersForTensor(LIT::StructType &structType, OpBuilder &builder) {
-  constexpr unsigned kDTypeIndex = 0;
-  constexpr unsigned kRankIndex = 1;
+  static constexpr unsigned kDTypeIndex = 0;
+  static constexpr unsigned kRankIndex = 1;
   auto allParameters = litTypeToParams(structType);
   assert(allParameters.size() >= 2);
   auto dtype = allParameters[kDTypeIndex];
@@ -197,9 +199,33 @@ getUnboundParametersForTensor(LIT::StructType &structType, OpBuilder &builder) {
   return tensorSpecNamedAttrs;
 }
 
-// Returns an array of attributes containing all parameters for the tensor type.
-static ArrayAttr getTensorParametersForTensor(LIT::StructType &structType,
-                                              OpBuilder &builder) {
+static SmallVector<NamedAttribute>
+getUnboundParametersForSIMD(LIT::StructType &structType, OpBuilder &builder) {
+  static constexpr unsigned kDTypeIndex = 0;
+  static constexpr unsigned kSizeIndex = 1;
+  auto allParameters = litTypeToParams(structType);
+
+  assert(allParameters.size() >= 2);
+  auto dtype = allParameters[kDTypeIndex];
+  auto size = allParameters[kSizeIndex];
+
+  SmallVector<NamedAttribute> tensorSpecNamedAttrs;
+  // Sometimes, dtype or size are not present because the user expects
+  // specific values for those parameters (ex: dtype=float32 or size=1).
+  if (dtype)
+    tensorSpecNamedAttrs.push_back(
+        NamedAttribute{builder.getStringAttr(kParameterDType), dtype});
+  if (size)
+    tensorSpecNamedAttrs.push_back(
+        NamedAttribute{builder.getStringAttr(kParameterSize), size});
+
+  return tensorSpecNamedAttrs;
+}
+
+// Returns an array of attributes containing all parameters for simple types
+// (i.e: tensor or SIMD).
+static ArrayAttr getParametersForSimpleType(LIT::StructType &structType,
+                                            OpBuilder &builder) {
   SmallVector<Attribute> attrs;
   for (TypedAttr attr : structType.getParamValues())
     attrs.push_back(attr);
@@ -213,8 +239,8 @@ getUnboundParametersForTensorTuple(LIT::StructType &structType,
                                    OpBuilder &builder) {
   // TODO(GEX-1126): consider a tuple which only contains tensors to
   // simplify this
-  constexpr unsigned kElementType = 0;
-  constexpr unsigned kSizeIndex = 1;
+  static constexpr unsigned kElementType = 0;
+  static constexpr unsigned kSizeIndex = 1;
   auto allParameters = litTypeToParams(structType);
 
   assert(allParameters.size() >= 2);
@@ -250,7 +276,7 @@ static ArrayAttr getTensorParametersForTensorTuple(LIT::StructType &structType,
       cast<LIT::StructType>(elementTypeAttr.getTypeValue());
   assert(symbolMatches(elementTypeStruct.getSymbol(), kMaxManagedTensorSlice) &&
          "Expect managed tensor slice element type");
-  return getTensorParametersForTensor(elementTypeStruct, builder);
+  return getParametersForSimpleType(elementTypeStruct, builder);
 }
 
 /// Return a set of named attributes mapping all unbound parameters in the list
@@ -260,7 +286,7 @@ getUnboundParametersForTensorList(LIT::StructType &structType,
                                   OpBuilder &builder) {
   // TODO(GEX-1126): consider a tuple which only contains tensors to
   // simplify this
-  constexpr unsigned kElementType = 0;
+  static constexpr unsigned kElementType = 0;
   auto allParameters = litTypeToParams(structType);
 
   assert(allParameters.size() >= 1);
@@ -315,7 +341,14 @@ static void labelTensorParamsInKernel(LIT::FuncOp funcOp) {
       tensorSpecs.push_back(
           DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
       tensorArgsParams.push_back(
-          getTensorParametersForTensor(asStructType, builder));
+          getParametersForSimpleType(asStructType, builder));
+    } else if (symbolMatches(asStructType.getSymbol(), kMaxSIMD)) {
+      SmallVector<NamedAttribute> tensorSpecNamedAttrs =
+          getUnboundParametersForSIMD(asStructType, builder);
+      tensorSpecs.push_back(
+          DictionaryAttr::get(funcOp.getContext(), tensorSpecNamedAttrs));
+      tensorArgsParams.push_back(
+          getParametersForSimpleType(asStructType, builder));
     } else if (symbolMatches(asStructType.getSymbol(), kMaxStaticTuple)) {
       SmallVector<NamedAttribute> tensorSpecNamedAttrs =
           getUnboundParametersForTensorTuple(asStructType, builder);
