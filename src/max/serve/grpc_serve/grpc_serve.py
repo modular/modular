@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
-import time
 import uuid
 from concurrent import futures
 from dataclasses import dataclass
@@ -24,6 +23,7 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipelineConfig,
 )
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.telemetry.stopwatch import StopWatch
 from ModelServing.proto.grpc_predict_v2_pb2_grpc import (
     GRPCInferenceServiceServicer,
     add_GRPCInferenceServiceServicer_to_server,
@@ -184,7 +184,7 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
     async def ModelInfer(
         self, request: pb2.ModelInferRequest, context
     ) -> pb2.ModelInferResponse:
-        req_recv_time_ns = time.time_ns()
+        req_recv_time_ns = StopWatch.time_ns()
         self.logger.debug(f"Model infer called with {request}, {type(context)}")
         model_name = request.model_name
         model_version = request.model_version

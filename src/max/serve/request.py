@@ -7,7 +7,6 @@
 
 import logging
 import uuid
-from time import perf_counter_ns
 from typing import Callable
 
 from max.serve.telemetry.metrics import METRICS
@@ -24,7 +23,7 @@ def register_request(app: FastAPI):
         with StopWatch() as requestTimer:
             request_id = str(uuid.uuid4())
             request.state.request_id = request_id
-            request.state.recv_time_ns = perf_counter_ns()
+            request.state.recv_time_ns = StopWatch.time_ns()
             try:
                 response: Response = await call_next(request)
                 status_code = response.status_code
