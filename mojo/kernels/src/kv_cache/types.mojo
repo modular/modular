@@ -536,9 +536,7 @@ struct ContinuousBatchingKVCache[
 
 @value
 @register_passable("trivial")
-struct PagedKVCache[
-    type: DType, kv_params: KVCacheStaticParams, page_size: Int
-](KVCacheT):
+struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
     """
@@ -550,6 +548,7 @@ struct PagedKVCache[
     [num_layers, 2, total_num_blocks, page_size, num_heads, head_size].
     """
     var blocks: NDBuffer[type, 6]
+    var page_size: Int
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 2]
     var is_cache_empty: Bool
@@ -566,6 +565,7 @@ struct PagedKVCache[
         kv_idx: Int,
     ):
         self.blocks = blocks
+        self.page_size = blocks.dim[3]()
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.is_cache_empty = is_cache_empty
@@ -617,7 +617,7 @@ struct PagedKVCache[
             "KVCache head_dim_idx is out of range",
         )
 
-        lut_block_index, tok_in_block_idx = divmod(tok_idx, page_size)
+        lut_block_index, tok_in_block_idx = divmod(tok_idx, self.page_size)
 
         debug_assert(
             tok_in_block_idx < self.blocks.dim[3](),
@@ -625,7 +625,7 @@ struct PagedKVCache[
         )
 
         debug_assert(bs < len(self.cache_lengths), "batch_idx is oob")
-        debug_assert(lut_block_index < page_size, "block_idx is OOB")
+        debug_assert(lut_block_index < self.page_size, "block_idx is OOB")
         block_idx = int(self.lookup_table[bs, lut_block_index])
         return IndexList[6](
             self.layer_idx,
@@ -687,13 +687,13 @@ struct PagedKVCache[
         head_idx: Int,
         head_dim_idx: Int = 0,
     ) -> UnsafePointer[Scalar[type]]:
-        constrained[
-            tile_size <= page_size and page_size % tile_size == 0,
+        debug_assert(
+            tile_size <= self.page_size and self.page_size % tile_size == 0,
             (
                 "layout block size must be divisible and less than or equal to"
                 " the block size"
             ),
-        ]()
+        )
 
         var full_block_idx = self._get_idx(
             batch_idx, head_idx, start_tok_idx, head_dim_idx
@@ -959,10 +959,10 @@ struct ContinuousBatchingKVCacheCollection[
         return self.cache_lengths
 
 
-struct PagedKVCacheCollection[
-    type: DType, kv_params: KVCacheStaticParams, page_size: Int
-](KVCollectionT):
-    alias CacheType = PagedKVCache[type, kv_params, page_size]
+struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
+    KVCollectionT
+):
+    alias CacheType = PagedKVCache[type, kv_params]
 
     var blocks: NDBuffer[type, 6]
     var cache_lengths: NDBuffer[DType.uint32, 1]

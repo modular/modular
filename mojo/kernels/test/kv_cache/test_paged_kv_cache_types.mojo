@@ -47,9 +47,7 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
     for i in range(batch_size):
         seq_ids.append(i)
 
-    var collection = PagedKVCacheCollection[
-        DType.float32, kv_params, cache_block_size
-    ](
+    var collection = PagedKVCacheCollection[DType.float32, kv_params](
         blocks.tensor,
         cache_lengths.tensor,
         lookup_table.tensor,
