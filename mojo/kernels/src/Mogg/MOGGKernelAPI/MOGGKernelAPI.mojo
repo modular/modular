@@ -6933,7 +6933,7 @@ fn generic_fused_qk_rope_bshd_ragged_kernel_api[
         "q_proj"
     ).shape
     alias freqs_cis_shape = compiler.specsof[freqs_cis.type, freqs_cis.rank](
-        "freq_cis"
+        "freqs_cis"
     ).shape
     alias input_row_shape = compiler.specsof[
         input_row_offset.type, input_row_offset.rank
@@ -6973,7 +6973,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
         "q_proj"
     ).shape
     alias freqs_cis_shape = compiler.specsof[freqs_cis.type, freqs_cis.rank](
-        "freq_cis"
+        "freqs_cis"
     ).shape
     alias input_row_shape = compiler.specsof[
         input_row_offset.type, input_row_offset.rank
