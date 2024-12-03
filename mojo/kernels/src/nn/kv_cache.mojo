@@ -17,6 +17,8 @@ from kv_cache.types import (
     ContiguousKVCacheCollection,
     ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
+    PagedKVCache,
+    PagedKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
@@ -2242,5 +2244,151 @@ fn continuous_batching_kv_cache_collection_h32_d128_bshd[
     kv_params_h32_d128_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h32_d128_bshd](
+        blocks, cache_lengths, lookup_table, is_cache_empty
+    )
+
+
+fn generic_get_paged_cache[
+    type: DType,
+    kv_params: KVCacheStaticParams,
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 2],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> PagedKVCacheCollection[type, kv_params] as result:
+    batch_size = lookup_table.dim[0]()
+    seq_ids_list = List[Int]()
+    for _ in range(batch_size):
+        # seq_ids are only used in Mojo for this type,
+        # but this op is only used by Python.
+        # Just fill it with dummy values.
+        seq_ids_list.append(-1)
+
+    return __type_of(result)(
+        blocks,
+        cache_lengths,
+        lookup_table,
+        is_cache_empty[0],
+        seq_ids_list,
+    )
+
+
+@register_internal("paged_kv_cache_collection_h1_d16_bshd")
+fn paged_kv_cache_collection_h1_d16_bshd[
+    type: DType, //,
+    target: StringLiteral,
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 2],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> PagedKVCacheCollection[type, kv_params_h1_d16_bshd]:
+    return generic_get_paged_cache[kv_params=kv_params_h1_d16_bshd](
+        blocks, cache_lengths, lookup_table, is_cache_empty
+    )
+
+
+@register_internal("paged_kv_cache_collection_h6_d48_bshd")
+fn paged_kv_cache_collection_h6_d48_bshd[
+    type: DType, //,
+    target: StringLiteral,
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 2],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> PagedKVCacheCollection[type, kv_params_h6_d48_bshd]:
+    return generic_get_paged_cache[kv_params=kv_params_h6_d48_bshd](
+        blocks, cache_lengths, lookup_table, is_cache_empty
+    )
+
+
+@register_internal("paged_kv_cache_collection_h8_d128_bshd")
+fn paged_kv_cache_collection_h8_d128_bshd[
+    type: DType, //,
+    target: StringLiteral,
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 2],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> PagedKVCacheCollection[type, kv_params_h8_d128_bshd]:
+    return generic_get_paged_cache[kv_params=kv_params_h8_d128_bshd](
+        blocks, cache_lengths, lookup_table, is_cache_empty
+    )
+
+
+@register_internal("paged_kv_cache_collection_h8_d16_bshd")
+fn paged_kv_cache_collection_h8_d16_bshd[
+    type: DType, //,
+    target: StringLiteral,
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 2],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> PagedKVCacheCollection[type, kv_params_h8_d16_bshd]:
+    return generic_get_paged_cache[kv_params=kv_params_h8_d16_bshd](
+        blocks, cache_lengths, lookup_table, is_cache_empty
+    )
+
+
+@register_internal("paged_kv_cache_collection_h8_d512_bshd")
+fn paged_kv_cache_collection_h8_d512_bshd[
+    type: DType, //,
+    target: StringLiteral,
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 2],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> PagedKVCacheCollection[type, kv_params_h8_d512_bshd]:
+    return generic_get_paged_cache[kv_params=kv_params_h8_d512_bshd](
+        blocks, cache_lengths, lookup_table, is_cache_empty
+    )
+
+
+@register_internal("paged_kv_cache_collection_h8_d32_bshd")
+fn paged_kv_cache_collection_h8_d32_bshd[
+    type: DType, //,
+    target: StringLiteral,
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 2],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> PagedKVCacheCollection[type, kv_params_h8_d32_bshd]:
+    return generic_get_paged_cache[kv_params=kv_params_h8_d32_bshd](
+        blocks, cache_lengths, lookup_table, is_cache_empty
+    )
+
+
+@register_internal("paged_kv_cache_collection_h8_d64_bshd")
+fn paged_kv_cache_collection_h8_d64_bshd[
+    type: DType, //,
+    target: StringLiteral,
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 2],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> PagedKVCacheCollection[type, kv_params_h8_d64_bshd]:
+    return generic_get_paged_cache[kv_params=kv_params_h8_d64_bshd](
+        blocks, cache_lengths, lookup_table, is_cache_empty
+    )
+
+
+@register_internal("paged_kv_cache_collection_h32_d128_bshd")
+fn paged_kv_cache_collection_h32_d128_bshd[
+    type: DType, //,
+    target: StringLiteral,
+](
+    blocks: NDBuffer[type, 6],
+    cache_lengths: NDBuffer[DType.uint32, 1],
+    lookup_table: NDBuffer[DType.uint32, 2],
+    is_cache_empty: NDBuffer[DType.bool, 1],
+) -> PagedKVCacheCollection[type, kv_params_h32_d128_bshd]:
+    return generic_get_paged_cache[kv_params=kv_params_h32_d128_bshd](
         blocks, cache_lengths, lookup_table, is_cache_empty
     )

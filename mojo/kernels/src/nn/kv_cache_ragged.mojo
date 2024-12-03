@@ -13,6 +13,8 @@ from kv_cache.types import (
     ContiguousKVCacheCollection,
     ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
+    PagedKVCache,
+    PagedKVCacheCollection,
     KVCacheStaticParams,
     KVCacheT,
     KVCollectionT,
@@ -37,6 +39,16 @@ from nn.kv_cache import (
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
+from nn.kv_cache import (
+    kv_params_h1_d16_bshd,
+    kv_params_h6_d48_bshd,
+    kv_params_h8_d128_bshd,
+    kv_params_h8_d16_bshd,
+    kv_params_h8_d512_bshd,
+    kv_params_h8_d32_bshd,
+    kv_params_h8_d64_bshd,
+    kv_params_h32_d128_bshd,
+)
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -305,6 +317,283 @@ fn fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged[
         ctx: The call context pointer, passed by the graph compiler.
     """
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
+
+
+@always_inline
+fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offset: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The object storing the KVCache for this layer.
+        layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+            Shape: (sum(seq_lens), num_heads * head_size).
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("output", output),
+            trace_arg("hidden_state", hidden_state),
+            trace_arg("weight", weight),
+            "layer_idx=" + str(layer_idx),
+            "num_heads=" + str(kv_collection.kv_params.num_heads),
+            "head_size=" + str(kv_collection.kv_params.head_size),
+        )
+
+    alias name = "fused_qkv_matmul_kv_cache_h" + str(
+        kv_collection.kv_params.num_heads
+    ) + "_d" + str(kv_collection.kv_params.head_size) + "_bshd_paged"
+    with Trace[TraceLevel.OP, target=target](
+        name,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _fused_qkv_matmul_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](
+            hidden_state,
+            input_row_offset,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h1_d16_bshd_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h1_d16_bshd_paged_ragged[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h1_d16_bshd,
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    return generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h6_d48_bshd_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h6_d48_bshd_paged_ragged[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h6_d48_bshd,
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    return generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h8_d128_bshd_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d128_bshd_paged_ragged[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d128_bshd,
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    return generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h8_d16_bshd_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d16_bshd_paged_ragged[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d16_bshd,
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    return generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h8_d512_bshd_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d512_bshd_paged_ragged[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d512_bshd,
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    return generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h8_d32_bshd_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d32_bshd_paged_ragged[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d32_bshd,
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    return generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h8_d64_bshd_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d64_bshd_paged_ragged[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d64_bshd,
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    return generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+        hidden_state,
+        input_row_offset,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h32_d128_bshd_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h32_d128_bshd_paged_ragged[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h32_d128_bshd,
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    return generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
         hidden_state,
         input_row_offset,
         weight,
@@ -1254,9 +1543,480 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
     )
 
 
+@always_inline
+fn generic_fused_qk_rope_bshd_paged_ragged[
+    target: StringLiteral, type: DType
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection,
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only executed after QKV completes.
+    """
+
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("output", output),
+            trace_arg("q_proj", q_proj),
+            trace_arg("freqs_cis", freqs_cis),
+            "layer_idx=" + str(layer_idx),
+            "num_heads=" + str(kv_collection.kv_params.num_heads),
+            "head_size=" + str(kv_collection.kv_params.head_size),
+        )
+
+    # Pass device context only on GPU.
+    var dev_ctx = Optional[
+        DeviceContext
+    ]() if target == "cpu" else context.get_device_context()
+
+    alias name = "fused_qk_rope_h" + str(
+        kv_collection.kv_params.num_heads
+    ) + "_d" + str(kv_collection.kv_params.head_size) + "_bshd_paged_ragged"
+    with Trace[TraceLevel.OP, target=target](
+        name,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        fused_qk_rope_ragged[kv_collection.CacheType, target=target](
+            q_proj,
+            input_row_offset,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            output,
+            dev_ctx,
+        )
+
+
+@register_internal("fused_qk_rope_h1_d16_bshd_paged_ragged")
+fn fused_qk_rope_h1_d16_bshd_paged_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h1_d16_bshd,
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    generic_fused_qk_rope_bshd_paged_ragged[target](
+        q_proj,
+        input_row_offset,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        output,
+        context,
+    )
+
+
+@register_internal("fused_qk_rope_h6_d48_bshd_paged_ragged")
+fn fused_qk_rope_h6_d48_bshd_paged_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h6_d48_bshd,
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    generic_fused_qk_rope_bshd_paged_ragged[target](
+        q_proj,
+        input_row_offset,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        output,
+        context,
+    )
+
+
+@register_internal("fused_qk_rope_h8_d128_bshd_paged_ragged")
+fn fused_qk_rope_h8_d128_bshd_paged_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d128_bshd,
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    generic_fused_qk_rope_bshd_paged_ragged[target](
+        q_proj,
+        input_row_offset,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        output,
+        context,
+    )
+
+
+@register_internal("fused_qk_rope_h8_d16_bshd_paged_ragged")
+fn fused_qk_rope_h8_d16_bshd_paged_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d16_bshd,
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    generic_fused_qk_rope_bshd_paged_ragged[target](
+        q_proj,
+        input_row_offset,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        output,
+        context,
+    )
+
+
+@register_internal("fused_qk_rope_h8_d512_bshd_paged_ragged")
+fn fused_qk_rope_h8_d512_bshd_paged_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d512_bshd,
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    generic_fused_qk_rope_bshd_paged_ragged[target](
+        q_proj,
+        input_row_offset,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        output,
+        context,
+    )
+
+
+@register_internal("fused_qk_rope_h8_d32_bshd_paged_ragged")
+fn fused_qk_rope_h8_d32_bshd_paged_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d32_bshd,
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    generic_fused_qk_rope_bshd_paged_ragged[target](
+        q_proj,
+        input_row_offset,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        output,
+        context,
+    )
+
+
+@register_internal("fused_qk_rope_h8_d64_bshd_paged_ragged")
+fn fused_qk_rope_h8_d64_bshd_paged_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h8_d64_bshd,
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    generic_fused_qk_rope_bshd_paged_ragged[target](
+        q_proj,
+        input_row_offset,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        output,
+        context,
+    )
+
+
+@register_internal("fused_qk_rope_h32_d128_bshd_paged_ragged")
+fn fused_qk_rope_h32_d128_bshd_paged_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        kv_params_h32_d128_bshd,
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    generic_fused_qk_rope_bshd_paged_ragged[target](
+        q_proj,
+        input_row_offset,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        output,
+        context,
+    )
+
+
 # ===-----------------------------------------------------------------------===#
 #   Flash Attention
 # ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_paged_ragged[
+    target: StringLiteral, type: DType
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("q", q),
+            "scale=" + str(scale),
+            "layer_idx=" + str(layer_idx),
+            "num_heads=" + str(kv_collection.kv_params.num_heads),
+            "head_size=" + str(kv_collection.kv_params.head_size),
+        )
+
+    alias name = "flash_attention_kv_cache_h" + str(
+        kv_collection.kv_params.num_heads
+    ) + "_d" + str(kv_collection.kv_params.head_size) + "_bshd_paged_ragged"
+
+    with Trace[TraceLevel.OP, target=target](
+        name,
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _flash_attention_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](
+            q,
+            input_row_offset,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@register_internal("flash_attention_kv_cache_h1_d16_bshd_paged_ragged")
+fn flash_attention_kv_cache_h1_d16_bshd_paged_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[type, kv_params_h1_d16_bshd],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_paged_ragged[target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
+
+
+@register_internal("flash_attention_kv_cache_h6_d48_bshd_paged_ragged")
+fn flash_attention_kv_cache_h6_d48_bshd_paged_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[type, kv_params_h6_d48_bshd],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_paged_ragged[target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
+
+
+@register_internal("flash_attention_kv_cache_h8_d128_bshd_paged_ragged")
+fn flash_attention_kv_cache_h8_d128_bshd_paged_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[type, kv_params_h8_d128_bshd],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_paged_ragged[target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
+
+
+@register_internal("flash_attention_kv_cache_h8_d16_bshd_paged_ragged")
+fn flash_attention_kv_cache_h8_d16_bshd_paged_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[type, kv_params_h8_d16_bshd],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_paged_ragged[target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
+
+
+@register_internal("flash_attention_kv_cache_h8_d512_bshd_paged_ragged")
+fn flash_attention_kv_cache_h8_d512_bshd_paged_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[type, kv_params_h8_d512_bshd],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_paged_ragged[target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
+
+
+@register_internal("flash_attention_kv_cache_h8_d32_bshd_paged_ragged")
+fn flash_attention_kv_cache_h8_d32_bshd_paged_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[type, kv_params_h8_d32_bshd],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_paged_ragged[target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
+
+
+@register_internal("flash_attention_kv_cache_h8_d64_bshd_paged_ragged")
+fn flash_attention_kv_cache_h8_d64_bshd_paged_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[type, kv_params_h8_d64_bshd],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_paged_ragged[target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
+
+
+@register_internal("flash_attention_kv_cache_h32_d128_bshd_paged_ragged")
+fn flash_attention_kv_cache_h32_d128_bshd_paged_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: PagedKVCacheCollection[type, kv_params_h32_d128_bshd],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_paged_ragged[target](
+        q, input_row_offset, kv_collection, layer_idx, scale, output, context
+    )
 
 
 @always_inline
