@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-
 import asyncio
 import base64
 import json
@@ -12,10 +11,9 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from json.decoder import JSONDecodeError
-from typing import Any, AsyncGenerator, List, Literal, Optional, cast
+from typing import Any, AsyncGenerator, List, Literal, Optional, Union, cast
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.applications import State
 from fastapi.responses import Response
 from httpx import AsyncClient
 from max.pipelines import (
@@ -43,6 +41,7 @@ from max.serve.schemas.openai import (  # type: ignore
 )
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
+from starlette.datastructures import State
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger(__name__)
@@ -55,12 +54,6 @@ class OpenAIResponseGenerator(ABC):
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.pipeline = pipeline
-
-    async def create_request(
-        self,
-        **kwargs,
-    ):
-        return await self.pipeline.create_request(**kwargs)
 
     @abstractmethod
     async def stream(
@@ -240,10 +233,10 @@ async def resolve_image_from_url(image_ref: AnyUrl) -> bytes:
     raise ValueError(f"Invalid image ref '{image_ref}'")
 
 
-@router.post("/chat/completions")
+@router.post("/chat/completions", response_model=None)
 async def openai_create_chat_completion(
     request: Request,
-) -> CreateChatCompletionResponse:
+) -> Union[CreateChatCompletionResponse, EventSourceResponse]:
     request_id = request.state.request_id
     try:
         request_json = await request.json()
@@ -263,22 +256,23 @@ async def openai_create_chat_completion(
         request_messages, request_images_urls = (
             openai_parse_chat_completion_request(pipeline, completion_request)
         )
-        request_resolved_images = None
+        request_images = None
         if request_images_urls:
             resolve_image_tasks = [
                 resolve_image_from_url(image_url)
                 for image_url in request_images_urls
             ]
-            request_resolved_images = await asyncio.gather(*resolve_image_tasks)
+            request_images = await asyncio.gather(*resolve_image_tasks)
 
         response_generator = OpenAIChatResponseGenerator(pipeline)
-        token_request = await response_generator.create_request(
+        token_request = TokenGeneratorRequest(
             id=request_id,
-            messages=request_messages,
-            images=request_resolved_images,
+            index=0,
             model_name=completion_request.model,
-            req_recv_time_ns=request.state.recv_time_ns,
+            messages=request_messages,
+            images=request_images,
             max_new_tokens=completion_request.max_tokens,
+            req_recv_time_ns=request.state.recv_time_ns,
         )
 
         if completion_request.stream:
@@ -425,10 +419,10 @@ def openai_get_prompt_from_completion_request(
     raise ValueError("Prompts of types other than strings are not supported.")
 
 
-@router.post("/completions")
+@router.post("/completions", response_model=None)
 async def openai_create_completion(
     request: Request,
-) -> CreateCompletionResponse:
+) -> Union[CreateCompletionResponse, EventSourceResponse]:
     """
     Legacy OpenAI /completion endpoint.
     https://platform.openai.com/docs/api-reference/completions
@@ -453,12 +447,13 @@ async def openai_create_completion(
         request_content = openai_get_prompt_from_completion_request(
             completion_request
         )
-        token_request = await response_generator.create_request(
+        token_request = TokenGeneratorRequest(
             id=request_id,
-            prompt=request_content,
+            index=0,
             model_name=completion_request.model,
-            req_recv_time_ns=request.state.recv_time_ns,
+            prompt=request_content,
             max_new_tokens=completion_request.max_tokens,
+            req_recv_time_ns=request.state.recv_time_ns,
             logprobs=completion_request.logprobs,
             echo=completion_request.echo,
         )

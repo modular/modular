@@ -12,7 +12,7 @@ import os
 import signal
 from dataclasses import dataclass, field
 from functools import partial
-from typing import AsyncGenerator, Callable, Generic, Mapping, Optional, TypeVar
+from typing import AsyncGenerator, Callable, Generic, Optional, TypeVar
 
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
 from max.serve.scheduler.queues import (
@@ -141,25 +141,15 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         self.engine_queue = engine_queue
         self.stats = TokenGeneratorStats()
 
-        self._timers: dict[str, TokenGeneratorTimers] = {}
         self._background_tasks: set[asyncio.Task] = set()
-
-    async def create_request(self, id: str, **kwargs) -> TokenGeneratorRequest:
-        METRICS.reqsRunning(1)
-        request = TokenGeneratorRequest(id=id, index=0, **kwargs)
-        self._timers[id] = TokenGeneratorTimers()
-        return request
-
-    def _complete_request(self, request: TokenGeneratorRequest):
-        del self._timers[request.id]
-        METRICS.reqsRunning(-1)
 
     async def next_token(
         self,
         request: TokenGeneratorRequest,
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
         """Generates and streams tokens for the provided request."""
-        timers = self._timers[request.id]
+        METRICS.reqsRunning(1)
+        timers = TokenGeneratorTimers()
         timers.ttft.start_ns = request.req_recv_time_ns
         self.logger.debug(
             "%s [%d]: Started: Elapsed: %0.2f ms",
@@ -202,7 +192,7 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                     top_log_probabilities=top_log_probabilities,
                 )
         finally:
-            self._complete_request(request)
+            METRICS.reqsRunning(-1)
             if self.debug_logging:
                 self.logger.debug(
                     "%s [%d]: Completed: Elapsed: %0.2f ms",
@@ -274,21 +264,3 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
             # Shut server down.
             # Sending SIGTERM is ugly, but simplifies the internal plumbing.
             os.kill(os.getpid(), signal.SIGTERM)
-
-    @staticmethod
-    def completed_context_encoding_requests(
-        batch_input: Mapping[str, TokenGeneratorContext],
-        batch_output: Mapping[str, str],
-    ):
-        # All request ids in the input are assumed to be
-        # context-encoded after the first pass.
-        return set(batch_input.keys())
-
-    @staticmethod
-    def completed_token_generation_requests(
-        batch_input: Mapping[str, TokenGeneratorContext],
-        batch_output: Mapping[str, str],
-    ):
-        # Request ids which were in the input batch but were not produced
-        # in the output batch are assumed completed.
-        return batch_input.keys() - batch_output.keys()
