@@ -782,7 +782,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
         RefType::getAnyOrigin(argVal.getRValueType(), /*isMut=*/false);
     auto expectedRef = cast<RefType>(expectedType);
 
-    (void)matchParams(valueRefType.getOrigin(), expectedRef.getOrigin());
+    (void)matchSingleEltStruct(valueRefType.getOrigin(),
+                               expectedRef.getOrigin());
     (void)matchSingleEltStruct(valueRefType.getAddressSpace(),
                                expectedRef.getAddressSpace());
 
