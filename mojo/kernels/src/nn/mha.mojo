@@ -2520,14 +2520,17 @@ fn mha_decoding_single_batch[
             output_reg_tile[n_mma, 0] *= rowsum_inv0
             output_reg_tile[n_mma, 1] *= rowsum_inv0
 
-    # Write to global memory.
-    var accum_smem_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(BM, depth),
+    # Pack resutls in shared memory for wider simd width.
+    var accum_smem_warp_tile = LayoutTensor[
+        output_type,
+        Layout.row_major(WM, WN),
         address_space = AddressSpace.SHARED,
-    ](q_smem.bitcast[Scalar[accum_type]]())
-    var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](warp_y, warp_x)
-    copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
+    ](q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN)
+
+    alias swizzle = make_swizzle[
+        num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+    ]()
+    copy_local_to_sram[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
         accum_smem_warp_tile.vectorize[1, 2](),
         output_reg_tile.vectorize[1, 2]().transpose(),
     )
@@ -2535,25 +2538,29 @@ fn mha_decoding_single_batch[
     # Guard writing to shared memory.
     barrier()
 
-    # Vectorized copy from shared to global memory, during which every 2 FP32
-    # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
-    # vector and stored using 16B store instruction.
+    alias output_gmem_layout = Layout.row_major(BM, depth)
+    var output_gmem_runtime_layout = RuntimeLayout(
+        RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
+        RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
+    )
     var output_gmem_tile = LayoutTensor[
-        output_type, Layout.row_major(depth * group)
-    ](output_ptr + q_offset)
-    var output_smem_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(depth * group),
-        address_space = AddressSpace.SHARED,
-    ](q_smem.bitcast[Scalar[accum_type]]())
+        output_type,
+        Layout.row_major(BM, depth),
+        masked=True,
+    ](output_ptr + q_offset, output_gmem_runtime_layout)
+    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
+        int(warp_y), int(warp_x)
+    )
 
-    if tid < (depth // simd_size) * group:
-        copy_sram_to_dram[
-            thread_layout = Layout.row_major((depth // simd_size) * group)
-        ](
-            output_gmem_tile.vectorize[simd_size](),
-            output_smem_tile.vectorize[simd_size](),
-        )
+    copy_sram_to_dram[
+        thread_layout = Layout.row_major(
+            WARP_SIZE * simd_size // WN, WN // simd_size
+        ),
+        swizzle=swizzle,
+    ](
+        output_gmem_warp_tile.vectorize[1, simd_size](),
+        accum_smem_warp_tile.vectorize[1, simd_size](),
+    )
 
 
 # ===----------------------------------------------------------------------===#
