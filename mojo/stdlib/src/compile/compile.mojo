@@ -72,6 +72,25 @@ alias _EMISSION_KIND_SHARED_OBJ = 3
 alias _EMISSION_KIND_ELABORATED_MLIR = 4
 
 
+fn _get_emission_kind_id[emission_kind: StringLiteral]() -> IntLiteral:
+    constrained[
+        emission_kind in ("elab-mlir", "llvm", "llvm-opt", "shared-obj", "asm"),
+        "invalid emission kind '" + emission_kind + "'",
+    ]()
+
+    @parameter
+    if emission_kind == "elab-mlir":
+        return _EMISSION_KIND_ELABORATED_MLIR
+    elif emission_kind == "llvm":
+        return _EMISSION_KIND_LLVM
+    elif emission_kind == "llvm-opt":
+        return _EMISSION_KIND_LLVM_OPT
+    elif emission_kind == "shared-obj":
+        return _EMISSION_KIND_SHARED_OBJ
+    else:
+        return _EMISSION_KIND_ASM
+
+
 fn _noop_populate(ptr: UnsafePointer[NoneType]) capturing:
     return
 
@@ -183,108 +202,22 @@ fn compile_info[
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> Info:
     @parameter
-    if emission_kind == "elab-mlir":
-
-        @parameter
-        if is_failable:
-            return _compile_info_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_ELABORATED_MLIR,
-                compile_options=compile_options,
-                target=target,
-            ]()
-        else:
-            return _compile_info_non_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_ELABORATED_MLIR,
-                compile_options=compile_options,
-                target=target,
-            ]()
-
-    @parameter
-    if emission_kind == "llvm":
-
-        @parameter
-        if is_failable:
-            return _compile_info_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_LLVM,
-                compile_options=compile_options,
-                target=target,
-            ]()
-        else:
-            return _compile_info_non_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_LLVM,
-                compile_options=compile_options,
-                target=target,
-            ]()
-
-    @parameter
-    if emission_kind == "llvm-opt":
-
-        @parameter
-        if is_failable:
-            return _compile_info_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_LLVM_OPT,
-                compile_options=compile_options,
-                target=target,
-            ]()
-        else:
-            return _compile_info_non_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_LLVM_OPT,
-                compile_options=compile_options,
-                target=target,
-            ]()
-
-    @parameter
-    if emission_kind == "shared-obj":
-
-        @parameter
-        if is_failable:
-            return _compile_info_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_SHARED_OBJ,
-                compile_options=compile_options,
-                target=target,
-            ]()
-        else:
-            return _compile_info_non_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_SHARED_OBJ,
-                compile_options=compile_options,
-                target=target,
-            ]()
-
+    if is_failable:
+        return _compile_info_failable_impl[
+            func_type,
+            func,
+            emission_kind = _get_emission_kind_id[emission_kind]().value,
+            compile_options=compile_options,
+            target=target,
+        ]()
     else:
-
-        @parameter
-        if is_failable:
-            return _compile_info_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_ASM,
-                compile_options=compile_options,
-                target=target,
-            ]()
-        else:
-            return _compile_info_non_failable_impl[
-                func_type,
-                func,
-                emission_kind=_EMISSION_KIND_ASM,
-                compile_options=compile_options,
-                target=target,
-            ]()
+        return _compile_info_non_failable_impl[
+            func_type,
+            func,
+            emission_kind = _get_emission_kind_id[emission_kind]().value,
+            compile_options=compile_options,
+            target=target,
+        ]()
 
 
 # ===----------------------------------------------------------------------===#
