@@ -20,8 +20,7 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     load_kv_manager,
 )
-from nn import Linear
-from nn.norm import RMSNorm
+from nn import Linear, RMSNorm
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (
     MllamaTextCrossSdpaAttention,
