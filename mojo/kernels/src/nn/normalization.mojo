@@ -28,7 +28,13 @@ from gpu import (
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace
-from gpu.shuffle import _static_log2, shuffle_down, warp_broadcast, warp_sum
+from gpu.shuffle import (
+    _static_log2,
+    shuffle_down,
+    warp_broadcast,
+    warp_sum,
+    lane_group_sum,
+)
 from memory import stack_allocation
 from register import register_internal, register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
@@ -41,8 +47,9 @@ from .reshape import reshape
 
 
 @always_inline
-fn block_reduce[type: DType](val: Scalar[type]) -> Scalar[type]:
-    alias max_warps_per_block = 32
+fn block_reduce[
+    type: DType, max_warps_per_block: Int
+](val: Scalar[type]) -> Scalar[type]:
     var m2_shared = stack_allocation[
         max_warps_per_block, type, address_space = AddressSpace.SHARED
     ]()
@@ -68,8 +75,10 @@ fn block_reduce[type: DType](val: Scalar[type]) -> Scalar[type]:
         m2_shared[warp_id] = warp_m2
     barrier()
 
-    if warp_id == 0:
-        var block_m2 = warp_sum(m2_shared[lane_idx])
+    if warp_id == 0 and lane_idx < max_warps_per_block:
+        var block_m2 = lane_group_sum[nthreads=max_warps_per_block](
+            m2_shared[lane_idx]
+        )
         if lane_idx == 0:
             m2_broadcast[0] = block_m2
     barrier()
@@ -694,6 +703,7 @@ fn layer_norm_shape[
 fn rms_norm_gpu_warp_tiling[
     type: DType, //,
     simd_width: Int,
+    max_warps_per_block: Int,
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
@@ -715,7 +725,9 @@ fn rms_norm_gpu_warp_tiling[
         vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
         thread_m2 = (vec_data**2).reduce_add()
 
-    var row_m2 = block_reduce(thread_m2)
+    var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+        thread_m2
+    )
     var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
 
     if idx < num_cols:
@@ -729,6 +741,7 @@ fn rms_norm_gpu_warp_tiling[
 fn rms_norm_gpu_block[
     type: DType, //,
     simd_width: Int,
+    max_warps_per_block: Int,
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
@@ -748,7 +761,9 @@ fn rms_norm_gpu_block[
             var vec_data = input_fn[simd_width](row, offset).cast[accum_type]()
             thread_m2 += (vec_data**2).reduce_add()
 
-    var row_m2 = block_reduce(thread_m2)
+    var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
+        thread_m2
+    )
     var norm_factor = isqrt((row_m2 / num_cols) + epsilon.cast[accum_type]())
 
     # need a pass again to perform in place normalization
@@ -820,7 +835,9 @@ fn rms_norm_gpu[
         # computation and normalization.
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             var gpu_func = ctx.compile_function[
-                rms_norm_gpu_warp_tiling[simd_width, input_fn_2d]
+                rms_norm_gpu_warp_tiling[
+                    simd_width, max_warps_per_block, input_fn_2d
+                ]
             ]()
             ctx.enqueue_function(
                 gpu_func,
@@ -832,7 +849,7 @@ fn rms_norm_gpu[
             )
         else:
             var gpu_func = ctx.compile_function[
-                rms_norm_gpu_block[simd_width, input_fn_2d]
+                rms_norm_gpu_block[simd_width, max_warps_per_block, input_fn_2d]
             ]()
             ctx.enqueue_function(
                 gpu_func,
@@ -844,7 +861,7 @@ fn rms_norm_gpu[
             )
     else:
         var gpu_func = ctx.compile_function[
-            rms_norm_gpu_block[1, input_fn_2d]
+            rms_norm_gpu_block[1, max_warps_per_block, input_fn_2d]
         ]()
         ctx.enqueue_function(
             gpu_func,
