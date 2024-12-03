@@ -6,7 +6,8 @@
 
 from sys import sizeof
 
-from gpu.host.memory_v1 import TMADescriptor, create_tma_descriptor
+from gpu.host import DeviceContext, DeviceBuffer
+from gpu.host.nvidia_cuda import TMADescriptor, create_tma_descriptor
 from gpu.memory import AddressSpace, cp_async_bulk_tensor_shared_cluster_global
 from gpu.sync import (
     mbarrier_arrive_expect_tx_shared,
@@ -112,12 +113,17 @@ struct TMATensorTile[
 @always_inline
 def create_tma_tile[
     *tile_sizes: Int
-](tensor: LayoutTensor) -> TMATensorTile[
+](ctx: DeviceContext, tensor: LayoutTensor) -> TMATensorTile[
     tensor.dtype,
     Layout.row_major(_to_int_tuple[*tile_sizes]()),
 ]:
     return create_tma_descriptor[tensor.dtype, 2](
-        tensor.ptr.bitcast[address_space = AddressSpace.GENERIC](),
+        DeviceBuffer(
+            ctx,
+            tensor.ptr.bitcast[address_space = AddressSpace.GENERIC](),
+            1,
+            owning=False,
+        ),
         (tensor.dim(0), tensor.dim(1)),
         (tensor.stride[0](), tensor.stride[1]()),
         (tile_sizes[0], tile_sizes[1]),
