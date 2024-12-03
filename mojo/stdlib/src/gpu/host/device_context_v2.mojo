@@ -685,9 +685,6 @@ struct DeviceFunctionV2[
             )
         )
 
-    fn test_only_num_captures(self) -> Int:
-        return self._func_impl.num_captures
-
     @always_inline
     fn test_only_get_attribute(self, attr: Attribute) raises -> Int:
         var result: Int32 = 0
