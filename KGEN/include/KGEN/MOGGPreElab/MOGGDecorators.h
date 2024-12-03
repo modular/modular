@@ -220,6 +220,8 @@ constexpr StringLiteral MOJO_DPS_TENSOR_TYPE_NAME =
 constexpr StringLiteral MOJO_INTERNAL_DPS_TENSOR_TYPE_NAME =
     "tensor_utils_internal::ManagedTensorSlice";
 
+constexpr StringLiteral MOJO_INTERNAL_DPS_SIMD_TYPE_NAME = "stdlib::SIMD";
+
 // We support tuples of DPS tensors for operations with variadic input/outputs
 constexpr StringLiteral MOJO_STATIC_INT_TUPLE_NAME = "stdlib::StaticTuple";
 
@@ -238,7 +240,7 @@ constexpr StringLiteral MOJO_EXTENSIBILITY_API_CALL_CONTEXT_PTR_TYPE_NAME =
 static constexpr llvm::StringLiteral kParameterDType = "dtype";
 static constexpr llvm::StringLiteral kParameterRank = "rank";
 
-// Used in variadics/tuple types.
+// Used in variadics/tuple/SIMD types.
 static constexpr llvm::StringLiteral kParameterSize = "size";
 
 } // namespace M::KGEN::MOGGPreElab
