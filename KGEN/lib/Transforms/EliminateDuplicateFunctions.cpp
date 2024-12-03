@@ -144,6 +144,9 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
   DenseSet<FuncOp, DuplicateFuncOpEquivalenceInfo> uniqueFuncSet;
   // The mutex to protect uniqueFuncSet accesses.
   std::mutex setAccessMutex;
+
+  // Number of deduplicated functions
+  uint64_t numDeduped = 0;
 };
 
 struct EliminateDuplicateFunctionsPass
@@ -216,8 +219,10 @@ void CallGraph::deduplicateNode(CallGraphNode *node) {
       {
         std::lock_guard<std::mutex> lock(setAccessMutex);
         auto it = uniqueFuncSet.find(callee->func);
-        if (it != uniqueFuncSet.end())
+        if (it != uniqueFuncSet.end() && *it != callee->func) {
           replaceTo = *it;
+          ++numDeduped;
+        }
       }
       if (replaceTo) {
         call.setCalleeAttr(SymbolConstantAttr::get(replaceTo.getSymNameAttr(),
@@ -256,6 +261,7 @@ void EliminateDuplicateFunctionsPass::runOnOperation() {
 
   CallGraph cg(module, symtab, runtime);
   cg.startDeduplication();
+  this->numDeduped = cg.numDeduped;
   // NOTE: We do not erase the duplicated function in the pass but rely later
   // passes to cleanup. A duplicate function is not always a dead symbol as it
   // might be referenced by operations other than KGENCallOpInterface.
