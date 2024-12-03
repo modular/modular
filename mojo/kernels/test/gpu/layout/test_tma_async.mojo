@@ -59,7 +59,7 @@ def test_tma_async_copy(ctx: DeviceContext):
 
     ctx.enqueue_copy_to_device(gmem_dev, gmem_host)
 
-    var tma_tensor = create_tma_tile[4, 4](tensor)
+    var tma_tensor = create_tma_tile[4, 4](ctx, tensor)
     ctx.synchronize()
 
     var kernel_copy_async = ctx.compile_function[

@@ -9,7 +9,7 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
-from gpu.host.memory_v1 import TMADescriptor, create_tma_descriptor
+from gpu.host.nvidia_cuda import TMADescriptor, create_tma_descriptor
 from gpu.id import BlockIdx
 from gpu.memory import (
     _GPUAddressSpace,
@@ -85,7 +85,7 @@ def test_tma_tile_copy(ctx: DeviceContext):
     ctx.enqueue_copy_to_device(gmem_dev, gmem_host)
 
     var descriptor = create_tma_descriptor[DType.float32, 2](
-        gmem_dev.ptr, (8, 8), (8, 1), (4, 4), (1, 1)
+        gmem_dev, (8, 8), (8, 1), (4, 4), (1, 1)
     )
 
     var kernel_copy_async = ctx.compile_function[
