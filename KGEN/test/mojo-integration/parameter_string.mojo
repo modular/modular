@@ -31,18 +31,7 @@ fn instantiateElsewhere():
 
 
 fn test_literal_from_comptime_string[s: String]() -> StringLiteral:
-    return StringLiteral.from_string[s + "-" + s]()
-
-
-fn to_string_literal[val: Int]() -> StringLiteral:
-    alias s = StringLiteral.from_string[str(val)]()
-    return s
-
-
-fn to_string_literal[val: SIMD]() -> StringLiteral:
-    constrained[val.type.is_integral(), "input type must be integral"]()
-    alias s = StringLiteral.from_string[str(val)]()
-    return s
+    return StringLiteral.get[s + "-" + s]()
 
 
 fn main():
@@ -65,10 +54,10 @@ fn main():
     print(strlit)
 
     # CHECK: 33
-    print(to_string_literal[33]())
+    print(StringLiteral.get[33]())
 
     # CHECK: 42
-    print(to_string_literal[Int64(42)]())
+    print(StringLiteral.get[Int64(42)]())
 
     # CHECK: [1, 2, 3, 4]
-    print(to_string_literal[SIMD[DType.int64, 4](1, 2, 3, 4)]())
+    print(StringLiteral.get[SIMD[DType.int64, 4](1, 2, 3, 4)]())
