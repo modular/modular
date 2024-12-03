@@ -1005,7 +1005,7 @@ fn _copy_frag_to_smem[
     layout1: Layout,
 ](
     p_smem_iter: LayoutTensorIter[
-        type0, layout0, address_space = AddressSpace.SHARED
+        type0, layout0, address_space = AddressSpace.SHARED, **_
     ],
     p_reg_tile: LayoutTensor[
         type1, layout1, address_space = AddressSpace.LOCAL
@@ -1069,11 +1069,10 @@ fn _copy_frag_to_smem[
                 var vec = p_reg_vecs[n_mma * num_m_mmas + m_mma, i].cast[
                     p_smem_tile.dtype
                 ]()
-                # p_smem_frag.aligned_store[frag_simd_width](
-                #     i, 0, rebind[SIMD[p_smem_frag.dtype, frag_simd_width]](vec)
-                # )
                 # Grep the right BMxBK tile and store the casted vec.
-                var tile_BMxBK = p_smem_iter.next((offset_BMxBN % BN) // BK)[]
+                var tile_BMxBK = p_smem_iter.next_unsafe(
+                    int((offset_BMxBN % BN) // BK)
+                )[]
                 alias align = alignof[SIMD[p_smem_iter.type, frag_simd_width]]()
                 tile_BMxBK.ptr.store[alignment=align](offset_BMxBK, vec)
 
@@ -2339,13 +2338,9 @@ fn mha_decoding_single_batch[
     # This overlaps key tile but are used at the same time i.e. no race condition.
     var p_smem = (v_smem + v_smem_size).bitcast[Scalar[v_type]]()
     alias p_smem_size = BM * BN
-    var p_smem_tile = LayoutTensor[
-        v_type,
-        Layout.row_major(BM, BN),
-        address_space = AddressSpace.SHARED,
-    ](p_smem)
-    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](warp_y, warp_x)
-    var p_smem_iter = p_smem_tile.tiled_iterator[BM, BK, axis=1](0, 0)
+    var p_smem_iter = LayoutTensorIter[
+        v_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
+    ](p_smem, BM * BN)
 
     # Scratch shared memory for reduction across warps.
     var warp_scratch = LayoutTensor[
@@ -2488,9 +2483,10 @@ fn mha_decoding_single_batch[
         ](v_ptr)
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
-        copy_local_to_sram[thread_layout = Layout.row_major(8, 4)](
-            p_smem_warp_tile.vectorize[1, 2](),
-            p_reg_tile.vectorize[1, 2]().transpose(),
+        # Copy score fragments to shared memory with swizzling to resolve bank
+        # conflicts for ldmatrix in the 2nd matmul.
+        _copy_frag_to_smem[BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth](
+            p_smem_iter, p_reg_tile, warp_x, warp_y
         )
         barrier()
 
@@ -2503,7 +2499,7 @@ fn mha_decoding_single_batch[
             num_threads,
             num_pipeline_stages,
             False,  # transpose_b
-            swizzle_a=False,
+            swizzle_a=True,
         ](
             output_reg_tile,
             p_smem_iter,
