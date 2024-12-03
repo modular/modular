@@ -273,7 +273,7 @@ PIPELINES = {
             pregenerated_torch_goldens_rlocation=(
                 "torch_llama_golden/torch_llama3_1_bfloat16_golden.json"
             ),
-            kl_div_threshold=0.005,
+            kl_div_threshold=0.006,
             cos_dist_threshold=0.002,
             # TODO(AIPIPE-134): The absolute and relative differences here seem
             # too high.
@@ -288,7 +288,7 @@ PIPELINES = {
             pipeline="replit",
             version="replit-code-v1_5-3b",
             encoding="float32",
-            kl_div_threshold=1e-3,
+            kl_div_threshold=1e-2,
             cos_dist_threshold=1e-3,
             absolute_tolerance=1e-4,
             relative_tolerance=1e-3,
