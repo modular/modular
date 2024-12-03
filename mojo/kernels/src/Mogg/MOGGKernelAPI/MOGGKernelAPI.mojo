@@ -21,6 +21,7 @@ from math import (
     sqrt,
     tanh,
 )
+from nn.concat import _concat_cpu, test_concat_fusion
 from random import randn, seed
 from sys import llvm_intrinsic
 from sys.info import bitwidthof, simdwidthof, sizeof
@@ -4358,15 +4359,13 @@ fn get_inputs_lambdas[
 
 @compiler.register("mo.concat")
 struct Concat:
-    # TODO(GEX-1299): Re-enable concat fusion
+    @compiler.enable_fusion_for("inputs", "output")
     @staticmethod
     fn execute[
         type: DType,
         rank: Int,
         synchronous: Bool,
         target: StringLiteral,
-        # TODO(GEX-1116): Support input fusion for concat
-        # lambdas_have_fusion: Bool,
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         axis: ManagedTensorSlice[rank=1],
@@ -4375,18 +4374,41 @@ struct Concat:
     ) raises:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
         var axis_val = axis._ptr.load(0)
-        var input_bufs = StaticTuple[NDBuffer[type, rank], inputs.size]()
+        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
         @parameter
         for i in range(inputs.size):
-            input_bufs[i] = managed_tensor_slice_to_ndbuffer(inputs[i])
+            input_shapes[i] = inputs[i]._spec.shape
 
-        alias fusion = None
-        concat[rank, type, synchronous, target, fusion](
-            output_buf,
+        alias inputs_lambdas = get_inputs_lambdas[
+            type,
+            rank,
+            inputs.size,
+            compiler.specsof[type, rank, inputs.size]("inputs"),
+        ]()
+
+        @always_inline
+        @parameter
+        fn epilogue_wrapper[
+            _type: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_type, width]):
+            output._fused_store[width=width](
+                rebind[IndexList[output.rank]](indices),
+                rebind[SIMD[output.type, width]](value),
+            )
+
+        test_concat_fusion[
+            type,
+            rank,
+            synchronous,
+            inputs_lambdas,
+            epilogue_wrapper,
+            target,
+        ](
             int(normalize_neg_index(axis_val, rank)),
-            input_bufs,
-            context=ctx,
+            input_shapes,
+            output_buf,
+            ctx,
         )
 
     @staticmethod
