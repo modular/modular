@@ -8,8 +8,7 @@ matrix operations.
 """
 
 from math import align_down
-from sys import is_nvidia_gpu, simdwidthof, sizeof
-
+from sys import has_nvidia_gpu, is_nvidia_gpu, simdwidthof, sizeof
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, lane_id
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
@@ -37,6 +36,10 @@ alias shape_16x8x16 = IndexList[3](16, 8, 16)
 alias shape_8x8x4 = IndexList[3](8, 8, 4)
 alias shape_16x8x32 = IndexList[3](16, 8, 32)
 
+# MI300x shapes
+alias shape_16x16x4 = IndexList[3](16, 16, 4)
+alias shape_16x16x16 = IndexList[3](16, 16, 16)
+
 
 struct TensorCore[
     out_type: DType,
@@ -49,8 +52,12 @@ struct TensorCore[
     Layout reference => https://github.com/NVIDIA/cutlass/blob/main/include/cute/atom/mma_traits_sm80.hpp#L44.
     """
 
-    alias supported_fp32 = in_type == DType.float32 and shape == shape_16x8x8
-    alias supported_half = in_type.is_half_float() and shape == shape_16x8x16
+    alias supported_fp32 = in_type == DType.float32 and (
+        shape == shape_16x8x8 if is_nvidia_gpu() else shape == shape_16x16x4
+    )
+    alias supported_half = in_type.is_half_float() and (
+        shape == shape_16x8x16 if is_nvidia_gpu() else shape == shape_16x16x16
+    )
 
     # Operand register types.
     alias a_reg_type = SIMD[in_type, num_matrix_reg[shape[0], shape[2]]()]
@@ -835,39 +842,54 @@ fn get_mma_shape[
     input_type: DType, accum_type: DType, shape_id: Int = 0
 ]() -> IndexList[3]:
     @parameter
-    if accum_type is DType.float32 and input_type is DType.float32:
+    if has_nvidia_gpu():
 
         @parameter
-        if shape_id == 0:
-            return shape_16x8x8
+        if accum_type is DType.float32 and input_type is DType.float32:
+
+            @parameter
+            if shape_id == 0:
+                return shape_16x8x8
+            else:
+                return shape_16x8x4
+
+        elif accum_type is DType.float32 and input_type is DType.bfloat16:
+
+            @parameter
+            if shape_id == 0:
+                return shape_16x8x16
+            else:
+                return shape_16x8x8
+
+        elif accum_type is DType.float32 and input_type is DType.float16:
+
+            @parameter
+            if shape_id == 0:
+                return shape_16x8x16
+            elif shape_id == 1:
+                return shape_16x8x8
+            else:
+                return shape_8x8x4
+        elif accum_type is DType.float32 and input_type in (
+            DType.float8e4m3,
+            DType.float8e5m2,
+        ):
+            return shape_16x8x32
         else:
-            return shape_16x8x4
-
-    elif accum_type is DType.float32 and input_type is DType.bfloat16:
-
-        @parameter
-        if shape_id == 0:
-            return shape_16x8x16
-        else:
-            return shape_16x8x8
-
-    elif accum_type is DType.float32 and input_type is DType.float16:
-
-        @parameter
-        if shape_id == 0:
-            return shape_16x8x16
-        elif shape_id == 1:
-            return shape_16x8x8
-        else:
-            return shape_8x8x4
-    elif accum_type is DType.float32 and input_type in (
-        DType.float8e4m3,
-        DType.float8e5m2,
-    ):
-        return shape_16x8x32
+            constrained[False, "Unsupported mma shape."]()
+            return shape_null
     else:
-        constrained[False, "Unsupported mma shape."]()
-        return shape_null
+
+        @parameter
+        if accum_type is DType.float32 and input_type is DType.float32:
+            return shape_16x16x4
+        elif accum_type is DType.float32 and input_type is DType.bfloat16:
+            return shape_16x16x16
+        elif accum_type is DType.float32 and input_type is DType.float16:
+            return shape_16x16x16
+        else:
+            constrained[False, "Unsupported mma shape."]()
+            return shape_null
 
 
 @always_inline
