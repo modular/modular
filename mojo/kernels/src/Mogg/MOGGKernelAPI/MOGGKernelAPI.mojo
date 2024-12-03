@@ -410,6 +410,16 @@ fn get_scalar_from_ndbuffer[
     return tensor[0]
 
 
+# Extract a value from a managed tensor slice.
+@register_internal_override("get_scalar_from_managed_tensor_slice", 1)
+@always_inline
+fn get_scalar_from_managed_tensor_slice[
+    dtype: DType
+](tensor: ManagedTensorSlice[dtype, 1]) -> Scalar[dtype]:
+    # Assumes that tensor is on the host!
+    return tensor[0]
+
+
 @register_internal_override("get_int_from_shape", 1)
 @always_inline
 fn get_int_from_shape[
@@ -2702,7 +2712,7 @@ struct Mean:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: ScalarTensor,
+        axis: Scalar,
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
