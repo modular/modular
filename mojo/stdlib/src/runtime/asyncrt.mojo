@@ -409,15 +409,6 @@ struct MojoCallContextPtr:
         self.ptr = ptr
 
     @always_inline
-    fn complete(self):
-        """Indicates to the C++ runtime that the async kernel has finished."""
-        external_call[
-            "KGEN_CompilerRT_AsyncRT_MojoCallContext_Complete", NoneType
-        ](
-            self.ptr,
-        )
-
-    @always_inline
     fn get_device_context(self) -> ref [ImmutableAnyOrigin] DeviceContext:
         """Get the device context held by the MojoCallContext.
 
