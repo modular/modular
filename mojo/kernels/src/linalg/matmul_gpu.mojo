@@ -33,14 +33,7 @@ from gpu import (
 from gpu.host import DeviceContext, FuncAttribute, LaunchAttribute
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import A100, DEFAULT_GPU_ARCH
-from gpu.memory import (
-    AddressSpace,
-    CacheOperation,
-    async_copy_commit_group,
-    async_copy_wait_all,
-    async_copy_wait_group,
-    load,
-)
+from gpu.memory import AddressSpace, CacheOperation, load
 from gpu.mma import ld_matrix, mma
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
