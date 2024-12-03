@@ -719,7 +719,11 @@ struct DeviceContextV2:
 
     @always_inline
     fn __init__(
-        mut self, device_id: Int = 0, *, api: String = Self.device_api
+        mut self,
+        device_id: Int = 0,
+        *,
+        api: String = Self.device_api,
+        buffer_cache_size: UInt = 0,
     ) raises:
         # const char *AsyncRT_DeviceContext_create(const DeviceContext **result, const char *api, int id)
         var result = _DeviceContextPtr()
@@ -730,10 +734,12 @@ struct DeviceContextV2:
                 UnsafePointer[_DeviceContextPtr],
                 _CharPtr,
                 Int32,
+                _SizeT,
             ](
                 UnsafePointer.address_of(result),
                 api.unsafe_ptr(),
                 device_id,
+                buffer_cache_size,
             )
         )
         self._handle = result
