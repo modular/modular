@@ -105,3 +105,9 @@ def configureLogging(
     logging.getLogger("sse_starlette.sse").setLevel(
         max(logger_level, logging.INFO)
     )
+    logger.info(
+        "Logging initialized: Console: %s, File: %s, Telemetry: %s",
+        console_level,
+        file_level,
+        otlp_level,
+    )

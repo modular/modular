@@ -21,9 +21,9 @@ def register_request(app: FastAPI):
     @app.middleware("http")
     async def request_session(request: Request, call_next: Callable):
         with StopWatch() as requestTimer:
-            request_id = str(uuid.uuid4())
+            request_id = uuid.uuid4().hex
             request.state.request_id = request_id
-            request.state.recv_time_ns = StopWatch.time_ns()
+            request.state.recv_time_ns = requestTimer.start_ns
             try:
                 response: Response = await call_next(request)
                 status_code = response.status_code

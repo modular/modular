@@ -11,7 +11,9 @@ import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from json.decoder import JSONDecodeError
+from time import perf_counter_ns
 from typing import Any, AsyncGenerator, List, Literal, Optional, Union, cast
+
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -428,19 +430,36 @@ async def openai_create_completion(
     https://platform.openai.com/docs/api-reference/completions
     Public benchmarking such as vLLM use this endpoint.
     """
+    request_handler_ns = perf_counter_ns()
     request_id = request.state.request_id
     try:
         request_json = await request.json()
+        request_json_ns = perf_counter_ns()
         completion_request = CreateCompletionRequest.model_validate(
             request_json
         )
+
+        request_timers = {}
+        request_timestamp_ns = request_json.get("timestamp", None)
+        if request_timestamp_ns:
+            request_timers["0_middleware"] = (
+                request.state.recv_time_ns - request_timestamp_ns
+            ) / 1e6
+            request_timers["1_handler"] = (
+                request_handler_ns - request_timestamp_ns
+            ) / 1e6
+            request_timers["2_json"] = (
+                request_json_ns - request_timestamp_ns
+            ) / 1e6
+
         pipeline = get_pipeline(request, completion_request.model)
         logger.info(
-            "Processing path, %s, req-id,%s%s, for model, %s.",
+            "Path: %s, Request: %s%s, Model: %s%s",
             request.url.path,
             request_id,
             " (streaming) " if completion_request.stream else "",
             completion_request.model,
+            ", Timers: {0}".format(request_timers) if request_timers else "",
         )
 
         response_generator = OpenAICompletionResponseGenerator(pipeline)
