@@ -4791,6 +4791,7 @@ struct Conv:
 
 @compiler.register("mo.conv_transpose")
 struct ConvTranspose:
+    @compiler.enable_fusion_for("output")
     @staticmethod
     fn execute[
         filter_packed: Bool,
