@@ -105,7 +105,6 @@ class TorchPrecomputedAspectRatioEmbedding(nn.Module):
         return hidden_state
 
 
-@pytest.mark.skip("not yet working")
 @pytest.mark.parametrize(
     "max_aspect_ratio_id,max_num_tiles,num_patches,hidden_size,patch_size,image_size",
     [
@@ -152,8 +151,8 @@ def test_vision_precomputed_position_embedding(
         ) = graph.inputs
 
         embedding = PrecomputedPositionEmbedding(
-            image_size=patch_size,
-            patch_size=image_size,
+            image_size=image_size,
+            patch_size=patch_size,
             max_num_tiles=max_num_tiles,
             hidden_size=hidden_size,
             gate=gate_weight,  # type: ignore
