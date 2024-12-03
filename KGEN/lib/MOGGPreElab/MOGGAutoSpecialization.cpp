@@ -110,7 +110,8 @@ static void identifyGetterFunctions(CallGraphNode *node, SymbolTable &symTab) {
     // Pull the name of the function being targeted off of the parameter
     // expression.
     auto asStr = cast<FlatSymbolRefAttr>(sym.getSymbol()).getValue();
-    auto invokedFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(asStr));
+    auto invokedFunc =
+        llvm::dyn_cast_if_present<GeneratorOp>(symTab.lookup(asStr));
     auto name = dyn_cast<StringAttr>(attr.getOperands()[1]);
     if (!invokedFunc || !name)
       return;
@@ -169,64 +170,63 @@ using CallGraphImpl = CallGraph;
 
 } // namespace
 
-/// Create a specialzied version of the function now accepting a tensor spec
-/// parameter.
-static GeneratorOp specializeOnSpec(CallGraphNode *node,
-                                    TensorSpecKGEN &specTemplate,
-                                    const CallGraphImpl &cg) {
-  const SymbolTable &symTab = cg.symtab;
+namespace {
 
-  GeneratorOp gen = node->func;
-  ArrayAttr argNames = gen->getAttrOfType<ArrayAttr>(MOGG_ARG_SRC_NAMES);
-  ArrayAttr argParams = gen->getAttrOfType<ArrayAttr>(MOGG_ARG_PARAMS);
-  llvm::BitVector &argsToSpec = node->argsNeedingSpec;
+class Specializer {
+public:
+  Specializer(ArrayRef<StringAttr> argNames, llvm::BitVector &argsToSpec)
+      : argsToSpec{argsToSpec} {
 
-  LLVM_DEBUG(llvm::dbgs() << "BEGIN specializeOnSpec for " << gen.getSymName()
-                          << "\n");
-
-  // Track the spec params we have for each argument.
-  // Pair paramDecl / argument index.
-  llvm::StringMap<std::pair<ParamDeclAttr, size_t>> argNameToSpecParam;
-
-  GeneratorOp cloned = gen.clone();
-
-  // Get the existing params, these won't change.
-  SmallVector<ParamDeclAttr> params(cloned.getInputParams());
-
-  // Reset the argsToSpec and prepare for optional parameters.
-  // We'll only add parameters if needed (specsof or call to another kernel).
-  for (size_t argIdx = 0, e = argsToSpec.size(); argIdx < e; ++argIdx) {
-    if (argsToSpec[argIdx]) {
-      argNameToSpecParam[cast<StringAttr>(argNames[argIdx]).strref()] = {
-          nullptr, argIdx};
-      argsToSpec[argIdx] = false;
+    // Reset the argsToSpec and prepare for optional parameters.
+    // We'll only add parameters if needed (specsof or call to another kernel).
+    for (auto index : llvm::seq(argNames.size())) {
+      StringRef argName = argNames[index].strref();
+      argNameToSpecParam[argName] = {nullptr, index};
+      argsToSpec[index] = false;
     }
   }
 
-  // Replace all references to the "get_param" intrinsic which the concrete
-  // param.
-  mlir::AttrTypeReplacer walker;
-  walker.addReplacement(
-      [&](ParamOperatorAttr attr) -> std::optional<TypedAttr> {
-        // Check if it matches any of our getter functions, if so replace it
-        // with a reference to that parameter.
-        for (ParamOperatorAttr getter : node->getterFunctions) {
-          if (attr != getter)
-            continue;
+  /// Get parameter info for the given parameter name.
+  std::pair<ParamDeclAttr, size_t> *getParamInfo(StringRef paramName) {
+    auto itr = argNameToSpecParam.find(paramName);
+    if (itr == argNameToSpecParam.end())
+      return nullptr;
+    return &itr->second;
+  }
+
+  /// Find uses of the specsof operation and replace that with a reference
+  /// to the parameter declaration for the StaticTensorSpec struct.
+  ErrorOrSuccess
+  replaceSpecsOfCalls(GeneratorOp func,
+                      ArrayRef<ParamOperatorAttr> getterFunctions) {
+    ErrorOrSuccess result = success();
+
+    // Apply the replacement on every op in the function.
+    mlir::AttrTypeReplacer walker;
+    walker.addReplacement(
+        [&](ParamOperatorAttr attr) -> std::optional<TypedAttr> {
+          // Is this one of the specsof getter functions?
+          if (!llvm::is_contained(getterFunctions, attr))
+            return std::nullopt;
 
           StringAttr tensorName = cast<StringAttr>(attr.getOperand(1));
-          auto itr = argNameToSpecParam.find(tensorName.strref());
-          if (itr == argNameToSpecParam.end())
-            continue;
+          std::pair<ParamDeclAttr, size_t> *paramInfo =
+              getParamInfo(tensorName.strref());
 
-          std::pair<ParamDeclAttr, size_t> &paramInfos = itr->second;
-          if (paramInfos.first == nullptr) {
+          if (!paramInfo) {
+            result =
+                Error(Twine("Unable to resolve specsof for variable named '") +
+                      tensorName.strref() + "'");
+            return nullptr;
+          }
+
+          if (paramInfo->first == nullptr) {
             // First time we encounter a getter function for this argument.
             // Define and add a specs parameter to the function.
-            size_t argIdx = paramInfos.second;
+            size_t argIdx = paramInfo->second;
             std::string paramName =
                 (SPEC_PREFIX_STR + std::to_string(argIdx)).str();
-            paramInfos.first = ParamDeclAttr::get(paramName, attr.getType());
+            paramInfo->first = ParamDeclAttr::get(paramName, attr.getType());
             argsToSpec[argIdx] = true;
 
             LLVM_DEBUG(llvm::dbgs() << "Add param (specsof) for "
@@ -234,21 +234,57 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
                                     << argIdx << ").\n";);
           }
 
-          return ParamDeclRefAttr::get(paramInfos.first);
-        }
-        return std::nullopt;
-      });
+          return ParamDeclRefAttr::get(paramInfo->first);
+        });
 
-  // Apply the replacement on every op in the function.
-  walker.recursivelyReplaceElementsIn(cloned, /*replaceAttrs=*/true,
-                                      /*replaceLocs=*/true,
-                                      /*replaceTypes=*/true);
+    // Apply the replacement on every op in the function.
+    walker.recursivelyReplaceElementsIn(func, /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/true,
+                                        /*replaceTypes=*/true);
+
+    return result;
+  }
+
+private:
+  /// Mapping of each argument name to the its index in the argument list
+  /// and the parameter declaration holding the tensor spec corresponding
+  /// to that argument (if any).
+  llvm::StringMap<std::pair<ParamDeclAttr, size_t>> argNameToSpecParam;
+
+  /// Bitmask determining which arguments need a tensor spec.
+  llvm::BitVector &argsToSpec;
+};
+
+} // namespace
+
+/// Create a specialzied version of the function now accepting a tensor spec
+/// parameter.
+static FailureOr<OwningOpRef<GeneratorOp>>
+specializeOnSpec(CallGraphNode *node, TensorSpecKGEN &specTemplate,
+                 const CallGraph &cg) {
+  GeneratorOp gen = node->func;
+  SmallVector<StringAttr> argNames =
+      llvm::to_vector(gen->getAttrOfType<ArrayAttr>(MOGG_ARG_SRC_NAMES)
+                          .getAsRange<StringAttr>());
+
+  ArrayAttr argParams = gen->getAttrOfType<ArrayAttr>(MOGG_ARG_PARAMS);
+  llvm::BitVector &argsToSpec = node->argsNeedingSpec;
+
+  LLVM_DEBUG(llvm::dbgs() << "BEGIN specializeOnSpec for " << gen.getSymName()
+                          << "\n");
+
+  OwningOpRef<GeneratorOp> cloned = gen.clone();
+  Specializer specializer(argNames, argsToSpec);
+
+  auto result = specializer.replaceSpecsOfCalls(*cloned, node->getterFunctions);
+  if (result.isError())
+    return gen.emitError() << result.takeError().get();
 
   // The Spec type from the callee refers to parameter of the callee.
   // Replace it to use parameters of the caller.
-  auto fixupCalleeSpecType = [&](Type specType, GeneratorOp callee,
-                                 size_t calleeArgIdx,
-                                 size_t callerArgIdx) -> Type {
+  auto fixupCalleeSpecType = [&argParams](Type specType, GeneratorOp callee,
+                                          size_t calleeArgIdx,
+                                          size_t callerArgIdx) -> Type {
     ArrayAttr callerArgParams =
         cast<ArrayAttr>(argParams.getValue()[callerArgIdx]);
     ArrayAttr calleeParams = callee->getAttrOfType<ArrayAttr>(MOGG_ARG_PARAMS);
@@ -306,11 +342,12 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
     return substitutor.replace(specType);
   };
 
+  const SymbolTable &symTab = cg.symtab;
+
   // Find calls to detect other params
-  cloned.walk([&](CallOp oldCall) {
+  cloned->walk([&](CallOp oldCall) {
     // Identify the call
-    auto calledSym =
-        cast<FlatSymbolRefAttr>(oldCall.getCalleeSymbol()).getValue();
+    auto calledSym = oldCall.getCalleeSymbol().getValue();
     auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(calledSym));
     // Skip any non generators.
     if (!calledFunc)
@@ -318,11 +355,11 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
 
     // We now have unreachable calls because we are dealing with the cloned
     // calls.
-    if (!cg.lookup(calledFunc))
+    const CallGraphNode *calledFuncNode = cg.lookup(calledFunc);
+    if (!calledFuncNode)
       return;
 
     // Specialize the node.
-    const CallGraphNode *calledFuncNode = cg.lookup(calledFunc);
     if (!calledFuncNode->specialization)
       return;
 
@@ -340,13 +377,12 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
         continue;
       auto callerIdx = blockArg.getArgNumber();
 
-      StringRef tensorName = cast<StringAttr>(argNames[callerIdx]).strref();
-      auto itr = argNameToSpecParam.find(tensorName);
-      if (itr == argNameToSpecParam.end())
+      StringAttr tensorName = argNames[callerIdx];
+      auto paramInfo = specializer.getParamInfo(tensorName);
+      if (!paramInfo)
         continue;
 
-      std::pair<ParamDeclAttr, size_t> &paramInfos = itr->second;
-      if (paramInfos.first == nullptr) {
+      if (paramInfo->first == nullptr) {
         // First time we encounter this arguments.
         // Define and add a specs parameter to the function.
         std::string paramName =
@@ -354,7 +390,7 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
 
         Type calleeParamTy =
             specialized.getSignature().getInputParamTypes()[calleeParamIdx - 1];
-        paramInfos.first = ParamDeclAttr::get(
+        paramInfo->first = ParamDeclAttr::get(
             paramName, fixupCalleeSpecType(calleeParamTy, specialized,
                                            calleeIdx, callerIdx));
         argsToSpec[callerIdx] = true;
@@ -368,6 +404,9 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
     }
   });
 
+  // Get the existing params, these won't change.
+  SmallVector<ParamDeclAttr> params(cloned->getInputParams());
+
   // Let's add the parameters now.
   // We need to add them at the end to ensure they follow the arguments order.
   SmallVector<Attribute> tensorSpecParamNames;
@@ -375,11 +414,12 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
                           << "\n");
   for (size_t argIdx = 0, e = argsToSpec.size(); argIdx < e; ++argIdx) {
     if (argsToSpec[argIdx]) {
-      std::pair<ParamDeclAttr, size_t> &paramInfos =
-          argNameToSpecParam[cast<StringAttr>(argNames[argIdx]).strref()];
-      ASSERT_STREAM(paramInfos.first != nullptr, << "parameter undefined");
-      params.push_back(paramInfos.first);
-      tensorSpecParamNames.push_back(paramInfos.first);
+      std::pair<ParamDeclAttr, size_t> *paramInfos =
+          specializer.getParamInfo(cast<StringAttr>(argNames[argIdx]).strref());
+      ASSERT_STREAM(paramInfos && paramInfos->first != nullptr,
+                    << "parameter undefined");
+      params.push_back(paramInfos->first);
+      tensorSpecParamNames.push_back(paramInfos->first);
     } else {
       tensorSpecParamNames.push_back(mlir::UnitAttr::get(gen->getContext()));
     }
@@ -388,22 +428,23 @@ static GeneratorOp specializeOnSpec(CallGraphNode *node,
                           << "\n");
 
   // Update the signature to add the new tensor types.
-  SignatureType oldSig = cloned.getSignature();
+  SignatureType oldSig = cloned->getSignature();
   FnEffects effects = oldSig.getFnEffects();
   effects.setCapturing(true);
-  cloned.setSignature(SignatureType::remapToSignature(
-      params, {}, cloned.getFunctionType(),
+  cloned->setSignature(SignatureType::remapToSignature(
+      params, {}, cloned->getFunctionType(),
       /*argConventions=*/oldSig.getArgConventions(),
       /*fnEffects=*/effects,
       /*metadata=*/oldSig.getMetadata()));
 
   // Remove the old params from the function.
-  cloned.setInputParams(params);
-  cloned->setAttr(kKernelTensorSpecParameterAttrName,
-                  ArrayAttr::get(gen->getContext(), tensorSpecParamNames));
+  cloned->setInputParams(params);
+  cloned->getOperation()->setAttr(
+      kKernelTensorSpecParameterAttrName,
+      ArrayAttr::get(gen->getContext(), tensorSpecParamNames));
 
   node->hasBeenProcessed = true;
-  node->specialization = cloned;
+  node->specialization = *cloned;
 
   // Remove the attribute that identifies the operation name.
   // It ensures MojoLibraryAnalysis will chose the specialized kernel (and not
@@ -422,17 +463,13 @@ class MOGGAutospecializePass
     : public M::KGEN::MOGGPreElab::impl::MOGGAutospecializeBase<
           MOGGAutospecializePass> {
 public:
-  static ErrorOr<TensorSpecKGEN> getTensorSpecTemplate(ModuleOp &mod) {
+  static TensorSpecKGEN getTensorSpecTemplate(ModuleOp mod) {
     TensorSpecKGEN specTemplate;
     for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
       if (gen->hasAttr(MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
         specTemplate.pullMetadataFromFunc(gen);
         break;
       }
-    }
-
-    if (!specTemplate && !specTemplate.getterFunc) {
-      return Error("Template for tensor spec not found!");
     }
 
     return specTemplate;
@@ -446,20 +483,16 @@ public:
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     SymbolTable &symTab = analysis.getTopLevelSymbolTable();
 
-    TensorSpecKGEN specTemplate;
-    for (GeneratorOp gen : mod.getOps<GeneratorOp>()) {
-      if (gen->hasAttr(MOGG_INTRINSIC_TENSOR_SPEC_HOOK)) {
-        specTemplate.pullMetadataFromFunc(gen);
-        break;
-      }
-    }
+    TensorSpecKGEN specTemplate = getTensorSpecTemplate(mod);
 
     // Pass relies on this, if we could find the function it should be there.
     // It's not a hard fail for users as this is sensitive to IR changes.
     if (!specTemplate) {
-      ASSERT_STREAM(!specTemplate.getterFunc,
-                    << "Sample none spec parameter could not be "
-                       "found in spec get function.");
+      if (specTemplate.getterFunc) {
+        mod.emitError() << "Sample none spec parameter could not be "
+                           "found in spec get function.";
+        signalPassFailure();
+      }
       return;
     }
 
@@ -578,8 +611,15 @@ public:
         continue;
       }
 
-      // Update the arguments needing a spec.
-      GeneratorOp newGen = specializeOnSpec(node, specTemplate, cg);
+      // Specialize the node on the argument specs.
+      FailureOr<OwningOpRef<GeneratorOp>> maybeNewGen =
+          specializeOnSpec(node, specTemplate, cg);
+      if (failed(maybeNewGen)) {
+        signalPassFailure();
+        return;
+      }
+
+      GeneratorOp newGen = maybeNewGen->release();
       symTab.insert(newGen);
 
       // Each new param is added after the existing params.
