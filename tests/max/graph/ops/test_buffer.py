@@ -349,3 +349,27 @@ def test_prints_with_buffer_ops(
 
 # TODO(MSDK-960): test that the chain is working correctly.
 # TODO(MSDK-960): test load -> element-wise ops -> store.
+
+
+def test_custom_buffer_error() -> None:
+    """Test that we get an error for passing unchained buffers to custom ops."""
+    with Graph(
+        "custom_buffer_error",
+        input_types=[BufferType(DType.float32, shape=[42])],
+    ) as graph:
+        buffer = graph.inputs[0]
+
+        with pytest.raises(
+            TypeError,
+            match=(
+                "custom ops that take buffers to do in-place updates should "
+                "use ops.inplace_custom instead"
+            ),
+        ):
+            _ = ops.custom(
+                "bar",
+                values=[buffer],
+                out_types=[TensorType(DType.uint32, shape=[])],
+            )[0]
+
+        graph.output()

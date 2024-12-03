@@ -35,6 +35,14 @@ def custom(
     """
     graph = Graph.current
     symbol_attr = StringAttr.get(name, graph._context)
+
+    if any(isinstance(val, BufferValue) for val in values):
+        msg = (
+            "custom ops that take buffers to do in-place updates should use "
+            "ops.inplace_custom instead"
+        )
+        raise TypeError(msg)
+
     return graph._add_op(
         mo.custom, [t.to_mlir() for t in out_types], values, symbol=symbol_attr
     )
@@ -60,14 +68,19 @@ def inplace_custom(name: str, values: Iterable[Value]) -> None:
     # Until that switch is made check that at least one input to the custom op
     # is a BufferValue to provide some level of safety.
     if not any(isinstance(val, BufferValue) for val in values):
-        raise TypeError(
-            "Expected at least one BufferValue as input to an in-place"
-            " custom op"
+        msg = (
+            "expected at least one BufferValue as input to an in-place custom "
+            "op"
         )
+        raise TypeError(msg)
 
     graph = Graph.current
     current_chain = graph._current_chain
-    values.append(current_chain)  # type: ignore
 
-    out_chain = custom(name, values, [_ChainType()])[0]  # type: ignore
+    out_chain = graph._add_op(
+        mo.custom,
+        results_=[_ChainType().to_mlir()],
+        operands_=[*values, current_chain],
+        symbol=StringAttr.get(name, graph._context),
+    )[0]
     graph._update_chain(out_chain._mlir_value)
