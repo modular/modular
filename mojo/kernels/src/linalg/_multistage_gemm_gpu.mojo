@@ -140,12 +140,18 @@ fn multistage_mma[
     # work around mut argument can't have default value.
     var next_b_iter = next_op_b_iter
 
+    # If there are more threads than vectors, thread layout should be based on
+    # the latter so that a vector is only mapped to one thread.
+    alias a_num_vecs = BM * BK // simd_size
     alias async_copy_a_layout = Layout.row_major(
-        num_threads * simd_size // BK, BK // simd_size
+        min(num_threads, a_num_vecs) * simd_size // BK, BK // simd_size
     )
 
+    alias b_num_ves = BN * BK // simd_size
     alias async_copy_b_layout = Layout.row_major(
-        num_threads * simd_size // b_smem_layout.stride[0].value(),
+        min(num_threads, b_num_ves)
+        * simd_size
+        // b_smem_layout.stride[0].value(),
         b_smem_layout.stride[0].value() // simd_size,
     )
     alias swizzle_b = transpose_b or b_type.is_half_float()
@@ -170,7 +176,11 @@ fn multistage_mma[
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
     ](dst: LayoutTensor, src: LayoutTensor,):
-        copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle,](
+        copy_dram_to_sram_async[
+            thread_layout=thread_layout,
+            swizzle=swizzle,
+            num_threads=num_threads,
+        ](
             dst.vectorize[1, simd_size](),
             src.vectorize[1, simd_size](),
         )
