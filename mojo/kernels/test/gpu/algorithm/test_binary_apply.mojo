@@ -66,7 +66,7 @@ fn run_binary_add(ctx: DeviceContext, capture: Float32) raises:
         block_dim=(block_dim),
     )
     # CHECK: number of captures: 1
-    print("number of captures:", func.test_only_num_captures())
+    print("number of captures:", func._func_impl.num_captures)
     ctx.synchronize()
 
     ctx.enqueue_copy_from_device(out_host, out_device)
