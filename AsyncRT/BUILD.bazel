@@ -100,6 +100,17 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "DeviceBufferCache",
+    srcs = [
+        "lib/DeviceContext/BufferCache.cpp",
+        "lib/DeviceContext/BufferCache.h",
+    ],
+    deps = [
+        ":RuntimeGlobals",
+    ],
+)
+
+modular_cc_library(
     name = "CUDADeviceContext",
     srcs = [
         "lib/DeviceContext/CUDA/CUDADeviceContext.cpp",
@@ -110,6 +121,7 @@ modular_cc_library(
         "lib/DeviceContext/CUDA/CUDADeviceContext.h",
     ],
     deps = [
+        ":DeviceBufferCache",
         ":DeviceContext.headers",
     ],
 )
@@ -125,6 +137,7 @@ modular_cc_library(
         "lib/DeviceContext/HIP/HIPDeviceContext.h",
     ],
     deps = [
+        ":DeviceBufferCache",
         ":DeviceContext.headers",
     ],
 )
