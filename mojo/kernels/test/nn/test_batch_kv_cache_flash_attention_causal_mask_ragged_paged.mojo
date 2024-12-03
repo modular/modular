@@ -53,7 +53,7 @@ def execute_ragged_flash_attention[
     alias num_continuous_blocks = 32
     alias block_size = 512
     alias num_paged_blocks = 512
-    alias PagedCacheType = PagedKVCache[type, kv_params, block_size]
+    alias PagedCacheType = PagedKVCache[type, kv_params]
     alias ContinuousBatchCacheType = ContinuousBatchingKVCache[type, kv_params]
     var batch_size = len(valid_lengths)
     debug_assert(
