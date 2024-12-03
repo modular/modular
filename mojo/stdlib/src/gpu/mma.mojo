@@ -16,6 +16,29 @@ from utils import StaticTuple
 
 
 @always_inline
+fn _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+    constrained[
+        False,
+        "no valid implementation of mma for for a="
+        + str(a.size)
+        + "x"
+        + str(a.type)
+        + ", b="
+        + str(b.size)
+        + "x"
+        + str(b.type)
+        + ", c="
+        + str(c.size)
+        + "x"
+        + str(c.type)
+        + ", and d="
+        + str(d.size)
+        + "x"
+        + str(d.type),
+    ]()
+
+
+@always_inline
 fn _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
@@ -93,7 +116,7 @@ fn _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         ](a, b, c, zero, zero, zero)
         d = rebind[__type_of(d)](r)
     else:
-        constrained[False, "no valid implementation of mma"]()
+        _unsupported_mma_op(d, a, b, c)
 
 
 @always_inline
@@ -379,7 +402,7 @@ fn _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d = rebind[__type_of(d)](SIMD[DType.float32, 4](r[0], r[1], r[2], r[3]))
 
     else:
-        constrained[False, "no valid implementation of mma"]()
+        _unsupported_mma_op(d, a, b, c)
 
 
 @always_inline
