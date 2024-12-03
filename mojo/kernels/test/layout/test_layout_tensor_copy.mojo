@@ -211,6 +211,29 @@ fn masked_copy_kernel[
 
 
 @always_inline
+fn partial_copy_dram_to_sram_async_kernel[
+    layout: Layout,
+    thread_layout: Layout,
+    num_threads: Int,
+](input: LayoutTensor[DType.float32, layout]):
+    var smem_tile = LayoutTensor[
+        DType.float32, layout, address_space = AddressSpace.SHARED
+    ].stack_allocation().fill(-1.0)
+
+    copy_dram_to_sram_async[
+        thread_layout=thread_layout, num_threads=num_threads
+    ](smem_tile.vectorize[1, 4](), input.vectorize[1, 4]())
+
+    async_copy_commit_group()
+    async_copy_wait_all()
+
+    copy_sram_to_dram[thread_layout=thread_layout](
+        input.vectorize[1, 4](),
+        smem_tile.vectorize[1, 4](),
+    )
+
+
+@always_inline
 fn copy_sram_to_dram_kernel[
     type: DType,
     layout: Layout,
@@ -453,6 +476,44 @@ fn test_masked_async_copy[
     )
 
     ctx.synchronize()
+    print(input.tensor)
+
+    _ = input^
+
+
+fn test_partial_copy_dram_to_sram_async[
+    layout: Layout,
+    thread_layout: Layout,
+    num_threads: Int,
+](ctx: DeviceContext) raises:
+    print("=== test_partial_copy_dram_to_sram_async")
+
+    var input = ManagedLayoutTensor[
+        DType.float32,
+        layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+    ]()
+
+    arange(input.tensor)
+
+    alias kernel_type = partial_copy_dram_to_sram_async_kernel[
+        layout,
+        thread_layout,
+        num_threads,
+    ]
+    var kernel = ctx.compile_function[kernel_type, dump_asm=True]()
+
+    ctx.enqueue_function(
+        kernel,
+        input,
+        grid_dim=(1,),
+        block_dim=(num_threads,),
+    )
+
+    ctx.synchronize()
+
     print(input.tensor)
 
     _ = input^
@@ -725,6 +786,14 @@ fn main() raises:
             M=8,
             N=8,
             skew_rows=1,
+        ](ctx)
+
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+        # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+        test_partial_copy_dram_to_sram_async[
+            layout = Layout.row_major(2, 16),
+            thread_layout = Layout.row_major(2, 4),
+            num_threads=32,
         ](ctx)
 
         # CHECK: == test_copy_sram_to_dram

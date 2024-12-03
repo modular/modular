@@ -2296,6 +2296,7 @@ fn copy_dram_to_sram_async[
     swizzle: Bool = False,
     fill: Fill = Fill.NONE,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    num_threads: Int = src_thread_layout.size(),
 ](dst: LayoutTensor, src: LayoutTensor):
     constrained[
         src.address_space == _GPUAddressSpace.GENERIC,
@@ -2306,6 +2307,23 @@ fn copy_dram_to_sram_async[
         dst.address_space == _GPUAddressSpace.SHARED,
         "dst address space must be SHARED.",
     ]()
+
+    constrained[
+        src_thread_layout.size() == dst_thread_layout.size(),
+        "src thread layout size "
+        + str(src_thread_layout.size())
+        + " does not match dst thread layout size "
+        + str(dst_thread_layout.size()),
+    ]()
+
+    alias num_busy_threads = src_thread_layout.size()
+
+    # We know at compile time that only partial threads copy based on the size
+    # of input tensors. Return if current thread doesn't have work.
+    @parameter
+    if num_threads > num_busy_threads:
+        if ThreadIdx.x >= num_busy_threads:
+            return
 
     alias row_size = dst.stride[0]()
     # See make_ldmatrix_swizzle in Swizzle.mojo for `conflict_ways`.
@@ -2388,12 +2406,14 @@ fn copy_dram_to_sram_async[
     masked: Bool = False,
     fill: Fill = Fill.NONE,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    num_threads: Int = thread_layout.size(),
 ](dst: LayoutTensor, src: LayoutTensor):
     copy_dram_to_sram_async[
         src_thread_layout=thread_layout,
         dst_thread_layout=thread_layout,
         swizzle=swizzle,
         eviction_policy=eviction_policy,
+        num_threads=num_threads,
     ](dst, src)
 
 
@@ -2401,6 +2421,7 @@ fn copy_dram_to_sram_async[
 fn copy_sram_to_dram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
+    num_threads: Int = thread_layout.size(),
 ](dst: LayoutTensor, src: LayoutTensor):
     constrained[
         dst.address_space == _GPUAddressSpace.GENERIC,
@@ -2415,6 +2436,13 @@ fn copy_sram_to_dram[
     constrained[
         src.layout.all_dims_known(), "Shared memory must have static layout"
     ]()
+
+    alias num_busy_threads = thread_layout.size()
+
+    @parameter
+    if num_threads > num_busy_threads:
+        if ThreadIdx.x >= num_busy_threads:
+            return
 
     var src_fragments = src.distribute[thread_layout](ThreadIdx.x)
     var dst_fragments = dst.distribute[thread_layout](ThreadIdx.x)
