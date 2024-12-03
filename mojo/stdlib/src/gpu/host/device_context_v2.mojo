@@ -458,7 +458,7 @@ struct DeviceFunctionV2[
                 self._func_impl.function_name.unsafe_ptr(),
                 self._func_impl.asm.unsafe_ptr(),
                 max_registers.or_else(-1),
-                threads_per_block.or_else(-1),
+                threads_per_block.or_else(-1) if is_nvidia_gpu() else -1,
                 int(cache_mode.or_else(-1)),
                 cache_config.or_else(CacheConfig(-1)).code,
                 max_dynamic_shared_size_bytes,
