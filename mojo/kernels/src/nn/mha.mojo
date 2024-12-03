@@ -2370,32 +2370,16 @@ fn mha_decoding_single_batch[
 
     var q_offset = depth * kv_head_idx * group
 
-    var q_gmem_block = LayoutTensor[
-        q_type,
-        Layout.row_major(group, depth),
-    ](q_ptr + int(q_offset))
-    var q_gmem_iter = q_gmem_block.tiled_iterator[group, BK, axis=1](0, 0)
+    alias q_gmem_layout = Layout.row_major(BM, depth)
+    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
+        q_ptr + int(q_offset),
+        RuntimeLayout(
+            RuntimeTuple[q_gmem_layout.shape, unsigned=True](group, depth),
+            RuntimeTuple[q_gmem_layout.stride, unsigned=True](depth, 1),
+        ),
+    )
+    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
-    # Preload q for all groups as loading in mma causes race condition
-    for i in range(tid * simd_size, BM * depth, BlockDim.x * simd_size):
-        var vec = SIMD[q_type, simd_size](0.0)
-        if i < depth * group:
-            vec = q_ptr.load[
-                width=simd_size,
-                alignment = alignof[SIMD[q_type, simd_size]](),
-            ](q_offset + i)
-        row, col = divmod(i, depth)
-        chunk_id, in_chunk_id = divmod(col, BK)
-        if i < BM * depth:
-            UnsafePointer[
-                Scalar[q_type],
-                address_space = AddressSpace.SHARED,
-                alignment = alignof[SIMD[q_type, simd_size]](),
-            ](q_smem.address).store[alignment = alignof[__type_of(vec)]()](
-                chunk_id * BM * BK + row * BK + in_chunk_id,
-                vec,
-            )
-    barrier()
     # Loop over Key and Value tiles
     for kv_tile_start_row in range(0, num_keys, BN):
         var k_ptr = k.block_paged_ptr[k_type, BN](
@@ -2414,26 +2398,47 @@ fn mha_decoding_single_batch[
         var kv_tile_num_rows = min(BN, num_keys - kv_tile_start_row)
 
         _ = p_reg_tile.fill(0)
-        multistage_mma[
-            BM,
-            BN,
-            BK,
-            WM,
-            WN,
-            num_threads,
-            num_pipeline_stages,
-            True,  # transpose_b
-            swizzle_a=False,
-        ](
-            p_reg_tile,
-            # Pass shared memory iterator to hint not loading from global memory.
-            q_smem_iter,
-            k_gmem_iter,
-            q_smem_iter,
-            k_smem_iter,
-            depth // BK,
-            num_b_rows=Int(kv_tile_num_rows),
-        )
+
+        if kv_tile_start_row == 0:
+            multistage_mma[
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                True,  # transpose_b
+                swizzle_a=True,
+            ](
+                p_reg_tile,
+                q_gmem_iter,
+                k_gmem_iter,
+                q_smem_iter,
+                k_smem_iter,
+                depth // BK,
+                num_b_rows=Int(kv_tile_num_rows),
+            )
+        else:
+            multistage_mma[
+                BM,
+                BN,
+                BK,
+                WM,
+                WN,
+                num_threads,
+                num_pipeline_stages,
+                True,  # transpose_b
+                swizzle_a=True,
+            ](
+                p_reg_tile,
+                q_smem_iter,
+                k_gmem_iter,
+                q_smem_iter,
+                k_smem_iter,
+                depth // BK,
+                num_b_rows=Int(kv_tile_num_rows),
+            )
 
         scale_and_mask_helper[
             num_n_mmas=num_n_mmas,
