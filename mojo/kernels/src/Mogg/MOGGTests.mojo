@@ -15,9 +15,9 @@ from runtime.asyncrt import MojoCallContextPtr
 from utils import StaticTuple, unroll
 from utils.index import IndexList
 
-# ===----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------===#
 # Special test targets just for generation tests
-# ===----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------===#
 
 
 @register_internal_override("mo.concat", 1)
