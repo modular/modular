@@ -24,6 +24,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 
 using namespace M;
@@ -668,13 +669,22 @@ emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
 static ASTType addImplicitTypeParams(ASTType type,
                                      TypeCheckedParamList &paramList,
                                      bool append) {
-  // Functor to insert an element into a vector, either at the front or back.
-  auto insertFn = [append](auto &vec, auto val) {
-    if (append)
-      vec.push_back(val);
-    else
-      vec.insert(vec.begin(), val);
+  SmallVector<ParamDeclAttr> paramDeclAttrs;
+  SmallVector<StringAttr> names;
+  SmallVector<PassingKind> passingKinds;
+  // Functor to insert the pending vectors into paramList, either at the front
+  // or back.
+  auto insertFn = [append](auto &dst, auto &src) {
+    dst.insert(append ? dst.end() : dst.begin(), src.begin(), src.end());
   };
+  auto commitChanges = llvm::make_scope_exit([&]() {
+    // All lists guaranteed to have the same length.
+    if (paramDeclAttrs.empty())
+      return;
+    insertFn(paramList.paramDeclAttrs, paramDeclAttrs);
+    insertFn(paramList.names, names);
+    insertFn(paramList.passingKinds, passingKinds);
+  });
 
   // The parameter decl references that will be used to fully bind the type,
   // plus a parameter evaluator we use to progressively refine the type.
@@ -686,11 +696,10 @@ static ASTType addImplicitTypeParams(ASTType type,
     auto funcDecl =
         ParamDeclAttr::get(paramList.declScope.mangleParamName(name),
                            evaluator.getReboundType(type));
-
-    insertFn(paramList.names, StringAttr::get(type.getContext()));
-    insertFn(paramList.passingKinds,
-             append ? PassingKind::Implicit : PassingKind::Inferred);
-    insertFn(paramList.paramDeclAttrs, funcDecl);
+    names.push_back(StringAttr::get(type.getContext()));
+    passingKinds.push_back(append ? PassingKind::Implicit
+                                  : PassingKind::Inferred);
+    paramDeclAttrs.push_back(funcDecl);
     paramValues.push_back(ParamDeclRefAttr::get(funcDecl));
     evaluator.addInputValue(paramValues.back());
   };

@@ -309,6 +309,18 @@ fn autoparam_of_params[a: int, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
 
+@value
+@register_passable("trivial")
+struct DependentParams[x: int, //, p: IndexParam[x]]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"autoparam_of_dependent_params
+# CHECK-SAME: <[""]*"x`", [""]*"p`1": {{.*}}IndexParam<*"x`">, +, dp: {{.*}}DependentParams<*"x`", :{{.*}}IndexParam<*"x`"> *"p`1">>
+fn autoparam_of_dependent_params[dp: DependentParams]():
+    pass
+
+
 # CHECK-LABEL: lit.func @"function_autoparam
 # CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<[""][[G_LT:.*]]: origin.set, [""][[F_LT:.*]]: origin.set, +
 # CHECK-SAME: f: !lit.signature<:[[F_LT]]:() capturing -> !kgen.none>
