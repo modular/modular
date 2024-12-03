@@ -448,7 +448,7 @@ def test_llama_language_model():
         "num_attention_heads": num_attention_heads,
         "num_key_value_heads": num_key_value_heads,
         "intermediate_size": 37,
-        "hidden_act": "gelu",
+        "hidden_act": "silu",
         "max_position_embeddings": max_position_embeddings,
         "initializer_range": 0.02,
         "rope_scaling": {"rope_type": "default"},
@@ -544,7 +544,7 @@ def test_llama_language_model():
             input_ids=graph_input_ids,
             attention_mask=graph_attention_mask,
             input_row_offset=graph_input_row_offset,
-        )[1]
+        )
         graph.output(logits)
 
     compiled = session.load(graph, weights_registry=weights_registry)
