@@ -515,7 +515,7 @@ fn fn_with_anon_refs(
 
 
 # CHECK-LABEL: "name": "fn_with_named_refs",
-# CHECK:     "signature": "fn_with_named_refs[life: MutableOrigin](ref [life] ref_arg1: AnyTrivialRegType) -> ref [life] AnyTrivialRegType",
+# CHECK:     "signature": "fn_with_named_refs[life: Origin[True]](ref [life] ref_arg1: AnyTrivialRegType) -> ref [life] AnyTrivialRegType",
 fn fn_with_named_refs[
     life: MutableOrigin
 ](ref [life]ref_arg1: AnyTrivialRegType) -> ref [
