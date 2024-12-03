@@ -22,7 +22,7 @@ from llama_vision.language_model import (
     TextModel,
     instantiate_language_model,
 )
-from max.driver import CPU, Tensor
+from max.driver import CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
@@ -290,7 +290,7 @@ def language_model_given_pytorch_model(
     rope_theta: float,
     kv_params,
     weights_registry: dict,
-    dtype: DType = DType.float32,
+    dtype: DType,
 ):
     rotary_embedding = OptimizedRotaryEmbedding(
         dim=hidden_size,
@@ -435,20 +435,20 @@ def test_llama_language_model():
     cross_attention_layers = [1]
     num_hidden_layers = 2
     max_position_embeddings = 512
-    hidden_size = 4096
+    hidden_size = 1024
     num_key_value_heads = 8
     num_attention_heads = 8
     rope_theta = 500000.0
 
     config_dict = {
         "model_type": "mllama",
-        "vocab_size": 99,
+        "vocab_size": 128,
         "hidden_size": hidden_size,
         "num_hidden_layers": num_hidden_layers,
         "num_attention_heads": num_attention_heads,
         "num_key_value_heads": num_key_value_heads,
-        "intermediate_size": 37,
-        "hidden_act": "silu",
+        "intermediate_size": hidden_size * 2,
+        "hidden_act": "gelu",
         "max_position_embeddings": max_position_embeddings,
         "initializer_range": 0.02,
         "rope_scaling": {"rope_type": "default"},
@@ -471,7 +471,7 @@ def test_llama_language_model():
     pytorch_model = MllamaForCausalLM(config=pytorch_lm_config)
     pytorch_model.to(torch_device)
     pytorch_model.eval()
-    with torch.autocast(device_type="cpu", dtype=torch.float16):
+    with torch.autocast(device_type="cuda", dtype=torch.float32):
         pytorch_logits = pytorch_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -502,9 +502,10 @@ def test_llama_language_model():
         rope_theta=rope_theta,
         kv_params=kv_params,
         weights_registry=weights_registry,
+        dtype=dtype,
     )
 
-    session = InferenceSession()
+    session = InferenceSession(devices=[CUDA()])
 
     kv_manager = load_kv_manager(
         params=kv_params,
@@ -512,11 +513,15 @@ def test_llama_language_model():
         max_seq_len=max_position_embeddings,  # verify this.
         num_layers=num_hidden_layers,
         session=session,
-        devices=[CPU()],
+        devices=[CUDA()],
     )
 
     seq_ids = kv_manager.claim(n=batch_size)
-    kv_cache_inputs = kv_manager.fetch(seq_ids)
+    kv_cache_inputs = tuple(
+        [element for tup in kv_manager.fetch(seq_ids) for element in tup]
+    )
+
+    # define graph API input types
     input_ids_type = TensorType(
         DType.int64,
         shape=input_ids.shape,  # batch_size, sequence_length
