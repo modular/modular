@@ -21,7 +21,8 @@ from max.serve.telemetry.metrics import METRICS
 console_level: Union[int, str] = logging.INFO
 file_path: str = ""
 file_level: Union[int, str, None] = None
-otlp_level: Union[int, str, None] = logging.INFO
+otlp_level: Union[int, str, None] = None
+metrics_egress_enabled = True
 if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
     console_level = logging.getLevelName(
         os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"]
@@ -35,8 +36,9 @@ if "MAX_SERVE_LOGS_FILE_PATH" in os.environ:
     )
 if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
     otlp_level = None
+    metrics_egress_enabled = False
 configureLogging(console_level, file_path, file_level, otlp_level)
-METRICS.configure(otlp_level)
+METRICS.configure(metrics_egress_enabled)
 
 
 from contextlib import asynccontextmanager

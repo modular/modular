@@ -43,9 +43,9 @@ class _Metrics:
         self._reqs_running: Any = _NoOpMetric()
         self._model_load_time: Any = _NoOpMetric()
 
-    def configure(self, otlp_level: Union[int, str, None] = None):
+    def configure(self, egress_enabled: bool):
         meterProviders = [PrometheusMetricReader("metrics")]  # type: ignore
-        if otlp_level is not None:
+        if egress_enabled:
             meterProviders.append(
                 PeriodicExportingMetricReader(  # type: ignore
                     OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
