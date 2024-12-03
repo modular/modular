@@ -14,15 +14,14 @@ from evaluate_llama import SupportedTestModels
 from max.driver import DeviceSpec
 from max.pipelines.config import SupportedEncoding
 from max.pipelines.tokenizer import TextTokenizer
-from max.serve.mocks.mock_api_requests import simple_openai_request
-from max.serve.schemas.openai import CreateChatCompletionResponse  # type: ignore
+from max.serve.schemas.openai import (  # type: ignore
+    CreateChatCompletionResponse,
+)
 from test_common.evaluate import PROMPTS
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
 
 from .params import ModelParams
-
-pytestmark = pytest.mark.skip("TODO(ylou): Fix!!")
 
 MAX_READ_SIZE = 10 * 1024
 
@@ -42,12 +41,17 @@ MAX_READ_SIZE = 10 * 1024
     indirect=True,
 )
 async def test_tinyllama_serve_cpu(app):
-    async with TestClient(app) as client:
+    async with TestClient(app, timeout=90.0) as client:
         raw_response = await client.post(
-            "/v1/chat/completions", json=simple_openai_request()
+            "/v1/chat/completions",
+            json={
+                "model": "modularai/llama-3.1",
+                "messages": [{"role": "user", "content": "tell me a joke"}],
+                "stream": False,
+            },
         )
         # This is not a streamed completion - There is no [DONE] at the end.
-        response = CreateChatCompletionResponse.model_validate_json(
+        response = CreateChatCompletionResponse.model_validate(
             raw_response.json()
         )
 
@@ -55,7 +59,6 @@ async def test_tinyllama_serve_cpu(app):
         assert response.choices[0].finish_reason == "stop"
 
 
-@pytest.mark.xfail(reason="SI-667")
 @pytest.mark.parametrize(
     "pipeline_model_config",
     [
@@ -72,7 +75,7 @@ async def test_tinyllama_serve_cpu(app):
 @pytest.mark.asyncio
 async def test_tinyllama_serve_cpu_stream(app, testdata_directory):
     NUM_TASKS = 16
-    model_encoding = SupportedTestModels.get("tinyllama", "bfloat16")
+    model_encoding = SupportedTestModels.get("tinyllama", "float32")
     golden_data_path = find_runtime_path(
         model_encoding.golden_data_fname(),
         testdata_directory,
@@ -90,12 +93,12 @@ async def test_tinyllama_serve_cpu_stream(app, testdata_directory):
     inference_config = model_encoding.build_config(testdata_directory)
     # context = TextContext(prompt="", max_tokens=-1, cache_seq_id=0)
     tokenizer = TextTokenizer(inference_config)
-    expected_response = [await tokenizer.delegate.decode(x) for x in tokens]
+    expected_response = [tokenizer.delegate.decode(x) for x in tokens]
 
     def openai_completion_request(content):
         """Create the json request for /v1/completion (not chat)."""
         return {
-            "model": "gpt-3.5-turbo",
+            "model": "modularai/llama-3.1",
             "prompt": content,
             "temperature": 0.7,
         }
@@ -128,7 +131,7 @@ async def test_tinyllama_serve_cpu_stream(app, testdata_directory):
 
     tasks = []
     resp = []
-    async with TestClient(app, timeout=5.0) as client:
+    async with TestClient(app, timeout=90.0) as client:
         for i in range(NUM_TASKS):
             # we skip the first prompt as it is longer than 512
             data_idx = 1 + (i % (len(PROMPTS) - 1))
@@ -137,9 +140,5 @@ async def test_tinyllama_serve_cpu_stream(app, testdata_directory):
             tasks.append(
                 asyncio.create_task(main_stream(client, msg, expected))
             )
-        for t in tasks:  # type: ignore
-            resp.append(await t)  # type: ignore
-        for t in tasks:  # type: ignore
-            resp.append(await t)  # type: ignore
         for t in tasks:  # type: ignore
             resp.append(await t)  # type: ignore

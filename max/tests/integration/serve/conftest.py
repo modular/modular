@@ -9,8 +9,9 @@ import os
 from pathlib import Path
 
 import pytest
-from max.pipelines.config import PipelineConfig
-from max.pipelines.registry import PIPELINE_REGISTRY
+from evaluate_llama import SupportedTestModels
+from max.pipelines import PIPELINE_REGISTRY
+from max.pipelines.kv_cache import KVCacheStrategy
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
 from max.serve.config import APIType, Settings
 from max.serve.debug import DebugSettings
@@ -34,43 +35,21 @@ def pipeline_model_config(testdata_directory, request):
     invoking it with.
     https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
     """
-    config = PipelineConfig(
-        weight_path=[Path(testdata_directory / request.param.weight_path)],
-        version="3.1",
+    return SupportedTestModels.get(
+        "tinyllama", request.param.encoding
+    ).build_config(
+        testdata_directory,
         max_length=request.param.max_length,
         max_new_tokens=request.param.max_new_tokens,
-        quantization_encoding=request.param.encoding,
         device_spec=request.param.device_spec,
+        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        max_cache_batch_size=16,
     )
-    return config
-
-
-# class DummyTokenizer(PreTrainedPipelineTokenizer[str]):
-#     def __init__(self, delegate) -> None:
-#         super().__init__(delegate)
-
-#     async def new_context(self, request: TokenGeneratorRequest):
-#         return ""
-
-
-# def identity(x):
-#     return x
 
 
 @pytest.fixture(scope="session")
 def app(pipeline_model_config):
     """The FastAPI app used to serve the model."""
-    # repo_id = "modularai/llama-3.1"
-    # tokenizer = DummyTokenizer(AutoTokenizer.from_pretrained(repo_id))
-    # pipeline = TokenGeneratorPipeline(  # type: ignore
-    #     TokenGeneratorPipelineConfig.continuous_heterogenous(
-    #         tg_batch_size=tinyllama_model.config.max_cache_batch_size,
-    #         ce_batch_size=1,
-    #     ),
-    #     "test",
-    #     tokenizer,
-    # )
-
     pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(
         pipeline_model_config
     )
@@ -99,26 +78,3 @@ def app(pipeline_model_config):
     debug_settings = DebugSettings()
     app = fastapi_app(settings, debug_settings, serving_settings)
     return app
-
-
-# @pytest.fixture(scope="session")
-# def tinyllama_model(testdata_directory, request, session):
-#     """The tiny Llama 3 model that is being served.
-
-#     Note: Only one instance of a fixture is cached at a time.
-#     So we may get multiple invocations of this based on the parameters we are
-#     invoking it with.
-#     https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
-#     """
-#     config = PipelineConfig(
-#         weight_path=[Path(testdata_directory / request.param.weight_path)],
-#         version="3.1",
-#         max_length=request.param.max_length,
-#         max_new_tokens=request.param.max_new_tokens,
-#         quantization_encoding=request.param.encoding,
-#         device_spec=request.param.device_spec,
-#     )
-
-#     model = Llama3Model(pipeline_config=config, session=session)
-#     return model
-#     return model
