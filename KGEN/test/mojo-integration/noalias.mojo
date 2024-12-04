@@ -39,7 +39,7 @@ fn noalias(a0: UnsafePointer[Float32], b: UnsafePointer[Float32]) -> Float32:
 #   Origin struct after fixing check that this parametric function can still
 #   be codegen'ed.
 @export
-fn any_life[life: MutableOrigin.type](ref [life]r: Int, mut x: Int):
+fn any_life[life: MutableOrigin._mlir_type](ref [life]r: Int, mut x: Int):
     pass
 
 
@@ -51,5 +51,5 @@ fn any_life[life: MutableOrigin.type](ref [life]r: Int, mut x: Int):
 #   Origin struct after fixing check that this parametric function can still
 #   be codegen'ed.
 @export
-fn imm_life[life: ImmutableOrigin.type](ref [life]r: Int, mut x: Int):
+fn imm_life[life: ImmutableOrigin._mlir_type](ref [life]r: Int, mut x: Int):
     pass
