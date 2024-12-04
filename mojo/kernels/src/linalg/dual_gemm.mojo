@@ -19,6 +19,7 @@ from gpu import (
     barrier,
     lane_id,
     warp_broadcast,
+    warp_sum,
 )
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import A100
@@ -49,7 +50,7 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from memory import UnsafePointer
+from memory import UnsafePointer, memset_zero, stack_allocation
 from memory.pointer import _GPUAddressSpace as AddressSpace
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
@@ -885,7 +886,7 @@ fn dual_gemm[
     b0: NDBuffer[b_type, 2, b_shape],
     b1: NDBuffer[b_type, 2, b_shape],
     ctx: DeviceContext,
-):
+) raises:
     # TODO: Autotune. Currently, these are a copy+paste of `_matmul_gpu`.
     #       These should be roughly optimal, as the dual gemm is sort of
     #       like one gemm where `B` has twice as many columns, but it
@@ -899,8 +900,7 @@ fn dual_gemm[
     var M = shape.M
     var N = 2 * shape.N
     var K = shape.K
-    var multi_gemm_cond = (N % 128 == 0 and K % 32 == 0 and K >= 128)
-    # var multi_gemm_cond = (M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128)
+    var multi_gemm_cond = (M > 1 and N % 128 == 0 and K % 32 == 0 and K >= 128)
     alias multistage_gemm_supported_shape = b_shape.all_known[
         2
     ]() and a_shape.has_value[1]() and c_shape.has_value[1]()
@@ -1079,8 +1079,222 @@ fn dual_gemm[
             ctx,
         )
         return
+
+    # Gemv
+    elif M == 1:
+        dual_gemv[elementwise_lambda_fn=elementwise_lambda_fn,](
+            c, a, b0, b1, ctx
+        )
+        return
+
     print("M,N,K =", M, N, K)
     abort("dual gemm size unsupported.")
+
+
+# ---------------------------------------------------------------------------- #
+# Dual-Gemv
+# ---------------------------------------------------------------------------- #
+
+
+fn dual_gemv_kernel[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    simd_width: UInt,
+    tile_m: UInt,
+    tile_n: UInt,
+    num_threads: UInt,
+    binary_lambda_fn: binary_fn_type,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
+](
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b0: NDBuffer[b_type, 2, b_shape],
+    b1: NDBuffer[b_type, 2, b_shape],
+):
+    var m: UInt = c.dim(0)
+    var n: UInt = b0.dim(0)
+    var k: UInt = b0.dim(1)
+
+    var tid = ThreadIdx.x
+
+    # tile_m is number of rows in A, defaults to 1.
+    # tile_n is number of rows in B0 and B1, each gets tile_n // 2.
+    alias tile_n_per_B = tile_n // 2
+    var tile_id_m = BlockIdx.x * tile_m
+    var tile_id_n = BlockIdx.y * tile_n_per_B
+
+    alias tile_k = simd_width * num_threads
+    var tile_a = stack_allocation[
+        simd_width, a_type, address_space = AddressSpace.LOCAL
+    ]()
+    var tile_w = stack_allocation[
+        tile_n * simd_width, b_type, address_space = AddressSpace.LOCAL
+    ]()
+    var acc = stack_allocation[
+        tile_m * tile_n, s_type, address_space = AddressSpace.LOCAL
+    ]()
+
+    var tile_b0 = tile_w
+    var tile_b1 = tile_w.offset(tile_n_per_B * simd_width)
+
+    alias align_act = alignof[SIMD[a_type, simd_width]]()
+    alias align_weight = alignof[SIMD[b_type, simd_width]]()
+
+    memset_zero[count = tile_m * tile_n](acc)
+
+    var act_idx = tile_id_m * k
+    var weight_idx = tile_id_n * k
+    var output_idx = tile_id_m * n + tile_id_n
+
+    # Each thread sums local data in K.
+    for idxK in range(tid * simd_width, k, tile_k):
+
+        @parameter
+        for i in range(int(tile_n_per_B)):
+            var b0_vec = b0.data.load[width=simd_width, alignment=align_weight](
+                weight_idx + i * k + idxK
+            )
+
+            tile_b0.store[alignment=align_weight](i * simd_width, b0_vec)
+
+        @parameter
+        for i in range(int(tile_n_per_B)):
+            var b1_vec = b1.data.load[width=simd_width, alignment=align_weight](
+                weight_idx + i * k + idxK
+            )
+
+            tile_b1.store[alignment=align_weight](i * simd_width, b1_vec)
+
+        @parameter
+        for i in range(int(tile_m)):
+            var a_vec = a.data.load[width=simd_width, alignment=align_act](
+                act_idx + i * k + idxK
+            )
+
+            tile_a.store[alignment=align_act](i * simd_width, a_vec)
+
+            @parameter
+            for j in range(int(tile_n)):
+
+                @parameter
+                for l in range(int(simd_width)):
+                    acc[i * tile_n + j] += (
+                        tile_a[l].cast[s_type]()
+                        * tile_w[j * simd_width + l].cast[s_type]()
+                    )
+
+    # Warps are arranged along K.
+    alias k_warp_num = num_threads // WARP_SIZE
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var lane_id = tid % WARP_SIZE
+    var shmem = stack_allocation[
+        k_warp_num * tile_m * tile_n,
+        s_type,
+        address_space = AddressSpace.SHARED,
+    ]()
+
+    # Each warp sums across its threads and stages results in shared memory.
+    # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
+    @parameter
+    for mi in range(int(tile_m)):
+
+        @parameter
+        for ni in range(int(tile_n)):
+            var val = warp_sum(acc[mi * tile_n + ni])
+            if lane_id == 0:
+                shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
+
+    barrier()
+
+    # Sum across warps' results in shared memory and apply the binary op.
+    for ii in range(tid, tile_m * tile_n_per_B, num_threads):
+        var mid = ii // tile_n_per_B
+        var nid = ii % tile_n_per_B
+        var val0 = Scalar[s_type]()
+        var val1 = Scalar[s_type]()
+
+        @parameter
+        for jj in range(int(k_warp_num)):
+            val0 += shmem[jj * tile_m * tile_n + mid * tile_n + nid]
+            val1 += shmem[
+                jj * tile_m * tile_n + mid * tile_n + nid + tile_n_per_B
+            ]
+
+        val0 = binary_lambda_fn(val0, val1)
+
+        @parameter
+        if elementwise_lambda_fn:
+            alias elementwise_lambda = elementwise_lambda_fn.value()
+            elementwise_lambda[c_type, 1](
+                Index(0, output_idx + mid * n + nid), val0.cast[c_type]()
+            )
+        else:
+            c.data.store(output_idx + mid * n + nid, val0.cast[c_type]())
+
+
+fn dual_gemv[
+    c_type: DType,
+    c_shape: DimList,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList, //,
+    *,
+    binary_lambda_fn: binary_fn_type = swilu,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b0: NDBuffer[b_type, 2, b_shape],
+    b1: NDBuffer[b_type, 2, b_shape],
+    ctx: DeviceContext,
+) raises:
+    var M = c.dim(0)
+    var N = c.dim(1)
+
+    alias simd_width = simdwidthof[a_type]()
+    alias tile_m = 1
+    alias tile_n = 2
+    alias num_threads = 128
+
+    alias kernel_type = dual_gemv_kernel[
+        c_type,
+        c_shape,
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        simd_width,
+        tile_m,
+        tile_n,
+        num_threads,
+        binary_lambda_fn,
+        elementwise_lambda_fn,
+    ]
+
+    var kernel = ctx.compile_function[kernel_type](
+        threads_per_block=int(num_threads)
+    )
+
+    ctx.enqueue_function(
+        kernel,
+        c,
+        a,
+        b0,
+        b1,
+        grid_dim=(ceildiv(M, tile_m), ceildiv(N, tile_n // 2)),
+        block_dim=num_threads,
+    )
+
+
+# ---------------------------------------------------------------------------- #
+# SwiGLU Layer
+# ---------------------------------------------------------------------------- #
 
 
 @register_internal("swishGLU")
@@ -1100,7 +1314,7 @@ fn swishGLU[
     b1: NDBuffer[b_type, 2, b_shape],
     c: NDBuffer[c_type, 2, c_shape],
     ctx: MojoCallContextPtr,
-):
+) raises:
     """
     Reference:
         GLU Variants Improve Transformer
