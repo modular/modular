@@ -17,8 +17,6 @@ from typing import Callable, Mapping, Optional, Sequence, TextIO, Union
 
 import click
 
-DUMMY_PIPELINE = "dummy"
-
 
 class DeviceType(enum.Enum):
     CPU = "cpu"

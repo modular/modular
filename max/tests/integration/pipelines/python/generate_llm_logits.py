@@ -21,13 +21,7 @@ import transformers
 # MAX
 from max import driver
 from max import pipelines
-from max.pipelines import (
-    interfaces,
-    TextGenerationPipeline,
-    HuggingFaceFile,
-    PIPELINE_REGISTRY,
-    PipelineModel,
-)
+from max.pipelines import interfaces
 
 # Pipelines
 from architectures import register_all_models
@@ -44,9 +38,9 @@ from test_common import numpy_encoder
 class MaxPipelineAndTokenizer:
     """An instantiated MAX pipeline and pieces necessary to run it."""
 
-    model: PipelineModel
+    model: pipelines.PipelineModel
     generator: Union[
-        interfaces.TokenGenerator, TextGenerationPipeline
+        interfaces.TokenGenerator, pipelines.TextGenerationPipeline
     ]  # TODO(kcaverly): Move to only TextGenerationPipeline
     tokenizer: interfaces.PipelineTokenizer
 
@@ -212,8 +206,8 @@ class LlamaPipelineOracle(PipelineOracle):
             ],
             device_spec=device_spec,
         )
-        tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, TextGenerationPipeline)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
             model=pipeline._pipeline_model,
             generator=pipeline,
@@ -287,7 +281,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         #     trust_remote_code=True,
         # )
         # tokenizer = TextTokenizer(config)
-        # generator = TextGenerationPipeline(
+        # generator = pipelines.TextGenerationPipeline(
         #     pipeline_config=config,
         #     pipeline_model=ReplitModel,
         #     eos_token_id=tokenizer.eos,
@@ -350,8 +344,8 @@ class ReplitPipelineOracle(PipelineOracle):
             huggingface_repo_id="modularai/replit-code-1.5",
             trust_remote_code=True,
         )
-        tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
-        assert isinstance(pipeline, TextGenerationPipeline)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
             # Unlike the other pipelines, replit.Replit is both a model and a
             # generator at the same time.
@@ -430,15 +424,15 @@ class MistralPipelineOracle(PipelineOracle):
             device_spec=device_spec,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             weight_path=[
-                HuggingFaceFile(
+                pipelines.HuggingFaceFile(
                     "mistralai/Mistral-Nemo-Instruct-2407",
                     "consolidated.safetensors",
                 ).download()
             ],
         )
-        tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 
-        assert isinstance(pipeline, TextGenerationPipeline)
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
         return MaxPipelineAndTokenizer(
             model=pipeline._pipeline_model,
             generator=pipeline,
