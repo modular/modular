@@ -11,9 +11,23 @@ from __future__ import annotations
 import functools
 import inspect
 import os
-from typing import Callable
+from typing import Callable, TypeVar, overload
 
 from max._profiler import Trace
+
+_FuncType = TypeVar("_FuncType", bound=Callable)
+
+
+@overload
+def traced(
+    func: _FuncType, *, message: str | None = None, color: str = "blue"
+) -> _FuncType: ...
+
+
+@overload
+def traced(
+    func: None = None, *, message: str | None = None, color: str = "blue"
+) -> Callable[[_FuncType], _FuncType]: ...
 
 
 def traced(
