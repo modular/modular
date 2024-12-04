@@ -97,6 +97,7 @@ struct CallGraphBase {
   using FuncOpT = typename NodeT::FuncOpT;
   using CallOpT = typename NodeT::CallOpT;
   using BaseT = CallGraphBase<DerivedT, NodeT>;
+  using EdgeT = typename NodeT::EdgeT;
 
   /// Get a reference to the derived class.
   DerivedT &getDerived() { return *static_cast<DerivedT *>(this); }
