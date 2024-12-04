@@ -9,256 +9,310 @@ transformers package reference implementation.
 
 import pytest
 import torch
-import torch.nn as nn
 from llama_vision.positional_embedding import (
     PrecomputedAspectRatioEmbedding,
     PrecomputedPositionEmbedding,
 )
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType
+from max.graph import Graph, TensorType, TensorValue, Weight
 from nn import Embedding
+from test_common.distance_metrics import is_euclidean_distance_close
+from transformers.models.mllama.configuration_mllama import MllamaVisionConfig
+from transformers.models.mllama.modeling_mllama import (
+    MllamaPrecomputedAspectRatioEmbedding,
+    MllamaPrecomputedPositionEmbedding,
+)
 
 
-class TorchPrecomputedPositionEmbedding(nn.Module):
+class PositionalEmbedding:
+    """(Test) Model containing position embedding layers."""
+
+    position_embedding: PrecomputedPositionEmbedding
+    """Layer for computing positional embedding."""
+
+    dtype: DType
+    """DType of the model weights."""
+
     def __init__(
         self,
-        max_aspect_ratio_id: int,
-        max_num_tiles: int,
-        num_patches: int,
-        hidden_size: int,
-    ):
-        super().__init__()
-        self.max_num_tiles = max_num_tiles
-        self.max_aspect_ratio_id = max_aspect_ratio_id
-        self.num_patches = num_patches
-        self.hidden_size = hidden_size
-        self.scale = hidden_size**-0.5
+        config: MllamaVisionConfig,
+        torch_pos_embed: MllamaPrecomputedPositionEmbedding,
+        dtype: DType,
+    ) -> None:
+        """Inits position embedding layers using the torch model."""
+        self.dtype = dtype
 
-        self.gate = nn.Parameter(torch.zeros(1))
-
-        # position embedding
-        position_embedding = torch.randn(self.num_patches, self.hidden_size)
-        self.embedding = nn.Parameter(self.scale * position_embedding)
-
-        # tile position embedding
-        self.tile_embedding = nn.Embedding(
-            self.max_aspect_ratio_id + 1,
-            self.max_num_tiles * self.num_patches * self.hidden_size,
+        # Use torch model weights to initialize MAX graph position embedding
+        # shapes.
+        self.position_embedding = PrecomputedPositionEmbedding(
+            image_size=config.image_size,
+            patch_size=config.patch_size,
+            max_num_tiles=config.max_num_tiles,
+            hidden_size=config.hidden_size,
+            gate=Weight(
+                name="gate",
+                dtype=self.dtype,
+                shape=torch_pos_embed.gate.shape,
+            ),
+            embedding=Weight(
+                name="embedding",
+                dtype=self.dtype,
+                shape=torch_pos_embed.embedding.shape,
+            ),
+            tile_embedding=Embedding(
+                Weight(
+                    name="tile_embedding",
+                    dtype=self.dtype,
+                    shape=torch_pos_embed.tile_embedding.weight.shape,
+                )
+            ),
         )
 
-    def forward(
-        self, hidden_state: torch.Tensor, aspect_ratio_ids: torch.Tensor
-    ) -> torch.Tensor:
-        # position embeddings
-        gated_position_embedding = (1 - self.gate.tanh()) * self.embedding
-        hidden_state = hidden_state + gated_position_embedding.view(
-            1, 1, self.num_patches, self.hidden_size
+    def __call__(
+        self,
+        hidden_state: TensorValue,
+        max_aspect_ratio_ids: TensorValue,
+    ) -> TensorValue:
+        return self.position_embedding(
+            hidden_state,
+            max_aspect_ratio_ids,
         )
 
-        # precomputed tile position embeddings
-        tile_position_embedding = self.tile_embedding(aspect_ratio_ids)
-        batch_size = hidden_state.shape[0]
-        tile_position_embedding = tile_position_embedding.reshape(
-            batch_size, self.max_num_tiles, self.num_patches, self.hidden_size
-        )
-        gated_tile_position_embedding = (
-            self.gate.tanh() * tile_position_embedding
-        )
-        hidden_state = hidden_state + gated_tile_position_embedding
 
-        return hidden_state
+class AspectRatioEmbedding:
+    """(Test) Model containing aspect ratio embedding layers."""
 
+    aspect_ratio_embedding: PrecomputedAspectRatioEmbedding
+    """Layer for computing aspect ratio embedding."""
 
-class TorchPrecomputedAspectRatioEmbedding(nn.Module):
+    dtype: DType
+    """DType of the model weights."""
+
     def __init__(
         self,
-        max_aspect_ratio_id: int,
-        max_num_tiles: int,
-        hidden_size: int,
-        is_gated: bool = True,
-    ):
-        super().__init__()
-        self.max_num_tiles = max_num_tiles
-        self.hidden_size = hidden_size
-        self.max_aspect_ratio_id = max_aspect_ratio_id
-        self.is_gated = is_gated
+        config: MllamaVisionConfig,
+        is_gated: bool,
+        torch_aspect_ratio_embed: MllamaPrecomputedAspectRatioEmbedding,
+        dtype: DType,
+    ) -> None:
+        """Inits aspect ratio embedding layers using the torch model."""
+        self.dtype = dtype
 
-        self.embedding = nn.Embedding(
-            self.max_aspect_ratio_id + 1, self.max_num_tiles * self.hidden_size
+        # Use torch model weights to initialize MAX graph aspect ratio embedding
+        # shapes.
+        self.aspect_ratio_embedding = PrecomputedAspectRatioEmbedding(
+            max_num_tiles=config.max_num_tiles,
+            hidden_size=config.hidden_size,
+            gate=Weight(
+                name="gate",
+                dtype=self.dtype,
+                shape=torch_aspect_ratio_embed.gate.shape,
+            ),
+            embedding=Embedding(
+                Weight(
+                    name="embedding",
+                    dtype=self.dtype,
+                    shape=torch_aspect_ratio_embed.embedding.weight.shape,
+                )
+            ),
+            is_gated=is_gated,
         )
-        if is_gated:
-            self.gate = nn.Parameter(torch.zeros(1))
 
-    def forward(
-        self, hidden_state: torch.Tensor, aspect_ratio_ids: torch.Tensor
-    ) -> torch.Tensor:
-        embeddings = self.embedding(aspect_ratio_ids)
-        embeddings = embeddings.reshape(
-            -1, self.max_num_tiles, 1, self.hidden_size
+    def __call__(
+        self,
+        hidden_state: TensorValue,
+        max_aspect_ratio_ids: TensorValue,
+    ) -> TensorValue:
+        return self.aspect_ratio_embedding(
+            hidden_state,
+            max_aspect_ratio_ids,
         )
-
-        if self.is_gated:
-            embeddings = embeddings * self.gate.tanh()
-
-        hidden_state = hidden_state + embeddings
-        return hidden_state
 
 
 @pytest.mark.parametrize(
-    "max_aspect_ratio_id,max_num_tiles,num_patches,hidden_size,patch_size,image_size",
+    "max_num_tiles,num_patches,hidden_size,patch_size,image_size",
     [
-        (8, 4, 1025, 1280, 14, 448),
+        (4, 1025, 1280, 14, 448),
     ],
 )
 def test_vision_precomputed_position_embedding(
     session: InferenceSession,
-    max_aspect_ratio_id: int,
     max_num_tiles: int,
     num_patches: int,
     hidden_size: int,
     patch_size: int,
     image_size: int,
 ) -> None:
-    input_type = TensorType(
-        DType.float32, [1, max_num_tiles, num_patches, hidden_size]
+    # Globally disable saving activations for backprop.
+    torch.set_grad_enabled(False)
+
+    # Reduced set of vision configs for testing purposes.
+    config = MllamaVisionConfig(
+        hidden_size=hidden_size,
+        image_size=image_size,
+        max_num_tiles=max_num_tiles,
+        model_type="mllama_vision_model",
+        patch_size=patch_size,
     )
-    gate_weight_type = TensorType(DType.float32, [1])
-    embedding_weight_type = TensorType(
-        DType.float32, [num_patches, hidden_size]
+
+    # Set up PyTorch position embedding layer.
+    torch_dtype = torch.float32
+    torch_precomputed_pos_embed = MllamaPrecomputedPositionEmbedding(
+        config=config
     )
-    tile_embedding_weight_type = TensorType(
-        DType.float32,
-        [max_aspect_ratio_id + 1, max_num_tiles * num_patches * hidden_size],
+    torch_precomputed_pos_embed.to(torch_dtype)
+
+    # Set up MAX graph position embedding layer.
+    dtype = DType.float32
+
+    hidden_state_type = TensorType(
+        dtype, [1, max_num_tiles, num_patches, hidden_size]
     )
-    max_aspect_ratio_ids_type = TensorType(DType.int64, [1, 1])
-    with Graph(
-        "precomputed_position_embedding",
+    aspect_ratio_ids_type = TensorType(DType.int64, [1, 1])
+
+    # Phase 1: op staging.
+    graph = Graph(
+        "test_precomputed_position_embedding",
+        forward=PositionalEmbedding(config, torch_precomputed_pos_embed, dtype),
         input_types=[
-            input_type,
-            gate_weight_type,
-            embedding_weight_type,
-            tile_embedding_weight_type,
-            max_aspect_ratio_ids_type,
+            hidden_state_type,
+            aspect_ratio_ids_type,
         ],
-    ) as graph:
-        (
-            x,
-            gate_weight,
-            embedding_weight,
-            tile_embedding_weight,
-            max_aspect_ratio_ids,
-        ) = graph.inputs
+    )
 
-        embedding = PrecomputedPositionEmbedding(
-            image_size=image_size,
-            patch_size=patch_size,
-            max_num_tiles=max_num_tiles,
-            hidden_size=hidden_size,
-            gate=gate_weight,  # type: ignore
-            embedding=embedding_weight,  # type: ignore
-            tile_embedding=Embedding(tile_embedding_weight),  # type: ignore
-        )
-        graph.output(embedding(x, max_aspect_ratio_ids))  # type: ignore
+    # Phase 2: model compilation and weight initialization.
 
-        # @modular_graph_test(session, graph)
-        # def test_correctness(execute, inputs, torch_inputs):
-        #     result = execute(inputs)
-        #     x, gate_weight, embedding_weight, tile_embedding_weight, max_aspect_ratio_ids = (
-        #         torch_inputs
-        #     )
+    # Map torch weight values to their MAX graph counterparts.
+    weights_registry = {
+        "gate": torch_precomputed_pos_embed.gate.detach(),
+        "embedding": torch_precomputed_pos_embed.embedding.detach(),
+        "tile_embedding": torch_precomputed_pos_embed.tile_embedding.weight.detach(),
+    }
+    position_embed_model = session.load(
+        graph, weights_registry=weights_registry
+    )
 
-        #     expected = (
-        #         TorchPrecomputedPositionEmbedding(
-        #             max_aspect_ratio_id, max_num_tiles, num_patches, hidden_size
-        #         )(x, max_aspect_ratio_ids)
-        #         .detach()
-        #         .numpy()
-        #     )
-        #     # TODO(AIPIPE-159): These tolerances have to be kinda large to accommodate
-        #     # large range of values generated by hypothesis. This is because there
-        #     # isn't a way to specify this (float) range without affecting the
-        #     # max_aspect_ratio_ids int64 tensor too.
-        #     ACCURACY_RTOL = 1
-        #     ACCURACY_ATOL = 1
-        #     np.testing.assert_allclose(
-        #         result,
-        #         expected,
-        #         atol=ACCURACY_ATOL,
-        #         rtol=ACCURACY_RTOL,
-        #         equal_nan=True,
-        #     )
+    # Phase 3: execution.
+
+    # Initialize model inputs.
+    hidden_state = torch.randn(
+        hidden_state_type.shape.static_dims, dtype=torch_dtype
+    )
+    aspect_ratio_ids = torch.randn(
+        aspect_ratio_ids_type.shape.static_dims, dtype=torch_dtype
+    ).to(torch.long)
+
+    predicted = position_embed_model(
+        hidden_state,
+        aspect_ratio_ids,
+    )[0]
+    assert isinstance(predicted, Tensor)
+
+    expected = (
+        torch_precomputed_pos_embed(
+            hidden_state=hidden_state,
+            aspect_ratio_ids=aspect_ratio_ids,
+        )[0]
+        .detach()
+        .numpy()
+    )
+
+    # Compare the outputs.
+    assert is_euclidean_distance_close(
+        result=predicted.to_numpy(), expected=expected, rtol=1e-4
+    )
 
 
 @pytest.mark.parametrize(
-    "max_aspect_ratio_id,max_num_tiles,patch_size,hidden_size",
+    "max_num_tiles,patch_size,hidden_size",
     [
-        (8, 4, 14, 1280),
+        (4, 14, 1280),
     ],
 )
 def test_vision_precomputed_aspect_ratio_embedding(
     session: InferenceSession,
-    max_aspect_ratio_id: int,
     max_num_tiles: int,
     patch_size: int,
     hidden_size: int,
 ) -> None:
-    input_type = TensorType(
-        DType.float32, [1, max_num_tiles, patch_size, hidden_size]
+    # # Globally disable saving activations for backprop.
+    # torch.set_grad_enabled(False)
+
+    # Reduced set of vision configs for testing purposes.
+    config = MllamaVisionConfig(
+        hidden_size=hidden_size,
+        max_num_tiles=max_num_tiles,
+        model_type="mllama_vision_model",
+        patch_size=patch_size,
     )
-    gate_weight_type = TensorType(DType.float32, [1])
-    embedding_weight_type = TensorType(
-        DType.float32,
-        [max_aspect_ratio_id + 1, max_num_tiles * hidden_size],
+
+    # Set up PyTorch position embedding layer.
+    torch_dtype = torch.float32
+    torch_aspect_ratio_embed = MllamaPrecomputedAspectRatioEmbedding(
+        config=config,
+        is_gated=True,
     )
-    max_aspect_ratio_ids_type = TensorType(DType.int64, [1, 1])
-    with Graph(
-        "precomputed_aspect_ratio_embedding",
+    torch_aspect_ratio_embed.to(torch_dtype)
+
+    # Set up MAX graph position embedding layer.
+    dtype = DType.float32
+
+    hidden_state_type = TensorType(
+        dtype, [1, max_num_tiles, patch_size, hidden_size]
+    )
+    aspect_ratio_ids_type = TensorType(DType.int64, [1, 1])
+
+    # Phase 1: op staging.
+    graph = Graph(
+        "test_precomputed_aspect_ratio_embedding",
+        forward=AspectRatioEmbedding(
+            config, True, torch_aspect_ratio_embed, dtype
+        ),
         input_types=[
-            input_type,
-            gate_weight_type,
-            embedding_weight_type,
-            max_aspect_ratio_ids_type,
+            hidden_state_type,
+            aspect_ratio_ids_type,
         ],
-    ) as graph:
-        x, gate_weight, embedding_weight, max_aspect_ratio_ids = graph.inputs
+    )
 
-        embedding = PrecomputedAspectRatioEmbedding(
-            max_num_tiles=max_num_tiles,
-            hidden_size=hidden_size,
-            gate=gate_weight,  # type: ignore
-            embedding=Embedding(embedding_weight),  # type: ignore
-            is_gated=True,
-        )
-        graph.output(embedding(x, max_aspect_ratio_ids))  # type: ignore
+    # Phase 2: model compilation and weight initialization.
 
-        # @modular_graph_test(session, graph)
-        # def test_correctness(execute, inputs, torch_inputs):
-        #     result = execute(inputs)
-        #     x, gate_weight, embedding_weight, max_aspect_ratio_ids = (
-        #         torch_inputs
-        #     )
+    # Map torch weight values to their MAX graph counterparts.
+    weights_registry = {
+        "gate": torch_aspect_ratio_embed.gate.detach(),
+        "embedding": torch_aspect_ratio_embed.embedding.weight.detach(),
+    }
+    position_embed_model = session.load(
+        graph, weights_registry=weights_registry
+    )
 
-        #     expected = (
-        #         TorchPrecomputedAspectRatioEmbedding(
-        #             max_aspect_ratio_id,
-        #             max_num_tiles,
-        #             hidden_size,
-        #             is_gated=True,
-        #         )(x, max_aspect_ratio_ids)
-        #         .detach()
-        #         .numpy()
-        #     )
-        #     # TODO(AIPIPE-159): These tolerances have to be kinda large to accommodate
-        #     # large range of values generated by hypothesis. This is because there
-        #     # isn't a way to specify this (float) range without affecting the
-        #     # max_aspect_ratio_ids int64 tensor too.
-        #     ACCURACY_RTOL = 1
-        #     ACCURACY_ATOL = 1
-        #     np.testing.assert_allclose(
-        #         result,
-        #         expected,
-        #         atol=ACCURACY_ATOL,
-        #         rtol=ACCURACY_RTOL,
-        #         equal_nan=True,
-        #     )
+    # Phase 3: execution.
+
+    # Initialize model inputs.
+    hidden_state = torch.randn(
+        hidden_state_type.shape.static_dims, dtype=torch_dtype
+    )
+    aspect_ratio_ids = torch.randn(
+        aspect_ratio_ids_type.shape.static_dims, dtype=torch_dtype
+    ).to(torch.long)
+
+    predicted = position_embed_model(
+        hidden_state,
+        aspect_ratio_ids,
+    )[0]
+    assert isinstance(predicted, Tensor)
+
+    expected = (
+        torch_aspect_ratio_embed(
+            hidden_state=hidden_state,
+            aspect_ratio_ids=aspect_ratio_ids,
+        )[0]
+        .detach()
+        .numpy()
+    )
+
+    # Compare the outputs.
+    assert is_euclidean_distance_close(
+        result=predicted.to_numpy(), expected=expected, rtol=1e-4
+    )
