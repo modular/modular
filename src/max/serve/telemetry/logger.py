@@ -46,7 +46,7 @@ def configureLogging(
     # Create a console handler
     console_handler = logging.StreamHandler()
     console_formatter: logging.Formatter
-    if os.getenv("MODULAR_STRUCTURED_LOGGING"):
+    if os.getenv("MODULAR_STRUCTURED_LOGGING") == "1":
         console_formatter = jsonlogger.JsonFormatter()
     else:
         console_formatter = logging.Formatter(
@@ -64,7 +64,7 @@ def configureLogging(
         # Create a file handler
         file_handler = logging.FileHandler(file_path)
         file_formatter: logging.Formatter
-        if os.getenv("MODULAR_STRUCTURED_LOGGING"):
+        if os.getenv("MODULAR_STRUCTURED_LOGGING") == "1":
             file_formatter = jsonlogger.JsonFormatter()
         else:
             file_formatter = logging.Formatter(
