@@ -54,6 +54,7 @@ class TorchModelAndDataProcessor:
         transformers.PreTrainedTokenizer,
         transformers.PreTrainedTokenizerFast,
         transformers.MllamaProcessor,
+        transformers.PixtralProcessor,
     ]
 
 
@@ -454,11 +455,62 @@ class MistralPipelineOracle(PipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=tokenizer)
 
 
+class PixtralPipelineOracle(MultiModalPipelineOracle):
+    @property
+    def prompts(self) -> Sequence[str]:
+        """Prompts to run a multi-modal model on."""
+        return [evaluate.PIXTRAL_PROMPT]
+
+    @property
+    def images(self) -> Optional[Sequence[str]]:
+        """Images to run a multi-modal model on."""
+        return [evaluate.PIXTRAL_IMG_URL]
+
+    @property
+    def supported_versions(self) -> Sequence[str]:
+        return ["pixtral12b"]
+
+    @property
+    def supported_encodings(self) -> Sequence[str]:
+        return ["bfloat16"]
+
+    def is_supported(
+        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+    ) -> bool:
+        assert version in self.supported_versions
+        assert encoding in self.supported_encodings
+        return device_spec.device_type == "gpu"
+
+    def create_max_pipeline(
+        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+    ) -> MaxPipelineAndTokenizer:
+        # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
+        assert self.is_supported(
+            version=version, encoding=encoding, device_spec=device_spec
+        )
+        raise NotImplementedError
+
+    def create_torch_pipeline(
+        self, *, version: str, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        hf_repo_id = "mistral-community/pixtral-12b"
+        processor = transformers.AutoProcessor.from_pretrained(hf_repo_id)
+        config = transformers.AutoConfig.from_pretrained(hf_repo_id)
+        model = transformers.LlavaForConditionalGeneration.from_pretrained(
+            hf_repo_id,
+            config=config,
+            device_map=device,
+            torch_dtype=torch.bfloat16,
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=processor)
+
+
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "llama": LlamaPipelineOracle(),
     "replit": ReplitPipelineOracle(),
     "mistral": MistralPipelineOracle(),
     "llama3-vision": LlamaVisionPipelineOracle(),
+    "pixtral": PixtralPipelineOracle(),
 }
 
 
@@ -585,11 +637,11 @@ def main(
         # Despite the name, run_torch_llama3 works for all transformers, not
         # just Llama.
         results = run_torch_llama.run_torch_llama3(
-            torch_pipeline_and_tokenizer.model,
-            torch_pipeline_and_tokenizer.data_processor,
-            torch_device,
-            pipeline_oracle.prompts,
-            pipeline_oracle.images
+            model=torch_pipeline_and_tokenizer.model,
+            data_processor=torch_pipeline_and_tokenizer.data_processor,
+            device=torch_device,
+            prompts=pipeline_oracle.prompts,
+            images=pipeline_oracle.images
             if isinstance(pipeline_oracle, MultiModalPipelineOracle)
             else None,
         )

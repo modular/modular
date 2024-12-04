@@ -44,6 +44,7 @@ from transformers import (
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
     MllamaProcessor,
+    PixtralProcessor,
 )
 
 
@@ -72,6 +73,7 @@ def run_torch_llama3(
         PreTrainedTokenizer,
         PreTrainedTokenizerFast,
         MllamaProcessor,
+        PixtralProcessor,
     ],
     device: torch.device,
     prompts: Iterable[str],
@@ -99,9 +101,9 @@ def run_torch_llama3(
         processed_images = process_images(images)
 
         for image, prompt in zip(processed_images, prompts):
-            inputs = data_processor(image, prompt, return_tensors="pt").to(
-                device
-            )
+            inputs = data_processor(
+                images=image, text=prompt, return_tensors="pt"
+            ).to(device)
             model.generate(
                 **inputs,
                 max_new_tokens=num_steps,
