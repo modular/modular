@@ -165,6 +165,7 @@ def execute_kv_cache_ragged_rope[
                 kv_collection_device,
                 freqs_cis_table_device.tensor,
                 0,
+                False,
                 output_device.tensor,
                 ctx,
             )
