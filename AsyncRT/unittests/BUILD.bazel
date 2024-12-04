@@ -47,9 +47,9 @@ modular_cc_test(
 )
 
 modular_cc_test(
-    name = "CUDADeviceContextTest",
+    name = "GPUDeviceContextTest",
     size = "small",
-    srcs = ["CUDADeviceContextTest.cpp"],
+    srcs = ["GPUDeviceContextTest.cpp"],
     tags = [
         "A100",
         "gpu",
@@ -61,9 +61,9 @@ modular_cc_test(
 )
 
 modular_cc_test(
-    name = "CUDAMultiDeviceContextTest",
+    name = "CUDADeviceContextTest",
     size = "small",
-    srcs = ["CUDAMultiDeviceContextTest.cpp"],
+    srcs = ["CUDADeviceContextTest.cpp"],
     tags = [
         "A100",
         "gpu",
