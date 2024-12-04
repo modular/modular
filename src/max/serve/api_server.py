@@ -59,7 +59,6 @@ from max.serve.pipelines.llm import (
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from prometheus_client import disable_created_metrics, make_asgi_app
 from pydantic_settings import CliSettingsSource
 from uvicorn import Config, Server
@@ -117,8 +116,6 @@ def fastapi_app(
     app.state.debug_settings = debug_settings
     register_debug(app, debug_settings)
 
-    # Instrument application with traces
-    FastAPIInstrumentor.instrument_app(app, excluded_urls="metrics/.*")
     return app
 
 

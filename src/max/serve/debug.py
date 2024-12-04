@@ -5,23 +5,23 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import logging
 import functools
-from typing import Callable, ClassVar, Union, Type
-from functools import lru_cache
-from enum import Enum
-from dataclasses import dataclass, field
+import logging
 from contextvars import ContextVar
+from dataclasses import dataclass, field
+from enum import Enum
+from functools import lru_cache
+from typing import Callable, ClassVar, Type, Union
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import FastAPI, Request
 from pydantic import Field
 from pydantic_settings import BaseSettings
 from pyinstrument import Profiler
-from pyinstrument.renderers.console import ConsoleRenderer
-from pyinstrument.renderers.jsonrenderer import JSONRenderer
-from pyinstrument.renderers.html import HTMLRenderer
-from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 from pyinstrument.renderers.base import FrameRenderer
+from pyinstrument.renderers.console import ConsoleRenderer
+from pyinstrument.renderers.html import HTMLRenderer
+from pyinstrument.renderers.jsonrenderer import JSONRenderer
+from pyinstrument.renderers.speedscope import SpeedscopeRenderer
 
 logger = logging.getLogger(__name__)
 
@@ -111,8 +111,6 @@ async def profile_call(profiler: Profiler, call: Callable):
 
 
 def register_debug(app: FastAPI, settings: DebugSettings):
-    router = APIRouter()
-
     if settings.profiling_enabled:
         profiler = ProfileSession.default_profiler()
 
@@ -134,5 +132,3 @@ def register_debug(app: FastAPI, settings: DebugSettings):
                 return result
             else:
                 return await call_next(request)
-
-    app.include_router(router)
