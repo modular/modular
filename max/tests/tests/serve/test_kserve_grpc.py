@@ -28,7 +28,7 @@ def grpc_servicer(fixture_tokenizer):
     tokenizer = fixture_tokenizer
     pipeline = get_performance_fake("no-op")
     service = max_grpc.MaxDirectInferenceService(
-        model_name, pipeline, tokenizer
+        model_name, pipeline, tokenizer, 16
     )
     return service
 
