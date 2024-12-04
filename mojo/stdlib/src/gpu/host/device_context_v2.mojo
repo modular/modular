@@ -1380,18 +1380,14 @@ struct DeviceContextV2:
 
     @staticmethod
     @always_inline
-    fn number_of_devices(*, api: String = Self.device_api) raises -> Int:
-        # const char *AsyncRT_DeviceContext_numberOfDevices(int32_t *result, const char* kind)
-        var num_devices: Int32 = 0
-        _checked(
+    fn number_of_devices(*, api: String = Self.device_api) -> Int:
+        # int32_t *AsyncRT_DeviceContext_numberOfDevices(const char* kind)
+        return int(
             external_call[
                 "AsyncRT_DeviceContext_numberOfDevices",
-                _CharPtr,
-                _IntPtr,
+                Int32,
                 _CharPtr,
             ](
-                UnsafePointer.address_of(num_devices),
                 api.unsafe_ptr(),
             )
         )
-        return int(num_devices)
