@@ -6644,6 +6644,7 @@ fn generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[
     kv_collection: ContiguousKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: UInt32,
+    interleaved: Bool,
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     """Performs a fused RoPE projection for Q and K projections.
@@ -6673,6 +6674,7 @@ fn generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[
             freqs_cis
         ),
         layer_idx,
+        interleaved,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -6694,10 +6696,17 @@ struct Struct_fused_qk_rope_h6_d48_bshd:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+            output,
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            ctx,
         )
 
 
@@ -6717,10 +6726,17 @@ struct Struct_fused_qk_rope_h8_d128_bshd:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+            output,
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            ctx,
         )
 
 
@@ -6740,10 +6756,17 @@ struct Struct_fused_qk_rope_h1_d16_bshd:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+            output,
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            ctx,
         )
 
 
@@ -6763,10 +6786,17 @@ struct Struct_fused_qk_rope_h8_d32_bshd:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+            output,
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            ctx,
         )
 
 
@@ -6786,10 +6816,17 @@ struct Struct_fused_qk_rope_h8_d64_bshd:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+            output,
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            ctx,
         )
 
 
@@ -6807,6 +6844,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: Scalar[DType.uint32],
+    interleaved: Scalar[DType.bool],
     ctx: MojoCallContextPtr,
 ):
     """Performs a fused RoPE projection for Q and K projections.
@@ -6836,6 +6874,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
             freqs_cis
         ),
         layer_idx,
+        interleaved,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -6857,10 +6896,17 @@ struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+            output,
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            ctx,
         )
 
 
@@ -6880,10 +6926,17 @@ struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+            output,
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            ctx,
         )
 
 
@@ -6903,10 +6956,17 @@ struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+            output,
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            ctx,
         )
 
 
@@ -6926,10 +6986,17 @@ struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
+            output,
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            ctx,
         )
 
 
@@ -6948,6 +7015,7 @@ fn generic_fused_qk_rope_bshd_ragged_kernel_api[
     kv_collection: ContiguousKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: Scalar[DType.uint32],
+    interleaved: Scalar[DType.bool],
     ctx: MojoCallContextPtr,
 ):
     alias output_shape = compiler.specsof[output.type, output.rank](
@@ -6973,6 +7041,7 @@ fn generic_fused_qk_rope_bshd_ragged_kernel_api[
             freqs_cis
         ),
         layer_idx,
+        interleaved,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -6988,6 +7057,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: Scalar[DType.uint32],
+    interleaved: Scalar[DType.bool],
     ctx: MojoCallContextPtr,
 ):
     alias output_shape = compiler.specsof[output.type, output.rank](
@@ -7013,6 +7083,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
             freqs_cis
         ),
         layer_idx,
+        interleaved,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -7035,6 +7106,7 @@ struct Struct_fused_qk_rope_h6_d48_bshd_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7044,6 +7116,7 @@ struct Struct_fused_qk_rope_h6_d48_bshd_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7065,6 +7138,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7074,6 +7148,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7095,6 +7170,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7104,6 +7180,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7125,6 +7202,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7134,6 +7212,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7155,6 +7234,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7164,6 +7244,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7185,6 +7266,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7194,6 +7276,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7215,6 +7298,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7226,6 +7310,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7247,6 +7332,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_continuous_batch_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7258,6 +7344,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_continuous_batch_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7279,6 +7366,7 @@ struct Struct_fused_qk_rope_h32_d128_bshd_continuous_batch_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7290,6 +7378,7 @@ struct Struct_fused_qk_rope_h32_d128_bshd_continuous_batch_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7311,6 +7400,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7322,6 +7412,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7343,6 +7434,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7354,6 +7446,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
@@ -7375,6 +7468,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch_ragged:
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
         layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7386,6 +7480,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch_ragged:
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             ctx,
         )
 
