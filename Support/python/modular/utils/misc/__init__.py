@@ -23,5 +23,14 @@ from ._misc import (
     set_env_var,
 )
 
+from ._torch_dtype_map import (
+    modular_to_torch_type,
+    torch_to_modular_type,
+    modular_type_of,
+    modular_dtype_to_str,
+    torch_dtype_to_str,
+)
+
 # Remove from the namespace so that it's not visible to users.
 del _misc  # type: ignore # noqa: F821
+del _torch_dtype_map  # type: ignore # noqa: F821
