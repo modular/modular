@@ -200,9 +200,11 @@ def test_vision_precomputed_position_embedding(
     hidden_state = torch.randn(
         hidden_state_type.shape.static_dims, dtype=torch_dtype
     )
-    aspect_ratio_ids = torch.randn(
-        aspect_ratio_ids_type.shape.static_dims, dtype=torch_dtype
-    ).to(torch.long)
+
+    # This needs to be within the range of [0, num_embeddings - 1].
+    aspect_ratio_ids = torch.randint(
+        0, 9, aspect_ratio_ids_type.shape.static_dims, dtype=torch.long
+    )
 
     predicted = position_embed_model(
         hidden_state,
@@ -237,8 +239,8 @@ def test_vision_precomputed_aspect_ratio_embedding(
     patch_size: int,
     hidden_size: int,
 ) -> None:
-    # # Globally disable saving activations for backprop.
-    # torch.set_grad_enabled(False)
+    # Globally disable saving activations for backprop.
+    torch.set_grad_enabled(False)
 
     # Reduced set of vision configs for testing purposes.
     config = MllamaVisionConfig(
@@ -293,9 +295,11 @@ def test_vision_precomputed_aspect_ratio_embedding(
     hidden_state = torch.randn(
         hidden_state_type.shape.static_dims, dtype=torch_dtype
     )
-    aspect_ratio_ids = torch.randn(
-        aspect_ratio_ids_type.shape.static_dims, dtype=torch_dtype
-    ).to(torch.long)
+
+    # This needs to be within the range of [0, num_embeddings - 1].
+    aspect_ratio_ids = torch.randint(
+        0, 9, aspect_ratio_ids_type.shape.static_dims, dtype=torch.long
+    )
 
     predicted = position_embed_model(
         hidden_state,
