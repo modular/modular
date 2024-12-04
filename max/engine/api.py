@@ -150,7 +150,8 @@ class Model:
 
         Returns:
             A list of output tensors and Mojo values. The output tensors will be
-            resident on the execution device by default.
+            resident on the execution device by default (you can change it with
+            the ``output_device`` argument).
 
         Raises:
             RuntimeError: If the given input tensors' shape don't match what
@@ -227,7 +228,7 @@ class Model:
     ) -> list[TensorOrMojoType]:
         """Executes the model with the provided input and returns the outputs.
 
-        Models can be called with any mixture of named and positional inputs:
+        Models can be called with any mixture of positional and named inputs:
 
         .. code-block:: python
 
@@ -239,6 +240,7 @@ class Model:
         the following is invalid.
 
         .. code-block:: python
+
             model(a, d, b=b, c=c)
 
         The function will assume that input `d` will map to the same position as
@@ -247,19 +249,20 @@ class Model:
         Args:
             args: A list of input tensors. We currently support the following
               input types:
-                * Any tensors implementing the dlpack protocol, such as
-                  :obj:`np.ndarray`, :obj:`torch.Tensor`
-                * Max Driver tensors, i.e. :obj:`max.driver.Tensor`
-                * Scalar inputs, i.e. :obj:`bool`, :obj:`float`, :obj:`int`,
-                  :obj:`np.generic`
-                * Mojo value inputs, i.e. :obj:`MojoValue`
+
+              * Any tensors implementing the DLPack protocol, such as
+                :obj:`np.ndarray`, :obj:`torch.Tensor`
+              * Max Driver tensors, i.e. :obj:`max.driver.Tensor`
+              * Scalar inputs, i.e. :obj:`bool`, :obj:`float`, :obj:`int`,
+                :obj:`np.generic`
+              * Mojo value inputs, i.e. :obj:`MojoValue` (internal use)
 
             kwargs: Named inputs. We can support the same types supported
               in :obj:`args`.
 
         Returns:
-            A list of output tensors and Mojo values. The output tensors will be
-            resident on the execution device by default.
+            A list of output tensors. The output tensors will be
+            resident on the execution device.
 
         Raises:
             RuntimeError: If the given input tensors' shape don't match what
