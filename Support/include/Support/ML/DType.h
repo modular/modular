@@ -17,6 +17,7 @@
 #include "Support/FunctionExtras.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ML/Float16.h"
+#include "Support/ML/Float8.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/STLExtras.h"
@@ -382,6 +383,8 @@ DECLARE_TYPE_MAPPING(si32, int32_t);
 DECLARE_TYPE_MAPPING(ui32, uint32_t);
 DECLARE_TYPE_MAPPING(si64, int64_t);
 DECLARE_TYPE_MAPPING(ui64, uint64_t);
+DECLARE_TYPE_MAPPING(f8e4m3, M::Float8::float8_e4m3_t);
+DECLARE_TYPE_MAPPING(f8e5m2, M::Float8::float8_e5m2_t);
 DECLARE_TYPE_MAPPING(bf16, M::Bfloat::bfloat16_t);
 DECLARE_TYPE_MAPPING(f16, M::Float16::float16_t);
 DECLARE_TYPE_MAPPING(f32, float);
