@@ -71,15 +71,32 @@ getDecoratorLambdaArgument(ModuleOp mod, TypedAttr decorator,
   return answer;
 }
 
-static void annotateTypes(LIT::FuncOp func) {
-  // Look through ref types to get underlaying decl ref type if needed.
-  auto getAsDeclRefOrNull = [&](Type t) {
-    auto asLitRef = dyn_cast<LIT::RefType>(t);
-    if (asLitRef)
-      return dyn_cast<LIT::StructType>(asLitRef.getElementType());
-    return dyn_cast<LIT::StructType>(t);
-  };
+/// Look through ref types to get underlaying decl ref type if needed.
+LIT::StructType getAsDeclRefOrNull(Type t) {
+  auto asLitRef = dyn_cast<LIT::RefType>(t);
+  if (asLitRef)
+    return dyn_cast<LIT::StructType>(asLitRef.getElementType());
+  return dyn_cast<LIT::StructType>(t);
+}
 
+/// Check if the function is a DPS kernel with by-ref tensor arguments.
+static LogicalResult checkByRefTensorArgs(LIT::FuncOp func) {
+  LIT::LITSignatureType signature = func.getSignature();
+  for (auto [index, litType] : llvm::enumerate(signature.getArguments())) {
+    if (LIT::StructType asDeclRef = getAsDeclRefOrNull(litType)) {
+      if (isDPSKernel(func) && isDPSTensor(asDeclRef) &&
+          isa<LIT::RefType>(litType)) {
+        return func.emitError()
+               << "taking a DPS tensor by reference in argument "
+               << signature.getArgName(index) << " is not supported.";
+      }
+    }
+  }
+
+  return success();
+}
+
+static LogicalResult annotateTypes(LIT::FuncOp func) {
   // Anything taking a tensor needs the annotation.
   bool takesTensor = false;
   for (Type litType : func.getArgumentTypes()) {
@@ -91,7 +108,10 @@ static void annotateTypes(LIT::FuncOp func) {
 
   if (!isKernel(func) && !isV1ShapeFunc(func) && !isDPSKernel(func) &&
       !takesTensor)
-    return;
+    return success();
+
+  if (failed(checkByRefTensorArgs(func)))
+    return failure();
 
   OpBuilder builder{func.getContext()};
 
@@ -160,6 +180,8 @@ static void annotateTypes(LIT::FuncOp func) {
     func->setDiscardableAttr(MOGG_ARG_SRC_NAMES,
                              builder.getArrayAttr(sourceName));
   }
+
+  return success();
 }
 
 // Extract the used parameters from the lit type. Returns null for fields which
@@ -459,21 +481,21 @@ isExtensibilityAPIStruct(LIT::StructDeclOp structDeclOp, ModuleOp moduleOp,
 // `annotation` the annotation name to attach to this function to be used in
 //    later lowering.
 // `builder` builder for ops
-bool processStructFuncCommon(LIT::StructDeclOp structDeclOp,
-                             ExtensibilityAPIStructInfo registrationInfo,
-                             LIT::FuncOp func, StringLiteral annotation,
-                             OpBuilder &builder) {
+LogicalResult processStructFuncCommon(
+    LIT::StructDeclOp structDeclOp, ExtensibilityAPIStructInfo registrationInfo,
+    LIT::FuncOp func, StringLiteral annotation, OpBuilder &builder) {
   if (!func.getIsStatic()) {
     func->emitError("Function is not static");
-    return false;
+    return failure();
   }
 
   func->setAttr(builder.getStringAttr(annotation),
                 registrationInfo.registrationName);
   func.setExported();
-  annotateTypes(func);
+  if (failed(annotateTypes(func)))
+    return failure();
 
-  return true;
+  return success();
 }
 
 // Run checks and mutations on an execute function. emits an
@@ -491,8 +513,8 @@ bool processStructExecuteFunc(ModuleOp moduleOp,
                               ExtensibilityAPIStructInfo registrationInfo,
                               LIT::StructDeclOp structDeclOp, LIT::FuncOp func,
                               StringLiteral annotation, OpBuilder &builder) {
-  if (!processStructFuncCommon(structDeclOp, registrationInfo, func, annotation,
-                               builder))
+  if (failed(processStructFuncCommon(structDeclOp, registrationInfo, func,
+                                     annotation, builder)))
     return false;
 
   // Handle extra parameters we allow on execute:
@@ -601,10 +623,13 @@ public:
     moduleOp->walk([](Operation *operation) {
       if (auto func = dyn_cast<LIT::FuncOp>(operation)) {
         stripDecorators(func);
-        annotateTypes(func);
+        if (failed(annotateTypes(func)))
+          return WalkResult::interrupt();
       } else if (auto structDeclOp = dyn_cast<LIT::StructDeclOp>(operation)) {
         stripDecorators(structDeclOp);
       }
+
+      return WalkResult::advance();
     });
 
     // Walk to process struct-based extensibility kernels.
@@ -637,14 +662,15 @@ public:
             return WalkResult::interrupt();
           executeOp = func;
         } else if (func.getSourceName() == kShapeFuncName) {
-          if (!processStructFuncCommon(structDeclOp, registrationInfo, func,
-                                       kMOGGShapeFunctionLabel, builder))
+          if (failed(processStructFuncCommon(structDeclOp, registrationInfo,
+                                             func, kMOGGShapeFunctionLabel,
+                                             builder)))
             return WalkResult::interrupt();
           shapeOp = func;
         } else if (func.getSourceName() == kPyTorchFallbackFuncName) {
-          if (!processStructFuncCommon(structDeclOp, registrationInfo, func,
-                                       kMOGGPyTorchFallbackFunctionLabel,
-                                       builder))
+          if (failed(processStructFuncCommon(
+                  structDeclOp, registrationInfo, func,
+                  kMOGGPyTorchFallbackFunctionLabel, builder)))
             return WalkResult::interrupt();
         }
       }
