@@ -849,6 +849,12 @@ class InferenceSession:
         """
         return json.loads(self._impl.stats_report)
 
+    def reset_stats_report(self) -> None:
+        """
+        Clears all entries in `stats_report`.
+        """
+        self._impl.reset_stats_report()
+
 
 def remove_annotations(cls: Type) -> Type:
     del cls.__annotations__
