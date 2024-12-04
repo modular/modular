@@ -1010,6 +1010,7 @@ fn generic_fused_qk_rope_bshd_ragged[
     kv_collection: ContiguousKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ):
@@ -1023,6 +1024,7 @@ fn generic_fused_qk_rope_bshd_ragged[
             "layer_idx=" + str(layer_idx),
             "num_heads=" + str(kv_collection.kv_params.num_heads),
             "head_size=" + str(kv_collection.kv_params.head_size),
+            "interleaved=" + str(interleaved),
         )
 
     # Pass device context only on GPU.
@@ -1044,6 +1046,7 @@ fn generic_fused_qk_rope_bshd_ragged[
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             output,
             dev_ctx,
         )
@@ -1060,6 +1063,7 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ):
@@ -1073,6 +1077,7 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
             "layer_idx=" + str(layer_idx),
             "num_heads=" + str(kv_collection.kv_params.num_heads),
             "head_size=" + str(kv_collection.kv_params.head_size),
+            "interleaved=" + str(interleaved),
         )
 
     # Pass device context only on GPU.
@@ -1094,6 +1099,7 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             output,
             dev_ctx,
         )
@@ -1110,6 +1116,7 @@ fn fused_qk_rope_h6_d48_bshd_ragged[
     kv_collection: ContiguousKVCacheCollection[type, kv_params_h6_d48_bshd],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1130,6 +1137,7 @@ fn fused_qk_rope_h6_d48_bshd_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1146,6 +1154,7 @@ fn fused_qk_rope_h8_d128_bshd_ragged[
     kv_collection: ContiguousKVCacheCollection[type, kv_params_h8_d128_bshd],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1166,6 +1175,7 @@ fn fused_qk_rope_h8_d128_bshd_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1182,6 +1192,7 @@ fn fused_qk_rope_h8_d512_bshd_ragged[
     kv_collection: ContiguousKVCacheCollection[type, kv_params_h8_d512_bshd],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1202,6 +1213,7 @@ fn fused_qk_rope_h8_d512_bshd_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1218,6 +1230,7 @@ fn fused_qk_rope_h1_d16_bshd_ragged[
     kv_collection: ContiguousKVCacheCollection[type, kv_params_h1_d16_bshd],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1238,6 +1251,7 @@ fn fused_qk_rope_h1_d16_bshd_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1254,6 +1268,7 @@ fn fused_qk_rope_h8_d32_bshd_ragged[
     kv_collection: ContiguousKVCacheCollection[type, kv_params_h8_d32_bshd],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1274,6 +1289,7 @@ fn fused_qk_rope_h8_d32_bshd_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1290,6 +1306,7 @@ fn fused_qk_rope_h8_d64_bshd_ragged[
     kv_collection: ContiguousKVCacheCollection[type, kv_params_h8_d64_bshd],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1310,6 +1327,7 @@ fn fused_qk_rope_h8_d64_bshd_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1328,6 +1346,7 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1348,6 +1367,7 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1366,6 +1386,7 @@ fn fused_qk_rope_h8_d512_bshd_continuous_batch_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1386,6 +1407,7 @@ fn fused_qk_rope_h8_d512_bshd_continuous_batch_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1404,6 +1426,7 @@ fn fused_qk_rope_h32_d128_bshd_continuous_batch_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1424,6 +1447,7 @@ fn fused_qk_rope_h32_d128_bshd_continuous_batch_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1442,6 +1466,7 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1462,6 +1487,7 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1480,6 +1506,7 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1500,6 +1527,7 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1518,6 +1546,7 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1538,6 +1567,7 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1552,6 +1582,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
     kv_collection: PagedKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1577,6 +1608,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
             "layer_idx=" + str(layer_idx),
             "num_heads=" + str(kv_collection.kv_params.num_heads),
             "head_size=" + str(kv_collection.kv_params.head_size),
+            "interleaved=" + str(interleaved),
         )
 
     # Pass device context only on GPU.
@@ -1597,6 +1629,7 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
             kv_collection,
             freqs_cis,
             layer_idx,
+            interleaved,
             output,
             dev_ctx,
         )
@@ -1616,6 +1649,7 @@ fn fused_qk_rope_h1_d16_bshd_paged_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1625,6 +1659,7 @@ fn fused_qk_rope_h1_d16_bshd_paged_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1644,6 +1679,7 @@ fn fused_qk_rope_h6_d48_bshd_paged_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1653,6 +1689,7 @@ fn fused_qk_rope_h6_d48_bshd_paged_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1672,6 +1709,7 @@ fn fused_qk_rope_h8_d128_bshd_paged_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1681,6 +1719,7 @@ fn fused_qk_rope_h8_d128_bshd_paged_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1700,6 +1739,7 @@ fn fused_qk_rope_h8_d16_bshd_paged_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1709,6 +1749,7 @@ fn fused_qk_rope_h8_d16_bshd_paged_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1728,6 +1769,7 @@ fn fused_qk_rope_h8_d512_bshd_paged_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1737,6 +1779,7 @@ fn fused_qk_rope_h8_d512_bshd_paged_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1756,6 +1799,7 @@ fn fused_qk_rope_h8_d32_bshd_paged_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1765,6 +1809,7 @@ fn fused_qk_rope_h8_d32_bshd_paged_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1784,6 +1829,7 @@ fn fused_qk_rope_h8_d64_bshd_paged_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1793,6 +1839,7 @@ fn fused_qk_rope_h8_d64_bshd_paged_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )
@@ -1812,6 +1859,7 @@ fn fused_qk_rope_h32_d128_bshd_paged_ragged[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1821,6 +1869,7 @@ fn fused_qk_rope_h32_d128_bshd_paged_ragged[
         kv_collection,
         freqs_cis,
         layer_idx,
+        interleaved,
         output,
         context,
     )

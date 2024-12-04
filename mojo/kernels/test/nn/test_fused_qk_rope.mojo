@@ -149,6 +149,7 @@ def test_fused_qk_rope[type: DType]() -> None:
         freqs_cis=freqs_cis_table,
         output=q_out,
         layer_idx=UInt32(0),
+        interleaved=True,
         context=Optional[DeviceContext](),
     )
 

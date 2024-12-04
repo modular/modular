@@ -861,6 +861,7 @@ fn generic_fused_qk_rope_bshd_contiguous_cache[
     kv_collection: ContiguousKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -886,6 +887,7 @@ fn generic_fused_qk_rope_bshd_contiguous_cache[
             "layer_idx=" + str(layer_idx),
             "num_heads=" + str(kv_collection.kv_params.num_heads),
             "head_size=" + str(kv_collection.kv_params.head_size),
+            "interleaved=" + str(interleaved),
         )
 
     # Pass device context only on GPU.
@@ -901,7 +903,13 @@ fn generic_fused_qk_rope_bshd_contiguous_cache[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         fused_qk_rope[kv_collection.CacheType, target=target](
-            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            dev_ctx,
         )
 
 
@@ -918,11 +926,18 @@ fn fused_qk_rope_h6_d48_bshd[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_contiguous_cache[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 
@@ -939,11 +954,18 @@ fn fused_qk_rope_h8_d128_bshd[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_contiguous_cache[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 
@@ -960,11 +982,18 @@ fn fused_qk_rope_h1_d16_bshd[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_contiguous_cache[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 
@@ -981,11 +1010,18 @@ fn fused_qk_rope_h8_d32_bshd[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_contiguous_cache[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 
@@ -1002,11 +1038,18 @@ fn fused_qk_rope_h8_d64_bshd[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_contiguous_cache[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 
@@ -1018,6 +1061,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
@@ -1043,6 +1087,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
             "layer_idx=" + str(layer_idx),
             "num_heads=" + str(kv_collection.kv_params.num_heads),
             "head_size=" + str(kv_collection.kv_params.head_size),
+            "interleaved=" + str(interleaved),
         )
 
     # Pass device context only on GPU.
@@ -1058,7 +1103,13 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         fused_qk_rope[kv_collection.CacheType, target=target](
-            q_proj, kv_collection, freqs_cis, layer_idx, output, dev_ctx
+            q_proj,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            dev_ctx,
         )
 
 
@@ -1075,11 +1126,18 @@ fn fused_qk_rope_h8_d128_bshd_continuous_batch[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_continuous_batch[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 
@@ -1096,11 +1154,18 @@ fn fused_qk_rope_h32_d128_bshd_continuous_batch[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_continuous_batch[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 
@@ -1117,11 +1182,18 @@ fn fused_qk_rope_h1_d16_bshd_continuous_batch[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_continuous_batch[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 
@@ -1138,11 +1210,18 @@ fn fused_qk_rope_h8_d32_bshd_continuous_batch[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_continuous_batch[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 
@@ -1159,11 +1238,18 @@ fn fused_qk_rope_h8_d64_bshd_continuous_batch[
     ],
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
     output: NDBuffer[type, 4, *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ):
     generic_fused_qk_rope_bshd_continuous_batch[target](
-        q_proj, kv_collection, freqs_cis, layer_idx, output, context
+        q_proj,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
     )
 
 

@@ -66,6 +66,7 @@ def _fused_qk_rope[
             freqs_cis.tensor
         ),
         layer_idx=layer_idx,
+        interleaved=True,
         output=rebind[NDBuffer[type, 4, shape=q_shape]](output.tensor),
         context=context,
     )
