@@ -19,7 +19,7 @@ from utils.numerics import min_or_neg_inf
 
 @value
 @register_passable("trivial")
-struct TileMaskStatus:
+struct TileMaskStatus(Stringable, Writable):
     """A tile's masking status."""
 
     var status: UInt8
@@ -35,6 +35,17 @@ struct TileMaskStatus:
 
     fn __eq__(self, rhs: Self) -> Bool:
         return self.status == rhs.status
+
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    fn write_to[W: Writer](self, mut writer: W):
+        if self.status == 0:
+            writer.write("not masked")
+        elif self.status == 1:
+            writer.write("partially masked")
+        else:
+            writer.write("fully masked")
 
 
 # ===-----------------------------------------------------------------------===#
@@ -136,6 +147,23 @@ struct CausalMask(MHAMask):
             2, element_bitwidth=element_bitwidth, unsigned=unsigned
         ],
     ) -> TileMaskStatus:
+        # Consider tile corners
+        #
+        # 1
+        # ^
+        # C--------------D        A: (offset0,         offset1)
+        # |              |        B: (offset0 + size0, offset1)
+        # |              |        C: (offset0,         offset1 + size1)
+        # |              |        D: (offset0 + size0, offset1 + size1)
+        # A--------------B --> 0
+        #
+        # Key Points:
+        #   * A is inside the tile but B, C, D are not.
+        #   * If B is on or above the diagonal i.e. offset0 + size0 <= offset1
+        #     the tile is fully masked.
+        #   * If C is on or below the diagonal i.e. offset0 >= offset1 + size1
+        #     the tile is not masked at all.
+
         # If false, the tile is not masked.
         var min_q_lt_max_k = (
             tile_offset.data[0] < (tile_offset.data[1] + tile_size.data[1])
@@ -143,7 +171,7 @@ struct CausalMask(MHAMask):
 
         # If true, the tile is fully masked
         var max_q_lt_min_k = (
-            tile_offset.data[0] + tile_size.data[0] < tile_offset.data[1]
+            tile_offset.data[0] + tile_size.data[0] <= tile_offset.data[1]
         ).cast[DType.uint8]()
 
         # Use 2 bits to represent:

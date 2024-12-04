@@ -36,11 +36,23 @@ def test_causal_mask():
         mask.status(Index(4, 4), Index(4, 4)) == TileMaskStatus.PARTIAL_MASK
     )
     assert_true(
-        mask.status(Index(0, 2), Index(2, 2)) == TileMaskStatus.PARTIAL_MASK
+        mask.status(Index(0, 2), Index(2, 2)) == TileMaskStatus.FULL_MASK
     )
     assert_true(mask.status(Index(2, 0), Index(2, 2)) == TileMaskStatus.NO_MASK)
     assert_true(
         mask.status(Index(1, 5), Index(2, 2)) == TileMaskStatus.FULL_MASK
+    )
+    assert_true(
+        mask.status(Index(64, 0), Index(64, 128)) == TileMaskStatus.PARTIAL_MASK
+    )
+    assert_true(
+        mask.status(Index(64, 128), Index(64, 128)) == TileMaskStatus.FULL_MASK
+    )
+    assert_true(
+        mask.status(Index(64, 256), Index(64, 128)) == TileMaskStatus.FULL_MASK
+    )
+    assert_true(
+        mask.status(Index(64, 384), Index(64, 128)) == TileMaskStatus.FULL_MASK
     )
 
 
