@@ -34,7 +34,7 @@ struct TensorSlice[
     is_mutable: Bool, //,
     type: DType,
     rank: Int,
-    origin: Origin[is_mutable].type,
+    origin: Origin[is_mutable],
 ]:
     """Sliced view of a tensor. This is safe to use even after the last use of
     tensor from which it is created. For creating a slice use the __getitem__
