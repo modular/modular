@@ -209,7 +209,7 @@ fn gemv_kernel_vector[
             )
 
 
-@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](block_size))
+@__llvm_metadata(`nvvm.maxntid`=StaticTuple[Int32, 1](num_threads))
 fn gemv_split_k[
     c_type: DType,
     c_shape: DimList,
@@ -220,7 +220,7 @@ fn gemv_split_k[
     simd_width: UInt,
     tile_m: UInt,
     tile_n: UInt,
-    block_size: UInt,
+    num_threads: UInt,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
@@ -231,17 +231,23 @@ fn gemv_split_k[
     n: UInt,
     k: UInt,
 ):
-    alias block_step = 128
-    alias step_k = block_step // bitwidthof[a_type]()
-    alias tile_k = step_k * block_size
+    """GEMV with tiling in K dimension.
+    Assuming the B (weight) matrix is transposed i.e. row major N x K, this kernel
+    implements a vector (1 x K) times a matrix (N x K).
+
+    The impl can actually handle M > 1 but it's only optimal fro tiny M. We use
+    it for M = 1 only.
+    """
+    # Nvidia vectorized load is 16B.
+    alias tile_k = simd_width * num_threads
     var tile_id_m = BlockIdx.x * tile_m
     var tile_id_n = BlockIdx.y * tile_n
     var tid = ThreadIdx.x
     var tile_a = stack_allocation[
-        step_k, a_type, address_space = AddressSpace.LOCAL
+        simd_width, a_type, address_space = AddressSpace.LOCAL
     ]()
     var tile_w = stack_allocation[
-        tile_n * step_k, b_type, address_space = AddressSpace.LOCAL
+        tile_n * simd_width, b_type, address_space = AddressSpace.LOCAL
     ]()
     var acc = stack_allocation[
         tile_m * tile_n, s_type, address_space = AddressSpace.LOCAL
@@ -256,39 +262,37 @@ fn gemv_split_k[
     var weight_idx = tile_id_n * k
     var output_idx = tile_id_m * n + tile_id_n
 
-    for idxK in range(tid * step_k, k, tile_k):
+    # Each thread sums local data in K.
+    for idxK in range(tid * simd_width, k, tile_k):
 
         @parameter
         for i in range(int(tile_n)):
-            var tile_w_quantized = weight.data.load[
+            var b_vec = weight.data.load[
                 width=simd_width, alignment=align_weight
             ](weight_idx + i * k + idxK)
 
-            @parameter
-            for cvt_idx in range(int(simd_width)):
-                tile_w[i * simd_width + cvt_idx] = tile_w_quantized[cvt_idx]
+            tile_w.store[alignment=align_weight](i * simd_width, b_vec)
 
         @parameter
         for i in range(int(tile_m)):
-            var tile_a_quantized = act.data.load[
-                width=simd_width, alignment=align_act
-            ](act_idx + i * k + idxK)
+            var a_vec = act.data.load[width=simd_width, alignment=align_act](
+                act_idx + i * k + idxK
+            )
 
-            @parameter
-            for cvt_idx in range(int(simd_width)):
-                tile_a[cvt_idx] = tile_a_quantized[cvt_idx]
+            tile_a.store[alignment=align_act](i * simd_width, a_vec)
 
             @parameter
             for j in range(int(tile_n)):
 
                 @parameter
-                for l in range(step_k):
+                for l in range(int(simd_width)):
                     acc[i * tile_n + j] += (
                         tile_a[l].cast[s_type]()
-                        * tile_w[j * step_k + l].cast[s_type]()
+                        * tile_w[j * simd_width + l].cast[s_type]()
                     )
 
-    alias k_warp_num = block_size // WARP_SIZE
+    # Warps are arranged along K.
+    alias k_warp_num = num_threads // WARP_SIZE
     var warp_id = warp_broadcast(tid // WARP_SIZE)
     var lane_id = tid % WARP_SIZE
     var shmem = stack_allocation[
@@ -297,6 +301,8 @@ fn gemv_split_k[
         address_space = AddressSpace.SHARED,
     ]()
 
+    # Each warp sums across its threads and stages results in shared memory.
+    # Shared memory data is row mojor (num_warps, tile_m, tile_n) stored in 1D.
     @parameter
     for mi in range(int(tile_m)):
 
@@ -307,7 +313,10 @@ fn gemv_split_k[
                 shmem[mi * tile_n + ni + warp_id * tile_m * tile_n] = val
 
     barrier()
-    for ii in range(tid, tile_m * tile_n, block_size):
+
+    # Sum across warps' results in shared memory then output.
+    # TODO: should be able to vectorize and maybe use larger tile_n.
+    for ii in range(tid, tile_m * tile_n, num_threads):
         var mid = ii // tile_n
         var nid = ii % tile_n
         var val = Scalar[s_type]()
@@ -497,7 +506,7 @@ fn gemv_gpu_dispatch[
     alias simd_width = simdwidthof[a.type, target = _get_gpu_target()]()
 
     if kernel_func is GEMVAlgorithm.GEMV_SPLIT_K:
-        alias block_size = 128
+        alias num_threads = 128
         alias tile_m = 1
         alias tile_n = 2
         var gpu_func = ctx.compile_function[
@@ -511,7 +520,7 @@ fn gemv_gpu_dispatch[
                 simd_width=simd_width,
                 tile_m=tile_m,
                 tile_n=tile_n,
-                block_size=block_size,
+                num_threads=num_threads,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ]
         ]()
@@ -524,7 +533,7 @@ fn gemv_gpu_dispatch[
             n,
             k,
             grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
-            block_dim=block_size,
+            block_dim=num_threads,
         )
 
     elif kernel_func is GEMVAlgorithm.GEMV_KERNEL_VECTOR:
