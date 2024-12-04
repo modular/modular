@@ -157,7 +157,9 @@ fn run_mha[
             + "/seq_len="
             + str(seq_len)
             + "/num_keys="
-            + str(num_keys),
+            + str(num_keys)
+            + "/batch_size="
+            + str(batch_size),
         ),
         ThroughputMeasure(BenchMetric.flops, compute_flops()),
     )
