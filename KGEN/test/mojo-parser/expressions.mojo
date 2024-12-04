@@ -1310,7 +1310,7 @@ fn thing_taking_ref[
   //,
   # TODO: Add _.
   is_mutable: Bool,
-  origin: Origin[is_mutable].type,
+  origin: Origin[is_mutable]._mlir_type,
 ](ref [origin] arg: type): pass
 
 fn thing_taking_ref2[type: AnyType](ref arg: type): pass
@@ -1342,7 +1342,7 @@ fn infer_through_alias():
 # CHECK-LABEL: lit.func @"infer_address_space
 fn infer_address_space[
     is_mutable: __mlir_type.i1,
-    origin: Origin[is_mutable].type
+    origin: Origin[is_mutable]._mlir_type
 ](a: Pointer[Int, origin, AddressSpace(4)]._mlir_type):
   # Show that we can infer the address space parameter of Pointer from a
   # !lit.ref.
