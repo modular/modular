@@ -46,7 +46,7 @@ struct Buffer[
     size: Dim = Dim(),
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    origin: Origin[True].type = MutableAnyOrigin,
+    origin: Origin[True] = MutableAnyOrigin,
 ](Sized):
     """Defines a Buffer which can be parametrized on a static size and Dtype.
 
