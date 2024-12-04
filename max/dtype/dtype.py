@@ -44,8 +44,8 @@ class DType(Enum):
     # si128 = (7 << kIntWidthShift) | mIsInteger | mIsSigned
     # ui128 = (7 << kIntWidthShift) | mIsInteger
 
-    # f8e5m2 = 0 | mIsFloat
-    # f8e4m3 = 1 | mIsFloat
+    f8e5m2 = 0 | mIsFloat
+    f8e4m3 = 1 | mIsFloat
     # f8e3m4 = 2 | mIsFloat
     # f8e5m2fnuz = 3 | mIsFloat
     # f8e4m3fnuz = 4 | mIsFloat
@@ -193,6 +193,8 @@ _DTYPE_TO_MLIR = {
     DType.uint16: "ui16",
     DType.uint32: "ui32",
     DType.uint64: "ui64",
+    DType.f8e4m3: "f8e4m3",
+    DType.f8e5m2: "f8e5m2",
     DType.float16: "f16",
     DType.float32: "f32",
     DType.float64: "f64",
@@ -215,5 +217,7 @@ _MLIR_TO_DTYPE = {
     "f32": DType.float32,
     "f64": DType.float64,
     "bf16": DType.bfloat16,
+    "f8e4m3": DType.f8e4m3,
+    "f8e5m2": DType.f8e5m2,
     "invalid": DType._unknown,
 }
