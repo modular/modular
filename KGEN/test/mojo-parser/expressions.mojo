@@ -1324,7 +1324,7 @@ fn test_thing_taking_reference(mut x: String):
   # CHECK-NEXT: lit.call {{.*}}thing_taking_ref2{{.*}}(%x)
   thing_taking_ref2(x)
 # CHECK-NEXT: lit.call {{.*}}@Pointer::@"address_of
-# CHECK-SAME: <:!Bool {:i1 1}, :!AnyType #String{{.*}}, :origin<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
+# CHECK-SAME: <:!Bool {:i1 1}, :!AnyType #String{{.*}}, :@stdlib::@builtin::@type_aliases::@Origin<:!Bool {:i1 1}> {_mlir_origin: origin<1> = *"x`"}, :!AddressSpace {_value: !Int = {0}}>
   thing_taking_pointer2(Pointer.address_of(x))
 
 struct StructWithStaticMethods:
