@@ -461,7 +461,7 @@ fn index_tensor_primitive[
 # Helpers
 # ===-----------------------------------------------------------------------===#
 
-# TODO(GEX-914): Properly support scalars.
+# TODO(GEX-1449): Replace remaining uses of ScalarTensor with Scalar
 alias ScalarTensor = ManagedTensorSlice[rank=1]
 
 
@@ -509,7 +509,7 @@ fn reduce_shape[
     input_type: DType,
 ](
     input_buf: ManagedTensorSlice[input_type, input_rank],
-    axis0: ScalarTensor,
+    axis0: Scalar,
 ) raises -> IndexList[input_rank]:
     """
     Compute the output shape of a `reduce` operation, and assert the inputs are
@@ -527,8 +527,7 @@ fn reduce_shape[
         The output shape.
     """
 
-    var axis_scalar = axis0._ptr.load(0)
-    var axis = int(normalize_neg_index(axis_scalar, input_rank))
+    var axis = int(normalize_neg_index(axis0, input_rank))
 
     if axis < 0 or input_rank <= axis:
         raise Error(
@@ -2554,16 +2553,16 @@ struct SliceDim:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        starts: ScalarTensor,
-        stops: ScalarTensor,
-        steps: ScalarTensor,
+        starts: Scalar,
+        stops: Scalar,
+        steps: Scalar,
         ctx: MojoCallContextPtr,
     ):
         var view_buffer = slice_dim_as_view[dim=axis](
             managed_tensor_slice_to_ndbuffer(input),
-            int(starts[0]),
-            int(stops[0]),
-            int(steps[0]),
+            int(starts),
+            int(stops),
+            int(steps),
         )
         var view_tensor = ManagedTensorSlice[type, rank](
             view_buffer.data,
@@ -2734,7 +2733,7 @@ struct Mean:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis[0])
+        var axis_val = int(axis)
 
         mean[
             output.type,
@@ -2750,7 +2749,7 @@ struct Mean:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: ScalarTensor,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
@@ -2764,7 +2763,7 @@ struct ReduceAdd:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: ScalarTensor,
+        axis: Scalar,
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -2786,7 +2785,7 @@ struct ReduceAdd:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis[0])
+        var axis_val = int(axis)
 
         sum[
             output.type,
@@ -2802,7 +2801,7 @@ struct ReduceAdd:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: ScalarTensor,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
@@ -2816,7 +2815,7 @@ struct ReduceMul:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: ScalarTensor,
+        axis: Scalar,
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -2838,7 +2837,7 @@ struct ReduceMul:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis[0])
+        var axis_val = int(axis)
 
         product[
             output.type,
@@ -2854,7 +2853,7 @@ struct ReduceMul:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: ScalarTensor,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
@@ -2868,7 +2867,7 @@ struct ReduceMax:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: ScalarTensor,
+        axis: Scalar,
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -2890,7 +2889,7 @@ struct ReduceMax:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis[0])
+        var axis_val = int(axis)
 
         reduce_max[
             output.type,
@@ -2906,7 +2905,7 @@ struct ReduceMax:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: ScalarTensor,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
@@ -2920,7 +2919,7 @@ struct ReduceMin:
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[type = output.type, rank = output.rank],
-        axis: ScalarTensor,
+        axis: Scalar,
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -2942,7 +2941,7 @@ struct ReduceMin:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = int(axis[0])
+        var axis_val = int(axis)
 
         reduce_min[
             output.type,
@@ -2958,7 +2957,7 @@ struct ReduceMin:
         input_type: DType,
     ](
         input: ManagedTensorSlice[input_type, input_rank],
-        axis: ScalarTensor,
+        axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape[input_rank, input_type](input, axis)
 
@@ -2974,7 +2973,7 @@ struct ReduceMinMax:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        axis0: ScalarTensor,
+        axis0: Scalar,
         ctx: MojoCallContextPtr,
     ) raises:
         """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
@@ -2983,7 +2982,7 @@ struct ReduceMinMax:
         """
 
         alias num_reductions = 2
-        var axis = int(normalize_neg_index(axis0[0], rank))
+        var axis = int(normalize_neg_index(axis0, rank))
 
         @parameter
         @always_inline
@@ -3070,11 +3069,9 @@ struct ReduceMinMax:
         _ = axis
 
     @staticmethod
-    fn shape(
-        input: ManagedTensorSlice, axis0: ScalarTensor
-    ) -> IndexList[input.rank]:
+    fn shape(input: ManagedTensorSlice, axis0: Scalar) -> IndexList[input.rank]:
         var new_shape = input.get_runtime_spec().shape
-        var axis = int(normalize_neg_index(axis0[0], input.rank))
+        var axis = int(normalize_neg_index(axis0, input.rank))
         new_shape[axis] = 2
 
         return new_shape
@@ -3416,7 +3413,7 @@ struct Gather:
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[output.type, *_],
         indices: ManagedTensorSlice,
-        axis: ScalarTensor,
+        axis: Scalar,
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -3447,8 +3444,6 @@ struct Gather:
                 rebind[SIMD[output.type, width]](val),
             )
 
-        var axis_val = axis._ptr.load(0)
-
         gather[
             type = output.type,
             indices_type = indices.type,
@@ -3458,7 +3453,7 @@ struct Gather:
             target=target,
             single_thread_blocking_override=synchronous,
         ](
-            Axis(axis_val, input.rank),
+            Axis(axis, input.rank),
             input._spec.shape,
             indices._spec.shape,
             output._spec.shape,
@@ -3526,7 +3521,7 @@ struct LayerNorm:
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
         beta: ManagedTensorSlice[type=type, rank=1],
-        epsilon: ScalarTensor[type=type],
+        epsilon: Scalar[type=type],
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -3546,14 +3541,13 @@ struct LayerNorm:
             return gamma._fused_load[width=width](rebind[IndexList[1]](coords))
 
         var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
-        var epsilon_val = epsilon._ptr.load(0)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         layer_norm[type, rank, input_fn, gamma_fn, target=target,](
             input._spec.shape,
             gamma._spec.shape,
             beta_buf,
-            epsilon_val,
+            epsilon,
             output_buf,
             ctx,
         )
@@ -3566,7 +3560,7 @@ struct LayerNorm:
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
         beta: ManagedTensorSlice[type=type, rank=1],
-        epsilon: ScalarTensor[type=type],
+        epsilon: Scalar[type=type],
     ) -> IndexList[rank]:
         return input._spec.shape
 
@@ -3585,7 +3579,7 @@ struct RMSNorm:
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
-        epsilon: ScalarTensor[type=type],
+        epsilon: Scalar[type=type],
         ctx: MojoCallContextPtr,
     ) raises:
         @parameter
@@ -3599,10 +3593,9 @@ struct RMSNorm:
 
         var gamma_buf = managed_tensor_slice_to_ndbuffer(gamma)
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
-        var epsilon_val = epsilon._ptr.load(0)
 
         rms_norm[type, rank, input_fn, target=target](
-            input._spec.shape, gamma_buf, epsilon_val, output_buf, ctx
+            input._spec.shape, gamma_buf, epsilon, output_buf, ctx
         )
 
     @staticmethod
@@ -3612,7 +3605,7 @@ struct RMSNorm:
     ](
         input: ManagedTensorSlice[type=type, rank=rank],
         gamma: ManagedTensorSlice[type=type, rank=1],
-        epsilon: ScalarTensor[type=type],
+        epsilon: Scalar[type=type],
     ) -> IndexList[rank]:
         return input._spec.shape
 
@@ -3632,18 +3625,18 @@ struct BottomK:
         values: ManagedTensorSlice[type=type, rank=rank],
         indices: ManagedTensorSlice[type = DType.int64, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        k: ScalarTensor,
-        axis: ScalarTensor,
-        sorted: ScalarTensor[type = DType.bool],
+        k: Scalar,
+        axis: Scalar,
+        sorted: Scalar[type = DType.bool],
     ):
         top_k(
             managed_tensor_slice_to_ndbuffer(input),
-            int(k[0]),
-            int(axis[0]),
+            int(k),
+            int(axis),
             False,
             managed_tensor_slice_to_ndbuffer(values),
             managed_tensor_slice_to_ndbuffer(indices),
-            sorted[0],
+            sorted,
         )
 
     @staticmethod
@@ -3672,18 +3665,18 @@ struct TopK:
         values: ManagedTensorSlice[type=type, rank=rank],
         indices: ManagedTensorSlice[type = DType.int64, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        k: ScalarTensor,
-        axis: ScalarTensor,
-        sorted: ScalarTensor[type = DType.bool],
+        k: Scalar,
+        axis: Scalar,
+        sorted: Scalar[type = DType.bool],
     ):
         top_k(
             managed_tensor_slice_to_ndbuffer(input),
-            int(k[0]),
-            int(axis[0]),
+            int(k),
+            int(axis),
             True,
             managed_tensor_slice_to_ndbuffer(values),
             managed_tensor_slice_to_ndbuffer(indices),
-            sorted[0],
+            sorted,
         )
 
     @staticmethod
@@ -3716,13 +3709,13 @@ struct NonMaximumSupression:
         output: ManagedTensorSlice[type = DType.int64, rank=2],
         boxes: ManagedTensorSlice[type=type, rank=3],
         scores: ManagedTensorSlice[type, rank=3],
-        max_output_boxes_per_class: ScalarTensor[DType.int64],
-        iou_threshold: ScalarTensor[DType.float32],
-        score_threshold: ScalarTensor[DType.float32],
+        max_output_boxes_per_class: Scalar[DType.int64],
+        iou_threshold: Scalar[DType.float32],
+        score_threshold: Scalar[DType.float32],
     ):
-        var max_output_boxes_int = int(max_output_boxes_per_class[0])
-        var iou_threshold_float = iou_threshold[0]
-        var score_threshold_float = score_threshold[0]
+        var max_output_boxes_int = int(max_output_boxes_per_class)
+        var iou_threshold_float = iou_threshold
+        var score_threshold_float = score_threshold
 
         non_max_suppression(
             managed_tensor_slice_to_ndbuffer(boxes),
@@ -3739,13 +3732,13 @@ struct NonMaximumSupression:
     ](
         boxes: ManagedTensorSlice[type=type, rank=3],
         scores: ManagedTensorSlice[type=type, rank=3],
-        max_output_boxes_per_class: ScalarTensor[DType.int64],
-        iou_threshold: ScalarTensor[DType.float32],
-        score_threshold: ScalarTensor[DType.float32],
+        max_output_boxes_per_class: Scalar[DType.int64],
+        iou_threshold: Scalar[DType.float32],
+        score_threshold: Scalar[DType.float32],
     ) -> IndexList[2]:
-        var max_output_boxes_int = int(max_output_boxes_per_class[0])
-        var iou_threshold_float = iou_threshold[0]
-        var score_threshold_float = score_threshold[0]
+        var max_output_boxes_int = int(max_output_boxes_per_class)
+        var iou_threshold_float = iou_threshold
+        var score_threshold_float = score_threshold
 
         return non_max_suppression_shape_func(
             managed_tensor_slice_to_ndbuffer(boxes),
@@ -4044,37 +4037,37 @@ struct ROIAlign:
         output: ManagedTensorSlice[type=type, rank=4],
         input: ManagedTensorSlice[type=type, rank=4],
         rois: ManagedTensorSlice[type=type, rank=2],
-        output_height: ScalarTensor[DType.int64],
-        output_width: ScalarTensor[DType.int64],
-        spatial_scale: ScalarTensor,
-        sampling_ratio: ScalarTensor,
+        output_height: Scalar[DType.int64],
+        output_width: Scalar[DType.int64],
+        spatial_scale: Scalar,
+        sampling_ratio: Scalar,
     ):
         roi_align_nhwc[aligned, mode](
             managed_tensor_slice_to_ndbuffer(output),
             managed_tensor_slice_to_ndbuffer(input),
             managed_tensor_slice_to_ndbuffer(rois),
-            int(output_height[0]),
-            int(output_width[0]),
-            spatial_scale[0],
-            sampling_ratio[0],
+            int(output_height),
+            int(output_width),
+            spatial_scale,
+            sampling_ratio,
         )
 
     @staticmethod
     fn shape(
         input: ManagedTensorSlice[rank=4],
         rois: ManagedTensorSlice[rank=2],
-        output_height: ScalarTensor[DType.int64],
-        output_width: ScalarTensor[DType.int64],
-        spatial_scale: ScalarTensor,
-        sampling_ratio: ScalarTensor,
+        output_height: Scalar[DType.int64],
+        output_width: Scalar[DType.int64],
+        spatial_scale: Scalar,
+        sampling_ratio: Scalar,
     ) -> IndexList[4]:
         var shape = IndexList[4]()
         # input shape is [N, H, W, C]
         # rois shape is [M, 5]
         # output shape is [M, output_height, output_width, C]
         shape[0] = rois.spec().shape[0]
-        shape[1] = int(output_height[0])
-        shape[2] = int(output_width[0])
+        shape[1] = int(output_height)
+        shape[2] = int(output_width)
         shape[3] = input.spec().shape[3]
 
         return shape
@@ -4125,11 +4118,11 @@ struct RandomNormal:
     ](
         output: ManagedTensorSlice,
         shape: ManagedTensorSlice[rank=1],
-        mean: ScalarTensor,
-        variance: ScalarTensor,
-        seed_value: ScalarTensor,
+        mean: Scalar,
+        variance: Scalar,
+        seed_value: Scalar,
     ):
-        seed(int(seed_value[0]))
+        seed(int(seed_value))
         var num_elements = 1
         # TODO: Add __len__ support in ManagedTensorSlice.
         for i in range(shape.spec().shape[0]):
@@ -4137,8 +4130,8 @@ struct RandomNormal:
         randn(
             output._ptr,
             num_elements,
-            mean[0].cast[DType.float64](),
-            variance[0].cast[DType.float64](),
+            mean.cast[DType.float64](),
+            variance.cast[DType.float64](),
         )
 
     @staticmethod
@@ -4159,17 +4152,17 @@ struct StaticRandomNormal:
         mean_var_type: DType
     ](
         output: ManagedTensorSlice,
-        mean: ScalarTensor,
-        variance: ScalarTensor,
-        seed_value: ScalarTensor,
+        mean: Scalar,
+        variance: Scalar,
+        seed_value: Scalar,
     ):
-        seed(int(seed_value[0]))
+        seed(int(seed_value))
         var num_elements = output.spec().shape.num_elements()
         randn(
             output._ptr,
             num_elements,
-            mean[0].cast[DType.float64](),
-            variance[0].cast[DType.float64](),
+            mean.cast[DType.float64](),
+            variance.cast[DType.float64](),
         )
 
 
@@ -4270,15 +4263,14 @@ struct CumSum:
     ](
         output: ManagedTensorSlice[type=type, rank=rank],
         input: ManagedTensorSlice[type=type, rank=rank],
-        axis: ScalarTensor,
+        axis: Scalar,
         ctx: MojoCallContextPtr,
     ):
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
         var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var axis_val = axis._ptr.load(0)
 
         cumsum[rank, type, exclusive, reverse](
-            output_buf, input_buf, int(normalize_neg_index(axis_val, rank))
+            output_buf, input_buf, int(normalize_neg_index(axis, rank))
         )
 
 
@@ -4531,10 +4523,9 @@ struct ConcatFromList:
                 managed_tensor_slice_to_ndbuffer(inputs[i])
             )
 
-        var axis_val = axis[0]
         _concat_cpu[rank, type, None, synchronous](
             output_buf,
-            int(normalize_neg_index(axis_val, rank)),
+            int(normalize_neg_index(axis[0], rank)),
             input_as_ndbuffer,
         )
 
@@ -4661,7 +4652,7 @@ struct Conv:
         strides: ManagedTensorSlice,
         dilation: ManagedTensorSlice,
         paddings: ManagedTensorSlice,
-        num_groups: ScalarTensor,
+        num_groups: Scalar,
     ) raises:
         @parameter
         @always_inline
@@ -4765,7 +4756,7 @@ struct Conv:
             pad_d_tuple,
             pad_h_tuple,
             pad_w_tuple,
-            int(num_groups._ptr[0]),
+            int(num_groups),
         )
 
     @staticmethod
@@ -4945,7 +4936,7 @@ struct MaskedFlashAttentionGPU:
         k: ManagedTensorSlice[rank=rank],
         v: ManagedTensorSlice[rank=rank],
         mask: ManagedTensorSlice,
-        scale: ScalarTensor[type = DType.float32],
+        scale: Scalar[type = DType.float32],
         ctx: MojoCallContextPtr,
     ) raises:
         """`masked_flash_attention_gpu` is a hand-fused operator which does
@@ -4961,7 +4952,7 @@ struct MaskedFlashAttentionGPU:
         attentionMatrix = query_processed @ key_processed
 
         **Step 2:
-        norm = broadcast_to(normScalarTensor, shape_of(attentionMatrix))
+        norm = broadcast_to(normScalar, shape_of(attentionMatrix))
 
         **Step 3:
         # Normalize and apply masking
@@ -5000,7 +4991,7 @@ struct MaskedFlashAttentionGPU:
             managed_tensor_slice_to_ndbuffer(k),
             managed_tensor_slice_to_ndbuffer(v),
             managed_tensor_slice_to_ndbuffer(mask),
-            scale[0],
+            scale,
             context=ctx,
         )
 
@@ -5015,7 +5006,7 @@ struct NoMaskFusedAttentionCPU:
         q: ManagedTensorSlice[rank=rank],
         k: ManagedTensorSlice[rank=rank],
         v: ManagedTensorSlice[rank=rank],
-        scale: ScalarTensor[type = DType.float32],
+        scale: Scalar[type = DType.float32],
     ) raises:
         alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
         alias k_shape = compiler.specsof[k.type, q.rank]("k").shape
@@ -5043,7 +5034,7 @@ struct NoMaskFusedAttentionCPU:
         alias mask_shape = DimList()
         alias mask_type = DType.float32
         var mask = NDBuffer[mask_type, rank, mask_shape]()
-        var scale_f32 = scale[0].cast[DType.float32]()
+        var scale_f32 = scale.cast[DType.float32]()
         var causal_mask: Float32 = 0
 
         fused_attention[
@@ -5083,7 +5074,7 @@ struct WithMAskFusedAttentionCPU:
         k: ManagedTensorSlice[rank=rank],
         v: ManagedTensorSlice[rank=rank],
         mask: ManagedTensorSlice[rank=rank],
-        scale: ScalarTensor[type = DType.float32],
+        scale: Scalar[type = DType.float32],
     ) raises:
         alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
         alias k_shape = compiler.specsof[k.type, q.rank]("k").shape
@@ -5109,7 +5100,7 @@ struct WithMAskFusedAttentionCPU:
         # v -- BHSD
         # output: BHSD
         # TODO: Unimplemented and not used
-        var scale_f32 = scale[0].cast[DType.float32]()
+        var scale_f32 = scale.cast[DType.float32]()
         var causal_mask: Float32 = 0
 
         fused_attention[
@@ -5150,7 +5141,7 @@ struct NoMaskFlashAttentionCPU:
         q: ManagedTensorSlice[type=type, rank=rank],
         k: ManagedTensorSlice[type=type, rank=rank],
         v: ManagedTensorSlice[type=type, rank=rank],
-        scale: ScalarTensor[type = DType.float32],
+        scale: Scalar[type = DType.float32],
     ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
@@ -5183,7 +5174,7 @@ struct NoMaskFlashAttentionCPU:
             v.get_runtime_spec().shape,
             IndexList[0](),
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
-            scale[0].cast[DType.float32](),
+            scale.cast[DType.float32](),
         )
 
 
@@ -5202,7 +5193,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
         k_cache: ManagedTensorSlice[type=type, rank = rank + 1],
         v_cache: ManagedTensorSlice[type=type, rank = rank + 1],
         mask: ManagedTensorSlice[type=type],
-        scale: ScalarTensor[type = DType.float32],
+        scale: Scalar[type = DType.float32],
     ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
@@ -5263,7 +5254,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
             v_cache.get_runtime_spec().shape,
             mask.get_runtime_spec().shape,
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
-            scale[0].cast[DType.float32](),
+            scale.cast[DType.float32](),
         )
 
     @staticmethod
@@ -5284,7 +5275,7 @@ struct WithMaskFlashAttentionCPU:
         k: ManagedTensorSlice[type=type, rank=rank],
         v: ManagedTensorSlice[type=type, rank=rank],
         mask: ManagedTensorSlice[type=type],
-        scale: ScalarTensor[type = DType.float32],
+        scale: Scalar[type = DType.float32],
     ) raises:
         alias output_shape = compiler.specsof[output.type, output.rank](
             "output"
@@ -5319,7 +5310,7 @@ struct WithMaskFlashAttentionCPU:
             v.get_runtime_spec().shape,
             mask.get_runtime_spec().shape,
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
-            scale[0].cast[DType.float32](),
+            scale.cast[DType.float32](),
         )
 
 
@@ -6081,7 +6072,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache_kernel_api[
     hidden_state: ManagedTensorSlice[type, 3],
     weight: ManagedTensorSlice[type, 2],
     kv_collection: ContiguousKVCacheCollection,
-    layer_idx: ScalarTensor[DType.uint32],
+    layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -6113,7 +6104,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache_kernel_api[
         ),
         managed_tensor_slice_to_ndbuffer[static_shape=weight_shape](weight),
         kv_collection,
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -6134,7 +6125,7 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
     input_row_offset: ManagedTensorSlice[DType.uint32, 1],
     weight: ManagedTensorSlice[type, 2],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: ScalarTensor[DType.uint32],
+    layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -6175,7 +6166,7 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
         ),
         managed_tensor_slice_to_ndbuffer[static_shape=weight_shape](weight),
         kv_collection,
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -6196,7 +6187,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h6_d48_bshd:
             type,
             kv_params_h6_d48_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache_kernel_api[
@@ -6219,7 +6210,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d128_bshd:
             type,
             kv_params_h8_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache_kernel_api[
@@ -6242,7 +6233,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h1_d16_bshd:
             type,
             kv_params_h1_d16_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache_kernel_api[
@@ -6265,7 +6256,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d32_bshd:
             type,
             kv_params_h8_d32_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_contiguous_cache_kernel_api[
@@ -6289,7 +6280,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged:
             type,
             kv_params_h8_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -6319,7 +6310,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged:
             type,
             kv_params_h8_d512_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -6349,7 +6340,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged:
             type,
             kv_params_h32_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -6379,7 +6370,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged:
             type,
             kv_params_h8_d64_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -6409,7 +6400,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d16_cont_batch_ragged:
             type,
             kv_params_h8_d16_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -6437,7 +6428,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
     hidden_state: ManagedTensorSlice[type, 3],
     weight: ManagedTensorSlice[type, 2],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: ScalarTensor[DType.uint32],
+    layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
 ) raises:
     """Performs a fused QKV matmul. Q outputs are written to the output argument
@@ -6469,7 +6460,7 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
         ),
         managed_tensor_slice_to_ndbuffer[static_shape=weight_shape](weight),
         kv_collection,
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -6492,7 +6483,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_bshd:
             type,
             kv_params_h8_d64_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
@@ -6516,7 +6507,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch:
             type,
             kv_params_h8_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
@@ -6539,7 +6530,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch:
             type,
             kv_params_h1_d16_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
@@ -6562,7 +6553,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch:
             type,
             kv_params_h8_d32_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
@@ -6585,7 +6576,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch:
             type,
             kv_params_h8_d64_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
@@ -6608,7 +6599,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch:
             type,
             kv_params_h8_d512_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
@@ -6631,7 +6622,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch:
             type,
             kv_params_h32_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
@@ -6681,7 +6672,7 @@ fn generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[
         managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
             freqs_cis
         ),
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -6702,11 +6693,11 @@ struct Struct_fused_qk_rope_h6_d48_bshd:
             kv_params_h6_d48_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx[0], ctx
+            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
         )
 
 
@@ -6725,11 +6716,11 @@ struct Struct_fused_qk_rope_h8_d128_bshd:
             kv_params_h8_d128_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx[0], ctx
+            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
         )
 
 
@@ -6748,11 +6739,11 @@ struct Struct_fused_qk_rope_h1_d16_bshd:
             kv_params_h1_d16_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx[0], ctx
+            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
         )
 
 
@@ -6771,11 +6762,11 @@ struct Struct_fused_qk_rope_h8_d32_bshd:
             kv_params_h8_d32_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx[0], ctx
+            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
         )
 
 
@@ -6794,11 +6785,11 @@ struct Struct_fused_qk_rope_h8_d64_bshd:
             kv_params_h8_d64_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_contiguous_cache_kernel_api[target](
-            output, q_proj, kv_collection, freqs_cis, layer_idx[0], ctx
+            output, q_proj, kv_collection, freqs_cis, layer_idx, ctx
         )
 
 
@@ -6815,7 +6806,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     q_proj: ManagedTensorSlice[type, 4],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
-    layer_idx: ScalarTensor[DType.uint32],
+    layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
 ):
     """Performs a fused RoPE projection for Q and K projections.
@@ -6844,7 +6835,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
         managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
             freqs_cis
         ),
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -6865,7 +6856,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch:
             kv_params_h8_d128_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
@@ -6888,7 +6879,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch:
             kv_params_h1_d16_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
@@ -6911,7 +6902,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch:
             kv_params_h8_d32_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
@@ -6934,7 +6925,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch:
             kv_params_h8_d64_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_kernel_api[target](
@@ -6956,7 +6947,7 @@ fn generic_fused_qk_rope_bshd_ragged_kernel_api[
     input_row_offset: ManagedTensorSlice[DType.uint32, 1],
     kv_collection: ContiguousKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
-    layer_idx: ScalarTensor[DType.uint32],
+    layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
 ):
     alias output_shape = compiler.specsof[output.type, output.rank](
@@ -6981,7 +6972,7 @@ fn generic_fused_qk_rope_bshd_ragged_kernel_api[
         managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
             freqs_cis
         ),
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -6996,7 +6987,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     input_row_offset: ManagedTensorSlice[DType.uint32, 1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
-    layer_idx: ScalarTensor[DType.uint32],
+    layer_idx: Scalar[DType.uint32],
     ctx: MojoCallContextPtr,
 ):
     alias output_shape = compiler.specsof[output.type, output.rank](
@@ -7021,7 +7012,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
         managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
             freqs_cis
         ),
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         ctx,
     )
@@ -7043,7 +7034,7 @@ struct Struct_fused_qk_rope_h6_d48_bshd_ragged:
             kv_params_h6_d48_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7073,7 +7064,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_ragged:
             kv_params_h8_d128_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7103,7 +7094,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_ragged:
             kv_params_h8_d512_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7133,7 +7124,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_ragged:
             kv_params_h1_d16_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7163,7 +7154,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_ragged:
             kv_params_h8_d32_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7193,7 +7184,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_ragged:
             kv_params_h8_d64_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
@@ -7223,7 +7214,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch_ragged:
             kv_params_h8_d128_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7255,7 +7246,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_continuous_batch_ragged:
             kv_params_h8_d512_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7287,7 +7278,7 @@ struct Struct_fused_qk_rope_h32_d128_bshd_continuous_batch_ragged:
             kv_params_h32_d128_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7319,7 +7310,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch_ragged:
             kv_params_h1_d16_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7351,7 +7342,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch_ragged:
             kv_params_h8_d32_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7383,7 +7374,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch_ragged:
             kv_params_h8_d64_bshd,
         ],
         freqs_cis: ManagedTensorSlice[type, 2],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
         generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
@@ -7411,10 +7402,10 @@ fn generic_flash_attention_kv_cache_contiguous_cache_kernel_api[
     output: ManagedTensorSlice[type, 4],
     q: ManagedTensorSlice[type, 4],
     kv_collection: ContiguousKVCacheCollection,
-    layer_idx: ScalarTensor[DType.uint32],
+    layer_idx: Scalar[DType.uint32],
     mask: ManagedTensorSlice[type],
     valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-    scale: ScalarTensor[DType.float32],
+    scale: Scalar[DType.float32],
     context: MojoCallContextPtr,
 ) raises:
     alias output_shape = compiler.specsof[output.type, output.rank](
@@ -7425,10 +7416,10 @@ fn generic_flash_attention_kv_cache_contiguous_cache_kernel_api[
     generic_flash_attention_kv_cache_contiguous_cache[target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
         kv_collection,
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer[static_shape=mask_shape](mask),
         managed_tensor_slice_to_ndbuffer(valid_lengths),
-        scale[0],
+        scale,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         context,
     )
@@ -7448,10 +7439,10 @@ struct Struct_flash_attention_kv_cache_h6_d48_bshd:
             type,
             kv_params_h6_d48_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
@@ -7480,10 +7471,10 @@ struct Struct_flash_attention_kv_cache_h8_d128_bshd:
             type,
             kv_params_h8_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
@@ -7512,10 +7503,10 @@ struct Struct_flash_attention_kv_cache_h1_d16_bshd:
             type,
             kv_params_h1_d16_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
@@ -7544,10 +7535,10 @@ struct Struct_flash_attention_kv_cache_h8_d32_bshd:
             type,
             kv_params_h8_d32_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
@@ -7576,10 +7567,10 @@ struct Struct_flash_attention_kv_cache_h8_d64_bshd:
             type,
             kv_params_h8_d64_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_contiguous_cache_kernel_api[target](
@@ -7606,10 +7597,10 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     output: ManagedTensorSlice[type, 4],
     q: ManagedTensorSlice[type, 4],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: ScalarTensor[DType.uint32],
+    layer_idx: Scalar[DType.uint32],
     mask: ManagedTensorSlice[type],
     valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-    scale: ScalarTensor[DType.float32],
+    scale: Scalar[DType.float32],
     context: MojoCallContextPtr,
 ) raises:
     alias output_shape = compiler.specsof[output.type, output.rank](
@@ -7621,10 +7612,10 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     generic_flash_attention_kv_cache_continuous_batch[target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
         kv_collection,
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer[static_shape=mask_shape](mask),
         managed_tensor_slice_to_ndbuffer(valid_lengths),
-        scale[0],
+        scale,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         context,
     )
@@ -7644,10 +7635,10 @@ struct Struct_flash_attention_kv_cache_h8_d128_bshd_continuous_batch:
             type,
             kv_params_h8_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
@@ -7676,10 +7667,10 @@ struct Struct_flash_attention_kv_cache_h1_d16_bshd_continuous_batch:
             type,
             kv_params_h1_d16_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
@@ -7708,10 +7699,10 @@ struct Struct_flash_attention_kv_cache_h8_d32_bshd_continuous_batch:
             type,
             kv_params_h8_d32_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
@@ -7740,10 +7731,10 @@ struct Struct_flash_attention_kv_cache_h8_d64_bshd_continuous_batch:
             type,
             kv_params_h8_d64_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
@@ -7772,10 +7763,10 @@ struct Struct_flash_attention_kv_cache_h32_d128_bshd_continuous_batch:
             type,
             kv_params_h32_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
@@ -7804,10 +7795,10 @@ struct Struct_flash_attention_kv_cache_h8_d512_bshd_continuous_batch:
             type,
             kv_params_h8_d512_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         mask: ManagedTensorSlice[type],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_continuous_batch_kernel_api[target](
@@ -7834,9 +7825,9 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     output: ManagedTensorSlice[type, 4],
     q: ManagedTensorSlice[type, 4],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: ScalarTensor[DType.uint32],
+    layer_idx: Scalar[DType.uint32],
     valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-    scale: ScalarTensor[DType.float32],
+    scale: Scalar[DType.float32],
     context: MojoCallContextPtr,
 ) raises:
     alias output_shape = compiler.specsof[output.type, output.rank](
@@ -7846,9 +7837,9 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
         kv_collection,
-        layer_idx[0],
+        layer_idx,
         managed_tensor_slice_to_ndbuffer(valid_lengths),
-        scale[0],
+        scale,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         context,
     )
@@ -7870,9 +7861,9 @@ struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch:
             type,
             kv_params_h8_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
@@ -7898,9 +7889,9 @@ struct Struct_flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch:
             type,
             kv_params_h8_d32_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
@@ -7926,9 +7917,9 @@ struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch:
             type,
             kv_params_h8_d64_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
@@ -7954,9 +7945,9 @@ struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch:
             type,
             kv_params_h1_d16_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
+        layer_idx: Scalar[DType.uint32],
         valid_lengths: ManagedTensorSlice[DType.uint32, 1],
-        scale: ScalarTensor[DType.float32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
@@ -7979,8 +7970,8 @@ fn generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[
     q: ManagedTensorSlice[type, 3],
     input_row_offset: ManagedTensorSlice[DType.uint32, 1],
     kv_collection: ContinuousBatchingKVCacheCollection,
-    layer_idx: ScalarTensor[DType.uint32],
-    scale: ScalarTensor[DType.float32],
+    layer_idx: Scalar[DType.uint32],
+    scale: Scalar[DType.float32],
     output: ManagedTensorSlice[type, 3],
     context: MojoCallContextPtr,
 ) raises:
@@ -7998,8 +7989,8 @@ fn generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[
             input_row_offset
         ),
         kv_collection,
-        layer_idx[0],
-        scale[0],
+        layer_idx,
+        scale,
         managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
         context,
     )
@@ -8020,8 +8011,8 @@ struct Struct_flash_attention_kv_cache_h1_d16_cont_batch_ragged:
             type,
             kv_params_h1_d16_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
-        scale: ScalarTensor[DType.float32],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -8050,8 +8041,8 @@ struct Struct_flash_attention_kv_cache_h8_d64_cont_batch_ragged:
             type,
             kv_params_h8_d64_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
-        scale: ScalarTensor[DType.float32],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -8080,8 +8071,8 @@ struct Struct_flash_attention_kv_cache_h8_d128_cont_batch_ragged:
             type,
             kv_params_h8_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
-        scale: ScalarTensor[DType.float32],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -8110,8 +8101,8 @@ struct Struct_flash_attention_kv_cache_h8_d512_cont_batch_ragged:
             type,
             kv_params_h8_d512_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
-        scale: ScalarTensor[DType.float32],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
@@ -8140,8 +8131,8 @@ struct Struct_flash_attention_kv_cache_h32_d128_cont_batch_ragged:
             type,
             kv_params_h32_d128_bshd,
         ],
-        layer_idx: ScalarTensor[DType.uint32],
-        scale: ScalarTensor[DType.float32],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
