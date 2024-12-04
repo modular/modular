@@ -17,6 +17,7 @@ from multiprocessing import get_context as mp_get_context
 from multiprocessing.synchronize import Event as MPEvent
 from typing import AsyncGenerator, Mapping, Optional
 
+import uvloop
 from faster_fifo import Queue as MPQueue  # type: ignore
 from max.pipelines.interfaces import TokenGeneratorFactory
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
@@ -34,7 +35,7 @@ def _model_worker_process_fn(
     events: Mapping[str, MPEvent],
 ):
     try:
-        asyncio.run(
+        uvloop.run(
             model_worker_run_v2(model_factory, pipeline_config, queues, events)
         )
     except KeyboardInterrupt:

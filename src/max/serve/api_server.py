@@ -9,12 +9,12 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 import os
 from dataclasses import dataclass
 from typing import Union
 
+import uvloop
 from max.serve.telemetry.logger import configureLogging
 from max.serve.telemetry.metrics import METRICS
 
@@ -120,7 +120,7 @@ def fastapi_app(
 
 
 def fastapi_config(app: FastAPI) -> Config:
-    config = Config(app=app, host="0.0.0.0", log_config=None)
+    config = Config(app=app, host="0.0.0.0", log_config=None, loop="uvloop")
     for route in app.routes:
         logger.info("Route enabled : %s", route)
     return config
@@ -160,4 +160,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    uvloop.run(main())
