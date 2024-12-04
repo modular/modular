@@ -704,9 +704,25 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
   Type type = mlirType;
   auto printUserType = [&](SymbolRefAttr symbol, ArrayRef<TypedAttr> params,
                            ASTDecl *typeDecl) {
+    // Handle special cases that should be aliased.
+    // FIXME(MOCO-367): maintain "typedef" sugar in the type system.
+    if (typeDecl && isa<LIT::StructDeclOp>(*typeDecl) && params.size() == 1 &&
+        cast<LIT::StructDeclOp>(*typeDecl).getDeclName().strref() == "Origin") {
+      // Check to see if we have a Bool with a known constant parameter.
+      //   #lit.struct<{value: i1 = 1}>
+      if (auto strParam = dyn_cast<LITStructAttr>(params[0])) {
+        if (strParam.getValues().size() == 1) {
+          if (auto value =
+                  dyn_cast<BoolAttr>(std::get<1>(strParam.getValues()[0]))) {
+            os << (value.getValue() ? "MutableOrigin" : "ImmutableOrigin");
+            return;
+          }
+        }
+      }
+    }
+
     // Only print the leaf reference when pretty printing types.
     printSymbol(os, symbol, diagShared, /*isFunc=*/false);
-
     if (params.empty())
       return;
 
