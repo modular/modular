@@ -17,6 +17,8 @@
 #include "llvm/ADT/bit.h"
 #include "llvm/Support/xxhash.h"
 
+#include <unistd.h>
+
 using namespace M;
 using namespace KGEN;
 using namespace POP;
@@ -2039,6 +2041,47 @@ static ErrorTreeOrSuccess interpretFree(ExternalCallOp op,
   return success();
 }
 
+static ErrorTreeOrSuccess interpreterWrite(ExternalCallOp op,
+                                           ArrayRef<Attribute> operands,
+                                           InterpreterState &state) {
+  if (!(operands.size() == 3 && op.getNumResults() == 1))
+    return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
+                                  "expected 3 operands and 1 results");
+  Type resultType = op.getResultTypes().front();
+  if (!resultType.isIntOrIndex() && !isa<POP::SIMDType>(resultType))
+    return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
+                                  "expected integer result type");
+  IntegerAttr fileDescriptor = dyn_cast<IntegerAttr>(operands[0]);
+  if (!fileDescriptor)
+    return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
+                                  "expected integer typed first operand");
+
+  PointerAttr buffer = cast<PointerAttr>(operands[1]);
+  if (!buffer)
+    return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
+                                  "expected pointer typed second operand");
+
+  IntegerAttr nbytes = cast<IntegerAttr>(operands[2]);
+  if (!nbytes)
+    return ErrorTree(op.getLoc(), "unable to interpret call to 'write', "
+                                  "expected integer typed third operand");
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  ErrorOr<const void *> mem =
+      state.getReadableMemory(buffer.getAddr(), ptrSize);
+  if (mem)
+    return ErrorTree(op.getLoc(), mem.takeError());
+  int size = nbytes.getValue().getZExtValue();
+  int numWritten =
+      write(fileDescriptor.getValue().getZExtValue(), (const void *)*mem, size);
+  if (auto simdType = dyn_cast<POP::SIMDType>(resultType)) {
+    auto simdAttr = SIMDAttr::get(numWritten, simdType);
+    state.mapResults(simdAttr);
+  } else {
+    state.mapResults(IntegerAttr::get(resultType, numWritten));
+  }
+  return success();
+}
+
 /// FIXME(#26342): We shouldn't implement interpreter support for external_call,
 /// this bakes assumptions about the functions. This is a temporary workaround
 /// because of the fact that the gpu path does not use the dedicated pop memory
@@ -2062,6 +2105,8 @@ ErrorTreeOrSuccess ExternalCallOp::interpret(ArrayRef<Attribute> operands,
     return interpretMalloc(*this, expandedOperands, state);
   if (callee == "free")
     return interpretFree(*this, expandedOperands, state);
+  if (callee == "write")
+    return interpreterWrite(*this, expandedOperands, state);
 
   return ErrorTree(
       getLoc(),
