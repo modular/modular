@@ -70,8 +70,15 @@ def get_default_llama31_config() -> PipelineConfig:
     type=int,
     default=9090,
 )
-def serve(bypass_serve: bool, model: str, port: int):
-    server_config = max_grpc.GRPCConfig(port=port, num_workers=10)
+@click.option(
+    "--max-batch-size",
+    type=int,
+    default=8,
+)
+def serve(bypass_serve: bool, model: str, port: int, max_batch_size: int):
+    server_config = max_grpc.GRPCConfig(
+        port=port, num_workers=10, max_batch_size=max_batch_size
+    )
     if not bypass_serve:
         if model == "perf-fake":
             # Doesn't work!
@@ -122,6 +129,7 @@ def serve(bypass_serve: bool, model: str, port: int):
                 )
                 exit(-1)
 
+            pipeline_config.max_cache_batch_size = max_batch_size
             # Retrieve tokenizer and pipeline.
             pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(
                 pipeline_config
@@ -166,6 +174,7 @@ def serve(bypass_serve: bool, model: str, port: int):
             # Works!
             model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
             pipeline_config = get_default_llama31_config()
+            pipeline_config.max_cache_batch_size = max_batch_size
             llama_tokenizer, llama_pipeline = PIPELINE_REGISTRY.retrieve(
                 pipeline_config
             )
@@ -179,6 +188,7 @@ def serve(bypass_serve: bool, model: str, port: int):
         elif model == "replit":
             model_name = "replit/replit-code-v1_5-3b"
             pipeline_config = get_default_replit_config()
+            pipeline_config.max_cache_batch_size = max_batch_size
             replit_tokenizer, replit_pipeline_factory = (
                 PIPELINE_REGISTRY.retrieve_factory(
                     pipeline_config,

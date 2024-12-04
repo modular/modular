@@ -5,45 +5,100 @@
 # ===----------------------------------------------------------------------=== #
 
 import logging
+import queue
 import uuid
 from concurrent import futures
 from dataclasses import dataclass
 from typing import Callable
 
 import grpc
-
-# mypy: disable-error-code="import-not-found"
-import ModelServing.proto.grpc_predict_v2_pb2 as pb2
 from cli import TextGenerationMetrics
 from grpc_reflection.v1alpha import reflection
 from max.pipelines import PipelineConfig, PipelineTokenizer, TextTokenizer
-from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
+from max.pipelines.interfaces import (  # TokenGeneratorContext,
+    TokenGenerator,
+    TokenGeneratorRequest,
+)
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.telemetry.stopwatch import StopWatch
+
+# mypy: disable-error-code="import-not-found"
+import ModelServing.proto.grpc_predict_v2_pb2 as pb2
 from ModelServing.proto.grpc_predict_v2_pb2_grpc import (
     GRPCInferenceServiceServicer,
     add_GRPCInferenceServiceServicer_to_server,
 )
 
-# logging.root.setLevel(logging.INFO)
+DEFAULT_MAX_TOKENS = 100
+
+
+def tokengen_request_from_grpc_request(
+    request: pb2.ModelInferRequest, index: int
+) -> TokenGeneratorRequest:
+    model_name = request.model_name
+    # model_version = request.model_version
+    max_tokens = DEFAULT_MAX_TOKENS
+    req_recv_time_ns = StopWatch.time_ns()
+    if request.id:
+        id = request.id
+    else:
+        id = str(uuid.uuid4())
+    for name, param in request.parameters.items():
+        # print(f"PARAM:: name {name}, value : {param.string_param}")
+        if name == "max_tokens":
+            max_tokens = int(param.string_param)
+
+    inputs = {}
+    prompt_text = "what is the meaning of life?"
+    for i in request.inputs:
+        inputs[i.name] = i.contents.int_contents
+        if i.name == "prompt":
+            prompt_text = "".join(chr(c) for c in i.contents.int_contents)
+    # self.logger.info(f"Request data : {model_name}, {model_version}, {id}")
+    return TokenGeneratorRequest(
+        id=id,
+        index=index,
+        prompt=prompt_text,
+        model_name=model_name,
+        max_new_tokens=max_tokens,
+        req_recv_time_ns=req_recv_time_ns,
+    )
+
+
+def create_pb_response_from_text(
+    tg_request: TokenGeneratorRequest, text: str
+) -> pb2.ModelInferResponse:
+    response_contents = pb2.InferTensorContents(
+        int_contents=[ord(i) for i in text]
+    )
+    response_entry = pb2.ModelInferResponse.InferOutputTensor(
+        name="response", contents=response_contents
+    )
+    return pb2.ModelInferResponse(
+        model_name=tg_request.model_name,
+        # TODO rashid - support model version in the request? Plumbing seems overkill?
+        model_version="0",
+        id=tg_request.id,
+        outputs=[response_entry],
+    )
 
 
 # TODO move this outside?
-def get_batch_config(
-    batch_size: int,  # Also KV-cache size.
-    batch_timeout=0.0,
-    max_forward_steps: int = 1,
-) -> TokenGeneratorPipelineConfig:
-    return TokenGeneratorPipelineConfig.continuous_heterogenous(
-        tg_batch_size=batch_size,
-        ce_batch_size=batch_size,
-        ce_batch_timeout=batch_timeout,
-        max_forward_steps=max_forward_steps,
-    )
+# def get_batch_config(
+#     batch_size: int,  # Also KV-cache size.
+#     batch_timeout=10.0,
+#     max_forward_steps: int = 1,
+# ) -> TokenGeneratorPipelineConfig:
+#     return TokenGeneratorPipelineConfig.continuous_heterogenous(
+#         tg_batch_size=batch_size,
+#         ce_batch_size=batch_size,
+#         ce_batch_timeout=batch_timeout,
+#         max_forward_steps=max_forward_steps,
+#     )
 
 
 class MaxDirectInferenceService(GRPCInferenceServiceServicer):
@@ -54,11 +109,15 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
         model_name: str,
         pipeline: TokenGenerator,
         tokenizer: PipelineTokenizer,
+        max_batch_size: int,
     ):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.model_name = model_name
         self.pipeline = pipeline
         self.tokenizer = tokenizer
+        self.available_indexes = queue.Queue(max_batch_size)
+        for i in range(max_batch_size):
+            self.available_indexes.put_nowait(i)
 
     def ServerLive(self, request: pb2.ServerLiveRequest, context):
         self.logger.debug(
@@ -71,42 +130,26 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
     async def ModelInfer(self, request: pb2.ModelInferRequest, context):
         self.logger.debug(f"Model infer called with {request}, {type(context)}")
         self.logger.debug(f"Request fields : {request.ListFields()}")
-        model_name = request.model_name
         model_version = request.model_version
-        max_tokens = 100
-        if request.id:
-            id = request.id
-        else:
-            id = str(uuid.uuid4())
-        for name, param in request.parameters.items():
-            print(f"PARAM:: name {name}, value : {param.string_param}")
-            if name == "max_tokens":
-                max_tokens = int(param.string_param)
-
-        inputs = {}
-        prompt_text = "what is the meaning of life?"
-        for i in request.inputs:
-            inputs[i.name] = i.contents.int_contents
-            if i.name == "prompt":
-                prompt_text = "".join(chr(c) for c in i.contents.int_contents)
-        self.logger.info(f"Request data : {model_name}, {model_version}, {id}")
-
+        index = self.available_indexes.get()
         try:
-            tg_request = TokenGeneratorRequest(
-                id=id,
-                index=0,
-                prompt=prompt_text,
-                model_name=self.model_name,
-                max_new_tokens=max_tokens,
+            tg_request = tokengen_request_from_grpc_request(request, index)
+            self.logger.info(
+                "Created token generator request instance : %s", tg_request
             )
             text_context = await self.tokenizer.new_context(tg_request)
-            batch = {id: text_context}
+            batch = {tg_request.id: text_context}
             text = ""
+            max_tokens = (
+                tg_request.max_new_tokens
+                if tg_request.max_new_tokens
+                else DEFAULT_MAX_TOKENS
+            )
             for i in range(max_tokens):
                 resp = self.pipeline.next_token(batch)
-                if id in resp[0]:
+                if tg_request.id in resp[0]:
                     text += await self.tokenizer.decode(
-                        text_context, resp[0][id].next_token
+                        text_context, resp[0][tg_request.id].next_token
                     )
                 else:
                     break
@@ -117,20 +160,50 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
             traceback.print_exception(e)
             self.logger.error(f"ERROR:: {e} :: ")
         finally:
+            self.logger.info("Releasing context %s", tg_request)
             self.pipeline.release(text_context)
+            self.available_indexes.put(index)
+            return create_pb_response_from_text(tg_request, text)
 
-        response_contents = pb2.InferTensorContents(
-            int_contents=[ord(i) for i in text]
-        )
-        response_entry = pb2.ModelInferResponse.InferOutputTensor(
-            name="response", contents=response_contents
-        )
-        return pb2.ModelInferResponse(
-            model_name=model_name,
-            model_version=model_version,
-            id=id,
-            outputs=[response_entry],
-        )
+    async def ModelInferStream(self, request: pb2.ModelInferRequest, context):
+        self.logger.debug(f"Model infer called with {request}, {type(context)}")
+        self.logger.debug(f"Request fields : {request.ListFields()}")
+        for name, param in request.parameters.items():
+            print(f"PARAM:: name {name}, value : {param.string_param}")
+
+        try:
+            index = self.available_indexes.get()
+            tg_request = tokengen_request_from_grpc_request(request, index)
+            self.logger.info(
+                "Created token generator request instance : %s", tg_request
+            )
+            num_tokens = (
+                tg_request.max_new_tokens
+                if tg_request.max_new_tokens
+                else DEFAULT_MAX_TOKENS
+            )
+            text_context = await self.tokenizer.new_context(tg_request)
+            batch = {tg_request.id: text_context}
+            text = ""
+            for i in range(num_tokens):
+                resp = self.pipeline.next_token(batch)
+                if tg_request.id in resp[0]:
+                    text += await self.tokenizer.decode(
+                        text_context, resp[0][tg_request.id].next_token
+                    )
+                    yield create_pb_response_from_text(tg_request, text)
+                else:
+                    break
+            self.logger.debug(f"Response is {text}")
+        except Exception as e:
+            import traceback
+
+            traceback.print_exception(e)
+            self.logger.error(f"ERROR:: {e} :: ")
+        finally:
+            self.logger.info("Release :: %s", tg_request)
+            self.pipeline.release(text_context)
+            self.available_indexes.put(index)
 
     def ServerReady(
         self, request: pb2.ServerReadyRequest, context
@@ -166,10 +239,13 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
 class MaxServeInferenceService(GRPCInferenceServiceServicer):
     """Utilizes the max-serve infrastructure to run a pipeline."""
 
-    def __init__(self, pipeline: TokenGeneratorPipeline):
+    def __init__(self, pipeline: TokenGeneratorPipeline, max_batch_size: int):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.pipeline = pipeline
         self.logger.info("Starting server handler")
+        self.available_indexes = queue.Queue(maxsize=max_batch_size)
+        for i in range(max_batch_size):
+            self.available_indexes.put(i)
 
     async def ServerLive(
         self, request: pb2.ServerLiveRequest, context
@@ -184,47 +260,13 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
     async def ModelInfer(
         self, request: pb2.ModelInferRequest, context
     ) -> pb2.ModelInferResponse:
-        req_recv_time_ns = StopWatch.time_ns()
-        self.logger.debug(f"Model infer called with {request}, {type(context)}")
-        model_name = request.model_name
-        model_version = request.model_version
-        if request.id:
-            id = request.id
-        else:
-            id = str(uuid.uuid4())
-        max_tokens = 100
-        for name, param in request.parameters.items():
-            self.logger.debug(
-                f"Request parameter:: name {name}, value : {param.string_param}"
-            )
-            if name == "max_tokens":
-                max_tokens = int(param.string_param)
-
-        inputs = {}
-        prompt_text = "what is the meaning of life?"
-        for i in request.inputs:
-            inputs[i.name] = i.contents.int_contents
-            if i.name == "prompt":
-                prompt_text = "".join(chr(c) for c in i.contents.int_contents)
-        self.logger.info(f"Request data : {model_name}, {model_version}, {id}")
-        self.logger.debug(
-            f"Max-tokens = {max_tokens}, Prompt is : {prompt_text}"
-        )
         try:
-            tg_request = await self.pipeline.create_request(
-                id=id,
-                prompt=prompt_text,
-                model_name=self.pipeline.model_name,
-                max_new_tokens=max_tokens,
-                req_recv_time_ns=req_recv_time_ns,
-            )
+            tg_request = tokengen_request_from_grpc_request(request, 0)
             self.logger.info(f"Request created : {tg_request}")
             text = ""
-            async with self.pipeline:
-                async for t in self.pipeline.next_token(tg_request):
-                    text += t.decoded_token
-                # text = await self.pipeline.all_tokens(tg_request)
-            self.logger.info(f"Response is {text}")
+            async for t in self.pipeline.next_token(tg_request):
+                text += t.decoded_token
+            return create_pb_response_from_text(tg_request, text)
         except Exception as e:
             import traceback
 
@@ -235,19 +277,31 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
             context.set_details(
                 f"Error in processing {id} : {e} - {traceback.format_exc()}"
             )
+        finally:
+            self.logger.info(f"Request created : {tg_request}")
 
-        response_contents = pb2.InferTensorContents(
-            int_contents=[ord(i) for i in text]
-        )
-        response_entry = pb2.ModelInferResponse.InferOutputTensor(
-            name="response", contents=response_contents
-        )
-        return pb2.ModelInferResponse(
-            model_name=model_name,
-            model_version=model_version,
-            id=id,
-            outputs=[response_entry],
-        )
+    async def ModelInferStream(
+        self, request: pb2.ModelInferRequest, context
+    ) -> pb2.ModelInferResponse:
+        try:
+            index = self.available_indexes.get()
+            tg_request = tokengen_request_from_grpc_request(request, index)
+            self.logger.info(f"Request created : {tg_request}")
+            async for t in self.pipeline.next_token(tg_request):
+                yield create_pb_response_from_text(tg_request, t.decoded_token)
+        except Exception as e:
+            import traceback
+
+            self.logger.error(
+                f"Error in processing {id} : {e} - {traceback.format_exc()}"
+            )
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(
+                f"Error in processing {id} : {e} - {traceback.format_exc()}"
+            )
+        finally:
+            self.available_indexes.put(index)
+            self.logger.info(f"Request completed : {tg_request}")
 
     async def ServerReady(
         self, request: pb2.ServerReadyRequest, context
@@ -286,6 +340,7 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
 class GRPCConfig:
     port: int = 9090
     num_workers: int = 10
+    max_batch_size: int = 8
 
 
 async def grpc_serve(
@@ -302,7 +357,7 @@ async def grpc_serve(
     server = grpc.aio.server(
         futures.ThreadPoolExecutor(
             max_workers=10
-        )  # , interceptors=interceptors
+        ),  # , interceptors=interceptors
     )
     logging.info(
         "Services available ::"
@@ -316,27 +371,39 @@ async def grpc_serve(
 
     tokenizer = TextTokenizer(pipeline_config)
     assert tokenizer.delegate
-    batch_size = pipeline_config.max_cache_batch_size
-    batch_config = get_batch_config(
-        batch_size, max_forward_steps=pipeline_config.max_num_steps
+
+    cont_batching = TokenGeneratorPipelineConfig.continuous_heterogenous(
+        tg_batch_size=server_config.max_batch_size,
+        ce_batch_size=1,
     )
-    pipeline = TokenGeneratorPipeline(batch_config, model_name, tokenizer)
-    pipelines = {}
-    pipelines[model_name] = pipeline
-    dynamic_pipeline_config = TokenGeneratorPipelineConfig.dynamic_homogenous(
-        batch_size=pipeline_config.max_cache_batch_size, batch_timeout=0
-    )
-    async with start_model_worker(
-        factories={model_name: model_factory},
-        configs={model_name: dynamic_pipeline_config},
-    ):
-        add_GRPCInferenceServiceServicer_to_server(
-            MaxServeInferenceService(pipeline), server
-        )
-        server.add_insecure_port(f"[::]:{server_config.port}")
-        await server.start()
-        logging.info("Started server...")
-        await server.wait_for_termination()
+    try:
+        async with (
+            start_model_worker(
+                model_factory=model_factory,
+                pipeline_config=cont_batching,
+            ) as worker_queue,
+            TokenGeneratorPipeline(
+                model_name, tokenizer, worker_queue
+            ) as pipeline,
+        ):
+            pipelines = {}
+            pipelines[model_name] = pipeline
+            add_GRPCInferenceServiceServicer_to_server(
+                MaxServeInferenceService(
+                    pipeline, server_config.max_batch_size
+                ),
+                server,
+            )
+            server.add_insecure_port(f"[::]:{server_config.port}")
+            await server.start()
+            logging.info("Started server (via serve API)...")
+            await server.wait_for_termination()
+    except Exception as ex:
+        logging.error("Exception occurred ", ex)
+        await server.stop(None)
+        logging.info("server shutdown ")
+    finally:
+        logging.info("Shutting down!")
 
 
 async def grpc_serve_direct(
@@ -364,11 +431,23 @@ async def grpc_serve_direct(
     )
     reflection.enable_server_reflection(SERVICE_NAMES, server)
 
-    with TextGenerationMetrics() as _:
-        add_GRPCInferenceServiceServicer_to_server(
-            MaxDirectInferenceService(model_name, pipeline, tokenizer), server
-        )
-        server.add_insecure_port(f"[::]:{server_config.port}")
-        await server.start()
-        logging.info("Started server...")
-        await server.wait_for_termination()
+    try:
+        with TextGenerationMetrics() as _:
+            add_GRPCInferenceServiceServicer_to_server(
+                MaxDirectInferenceService(
+                    model_name,
+                    pipeline,
+                    tokenizer,
+                    server_config.max_batch_size,
+                ),
+                server,
+            )
+            server.add_insecure_port(f"[::]:{server_config.port}")
+            await server.start()
+            logging.info("Started server (direct)...")
+            await server.wait_for_termination()
+    except Exception as ex:
+        logging.error("Exception encountered ", ex)
+    finally:
+        logging.info("Terminating....")
+        await server.stop(None)
