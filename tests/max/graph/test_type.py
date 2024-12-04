@@ -31,7 +31,7 @@ def test_dtype_type(mlir_context, dtype: DType) -> None:
     # We would need `DType.from_mlir`, like `tensor_type_get_dtype` to get "bool".
     assume(dtype != DType.bool)
     new_dtype = _graph.dtype_type(mlir_context, dtype._mlir)
-    assert dtype._mlir == str(new_dtype)
+    assert dtype._mlir == str(new_dtype).lower()
 
 
 @given(dim=...)

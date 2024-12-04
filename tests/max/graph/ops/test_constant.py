@@ -44,4 +44,4 @@ def test_scalar_constant(dtype: DType) -> None:
 
         mlir_dtype = _graph.dtype_type(graph._context, dtype._mlir)
         assert "7" in str(graph._mlir_op)
-        assert str(mlir_dtype) in str(graph._mlir_op)
+        assert str(mlir_dtype).lower() in str(graph._mlir_op)

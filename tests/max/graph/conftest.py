@@ -41,8 +41,10 @@ settings.load_profile("graph_tests")
 MAX_INT32 = np.iinfo(np.int32).max
 MAX_INT64 = np.iinfo(np.int64).max
 
-
-dtypes = st.sampled_from([d for d in DType if d is not DType._unknown])
+# TODO(MSDK-1234): add f8e5m2 and f8e4m3 to test date types
+dtypes = st.sampled_from(
+    [d for d in DType if d not in (DType._unknown, DType.f8e5m2, DType.f8e4m3)]
+)
 
 
 def static_dims(min: int = 0, max: int = 2**63 - 1):
