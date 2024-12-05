@@ -214,12 +214,17 @@ class SpecInstance:
             os.makedirs(KBENCH_CACHE_PATH, exist_ok=True)
 
             defines_str = str(defines)
-            found_in_cache = defines_str in KBENCH_CACHE.keys()
+
+            found_in_cache = (
+                defines_str in KBENCH_CACHE.keys()
+                and os.path.exists(KBENCH_CACHE.get(defines_str))
+            )
             print(f"binary: {defines_str} found in cache: {found_in_cache}")
+            print(f"vars  : {vars}")
 
             if not found_in_cache:
-                binary_path = KBENCH_CACHE_PATH / file_abs_path.stem
                 obj_path = str(file_abs_path.with_suffix(""))
+                binary_path = KBENCH_CACHE_PATH / file_abs_path.stem
                 KBENCH_CACHE[defines_str] = binary_path
                 cmd = self.get_executor()
                 cmd.extend(
@@ -229,6 +234,7 @@ class SpecInstance:
                 out = self._run(cmd, output_file, verbose, dryrun)
                 if out.stderr:
                     print(out.stderr)
+                    return out
                 # move the binary to kbench_cache directory.
                 cmd = ["mv", str(obj_path), str(binary_path)]
                 self._run(cmd, output_file, verbose, dryrun)
