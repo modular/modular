@@ -11,6 +11,7 @@ from buffer.dimlist import DimList
 from memory import UnsafePointer
 from register import *
 from runtime.asyncrt import MojoCallContextPtr
+from sys import external_call
 
 from utils import StaticTuple, unroll
 from utils.index import IndexList
@@ -603,3 +604,9 @@ fn kernel_with_no_target[
     type: DType, rank: Int
 ](x: NDBuffer[type, rank], out: NDBuffer[type, rank]):
     print("hello from kernel with no target")
+
+
+@register_internal("mgprt_test_func")
+@always_inline
+fn mgprt_test_func():
+    external_call["MGP_RT_TEST", NoneType]()

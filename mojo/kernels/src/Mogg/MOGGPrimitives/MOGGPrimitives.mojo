@@ -853,7 +853,7 @@ fn mgp_buffer_get_cached(
 ) raises -> NDBuffer[DType.uint8, 1]:
     var buffer_size: UInt64 = 0
     var buffer_data: UnsafePointer[NoneType] = external_call[
-        "KGEN_CompilerRT_GetCachedBuffer", UnsafePointer[NoneType]
+        "MGP_RT_GetCachedBuffer", UnsafePointer[NoneType]
     ](
         int(buffer_slot),
         ctx.ctx_ptr,
@@ -872,7 +872,7 @@ fn mgp_buffer_get_cached(
 @register_internal("mgp.buffer.remove_cached")
 @always_inline
 fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64) -> Int:
-    external_call["KGEN_CompilerRT_RemoveCachedBuffer", NoneType](
+    external_call["MGP_RT_RemoveCachedBuffer", NoneType](
         int(buffer_slot), ctx.ctx_ptr
     )
     return 0
