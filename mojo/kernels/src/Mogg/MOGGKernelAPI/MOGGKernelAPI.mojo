@@ -572,9 +572,9 @@ struct Range:
         target: StringLiteral,
     ](
         output: ManagedTensorSlice[type=type, rank=1],
-        start: ScalarTensor[type=type],
-        stop: ScalarTensor[type=type],
-        step: ScalarTensor[type=type],
+        start: ManagedTensorSlice[type=type, rank=1],
+        stop: ManagedTensorSlice[type=type, rank=1],
+        step: ManagedTensorSlice[type=type, rank=1],
         ctx: MojoCallContextPtr,
     ):
         @parameter
