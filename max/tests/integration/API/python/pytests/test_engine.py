@@ -157,7 +157,7 @@ def test_devicetensor_wrong_rank(
         ValueError,
         match=(
             r"Rank mismatch: expected a tensor of rank 1 at position 0 "
-            r"but got 2 instead."
+            r"but got a tensor of rank 2 instead."
         ),
     ):
         model.execute(tensor)
