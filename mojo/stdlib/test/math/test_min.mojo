@@ -23,5 +23,13 @@ def test_min():
     assert_equal(actual_result, expected_result)
 
 
+def test_min_scalar():
+    assert_equal(min(Bool(True), Bool(False)), Bool(False))
+    assert_equal(min(Bool(False), Bool(True)), Bool(False))
+    assert_equal(min(Bool(False), Bool(False)), Bool(False))
+    assert_equal(min(Bool(True), Bool(True)), Bool(True))
+
+
 def main():
     test_min()
+    test_min_scalar()

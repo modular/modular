@@ -23,5 +23,12 @@ def test_max():
     assert_equal(actual_result, expected_result)
 
 
+def test_max_scalar():
+    assert_equal(max(Bool(True), Bool(False)), Bool(True))
+    assert_equal(max(Bool(False), Bool(True)), Bool(True))
+    assert_equal(max(Bool(False), Bool(False)), Bool(False))
+    assert_equal(max(Bool(True), Bool(True)), Bool(True))
+
+
 def main():
     test_max()
