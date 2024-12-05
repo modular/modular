@@ -7,6 +7,7 @@
 package reference implementation.
 """
 
+import numpy as np
 import pytest
 import torch
 from llama_vision.attention import Attention
@@ -17,6 +18,7 @@ from llama_vision.positional_embedding import (
     PrecomputedPositionEmbedding,
 )
 from llama_vision.vision_model import VisionConv2D, VisionModel
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight
@@ -49,14 +51,11 @@ class WrappedVisionModel:
             dtype=dtype,
             image_size=config.image_size,
             patch_size=config.patch_size,
-            supported_aspect_ratios=config.supported_aspect_ratios,
             hidden_size=config.hidden_size,
             max_num_tiles=config.max_num_tiles,
-            num_channels=config.num_channels,
             norm_eps=config.norm_eps,
             attention_heads=config.attention_heads,
             num_hidden_layers=config.num_hidden_layers,
-            intermediate_size=config.intermediate_size,
             num_global_layers=config.num_global_layers,
             intermediate_layers_indices=config.intermediate_layers_indices,
             torch_vision_model=torch_vision_model,
@@ -79,14 +78,11 @@ class WrappedVisionModel:
         dtype: DType,
         image_size: int,
         patch_size: int,
-        supported_aspect_ratios: list[list[int]],
         hidden_size: int,
         max_num_tiles: int,
-        num_channels: int,
         norm_eps: float,
         attention_heads: int,
         num_hidden_layers: int,
-        intermediate_size: int,
         num_global_layers: int,
         intermediate_layers_indices: list[int],
         torch_vision_model: MllamaVisionModel,
@@ -95,10 +91,6 @@ class WrappedVisionModel:
         Helper function to construct a VisionModel used exclusively for testing
         purposes here.
         """
-        # Shared variables.
-        num_patches = (image_size // patch_size) ** 2 + 1
-        max_aspect_ratio_id = (len(supported_aspect_ratios)) + 1
-
         gated_positional_embedding = PrecomputedPositionEmbedding(
             image_size=image_size,
             patch_size=patch_size,
@@ -408,27 +400,17 @@ def test_vision_model(
         image_size=image_size,
         initializer_range=0.02,
         intermediate_layers_indices=[3, 7, 15, 23, 30],
-        intermediate_size=5120,
         norm_eps=1e-05,
-        num_channels=num_channels,
         num_global_layers=8,
         num_hidden_layers=32,
-        supported_aspect_ratios=[
-            [1, 1],
-            [1, 2],
-            [1, 3],
-            [1, 4],
-            [2, 1],
-            [2, 2],
-            [3, 1],
-            [4, 1],
-        ],
         vision_output_dim=7680,
     )
 
     # Set up PyTorch position embedding layer.
     torch_dtype = torch.float32
-    torch_vision_model = MllamaVisionModel(config=config)
+    torch_vision_model = MllamaVisionModel._from_config(
+        config, attn_implementation="sdpa"
+    )
     # torch_vision_model.to(torch_dtype)
 
     # Set up MAX graph position embedding layer.
@@ -525,18 +507,7 @@ def test_vision_model(
     weights_registry.update(local_transformer_weights_registry)
     weights_registry.update(global_transformer_weights_registry)
 
-    # vision_model = session.load(graph, weights_registry=weights_registry)
-
-    # # Phase 3: execution.
-
-    # # Initialize model inputs.
-    # # Inputs:
-    # #   pixel_values: shape=[1, 1, 4, 3, 448, 448], dtype=torch.float32
-    # #   aspect_ratio_ids: shape=[1, 1], dtype=torch.int64
-    # #   aspect_ratio_mask: shape=[1, 1, 4], dtype=torch.int64
-    # #   output_attentions: value=False
-    # #   output_hidden_states: value=False
-    # #   return_dict: value=True
+    vision_model = session.load(graph, weights_registry=weights_registry)
 
     pixel_values = torch.randn(
         pixel_values_type.shape.static_dims, dtype=torch_dtype
@@ -552,27 +523,21 @@ def test_vision_model(
         0, 9, aspect_ratio_mask_type.shape.static_dims, dtype=torch.long
     )
 
-    # predicted = vision_model(
-    #     pixel_values,
-    #     aspect_ratio_ids,
-    # )[0]
-    # assert isinstance(predicted, Tensor)
+    predicted = vision_model(
+        pixel_values,
+        aspect_ratio_ids,
+        aspect_ratio_mask,
+    )[0]
+    assert isinstance(predicted, Tensor)
 
-    # pixel_values: torch.Tensor,
-    # aspect_ratio_ids: torch.Tensor,
-    # aspect_ratio_mask: torch.Tensor,
-    # output_attentions: Optional[bool] = None,
-    # output_hidden_states: Optional[bool] = None,
-    # return_dict: Optional[bool] = None,
-    expected = (
-        torch_vision_model(
-            pixel_values=pixel_values,
-            aspect_ratio_ids=aspect_ratio_ids,
-            aspect_ratio_mask=aspect_ratio_mask,
-        )[0]
-        .detach()
-        .numpy()
-    )
+    cross_attention_states = torch_vision_model(
+        pixel_values=pixel_values,
+        aspect_ratio_ids=aspect_ratio_ids,
+        aspect_ratio_mask=aspect_ratio_mask,
+    )[0]
+    expected = cross_attention_states.detach().numpy()
+
+    np.testing.assert_array_equal(predicted.to_numpy().shape, expected.shape)
 
     # # Compare the outputs.
     # assert is_euclidean_distance_close(
