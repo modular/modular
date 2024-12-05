@@ -4325,10 +4325,7 @@ fn statictuple_setitem__[
     index: Int,
     val: element_type,
 ](mut static_tuple: StaticTuple[element_type, size]):
-    constrained[index < size]()
-    var tmp = static_tuple
-    _set_array_elem[index, size, element_type](val, tmp.array)
-    static_tuple = tmp
+    static_tuple[index] = val
 
 
 fn get_inputs_lambdas[
