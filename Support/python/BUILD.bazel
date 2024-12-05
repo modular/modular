@@ -27,7 +27,6 @@ modular_py_test(
     tags = ["requires-network"],
     deps = [
         ":support",
-        "//SDK/lib/API/python/max/dtype",
         requirement("ruamel.yaml"),
         requirement("torch"),
     ],
