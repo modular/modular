@@ -194,6 +194,93 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
+// LITNewSignatureType
+//===----------------------------------------------------------------------===//
+
+class LITNewSignatureType : public NewSignatureType {
+public:
+  using NewSignatureType::NewSignatureType;
+  LITNewSignatureType(NewSignatureType sig);
+
+  /// Get the signature metadata.
+  FnMetadataAttr getMetadata();
+
+  /// Get the argument list metadata.
+  PogListAttr getArgListAttrs();
+
+  /// Return the name for the argument at the specified index.
+  StringAttr getArgName(size_t idx);
+
+  /// Get the origin set of the capture lifetimes.
+  TypedAttr getCaptureOrigins();
+
+  /// Get whether nested lifetimes are excluded from exclusivity checking.
+  bool getIsNestedOriginExclusivityCheckingDisabled();
+
+  /// Get the function's default positional arguments.
+  ArrayRef<TypedAttr> getDefaultPosArgs();
+
+  /// Get the function's default keyword-only arguments.
+  ArrayRef<TypedAttr> getDefaultKwOnlyArgs();
+
+  /// Get the number of implicit origin decls this function type carries.
+  size_t getNumImplicitOriginDecls();
+
+  /// LIT-level signatures always have one result type.
+  Type getResultType() { return getResults().front(); }
+
+  /// Get the user result type of the signature.
+  Type getUserResultType();
+
+  /// Returns true if the argument at this index is any vararg or a pack.
+  bool isAnyVarArg(size_t index);
+
+  /// Returns true if the argument at this index is a positional vararg.
+  bool isPosVarArg(size_t index);
+
+  /// For a PosVarArg, return the declared ArgConvention of the elements. For
+  /// example: fn x(inout *args: Int) is declared 'inout'.
+  ArgConvention getPosVarArgConvention(size_t index);
+
+  /// Returns true if the argument at this index is a keyword vararg.
+  bool isKwVarArg(size_t index);
+
+  /// Returns true if the argument at this index is a pack vararg.
+  bool isPackVarArg(size_t index);
+
+  /// For a PackVarArg, return the declared ArgConvention of the elements. For
+  /// example: fn x[*Ts: AnyType](inout *pack: *Ts) is declared 'inout'.
+  ArgConvention getPackVarArgConvention(size_t index);
+
+  /// If the specified argument is a variadic pack, return the VariadicPack.
+  Type getIfVariadicPack(size_t index);
+
+  /// Returns true if the signature has has pack arguments.
+  bool hasPackVarArgs();
+
+  /// Returns true if the signature has keyword variadic arguments.
+  bool hasKwVarArgs();
+
+  /// Return the offset of the error slot argument from the back of the argument
+  /// list, if the signature is raising.
+  unsigned getErrorSlotOffset();
+
+  /// Return this signature with the specified capture lifetimes.
+  LITNewSignatureType getWithCaptureOrigins(TypedAttr lifetimes);
+
+  /// A `NewSignatureType` is a LIT signature if it contains function metadata.
+  static bool classof(NewSignatureType type);
+  static bool classof(Type type);
+
+  static LITNewSignatureType get(MLIRContext *ctx, TypeRange inputs,
+                                 TypeRange results,
+                                 size_t numImplicitOriginDecls);
+  static LITNewSignatureType get(FunctionType values, ArrayRef<Type> paramTypes,
+                                 ArrayRef<ArgConvention> convs,
+                                 FnEffects effects, FnMetadataAttr metadata);
+};
+
+//===----------------------------------------------------------------------===//
 // Type Utilities
 //===----------------------------------------------------------------------===//
 

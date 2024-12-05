@@ -215,6 +215,91 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
 }
 
 //===----------------------------------------------------------------------===//
+// NewSignatureType
+//===----------------------------------------------------------------------===//
+
+def KGEN_NewSignatureType : KGENType<"NewSignature", "new_signature", [
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+  let summary = "The type of a KGEN function";
+  let description = [{
+    This type describes the type of a function KGEN, which can have input/output
+    value arguments and results.
+
+    The metadata attribute is used to store additional information about a
+    function, such as its argument calling conventions and the effects of the
+    function itself. When the metadata only contains default values, it isn't
+    printed in the textual MLIR format.
+  }];
+
+  let parameters = (ins
+    "FunctionType":$values,
+    ArrayRefParameter<"ArgConvention">:$argConventions,
+    "FnEffects":$fnEffects,
+    "FnMetadataAttrInterface":$metadata
+  );
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    /// This builder allows everything other than the function type to be null.
+    TypeBuilderWithInferredContext<(ins
+        "FunctionType":$values,
+        CArg<"ArrayRef<ArgConvention>", "{}">:$argConvs,
+        CArg<"FnEffects", "{}">:$effects,
+        CArg<"Attribute", "{}">:$metadata), [{
+      SmallVector<ArgConvention> convs = llvm::to_vector(argConvs);
+      convs.resize(values.getNumInputs());
+      return $_get(values.getContext(), values, convs, effects,
+                   ::cast_or_null<FnMetadataAttrInterface>(metadata));
+    }]>,
+    TypeBuilder<(ins "TypeRange":$inputs, "TypeRange":$results)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Helper to return the argument and result types.
+    ArrayRef<Type> getArguments() const;
+    ArrayRef<Type> getResults() const;
+
+    /// Return true if this signature's last argument is a result from the
+    /// function returned through memory.
+    bool hasMemoryOnlyResult();
+    /// Return true if this signature's first argument is an initializer result
+    /// returned through memory.
+    bool hasInitSelfArg();
+
+    bool isThrows() const { return getFnEffects().isThrows(); }
+    bool isAsync() const { return getFnEffects().isAsync(); }
+    bool isCapturing() const { return getFnEffects().isCapturing(); }
+    bool isEscaping() const { return getFnEffects().isEscaping(); }
+    bool isRefResult() const { return getFnEffects().isRefResult(); }
+
+    /// Return the convention for the specified value argument.
+    ArgConvention getArgConvention(size_t inputNo) {
+      return getArgConventions()[inputNo];
+    }
+
+    /// Set a function convention.
+    NewSignatureType getWithFnEffects(FnEffects effect);
+    /// Return this signature type with the value signature replaced.
+    NewSignatureType getWithValuesReplaced(FunctionType fnType);
+    /// Return this signature with a new metadata attribute.
+    NewSignatureType getWithMetadata(FnMetadataAttrInterface metadata);
+
+    /// Return the number of arguments.
+    size_t getNumArguments() { return getArguments().size(); }
+    /// Return the number of results.
+    size_t getNumResults() { return getResults().size(); }
+
+    /// Calls to async functions don't provide values for the `byref_error` and
+    /// `byref_result` arguments. If this is an async function, return the
+    /// number of result slots it has. Otherwise, return 0.
+    size_t getNumAsyncReturnSlots();
+  }];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 
@@ -225,6 +310,9 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     ParameterScopeTypeInterface]> {
   let summary = "The signature for a parameterized declaration";
   let description = [{
+    WARNING: This type is being deprecated in favor of GeneratorType +
+    NewSignatureType.
+
     This type describes the signature for a parameterized declaration, which
     can have input/output parameters as well as input/output value arguments
     and results.

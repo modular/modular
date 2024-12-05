@@ -35,6 +35,13 @@ def GeneratorType : DialectType<(type
   ConcreteOptionalAttribute<"GeneratorMetadataAttrInterface">:$metadata
 )>;
 
+def NewSignatureType : DialectType<(type
+  ConcreteType<"FunctionType">:$values,
+  EnumAttrArray<"ArgConvention">:$argConventions,
+  Custom<"FnEffects">:$fnEffects,
+  ConcreteOptionalAttribute<"FnMetadataAttrInterface">:$metadata
+)>;
+
 def SignatureType : DialectType<(type
   TypeArray:$inputParamTypes,
   TypeArray:$resultParamTypes,

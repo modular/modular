@@ -929,7 +929,8 @@ static ParseResult parseLITGenerator(AsmParser &p, Type &generator) {
 // SignatureType Parsing
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
+static ParseResult parseLITSignature(AsmParser &p, Type &signature,
+                                     bool isNew) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
 
   size_t numOriginDecls = 0;
@@ -950,8 +951,12 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
   SmallVector<Type> inputParamTypes;
   PogListAttr paramListAttr;
-  if (failed(parseOptionalParamSignature(p, inputParamTypes, paramListAttr)))
-    return failure();
+  if (!isNew) {
+    if (failed(parseOptionalParamSignature(p, inputParamTypes, paramListAttr)))
+      return failure();
+  } else {
+    paramListAttr = PogListAttr::get(p.getContext());
+  }
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaultPosArgs;
@@ -1012,9 +1017,15 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
                        origArgPackConvention),
       paramListAttr, numOriginDecls, captureOrigins,
       isNestedOriginExclusivityCheckingDisabled);
-  signature = SignatureType::getChecked(
-      [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
-      /*resultParamTypes=*/{}, argConventions, effects, metadata);
+  if (isNew) {
+    signature = NewSignatureType::getChecked(
+        [&] { return p.emitError(startLoc); }, functionType, argConventions,
+        effects, metadata);
+  } else {
+    signature = SignatureType::getChecked(
+        [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
+        /*resultParamTypes=*/{}, argConventions, effects, metadata);
+  }
   return success(!!signature);
 }
 
@@ -1026,9 +1037,15 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
   if (parseResult.has_value())
     return genType;
 
-  // Special alias for `!lit.signature` & `!lit.generator` type.
+  // Special alias for `!lit.(new_)signature` & `!lit.generator` types.
   if (mnemonic == "signature") {
-    if (p.parseLess() || parseLITSignature(p, genType) || p.parseGreater())
+    if (p.parseLess() || parseLITSignature(p, genType, /*isNew=*/false) ||
+        p.parseGreater())
+      return {};
+    return genType;
+  } else if (mnemonic == "new_signature") {
+    if (p.parseLess() || parseLITSignature(p, genType, /*isNew=*/true) ||
+        p.parseGreater())
       return {};
     return genType;
   } else if (mnemonic == "generator") {
@@ -1047,22 +1064,24 @@ void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
     return;
 }
 
-void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
-  p << "!lit.signature<";
-  auto signature = ::cast<LITSignatureType>(sig);
-
-  if (unsigned numOriginDecls = getNumImplicitOriginDecls())
+/// Temporary shared printing logic during migration.
+/// Expects `SigT` to be LITSignatureType or LITNewSignatureType.
+template <typename SigT>
+static void printSignatureShared(AsmPrinter &p, SigT signature,
+                                 FnMetadataAttr metadata) {
+  if (unsigned numOriginDecls = metadata.getNumImplicitOriginDecls())
     p << '[' << numOriginDecls << ']';
-  if (!isEmptyOriginSet(getCaptureOrigins())) {
+  if (!isEmptyOriginSet(metadata.getCaptureOrigins())) {
     p << ':';
-    printParamValue(p, getCaptureOrigins());
+    printParamValue(p, metadata.getCaptureOrigins());
     p << ':';
   }
   if (signature.getIsNestedOriginExclusivityCheckingDisabled())
     p << "no_nested_origin_exclusivity";
 
-  printOptionalParamSignature(p, signature.getParamTypes(),
-                              signature.getParamListAttrs());
+  if constexpr (std::is_same_v<SigT, LITSignatureType>)
+    printOptionalParamSignature(p, signature.getParamTypes(),
+                                signature.getParamListAttrs());
 
   PogListAttr argListAttr = signature.getArgListAttrs();
   SmallVector<Variadicness> variadicness = getVariadicness(argListAttr);
@@ -1096,8 +1115,23 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     passingKindPrinter.printOptionalTrailingSlash(i);
   };
 
-  printSignatureValues(p, printElt, signature.getValues(), signature,
+  printSignatureValues(p, printElt, signature.getValues(),
+                       signature.getArgConventions(), signature.getFnEffects(),
                        /*optionalResultList=*/false);
+}
+
+void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
+  p << "!lit.signature<";
+  auto signature = ::cast<LITSignatureType>(sig);
+  printSignatureShared(p, signature, *this);
+  p << '>';
+}
+
+void FnMetadataAttr::printNewSignature(AsmPrinter &p,
+                                       NewSignatureType sig) const {
+  p << "!lit.new_signature<";
+  auto signature = ::cast<LITNewSignatureType>(sig);
+  printSignatureShared(p, signature, *this);
   p << '>';
 }
 
@@ -1408,6 +1442,131 @@ LITSignatureType::prependParams(LITSignatureType sig,
                             remapper.replace(sig.getResultParamTypes()),
                             sig.getArgConventions(), sig.getFnEffects(),
                             metadata);
+}
+
+//===----------------------------------------------------------------------===//
+// LITNewSignatureType
+//===----------------------------------------------------------------------===//
+
+LITNewSignatureType::LITNewSignatureType(NewSignatureType sig)
+    : NewSignatureType(sig) {
+  assert((!sig || ::isa_and_nonnull<FnMetadataAttr>(sig.getMetadata())) &&
+         "expected LIT function metadata");
+}
+
+FnMetadataAttr LITNewSignatureType::getMetadata() {
+  return ::cast<FnMetadataAttr>(NewSignatureType::getMetadata());
+}
+
+PogListAttr LITNewSignatureType::getArgListAttrs() {
+  return getMetadata().getArgListAttrs();
+}
+
+StringAttr LITNewSignatureType::getArgName(size_t idx) {
+  return getArgListAttrs().getName(idx);
+}
+
+TypedAttr LITNewSignatureType::getCaptureOrigins() {
+  return getMetadata().getCaptureOrigins();
+}
+
+bool LITNewSignatureType::getIsNestedOriginExclusivityCheckingDisabled() {
+  return getMetadata().getIsNestedOriginExclusivityCheckingDisabled();
+}
+
+ArrayRef<TypedAttr> LITNewSignatureType::getDefaultPosArgs() {
+  return getMetadata().getDefaultPosArgs();
+}
+
+ArrayRef<TypedAttr> LITNewSignatureType::getDefaultKwOnlyArgs() {
+  return getMetadata().getDefaultKwOnlyArgs();
+}
+
+/// Get the number of implicit origin decls this function type carries.
+size_t LITNewSignatureType::getNumImplicitOriginDecls() {
+  return getMetadata().getNumImplicitOriginDecls();
+}
+
+Type LITNewSignatureType::getUserResultType() {
+  // If this function has an init_self argument, then it returns None.
+  if (hasInitSelfArg())
+    return KGEN::NoneType::get(getContext());
+  // If this function has a byref_result, return the reference element type.
+  if (hasMemoryOnlyResult())
+    return ::cast<RefType>(getArguments().back()).getElementType();
+  return getResultType();
+}
+
+LITNewSignatureType
+LITNewSignatureType::getWithCaptureOrigins(TypedAttr origins) {
+  return getWithMetadata(FnMetadataAttr::get(
+      getArgListAttrs(), {}, getNumImplicitOriginDecls(), origins,
+      getIsNestedOriginExclusivityCheckingDisabled()));
+}
+
+bool LITNewSignatureType::isAnyVarArg(size_t index) {
+  return getMetadata().isAnyVarArg(index);
+}
+
+bool LITNewSignatureType::isPosVarArg(size_t index) {
+  return getMetadata().isPosVarArg(index);
+}
+
+/// For a PosVarArg, return the declared ArgConvention of the elements. For
+/// example: fn x(inout *args: Int) is declared 'inout'.
+ArgConvention LITNewSignatureType::getPosVarArgConvention(size_t index) {
+  assert(isPosVarArg(index) && "isn't a positional vararg");
+  return ::cast<VariadicType>(getArguments()[index]).getConvention();
+}
+
+bool LITNewSignatureType::isKwVarArg(size_t index) {
+  return getMetadata().isKwVarArg(index);
+}
+
+bool LITNewSignatureType::isPackVarArg(size_t index) {
+  return getMetadata().isPackVarArg(index);
+}
+
+/// If the specified argument is a variadic pack, return the VariadicPack.
+Type LITNewSignatureType::getIfVariadicPack(size_t index) {
+  if (!isPackVarArg(index))
+    return {};
+
+  // Look through references to the VariadicPack type.
+  auto type = getArguments()[index];
+  if (SignatureType::hasAddress(getArgConvention(index)))
+    type = ::cast<RefType>(type).getElementType();
+  return type;
+}
+
+/// For a PosVarArg, return the declared ArgConvention of the elements. For
+/// example: fn x(inout *args: Int) is declared 'inout'.
+ArgConvention LITNewSignatureType::getPackVarArgConvention(size_t index) {
+  assert(getMetadata().isPackVarArg(index));
+  return *getArgListAttrs().getOrigPackConvention();
+}
+
+bool LITNewSignatureType::hasPackVarArgs() {
+  return getMetadata().hasPackVarArgs();
+}
+
+bool LITNewSignatureType::hasKwVarArgs() {
+  return getMetadata().hasKwVarArgs();
+}
+
+unsigned LITNewSignatureType::getErrorSlotOffset() {
+  assert(isThrows() && "signature does not refer to a throwing function");
+  return 1 + hasMemoryOnlyResult();
+}
+
+bool LITNewSignatureType::classof(NewSignatureType type) {
+  return ::isa_and_nonnull<FnMetadataAttr>(type.getMetadata());
+}
+
+bool LITNewSignatureType::classof(Type type) {
+  if (auto sig = ::dyn_cast<NewSignatureType>(type))
+    return classof(sig);
+  return false;
 }
 
 //===----------------------------------------------------------------------===//

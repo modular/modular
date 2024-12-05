@@ -322,6 +322,14 @@ void printSignatureValues(AsmPrinter &p, FunctionType functionType,
 void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
                           FunctionType functionType, SignatureType signature,
                           bool optionalResultList);
+void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
+                          FunctionType functionType,
+                          ArrayRef<ArgConvention> argConvs, FnEffects fnEffects,
+                          bool optionalResultList);
+
+/// NewSignature versions of print/parse
+void printNewSignature(AsmPrinter &p, NewSignatureType signatureType);
+ParseResult parseNewSignature(AsmParser &p, Type &signature);
 
 /// Parse a plain (i.e. non-lit) signature.
 ParseResult parseKGENSignature(AsmParser &p, FunctionType &functionType,
