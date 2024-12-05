@@ -6,6 +6,7 @@
 
 import logging
 import queue
+import traceback
 import uuid
 from concurrent import futures
 from dataclasses import dataclass
@@ -15,10 +16,7 @@ import grpc
 from cli import TextGenerationMetrics
 from grpc_reflection.v1alpha import reflection
 from max.pipelines import PipelineConfig, PipelineTokenizer, TextTokenizer
-from max.pipelines.interfaces import (  # TokenGeneratorContext,
-    TokenGenerator,
-    TokenGeneratorRequest,
-)
+from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorPipelineConfig,
@@ -37,10 +35,15 @@ DEFAULT_MAX_TOKENS = 100
 
 
 def tokengen_request_from_grpc_request(
-    request: pb2.ModelInferRequest, index: int
+    request: pb2.ModelInferRequest,
+    index: int = 0,  # needed when bypassing serve
 ) -> TokenGeneratorRequest:
+    """Creates a TokenGeneratorRequest object from a protobuf request instance.
+    This method adds the request receive time, as well as converts the ascii
+    input prompt to a text input prompt. The protobuf request contains an optional
+    `max_tokens` to indicate the max output token length.
+    """
     model_name = request.model_name
-    # model_version = request.model_version
     max_tokens = DEFAULT_MAX_TOKENS
     req_recv_time_ns = StopWatch.time_ns()
     if request.id:
@@ -48,7 +51,6 @@ def tokengen_request_from_grpc_request(
     else:
         id = str(uuid.uuid4())
     for name, param in request.parameters.items():
-        # print(f"PARAM:: name {name}, value : {param.string_param}")
         if name == "max_tokens":
             max_tokens = int(param.string_param)
 
@@ -58,7 +60,6 @@ def tokengen_request_from_grpc_request(
         inputs[i.name] = i.contents.int_contents
         if i.name == "prompt":
             prompt_text = "".join(chr(c) for c in i.contents.int_contents)
-    # self.logger.info(f"Request data : {model_name}, {model_version}, {id}")
     return TokenGeneratorRequest(
         id=id,
         index=index,
@@ -72,6 +73,9 @@ def tokengen_request_from_grpc_request(
 def create_pb_response_from_text(
     tg_request: TokenGeneratorRequest, text: str
 ) -> pb2.ModelInferResponse:
+    """Creates a protobuf model inference response for a given request object
+    and a given text string. This can be a partial string used in streaming responses or
+     a complete string in non-streaming responses."""
     response_contents = pb2.InferTensorContents(
         int_contents=[ord(i) for i in text]
     )
@@ -85,20 +89,6 @@ def create_pb_response_from_text(
         id=tg_request.id,
         outputs=[response_entry],
     )
-
-
-# TODO move this outside?
-# def get_batch_config(
-#     batch_size: int,  # Also KV-cache size.
-#     batch_timeout=10.0,
-#     max_forward_steps: int = 1,
-# ) -> TokenGeneratorPipelineConfig:
-#     return TokenGeneratorPipelineConfig.continuous_heterogenous(
-#         tg_batch_size=batch_size,
-#         ce_batch_size=batch_size,
-#         ce_batch_timeout=batch_timeout,
-#         max_forward_steps=max_forward_steps,
-#     )
 
 
 class MaxDirectInferenceService(GRPCInferenceServiceServicer):
@@ -128,11 +118,10 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
         return pb2.ServerLiveResponse(live=is_live)
 
     async def ModelInfer(self, request: pb2.ModelInferRequest, context):
-        self.logger.debug(f"Model infer called with {request}, {type(context)}")
+        self.logger.debug(f"Model infer called with {request}")
         self.logger.debug(f"Request fields : {request.ListFields()}")
-        model_version = request.model_version
-        index = self.available_indexes.get()
         try:
+            index = self.available_indexes.get()
             tg_request = tokengen_request_from_grpc_request(request, index)
             self.logger.info(
                 "Created token generator request instance : %s", tg_request
@@ -153,24 +142,20 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
                     )
                 else:
                     break
-            self.logger.info(f"Response is {text}")
+            self.logger.debug(f"Response is {text}")
         except Exception as e:
-            import traceback
-
-            traceback.print_exception(e)
-            self.logger.error(f"ERROR:: {e} :: ")
+            self.logger.exception(
+                "Error in model infer::", e, exc_info=True, stack_info=True
+            )
         finally:
-            self.logger.info("Releasing context %s", tg_request)
+            self.logger.info("Completed request %s", tg_request)
             self.pipeline.release(text_context)
             self.available_indexes.put(index)
             return create_pb_response_from_text(tg_request, text)
 
     async def ModelInferStream(self, request: pb2.ModelInferRequest, context):
-        self.logger.debug(f"Model infer called with {request}, {type(context)}")
+        self.logger.debug(f"Model infer called with {request}")
         self.logger.debug(f"Request fields : {request.ListFields()}")
-        for name, param in request.parameters.items():
-            print(f"PARAM:: name {name}, value : {param.string_param}")
-
         try:
             index = self.available_indexes.get()
             tg_request = tokengen_request_from_grpc_request(request, index)
@@ -196,12 +181,14 @@ class MaxDirectInferenceService(GRPCInferenceServiceServicer):
                     break
             self.logger.debug(f"Response is {text}")
         except Exception as e:
-            import traceback
-
-            traceback.print_exception(e)
-            self.logger.error(f"ERROR:: {e} :: ")
+            self.logger.exception(
+                "Error in model infer stream::",
+                e,
+                exc_info=True,
+                stack_info=True,
+            )
         finally:
-            self.logger.info("Release :: %s", tg_request)
+            self.logger.info("Completed request :: %s", tg_request)
             self.pipeline.release(text_context)
             self.available_indexes.put(index)
 
@@ -243,9 +230,6 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.pipeline = pipeline
         self.logger.info("Starting server handler")
-        self.available_indexes = queue.Queue(maxsize=max_batch_size)
-        for i in range(max_batch_size):
-            self.available_indexes.put(i)
 
     async def ServerLive(
         self, request: pb2.ServerLiveRequest, context
@@ -261,68 +245,64 @@ class MaxServeInferenceService(GRPCInferenceServiceServicer):
         self, request: pb2.ModelInferRequest, context
     ) -> pb2.ModelInferResponse:
         try:
-            tg_request = tokengen_request_from_grpc_request(request, 0)
+            tg_request = tokengen_request_from_grpc_request(request)
             self.logger.info(f"Request created : {tg_request}")
             text = ""
             async for t in self.pipeline.next_token(tg_request):
                 text += t.decoded_token
             return create_pb_response_from_text(tg_request, text)
         except Exception as e:
-            import traceback
-
-            self.logger.error(
+            error_msg = (
                 f"Error in processing {id} : {e} - {traceback.format_exc()}"
             )
             context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(
-                f"Error in processing {id} : {e} - {traceback.format_exc()}"
+            context.set_details(error_msg)
+            self.logger.exception(
+                "Error in model infer::", e, exc_info=True, stack_info=True
             )
         finally:
-            self.logger.info(f"Request created : {tg_request}")
+            self.logger.info(f"Request completed : {tg_request}")
 
     async def ModelInferStream(
         self, request: pb2.ModelInferRequest, context
     ) -> pb2.ModelInferResponse:
         try:
-            index = self.available_indexes.get()
-            tg_request = tokengen_request_from_grpc_request(request, index)
+            tg_request = tokengen_request_from_grpc_request(request)
             self.logger.info(f"Request created : {tg_request}")
             async for t in self.pipeline.next_token(tg_request):
                 yield create_pb_response_from_text(tg_request, t.decoded_token)
         except Exception as e:
-            import traceback
-
-            self.logger.error(
+            error_msg = (
                 f"Error in processing {id} : {e} - {traceback.format_exc()}"
             )
             context.set_code(grpc.StatusCode.INTERNAL)
-            context.set_details(
-                f"Error in processing {id} : {e} - {traceback.format_exc()}"
+            context.set_details(error_msg)
+            self.logger.exception(
+                "Error in model infer::", e, exc_info=True, stack_info=True
             )
         finally:
-            self.available_indexes.put(index)
             self.logger.info(f"Request completed : {tg_request}")
 
-    async def ServerReady(
+    def ServerReady(
         self, request: pb2.ServerReadyRequest, context
     ) -> pb2.ServerReadyResponse:
         return pb2.ServerReadyResponse(ready=self.pipeline is not None)
 
-    async def ModelReady(
+    def ModelReady(
         self, request: pb2.ModelReadyRequest, context
     ) -> pb2.ModelReadyResponse:
         return pb2.ModelReadyResponse(
             ready=(request.name == self.pipeline.model_name)
         )
 
-    async def ServerMetadata(
+    def ServerMetadata(
         self, request: pb2.ServerMetadataRequest, context
     ) -> pb2.ServerMetadataResponse:
         return pb2.ServerMetadataResponse(
             name="max-grpc-kserve", version="DEBUG"
         )
 
-    async def ModelMetadata(
+    def ModelMetadata(
         self, request: pb2.ModelMetadataRequest, context
     ) -> pb2.ModelMetadataResponse:
         if request.name == self.pipeline.model_name and request.version == "0":
