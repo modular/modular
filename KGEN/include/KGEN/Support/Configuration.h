@@ -70,6 +70,12 @@ public:
   /// Return the path to the orc-rt library.
   StringRef getOrcRTPath();
 
+  /// Return the path to the mgp-rt library.
+  StringRef getMGPRTPath();
+
+  /// Return the path to the aten-rt library.
+  StringRef getATenRTPath();
+
   //===--------------------------------------------------------------------===//
   // Driver Configurations
   //===--------------------------------------------------------------------===//

@@ -586,37 +586,6 @@ KGEN_CompilerRT_GetContextAndSizeFromAsync(
   return reinterpret_cast<void *>(&ctx);
 }
 
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_GetCachedBuffer(size_t bBufferSlot,
-                                AsyncRTWrapper<StateContext> rawCtx,
-                                size_t *size, AnyAsyncValueRef *storageRefPtr) {
-  static_assert(sizeof(AnyAsyncValueRef) == sizeof(void *) &&
-                "SANITY CHECK FAILED: Graph Compiler allocates a `void *` to "
-                "hold the async value ref, keep two sizes consistent to make "
-                "the function work.");
-  assert(storageRefPtr != nullptr);
-
-  StateContext &theContext = unwrap(rawCtx);
-  auto &stateSlot = theContext.getStateSlot(bBufferSlot);
-  ErrorOr<TensorBufferRef> errOr = stateSlot.getBuffer(/*bufferIndex=*/0);
-  if (errOr)
-    return nullptr;
-
-  TensorBufferRef ref = errOr.takeValue();
-  // Emplace construction using the storage_ref of the TensorBufferRef.
-  new ((void *)storageRefPtr) AnyAsyncValueRef(ref.getMemStorageHandle());
-  *size = ref.getSize();
-  return ref.getBuffer();
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_RemoveCachedBuffer(size_t bufferSlot,
-                                   AsyncRTWrapper<StateContext> rawCtx) {
-  StateContext &theContext = unwrap(rawCtx);
-  auto &stateSlot = theContext.getStateSlot(bufferSlot);
-  stateSlot.clear();
-}
-
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_DestructAsyncRefs(size_t size, void **storageRefPtr) {
   for (size_t i = 0; i < size; i++) {

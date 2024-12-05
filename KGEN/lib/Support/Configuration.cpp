@@ -81,6 +81,14 @@ StringRef MojoConfig::getOrcRTPath() {
   return getValue(STRINGIFY_MOJO_CONFIG(".orcrt_path"));
 }
 
+StringRef MojoConfig::getMGPRTPath() {
+  return getValue(STRINGIFY_MOJO_CONFIG(".mgprt_path"));
+}
+
+StringRef MojoConfig::getATenRTPath() {
+  return getValue(STRINGIFY_MOJO_CONFIG(".atenrt_path"));
+}
+
 //===----------------------------------------------------------------------===//
 // Driver Configurations
 
