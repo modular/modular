@@ -53,6 +53,115 @@ static FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref) {
   return SymbolRefAttr::get(ref.getContext(), getFlattenedSymbolName(ref));
 }
 
+namespace {
+/// Helper class for identifying singleton types.
+/// Currently only considers a struct type as singleton if for all possible
+/// parameter bindings, the struct type always yields a singleton type.
+/// Supporting parametric singleton struct types is overkill right now.
+class SingletonTypeHelper {
+public:
+  SingletonTypeHelper(SymbolTable &symtab, ModuleOp &module)
+      : symtab(symtab), module(module) {}
+
+  bool isSingletonType(Type type) { return !!getSingletonValue(type); }
+
+  /// If `type` is a singleton type, this returns the singleton value of that
+  /// type. Otherwise, returns a null result.
+  TypedAttr getSingletonValue(Type type);
+
+  /// Cache the struct decl in the helper so that symbol references to this decl
+  /// never needs to be looked up via the symbol table anymore. This is not only
+  /// an optimization, but also necessary so that flattened struct decls can
+  /// still be found when their symbol references have not been flattened yet
+  /// during this pass.
+  void preprocessStructDecl(StructDeclOp decl);
+
+private:
+  using StructCacheTy =
+      DenseMap<SymbolRefAttr, SmallVector<std::pair<StringAttr, Type>>>;
+
+  TypedAttr getSingletonValueImpl(Type type);
+
+  /// Cached-lookup of struct fields from a symbol reference. The decl can be
+  /// optionally provided to avoid a symbol table lookup.
+  StructCacheTy::iterator lookupStructFields(SymbolRefAttr ref,
+                                             StructDeclOp decl);
+
+  SymbolTable &symtab;
+  ModuleOp module;
+  /// This map caches the result of `getSingletonValue` so that visited types
+  /// return immediately.
+  DenseMap<Type, TypedAttr> valueCache;
+  /// These are the struct decls that are known to not always be singletons.
+  /// Cache them to avoid ever walking them a second time.
+  DenseSet<SymbolRefAttr> knownNotAlwaysSingletonStructs;
+  /// These are the cached fields of struct decls so that symbol lookup is
+  /// performed at most once per struct decl. A decl is eagerly erased from this
+  /// map once it's added to `knownNotAlwaysSingletonStructs`.
+  StructCacheTy structCache;
+};
+} // namespace
+
+TypedAttr SingletonTypeHelper::getSingletonValue(Type type) {
+  if (auto it = valueCache.find(type); it != valueCache.end())
+    return it->second;
+  TypedAttr result = getSingletonValueImpl(type);
+  valueCache.try_emplace(type, result);
+  return result;
+}
+
+TypedAttr SingletonTypeHelper::getSingletonValueImpl(Type type) {
+  if (auto origin = dyn_cast<OriginType>(type))
+    return AnyOriginAttr::get(origin);
+  if (auto set = dyn_cast<OriginSetType>(type))
+    return OriginSetAttr::get(/*operands=*/{}, set);
+
+  if (auto structType = dyn_cast<LIT::StructType>(type)) {
+    SymbolRefAttr ref = structType.getSymbol();
+    StructCacheTy::iterator it = lookupStructFields(ref, /*decl=*/{});
+    if (it == structCache.end())
+      return {};
+
+    SmallVector<std::tuple<StringAttr, TypedAttr>> values;
+    for (auto [name, type] : it->second) {
+      // TODO: Use evaluator to substitute parameters into types to support
+      // parametrically singleton decls.
+      TypedAttr value = getSingletonValue(type);
+      if (!value) {
+        knownNotAlwaysSingletonStructs.insert(ref);
+        structCache.erase(ref);
+        return {};
+      }
+      values.push_back(std::make_tuple(name, value));
+    }
+    return LITStructAttr::get(values, structType);
+  }
+  return {};
+}
+
+void SingletonTypeHelper::preprocessStructDecl(StructDeclOp decl) {
+  SymbolRefAttr ref = getFullyResolvedSymbolRef(decl);
+  lookupStructFields(ref, decl);
+}
+
+SingletonTypeHelper::StructCacheTy::iterator
+SingletonTypeHelper::lookupStructFields(SymbolRefAttr ref, StructDeclOp decl) {
+  if (knownNotAlwaysSingletonStructs.contains(ref))
+    return structCache.end();
+
+  auto [it, inserted] = structCache.try_emplace(ref);
+  if (inserted) {
+    // Perform the lookup if the decl isn't pre-known.
+    if (!decl)
+      decl = cast<StructDeclOp>(symtab.lookupSymbolIn(module, ref));
+
+    for (StructFieldOp field : decl.getFieldDecls())
+      it->second.push_back(
+          std::make_pair(field.getNameAttr(), field.getType()));
+  }
+  return it;
+}
+
 /// This processes a `lit.func` and returns the param declarations for the
 /// normal input parameters, ignoring the origin parameters.
 static ArrayRef<ParamDeclAttr> extractImplicitOriginParams(LIT::FuncOp func) {
@@ -63,11 +172,12 @@ static ArrayRef<ParamDeclAttr> extractImplicitOriginParams(LIT::FuncOp func) {
 /// Check a list of parameter declarations to see if any of the parameters are
 /// singletons like origin parameters.  If so, remove them from the list.
 static void
-removeSingletonParamDecls(SmallVectorImpl<ParamDeclAttr> &paramDecls) {
+removeSingletonParamDecls(SingletonTypeHelper &singletonTypeHelper,
+                          SmallVectorImpl<ParamDeclAttr> &paramDecls) {
   size_t numRemoved = 0;
   for (auto [idx, paramDecl] : llvm::enumerate(paramDecls)) {
     // If this is a parameter we are supposed to remove, bind it.
-    if (isSingletonParameter(paramDecl.getType())) {
+    if (singletonTypeHelper.isSingletonType(paramDecl.getType())) {
       // We can just remove the parameter without inserting a placeholder
       // in the body. This is safe because we unconditionally replace
       // all attributes of origin type at the end of this pass with
@@ -115,6 +225,7 @@ struct LITLowerer {
 
   SymbolTable &symbolTable;
   DenseMap<StringAttr, StringAttr> &renamedSymbols;
+  SingletonTypeHelper &singletonTypeHelper;
   bool foundAnyPatterns = false;
 };
 } // namespace
@@ -255,7 +366,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
   // Now that we have the full parameter list, remove any singleton parameters.
   // This ensures that the elaborator doesn't instantiate the function based on
   // lifetimes.
-  removeSingletonParamDecls(inputParams);
+  removeSingletonParamDecls(singletonTypeHelper, inputParams);
 
   // If the function has an alias name, rename it.
   if (StringAttr newName = func.getLinkageNameAttr()) {
@@ -302,7 +413,7 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
   // The new param.declare.region will drop implicit lifetimes.
   SmallVector<ParamDeclAttr> inputParams;
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
-  removeSingletonParamDecls(inputParams);
+  removeSingletonParamDecls(singletonTypeHelper, inputParams);
 
   auto region = b.create<ParamDeclareRegionOp>(
       decl, func.getSignature(), func.getFunctionType(), inputParams,
@@ -313,6 +424,9 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
 
 LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
                                           Block::iterator symTableIt) {
+  /// Always pre-cache the struct decl in `singletonTypeHelper` before
+  /// flattening it.
+  singletonTypeHelper.preprocessStructDecl(structDecl);
   // Update the name of this struct, incorporating any parents.
   StringAttr structName =
       flattenAndRenameSymbol(structDecl, symbolTable, symTableIt);
@@ -440,7 +554,9 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
 /// Check to see if any of the parameters of the specified signature are
 /// singletons like origin parameters.  If so, bind them to a dummy value and
 /// return the updated signature without them.
-static SignatureType removeSingletonParams(SignatureType signature) {
+static SignatureType
+removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
+                      SignatureType signature) {
   llvm::SmallVector<TypedAttr> paramsToBind;
   size_t numRemoved = 0;
 
@@ -450,7 +566,15 @@ static SignatureType removeSingletonParams(SignatureType signature) {
     Type adjParamType = evaluator.getReboundType(paramType);
 
     // If this is a parameter we are supposed to keep, leave it unbound.
-    if (!isSingletonParameter(adjParamType)) {
+    if (TypedAttr singletonValue =
+            singletonTypeHelper.getSingletonValue(adjParamType)) {
+      // Bind the parameter to the expected singleton value of the right
+      // type. 'getSpecializedSignature' strips off a level of indexes from
+      // the type, so we need to adapt the type to cooperate.
+      paramsToBind.push_back(singletonValue);
+      evaluator.addInputValue(paramsToBind.back());
+      ++numRemoved;
+    } else {
       // Any uses of this parameter in later replaced lifetimes needs to refer
       // to the appropriate index of the resultant parameter number, e.g. the
       // bool in a origin may shift to a new index.
@@ -460,14 +584,6 @@ static SignatureType removeSingletonParams(SignatureType signature) {
 
       // We tell getSpecializedSignature not to touch this though.
       paramsToBind.push_back(UnboundAttr::get(adjParamType));
-
-    } else {
-      // Bind the parameter to the expected singleton value of the right
-      // type. 'getSpecializedSignature' strips off a level of indexes from
-      // the type, so we need to adapt the type to cooperate.
-      paramsToBind.push_back(getSingletonParameterValue(adjParamType));
-      evaluator.addInputValue(paramsToBind.back());
-      ++numRemoved;
     }
   }
 
@@ -479,8 +595,10 @@ static SignatureType removeSingletonParams(SignatureType signature) {
   return signature;
 }
 
-static void lowerAttributesAndTypes(
-    Operation *op, const DenseMap<StringAttr, StringAttr> &renamedSymbols) {
+static void
+lowerAttributesAndTypes(Operation *op,
+                        const DenseMap<StringAttr, StringAttr> &renamedSymbols,
+                        SingletonTypeHelper &singletonTypeHelper) {
   mlir::AttrTypeReplacer replacer;
 
   // Member functions are reference with nested symbol references. After
@@ -506,20 +624,25 @@ static void lowerAttributesAndTypes(
         /*no resultParamTypes*/ {}, sig.getArgConventions(),
         sig.getFnEffects());
     // Remove the singleton parameter declarations.
-    return removeSingletonParams(sig);
+    return removeSingletonParams(singletonTypeHelper, sig);
   });
 
-  replacer.addReplacement([&](TypedAttr attr) -> TypedAttr {
+  auto *debugInfoDialect =
+      op->getContext()->getLoadedDialect<DebugInfo::DebugInfoDialect>();
+  replacer.addReplacement([&](TypedAttr attr) -> std::optional<TypedAttr> {
+    if (&attr.getDialect() == debugInfoDialect)
+      return std::nullopt;
+
     // Remove all values of origin type.  This removes all references to
     // origin parameters that have been dropped.
-    if (isSingletonParameter(attr.getType()))
-      return getSingletonParameterValue(attr.getType());
+    if (TypedAttr value = singletonTypeHelper.getSingletonValue(attr.getType()))
+      return value;
 
     // Remove singleton parameter values from SymbolConstantAttr.
     if (auto symCst = dyn_cast<SymbolConstantAttr>(attr)) {
       SmallVector<TypedAttr> newParams;
       for (auto param : symCst.getParamValues())
-        if (!isSingletonParameter(param.getType()))
+        if (!singletonTypeHelper.isSingletonType(param.getType()))
           newParams.push_back(param);
       if (newParams.size() != symCst.getParamValues().size())
         return SymbolConstantAttr::get(symCst.getSymbol(), symCst.getType(),
@@ -532,7 +655,7 @@ static void lowerAttributesAndTypes(
         SmallVector<TypedAttr> newOperands;
         for (auto op : paramOperator.getOperands()) {
           auto adjusted = cast<TypedAttr>(replacer.replace(op));
-          if (!isSingletonParameter(adjusted.getType()))
+          if (!singletonTypeHelper.isSingletonType(adjusted.getType()))
             newOperands.push_back(adjusted);
         }
         if (newOperands.size() != paramOperator.getNumOperands())
@@ -716,17 +839,22 @@ struct LowerLITPass : public KGEN::impl::LowerLITBase<LowerLITPass> {
     ModuleOp module = getOperation();
     auto &symtab = getAnalysis<mlir::SymbolTableAnalysis>();
 
-    DenseMap<StringAttr, StringAttr> renamedSymbols;
-    if (failed(orderAndLowerGlobalVariables(
-            module, renamedSymbols,
-            static_cast<llvm::dwarf::SourceLanguage>(
-                debugInfoLanguage.getValue()))))
-      return signalPassFailure();
+    {
+      DenseMap<StringAttr, StringAttr> renamedSymbols;
+      if (failed(orderAndLowerGlobalVariables(
+              module, renamedSymbols,
+              static_cast<llvm::dwarf::SourceLanguage>(
+                  debugInfoLanguage.getValue()))))
+        return signalPassFailure();
 
-    LITLowerer lowerer{symtab.getTopLevelSymbolTable(), renamedSymbols};
-    if (failed(lowerer.lowerModuleDecl(module.getBody())))
-      return signalPassFailure();
-    lowerAttributesAndTypes(module, renamedSymbols);
+      SingletonTypeHelper singletonTypeHelper(symtab.getTopLevelSymbolTable(),
+                                              module);
+      LITLowerer lowerer{symtab.getTopLevelSymbolTable(), renamedSymbols,
+                         singletonTypeHelper};
+      if (failed(lowerer.lowerModuleDecl(module.getBody())))
+        return signalPassFailure();
+      lowerAttributesAndTypes(module, renamedSymbols, singletonTypeHelper);
+    }
 
     // Keep lowering all the operations and types.
     if (failed(LIT::lowerLITTypes(module, symtab)))

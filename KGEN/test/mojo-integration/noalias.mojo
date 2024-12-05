@@ -34,22 +34,14 @@ fn noalias(a0: UnsafePointer[Float32], b: UnsafePointer[Float32]) -> Float32:
 # CHECK-LABEL: @any_life(
 # CHECK-SAME: ptr noalias nocapture noundef nonnull readnone %0,
 # CHECK-SAME: ptr noalias nocapture noundef nonnull readnone %1)
-# TODO(MOCO-1492):
-#   Remove the use of `.type` `!lit.origin` parameter here, use
-#   Origin struct after fixing check that this parametric function can still
-#   be codegen'ed.
 @export
-fn any_life[life: MutableOrigin._mlir_type](ref [life]r: Int, mut x: Int):
+fn any_life[life: MutableOrigin](ref [life]r: Int, mut x: Int):
     pass
 
 
 # CHECK-LABEL: @imm_life(
 # CHECK-SAME: ptr nocapture noundef nonnull readnone %0,
 # CHECK-SAME: ptr noalias nocapture noundef nonnull readnone %1)
-# TODO(MOCO-1492):
-#   Remove the use of `.type` `!lit.origin` parameter here, use
-#   Origin struct after fixing check that this parametric function can still
-#   be codegen'ed.
 @export
-fn imm_life[life: ImmutableOrigin._mlir_type](ref [life]r: Int, mut x: Int):
+fn imm_life[life: ImmutableOrigin](ref [life]r: Int, mut x: Int):
     pass
