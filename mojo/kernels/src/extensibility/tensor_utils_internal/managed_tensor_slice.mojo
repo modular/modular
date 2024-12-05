@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import InlineArray, OptionalReg
+from gpu.host._compile import _get_gpu_target
 from math import ceil, fma
 from sys import alignof, simdwidthof
 from sys.info import is_nvidia_gpu
@@ -23,6 +24,8 @@ from memory.pointer import _GPUAddressSpace
 from runtime.asyncrt import MojoCallContextPtr
 from tensor_internal import RuntimeTensorSpec, TensorSpec
 
+from buffer import NDBuffer, DimList
+from buffer.dimlist import _make_tuple
 from utils import IndexList
 
 from .indexing import _dot_prod, _row_major_strides, _slice_to_tuple
@@ -124,6 +127,7 @@ struct ManagedTensorSlice[
         """
         self = Self(ndbuffer.data, ndbuffer.get_shape())
 
+    @always_inline
     fn get_runtime_spec(self) -> RuntimeTensorSpec[type, rank]:
         """Gets the static spec of the slice.
 
@@ -305,6 +309,7 @@ struct ManagedTensorSlice[
 
         # Stride = 1
         @parameter
+        @always_inline
         fn load_stride1() -> SIMD[type, width]:
             @parameter
             if type is DType.bool:
@@ -319,6 +324,7 @@ struct ManagedTensorSlice[
 
         # Stride > 1
         @parameter
+        @always_inline
         fn load_strided(stride: Int) -> SIMD[type, width]:
             @parameter
             if type is DType.bool:
@@ -413,6 +419,7 @@ struct ManagedTensorSlice[
 
         # Stride = 1
         @parameter
+        @always_inline
         fn store_stride1():
             @parameter
             if type is DType.bool:
@@ -422,6 +429,7 @@ struct ManagedTensorSlice[
                 self._ptr.store[alignment=max_alignment](flat_index, val)
 
         # Stride > 1
+        @always_inline
         fn store_strided(stride: Int):
             @parameter
             if type is DType.bool:
@@ -522,23 +530,33 @@ fn foreach[
     synchronous: Bool = False,
     target: StringLiteral = "cpu",
 ](tensor: ManagedTensorSlice[type, rank]):
-    alias simd_width = simdwidthof[tensor.type]()
+    alias simd_width = simdwidthof[
+        tensor.type
+    ]() if target == "cpu" else simdwidthof[
+        tensor.type, target = _get_gpu_target()
+    ]()
 
     @parameter
-    # TODO(MOCO-1469)
-    # @always_inline
+    @always_inline
     fn elementwise_fn_wrapper[
         width: Int, rank: Int
     ](index: IndexList[rank]) capturing:
         var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
+    alias static_shape = specsof[tensor.type, tensor.rank]("tensor").shape
+    var shape = _make_tuple[tensor.rank](
+        static_shape
+    ).canonicalize() if static_shape.all_known[
+        tensor.rank
+    ]() else tensor.get_runtime_spec().shape
+
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
         use_blocking_impl=synchronous,
         target=target,
-    ](tensor.get_runtime_spec().shape)
+    ](shape)
 
 
 @__mogg_intrinsic_attr("mogg.for_each")
@@ -550,23 +568,33 @@ fn foreach[
     synchronous: Bool = False,
     target: StringLiteral = "cpu",
 ](tensor: ManagedTensorSlice[type, rank], ctx: MojoCallContextPtr):
-    alias simd_width = simdwidthof[tensor.type]()
+    alias simd_width = simdwidthof[
+        tensor.type
+    ]() if target == "cpu" else simdwidthof[
+        tensor.type, target = _get_gpu_target()
+    ]()
 
     @parameter
-    # TODO(MOCO-1469)
-    # @always_inline
+    @always_inline
     fn elementwise_fn_wrapper[
         width: Int, rank: Int
     ](index: IndexList[rank]) capturing:
         var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
+    alias static_shape = specsof[tensor.type, tensor.rank]("tensor").shape
+    var shape = _make_tuple[tensor.rank](
+        static_shape
+    ).canonicalize() if static_shape.all_known[
+        tensor.rank
+    ]() else tensor.get_runtime_spec().shape
+
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
         use_blocking_impl=synchronous,
         target=target,
-    ](tensor.get_runtime_spec().shape, ctx)
+    ](shape, ctx)
 
 
 # This is a special version of `specsof(self)`
