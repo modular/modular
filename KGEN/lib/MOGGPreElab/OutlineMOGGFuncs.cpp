@@ -304,6 +304,7 @@ public:
     ModuleOp mod = getOperation();
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     SymbolTable &symTab = analysis.getTopLevelSymbolTable();
+    OpBuilder builder{ctx};
 
     for (GeneratorOp kernel : mod.getOps<GeneratorOp>()) {
       // Skip non-kernels.
@@ -358,6 +359,8 @@ public:
 
           if (func->hasAttr(Decorators::ELEM_HOOK.attr) ||
               func->hasAttr(MOGG_INTRINSIC_FOR_EACH)) {
+
+            func->setAttr(outlinedAttrName, builder.getUnitAttr());
             isLegacyMOGGElementwise = func->hasAttr(Decorators::ELEM_HOOK.attr);
             elementwiseOp = call;
           }
@@ -393,7 +396,6 @@ public:
         for (NamedAttribute attr : kernel->getAttrs())
           attrsToAdd.push_back(attr);
 
-        OpBuilder builder{ctx};
         attrsToAdd.push_back(NamedAttribute{
             builder.getStringAttr(kMOGGElementwiseLambda), asParam.getName()});
         kernel->setAttrs(attrsToAdd);
