@@ -27,7 +27,6 @@ modular_py_test(
         "BAZEL": "true",
         "PIPELINES_TESTDATA": "SDK/integration-test/pipelines/python/llama3/testdata",
     },
-    exec_compatible_with = ["//:large"],
     requires_gpu = False,
     tags = [
         "requires-network",

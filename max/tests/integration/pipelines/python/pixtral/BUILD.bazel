@@ -23,7 +23,6 @@ modular_py_test(
     env = {
         "HF_ESCAPES_SANDBOX": "1",
     },
-    exec_compatible_with = ["//:large"],
     requires_gpu = False,
     tags = [
         "huggingface",

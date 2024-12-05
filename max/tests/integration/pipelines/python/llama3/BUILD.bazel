@@ -95,7 +95,6 @@ modular_py_binary(
                 "$(location //Support/tools/system-info)"
             ),
         },
-        exec_compatible_with = ["//:large"],
         requires_gpu = False,
         tags = [
             "huggingface",
