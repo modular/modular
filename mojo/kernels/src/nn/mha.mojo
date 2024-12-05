@@ -9,7 +9,7 @@ from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp, iota, recip
 from os import abort
 from sys import alignof, bitwidthof, has_nvidia_gpu, simdwidthof, sizeof
-
+from bit import bit_ceil
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from buffer import Buffer, NDBuffer
@@ -41,6 +41,7 @@ from layout.layout_tensor import (
 from layout.runtime_layout import RuntimeLayout, RuntimeTuple
 from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
 from layout.tensor_core import get_accum_type, get_fragment_size, get_mma_shape
+from layout.tensor_builder import LayoutTensorBuild as tb, static
 from linalg._multistage_gemm_gpu import multistage_mma
 from linalg.bmm import batched_matmul
 from linalg.matmul import matmul
@@ -59,6 +60,13 @@ from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
 from .mha_warp_shuffle import mha_decoding_single_batch_warp_shuffle
+from gpu.shuffle import (
+    lane_group_max,
+    lane_group_sum,
+    shuffle_idx,
+    warp_max,
+    warp_sum,
+)
 from .softmax import _online_softmax_iter_for_mma_output, _softmax_gpu, softmax
 
 # ===-----------------------------------------------------------------------===#
@@ -339,6 +347,7 @@ fn flash_attention[
     mask: NDBuffer,
     scale: Float32,
     context: MojoCallContextPtr = MojoCallContextPtr(),
+    num_partitions: OptionalReg[Int] = None,
 ) raises:
     # TODO docstring
     @always_inline
@@ -375,7 +384,18 @@ fn flash_attention[
             IdentityScoreMod(),
             scale,
             context.get_device_context(),
+            num_partitions,
         )
+
+
+fn get_mha_decoding_num_partitions[
+    num_heads: Int, group: Int
+](batch_size: Int, num_keys: Int, ctx: DeviceContext) -> Int:
+    var sm_count = ctx.device_info.sm_count
+    # TODO: This is dumb, make it more granular as a follow up
+    if num_keys >= 512:
+        return min(bit_ceil(sm_count // (batch_size * (num_heads // group))), 4)
+    return 1
 
 
 # Entry point for flash_attention with batch_size > 1.
@@ -405,6 +425,7 @@ fn flash_attention[
     valid_length: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     ctx: DeviceContext,
+    num_partitions: OptionalReg[Int] = None,
 ) raises:
     """Flash attention 2 algorithm.
     Compute:
@@ -649,24 +670,127 @@ fn flash_attention[
                         ctx.device_info.shared_memory_per_multiprocessor - 4096
                     ),
                 )
-
-                ctx.enqueue_function(
-                    func,
-                    q.data,
-                    k,
-                    v,
-                    mask.data,
-                    output.data,
-                    scale,
-                    batch_size,
-                    max_cache_valid_length,
-                    valid_length,
-                    mask_functor,
-                    score_mod_functor,
-                    grid_dim=(1, Int(num_blocks_y), Int(batch_size)),
-                    block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=shared_mem_bytes,
+                alias nullptr = UnsafePointer[Scalar[accum_type]]()
+                var num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
+                    num_heads, group
+                ](
+                    batch_size, max_cache_valid_length, ctx
                 )
+
+                if num_partitions_value == 1:
+                    ctx.enqueue_function(
+                        func,
+                        q.data,
+                        k,
+                        v,
+                        mask.data,
+                        output.data,
+                        nullptr,
+                        nullptr,
+                        scale,
+                        batch_size,
+                        num_partitions_value,
+                        max_cache_valid_length,
+                        valid_length,
+                        mask_functor,
+                        score_mod_functor,
+                        grid_dim=(1, Int(num_blocks_y), Int(batch_size)),
+                        block_dim=(num_threads, 1, 1),
+                        shared_mem_bytes=shared_mem_bytes,
+                    )
+                else:
+                    # allocate memory for intermediate results
+                    # q # [B, S, H, D]
+
+                    var output_intermediate_data = ctx.enqueue_create_buffer[
+                        output.type
+                    ](num_heads * depth * batch_size * num_partitions_value)
+
+                    var output_intermediate = NDBuffer[output.type, 4](
+                        output_intermediate_data.ptr,
+                        Index(
+                            num_partitions_value,
+                            batch_size,
+                            int(num_heads),
+                            int(depth),
+                        ),
+                    )
+
+                    var exp_sum_data = ctx.enqueue_create_buffer[accum_type](
+                        num_heads * batch_size * num_partitions_value
+                    )
+
+                    var exp_sum = NDBuffer[accum_type, 3](
+                        exp_sum_data.ptr,
+                        Index(
+                            num_partitions_value,
+                            batch_size,
+                            int(num_heads),
+                        ),
+                    )
+
+                    var qk_max_data = ctx.enqueue_create_buffer[accum_type](
+                        num_heads * batch_size * num_partitions_value
+                    )
+
+                    var qk_max = NDBuffer[accum_type, 3](
+                        qk_max_data.ptr,
+                        Index(num_partitions_value, batch_size, int(num_heads)),
+                    )
+
+                    ctx.enqueue_function(
+                        func,
+                        q.data,
+                        k,
+                        v,
+                        mask.data,
+                        output_intermediate.data,
+                        exp_sum.data,
+                        qk_max.data,
+                        scale,
+                        batch_size,
+                        num_partitions_value,
+                        max_cache_valid_length,
+                        valid_length,
+                        mask_functor,
+                        score_mod_functor,
+                        grid_dim=(
+                            num_partitions_value,
+                            Int(num_blocks_y),
+                            Int(batch_size),
+                        ),
+                        block_dim=(num_threads, 1, 1),
+                        shared_mem_bytes=shared_mem_bytes,
+                    )
+
+                    var func_reduce = ctx.compile_function[
+                        mha_splitk_reduce[
+                            output.type,
+                            depth=depth,
+                            num_heads=num_heads,
+                            num_threads=WARP_SIZE,
+                            group=group,
+                        ]
+                    ]()
+
+                    ctx.enqueue_function(
+                        func_reduce,
+                        output_intermediate.data,
+                        output.data,
+                        exp_sum.data,
+                        qk_max.data,
+                        batch_size,
+                        num_partitions_value,
+                        grid_dim=(
+                            1,
+                            int(num_heads),
+                            batch_size,
+                        ),
+                        block_dim=(WARP_SIZE, 1, 1),
+                    )
+                    _ = exp_sum_data^
+                    _ = qk_max_data^
+                    _ = output_intermediate_data^
             else:
                 mha_gpu_naive[
                     mask.rank,
@@ -734,6 +858,8 @@ fn flash_attention[
     score_mod_functor: score_mod_t,
     scale: Float32,
     ctx: DeviceContext,
+    # if not set, we select num_partitions based on heuristics
+    num_partitions: OptionalReg[Int] = None,
 ) raises:
     """Flash attention 2 algorithm.
     Compute:
@@ -927,23 +1053,122 @@ fn flash_attention[
                         ctx.device_info.shared_memory_per_multiprocessor - 4096
                     ),
                 )
-                ctx.enqueue_function(
-                    func,
-                    q.data,
-                    k,
-                    v,
-                    mask.data,
-                    output.data,
-                    scale,
-                    batch_size,
-                    num_keys,
-                    mask_functor,
-                    score_mod_functor,
-                    grid_dim=(1, num_blocks_y, batch_size),
-                    block_dim=(num_threads, 1, 1),
-                    shared_mem_bytes=shared_mem_bytes,
+
+                var num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
+                    num_heads, group
+                ](
+                    batch_size, num_keys, ctx
                 )
 
+                if num_partitions_value == 1:
+                    alias nullptr = UnsafePointer[Scalar[accum_type]]()
+                    ctx.enqueue_function(
+                        func,
+                        q.data,
+                        k,
+                        v,
+                        mask.data,
+                        output.data,
+                        nullptr,
+                        nullptr,
+                        scale,
+                        batch_size,
+                        num_partitions_value,
+                        num_keys,
+                        mask_functor,
+                        score_mod_functor,
+                        grid_dim=(1, num_blocks_y, batch_size),
+                        block_dim=(num_threads, 1, 1),
+                        shared_mem_bytes=shared_mem_bytes,
+                    )
+                else:
+                    # allocate memory for intermediate results
+                    # q # [B, S, H, D]
+
+                    var output_intermediate_data = ctx.enqueue_create_buffer[
+                        output.type
+                    ](num_heads * depth * batch_size * num_partitions_value)
+
+                    var output_intermediate = NDBuffer[output.type, 4](
+                        output_intermediate_data.ptr,
+                        Index(
+                            num_partitions_value,
+                            batch_size,
+                            num_heads,
+                            depth,
+                        ),
+                    )
+
+                    var exp_sum_data = ctx.enqueue_create_buffer[accum_type](
+                        num_heads * batch_size * num_partitions_value
+                    )
+
+                    var exp_sum = NDBuffer[accum_type, 3](
+                        exp_sum_data.ptr,
+                        Index(num_partitions_value, batch_size, num_heads),
+                    )
+
+                    var qk_max_data = ctx.enqueue_create_buffer[accum_type](
+                        num_heads * batch_size * num_partitions_value
+                    )
+
+                    var qk_max = NDBuffer[accum_type, 3](
+                        qk_max_data.ptr,
+                        Index(num_partitions_value, batch_size, num_heads),
+                    )
+
+                    ctx.enqueue_function(
+                        func,
+                        q.data,
+                        k,
+                        v,
+                        mask.data,
+                        output_intermediate.data,
+                        exp_sum.data,
+                        qk_max.data,
+                        scale,
+                        batch_size,
+                        num_partitions_value,
+                        num_keys,
+                        mask_functor,
+                        score_mod_functor,
+                        grid_dim=(
+                            num_partitions_value,
+                            num_blocks_y,
+                            batch_size,
+                        ),
+                        block_dim=(num_threads, 1, 1),
+                        shared_mem_bytes=shared_mem_bytes,
+                    )
+
+                    var func_reduce = ctx.compile_function[
+                        mha_splitk_reduce[
+                            output.type,
+                            depth=depth,
+                            num_heads=num_heads,
+                            num_threads=WARP_SIZE,
+                            group=group,
+                        ]
+                    ]()
+
+                    ctx.enqueue_function(
+                        func_reduce,
+                        output_intermediate.data,
+                        output.data,
+                        exp_sum.data,
+                        qk_max.data,
+                        batch_size,
+                        num_partitions_value,
+                        grid_dim=(
+                            1,
+                            num_heads,
+                            batch_size,
+                        ),
+                        block_dim=(WARP_SIZE, 1, 1),
+                    )
+                    _ = exp_sum_data^
+                    _ = qk_max_data^
+                    _ = output_intermediate_data^
             else:
                 mha_gpu_naive[mask.rank](
                     q.data,
@@ -1898,16 +2123,31 @@ fn mha_decoding[
     v: cache_t,
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     scale: Float32,
     batch_size: Int,
+    num_partitions: Int,
     max_cache_valid_length: Int,  # longest KV cache entry
     valid_length: NDBuffer[DType.uint32, 1],  # valid length per batch
     mask: mask_t,
     score_mod: score_mod_t,
 ):
     var batch_idx = BlockIdx.z
+    var partition_idx = BlockIdx.x
     var seq_len: Int
     var q_batch_offset: Int
+    var output_batch_offset = depth * num_heads * batch_idx + depth * num_heads * batch_size * partition_idx
+    var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx
+    var exp_sum_offset = qk_max_offset
+
+    var qk_max_batch_ptr = __type_of(qk_max_ptr)()
+    if qk_max_ptr:
+        qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
+
+    var exp_sum_batch_ptr = __type_of(exp_sum_ptr)()
+    if exp_sum_ptr:
+        exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
 
     @parameter
     if ragged:
@@ -1956,9 +2196,12 @@ fn mha_decoding[
             k_operand,
             v_operand,
             mask_ptr.offset(mask_batch_offset),
-            output_ptr.offset(q_batch_offset),
+            output_ptr.offset(output_batch_offset),
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
             scale,
             num_keys,
+            num_partitions,
             max_cache_valid_length,
             mask,
             score_mod,
@@ -1977,7 +2220,7 @@ fn mha_decoding[
             q_ptr.offset(q_batch_offset),
             k_operand,
             v_operand,
-            output_ptr.offset(q_batch_offset),
+            output_ptr.offset(output_batch_offset),
             scale,
             num_keys,
             mask,
@@ -2020,19 +2263,36 @@ fn mha_decoding[
     v_nd: NDBuffer[v_type, v_rank, v_shape],
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     scale: Float32,
     batch_size: Int,
+    num_partitions: Int,
     num_keys: Int,
     mask: mask_t,
     score_mod: score_mod_t,
 ):
     var batch_idx = BlockIdx.z
+    var partition_idx = BlockIdx.x
+
     var q_batch_offset = depth * num_heads * batch_idx
     var mask_batch_offset = batch_idx * num_keys * (
         num_heads if mask_rank == 4 else 1
     )
     var k_operand = NDBufferMHAOperand[k_type, k_rank, k_shape](k_nd)
     var v_operand = NDBufferMHAOperand[v_type, v_rank, v_shape](v_nd)
+
+    var output_batch_offset = depth * num_heads * batch_idx + depth * num_heads * batch_size * partition_idx
+    var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx
+    var exp_sum_offset = qk_max_offset
+
+    var qk_max_batch_ptr = __type_of(qk_max_ptr)()
+    if qk_max_ptr:
+        qk_max_batch_ptr = qk_max_ptr.offset(qk_max_offset)
+
+    var exp_sum_batch_ptr = __type_of(exp_sum_ptr)()
+    if exp_sum_ptr:
+        exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
 
     @parameter
     if use_mask_tensor or (not use_warp_shuffle_decoding):
@@ -2055,9 +2315,12 @@ fn mha_decoding[
             k_operand,
             v_operand,
             mask_ptr.offset(mask_batch_offset),
-            output_ptr.offset(q_batch_offset),
+            output_ptr.offset(output_batch_offset),
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
             scale,
             num_keys,
+            num_partitions,
             num_keys,
             mask,
             score_mod,
@@ -2076,7 +2339,7 @@ fn mha_decoding[
             q_ptr.offset(q_batch_offset),
             k_operand,
             v_operand,
-            output_ptr.offset(q_batch_offset),
+            output_ptr.offset(output_batch_offset),
             scale,
             num_keys,
             mask,
@@ -2189,7 +2452,13 @@ fn scale_and_mask_helper[
                     Index(score_row, score_col),
                     Index(
                         batch_cache_valid_length + 1,
-                        batch_cache_valid_length + 1,
+                        # The following setting ensures that out of bound check happens at
+                        # every function call, also it corrects the bounds to be exact.
+                        # Previous version was using batch_cache_valid_length + 1 which was fine
+                        # with the non-split-k based mha as the ooo would have been triggered only
+                        # for the last iteration of the outer loop. So while the bound was not exact, it
+                        # led to correct output.
+                        kv_tile_start_row + bound,
                     ),
                     p_reg_tile[n_mma, i],
                 )
@@ -2223,8 +2492,11 @@ fn mha_decoding_single_batch[
     v: v_t,
     mask_ptr: UnsafePointer[Scalar[mask_type]],
     output_ptr: UnsafePointer[Scalar[output_type]],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
     scale: Float32,
     num_keys: UInt,
+    num_partitions: UInt,
     max_cache_valid_length: UInt,  # longest KV cache entry
     mask: mask_t,
     score_mod: score_mod_t,
@@ -2358,7 +2630,6 @@ fn mha_decoding_single_batch[
         kv_head_idx * group * stride
     ) if mask_rank == 4 else 0
     var warp_offset = warp_y * WM * num_keys + warp_x * WN
-    var mask_warp_ptr = mask_ptr + Int(kv_head_offset) + Int(warp_offset)
 
     # Account for group query.
     alias kv_num_heads = num_heads // group
@@ -2376,7 +2647,14 @@ fn mha_decoding_single_batch[
     var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
 
     # Loop over Key and Value tiles
-    for kv_tile_start_row in range(0, num_keys, BN):
+    var num_keys_per_partition = ceildiv(num_keys, num_partitions)
+    var start = num_keys_per_partition * BlockIdx.x
+    var end = min(num_keys, start + num_keys_per_partition)
+    var mask_warp_ptr = mask_ptr + Int(kv_head_offset) + Int(
+        warp_offset
+    ) + start
+
+    for kv_tile_start_row in range(start, end, BN):
         var k_ptr = k.block_paged_ptr[k_type, BN](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
         )
@@ -2390,11 +2668,11 @@ fn mha_decoding_single_batch[
         ](k_ptr)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
-        var kv_tile_num_rows = min(BN, num_keys - kv_tile_start_row)
+        var kv_tile_num_rows = min(BN, end - kv_tile_start_row)
 
         _ = p_reg_tile.fill(0)
 
-        if kv_tile_start_row == 0:
+        if kv_tile_start_row == start:
             multistage_mma[
                 BM,
                 BN,
@@ -2520,6 +2798,14 @@ fn mha_decoding_single_batch[
             output_reg_tile[n_mma, 0] *= rowsum_inv0
             output_reg_tile[n_mma, 1] *= rowsum_inv0
 
+    if num_partitions > 1:
+        if ThreadIdx.x % 4 == 0 and ThreadIdx.x < 4 * group:
+            var row_sum = rowsum[0]
+            var row_max = rowmax[0]
+            var q_head_idx = kv_head_idx * group + ThreadIdx.x // 4
+            exp_sum_ptr[q_head_idx] = row_sum
+            qk_max_ptr[q_head_idx] = row_max
+
     # Pack resutls in shared memory for wider simd width.
     var accum_smem_warp_tile = LayoutTensor[
         output_type,
@@ -2561,6 +2847,85 @@ fn mha_decoding_single_batch[
         output_gmem_warp_tile.vectorize[1, simd_size](),
         accum_smem_warp_tile.vectorize[1, simd_size](),
     )
+
+
+fn mha_splitk_reduce[
+    output_type: DType,
+    depth: UInt,
+    num_heads: UInt,
+    num_threads: UInt,
+    group: UInt = 1,
+](
+    intermediate_ptr: UnsafePointer[Scalar[output_type]],
+    output_ptr: UnsafePointer[Scalar[output_type]],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[output_type]()]],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[output_type]()]],
+    batch_size: Int,
+    num_partitions: Int,
+):
+    # we only reduce over a warp so limit number of warps to 1
+    constrained[
+        num_threads == WARP_SIZE, "num_threads should be equal to the warp_size"
+    ]()
+    debug_assert(
+        BlockDim.x == WARP_SIZE, "BlockDim.x should be equal to the warp_size"
+    )
+
+    alias accum_type = get_accum_type[output_type]()
+    var batch_idx = BlockIdx.z
+    var q_head_idx = BlockIdx.y
+
+    debug_assert(
+        num_partitions <= WARP_SIZE,
+        "number of partitions should be less than or equal to the warp_size",
+    )
+    var partition_idx = lane_id()
+    var l = min_or_neg_inf[accum_type]()
+    if partition_idx < num_partitions:
+        var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx + q_head_idx
+        l = qk_max_ptr[qk_max_offset]
+
+    # TODO: use lane_group_max since partition is going to be much smaller than WARP_SIZE
+    var qk_max = shuffle_idx(warp_max(l), 0)
+
+    # since num_partions <= WARP_SIZE, allocate buffer using WARP_SIZE
+    var exp_sums = tb[accum_type]().layout[WARP_SIZE]().shared().alloc()
+
+    var intermediate_output = tb[output_type]().row_major(
+        num_partitions,
+        batch_size,
+        static[num_heads](),
+        static[depth](),
+    ).view(intermediate_ptr)
+    var output = tb[output_type]().row_major(
+        batch_size, static[num_heads](), static[depth]()
+    ).view(output_ptr)
+
+    var rescaled_exp_sum: Scalar[accum_type] = 0
+    if partition_idx < num_partitions:
+        var qk_max_offset = num_heads * batch_idx + num_heads * batch_size * partition_idx + q_head_idx
+        rescaled_exp_sum = exp_sum_ptr[qk_max_offset] * exp(l - qk_max)
+        exp_sums[partition_idx] = rescaled_exp_sum
+
+    # ensure exp_sums is written to before reading
+    barrier()
+
+    # TODO: use lane_group_sum since partition is going to be much smaller than WARP_SIZE
+    var exp_sum = shuffle_idx(warp_sum(rescaled_exp_sum), 0)
+
+    var inv_global_exp_sum = 1.0 / exp_sum
+    # TODO: vectorize load and store operations
+    for d in range(ThreadIdx.x, depth, num_threads):
+        var acc = Scalar[accum_type](0)
+
+        for partition_idx in range(num_partitions):
+            var partition_exp_sum = exp_sums[partition_idx]
+            if partition_exp_sum > 0:
+                var x = intermediate_output[
+                    partition_idx, batch_idx, q_head_idx, d
+                ].cast[accum_type]() * inv_global_exp_sum * partition_exp_sum
+                acc += x[0]
+        output[batch_idx, q_head_idx, d] = acc.cast[output_type]()
 
 
 # ===-----------------------------------------------------------------------===#

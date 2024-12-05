@@ -199,11 +199,7 @@ fn test[
     ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
     _ = output_ref_device_ptr
 
-    # seqlen > 1 compares the same kernel using mask tensor vs CausalMask()
-    # seqlen = 1 compares tensor core mha decoding using mask tensor vs warp
-    # shuffling mha decoding using CausalMask(), hence a larger rtol.
-    var rtol = 1e-4 if seq_len > 1 else 1e-2
-
+    var rtol = 1e-4
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):

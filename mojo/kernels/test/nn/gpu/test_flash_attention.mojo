@@ -42,6 +42,8 @@ fn test[
     num_heads: Int,
     group: Int = 1,
     against_gpu_naive: Bool = False,
+    batch_size: Int = 1,
+    num_partitions: OptionalReg[Int] = None,
 ](
     seq_len: Int,
     num_keys: Int,
@@ -49,7 +51,23 @@ fn test[
     is_benchmark: Bool = False,
     use_index_input: Bool = False,
 ) raises:
-    print("test_flash_attention")
+    print(
+        "test_flash_attention",
+        "batch_size:",
+        batch_size,
+        "num_partitions:",
+        num_partitions.value() if num_partitions else -1,
+        "seq_len:",
+        seq_len,
+        "num_keys:",
+        num_keys,
+        "qkv_type:",
+        qkv_type,
+        "mask_type:",
+        mask_type,
+        "mask_rank:",
+        mask_rank,
+    )
 
     constrained[mask_rank in (3, 4), "mha only support rank 3 or 4."]()
     constrained[
@@ -58,7 +76,6 @@ fn test[
     ]()
 
     # Query, key, value dimensions.
-    alias batch_size = 1
     alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
     alias kv_num_heads = num_heads // group
 
@@ -67,7 +84,9 @@ fn test[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var v_size = k_size
     var o_size = q_size
-    var mask_size = (num_heads if mask_rank == 4 else 1) * seq_len * num_keys
+    var mask_size = (
+        num_heads if mask_rank == 4 else 1
+    ) * seq_len * num_keys * batch_size
 
     # Allocate memory for all variables.
     var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
@@ -79,6 +98,7 @@ fn test[
 
     # Q, K, V are randomly initalized.
     if use_index_input:
+        debug_assert(batch_size == 1)
         for i in range(seq_len):
             for h in range(num_heads):
                 for j in range(depth):
@@ -127,6 +147,10 @@ fn test[
     var mask = NDBuffer[mask_type, 2](mask_ptr, Index(seq_len, num_keys))
     var output = NDBuffer[qkv_type, 4](
         output_ptr, Index(batch_size, seq_len, num_heads, depth)
+    )
+
+    var flash_output = NDBuffer[qkv_type, 4](
+        flash_output_ptr, Index(batch_size, seq_len, num_heads, depth)
     )
 
     @parameter
@@ -195,6 +219,7 @@ fn test[
                 IdentityScoreMod(),
                 scale,
                 ctx,
+                num_partitions,
             )
         else:
             flash_attention(
@@ -207,6 +232,7 @@ fn test[
                 IdentityScoreMod(),
                 scale,
                 ctx,
+                num_partitions,
             )
 
     if is_benchmark:
@@ -251,21 +277,22 @@ fn test[
         ctx.enqueue_copy_from_device(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
 
-    var rtol = Scalar[qkv_type](1e-4) if use_index_input else Scalar[qkv_type](
-        8e-3
-    )
+    var rtol_1_partition = Scalar[qkv_type](
+        1e-4
+    ) if use_index_input else Scalar[qkv_type](8e-3)
+    var rtol_multiple_partitions = Scalar[qkv_type](9e-3)
+    var rtol = rtol_1_partition if num_partitions and num_partitions.value() == 1 else rtol_multiple_partitions
 
-    for h in range(num_heads):
-        for s in range(seq_len):
-            for d in range(depth):
-                var expect = output_ptr.load(d + depth * (h + s * num_heads))
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                )
-                if not isclose(actual, expect, atol=1e-5, rtol=rtol):
-                    var rerr = abs((actual - expect) / expect)
-                    print(h, s, d, actual, expect, rerr)
-                assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
+    for bs in range(batch_size):
+        for h in range(num_heads):
+            for s in range(seq_len):
+                for d in range(depth):
+                    var actual = flash_output[Index(bs, s, int(h), int(d))]
+                    var expect = output[Index(bs, s, int(h), int(d))]
+                    if not isclose(actual, expect, atol=1e-5, rtol=rtol):
+                        var rerr = abs((actual - expect) / expect)
+                        print(h, s, d, actual, expect, rerr)
+                    assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
 
     _ = q_device_ptr
     _ = k_device_ptr
@@ -281,183 +308,185 @@ fn test[
     flash_output_ptr.free()
 
 
+fn test_context_encoding[batch_size: Int](ctx: DeviceContext) raises:
+    # fp32 arbitrary depth and num_heads, baseline impl.
+    test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
+    # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
+    test[
+        4,
+        DType.float32,
+        DType.float32,
+        128,
+        32,
+        against_gpu_naive=True,
+    ](1024, 1024, ctx, is_benchmark())
+    test[
+        3,
+        DType.float32,
+        DType.float32,
+        128,
+        3,
+        against_gpu_naive=True,
+    ](14, 14, ctx, is_benchmark())
+    test[
+        3,
+        DType.float32,
+        DType.float32,
+        128,
+        1,
+        against_gpu_naive=True,
+    ](178, 178, ctx, is_benchmark())
+    # bf16 depth == 128, bf16-fp32 mma
+    test[
+        4,
+        DType.bfloat16,
+        DType.bfloat16,
+        depth=128,
+        num_heads=1,
+        against_gpu_naive=True,
+    ](128, 128, ctx, use_index_input=True)
+    test[
+        4,
+        DType.bfloat16,
+        DType.float32,
+        depth=128,
+        num_heads=1,
+        against_gpu_naive=True,
+    ](384, 384, ctx)
+    test[
+        3,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        3,
+        against_gpu_naive=True,
+    ](256, 256, ctx)
+    test[
+        4,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        32,
+        against_gpu_naive=True,
+    ](1024, 1024, ctx, is_benchmark())
+    test[
+        4,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        24,
+        group=3,
+        against_gpu_naive=True,
+    ](1024, 1024, ctx)
+    # BF16 with sequence length not multiple of 128
+    test[
+        4,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        3,
+        group=3,
+        against_gpu_naive=True,
+    ](64, 64, ctx)
+    test[
+        4,
+        DType.bfloat16,
+        DType.bfloat16,
+        128,
+        3,
+        group=3,
+        against_gpu_naive=True,
+    ](102, 102, ctx)
+    test[
+        3,
+        DType.bfloat16,
+        DType.float32,
+        128,
+        1,
+        against_gpu_naive=True,
+    ](14, 14, ctx)
+    test[
+        3,
+        DType.bfloat16,
+        DType.bfloat16,
+        128,
+        1,
+        against_gpu_naive=True,
+    ](528, 528, ctx)
+
+
+fn test_decoding[
+    batch_size: Int,
+    num_partitions: OptionalReg[Int] = None,
+    qkv_type: DType = DType.bfloat16,
+](ctx: DeviceContext, use_index_input: Bool) raises:
+    # fp32 arbitrary depth and num_heads, baseline impl.
+    # BF16 token gen
+    test[
+        3,
+        qkv_type,
+        DType.float32,
+        128,
+        1,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 11, ctx, use_index_input=use_index_input)
+    test[
+        4,
+        qkv_type,
+        DType.bfloat16,
+        128,
+        2,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 523, ctx, use_index_input=use_index_input)
+    test[
+        4,
+        qkv_type,
+        DType.float32,
+        128,
+        24,
+        group=3,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 29, ctx, use_index_input=use_index_input)
+    test[
+        4,
+        qkv_type,
+        DType.bfloat16,
+        128,
+        3,
+        group=3,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 156, ctx, use_index_input=use_index_input)
+    test[
+        4,
+        qkv_type,
+        DType.bfloat16,
+        128,
+        3,
+        group=3,
+        against_gpu_naive=True,
+        batch_size=batch_size,
+        num_partitions=num_partitions,
+    ](1, 208, ctx, use_index_input=use_index_input)
+
+
 def main():
     with DeviceContext() as ctx:
-        # fp32 arbitrary depth and num_heads, baseline impl.
-        test[3, DType.float32, DType.float32, 127, 2](111, 121, ctx)
-        test[3, DType.float32, DType.float32, 25, 3](1, 1, ctx)
-        test[3, DType.float32, DType.float32, 200, 4](1, 20, ctx)
-        test[3, DType.float32, DType.float32, 97, 5](1, 17, ctx)
-        test[3, DType.float32, DType.float32, 13, 6](1, 100, ctx)
+        test_context_encoding[1](ctx)
 
-        # fp32 depth == 128, tf32-fp32 mma, llama2 shape.
-        test[
-            4,
-            DType.float32,
-            DType.float32,
-            128,
-            32,
-            against_gpu_naive=True,
-        ](1024, 1024, ctx, is_benchmark())
-
-        test[
-            3,
-            DType.float32,
-            DType.float32,
-            128,
-            3,
-            against_gpu_naive=True,
-        ](14, 14, ctx, is_benchmark())
-
-        test[
-            3,
-            DType.float32,
-            DType.float32,
-            128,
-            1,
-            against_gpu_naive=True,
-        ](178, 178, ctx, is_benchmark())
-
-        # bf16 depth == 128, bf16-fp32 mma
-        test[
-            4,
-            DType.bfloat16,
-            DType.bfloat16,
-            depth=128,
-            num_heads=1,
-            against_gpu_naive=True,
-        ](128, 128, ctx, use_index_input=True)
-
-        test[
-            4,
-            DType.bfloat16,
-            DType.float32,
-            depth=128,
-            num_heads=1,
-            against_gpu_naive=True,
-        ](384, 384, ctx)
-
-        test[
-            3,
-            DType.bfloat16,
-            DType.float32,
-            128,
-            3,
-            against_gpu_naive=True,
-        ](256, 256, ctx)
-
-        test[
-            4,
-            DType.bfloat16,
-            DType.float32,
-            128,
-            32,
-            against_gpu_naive=True,
-        ](1024, 1024, ctx, is_benchmark())
-
-        test[
-            4,
-            DType.bfloat16,
-            DType.float32,
-            128,
-            24,
-            group=3,
-            against_gpu_naive=True,
-        ](1024, 1024, ctx)
-
-        # BF16 with sequence length not multiple of 128
-        test[
-            4,
-            DType.bfloat16,
-            DType.float32,
-            128,
-            3,
-            group=3,
-            against_gpu_naive=True,
-        ](64, 64, ctx)
-
-        test[
-            4,
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-            against_gpu_naive=True,
-        ](102, 102, ctx)
-
-        test[
-            3,
-            DType.bfloat16,
-            DType.float32,
-            128,
-            1,
-            against_gpu_naive=True,
-        ](14, 14, ctx)
-
-        test[
-            3,
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            1,
-            against_gpu_naive=True,
-        ](528, 528, ctx)
-
-        # BF16 token gen
-        test[
-            3,
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            11,
-            against_gpu_naive=True,
-        ](1, 256, ctx)
-
-        test[
-            4,
-            DType.bfloat16,
-            DType.float32,
-            128,
-            1,
-            against_gpu_naive=True,
-        ](1, 11, ctx)
-
-        test[
-            4,
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            2,
-            against_gpu_naive=True,
-        ](1, 523, ctx)
-
-        test[
-            4,
-            DType.bfloat16,
-            DType.float32,
-            128,
-            24,
-            group=3,
-            against_gpu_naive=True,
-        ](1, 29, ctx)
-
-        test[
-            4,
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-            against_gpu_naive=True,
-        ](1, 156, ctx)
-
-        test[
-            4,
-            DType.bfloat16,
-            DType.bfloat16,
-            128,
-            3,
-            group=3,
-            against_gpu_naive=True,
-        ](1, 208, ctx)
+        @parameter
+        for batch_size in range(1, 5, 3):
+            test_decoding[batch_size, 1](ctx, False)
+            test_decoding[batch_size, 1, DType.float32](ctx, False)
+            test_decoding[batch_size, 2](ctx, False)
+            test_decoding[batch_size, 4](ctx, False)
+            test_decoding[batch_size, 4, DType.float32](ctx, False)
+            test_decoding[batch_size, None](ctx, False)
+            test_decoding[batch_size, 32](ctx, False)
