@@ -17,13 +17,9 @@ def test_function_attributes():
     fn kernel(x: UnsafePointer[Int]):
         x[0] = ThreadIdx.x
 
-    # CHECK: tid.x
-
     with DeviceContext() as ctx:
-        var func = ctx.compile_function[kernel, dump_asm=True]()
-        assert_equal(
-            func.test_only_get_attribute(Attribute.CONST_SIZE_BYTES), 0
-        )
+        var func = ctx.compile_function[kernel]()
+        assert_equal(func.get_attribute(Attribute.CONST_SIZE_BYTES), 0)
 
 
 def main():
