@@ -140,6 +140,10 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
     }], "void", "printSignature", (ins "AsmPrinter &":$p,
                                        "SignatureType":$sig)>,
     InterfaceMethod<[{
+      Request the custom metadata attribute print the provided new_signature.
+    }], "void", "printNewSignature", (ins "AsmPrinter &":$p,
+                                          "NewSignatureType":$sig)>,
+    InterfaceMethod<[{
       Get a new metadata attribute for a signature where the parameters
       indicated by set bits in `boundParams` been removed from the signature by
       being explicitly bound to values, such as in call signatures.

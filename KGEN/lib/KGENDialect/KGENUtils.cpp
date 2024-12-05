@@ -165,6 +165,34 @@ static OptionalParseResult parseOptionalKGENSignature(AsmParser &p,
   return result;
 }
 
+/// Parse an operand and result type list with metadata for a plain (i.e.
+/// non-lit) signature.
+static OptionalParseResult parseOptionalNewKGENSignature(AsmParser &p,
+                                                         Type &signature) {
+  llvm::SMLoc loc = p.getCurrentLocation();
+  SmallVector<ArgConvention> argConventions;
+  auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
+    // Parse the argument type and its input convention.
+    if (p.parseType(argTypes.emplace_back()) ||
+        parseArgConvention(p, argConventions.emplace_back()))
+      return failure();
+    return success();
+  };
+
+  FunctionType functionType;
+  FnEffects effects;
+  OptionalParseResult result = parseOptionalSignatureValues(
+      p, parseArg, functionType, effects, /*optionalResultList=*/false);
+  if (result.has_value() && succeeded(*result)) {
+    signature = NewSignatureType::getChecked([&] { return p.emitError(loc); },
+                                             functionType, argConventions,
+                                             effects, /*metadata=*/{});
+    if (!signature)
+      return failure();
+  }
+  return result;
+}
+
 /// Parse a type in a KGEN context, handling sugar like "dtype" for
 /// "!kgen.dtype" etc.
 OptionalParseResult KGEN::parseOptionalKGENType(AsmParser &p, Type &type) {
@@ -238,6 +266,11 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
   } else if (auto signature = dyn_cast<SignatureType>(type)) {
     // Otherwise print it as "p1, p2 -> r3, () -> ())"
     printSignature(p, signature);
+  } else if (auto new_signature = dyn_cast<NewSignatureType>(type)) {
+    if (FnMetadataAttrInterface metadata = new_signature.getMetadata())
+      metadata.printNewSignature(p, new_signature);
+    else
+      p << type;
   } else if (auto generator = dyn_cast<GeneratorType>(type)) {
     if (GeneratorMetadataAttrInterface metadata = generator.getMetadata())
       metadata.printGenerator(p, generator);
@@ -1456,14 +1489,21 @@ void KGEN::printSignatureValues(AsmPrinter &p,
                                 FunctionType functionType,
                                 SignatureType signature,
                                 bool optionalResultList) {
+  printSignatureValues(p, printElt, functionType, signature.getArgConventions(),
+                       signature.getFnEffects(), optionalResultList);
+}
+
+void KGEN::printSignatureValues(AsmPrinter &p,
+                                function_ref<void(unsigned)> printElt,
+                                FunctionType functionType,
+                                ArrayRef<ArgConvention> argConvs,
+                                FnEffects fnEffects, bool optionalResultList) {
   p << '(';
-  llvm::interleaveComma(
-      llvm::seq<unsigned>(0, signature.getArgConventions().size()), p,
-      printElt);
+  llvm::interleaveComma(llvm::seq<unsigned>(0, argConvs.size()), p, printElt);
   p << ')';
 
   // Print the function effects.
-  impl::FnEffects effects = signature.getFnEffects().getImpl();
+  impl::FnEffects effects = fnEffects.getImpl();
   if (effects != impl::FnEffects::None)
     p << ' ' << impl::stringifyFnEffects(effects);
 
@@ -1625,6 +1665,21 @@ ParseResult KGEN::parseSignature(AsmParser &p, TypeAttr &signature) {
   return success();
 }
 
+ParseResult KGEN::parseNewSignature(AsmParser &p, Type &signature) {
+  OptionalParseResult result = parseOptionalNewKGENSignature(p, signature);
+  if (result.has_value())
+    return *result;
+  result = p.parseOptionalType(signature);
+  if (!result.has_value())
+    return p.emitError(p.getCurrentLocation(),
+                       "expected '<' or '(' to begin a new_signature");
+  if (failed(*result))
+    return failure();
+  if (!isa<NewSignatureType>(signature))
+    return p.emitError(p.getCurrentLocation(), "expected a new_signature type");
+  return success();
+}
+
 void KGEN::printSignature(AsmPrinter &p, SignatureType signature) {
   // If the signature has metadata, ask its dialect to print the signature.
   if (FnMetadataAttrInterface metadata = signature.getMetadata()) {
@@ -1646,6 +1701,23 @@ void KGEN::printSignature(AsmPrinter &p, SignatureType signature) {
 
 void KGEN::printSignature(AsmPrinter &p, Operation *op, TypeAttr signature) {
   printSignature(p, cast<SignatureType>(signature.getValue()));
+}
+
+void KGEN::printNewSignature(AsmPrinter &p, NewSignatureType signature) {
+  // If the signature has metadata, ask its dialect to print the signature.
+  if (FnMetadataAttrInterface metadata = signature.getMetadata()) {
+    metadata.printNewSignature(p, signature);
+    return;
+  }
+
+  auto printElt = [&](unsigned i) {
+    p << signature.getArguments()[i];
+    printArgConvention(p, signature.getArgConvention(i));
+  };
+
+  printSignatureValues(p, printElt, signature.getValues(),
+                       signature.getArgConventions(), signature.getFnEffects(),
+                       /*optionalResultList=*/false);
 }
 
 ParseResult KGEN::parseKGENSignature(AsmParser &p, FunctionType &functionType,

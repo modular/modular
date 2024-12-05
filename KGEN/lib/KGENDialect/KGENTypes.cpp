@@ -267,6 +267,161 @@ void GeneratorType::print(AsmPrinter &p) const {
 }
 
 //===----------------------------------------------------------------------===//
+// NewSignatureType
+//===----------------------------------------------------------------------===//
+
+ArrayRef<Type> NewSignatureType::getArguments() const {
+  return getValues().getInputs();
+}
+ArrayRef<Type> NewSignatureType::getResults() const {
+  return getValues().getResults();
+}
+
+bool NewSignatureType::hasMemoryOnlyResult() {
+  ArrayRef<ArgConvention> conventions = getArgConventions();
+  return !conventions.empty() &&
+         conventions.back() == ArgConvention::ByRefResult;
+}
+bool NewSignatureType::hasInitSelfArg() {
+  ArrayRef<ArgConvention> conventions = getArgConventions();
+  return !conventions.empty() && conventions[0] == ArgConvention::InitSelf;
+}
+
+NewSignatureType NewSignatureType::getWithFnEffects(FnEffects effects) {
+  return NewSignatureType::get(getValues(), getArgConventions(), effects,
+                               getMetadata());
+}
+NewSignatureType NewSignatureType::getWithValuesReplaced(FunctionType fnType) {
+  return NewSignatureType::get(fnType, getArgConventions(), getFnEffects(),
+                               getMetadata());
+}
+
+NewSignatureType
+NewSignatureType::getWithMetadata(FnMetadataAttrInterface metadata) {
+  return NewSignatureType::get(getValues(), getArgConventions(), getFnEffects(),
+                               metadata);
+}
+
+size_t NewSignatureType::getNumAsyncReturnSlots() {
+  // Async functions can never have `init_self` arguments.
+  return isAsync() ? (hasMemoryOnlyResult() + isThrows()) : 0;
+}
+
+std::optional<int64_t>
+NewSignatureType::getTypeSize(TargetInfoAttr target) const {
+  // Non-capturing closures are function pointers. Capturing closures contain
+  // a function pointer and a capture state pointer.
+  return (isCapturing() ? 2 : 1) * target.getDataLayout().getPointerSize();
+}
+
+std::optional<int64_t>
+NewSignatureType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
+}
+
+ErrorOrSuccess NewSignatureType::writeTo(TypedAttr value, int64_t addr,
+                                         InterpreterState &state) const {
+  // The index is written to the slot.
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  ErrorOr<void *> mem =
+      state.getWritableMemory(addr, ptrSize, RegionMark::Symbol);
+  if (mem.isError())
+    return mem.takeError();
+
+  // Store the actual symbol in symbolic memory
+  uint64_t index = state.addSymbolToSymbolTable(value);
+
+  // Store the index of the symbol in the pointer slot.
+  llvm::StoreIntToMemory(APInt(ptrSize * 8, index), (uint8_t *)*mem, ptrSize);
+  return success();
+}
+
+ErrorOr<TypedAttr> NewSignatureType::readFrom(int64_t addr,
+                                              InterpreterState &state) const {
+  // The index is written to the slot.
+  unsigned ptrSize = state.getTarget().getDataLayout().getPointerSize();
+  ErrorOr<const void *> mem = state.getReadableMemory(addr, ptrSize);
+  if (mem)
+    return mem.takeError();
+
+  APInt value(ptrSize * 8, 0);
+  llvm::LoadIntFromMemory(value, (const uint8_t *)*mem, ptrSize);
+  return state.getSymbol(value.getZExtValue());
+}
+
+Type NewSignatureType::parse(AsmParser &parser) {
+  NewSignatureType signature;
+  if (parser.parseLess() || parseNewSignature(parser, signature) ||
+      parser.parseGreater())
+    return {};
+  return signature;
+}
+
+void NewSignatureType::print(AsmPrinter &printer) const {
+  printer << '<';
+  printNewSignature(printer, *this);
+  printer << '>';
+}
+
+NewSignatureType NewSignatureType::get(MLIRContext *context, TypeRange inputs,
+                                       TypeRange results) {
+  return get(FunctionType::get(context, inputs, results));
+}
+
+LogicalResult
+NewSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
+                         FunctionType values,
+                         ArrayRef<ArgConvention> argConventions,
+                         FnEffects effects, FnMetadataAttrInterface metadata) {
+  // Check we have the right number of conventions.
+  if (argConventions.size() != values.getInputs().size())
+    return emitError() << "incorrect # of input conventions specified";
+
+  // If the signature has metadata, defer to it for further verification.
+  // Otherwise, run the standard KGEN signature verification.
+  if (metadata) {
+    return metadata.verifySignature(emitError, /*inputParamTypes=*/{},
+                                    /*resultParamTypes=*/{}, values,
+                                    argConventions, effects);
+  }
+
+  // Verify input convention and argument types.
+  for (auto [i, argType, conv] :
+       llvm::enumerate(values.getInputs(), argConventions)) {
+    if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
+      return emitError() << "'byref_result' argument must be the last argument";
+    if (conv == ArgConvention::ByRefError && !effects.isThrows()) {
+      return emitError()
+             << "signature with 'byref_error' argument must be 'throws'";
+    }
+
+    Type type = argType;
+    // Verify variadics.
+    if (auto variadic = ::dyn_cast<VariadicType>(type))
+      type = variadic.getElementType();
+    // Verify argument conventions.  Before lit lowering, they need to be
+    // !lit.ref type, after lowering, they should have !kgen.pointer type.
+    if (SignatureType::hasAddress(conv)) {
+      if (::isa<PointerType>(type))
+        continue;
+      // TODO: During LowerLIT, we strip off the metadata, but later we lower
+      // references to pointers.  This means that LowerLIT needs a
+      // kgen.signature (without LIT attribute) with references.  Accept
+      // !lit.ref until we can sort this out.
+      if (type.getDialect().getNamespace() == "lit")
+        continue;
+
+      return emitError()
+             << "argument #" << i << " with convention '" << stringifyEnum(conv)
+             << "' in signature type should be a `!kgen.pointer` but got: "
+             << type;
+    }
+  }
+
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // SignatureType
 //===----------------------------------------------------------------------===//
 
