@@ -45,6 +45,7 @@ fn run_mha[
     seq_len: Int,
     num_keys: Int,
     batch_size: Int,
+    num_partitions: Int,
     ctx: DeviceContext,
 ) raises:
     # Query, key, value dimensions.
@@ -132,6 +133,7 @@ fn run_mha[
             IdentityScoreMod(),
             scale,
             ctx,
+            num_partitions if num_partitions > 0 else OptionalReg[Int](None),
         )
 
     @parameter
@@ -255,6 +257,7 @@ fn main() raises:
     var seq_len = int(arg_parse("seq_len", 64))
     var num_keys = int(arg_parse("num_keys", 64))
     var batch_size = int(arg_parse("batch_size", 1))
+    var num_partitions = int(arg_parse("num_partitions", 1))
 
     alias cfg = MHA_cfg(
         qkv_type=qkv_type,
@@ -272,6 +275,5 @@ fn main() raises:
             cfg.depth,
             cfg.num_heads,
             cfg.group,
-        ](m, seq_len, num_keys, batch_size, ctx)
-
+        ](m, seq_len, num_keys, batch_size, num_partitions, ctx)
     m.dump_report()
