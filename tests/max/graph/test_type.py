@@ -295,3 +295,15 @@ def test_buffer_type_with_device_accessors(mlir_context) -> None:
     assert _graph.buffer_type_get_device(cpu_buffer_type) == cpu_device
     assert _graph.buffer_type_get_device(cuda_buffer_type) == cuda_device0
     assert not _graph.buffer_type_get_device(default_buffer_type)
+
+
+def test_device_type(mlir_context) -> None:
+    """Tests Device type."""
+    host = Device.CPU(0)
+    cuda0 = Device.CUDA(0)
+    cuda1 = Device.CUDA(1)
+    cuda1_2 = Device.CUDA(1)
+    assert cuda0 != cuda1 != host
+    assert cuda0 != cuda1_2 != host
+    assert cuda0 != Device.CPU()
+    assert cuda1 == cuda1_2

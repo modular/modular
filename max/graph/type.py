@@ -518,7 +518,7 @@ class Device:
 
     def __eq__(self, other: Any) -> bool:
         """Returns true if devices are equal."""
-        return self.device_type == other.device_type and self.id == other.id
+        return self.device_type is other.device_type and self.id == other.id
 
     def to_mlir(self) -> mlir.Attribute:
         """Returns a mlir attribute representing device."""
