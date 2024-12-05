@@ -1441,14 +1441,3 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
   return {type,
           ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};
 }
-
-/// This returns the singleton value to use for a parameter value that
-/// `isSingletonParameter` returns true on. This aborts on non-singleton types.
-TypedAttr LIT::getSingletonParameterValue(Type type) {
-  // TODO: Could support structs of origins.
-  if (auto origin = dyn_cast<OriginType>(type))
-    return AnyOriginAttr::get(origin);
-  if (auto set = dyn_cast<OriginSetType>(type))
-    return OriginSetAttr::get(/*operands=*/{}, set);
-  llvm_unreachable("isn't a singleton parameter");
-}
