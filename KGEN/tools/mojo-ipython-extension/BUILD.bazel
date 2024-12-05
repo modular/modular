@@ -48,7 +48,7 @@ modular_shared_library(
 modular_py_library(
     name = "mojomagic",
     srcs = glob(["mojomagic/**/*.py"]),
-    data = [
+    deps = [
         "//KGEN/tools/mojo-ipython-extension:IPythonExtension",
     ],
 )
