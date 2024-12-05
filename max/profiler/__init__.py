@@ -33,10 +33,11 @@ def bar() -> None:
 ```
 """
 
-from max._profiler import Trace
+from max._profiler import Trace, is_profiling_enabled
 from max.profiler.tracing import traced
 
 __all__ = [
     "Trace",
     "traced",
+    "is_profiling_enabled",
 ]
