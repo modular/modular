@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import functools
 import inspect
-import os
 from typing import Callable, TypeVar, overload
 
-from max._profiler import Trace
+from max._profiler import Trace, is_profiling_enabled
 
 _FuncType = TypeVar("_FuncType", bound=Callable)
 
@@ -81,13 +80,3 @@ def traced(
                 return func(*args, **kwargs)
 
     return wrapper
-
-
-def is_profiling_enabled() -> bool:
-    """Returns true if profiling is enabled via `MODULAR_ENABLE_PROFILING = 1`"""
-    enable_profiling: str | None = os.getenv("MODULAR_ENABLE_PROFILING")
-    truthy_values: list[str] = ["1", "t", "true", "yes", "y"]
-    return (
-        enable_profiling is not None
-        and enable_profiling.lower() in truthy_values
-    )
