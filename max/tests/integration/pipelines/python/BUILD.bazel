@@ -53,7 +53,6 @@ modular_py_binary(
             "SDK/integration-test/pipelines/python/llama3/testdata"
         ),
     },
-    use_legacy_binary = True,
     visibility = ["//visibility:public"],
     deps = [
         requirement("click"),
