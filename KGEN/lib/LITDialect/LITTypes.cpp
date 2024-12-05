@@ -720,6 +720,21 @@ OriginType::MutabilityClass OriginType::getMutabilityClass() {
   return cst.getValue() ? Mutable : Immutable;
 }
 
+/// Remove any OriginMutCast and ._mlir_origin if present.
+TypedAttr OriginType::stripMutCastAndFieldExtract(TypedAttr origin) {
+  // Handle an extract out of an Origin type.
+  if (auto extract = ::dyn_cast<LIT::StructExtractAttr>(origin)) {
+    if (extract.getField() == ORIGIN_FIELD_NAME)
+      return stripMutCastAndFieldExtract(extract.getStructValue());
+  }
+
+  // Ignore MutCasts.
+  if (auto mutCast = ::dyn_cast<OriginMutCastAttr>(origin))
+    return stripMutCastAndFieldExtract(mutCast.getOperand());
+
+  return origin;
+}
+
 //===----------------------------------------------------------------------===//
 // OriginSetType
 //===----------------------------------------------------------------------===//

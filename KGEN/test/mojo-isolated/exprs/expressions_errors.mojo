@@ -769,3 +769,9 @@ fn bad_union[ao: Origin[True]](ref [ao] a: String, mut b: String) -> ref [a, b] 
     var c: String
     # expected-error @below {{cannot return reference with incompatible origin: 'c' vs '{ao._mlir_origin, b}'}}
     return c
+
+# https://github.com/modularml/mojo/issues/3829
+fn apply_in_memory[o: ImmutableOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None, x: SomeNonTrivRegPassable):
+# expected-error @below {{argument #0 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
+# expected-note @below {{operand origin 'x' doesn't match expected origin 'o'}}
+    f(x)
