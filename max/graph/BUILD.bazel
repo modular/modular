@@ -9,7 +9,6 @@ modular_py_library(
         "//SDK/lib/API/python/max/_graph",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/mlir",
-        "//Support/python:support",
         requirement("numpy"),
     ],
 )

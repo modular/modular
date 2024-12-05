@@ -22,11 +22,32 @@ except ImportError:
     torch = None
 
 from max.dtype import DType
-from modular.utils.misc import torch_to_modular_type
 
 from ..quantization import QuantizationEncoding
 from ..type import ShapeLike
 from ..weight import Weight
+
+
+def _dtype_from_torch(dtype) -> DType:
+    torch_to_dtype = {
+        torch.bool: DType.bool,
+        torch.int8: DType.int8,
+        torch.int16: DType.int16,
+        torch.int32: DType.int32,
+        torch.int64: DType.int64,
+        torch.uint8: DType.uint8,
+        # torch.uint16: DType.uint16,  # Pytorch doesn't support these uint dtypes.
+        # torch.uint32: DType.uint32,
+        # torch.uint64: DType.uint64,
+        torch.float8_e4m3fn: DType.f8e4m3,
+        torch.float8_e5m2: DType.f8e5m2,
+        torch.float16: DType.float16,
+        torch.float32: DType.float32,
+        torch.float64: DType.float64,
+        torch.bfloat16: DType.bfloat16,
+    }
+
+    return torch_to_dtype[dtype]
 
 
 @dataclass
@@ -171,7 +192,7 @@ class PytorchWeights:
         tensor_info = self.raw_tensor()
         weight = Weight(
             self._prefix,
-            torch_to_modular_type(tensor_info.dtype),
+            _dtype_from_torch(tensor_info.dtype),
             tensor_info.shape,
         )
         self._allocated[self._prefix] = np.memmap(
