@@ -52,8 +52,9 @@ private:
   template <typename Result>
   class ResponseHandlerImpl : public ResponseHandler {
   public:
-    ResponseHandlerImpl(std::function<void(const Result &)> callback)
-        : callback(std::move(callback)) {}
+    ResponseHandlerImpl(std::function<void(const Result &)> callback,
+                        bool allowNull = false)
+        : callback(std::move(callback)), allowNull(allowNull) {}
 
     ErrorOrSuccess onResponse(const llvm::json::Value &response) override {
       // Some requests might just want the raw JSON value.
@@ -62,6 +63,8 @@ private:
       } else {
         if (auto resultOr = llvm::json::parse<Result>(response))
           callback(*resultOr);
+        else if (allowNull)
+          callback({});
         else
           return toModularErrorOr(resultOr.takeError());
       }
@@ -70,6 +73,7 @@ private:
 
   private:
     std::function<void(const Result &)> callback;
+    bool allowNull;
   };
 
 public:
@@ -80,9 +84,15 @@ public:
     std::optional<LSPServerStdioFiles> serverIOFiles = std::nullopt;
   };
 
-  LSPBatchClient(bool attachDebugger = false,
-                 std::optional<std::function<void(const ExecutionResult &)>>
-                     onExecuteCallback = std::nullopt);
+  LSPBatchClient(
+      bool attachDebugger = false,
+      std::function<void(const ExecutionResult &)> onExecuteCallback =
+          [](const ExecutionResult &result) {
+            if (failed(result.err))
+              llvm::errs() << result.err.getError() << "\n";
+            else
+              llvm::errs() << "Success!!\n";
+          });
   ~LSPBatchClient();
 
   /// textDocument/didOpen
@@ -120,6 +130,10 @@ public:
   LSPBatchClient &
   hover(const Document &doc, const mlir::lsp::Position &position,
         std::function<void(const mlir::lsp::Hover2 &)> callback);
+
+  LSPBatchClient &hoverNullable(
+      const Document &doc, const mlir::lsp::Position &position,
+      std::function<void(const std::optional<mlir::lsp::Hover2> &)> callback);
 
   /// textDocument/rename
   LSPBatchClient &
@@ -178,11 +192,12 @@ private:
   /// Register a request to be sent to the server.
   template <typename Result>
   void request(StringRef method, const llvm::json::Value &params,
-               std::function<void(const Result &)> callback) {
+               std::function<void(const Result &)> callback,
+               bool allowNull = false) {
     RequestId id = requestId++;
     requestHandlers.try_emplace(
-        id, std::unique_ptr<ResponseHandler>(
-                new ResponseHandlerImpl<Result>(std::move(callback))));
+        id, std::unique_ptr<ResponseHandler>(new ResponseHandlerImpl<Result>(
+                std::move(callback), allowNull)));
 
     appendJSONRequest(id, method, params);
   }
@@ -202,7 +217,7 @@ private:
   /// handlers, erasing them as they are responded.
   ErrorOrSuccess dispatchResponses(StringRef serverStdout);
 
-  std::optional<std::function<void(const ExecutionResult &)>> onExecuteCallback;
+  std::function<void(const ExecutionResult &)> onExecuteCallback;
   /// Flag that indicates whether `execute` has been invoked.
   bool didExecute = false;
   /// The collected JSON input to send to the server.
@@ -215,8 +230,8 @@ private:
   DenseMap<RequestId, std::unique_ptr<ResponseHandler>> requestHandlers;
   /// A map from doc URL to response handler.
   llvm::StringMap<std::deque<DiagnosticHandler>> diagnosticsHandlers;
-  /// A flag indicating that a mojo-lsp-server will be launched with a debugger
-  /// attached.
+  /// A flag indicating that a mojo-lsp-server will be launched with a
+  /// debugger attached.
   bool attachDebugger;
 };
 

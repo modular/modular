@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "../../common/lsp-protocol/Protocol.h"
 #include "../LSPBatchClient.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
@@ -44,6 +43,8 @@ int main(int argc, char **argv) {
   // inspection.
   setenv("PRESERVE_LSP_IO_FILES", "1", /*overwrite=*/true);
 
+  // By default, we include the following requests that don't require any
+  // special input.
   LSPBatchClient(/*attachDebugger=*/attachDebugger)
       .open(doc)
       .documentSymbol(doc,
@@ -54,5 +55,7 @@ int main(int argc, char **argv) {
                         // lambda to print the results, but you can probably
                         // more easily just inspect the stdout/stderr files.
                       })
+      .semanticTokensFull(doc, [&](ArrayRef<Mojo::LSP::SemanticToken>) {})
+      .hoverNullable(doc, {0, 0}, [&](const std::optional<lsp::Hover2> &) {})
       .execute();
 }

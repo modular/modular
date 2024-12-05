@@ -13,7 +13,6 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
-#include <fstream>
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/Support/Program.h>
 #include <type_traits>
@@ -32,8 +31,7 @@ LSPServerStdioFiles::LSPServerStdioFiles(const std::filesystem::path &parentDir)
 
 LSPBatchClient::LSPBatchClient(
     bool attachDebugger,
-    std::optional<std::function<void(const ExecutionResult &)>>
-        onExecuteCallback)
+    std::function<void(const ExecutionResult &)> onExecuteCallback)
     : onExecuteCallback(std::move(onExecuteCallback)),
       serverJSONInputOS(serverJSONInput), attachDebugger(attachDebugger) {
   llvm::json::Value initialize = llvm::json::Object{{"processId", 123},
@@ -136,6 +134,16 @@ LSPBatchClient::hover(const Document &doc, const lsp::Position &position,
   lsp::TextDocumentPositionParams params{
       lsp::TextDocumentIdentifier{doc.getURI()}, position};
   request("textDocument/hover", toJSON(params), std::move(callback));
+  return *this;
+}
+
+LSPBatchClient &LSPBatchClient::hoverNullable(
+    const Document &doc, const lsp::Position &position,
+    std::function<void(const std::optional<lsp::Hover2> &)> callback) {
+  lsp::TextDocumentPositionParams params{
+      lsp::TextDocumentIdentifier{doc.getURI()}, position};
+  request("textDocument/hover", toJSON(params), std::move(callback),
+          /*allowNull=*/true);
   return *this;
 }
 
@@ -333,6 +341,12 @@ ErrorOrSuccess LSPBatchClient::doExecute(const LSPServerStdioFiles &ioFiles,
   if (attachDebugger)
     args.push_back("-attach-debugger-on-startup");
 
+  if (std::getenv("PRESERVE_LSP_IO_FILES")) {
+    llvm::errs() << "You can manually rerun this invocation with:\n"
+                 << "  " << lspServerPath << " -mojo-test < "
+                 << ioFiles.serverStdin << "\n";
+  }
+
   int exitCode = llvm::sys::ExecuteAndWait(lspServerPath, args,
                                            /*Env=*/std::nullopt, /*redirects=*/
                                            {
@@ -343,9 +357,10 @@ ErrorOrSuccess LSPBatchClient::doExecute(const LSPServerStdioFiles &ioFiles,
                                            /*SecondsToWait=*/0,
                                            /*MemoryLimit=*/0,
                                            /*ErrMsg=*/&errMsg);
-  if (exitCode != 0)
+  if (exitCode != 0) {
     return Error(llvm::formatv("Server failed with exit code {0}. {1}",
                                exitCode, errMsg));
+  }
 
   return dispatchResponses(ioFiles.serverStdout);
 }
@@ -386,8 +401,7 @@ LSPBatchClient::ExecutionResult LSPBatchClient::execute() {
     result.err = std::move(err);
     result.serverIOFiles = std::move(ioFiles);
   }
-  if (onExecuteCallback)
-    (*onExecuteCallback)(result);
+  onExecuteCallback(result);
   return result;
 }
 
