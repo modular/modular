@@ -187,16 +187,22 @@ initializeCompilerRT(llvm::orc::ExecutionSession &session, MojoConfig &cfg,
   if (!std::filesystem::exists(compilerRTPath, ec) || ec)
     return Error(std::string("unable to locate compiler_rt ") + compilerRTPath);
 
-  auto generatorOr =
-      toModularErrorOr(llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
-          session, compilerRTPath.c_str()));
-  if (generatorOr.isError()) {
-    return Error(Twine("error '") + Twine(generatorOr.getError()) +
-                 "' while loading compiler runtime library from '" +
-                 compilerRTPath.c_str() + "'");
-  }
   auto *libJD = &session.createBareJITDylib(compilerRTlibName.str());
-  libJD->addGenerator(std::move(*generatorOr));
+
+  SmallVector<StringRef> paths = options.libraryPaths;
+  paths.push_back(compilerRTPath);
+
+  for (StringRef libPath : paths) {
+    auto generatorOr =
+        toModularErrorOr(llvm::orc::EPCDynamicLibrarySearchGenerator::Load(
+            session, libPath.str().c_str()));
+    if (generatorOr.isError()) {
+      return Error(Twine("error '") + Twine(generatorOr.getError()) +
+                   "' while loading compiler runtime library from '" +
+                   libPath.str().c_str() + "'");
+    }
+    libJD->addGenerator(std::move(*generatorOr));
+  }
 
   // Allow pulling in sanitizer methods from the current process, as we
   // currently can't activate any of these runtimes otherwise (they must

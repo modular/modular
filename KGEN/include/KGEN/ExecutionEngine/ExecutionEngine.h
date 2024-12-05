@@ -45,6 +45,9 @@ struct ExecutionEngineOptions {
 
   /// An ORC ExecutorProcessControl that the user can specify.
   std::unique_ptr<llvm::orc::ExecutorProcessControl> epc = nullptr;
+
+  /// Libraries to load.
+  SmallVector<StringRef> libraryPaths;
 };
 
 //===----------------------------------------------------------------------===//
