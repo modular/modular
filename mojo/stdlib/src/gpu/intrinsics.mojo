@@ -114,25 +114,6 @@ fn warpgroup_reg_dealloc[count: Int]():
 
 
 # ===-----------------------------------------------------------------------===#
-# clock
-# ===-----------------------------------------------------------------------===#
-
-
-@always_inline("nodebug")
-fn clock() -> UInt:
-    """Returns a 32-bit unsigned cycle counter."""
-    alias asm = "llvm.nvvm.read.ptx.sreg.clock" if is_nvidia_gpu() else "llvm.amdgcn.s.memtime"
-    return int(llvm_intrinsic[asm, Int32]())
-
-
-@always_inline("nodebug")
-fn clock64() -> UInt:
-    """Returns a 64-bit unsigned cycle counter."""
-    alias asm = "llvm.nvvm.read.ptx.sreg.clock64" if is_nvidia_gpu() else "llvm.amdgcn.s.memtime"
-    return int(llvm_intrinsic[asm, Int64]())
-
-
-# ===-----------------------------------------------------------------------===#
 # lop
 # ===-----------------------------------------------------------------------===#
 

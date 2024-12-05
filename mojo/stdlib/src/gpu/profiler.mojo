@@ -8,7 +8,7 @@
 from builtin._location import __call_location, _SourceLocation
 from builtin.io import _printf
 
-from .intrinsics import clock64
+from time import perf_counter_ns
 
 
 @value
@@ -35,7 +35,7 @@ struct ProfileBlock[enabled: Bool = False]:
         @parameter
         if not enabled:
             return
-        self.start_time = clock64()
+        self.start_time = perf_counter_ns()
 
     @always_inline
     fn __exit__(mut self):
@@ -43,7 +43,7 @@ struct ProfileBlock[enabled: Bool = False]:
         if not enabled:
             return
 
-        var end_time = clock64()
+        var end_time = perf_counter_ns()
 
         _printf["@ %s %ld\n"](
             self.name.unsafe_cstr_ptr(), self.start_time - end_time
