@@ -43,6 +43,7 @@ lit_tests(
     ),
     data = glob(["max-cli/benchmark/Inputs/**"]) + [
         ":inputs",
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//PyTorch:TorchRuntimePlugins",
         "//PyTorch/tools/torch:mtorch",

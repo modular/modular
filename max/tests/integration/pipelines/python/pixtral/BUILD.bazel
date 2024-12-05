@@ -16,6 +16,7 @@ modular_py_test(
         ],
     ),
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//ModularFramework/tools/mof",
         "@llvm-project//compiler-rt:orc_rt",

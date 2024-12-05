@@ -11,6 +11,7 @@ modular_py_binary(
     name = "evaluate_llama",
     srcs = ["evaluate_llama.py"],
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
@@ -77,6 +78,7 @@ modular_py_binary(
             "auto",
         ],
         data = [
+            "//GenericML:MGPRT",
             "//KGEN:CompilerRT",
             "//ModularFramework/tools/mof",
             "//SDK/integration-test/pipelines/python/llama3/testdata",
@@ -151,6 +153,7 @@ modular_py_test(
         "torch_vision_encoder.py",
     ],
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//ModularFramework/tools/mof",

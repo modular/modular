@@ -5,6 +5,7 @@ modular_py_binary(
     name = "evaluate_batch_scenarios",
     srcs = ["evaluate_batch_scenarios.py"],
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
@@ -65,6 +66,7 @@ modular_py_test(
     size = "enormous",
     srcs = ["test_pipelines_cli.py"],
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],

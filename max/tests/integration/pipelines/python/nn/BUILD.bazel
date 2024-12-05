@@ -9,6 +9,7 @@ modular_py_test(
         ["**/test_tokenizer.py"],
     ),
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
@@ -61,6 +62,7 @@ modular_py_test(
         ],
     ),
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
@@ -103,6 +105,7 @@ modular_py_test(
         ],
     ),
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",
@@ -145,6 +148,7 @@ modular_py_test(
         ],
     ),
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//Support/tools/system-info",

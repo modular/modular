@@ -42,6 +42,7 @@ lit_tests(
     data = [
         ":inputs",
         "//GenericML:DeviceDriver",
+        "//GenericML:MGPRT",
         "//GenericML:modular-framework-common",
         "//KGEN:CompilerRT",
         "//ModelServing:ServeRTCAPI",
