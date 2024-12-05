@@ -47,8 +47,8 @@ class DType(Enum):
     f8e5m2 = 0 | mIsFloat
     f8e4m3 = 1 | mIsFloat
     # f8e3m4 = 2 | mIsFloat
-    # f8e5m2fnuz = 3 | mIsFloat
-    # f8e4m3fnuz = 4 | mIsFloat
+    f8e5m2fnuz = 3 | mIsFloat
+    f8e4m3fnuz = 4 | mIsFloat
     float16 = 5 | mIsFloat  # Original name: f16
     bfloat16 = 6 | mIsFloat  # Original name: bf16
     float32 = 7 | mIsFloat  # Original name: f32
@@ -194,7 +194,9 @@ _DTYPE_TO_MLIR = {
     DType.uint32: "ui32",
     DType.uint64: "ui64",
     DType.f8e4m3: "f8e4m3",
+    DType.f8e4m3fnuz: "f8e4m3fnuz",
     DType.f8e5m2: "f8e5m2",
+    DType.f8e5m2fnuz: "f8e5m2fnuz",
     DType.float16: "f16",
     DType.float32: "f32",
     DType.float64: "f64",
@@ -218,6 +220,8 @@ _MLIR_TO_DTYPE = {
     "f64": DType.float64,
     "bf16": DType.bfloat16,
     "f8e4m3": DType.f8e4m3,
+    "f8e4m3fnuz": DType.f8e4m3fnuz,
     "f8e5m2": DType.f8e5m2,
+    "f8e5m2fnuz": DType.f8e5m2fnuz,
     "invalid": DType._unknown,
 }
