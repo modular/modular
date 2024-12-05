@@ -43,7 +43,18 @@ MAX_INT64 = np.iinfo(np.int64).max
 
 # TODO(MSDK-1234): add f8e5m2 and f8e4m3 to test date types
 dtypes = st.sampled_from(
-    [d for d in DType if d not in (DType._unknown, DType.f8e5m2, DType.f8e4m3)]
+    [
+        d
+        for d in DType
+        if d
+        not in (
+            DType._unknown,
+            DType.f8e5m2,
+            DType.f8e5m2fnuz,
+            DType.f8e4m3,
+            DType.f8e4m3fnuz,
+        )
+    ]
 )
 
 
