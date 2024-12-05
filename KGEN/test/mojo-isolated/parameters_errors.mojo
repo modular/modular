@@ -529,3 +529,16 @@ fn use_take_args[width: Int]():
     # expected-error @below {{cannot be converted}}
     # expected-note @below {{types parameters include unfolded expression at parser time; try rebinding to a consistent type?}}
     _ = has_expr_for_elaborator[width](HasSize[size=width + 5]())
+
+
+# MOCO-1480: handle init-self param not deduce-able.
+struct UnusedInitSelfParam[A: Int]:
+    # expected-note @below {{function declared here}}
+    fn __init__[B: Int](out self: UnusedInitSelfParam[B]):
+        pass
+
+
+fn unused_init_self_param():
+    # expected-error @below {{invalid initialization: could not deduce parameter 'B' of callee '__init__'}}
+    # expected-note @below {{failed to infer parameter 'B', parameter isn't used in any argument}}
+    var slice = UnusedInitSelfParam()

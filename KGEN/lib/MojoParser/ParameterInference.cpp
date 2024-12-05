@@ -1249,10 +1249,19 @@ ParameterInferenceState::infer(LITSignatureType signature,
   //
   // It would be really nice if we moved InitSelf arguments to the end of the
   // initializer list to merge them with __result__.
-  for (unsigned idx : initSelfParams) {
-    if (idx < inferredParams.size()) {
-      TypedAttr &param = inferredParams[idx];
-      param = cast<TypedAttr>(evaluator.getReboundAttribute(param));
+  if (!initSelfParams.empty()) {
+    // Need to first populate the evaluator with unbound attrs in case any
+    // InitSelf params were not deduced.
+    ArrayRef<Type> paramTypes = signature.getParamTypes();
+    for (size_t paramIdx = evaluator.getNumInputParams();
+         paramIdx < signature.getNumParams(); ++paramIdx)
+      evaluator.addInputValue(UnboundAttr::get(paramTypes[paramIdx]));
+
+    for (unsigned idx : initSelfParams) {
+      if (idx < inferredParams.size()) {
+        TypedAttr &param = inferredParams[idx];
+        param = cast<TypedAttr>(evaluator.getReboundAttribute(param));
+      }
     }
   }
 
