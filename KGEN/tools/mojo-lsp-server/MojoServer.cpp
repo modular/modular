@@ -312,6 +312,17 @@ void SymbolIndex::walkSymbolRefs(SMRange range,
 
 void SymbolIndex::insertRangeInMainDoc(SymbolRef &&symbolRef) {
   SMRange range = symbolRef.range;
+  // Interestingly, __init__.mojo files end up notifying the LSP of a module
+  // called __init__ that exists at the beginning of the file. Changing that
+  // behavior on the compiler is not trivial, but it's simpler to just ignore
+  // this symbol in the LSP.
+  if (symbolRef.symbols[0]->identifier == "__init__") {
+    int buffer = mainDoc.getSourceMgr().FindBufferContainingLoc(range.Start);
+    if (buffer &&
+        mainDoc.getSourceMgr().getMemoryBuffer(buffer)->getBufferStart() ==
+            range.Start.getPointer())
+      return;
+  }
 
   // If an existing mapping is found, overwrite with the new reference. We may
   // resolve more specific references as the parser progresses.
