@@ -14,8 +14,14 @@
 namespace M {
 
 /// Print the executable name and process ID to standard output, then pause
-/// for the specified number of seconds (default to 120 seconds) and wait.
-/// This should allow a debugger to be attached.
+/// for the specified number of seconds on Linux (default to 120 seconds) and
+/// wait. On Mac or Windows, it waits indefinitely.
+///
+/// The reason behind the differences in behavior for each platform are due to
+/// how the debugger resumes after a wait or SIGSTOP pauses the program. For
+/// example, on Mac, after resuming a process stopped with `sleep_for`, you
+/// continue the wait. However, on Linux, you don't wait anymore and simply
+/// continue the rest of the execution of the process.
 void waitForDebuggerToAttach(int timeoutSeconds = 120);
 
 } // namespace M

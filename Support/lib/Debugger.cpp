@@ -10,6 +10,7 @@
 #include "llvm/Support/Process.h"
 
 #include <chrono>
+#include <csignal>
 #include <thread>
 
 using namespace M;
@@ -26,12 +27,14 @@ void M::waitForDebuggerToAttach(int timeoutSeconds) {
   llvm::errs() << "  * br //:lldb -- -p " << pid
                << " (to use monorepo build of lldb)\n";
   llvm::errs() << "  * lldb -p " << pid << " (to use installed lldb)\n";
-  llvm::errs() << "\n";
   llvm::errs() << "Waiting for " << timeoutSeconds << " seconds...\n";
 #ifdef _WIN32
   while (!IsDebuggerPresent())
     Sleep(1000);
+#elif defined(__APPLE__)
+  raise(SIGSTOP);
 #else
+  llvm::errs() << "Waiting for " << timeoutSeconds << " seconds...\n";
   std::this_thread::sleep_for(std::chrono::seconds(timeoutSeconds));
 #endif
   llvm::errs() << "======= Resuming execution ========\n";
