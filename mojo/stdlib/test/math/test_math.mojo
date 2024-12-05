@@ -30,11 +30,11 @@ from math import (
     trunc,
     ulp,
 )
+from memory import Span
 from sys.info import has_neon
 
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
-from utils import Span
 from utils.numerics import inf, isinf, isnan, nan, neg_inf
 
 
