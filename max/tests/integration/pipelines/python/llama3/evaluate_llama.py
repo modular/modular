@@ -115,12 +115,13 @@ class SupportedTestModels:
                 else KVCacheStrategy.NAIVE
             )
 
-        if self.version == "3.1":
-            kwargs["huggingface_repo_id"] = "modularai/llama-3.1"
-        elif self.version == "3":
-            kwargs["huggingface_repo_id"] = "modularai/llama-3"
-        else:
-            raise ValueError(f"version {self.version} not supported.")
+        if "huggingface_repo_id" not in kwargs:
+            if self.version == "3.1":
+                kwargs["huggingface_repo_id"] = "modularai/llama-3.1"
+            elif self.version == "3":
+                kwargs["huggingface_repo_id"] = "modularai/llama-3"
+            else:
+                raise ValueError(f"version {self.version} not supported.")
 
         config = PipelineConfig(
             architecture="LlamaForCausalLM",

@@ -29,6 +29,7 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     KVCacheParams,
     load_kv_manager,
+    estimate_kv_cache_size,
 )
 from max.engine import InferenceSession, Model
 
@@ -102,6 +103,15 @@ class DummyPipelineModel(PipelineModel):
             num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
             devices=[self.pipeline_config.device],
             session=session,
+        )
+
+    def estimate_kv_cache_size(self) -> int:
+        return estimate_kv_cache_size(
+            params=self._get_kv_params(),
+            max_cache_batch_size=self.pipeline_config.max_cache_batch_size,
+            max_seq_len=self.pipeline_config.huggingface_config.max_seq_len,
+            num_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
+            devices=[self.pipeline_config.device],
         )
 
     def load_model(
