@@ -122,7 +122,7 @@ class Graph:
     _unique_symbolic_dim_counter: int
     _context_state: list
     inputs: tuple[Value, ...]
-    weights: dict[str, _GraphWeight]
+    _weights: dict[str, _GraphWeight]
     # A global sequence of chains that is updated by side-effecting ops.
     _current_chain: _ChainValue
 
@@ -177,7 +177,7 @@ class Graph:
         self._mlir_op.attributes["inputParams"] = param_decl
 
         self.inputs = tuple(Value(arg) for arg in self._body.arguments)  # type: ignore
-        self.weights = {}
+        self._weights = {}
 
         self._current_chain = self._add_op(mo.chain_create, [])[0]  # type: ignore
 
@@ -404,7 +404,7 @@ class Graph:
         Raises:
             ValueError: If a weight with the same name already exists in the graph.
         """
-        if graph_weight := self.weights.get(weight.name):
+        if graph_weight := self._weights.get(weight.name):
             if graph_weight.weight is weight:
                 return graph_weight.value
             else:
@@ -432,7 +432,7 @@ class Graph:
             DeviceType.CPU, 0
         ).to_mlir()
 
-        self.weights[weight.name] = _GraphWeight(weight, weight_tensor)
+        self._weights[weight.name] = _GraphWeight(weight, weight_tensor)
         return weight_tensor
 
     def __repr__(self) -> str:
