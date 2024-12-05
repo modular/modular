@@ -430,14 +430,3 @@ fn load_volatile[
         Scalar[type],
         constraints=constraints,
     ](ptr.bitcast[address_space = AddressSpace.GENERIC]())
-
-
-@always_inline("nodebug")
-fn sleep(n: Int32):
-    """Sleeps for n clocks (max ~8000)."""
-    if is_nvidia_gpu():
-        constrained[
-            False, "The sleep function is not supported by NVidia GPUs."
-        ]()
-    else:
-        llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](n)
