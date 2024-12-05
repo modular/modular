@@ -686,12 +686,12 @@ struct DeviceFunctionV2[
         )
 
     @always_inline
-    fn test_only_get_attribute(self, attr: Attribute) raises -> Int:
+    fn get_attribute(self, attr: Attribute) raises -> Int:
         var result: Int32 = 0
-        # const char *AsyncRT_DeviceFunction_TEST_ONLY_getAttribute(int32_t *result, const DeviceFunction *func, int32_t attr_code)
+        # const char *AsyncRT_DeviceFunction_getAttribute(int32_t *result, const DeviceFunction *func, int32_t attr_code)
         _checked(
             external_call[
-                "AsyncRT_DeviceFunction_TEST_ONLY_getAttribute",
+                "AsyncRT_DeviceFunction_getAttribute",
                 _CharPtr,
                 UnsafePointer[Int32],
                 _DeviceFunctionPtr,
