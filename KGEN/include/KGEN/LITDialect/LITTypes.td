@@ -373,6 +373,9 @@ def LIT_OriginType : LITType<"Origin", "origin",
 
     /// Classify the mutability into Mutable/Immutable/Parametric.
     MutabilityClass getMutabilityClass();
+
+    /// Remove any OriginMutCast and ._mlir_origin if present.
+    static TypedAttr stripMutCastAndFieldExtract(TypedAttr origin);
   }];
 }
 

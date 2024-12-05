@@ -236,7 +236,7 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
                                             ASTExprAnd<AnyValue> operand,
                                             RefType argType,
                                             SharedState &shared) {
-  diag << "'Reference[" << ASTType(argType.getElementType()) << ", ...]";
+  diag << "ref " << ASTType(argType.getElementType());
 
   auto loc = operand.expr->getLoc();
   if (operand.ir.getIfRValue()) {
@@ -267,9 +267,19 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
                          << " doesn't match expected mutability "
                          << argType.isMutable();
   } else if (!ExprEmitter::canZeroCostConvert(operandRefTy, argType, shared)) {
-    diag.attachNote(loc) << "operand origin " << operandRefTy.getOrigin()
-                         << " doesn't match expected origin "
-                         << argType.getOrigin();
+    auto operandO = operandRefTy.getOrigin();
+    auto argO = argType.getOrigin();
+    // Strip off mutcasts etc - if the origins still differ we can complain
+    // about the simpler thing.
+    auto operandOS = OriginType::stripMutCastAndFieldExtract(operandO);
+    auto argOS = OriginType::stripMutCastAndFieldExtract(argO);
+    if (operandOS != argOS) {
+      argO = argOS;
+      operandO = operandOS;
+    }
+
+    diag.attachNote(loc) << "operand origin " << operandO
+                         << " doesn't match expected origin " << argO;
   }
 }
 

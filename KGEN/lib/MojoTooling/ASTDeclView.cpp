@@ -92,6 +92,8 @@ static std::string generatePValueString(SharedState &shared, PValue value) {
 static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
                                       LITSignatureType signature,
                                       bool isRefResult) {
+  // Strip out extra stuff.
+  origin = OriginType::stripMutCastAndFieldExtract(origin);
 
   // Check to see if the origin is a parameter on this signature.  If so, it
   // will have a depth of zero.
@@ -117,18 +119,6 @@ static std::string getSignatureOrigin(SharedState &shared, TypedAttr origin,
 
     return paramListMetadata.getName(indexRef.getIndex()).str();
   }
-
-  // Handle an extract out of an Origin type.
-  if (auto extract = dyn_cast<LIT::StructExtractAttr>(origin)) {
-    if (extract.getField() == ORIGIN_FIELD_NAME)
-      return getSignatureOrigin(shared, extract.getStructValue(), signature,
-                                isRefResult);
-  }
-
-  // Ignore MutCasts.
-  if (auto mutCast = dyn_cast<OriginMutCastAttr>(origin))
-    return getSignatureOrigin(shared, mutCast.getOperand(), signature,
-                              isRefResult);
 
   // Combine unions into comma separated string.
   if (auto unionAttr = dyn_cast<OriginUnionAttr>(origin)) {
