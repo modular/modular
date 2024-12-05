@@ -13,11 +13,11 @@ from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from buffer import NDBuffer
 from builtin.sort import _quicksort
-from memory import UnsafePointer
+from memory import UnsafePointer, Span
 from nn.reshape import reshape
 from register import register_internal_shape_func
 
-from utils import IndexList, Span
+from utils import IndexList
 
 
 @always_inline

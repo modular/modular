@@ -8,9 +8,9 @@ from collections import List
 from math import iota
 
 from buffer import NDBuffer
-from memory import UnsafePointer
+from memory import UnsafePointer, Span
 
-from utils import IndexList, Span
+from utils import IndexList
 from utils.index import Index
 
 
