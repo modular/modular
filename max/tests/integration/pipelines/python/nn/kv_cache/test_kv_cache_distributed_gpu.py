@@ -6,7 +6,7 @@
 
 import asyncio
 
-from max.driver import CUDA, cuda_device_count
+from max.driver import CUDA, accelerator_count
 from max.dtype import DType
 from max.pipelines.kv_cache import (
     KVCacheParams,
@@ -22,7 +22,7 @@ def test_kv_cache_gpu():
 
 
 async def _test_kv_cache_gpu():
-    num_devices = cuda_device_count()
+    num_devices = accelerator_count()
 
     if num_devices > 1:
         list_of_devices = [CUDA(id=i) for i in range(num_devices)]
