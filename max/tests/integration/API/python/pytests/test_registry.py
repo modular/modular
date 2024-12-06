@@ -4,34 +4,35 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
 from functools import wraps
 from typing import Sequence
 
-from max.dtype import DType
+import pytest
 from max.driver import Tensor
+from max.dtype import DType
+from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
 from max.pipelines import (
     PIPELINE_REGISTRY,
-    TextTokenizer,
-    SupportedArchitecture,
-    SupportedVersion,
-    SupportedEncoding,
-    PipelineModel,
-    PipelineConfig,
     HuggingFaceFile,
     ModelOutputs,
+    PipelineConfig,
     PipelineEngine,
+    PipelineModel,
+    SupportedArchitecture,
+    SupportedEncoding,
+    SupportedVersion,
+    TextTokenizer,
+    WeightsFormat,
 )
 from max.pipelines.context import InputContext
 from max.pipelines.kv_cache import (
     KVCacheManager,
-    KVCacheStrategy,
     KVCacheParams,
+    KVCacheStrategy,
     load_kv_manager,
     estimate_kv_cache_size,
 )
-from max.engine import InferenceSession, Model
 
 
 def prepare_registry(func):
@@ -154,6 +155,7 @@ DUMMY_ARCH = SupportedArchitecture(
     default_version="1",
     pipeline_model=DummyPipelineModel,
     tokenizer=TextTokenizer,
+    default_weights_format=WeightsFormat.gguf,
 )
 
 
