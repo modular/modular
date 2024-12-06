@@ -6137,7 +6137,7 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
 ](
     output: ManagedTensorSlice[type, 2],
     hidden_state: ManagedTensorSlice[type, 2],
-    input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
     weight: ManagedTensorSlice[type, 2],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
@@ -6150,7 +6150,7 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
         hidden_state: Tensor with shape (batch_size, seq_len, num_heads * head_size).
-        input_row_offset: Tensor with shape (batch_size + 1,).
+        input_row_offsets: Tensor with shape (batch_size + 1,).
             The value at each index is the start_idx of the corresponding batch in hidden_state.
         weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
         kv_collection: The historical KVCache for keys and values. The KVCache for
@@ -6169,15 +6169,15 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
         "weight"
     ).shape
     alias input_row_shape = compiler.specsof[
-        input_row_offset.type, input_row_offset.rank
-    ]("input_row_offset").shape
+        input_row_offsets.type, input_row_offsets.rank
+    ]("input_row_offsets").shape
 
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
         managed_tensor_slice_to_ndbuffer[static_shape=hidden_state_shape](
             hidden_state
         ),
         managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
-            input_row_offset
+            input_row_offsets
         ),
         managed_tensor_slice_to_ndbuffer[static_shape=weight_shape](weight),
         kv_collection,
@@ -6289,7 +6289,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
@@ -6301,7 +6301,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
             output,
             hidden_state,
-            input_row_offset,
+            input_row_offsets,
             weight,
             kv_collection,
             layer_idx,
@@ -6319,7 +6319,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
@@ -6331,7 +6331,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
             output,
             hidden_state,
-            input_row_offset,
+            input_row_offsets,
             weight,
             kv_collection,
             layer_idx,
@@ -6349,7 +6349,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
@@ -6361,7 +6361,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
             output,
             hidden_state,
-            input_row_offset,
+            input_row_offsets,
             weight,
             kv_collection,
             layer_idx,
@@ -6379,7 +6379,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
@@ -6391,7 +6391,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
             output,
             hidden_state,
-            input_row_offset,
+            input_row_offsets,
             weight,
             kv_collection,
             layer_idx,
@@ -6409,7 +6409,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d16_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 2],
         hidden_state: ManagedTensorSlice[type, 2],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         weight: ManagedTensorSlice[type, 2],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
@@ -6421,7 +6421,7 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d16_cont_batch_ragged:
         generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[target](
             output,
             hidden_state,
-            input_row_offset,
+            input_row_offsets,
             weight,
             kv_collection,
             layer_idx,
@@ -7026,7 +7026,7 @@ fn generic_fused_qk_rope_bshd_ragged_kernel_api[
 ](
     output: ManagedTensorSlice[type, 3],
     q_proj: ManagedTensorSlice[type, 3],
-    input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
     kv_collection: ContiguousKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: Scalar[DType.uint32],
@@ -7043,13 +7043,13 @@ fn generic_fused_qk_rope_bshd_ragged_kernel_api[
         "freqs_cis"
     ).shape
     alias input_row_shape = compiler.specsof[
-        input_row_offset.type, input_row_offset.rank
-    ]("input_row_offset").shape
+        input_row_offsets.type, input_row_offsets.rank
+    ]("input_row_offsets").shape
 
     generic_fused_qk_rope_bshd_ragged[target=target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_proj_shape](q_proj),
         managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
-            input_row_offset
+            input_row_offsets
         ),
         kv_collection,
         managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
@@ -7068,7 +7068,7 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
 ](
     output: ManagedTensorSlice[type, 3],
     q_proj: ManagedTensorSlice[type, 3],
-    input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     freqs_cis: ManagedTensorSlice[type, 2],
     layer_idx: Scalar[DType.uint32],
@@ -7085,13 +7085,13 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
         "freqs_cis"
     ).shape
     alias input_row_shape = compiler.specsof[
-        input_row_offset.type, input_row_offset.rank
-    ]("input_row_offset").shape
+        input_row_offsets.type, input_row_offsets.rank
+    ]("input_row_offsets").shape
 
     generic_fused_qk_rope_bshd_continous_batch_ragged[target=target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_proj_shape](q_proj),
         managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
-            input_row_offset
+            input_row_offsets
         ),
         kv_collection,
         managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
@@ -7114,7 +7114,7 @@ struct Struct_fused_qk_rope_h6_d48_bshd_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContiguousKVCacheCollection[
             type,
             kv_params_h6_d48_bshd,
@@ -7127,7 +7127,7 @@ struct Struct_fused_qk_rope_h6_d48_bshd_ragged:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7146,7 +7146,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContiguousKVCacheCollection[
             type,
             kv_params_h8_d128_bshd,
@@ -7159,7 +7159,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_ragged:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7178,7 +7178,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContiguousKVCacheCollection[
             type,
             kv_params_h8_d512_bshd,
@@ -7191,7 +7191,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_ragged:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7210,7 +7210,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContiguousKVCacheCollection[
             type,
             kv_params_h1_d16_bshd,
@@ -7223,7 +7223,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_ragged:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7242,7 +7242,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContiguousKVCacheCollection[
             type,
             kv_params_h8_d32_bshd,
@@ -7255,7 +7255,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_ragged:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7274,7 +7274,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContiguousKVCacheCollection[
             type,
             kv_params_h8_d64_bshd,
@@ -7287,7 +7287,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_ragged:
         generic_fused_qk_rope_bshd_ragged_kernel_api[target=target](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7306,7 +7306,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h8_d128_bshd,
@@ -7321,7 +7321,7 @@ struct Struct_fused_qk_rope_h8_d128_bshd_continuous_batch_ragged:
         ](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7340,7 +7340,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_continuous_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h8_d512_bshd,
@@ -7355,7 +7355,7 @@ struct Struct_fused_qk_rope_h8_d512_bshd_continuous_batch_ragged:
         ](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7374,7 +7374,7 @@ struct Struct_fused_qk_rope_h32_d128_bshd_continuous_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h32_d128_bshd,
@@ -7389,7 +7389,7 @@ struct Struct_fused_qk_rope_h32_d128_bshd_continuous_batch_ragged:
         ](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7408,7 +7408,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h1_d16_bshd,
@@ -7423,7 +7423,7 @@ struct Struct_fused_qk_rope_h1_d16_bshd_continuous_batch_ragged:
         ](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7442,7 +7442,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h8_d32_bshd,
@@ -7457,7 +7457,7 @@ struct Struct_fused_qk_rope_h8_d32_bshd_continuous_batch_ragged:
         ](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -7476,7 +7476,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q_proj: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h8_d64_bshd,
@@ -7491,7 +7491,7 @@ struct Struct_fused_qk_rope_h8_d64_bshd_continuous_batch_ragged:
         ](
             output,
             q_proj,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -8078,7 +8078,7 @@ fn generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[
     target: StringLiteral,
 ](
     q: ManagedTensorSlice[type, 3],
-    input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
     kv_collection: ContinuousBatchingKVCacheCollection,
     layer_idx: Scalar[DType.uint32],
     scale: Scalar[DType.float32],
@@ -8090,13 +8090,13 @@ fn generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[
     ).shape
     alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
     alias input_row_shape = compiler.specsof[
-        input_row_offset.type, input_row_offset.rank
-    ]("input_row_offset").shape
+        input_row_offsets.type, input_row_offsets.rank
+    ]("input_row_offsets").shape
 
     generic_flash_attention_kv_cache_cont_batch_ragged[target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
         managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
-            input_row_offset
+            input_row_offsets
         ),
         kv_collection,
         layer_idx,
@@ -8116,7 +8116,7 @@ struct Struct_flash_attention_kv_cache_h1_d16_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h1_d16_bshd,
@@ -8127,7 +8127,7 @@ struct Struct_flash_attention_kv_cache_h1_d16_cont_batch_ragged:
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
             q,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
@@ -8146,7 +8146,7 @@ struct Struct_flash_attention_kv_cache_h8_d64_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h8_d64_bshd,
@@ -8157,7 +8157,7 @@ struct Struct_flash_attention_kv_cache_h8_d64_cont_batch_ragged:
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
             q,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
@@ -8176,7 +8176,7 @@ struct Struct_flash_attention_kv_cache_h8_d128_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h8_d128_bshd,
@@ -8187,7 +8187,7 @@ struct Struct_flash_attention_kv_cache_h8_d128_cont_batch_ragged:
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
             q,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
@@ -8206,7 +8206,7 @@ struct Struct_flash_attention_kv_cache_h8_d512_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h8_d512_bshd,
@@ -8217,7 +8217,7 @@ struct Struct_flash_attention_kv_cache_h8_d512_cont_batch_ragged:
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
             q,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
@@ -8236,7 +8236,7 @@ struct Struct_flash_attention_kv_cache_h32_d128_cont_batch_ragged:
     ](
         output: ManagedTensorSlice[type, 3],
         q: ManagedTensorSlice[type, 3],
-        input_row_offset: ManagedTensorSlice[DType.uint32, 1],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
         kv_collection: ContinuousBatchingKVCacheCollection[
             type,
             kv_params_h32_d128_bshd,
@@ -8247,7 +8247,7 @@ struct Struct_flash_attention_kv_cache_h32_d128_cont_batch_ragged:
     ) raises:
         generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
             q,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
