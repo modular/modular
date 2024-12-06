@@ -49,7 +49,23 @@ from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from memory import UnsafePointer
 
 
-fn cublas_matmul[
+fn vendor_matmul[
+    use_tf32: Bool = False,
+](
+    handle: UnsafePointer[cublasContext],
+    c: NDBuffer[_, 2, _],
+    a: NDBuffer[_, 2, _],
+    b: NDBuffer[_, 2, _],
+    c_row_major: Bool = False,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+) -> Result:
+    return _cublas_matmul[use_tf32=use_tf32](
+        handle, c, a, b, c_row_major, transpose_a, transpose_b
+    )
+
+
+fn _cublas_matmul[
     use_tf32: Bool = False,
 ](
     handle: UnsafePointer[cublasContext],
