@@ -8,7 +8,7 @@ matrix operations.
 """
 
 from math import align_down
-from sys import has_nvidia_gpu, is_nvidia_gpu, simdwidthof, sizeof
+from sys import has_nvidia_gpu_accelerator, is_nvidia_gpu, simdwidthof, sizeof
 from gpu import WARP_SIZE, BlockIdx, ThreadIdx, lane_id
 from gpu.intrinsics import lop
 from gpu.memory import AddressSpace
@@ -1002,7 +1002,7 @@ fn get_mma_shape[
     input_type: DType, accum_type: DType, shape_id: Int = 0
 ]() -> IndexList[3]:
     @parameter
-    if has_nvidia_gpu():
+    if has_nvidia_gpu_accelerator():
 
         @parameter
         if accum_type is DType.float32 and input_type is DType.float32:
