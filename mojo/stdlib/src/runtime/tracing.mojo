@@ -9,13 +9,13 @@ from collections.optional import OptionalReg
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
 
-import gpu.host.nvtx
+import gpu.host.profiler
 from buffer import NDBuffer
-from gpu.host.nvtx import _end_range as _end_nvtx_range
-from gpu.host.nvtx import _is_enabled as _nvtx_is_enabled
-from gpu.host.nvtx import _is_enabled_details as _nvtx_is_enabled_details
-from gpu.host.nvtx import _mark as _mark_nvtx
-from gpu.host.nvtx import _start_range as _start_nvtx_range
+from gpu.host.profiler import _end_range as _end_nvtx_range
+from gpu.host.profiler import _is_enabled as _nvtx_is_enabled
+from gpu.host.profiler import _is_enabled_details as _nvtx_is_enabled_details
+from gpu.host.profiler import _mark as _mark_nvtx
+from gpu.host.profiler import _start_range as _start_nvtx_range
 
 from utils import IndexList, Variant
 
@@ -217,7 +217,7 @@ fn is_profiling_disabled[type: TraceCategory, level: TraceLevel]() -> Bool:
 
 
 @always_inline
-fn _is_nvtx_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
+fn _is_gpu_profiler_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     """Returns True if the e2e kernel profiling is enabled. Note that we always
     prefer to use llcl profiling if they are enabled."""
     return (
@@ -228,7 +228,9 @@ fn _is_nvtx_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
 
 
 @always_inline
-fn _is_nvtx_detailed_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
+fn _is_gpu_profiler_detailed_enabled[
+    type: TraceCategory, level: TraceLevel
+]() -> Bool:
     """Returns True if the e2e detailed kernel profiling is enabled. Note that
     we always prefer to use llcl profiling if they are enabled."""
     return (
@@ -316,7 +318,7 @@ struct Trace[
         self.parent_id = parent_id
 
         @parameter
-        if _is_nvtx_enabled[category, level]():
+        if _is_gpu_profiler_enabled[category, level]():
             self.name = name
 
             @parameter
@@ -363,7 +365,7 @@ struct Trace[
         self.parent_id = parent_id
 
         @parameter
-        if _is_nvtx_enabled[category, level]():
+        if _is_gpu_profiler_enabled[category, level]():
             self.name = name
 
             @parameter
@@ -395,7 +397,7 @@ struct Trace[
         """
 
         @parameter
-        if _is_nvtx_enabled[category, level]():
+        if _is_gpu_profiler_enabled[category, level]():
 
             @parameter
             if _nvtx_is_enabled_details():
@@ -470,8 +472,8 @@ struct Trace[
         """
 
         @parameter
-        if _is_nvtx_enabled[category, level]():
-            _end_nvtx_range(nvtx.RangeID(self.event_id))
+        if _is_gpu_profiler_enabled[category, level]():
+            _end_nvtx_range(profiler.RangeID(self.event_id))
             return
 
         @parameter
@@ -491,7 +493,7 @@ struct Trace[
         """Marks the tracer with the info at the specific point of time."""
 
         @parameter
-        if _is_nvtx_enabled[category, level]():
+        if _is_gpu_profiler_enabled[category, level]():
             var message = self._get_name_as_str()
 
             @parameter
@@ -518,7 +520,7 @@ struct Trace[
         @parameter
         if (
             is_profiling_enabled[category, level]()
-            or _is_nvtx_detailed_enabled[category, level]()
+            or _is_gpu_profiler_detailed_enabled[category, level]()
         ):
             return detail_fn()
         else:
