@@ -32,7 +32,7 @@ from nn.flash_attention import (
 from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask, NullMask
-from nn.mha_score_mod import IdentityScoreMod
+from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -1880,6 +1880,158 @@ fn flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch[
 
 
 @always_inline
+fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[
+    target: StringLiteral, type: DType
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("q", q),
+            trace_arg("valid_lengths", valid_lengths),
+            "scale=" + str(scale),
+            "layer_idx=" + str(layer_idx),
+            "num_heads=" + str(kv_collection.kv_params.num_heads),
+            "head_size=" + str(kv_collection.kv_params.head_size),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h"
+        + str(kv_collection.kv_params.num_heads)
+        + "_d"
+        + str(kv_collection.kv_params.head_size)
+        + "_bshd_causal_alibi_batching_continuous_batch",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _flash_attention_kv_cache_causal_alibi_mask[
+            kv_collection.CacheType, target=target
+        ](q, kv_collection, layer_idx, valid_lengths, scale, output, context)
+
+
+@register_internal(
+    "flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch"
+)
+fn flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        kv_params_h8_d128_bshd,
+    ],
+    layer_idx: UInt32,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[target](
+        q, kv_collection, layer_idx, valid_lengths, scale, output, context
+    )
+
+
+@register_internal(
+    "flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch"
+)
+fn flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        kv_params_h32_d128_bshd,
+    ],
+    layer_idx: UInt32,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[target](
+        q, kv_collection, layer_idx, valid_lengths, scale, output, context
+    )
+
+
+@register_internal(
+    "flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch"
+)
+fn flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        kv_params_h8_d32_bshd,
+    ],
+    layer_idx: UInt32,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[target](
+        q, kv_collection, layer_idx, valid_lengths, scale, output, context
+    )
+
+
+@register_internal(
+    "flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch"
+)
+fn flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        kv_params_h8_d64_bshd,
+    ],
+    layer_idx: UInt32,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[target](
+        q, kv_collection, layer_idx, valid_lengths, scale, output, context
+    )
+
+
+@register_internal(
+    "flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch"
+)
+fn flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type,
+        kv_params_h1_d16_bshd,
+    ],
+    layer_idx: UInt32,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[target](
+        q, kv_collection, layer_idx, valid_lengths, scale, output, context
+    )
+
+
+@always_inline
 fn _flash_attention_kv_cache_causal_mask[
     type: DType,
     collection_t: KVCollectionT, //,
@@ -2048,6 +2200,128 @@ fn _flash_attention_kv_cache_gpu[
         mask_nd,
         NullMask(),
         IdentityScoreMod(),
+        valid_lengths,
+        scale,
+        context,
+    )
+
+
+@always_inline
+fn _flash_attention_kv_cache_causal_alibi_mask[
+    type: DType,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: MojoCallContextPtr,
+) raises:
+    """Performs flash attention using k and v caches from ContiguousKVCache/ContinuousBatchingKVCache
+    custom types, with the causal mask and alibi mask materialized inside the kernel.
+
+    Args:
+        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
+        kv_collection: The Collection object storing out KVCache entries for this layer
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        valid_lengths: The unpadded lengths of the sequences contained in q
+        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        output: The Pre-allocated output buffer to write results to. Has shape:
+            (batch_size, num_heads, seq_len, head_size).
+        context: Pointer containing the runtime context for the target device.
+    """
+    var cuda_ctx: Optional[DeviceContext] = None
+
+    @parameter
+    if target != "cpu":
+        cuda_ctx = context.get_device_context()
+
+    _flash_attention_kv_cache_causal_alibi_mask_impl[cache_t, target=target](
+        q, kv_collection, layer_idx, valid_lengths, scale, output, cuda_ctx
+    )
+
+
+@always_inline
+fn _flash_attention_kv_cache_causal_alibi_mask_impl[
+    type: DType,
+    collection_t: KVCollectionT, //,
+    cache_t: KVCacheT,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 4, *_],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: Optional[DeviceContext],
+) raises:
+    """Performs flash attention using k and v caches from ContiguousKVCache/ContinuousBatchingKVCache
+    custom types, with the causal mask and alibi mask materialized inside the kernel.
+
+    Args:
+        q: NDBuffer with shape (batch_size, num_heads, seq_len, head_size).
+        kv_collection: The Collection object storing out KVCache entries for this layer
+        layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        valid_lengths: The unpadded lengths of the sequences contained in q
+        scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
+        output: The Pre-allocated output buffer to write results to. Has shape:
+            (batch_size, num_heads, seq_len, head_size).
+        context: CUDA DeviceContext. This is not used if target == "cpu"
+    """
+    var layer_idx_cast = int(layer_idx)
+    var k = kv_collection.get_key_cache[cache_t](layer_idx_cast)
+    var v = kv_collection.get_value_cache[cache_t](layer_idx_cast)
+
+    @parameter
+    if target == "cpu":
+        return flash_attention_kv_cache_cpu(
+            q, k, v, CausalMask(), scale, output
+        )
+    else:
+        return _flash_attention_kv_cache_causal_alibi_mask_gpu[target=target](
+            q, k, v, valid_lengths, scale, output, context.value()
+        )
+
+
+# TODO: Change this as needed when plumbed with pipelines.
+#       This is a copy of _flash_attention_kv_cache_gpu with the difference that
+#       it calls gpu_flash_attention with the option to use mask tensor and
+#       passing CausalMask() and AlibiScoreMod().
+@always_inline
+fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
+    type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
+](
+    q: NDBuffer[type, 4, *_],
+    k: cache_t,
+    v: cache_t,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    scale: Float32,
+    output: NDBuffer[type, 4, *_],
+    context: DeviceContext,
+) raises:
+    var mask_nd = NDBuffer[type, 4, DimList.create_unknown[4]()](
+        UnsafePointer[Scalar[type]](), IndexList[4]()
+    )
+
+    # TODO: This is replit-specific; need to generalize.
+    alias replit_num_q_heads = 24
+
+    # GPU flash attention kernel gets the cache length from the k tensor shape
+    # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
+    # KERN-725
+    gpu_flash_attention[add_attn_mask=False, use_score_mod=True](
+        output,
+        q,
+        k,
+        v,
+        mask_nd,
+        CausalMask(),
+        AlibiScoreMod[replit_num_q_heads](),
         valid_lengths,
         scale,
         context,
