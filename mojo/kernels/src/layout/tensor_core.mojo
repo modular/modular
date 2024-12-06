@@ -234,7 +234,9 @@ struct TensorCore[
         var b_reg_tile = __type_of(res).stack_allocation()
         alias reg_per_thread = num_matrix_reg[mma_k, mma_n]()
 
-        alias warp_layout = Layout.row_major(4, 16)
+        alias warp_layout = Layout.col_major(
+            16, 4
+        ) if transpose_b else Layout.row_major(4, 16)
 
         @parameter
         if in_type is DType.float32:
