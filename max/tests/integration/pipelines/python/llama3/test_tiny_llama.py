@@ -138,7 +138,7 @@ async def test_tinyllama_create_context(
     # Check that TextContext.seq_len is the prompt size for context encoding.
     assert context.seq_len == prompt_len
 
-    assert context.max_tokens == tinyllama_pipeline._pipeline_config.max_length
+    assert context.max_length == tinyllama_pipeline._pipeline_config.max_length
     assert context.next_tokens is not None
 
 
@@ -202,7 +202,7 @@ async def test_tinyllama_max_new_tokens(
         else min(max_model_tokens_after_prompt, requested_max_new_tokens)
     )
     assert (
-        context.max_tokens == context.current_length + configured_max_new_tokens
+        context.max_length == context.current_length + configured_max_new_tokens
     )
 
     # Run the model for the first time.

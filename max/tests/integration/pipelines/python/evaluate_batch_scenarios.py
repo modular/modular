@@ -279,7 +279,7 @@ async def run_batch_scenario(
                                 "Encoded: %s, %d/%d, Completion:\n%s",
                                 batch_id,
                                 batch_context.current_length,
-                                batch_context.max_tokens,
+                                batch_context.max_length,
                                 batch_completions[batch_id],
                             )
                             batch_out_file = batch_output_files.get(batch_id)
@@ -329,7 +329,7 @@ async def run_batch_scenario(
                         "Executed: %s, %d/%d - Completion:\n%s",
                         batch_id,
                         batch_context.current_length,
-                        batch_context.max_tokens,
+                        batch_context.max_length,
                         batch_completions[batch_id],
                     )
                     batch_out_file = batch_output_files.get(batch_id)

@@ -29,7 +29,7 @@ async def test_tokenizer__encode_and_decode():
     test_string = "hi my name is"
     encoded = await tokenizer.encode(test_string)
     context = TextContext(
-        max_tokens=10,
+        max_length=10,
         cache_seq_id=0,
         prompt=test_string,
         next_tokens=np.array(encoded),

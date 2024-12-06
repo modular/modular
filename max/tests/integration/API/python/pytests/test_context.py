@@ -12,7 +12,7 @@ def test_context__current_length():
     context = TextContext(
         cache_seq_id=0,
         prompt="this is a test prompt",
-        max_tokens=10,
+        max_length=10,
         next_tokens=np.array([0, 1, 2, 3]),
     )
 
@@ -33,7 +33,7 @@ def test_context__seq_len():
     context = TextContext(
         cache_seq_id=0,
         prompt="this is a test prompt",
-        max_tokens=10,
+        max_length=10,
         next_tokens=np.array([0, 1, 2, 3]),
     )
 
