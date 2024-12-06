@@ -4,6 +4,7 @@ modular_py_binary(
     name = "mojodoc_json_to_markdown",
     srcs = ["mojodoc_json_to_markdown.py"],
     data = glob(["mojodoc-templates/*.md"]),
+    use_legacy_binary = True,
     visibility = ["//visibility:public"],
     deps = [
         requirement("jinja2"),
