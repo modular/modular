@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s
 
-from time import now, perf_counter_ns, sleep, time_function
+from time import perf_counter_ns, sleep, time_function
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.intrinsics import *
@@ -14,7 +14,6 @@ from testing import *
 
 fn clock_functions():
     _ = perf_counter_ns()
-    _ = now()
 
 
 @always_inline
