@@ -108,20 +108,25 @@ from nn.kv_cache import (
     flash_attention_kv_cache_h1_d16_bshd,
     flash_attention_kv_cache_h1_d16_bshd_continuous_batch,
     flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch,
+    flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch,
     flash_attention_kv_cache_h6_d48_bshd,
     flash_attention_kv_cache_h8_d32_bshd,
     flash_attention_kv_cache_h8_d32_bshd_continuous_batch,
     flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch,
+    flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch,
     flash_attention_kv_cache_h8_d64_bshd,
     flash_attention_kv_cache_h8_d64_bshd_continuous_batch,
     flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch,
+    flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch,
     flash_attention_kv_cache_h8_d128_bshd,
     flash_attention_kv_cache_h8_d128_bshd_continuous_batch,
     flash_attention_kv_cache_h16_d128_bshd_continuous_batch,
     flash_attention_kv_cache_h8_d128_causal_mask_continuous_batch,
+    flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch,
     flash_attention_kv_cache_h8_d512_bshd_continuous_batch,
     flash_attention_kv_cache_h32_d128_bshd_continuous_batch,
     flash_attention_kv_cache_h32_d128_causal_mask_continuous_batch,
+    flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch,
     fused_qk_rope_h1_d16_bshd,
     fused_qk_rope_h1_d16_bshd_continuous_batch,
     fused_qk_rope_h6_d48_bshd,
@@ -400,6 +405,11 @@ fn MOGGExport():
     alias _flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch = flash_attention_kv_cache_h8_d32_causal_mask_continuous_batch
     alias _flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch = flash_attention_kv_cache_h8_d64_causal_mask_continuous_batch
     alias _flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch = flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch
+    alias _flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch = flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch
+    alias _flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch = flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch
+    alias _flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch = flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch
+    alias _flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch = flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch
+    alias _flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch = flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch
     alias _contiguous_kv_cache_collection_h6_d48_bshd = contiguous_kv_cache_collection_h6_d48_bshd
     alias _contiguous_kv_cache_collection_h8_d128_bshd = contiguous_kv_cache_collection_h8_d128_bshd
     alias _contiguous_kv_cache_collection_h1_d16_bshd = contiguous_kv_cache_collection_h1_d16_bshd
