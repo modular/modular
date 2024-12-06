@@ -52,6 +52,7 @@ def _attention_layer(
     wk_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
     wv_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
     wo_type = TensorType(dtype, [N_KV_HEADS * HEAD_DIM, HIDDEN_DIM])
+    valid_lengths_type = TensorType(DType.uint32, ["batch_size"])
 
     # Initialize kv cache params and manager
     kv_params = KVCacheParams(
@@ -85,10 +86,11 @@ def _attention_layer(
             wk_type,  # 3
             wv_type,  # 4
             wo_type,  # 5
-            blocks_type,  # 6
-            cache_lengths,  # 7
-            lookup_table,  # 8
-            is_cache_empty,  # 9
+            valid_lengths_type,  # 6
+            blocks_type,  # 7
+            cache_lengths,  # 8
+            lookup_table,  # 9
+            is_cache_empty,  # 10
         ],
     ) as graph:
         (
@@ -98,6 +100,7 @@ def _attention_layer(
             wk,
             wv,
             wo,
+            valid_lengths,
             blocks,
             cache_lengths,
             lookup_table,
@@ -129,7 +132,7 @@ def _attention_layer(
         attn_out, _ = attn_fn(
             x,  # type: ignore
             kv_collection,  # type: ignore
-            valid_lengths=cache_lengths,
+            valid_lengths=valid_lengths,
             attention_mask=attn_mask,
         )
 
@@ -188,6 +191,10 @@ def test_attention__valid_logits(session, start_pos, seq_len):
         seq_id = kv_manager.claim(1)
         seq_ids.append(seq_id[0])
 
+    # Base the valid lengths on max_seq_len
+    valid_lengths = Tensor.from_numpy(
+        np.full((BATCH_SIZE), seq_len, dtype=np.uint32)
+    )
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(seq_ids)[0]
     )
@@ -201,10 +208,11 @@ def test_attention__valid_logits(session, start_pos, seq_len):
             "batch_size": BATCH_SIZE,
         },
         provided_inputs={
-            6: blocks,
-            7: cache_lengths,
-            8: lookup_table_tensor,
-            9: is_cache_empty_buf,
+            6: valid_lengths,
+            7: blocks,
+            8: cache_lengths,
+            9: lookup_table_tensor,
+            10: is_cache_empty_buf,
         },
     )
     def test_runs_without_inf(execute, inputs, torch_inputs):

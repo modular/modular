@@ -24,7 +24,7 @@ from nn.attention import Attention
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
 N_HEADS = 32
-N_KV_HEADS = 32
+N_KV_HEADS = N_HEADS
 HEAD_DIM = 128
 HIDDEN_DIM = N_KV_HEADS * HEAD_DIM
 MAX_SEQ_LEN = 512
@@ -50,6 +50,7 @@ def _attention_layer(
     wk_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
     wv_type = TensorType(dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM])
     wo_type = TensorType(dtype, [N_HEADS * HEAD_DIM, HIDDEN_DIM])
+    valid_lengths_type = TensorType(DType.uint32, ["batch_size"])
 
     # Initialize kv cache params and manager
     kv_params = KVCacheParams(
@@ -83,10 +84,11 @@ def _attention_layer(
             wk_type,  # 3
             wv_type,  # 4
             wo_type,  # 5
-            blocks_type,  # 6
-            cache_lengths,  # 7
-            lookup_table,  # 8
-            is_cache_empty,  # 9
+            valid_lengths_type,  # 6
+            blocks_type,  # 7
+            cache_lengths,  # 8
+            lookup_table,  # 9
+            is_cache_empty,  # 10
         ],
     ) as graph:
         (
@@ -96,6 +98,7 @@ def _attention_layer(
             wk,
             wv,
             wo,
+            valid_lengths,
             blocks,
             cache_lengths,
             lookup_table,
@@ -127,7 +130,7 @@ def _attention_layer(
         attn_out, _ = attn_fn(
             x,  # type: ignore
             kv_collection,
-            valid_lengths=cache_lengths,
+            valid_lengths=valid_lengths,
             attention_mask=attn_mask,
         )
 
@@ -139,7 +142,8 @@ def _attention_layer(
 @pytest.mark.parametrize(
     "start_pos,seq_len",
     [
-        (0, 10),
+        (0, 128),
+        (9, 1),
     ],
 )
 def test_attention_gpu(start_pos, seq_len):
@@ -147,7 +151,6 @@ def test_attention_gpu(start_pos, seq_len):
     # It does not test that these logits match a reference implementation.
     host = CPU(0)
     device0 = CUDA(0)
-    # devices = [host]
     devices = [device0]
     session = InferenceSession(devices=devices)
     # Get Graph
@@ -188,6 +191,9 @@ def test_attention_gpu(start_pos, seq_len):
     wo = Tensor.from_numpy(
         np.ones((N_HEADS * HEAD_DIM, HIDDEN_DIM), dtype=np.float32),
     ).to(device0)
+    valid_lengths = Tensor.from_numpy(
+        np.full((BATCH_SIZE), seq_len, dtype=np.uint32)
+    ).to(device0)
 
     results = compiled.execute(
         hidden_states,
@@ -196,6 +202,7 @@ def test_attention_gpu(start_pos, seq_len):
         wk,
         wv,
         wo,
+        valid_lengths,
         blocks,
         cache_lengths,
         lookup_table_tensor,
