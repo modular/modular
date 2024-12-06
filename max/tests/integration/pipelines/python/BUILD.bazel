@@ -36,6 +36,7 @@ modular_py_binary(
     srcs = ["verify_pipelines.py"],
     data = [
         ":generate_llm_logits",
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3:verify",
@@ -128,6 +129,7 @@ modular_py_binary(
         "replit_compat.py",
     ],
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
@@ -163,6 +165,7 @@ modular_py_binary(
     name = "evaluate_pipelines",
     srcs = ["evaluate_pipelines.py"],
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3/testdata",
@@ -218,6 +221,7 @@ modular_py_binary(
     srcs = ["pipelines_lm_eval.py"],
     data = [
         ":lm-eval",
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "//SDK/public/max-repo/pipelines/python:pipelines",
         "@llvm-project//compiler-rt:orc_rt",

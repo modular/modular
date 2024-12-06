@@ -12,6 +12,7 @@ modular_py_test(
         exclude = ["**/*_gpu.py"],
     ),
     data = [
+        "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
         "@llvm-project//compiler-rt:orc_rt",
     ],
