@@ -176,7 +176,6 @@ class MatmulKVRaggedModel:
         )
 
 
-@pytest.mark.skip(reason="AIPIPE-246")
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
 def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     """Tests the matmul_kv_cache_ragged custom op."""
@@ -197,8 +196,8 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     wkv_type = TensorType(
         DType.float32,
         [
-            num_q_heads * kv_params.head_dim,
             (2 * (kv_params.n_kv_heads)) * kv_params.head_dim,
+            num_q_heads * kv_params.head_dim,
         ],
     )
     input_row_offset_type = TensorType(DType.uint32, ["input_row_offset_len"])
@@ -283,8 +282,8 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
     wkv_type = TensorType(
         dtype,
         [
-            num_q_heads * kv_params.head_dim,
             (2 * (kv_params.n_kv_heads)) * kv_params.head_dim,
+            num_q_heads * kv_params.head_dim,
         ],
     )
     input_row_offset_type = TensorType(DType.uint32, ["input_row_offset_len"])
