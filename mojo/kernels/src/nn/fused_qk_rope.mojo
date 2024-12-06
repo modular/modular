@@ -215,7 +215,7 @@ fn fused_qk_rope_ragged[
     target: StringLiteral,
 ](
     q_proj: NDBuffer[type, 3, *_],
-    input_row_offset: NDBuffer[DType.uint32, 1, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     freqs_cis: NDBuffer[type, 2, *_],
     layer_idx: UInt32,
@@ -227,13 +227,13 @@ fn fused_qk_rope_ragged[
     alias num_q_heads = q_proj.shape.get[1]()
     alias num_k_heads = kv_params.num_heads
     alias head_size = q_proj.shape.get[2]()
-    var batch_size = input_row_offset.dim[0]() - 1
+    var batch_size = input_row_offsets.dim[0]() - 1
 
     var k_cache = kv_collection.get_key_cache[cache_t](int(layer_idx))
 
     @always_inline
     @parameter
-    @__copy_capture(k_cache, batch_size, input_row_offset)
+    @__copy_capture(k_cache, batch_size, input_row_offsets)
     fn rope_fn[width: Int, rank: Int](idx_arg: IndexList[rank]):
         constrained[rank == 3, "Invalid rank passed to rope kernel"]()
 
@@ -246,9 +246,9 @@ fn fused_qk_rope_ragged[
             var global_token_idx = idx[0]
 
             var batch_idx: Int = get_batch_from_row_offsets(
-                input_row_offset, global_token_idx
+                input_row_offsets, global_token_idx
             )
-            var token_idx = int(global_token_idx - input_row_offset[batch_idx])
+            var token_idx = int(global_token_idx - input_row_offsets[batch_idx])
 
             var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
             var head_idx = idx[1]

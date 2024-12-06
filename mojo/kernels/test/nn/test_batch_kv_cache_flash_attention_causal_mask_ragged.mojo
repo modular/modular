@@ -61,7 +61,7 @@ def execute_ragged_flash_attention[
         "expected valid_lengths and cache_lengths size to be equal",
     )
 
-    var input_row_offset = HostNDBuffer[DType.uint32, 1](
+    var input_row_offsets = HostNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size + 1)
     )
     var cache_lengths = HostNDBuffer[DType.uint32, 1](IndexList[1](batch_size))
@@ -72,7 +72,7 @@ def execute_ragged_flash_attention[
     var max_prompt_length = -1
     var is_context_encoding = True
     for i in range(batch_size):
-        input_row_offset.tensor[i] = total_length
+        input_row_offsets.tensor[i] = total_length
         cache_lengths.tensor[i] = cache_lengths_list[i]
         valid_lengths.tensor[i] = valid_lengths_list[i]
         full_context_length = cache_lengths_list[i] + valid_lengths_list[i]
@@ -86,7 +86,7 @@ def execute_ragged_flash_attention[
             is_context_encoding = False
 
         total_length += valid_lengths_list[i]
-    input_row_offset.tensor[batch_size] = total_length
+    input_row_offsets.tensor[batch_size] = total_length
 
     q_ragged = HostNDBuffer[
         type, 3, DimList(Dim(), num_q_heads, kv_params.head_size)
@@ -104,7 +104,7 @@ def execute_ragged_flash_attention[
     # Don't worry about padded values, we won't read them.
     for bs in range(batch_size):
         unpadded_seq_len = valid_lengths_list[bs]
-        ragged_start_idx = int(input_row_offset.tensor[bs])
+        ragged_start_idx = int(input_row_offsets.tensor[bs])
         padded_ptr = q_padded.tensor._offset((bs, 0, 0, 0))
         ragged_ptr = q_ragged.tensor._offset((ragged_start_idx, 0, 0))
         memcpy(
@@ -186,7 +186,7 @@ def execute_ragged_flash_attention[
     # ragged execution
     flash_attention_kv_cache(
         q_ragged.tensor,
-        input_row_offset.tensor,
+        input_row_offsets.tensor,
         k_cache,
         v_cache,
         CausalMask(),
@@ -208,7 +208,7 @@ def execute_ragged_flash_attention[
     test_out = test_output.tensor
     for bs in range(batch_size):
         prompt_len = int(valid_lengths.tensor[bs])
-        ragged_offset = int(input_row_offset.tensor[bs])
+        ragged_offset = int(input_row_offsets.tensor[bs])
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
