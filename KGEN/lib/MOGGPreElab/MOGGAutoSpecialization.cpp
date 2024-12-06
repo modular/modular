@@ -89,7 +89,7 @@ struct CallGraphNode
     if (argsNeedingSpec.test(argIndex))
       return;
 
-    ParamDeclAttr paramInfo = paramInfos[argIndex];
+    [[maybe_unused]] ParamDeclAttr paramInfo = paramInfos[argIndex];
     ASSERT_STREAM(!paramInfo,
                   << "bitvector out of sync with parameter information");
 
