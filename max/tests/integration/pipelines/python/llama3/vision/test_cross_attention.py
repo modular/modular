@@ -100,16 +100,18 @@ class CrossAttentionModel:
     def __call__(
         self,
         hidden_states: TensorValue,
+        hidden_input_row_offsets: TensorValue,
         cross_attention_states: TensorValue,
-        input_row_offsets: TensorValue,
+        cross_input_row_offsets: TensorValue,
         *fetch_args: TensorValue,
     ) -> TensorValue:
         """Builds the cross attention model graph."""
         kv_collection = self.fetch(*fetch_args)
         return self.cross_attention(
             hidden_states,
+            hidden_input_row_offsets,
             cross_attention_states,
-            input_row_offsets,
+            cross_input_row_offsets,
             kv_collection,
         )
 
@@ -127,6 +129,9 @@ def test_cross_attention(
     # Globally disable saving activations for backprop.
     torch.set_grad_enabled(False)
 
+    num_tiles = 4
+    # image_dim**2 // patch_dim**2 + 1 (cls token)
+    num_vision_tokens = 1025
     config = MllamaTextConfig(
         hidden_size=4096,
         num_attention_heads=32,
@@ -149,7 +154,8 @@ def test_cross_attention(
         dtype, ["total_seq_len", config.hidden_size]
     )
     cross_attention_states_type = TensorType(
-        dtype, shape=[4 * 1025, config.hidden_size]
+        dtype,
+        shape=[batch_size * num_tiles * num_vision_tokens, config.hidden_size],
     )
 
     input_row_offsets_type = TensorType(DType.uint32, [batch_size + 1])
@@ -173,7 +179,9 @@ def test_cross_attention(
         "test_cross_attn",
         forward=CrossAttentionModel(config, kv_params, torch_cross_attn, dtype),
         input_types=[
+            # NOTE: 2 input row offsets: for hidden and cross attention states.
             hidden_states_type,
+            input_row_offsets_type,
             cross_attention_states_type,
             input_row_offsets_type,
             *kv_manager.input_symbols()[0],
@@ -206,14 +214,19 @@ def test_cross_attention(
     cross_attention_states = torch.randn(
         cross_attention_states_type.shape.static_dims, dtype=torch_dtype
     )
-    input_row_offsets = torch.tensor(
+    hidden_input_row_offsets = torch.tensor(
         [0, *np.cumsum(seq_lens)], dtype=torch.uint32
+    )
+    cross_input_row_offsets = torch.tensor(
+        [i * num_tiles * num_vision_tokens for i in range(batch_size + 1)],
+        dtype=torch.uint32,
     )
 
     predicted = cross_attn_model(
         hidden_states,
+        hidden_input_row_offsets,
         cross_attention_states,
-        input_row_offsets,
+        cross_input_row_offsets,
         *kv_cache_inputs,
     )[0]
     assert isinstance(predicted, Tensor)
@@ -226,9 +239,9 @@ def test_cross_attention(
         dtype=torch_dtype,
     )
     # Convert to int since torch can't subtract uint32.
-    input_row_offsets = input_row_offsets.to(dtype=torch.int32)
+    hidden_input_row_offsets = hidden_input_row_offsets.to(dtype=torch.int32)
     for batch_idx, (start, stop) in enumerate(
-        zip(input_row_offsets[:-1], input_row_offsets[1:])
+        zip(hidden_input_row_offsets[:-1], hidden_input_row_offsets[1:])
     ):
         hidden_states_padded[batch_idx, : stop - start] = hidden_states[
             start:stop
@@ -238,8 +251,8 @@ def test_cross_attention(
     expected = (
         torch_cross_attn(
             hidden_states=hidden_states_padded,
-            cross_attention_states=cross_attention_states.broadcast_to(
-                [2, *cross_attention_states.shape]
+            cross_attention_states=cross_attention_states.reshape(
+                [2, num_tiles * num_vision_tokens, config.hidden_size]
             ),
             attention_mask=attention_mask,
         )[0]
@@ -250,7 +263,7 @@ def test_cross_attention(
         shape=[total_seq_len, config.hidden_size], dtype=dtype.to_numpy()
     )
     for batch_idx, (start, stop) in enumerate(
-        zip(input_row_offsets[:-1], input_row_offsets[1:])
+        zip(hidden_input_row_offsets[:-1], hidden_input_row_offsets[1:])
     ):
         expected_ragged[start:stop] = expected[batch_idx, : stop - start]
 

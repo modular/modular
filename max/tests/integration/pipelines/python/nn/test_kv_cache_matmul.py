@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pytest
+import torch
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -164,8 +165,13 @@ class MatmulKVRaggedModel:
         hidden_states: TensorValue,
         input_row_offsets: TensorValue,
         weight: TensorValue,
-        *fetch_args,
+        *fetch_args: TensorValue,
     ) -> None:
+        """Stages a graph consisting of a matmul KV cache ragged custom op.
+
+        This contains both the matmul KV cache ragged custom op and a "fetch"
+        op to get a KVCacheCollection.
+        """
         matmul_kv_cache_ragged(
             self.kv_params,
             hidden_states,
@@ -176,12 +182,25 @@ class MatmulKVRaggedModel:
         )
 
 
-@pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DType.float32,
+        # TODO(bduke): support converting to torch tensor from bfloat16 driver
+        # tensor.
+        # DType.bfloat16,
+    ],
+)
 def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     """Tests the matmul_kv_cache_ragged custom op."""
+    # Set up hyperparameters for the test.
+    torch_dtype = {
+        DType.float32: torch.float32,
+        DType.bfloat16: torch.bfloat16,
+    }[dtype]
     num_q_heads = 32
     kv_params = KVCacheParams(
-        dtype=DType.float32,
+        dtype=dtype,
         n_kv_heads=8,
         head_dim=128,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
@@ -189,12 +208,13 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     prompt_lens = [10, 30]
     batch_size = len(prompt_lens)
     total_seq_len = sum(prompt_lens)
-    hidden_state_type = TensorType(
-        DType.float32, ["total_seq_len", num_q_heads * kv_params.head_dim]
-    )
 
+    # Set MLIR types for the graph.
+    hidden_state_type = TensorType(
+        dtype, ["total_seq_len", num_q_heads * kv_params.head_dim]
+    )
     wkv_type = TensorType(
-        DType.float32,
+        dtype,
         [
             (2 * (kv_params.n_kv_heads)) * kv_params.head_dim,
             num_q_heads * kv_params.head_dim,
@@ -212,6 +232,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     )
     fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
 
+    # Stage the fetch op + custom matmul KV cache ragged op graph.
     graph = Graph(
         "matmul_kv_cache_ragged",
         forward=MatmulKVRaggedModel(fetch_layer, kv_params, layer_idx=0),
@@ -222,6 +243,9 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
             *kv_manager.input_symbols()[0],
         ],
     )
+
+    # Compile and init the model.
+    model = session.load(graph)
 
     # Claim seq_ids in cache.
     seq_ids = []
@@ -237,27 +261,20 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
 
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(seq_ids)[0]
-    )
+    fetch_args = kv_manager.fetch(seq_ids)[0]
+    kv_blocks = fetch_args[0]
+    # First check that the KV cache was zeroed out on initialization.
+    assert not kv_blocks.to_numpy().any()
 
-    @modular_graph_test(
-        session,
-        graph,
-        static_dims={
-            "total_seq_len": total_seq_len,
-            "input_row_offsets_len": len(prompt_lens) + 1,
-        },
-        provided_inputs={
-            1: input_row_offsets,
-            3: blocks,
-            4: cache_lengths,
-            5: lookup_table_tensor,
-            6: is_cache_empty_buf,
-        },
+    hidden_states = torch.randn(
+        size=[total_seq_len, num_q_heads * kv_params.head_dim],
+        dtype=torch_dtype,
     )
-    def test_runs_without_nan(execute, inputs, _torch_inputs):
-        execute(list(inputs))
+    wkv = torch.randn(size=wkv_type.shape.static_dims, dtype=torch_dtype)
+    model(hidden_states, input_row_offsets, wkv, *fetch_args)
+
+    # Check that the matmul wrote output to the KV cache.
+    assert kv_blocks.to_numpy().any()
 
 
 @pytest.mark.parametrize(
