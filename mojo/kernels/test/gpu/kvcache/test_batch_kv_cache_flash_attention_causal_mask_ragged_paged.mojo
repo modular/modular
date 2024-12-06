@@ -72,7 +72,7 @@ def execute_ragged_flash_attention[
         "expected valid_lengths and cache_lengths size to be equal",
     )
 
-    var input_row_offset_host = HostNDBuffer[DType.uint32, 1](
+    var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size + 1)
     )
     var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
@@ -84,7 +84,7 @@ def execute_ragged_flash_attention[
     var max_prompt_length = -1
     var is_context_encoding = True
     for i in range(batch_size):
-        input_row_offset_host.tensor[i] = total_length
+        input_row_offsets_host.tensor[i] = total_length
         cache_lengths_host.tensor[i] = cache_lengths[i]
         full_context_length = cache_lengths[i] + valid_lengths[i]
         if full_context_length > max_context_length:
@@ -97,9 +97,9 @@ def execute_ragged_flash_attention[
             is_context_encoding = False
 
         total_length += valid_lengths[i]
-    input_row_offset_host.tensor[batch_size] = total_length
+    input_row_offsets_host.tensor[batch_size] = total_length
 
-    input_row_offset_device = input_row_offset_host.copy_to_device(ctx)
+    input_row_offsets_device = input_row_offsets_host.copy_to_device(ctx)
     cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     q_ragged_host = HostNDBuffer[
@@ -253,7 +253,7 @@ def execute_ragged_flash_attention[
         dummy_mask,
         CausalMask(),
         IdentityScoreMod(),
-        input_row_offset_device.tensor,
+        input_row_offsets_device.tensor,
         # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
@@ -268,7 +268,7 @@ def execute_ragged_flash_attention[
         dummy_mask,
         CausalMask(),
         IdentityScoreMod(),
-        input_row_offset_device.tensor,
+        input_row_offsets_device.tensor,
         # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
@@ -285,7 +285,7 @@ def execute_ragged_flash_attention[
     test_out = test_output_host.tensor
     for bs in range(batch_size):
         prompt_len = valid_lengths[bs]
-        ragged_offset = int(input_row_offset_host.tensor[bs])
+        ragged_offset = int(input_row_offsets_host.tensor[bs])
         for s in range(prompt_len):
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):

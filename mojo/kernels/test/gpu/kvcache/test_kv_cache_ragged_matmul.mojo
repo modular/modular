@@ -36,7 +36,7 @@ alias llama_num_q_heads = 32
 def _initialize_ragged_inputs[
     type: DType, hidden_size: Int
 ](
-    mut input_row_offset_host: HostNDBuffer[DType.uint32, 1],
+    mut input_row_offsets_host: HostNDBuffer[DType.uint32, 1],
     batch_size: Int,
     prompt_lens: List[Int],
     ctx: DeviceContext,
@@ -49,15 +49,15 @@ def _initialize_ragged_inputs[
     total_length = 0
     max_seq_length_batch = -1
     for i in range(batch_size):
-        input_row_offset_host.tensor[i] = total_length
+        input_row_offsets_host.tensor[i] = total_length
 
         curr_len = prompt_lens[i]
         total_length += curr_len
         if curr_len > max_seq_length_batch:
             max_seq_length_batch = curr_len
 
-    input_row_offset_host.tensor[batch_size] = total_length
-    input_row_offset_device = input_row_offset_host.copy_to_device(ctx)
+    input_row_offsets_host.tensor[batch_size] = total_length
+    input_row_offsets_device = input_row_offsets_host.copy_to_device(ctx)
 
     # Initialize ragged hidden state.
     hidden_state_ragged_host = HostNDBuffer[
@@ -77,7 +77,7 @@ def _initialize_ragged_inputs[
     # Don't worry about padded values, we won't read them.
     for bs in range(batch_size):
         unpadded_seq_len = prompt_lens[bs]
-        ragged_start_idx = int(input_row_offset_host.tensor[bs])
+        ragged_start_idx = int(input_row_offsets_host.tensor[bs])
         for s in range(unpadded_seq_len):
             padded_ptr = hidden_state_padded_host.tensor._offset(
                 (bs * max_seq_length_batch + s, 0)
@@ -96,7 +96,7 @@ def _initialize_ragged_inputs[
     _ = hidden_state_padded_host^
 
     return (
-        input_row_offset_device,
+        input_row_offsets_device,
         hidden_state_ragged_device,
         hidden_state_padded_device,
     )
@@ -151,11 +151,11 @@ def execute_matmul_kv_cache_ragged[
     )
 
     # Initialize input row offsets and hidden states.
-    input_row_offset_host = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
-    input_row_offset_device, hidden_state_ragged_device, hidden_state_padded_device = _initialize_ragged_inputs[
+    input_row_offsets_host = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
+    input_row_offsets_device, hidden_state_ragged_device, hidden_state_padded_device = _initialize_ragged_inputs[
         type, hidden_size
     ](
-        input_row_offset_host, batch_size, prompt_lens, ctx
+        input_row_offsets_host, batch_size, prompt_lens, ctx
     )
 
     # Initialize the weights.
@@ -249,7 +249,7 @@ def execute_matmul_kv_cache_ragged[
     # Execute test.
     _matmul_kv_cache_ragged_impl[target="cuda"](
         hidden_state_ragged_device.tensor,
-        input_row_offset_device.tensor,
+        input_row_offsets_device.tensor,
         weight_device.tensor,
         k_cache_device,
         v_cache_device,
@@ -318,8 +318,8 @@ def execute_matmul_kv_cache_ragged[
     _ = lookup_table_device^
     _ = cache_lengths_device^
     _ = cache_lengths_host^
-    _ = input_row_offset_device^
-    _ = input_row_offset_host^
+    _ = input_row_offsets_device^
+    _ = input_row_offsets_host^
 
 
 def execute_fused_qkv_matmul[
@@ -365,11 +365,11 @@ def execute_fused_qkv_matmul[
     )
 
     # Initialize input row offsets and hidden states.
-    input_row_offset_host = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
-    input_row_offset_device, hidden_state_ragged_device, hidden_state_padded_device = _initialize_ragged_inputs[
+    input_row_offsets_host = HostNDBuffer[DType.uint32, 1]((batch_size + 1,))
+    input_row_offsets_device, hidden_state_ragged_device, hidden_state_padded_device = _initialize_ragged_inputs[
         type, hidden_size
     ](
-        input_row_offset_host, batch_size, prompt_lens, ctx
+        input_row_offsets_host, batch_size, prompt_lens, ctx
     )
 
     # initialize the weights
@@ -475,7 +475,7 @@ def execute_fused_qkv_matmul[
     # execute the matmul
     _fused_qkv_matmul_kv_cache_ragged_impl[target="cuda",](
         hidden_state_ragged_device.tensor,
-        input_row_offset_device.tensor,
+        input_row_offsets_device.tensor,
         weight_device.tensor,
         k_cache_device,
         v_cache_device,
@@ -505,7 +505,7 @@ def execute_fused_qkv_matmul[
     test_out = test_output_host.tensor
     for bs in range(batch_size):
         prompt_len = prompt_lens[bs]
-        ragged_offset = int(input_row_offset_host.tensor[bs])
+        ragged_offset = int(input_row_offsets_host.tensor[bs])
         for s in range(prompt_len):
             for q_dim in range(hidden_size):
                 assert_almost_equal(
@@ -565,8 +565,8 @@ def execute_fused_qkv_matmul[
     _ = lookup_table_host^
     _ = cache_lengths_device^
     _ = cache_lengths_host^
-    _ = input_row_offset_device^
-    _ = input_row_offset_host^
+    _ = input_row_offsets_device^
+    _ = input_row_offsets_host^
 
 
 def execute_fused_matmul_suite(ctx: DeviceContext):
