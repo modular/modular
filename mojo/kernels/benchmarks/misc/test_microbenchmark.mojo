@@ -7,7 +7,6 @@
 import time
 from random import random_si64, seed
 from sys.info import sizeof
-from time import now
 
 import microbenchmark
 from buffer import NDBuffer
