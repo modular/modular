@@ -5030,7 +5030,7 @@ fn GPTQ_gpu_repack_b4_g128[
     constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
     with Trace[TraceLevel.OP, target=target]("GPTQ_gpu_repack_b4_g128"):
-        gpu_qint4_repack_GPTQ[128, target](b, b_packed, ctx)
+        gpu_qint4_repack_GPTQ[128, target](b, b_packed, ctx=ctx)
 
 
 @register_internal_shape_func("GPTQ_gpu_repack_b4_g128")
@@ -5041,7 +5041,37 @@ fn GPTQ_gpu_repack_b4_g128_shape_func[
     return IndexList[2](b.dim[1](), b.dim[0]())
 
 
-# ===-----------------------------------------------------------------------===#
+@register_internal_override("GPTQ_gpu_repack_b4_g128_desc_act", 1)
+@always_inline
+fn GPTQ_gpu_repack_b4_g128[
+    input_0_static_shape: DimList,
+    input_1_static_shape: DimList,
+    target: StringLiteral = "cpu",
+](
+    b: NDBuffer[DType.uint8, 2, input_0_static_shape],
+    perm_idx: NDBuffer[DType.int32, 1],
+    b_packed: NDBuffer[DType.uint8, 2, input_1_static_shape],
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+
+    with Trace[TraceLevel.OP, target=target](
+        "GPTQ_gpu_repack_b4_g128_desc_act"
+    ):
+        gpu_qint4_repack_GPTQ[128, target](b, b_packed, perm_idx, ctx=ctx)
+
+
+@register_internal_shape_func("GPTQ_gpu_repack_b4_g128_desc_act")
+@always_inline
+fn GPTQ_gpu_repack_b4_g128_desc_act_shape_func[
+    single_thread_blocking_override: Bool
+](b: NDBuffer[DType.uint8, 2], perm_idx: NDBuffer[DType.int32, 1]) -> IndexList[
+    2
+]:
+    return IndexList[2](b.dim[1](), b.dim[0]())
+
+
+# ===----------------------------------------------------------------------===#
 # Basic elementwise primitives
 # ===-----------------------------------------------------------------------===#
 
