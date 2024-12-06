@@ -8,7 +8,13 @@
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp, iota, recip
 from os import abort
-from sys import alignof, bitwidthof, has_nvidia_gpu, simdwidthof, sizeof
+from sys import (
+    alignof,
+    bitwidthof,
+    has_nvidia_gpu_accelerator,
+    simdwidthof,
+    sizeof,
+)
 from bit import bit_ceil
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
@@ -527,7 +533,7 @@ fn flash_attention[
         # fmt: off
         alias head_depth_known = q.shape.all_known[rank-2, rank]() and k.get_block_static_shape().has_value[1]()
         # Current impl has only been verified for depth = 128.
-        alias flash_attention_applicable = has_nvidia_gpu() and head_depth_known and q.shape.get[rank-1]() == 128
+        alias flash_attention_applicable = has_nvidia_gpu_accelerator() and head_depth_known and q.shape.get[rank-1]() == 128
         alias q_half_float = q.type in (DType.float16, DType.bfloat16)
         # fmt: on
 
