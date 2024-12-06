@@ -103,7 +103,7 @@ struct TensorCore[
 
     @always_inline
     fn load_a(
-        mut self,
+        self,
         a: LayoutTensor,
     ) -> Self.a_reg_tile_type as res:
         @parameter
@@ -114,7 +114,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_a_amd(
-        mut self,
+        self,
         a: LayoutTensor,
     ) -> Self.a_reg_tile_type as res:
         alias mma_m = shape[0]
@@ -156,7 +156,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_a_nvidia(
-        mut self,
+        self,
         a: LayoutTensor,
     ) -> Self.a_reg_tile_type as res:
         alias mma_m = shape[0]
@@ -214,7 +214,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn load_b(
-        mut self,
+        self,
         b: LayoutTensor,
     ) -> Self.b_reg_tile_type as res:
         @parameter
@@ -226,7 +226,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn _load_b_amd(
-        mut self,
+        self,
         b: LayoutTensor,
     ) -> Self.b_reg_tile_type as res:
         alias mma_n = shape[1]
@@ -262,7 +262,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn _load_b_nvidia(
-        mut self,
+        self,
         b: LayoutTensor,
     ) -> Self.b_reg_tile_type as res:
         alias mma_n = shape[1]
@@ -290,10 +290,17 @@ struct TensorCore[
                 "No valid mma shape to load matrix fragment b",
             ]()
 
-            var b_ram_frags = b.vectorize[2, 1]().distribute[warp_layout](
-                lane_id()
-            )
-            b_reg_tile.vectorize[2, 1]().copy_from(b_ram_frags)
+            @parameter
+            if transpose_b:
+                var b_ram_frags = b.vectorize[1, 2]().distribute[warp_layout](
+                    lane_id()
+                )
+                b_reg_tile.vectorize[2, 1]().copy_from(b_ram_frags.transpose())
+            else:
+                var b_ram_frags = b.vectorize[2, 1]().distribute[warp_layout](
+                    lane_id()
+                )
+                b_reg_tile.vectorize[2, 1]().copy_from(b_ram_frags)
         elif in_type is DType.float8e4m3 or in_type is DType.float8e5m2:
             constrained[
                 reg_per_thread in (8,),
@@ -312,7 +319,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
     fn load_c(
-        mut self,
+        self,
         c: LayoutTensor,
     ) -> Self.c_reg_tile_type as res:
         @parameter
@@ -323,7 +330,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_c_amd(
-        mut self,
+        self,
         c: LayoutTensor,
     ) -> Self.c_reg_tile_type as res:
         alias mma_m = shape[0]
@@ -349,7 +356,7 @@ struct TensorCore[
 
     @always_inline
     fn _load_c_nvidia(
-        mut self,
+        self,
         c: LayoutTensor,
     ) -> Self.c_reg_tile_type as res:
         alias mma_m = shape[0]
@@ -479,7 +486,78 @@ struct TensorCore[
             element_layout=element_layout1,
             address_space = AddressSpace.LOCAL, **_,
         ],
-        mma_tile_coordk: UInt = 0,  # the k corrdinate of mma tile
+        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
+    ):
+        @parameter
+        if is_nvidia_gpu():
+            self._load_a_nvidia[swizzle](warp_tile, fragments, mma_tile_coord_k)
+        else:
+            self._load_a_amd(warp_tile, fragments, mma_tile_coord_k)
+
+    @always_inline
+    fn _load_a_amd[
+        *,
+        type0: DType,
+        layout0: Layout,
+        element_layout0: Layout,
+        type1: DType,
+        layout1: Layout,
+        element_layout1: Layout,
+    ](
+        self,
+        warp_tile: LayoutTensor[
+            type0,
+            layout0,
+            address_space = AddressSpace.SHARED,
+            element_layout=element_layout0, **_,
+        ],
+        fragments: LayoutTensor[
+            type1,
+            layout1,
+            element_layout=element_layout1,
+            address_space = AddressSpace.LOCAL, **_,
+        ],
+        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
+    ):
+        constrained[self.supported_fp32 or self.supported_half]()
+
+        alias frag_type = fragments.element_type
+        alias simd_size = simdwidthof[type0]()
+        alias num_frags = fragments.shape[0]()
+        alias M = shape[0]
+        alias K = shape[2]
+
+        @parameter
+        for i in range(num_frags):
+            var mma_tile = warp_tile.tile[M, K](i, mma_tile_coord_k)
+            var a = load_to_simd(self.load_a(mma_tile))
+            fragments[i, 0] = rebind[frag_type](a)
+
+    @always_inline
+    fn _load_a_nvidia[
+        swizzle: Bool = True,
+        *,
+        type0: DType,
+        layout0: Layout,
+        element_layout0: Layout,
+        type1: DType,
+        layout1: Layout,
+        element_layout1: Layout,
+    ](
+        self,
+        warp_tile: LayoutTensor[
+            type0,
+            layout0,
+            address_space = AddressSpace.SHARED,
+            element_layout=element_layout0, **_,
+        ],
+        fragments: LayoutTensor[
+            type1,
+            layout1,
+            element_layout=element_layout1,
+            address_space = AddressSpace.LOCAL, **_,
+        ],
+        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
     ):
         constrained[self.supported_fp32 or self.supported_half]()
 
@@ -487,7 +565,7 @@ struct TensorCore[
         alias simd_size = simdwidthof[type0]()
         alias num_frags = fragments.shape[0]()
 
-        var swizzle_offset = mma_tile_coordk * shape[2] // simd_size
+        var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
 
         @parameter
         for i in range(num_frags):
@@ -518,8 +596,90 @@ struct TensorCore[
             element_layout=element_layout1,
             address_space = AddressSpace.LOCAL, **_,
         ],
-        mma_tile_coordk: UInt = 0,  # the k corrdinate of mma tile
-        warp_tile_coordn: UInt = 0,  # n coordiante of warp tile
+        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
+        warp_tile_coord_n: UInt = 0,  # n coordiante of warp tile
+    ):
+        @parameter
+        if is_nvidia_gpu():
+            self._load_b_nvidia(
+                warp_tile, fragments, mma_tile_coord_k, warp_tile_coord_n
+            )
+        else:
+            self._load_b_amd(
+                warp_tile, fragments, mma_tile_coord_k, warp_tile_coord_n
+            )
+
+    @always_inline
+    fn _load_b_amd[
+        *,
+        type0: DType,
+        layout0: Layout,
+        element_layout0: Layout,
+        layout1: Layout,
+        element_layout1: Layout,
+    ](
+        self,
+        warp_tile: LayoutTensor[
+            type0,
+            layout0,
+            address_space = AddressSpace.SHARED,
+            element_layout=element_layout0, **_,
+        ],
+        fragments: LayoutTensor[
+            type0,
+            layout1,
+            element_layout=element_layout1,
+            address_space = AddressSpace.LOCAL, **_,
+        ],
+        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
+        warp_tile_coord_n: UInt = 0,  # n coordiante of warp tile
+    ):
+        alias frag_type = fragments.element_type
+        alias simd_size = simdwidthof[in_type]()
+        alias num_frags = fragments.shape[0]()
+        alias N = shape[1]
+        alias K = shape[2]
+
+        @parameter
+        if transpose_b:
+
+            @parameter
+            for i in range(num_frags):
+                var mma_tile = warp_tile.tile[N, K](i, mma_tile_coord_k)
+                var frag = load_to_simd(self.load_b(mma_tile))
+                fragments[i, 0] = rebind[frag_type](frag)
+        else:
+
+            @parameter
+            for i in range(num_frags):
+                var mma_tile = warp_tile.tile[K, N](mma_tile_coord_k, i)
+                var frag = load_to_simd(self.load_b(mma_tile))
+                fragments[i, 0] = rebind[frag_type](frag)
+
+    @always_inline
+    fn _load_b_nvidia[
+        *,
+        type0: DType,
+        layout0: Layout,
+        element_layout0: Layout,
+        layout1: Layout,
+        element_layout1: Layout,
+    ](
+        self,
+        warp_tile: LayoutTensor[
+            type0,
+            layout0,
+            address_space = AddressSpace.SHARED,
+            element_layout=element_layout0, **_,
+        ],
+        fragments: LayoutTensor[
+            type0,
+            layout1,
+            element_layout=element_layout1,
+            address_space = AddressSpace.LOCAL, **_,
+        ],
+        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
+        warp_tile_coord_n: UInt = 0,  # n coordiante of warp tile
     ):
         constrained[self.supported_fp32 or self.supported_half]()
 
@@ -533,7 +693,7 @@ struct TensorCore[
 
             @parameter
             if in_type == DType.float32:
-                var swizzle_offset = mma_tile_coordk * shape[2] // simd_size
+                var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
 
                 @parameter
                 for i in range(0, num_frags, 2):
@@ -550,7 +710,7 @@ struct TensorCore[
             else:
                 constrained[self.supported_half]()
 
-                var swizzle_offset = mma_tile_coordk * shape[2] // simd_size
+                var swizzle_offset = mma_tile_coord_k * shape[2] // simd_size
 
                 @parameter
                 for i in range(0, num_frags, 2):
@@ -572,7 +732,7 @@ struct TensorCore[
                 @parameter
                 for i in range(num_frags):
                     var mma_tile = warp_tile.tile[shape[2], shape[1]](
-                        mma_tile_coordk, i
+                        mma_tile_coord_k, i
                     )
                     var frag = mma_tile.distribute[Layout.col_major(4, 8)](
                         lane_id()
@@ -588,7 +748,7 @@ struct TensorCore[
                 constrained[self.supported_half]()
 
                 var mma_tile = warp_tile.tile[shape[2], warp_tile.shape[1]()](
-                    mma_tile_coordk, 0
+                    mma_tile_coord_k, 0
                 )
 
                 # This is a hack to get correct result for small warp tile.
@@ -606,12 +766,12 @@ struct TensorCore[
                         mma_tile.dtype,
                         mma_tile.layout,
                         address_space = AddressSpace.SHARED,
-                    ](mma_tile.ptr - warp_tile_coordn * WN)
+                    ](mma_tile.ptr - warp_tile_coord_n * WN)
 
                     @parameter
                     for i in range(0, num_frags, 2):
                         var swizzle_offset = (
-                            i + warp_tile_coordn * WN // simd_size
+                            i + warp_tile_coord_n * WN // simd_size
                         )
                         var vec = _load_matrix_frag[transposed=True](
                             mma_tile_shifted, swizzle_offset
@@ -675,7 +835,7 @@ struct TensorCore[
             element_layout=element_layout2,
             address_space = AddressSpace.LOCAL, **_,
         ],
-        mma_tile_coordk: UInt = 0,  # the k corrdinate of mma tile
+        mma_tile_coord_k: UInt = 0,  # the k corrdinate of mma tile
     ):
         constrained[self.supported_half]()
 
@@ -709,7 +869,7 @@ struct TensorCore[
         # Every contigous 128 ints stores a 64x16 repacked tile
         var mma_tile = warp_tile.tile[
             1, (repack_tile[0] * repack_tile[1]) // pack_factor
-        ](0, mma_tile_coordk)
+        ](0, mma_tile_coord_k)
 
         var vec = bitcast[DType.int32, 4](
             mma_tile.vectorize[1, 4]()[ThreadIdx.x % WARP_SIZE]
