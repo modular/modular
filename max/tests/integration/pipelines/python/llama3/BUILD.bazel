@@ -30,6 +30,7 @@ modular_py_binary(
         ),
     },
     imports = ["."],
+    use_legacy_binary = True,
     visibility = ["//visibility:public"],
     deps = [
         "//SDK/integration-test/pipelines/python/test_common",
@@ -54,6 +55,7 @@ modular_py_binary(
         ),
     },
     imports = ["."],
+    use_legacy_binary = True,
     visibility = ["//visibility:public"],
     deps = [
         ":evaluate_llama",
