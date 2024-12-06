@@ -81,7 +81,7 @@ def execute_kv_cache_ragged_flash_attention[
         + ")",
     )
 
-    var input_row_offset_host = HostNDBuffer[DType.uint32, 1](
+    var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size + 1)
     )
     var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
@@ -115,7 +115,7 @@ def execute_kv_cache_ragged_flash_attention[
         if curr_cache_length > 0:
             is_context_encoding = False
 
-        input_row_offset_host.tensor[i] = total_seq_len
+        input_row_offsets_host.tensor[i] = total_seq_len
         cache_lengths_host.tensor[i] = curr_cache_length
         total_seq_len += curr_seq_length
 
@@ -127,8 +127,8 @@ def execute_kv_cache_ragged_flash_attention[
             * head_dim
         )
 
-    input_row_offset_host.tensor[batch_size] = total_seq_len
-    var input_row_offset_device = input_row_offset_host.copy_to_device(ctx)
+    input_row_offsets_host.tensor[batch_size] = total_seq_len
+    var input_row_offsets_device = input_row_offsets_host.copy_to_device(ctx)
     var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     q_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
@@ -206,7 +206,7 @@ def execute_kv_cache_ragged_flash_attention[
         v_cache_device,
         output_device,
         dummy_mask,
-        input_row_offset_device,
+        input_row_offsets_device,
     )
     @always_inline
     fn bench_func(mut b: Bencher):
@@ -221,7 +221,7 @@ def execute_kv_cache_ragged_flash_attention[
                 dummy_mask,
                 CausalMask(),
                 IdentityScoreMod(),
-                input_row_offset_device.tensor,
+                input_row_offsets_device.tensor,
                 isqrt(Float32(head_dim)),
                 ctx,
             )
@@ -243,7 +243,7 @@ def execute_kv_cache_ragged_flash_attention[
     _ = kv_block_device^
     _ = output_device^
     _ = q_device^
-    _ = input_row_offset_device^
+    _ = input_row_offsets_device^
     _ = cache_lengths_device^
     _ = lookup_table_device^
 

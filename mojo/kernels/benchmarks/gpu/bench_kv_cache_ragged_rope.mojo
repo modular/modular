@@ -59,7 +59,7 @@ def execute_kv_cache_ragged_rope[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
     ]
-    var input_row_offset_host = HostNDBuffer[DType.uint32, 1](
+    var input_row_offsets_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size + 1)
     )
     var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
@@ -79,7 +79,7 @@ def execute_kv_cache_ragged_rope[
         else:
             curr_seq_length = seq_len
 
-        input_row_offset_host.tensor[i] = curr_seq_length
+        input_row_offsets_host.tensor[i] = curr_seq_length
         if curr_seq_length > max_prompt_length:
             max_prompt_length = int(curr_seq_length)
 
@@ -87,8 +87,8 @@ def execute_kv_cache_ragged_rope[
         total_seq_len += curr_seq_length
         seq_ids.append(-1)
 
-    input_row_offset_host.tensor[batch_size] = total_seq_len
-    var input_row_offset_device = input_row_offset_host.copy_to_device(ctx)
+    input_row_offsets_host.tensor[batch_size] = total_seq_len
+    var input_row_offsets_device = input_row_offsets_host.copy_to_device(ctx)
     var cache_lengths_device = cache_lengths_host.copy_to_device(ctx)
 
     var q_host = HostNDBuffer[dtype, 3, DimList(Dim(), num_q_heads, head_dim)](
@@ -150,7 +150,7 @@ def execute_kv_cache_ragged_rope[
     @__copy_capture(
         q_device,
         kv_collection_device,
-        input_row_offset_device,
+        input_row_offsets_device,
         freqs_cis_table_device,
         output_device,
     )
@@ -161,7 +161,7 @@ def execute_kv_cache_ragged_rope[
         fn kernel_launch(ctx: DeviceContext) raises:
             fused_qk_rope_ragged[CollectionType.CacheType, target="gpu",](
                 q_device.tensor,
-                input_row_offset_device.tensor,
+                input_row_offsets_device.tensor,
                 kv_collection_device,
                 freqs_cis_table_device.tensor,
                 0,
@@ -186,7 +186,7 @@ def execute_kv_cache_ragged_rope[
     _ = kv_block_device^
     _ = output_device^
     _ = q_device^
-    _ = input_row_offset_device^
+    _ = input_row_offsets_device^
     _ = cache_lengths_device^
     _ = lookup_table_device^
     _ = freqs_cis_table_device^
