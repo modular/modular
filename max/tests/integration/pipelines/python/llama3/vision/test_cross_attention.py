@@ -101,7 +101,7 @@ class CrossAttentionModel:
         self,
         hidden_states: TensorValue,
         cross_attention_states: TensorValue,
-        input_row_offset: TensorValue,
+        input_row_offsets: TensorValue,
         *fetch_args: TensorValue,
     ) -> TensorValue:
         """Builds the cross attention model graph."""
@@ -109,7 +109,7 @@ class CrossAttentionModel:
         return self.cross_attention(
             hidden_states,
             cross_attention_states,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
         )
 
@@ -152,7 +152,7 @@ def test_cross_attention(
         dtype, shape=[4 * 1025, config.hidden_size]
     )
 
-    input_row_offset_type = TensorType(DType.uint32, [batch_size + 1])
+    input_row_offsets_type = TensorType(DType.uint32, [batch_size + 1])
 
     kv_params = KVCacheParams(
         dtype=dtype, n_kv_heads=config.num_key_value_heads, head_dim=head_dim
@@ -175,7 +175,7 @@ def test_cross_attention(
         input_types=[
             hidden_states_type,
             cross_attention_states_type,
-            input_row_offset_type,
+            input_row_offsets_type,
             *kv_manager.input_symbols()[0],
         ],
     )
@@ -206,14 +206,14 @@ def test_cross_attention(
     cross_attention_states = torch.randn(
         cross_attention_states_type.shape.static_dims, dtype=torch_dtype
     )
-    input_row_offset = torch.tensor(
+    input_row_offsets = torch.tensor(
         [0, *np.cumsum(seq_lens)], dtype=torch.uint32
     )
 
     predicted = cross_attn_model(
         hidden_states,
         cross_attention_states,
-        input_row_offset,
+        input_row_offsets,
         *kv_cache_inputs,
     )[0]
     assert isinstance(predicted, Tensor)
@@ -226,9 +226,9 @@ def test_cross_attention(
         dtype=torch_dtype,
     )
     # Convert to int since torch can't subtract uint32.
-    input_row_offset = input_row_offset.to(dtype=torch.int32)
+    input_row_offsets = input_row_offsets.to(dtype=torch.int32)
     for batch_idx, (start, stop) in enumerate(
-        zip(input_row_offset[:-1], input_row_offset[1:])
+        zip(input_row_offsets[:-1], input_row_offsets[1:])
     ):
         hidden_states_padded[batch_idx, : stop - start] = hidden_states[
             start:stop
@@ -250,7 +250,7 @@ def test_cross_attention(
         shape=[total_seq_len, config.hidden_size], dtype=dtype.to_numpy()
     )
     for batch_idx, (start, stop) in enumerate(
-        zip(input_row_offset[:-1], input_row_offset[1:])
+        zip(input_row_offsets[:-1], input_row_offsets[1:])
     ):
         expected_ragged[start:stop] = expected[batch_idx, : stop - start]
 

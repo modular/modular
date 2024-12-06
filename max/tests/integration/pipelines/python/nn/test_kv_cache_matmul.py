@@ -44,10 +44,10 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
             (num_q_heads + 2 * (kv_params.n_kv_heads)) * kv_params.head_dim,
         ],
     )
-    input_row_offset_type = TensorType(
+    input_row_offsets_type = TensorType(
         DType.uint32,
         [
-            "input_row_offset_len",
+            "input_row_offsets_len",
         ],
     )
 
@@ -68,7 +68,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         "call_ragged_qkv_matmul",
         input_types=[
             input_type,
-            input_row_offset_type,
+            input_row_offsets_type,
             wqkv_type,
             blocks_type,
             cache_lengths_type,
@@ -78,7 +78,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     ) as g:
         (
             input,
-            input_row_offset,
+            input_row_offsets,
             wqkv,
             blocks,
             cache_lengths,
@@ -96,7 +96,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         result = fused_qkv_ragged_matmul(
             kv_params,
             input,
-            input_row_offset,
+            input_row_offsets,
             wqkv,
             kv_collection,
             layer_idx,
@@ -110,15 +110,15 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         seq_id = kv_manager.claim(1)
         seq_ids.append(seq_id[0])
 
-    input_row_offset = Tensor(
+    input_row_offsets = Tensor(
         [batch_size + 1],
         DType.uint32,
     )
     running_sum = 0
     for i in range(batch_size):
-        input_row_offset[i] = running_sum
+        input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
-    input_row_offset[i] = running_sum
+    input_row_offsets[i] = running_sum
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(seq_ids)[0]
@@ -129,10 +129,10 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         g,
         static_dims={
             "total_seq_len": total_seq_len,
-            "input_row_offset_len": len(prompt_lens) + 1,
+            "input_row_offsets_len": len(prompt_lens) + 1,
         },
         provided_inputs={
-            1: input_row_offset,
+            1: input_row_offsets,
             3: blocks,
             4: cache_lengths,
             5: lookup_table_tensor,
@@ -162,14 +162,14 @@ class MatmulKVRaggedModel:
     def __call__(
         self,
         hidden_states: TensorValue,
-        input_row_offset: TensorValue,
+        input_row_offsets: TensorValue,
         weight: TensorValue,
         *fetch_args,
     ) -> None:
         matmul_kv_cache_ragged(
             self.kv_params,
             hidden_states,
-            input_row_offset,
+            input_row_offsets,
             weight,
             kv_collection=self.fetch_layer(*fetch_args),
             layer_idx=self.layer_idx,
@@ -200,7 +200,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
             num_q_heads * kv_params.head_dim,
         ],
     )
-    input_row_offset_type = TensorType(DType.uint32, ["input_row_offset_len"])
+    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
 
     kv_manager = ContinuousBatchingKVCacheManager(
         kv_params,
@@ -217,7 +217,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         forward=MatmulKVRaggedModel(fetch_layer, kv_params, layer_idx=0),
         input_types=[
             hidden_state_type,
-            input_row_offset_type,
+            input_row_offsets_type,
             wkv_type,
             *kv_manager.input_symbols()[0],
         ],
@@ -230,12 +230,12 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         seq_ids.append(seq_id[0])
 
     # Compute input row offsets for ragged tensors.
-    input_row_offset = Tensor([batch_size + 1], DType.uint32)
+    input_row_offsets = Tensor([batch_size + 1], DType.uint32)
     running_sum = 0
     for i in range(batch_size):
-        input_row_offset[i] = running_sum
+        input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
-    input_row_offset[i] = running_sum
+    input_row_offsets[i] = running_sum
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(seq_ids)[0]
@@ -246,10 +246,10 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         graph,
         static_dims={
             "total_seq_len": total_seq_len,
-            "input_row_offset_len": len(prompt_lens) + 1,
+            "input_row_offsets_len": len(prompt_lens) + 1,
         },
         provided_inputs={
-            1: input_row_offset,
+            1: input_row_offsets,
             3: blocks,
             4: cache_lengths,
             5: lookup_table_tensor,
@@ -286,7 +286,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
             num_q_heads * kv_params.head_dim,
         ],
     )
-    input_row_offset_type = TensorType(DType.uint32, ["input_row_offset_len"])
+    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
 
     kv_manager = ContinuousBatchingKVCacheManager(
         kv_params,
@@ -303,7 +303,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         forward=MatmulKVRaggedModel(fetch_layer, kv_params, layer_idx=0),
         input_types=[
             hidden_state_type,
-            input_row_offset_type,
+            input_row_offsets_type,
             wkv_type,
             *kv_manager.input_symbols()[0],
         ],

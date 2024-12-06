@@ -82,7 +82,7 @@ def _attention_layer(
     wo_type = TensorType(dtype, [config.hidden_size, n_heads * head_dim])
     weight_types = [wq_type, wk_type, wv_type, wo_type]
 
-    input_row_offset_type = TensorType(
+    input_row_offsets_type = TensorType(
         DType.uint32,
         [BATCH_SIZE + 1],
     )
@@ -115,12 +115,12 @@ def _attention_layer(
         "self_attn",
         input_types=[input_type]
         + weight_types
-        + [input_row_offset_type]
+        + [input_row_offsets_type]
         + kv_cache_types,
     )
 
     with graph:
-        x, wq, wk, wv, wo, input_row_offset, *graph_kv_cache_inputs = (
+        x, wq, wk, wv, wo, input_row_offsets, *graph_kv_cache_inputs = (
             graph.inputs
         )
 
@@ -154,7 +154,7 @@ def _attention_layer(
             attention(
                 x=x,  # type: ignore
                 kv_collection=kv_collection,
-                input_row_offset=input_row_offset,
+                input_row_offsets=input_row_offsets,
             )[0]
         )
     return graph, kv_cache_inputs
@@ -197,15 +197,15 @@ def test_self_attention(session, start_pos, seq_len):
 
     prompt_lens = [30]
     assert len(prompt_lens) == BATCH_SIZE
-    input_row_offset = Tensor(
+    input_row_offsets = Tensor(
         [BATCH_SIZE + 1],
         DType.uint32,
     )
     running_sum = 0
     for i in range(BATCH_SIZE):
-        input_row_offset[i] = running_sum
+        input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
-    input_row_offset[BATCH_SIZE] = running_sum
+    input_row_offsets[BATCH_SIZE] = running_sum
 
     # Set up PyTorch attention layer.
     torch_attention = TorchAttention(
@@ -219,10 +219,10 @@ def test_self_attention(session, start_pos, seq_len):
         session,
         layer_graph,
         static_dims={
-            "input_row_offset": 1,
+            "input_row_offsets": 1,
         },
         provided_inputs={
-            5: input_row_offset.to_numpy(),
+            5: input_row_offsets.to_numpy(),
             6: blocks.to_numpy(),
             7: cache_lengths.to_numpy(),
             8: lookup_table_tensor.to_numpy(),

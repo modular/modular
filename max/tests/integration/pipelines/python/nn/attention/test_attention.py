@@ -227,10 +227,10 @@ def test_kv_cache_ragged_attention(session):
     input_type = TensorType(
         DType.float32, ["total_seq_len", num_q_heads, kv_params.head_dim]
     )
-    input_row_offset_type = TensorType(
+    input_row_offsets_type = TensorType(
         DType.uint32,
         [
-            "input_row_offset_len",
+            "input_row_offsets_len",
         ],
     )
 
@@ -251,7 +251,7 @@ def test_kv_cache_ragged_attention(session):
         "call_ragged_attention",
         input_types=[
             input_type,
-            input_row_offset_type,
+            input_row_offsets_type,
             blocks_type,
             cache_lengths_type,
             lookup_table_type,
@@ -260,7 +260,7 @@ def test_kv_cache_ragged_attention(session):
     ) as g:
         (
             input,
-            input_row_offset,
+            input_row_offsets,
             blocks,
             cache_lengths,
             lookup_table,
@@ -275,7 +275,7 @@ def test_kv_cache_ragged_attention(session):
             blocks, cache_lengths, lookup_table, is_cache_empty
         )
         result = flash_attention_ragged_with_causal_mask(
-            kv_params, input, input_row_offset, kv_collection, layer_idx
+            kv_params, input, input_row_offsets, kv_collection, layer_idx
         )
         g.output(result)
 
@@ -285,15 +285,15 @@ def test_kv_cache_ragged_attention(session):
         seq_id = kv_manager.claim(1)
         seq_ids.append(seq_id[0])
 
-    input_row_offset = Tensor(
+    input_row_offsets = Tensor(
         [batch_size + 1],
         DType.uint32,
     )
     running_sum = 0
     for i in range(batch_size):
-        input_row_offset[i] = running_sum
+        input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
-    input_row_offset[batch_size] = running_sum
+    input_row_offsets[batch_size] = running_sum
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(seq_ids)[0]
@@ -304,10 +304,10 @@ def test_kv_cache_ragged_attention(session):
         g,
         static_dims={
             "total_seq_len": total_seq_len,
-            "input_row_offset_len": len(prompt_lens) + 1,
+            "input_row_offsets_len": len(prompt_lens) + 1,
         },
         provided_inputs={
-            1: input_row_offset,
+            1: input_row_offsets,
             2: blocks,
             3: cache_lengths,
             4: lookup_table_tensor,

@@ -527,20 +527,20 @@ def test_llama_language_model():
         shape=input_ids.shape,  # batch_size, sequence_length
     )
     attention_mask_type = input_ids_type
-    input_row_offset_type = TensorType(
+    input_row_offsets_type = TensorType(
         DType.uint32,
         [batch_size + 1],
     )
     input_types = [
         input_ids_type,
         attention_mask_type,
-        input_row_offset_type,
+        input_row_offsets_type,
     ] + [element for tup in kv_manager.input_symbols() for element in tup]
     with Graph("test_language_model", input_types=input_types) as graph:
         (
             graph_input_ids,
             graph_attention_mask,
-            graph_input_row_offset,
+            graph_input_row_offsets,
             *graph_kv_cache_inputs,
         ) = graph.inputs
 
@@ -548,7 +548,7 @@ def test_llama_language_model():
             kv_cache_inputs=graph_kv_cache_inputs,
             input_ids=graph_input_ids,
             attention_mask=graph_attention_mask,
-            input_row_offset=graph_input_row_offset,
+            input_row_offsets=graph_input_row_offsets,
         )
         graph.output(logits)
 
@@ -556,18 +556,18 @@ def test_llama_language_model():
 
     prompt_lens = [30]
     assert len(prompt_lens) == batch_size
-    input_row_offset = Tensor(
+    input_row_offsets = Tensor(
         [batch_size + 1],
         DType.uint32,
     )
     running_sum = 0
     for i in range(batch_size):
-        input_row_offset[i] = running_sum
+        input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
-    input_row_offset[batch_size] = running_sum
+    input_row_offsets[batch_size] = running_sum
 
     # output = compiled.execute(
-    #     input_ids, attention_mask, input_row_offset, *kv_cache_inputs
+    #     input_ids, attention_mask, input_row_offsets, *kv_cache_inputs
     # )[  # type: ignore
     #     0
     # ].to_numpy()

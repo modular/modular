@@ -289,18 +289,18 @@ def test_llava_mistral_decoder(pytorch_mistral_and_config):
         shape=embeds.shape,  # [batch_size, n_tokens_and_patches, hidden_dim]
     )
 
-    input_row_offset_type = TensorType(
+    input_row_offsets_type = TensorType(
         DType.uint32,
         [batch_size + 1],
     )
 
     input_types = [
         embeds_type,
-        input_row_offset_type,
+        input_row_offsets_type,
     ] + [element for tup in kv_manager.input_symbols() for element in tup]
 
     with Graph("test_llava_decoder_llm", input_types=input_types) as graph:
-        graph_embeds, graph_input_row_offset, *graph_kv_cache_inputs = (
+        graph_embeds, graph_input_row_offsets, *graph_kv_cache_inputs = (
             graph.inputs
         )
 
@@ -316,7 +316,7 @@ def test_llava_mistral_decoder(pytorch_mistral_and_config):
         logits = graph_api_model(
             kv_cache_inputs=graph_kv_cache_inputs,
             embeds=graph_embeds,
-            input_row_offset=graph_input_row_offset,
+            input_row_offsets=graph_input_row_offsets,
         )
         graph.output(logits)
 
@@ -324,17 +324,17 @@ def test_llava_mistral_decoder(pytorch_mistral_and_config):
 
     prompt_lens = [30]
     assert len(prompt_lens) == batch_size
-    input_row_offset = Tensor(
+    input_row_offsets = Tensor(
         [batch_size + 1],
         DType.uint32,
     )
     running_sum = 0
     for i in range(batch_size):
-        input_row_offset[i] = running_sum
+        input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
-    input_row_offset[batch_size] = running_sum
+    input_row_offsets[batch_size] = running_sum
 
-    # graph_api_logits = compiled.execute(embeds, input_row_offset, *kv_cache_inputs)[
+    # graph_api_logits = compiled.execute(embeds, input_row_offsets, *kv_cache_inputs)[
     #     0
     # ].to_numpy()
 

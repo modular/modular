@@ -13,15 +13,15 @@ from hypothesis import assume
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.graph import Dim, Graph, TensorType, TensorValue, TensorValueLike, ops
-from modular_graph_test import modular_graph_test
-from nn import RotaryEmbedding
-from nn.kernels import fused_qk_ragged_rope
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
 )
+from modular_graph_test import modular_graph_test
+from nn import RotaryEmbedding
+from nn.kernels import fused_qk_ragged_rope
 
 MAX_SEQ_LEN = 2**16
 ACCURACY_RTOL = 1e-2
@@ -170,10 +170,10 @@ def test_kv_cache_ragged_rope(session):
     input_type = TensorType(
         DType.float32, ["total_seq_len", num_q_heads, kv_params.head_dim]
     )
-    input_row_offset_type = TensorType(
+    input_row_offsets_type = TensorType(
         DType.uint32,
         [
-            "input_row_offset_len",
+            "input_row_offsets_len",
         ],
     )
 
@@ -198,7 +198,7 @@ def test_kv_cache_ragged_rope(session):
         "call_ragged_qk_rope",
         input_types=[
             input_type,
-            input_row_offset_type,
+            input_row_offsets_type,
             freqs_cis_type,
             blocks_type,
             cache_lengths_type,
@@ -208,7 +208,7 @@ def test_kv_cache_ragged_rope(session):
     ) as g:
         (
             input,
-            input_row_offset,
+            input_row_offsets,
             freqs_cis,
             blocks,
             cache_lengths,
@@ -229,7 +229,7 @@ def test_kv_cache_ragged_rope(session):
         result = fused_qk_ragged_rope(
             kv_params,
             input,
-            input_row_offset,
+            input_row_offsets,
             kv_collection,
             freqs_cis,
             layer_idx,
@@ -242,15 +242,15 @@ def test_kv_cache_ragged_rope(session):
         seq_id = kv_manager.claim(1)
         seq_ids.append(seq_id[0])
 
-    input_row_offset = Tensor(
+    input_row_offsets = Tensor(
         [batch_size + 1],
         DType.uint32,
     )
     running_sum = 0
     for i in range(batch_size):
-        input_row_offset[i] = running_sum
+        input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
-    input_row_offset[batch_size] = running_sum
+    input_row_offsets[batch_size] = running_sum
 
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(seq_ids)[0]
@@ -261,10 +261,10 @@ def test_kv_cache_ragged_rope(session):
         g,
         static_dims={
             "total_seq_len": total_seq_len,
-            "input_row_offset_len": len(prompt_lens) + 1,
+            "input_row_offsets_len": len(prompt_lens) + 1,
         },
         provided_inputs={
-            1: input_row_offset,
+            1: input_row_offsets,
             3: blocks,
             4: cache_lengths,
             5: lookup_table_tensor,
