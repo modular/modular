@@ -2308,8 +2308,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
         UnsafePointer[Scalar[type]](), IndexList[4]()
     )
 
-    # TODO: This is replit-specific; need to generalize.
-    alias replit_num_q_heads = 24
+    alias num_q_heads = cache_t.get_kv_params().num_heads
 
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.
@@ -2321,7 +2320,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
         v,
         mask_nd,
         CausalMask(),
-        AlibiScoreMod[replit_num_q_heads](),
+        AlibiScoreMod[num_q_heads](),
         valid_lengths,
         scale,
         context,
