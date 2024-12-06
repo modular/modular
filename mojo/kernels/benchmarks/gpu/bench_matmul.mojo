@@ -23,7 +23,7 @@ from gpu.cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
-from linalg.cublas import cublas_matmul
+from linalg.gpu_blas import cublas_matmul
 from gpu.host.info import DEFAULT_GPU_ARCH
 
 
