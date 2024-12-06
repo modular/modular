@@ -14,7 +14,7 @@ from buffer import DimList, NDBuffer
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.cublas.cublas import *
 from gpu.host import DeviceContext
-from linalg.cublas import cublas_matmul
+from linalg.gpu_blas import cublas_matmul
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal

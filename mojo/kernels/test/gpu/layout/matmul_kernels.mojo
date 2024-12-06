@@ -32,7 +32,7 @@ from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from linalg.cublas import cublas_matmul
+from linalg.gpu_blas import cublas_matmul
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 

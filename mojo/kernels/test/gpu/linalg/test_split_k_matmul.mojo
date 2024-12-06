@@ -29,7 +29,7 @@ from internal_utils import (
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout import UNKNOWN_VALUE
 from linalg._multistage_gemm_gpu import multistage_gemm_kernel
-from linalg.cublas import cublas_matmul
+from linalg.gpu_blas import cublas_matmul
 from linalg.utils_gpu import MatmulKernels
 from memory import UnsafePointer
 

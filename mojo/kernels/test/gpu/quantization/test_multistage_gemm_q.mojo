@@ -66,7 +66,7 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from linalg.cublas import cublas_matmul
+from linalg.gpu_blas import cublas_matmul
 from linalg.matmul_gpu import _matmul_gpu
 from linalg.utils_gpu import (
     MatmulConfig,

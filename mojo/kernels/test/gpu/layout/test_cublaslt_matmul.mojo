@@ -11,7 +11,7 @@ from gpu.cublas.cublaslt import Context, cublasLtCreate, cublasLtDestroy
 from gpu.host import DeviceContext
 from layout import Layout
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from linalg.cublas import cublasLt_fp8_matmul
+from linalg.gpu_blas import cublasLt_fp8_matmul
 from memory import UnsafePointer
 
 
