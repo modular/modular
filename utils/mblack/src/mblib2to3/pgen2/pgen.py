@@ -131,7 +131,7 @@ class ParserGenerator(object):
             # Either a keyword or an operator
             assert label[0] in ('"', "'"), label
             value = eval(label)
-            if value[0].isalpha():
+            if value[0].isalpha() or value.startswith("__disable_del"):
                 if label[0] == '"':
                     keywords = c.soft_keywords
                 else:

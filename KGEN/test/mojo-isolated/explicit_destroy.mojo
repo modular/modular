@@ -4,14 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
+# RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 
 struct MyAffine:
     fn __init__(mut self):
         pass
 
-# CHECK-LABEL: @testAffineThing
+# CHECK-LABEL: @"testAffineThing
 fn testAffineThing():
     var l = MyAffine()
     # CHECK: __del__
@@ -22,9 +22,10 @@ struct EmptyExplicit:
     fn __init__(mut self):
         pass
 
-    # CHECK-LABEL: @consume
+    # CHECK-LABEL: @"consume
     fn consume(owned self):
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
+        # CHECK: lit.ownership.mark_destroyed %self
+        __disable_del self
         # CHECK-NOT: lit.call {{.*}}__del__
 
 fn correctUseExample():

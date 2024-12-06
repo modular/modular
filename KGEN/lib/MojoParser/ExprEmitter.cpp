@@ -139,6 +139,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in __type_of";
   case EC_PyBindGen:
     return " in Python binding generation";
+  case EC_DisableDel:
+    return " in __disable_del operand";
   }
   llvm_unreachable("invalid expr context");
 }
@@ -2483,6 +2485,14 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 
   // Finally we emit a normal return with lit.return.
   builder.create<LIT::ReturnOp>(value);
+}
+
+//===----------------------------------------------------------------------===//
+// __disable_del emission helpers.
+
+void ExprEmitter::emitMarkDestroyed(ImplicitLocOpBuilder &builder,
+                                    Value value) {
+  builder.create<LIT::OwnershipMarkDestroyedOp>(value);
 }
 
 //===--------------------------------------------------------------------===//

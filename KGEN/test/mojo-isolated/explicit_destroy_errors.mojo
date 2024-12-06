@@ -15,7 +15,7 @@ struct EmptyExplicit:
     fn __init__(mut self):
         pass
     fn consume(owned self):
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
+        __disable_del self
 
 fn errorExample():
     # expected-error @below {{Must use consume!}}

@@ -148,6 +148,7 @@ TOK_KEYWORD(try)
 TOK_KEYWORD(var) // Mojo extension.
 TOK_KEYWORD(while)
 TOK_KEYWORD(with)
+TOK_KEYWORD(__disable_del)
 TOK_KEYWORD(yield)
 TOK_KEYWORD(__mlir_region)
 TOK_KEYWORD(__get_address_as_uninit_lvalue)
