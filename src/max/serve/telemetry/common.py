@@ -50,7 +50,11 @@ logs_resource = Resource.create(
         "os.version": platform.release(),
         "cpu.description": platform.processor(),
         "cpu.arch": platform.architecture()[0],
-        "system.gpu": _getGPUInfo(),
+        # MAGIC-55: disable gpu info for now
+        # Because it initilizes the CUDA driver in the API process
+        # while we initialize models in the Model worker process
+        # CUDA doesn't like it and crashes.
+        # "system.gpu": _getGPUInfo(),
         "system.cloud": _getCloudProvider(),
         "deployment.id": os.environ.get("MAX_SERVE_DEPLOYMENT_ID", ""),
     }
