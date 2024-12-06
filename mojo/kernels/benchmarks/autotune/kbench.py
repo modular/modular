@@ -768,7 +768,7 @@ def run(
             with open(output_path, "w") as f:
                 f.write(output_str + "\n")
 
-        print(f"wrote results to [{output_path}]")
+        logging.info(f"wrote results to [{output_path}]")
 
 
 @functools.cache
