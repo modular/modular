@@ -20,6 +20,7 @@ from typing import AsyncGenerator, Mapping, Optional
 import uvloop
 from faster_fifo import Queue as MPQueue  # type: ignore
 from max.pipelines.interfaces import TokenGeneratorFactory
+from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.scheduler.queues import STOP_STREAM, BatchInputs, EngineQueue
 from max.serve.telemetry.metrics import METRICS
@@ -135,6 +136,7 @@ async def start_model_worker(
 # INTERNAL
 
 
+@traced
 async def model_worker_run_v2(
     model_factory: TokenGeneratorFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
@@ -142,6 +144,7 @@ async def model_worker_run_v2(
     events: Mapping[str, MPEvent],
 ):
     try:
+        tracer = Tracer()  # provides MojoTrace (NVTX spans
         pid = os.getpid()
         logger.info("Starting model worker on process %d!", pid)
 
@@ -157,7 +160,7 @@ async def model_worker_run_v2(
         logger.info("Worker Queues: %s, Events: %s", queues, events)
 
         # Initialize all token generators.
-        with StopWatch() as timer:
+        with StopWatch() as timer, Tracer("model_factory"):
             model = model_factory()
             METRICS.modelLoadTime(int(timer.elapsed_ms))
         config = pipeline_config
@@ -196,6 +199,7 @@ async def model_worker_run_v2(
                 start_time,
                 batch_timeout,
             ):
+                tracer.push("scheduling_ce")
                 max_batch_size_to_execute = min(
                     max_batch_size_ce, max_batch_size_tg - len(batch_continuous)
                 )
@@ -207,6 +211,7 @@ async def model_worker_run_v2(
                         target_sum_seq_len,
                     )
                 ):
+                    tracer.push("batch_to_execute")
                     logger.debug(
                         "Scheduling CE with BS: %d", len(batch_to_execute)
                     )
@@ -220,10 +225,15 @@ async def model_worker_run_v2(
                     for req_id in batch_to_execute:
                         batch_continuous[req_id] = batch_to_execute[req_id]
 
+                    tracer.push("put_many_nowait")
                     response_queue.put_many_nowait(batch_responses)
+                    tracer.pop()  # pops put_many_nowait
                     start_time[0] = None
+                    tracer.pop()  # pops batch_to_execute
+                tracer.pop()  # pops scheduling_ce
 
             elif batch_continuous:
+                tracer.push("batch_continuous")
                 logger.debug("Scheduling TG with BS: %d", len(batch_continuous))
                 batch_responses = model.next_token(
                     batch_continuous, num_steps=max_forward_steps_tg
@@ -232,10 +242,14 @@ async def model_worker_run_v2(
                     batch_continuous, batch_responses, model, cache_indices
                 )
 
+                tracer.push("put_many_nowait")  # pops batch_continuous
                 response_queue.put_many_nowait(batch_responses)
+                tracer.pop()  # pops put_many_nowait
+                tracer.pop()  # pops batch_continuous
 
             # Occasionally clear out contexts cancelled out API worker side.
             if i % 20 == 0 and not cancel_queue.empty():
+                tracer.push("cancel_queue")
                 try:
                     for req_id in cancel_queue.get_many_nowait():
                         if req_id in batch_continuous:
@@ -245,7 +259,9 @@ async def model_worker_run_v2(
                             )
                             del batch_continuous[req_id]
                 except queue.Empty:
+                    tracer.pop()  # pops cancel_queue
                     continue
+                tracer.pop()  # pops cancel_queue
 
             await asyncio.sleep(0)
 
@@ -258,6 +274,7 @@ async def model_worker_run_v2(
         logger.info("Stopped model worker at process %d!", pid)
 
 
+@traced
 def should_schedule_ce(
     batch_continuous: BatchInputs,
     request_queue: MPQueue,
@@ -300,6 +317,7 @@ def should_schedule_ce(
     return True
 
 
+@traced
 def create_batch(
     request_queue: MPQueue,
     max_batch_size: int,
@@ -330,6 +348,7 @@ def create_batch(
     return batch
 
 
+@traced
 def handle_terminated_responses(
     batch_executed, batch_responses, model, cache_indices
 ):
