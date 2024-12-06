@@ -7,17 +7,17 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK-NOT: CUDA ERROR
 
-from math import isclose, isqrt
 
 from algorithm import max
 from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContiguousKVCache, KVCacheStaticParams
+from math import iota, isqrt, isclose, exp2
 from memory import UnsafePointer
 from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, NullMask
-from nn.mha_score_mod import AddFactorMod, IdentityScoreMod
+from nn.mha_score_mod import IdentityScoreMod, AlibiScoreMod
 from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
@@ -32,8 +32,24 @@ alias kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 alias llama_num_q_heads = 32
 
 
+fn generate_alibi_bias[
+    type: DType,
+    width: Int,
+    num_heads: Int,
+](
+    head_idx: SIMD[DType.index, width],
+    q_idx: SIMD[DType.index, width],
+    k_idx: SIMD[DType.index, width],
+) -> SIMD[type, width]:
+    var scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
+    var bias = (q_idx - k_idx - iota[DType.index, width]()).cast[type]() * scale
+    return bias
+
+
 def execute_flash_attention[
-    num_q_heads: Int, type: DType, kv_params: KVCacheStaticParams
+    num_q_heads: Int,
+    type: DType,
+    kv_params: KVCacheStaticParams,
 ](
     batch_size: Int,
     valid_length: NDBuffer[DType.uint32, 1],
@@ -90,7 +106,7 @@ def execute_flash_attention[
 
     # initialize mask tensor
     mask_host = HostNDBuffer[
-        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
+        DType.float32, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](
         IndexList[4](
             batch_size,
@@ -108,12 +124,12 @@ def execute_flash_attention[
                     mask_host.tensor.store(
                         Index(b, h, q_idx, k_idx),
                         0 if q_idx + max_cache_valid_length
-                        >= k_idx else min_or_neg_inf[type](),
+                        >= k_idx else min_or_neg_inf[DType.float32](),
                     )
 
     # initialize mask tensor
     mask_host_mod = HostNDBuffer[
-        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
+        DType.float32, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](
         IndexList[4](
             batch_size,
@@ -123,9 +139,8 @@ def execute_flash_attention[
         )
     )
 
-    # Added a huge number here so the effect is not hidden by tolerance.
-    alias add_factor = 1_500_000
     # Initialize causal mask with a bias for when q_idx >= k_idx.
+    # In this case this is the alibi as added bias.
     # This is used to compare against the score_mod implementation.
     for b in range(batch_size):
         for h in range(num_q_heads):
@@ -133,12 +148,15 @@ def execute_flash_attention[
                 for k_idx in range(max_prompt_len + max_cache_valid_length):
                     mask_host_mod.tensor.store(
                         Index(b, h, q_idx, k_idx),
-                        add_factor if q_idx + max_cache_valid_length
-                        >= k_idx else min_or_neg_inf[type](),
+                        generate_alibi_bias[DType.float32, 1, num_q_heads](
+                            h, q_idx, k_idx
+                        ) if q_idx
+                        + max_cache_valid_length
+                        >= k_idx else min_or_neg_inf[DType.float32](),
                     )
 
     mask_device = DeviceNDBuffer[
-        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
+        DType.float32, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](
         IndexList[4](
             batch_size,
@@ -151,7 +169,7 @@ def execute_flash_attention[
     ctx.enqueue_copy_to_device(mask_device.buffer, mask_host.tensor.data)
 
     mask_device_mod = DeviceNDBuffer[
-        type, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
+        DType.float32, 4, DimList(Dim(), num_q_heads, Dim(), Dim())
     ](
         IndexList[4](
             batch_size,
@@ -298,9 +316,9 @@ def execute_flash_attention[
         v_cache_device,
         mask_device.tensor,
         CausalMask(),
-        AddFactorMod[add_factor](),
+        AlibiScoreMod[num_q_heads](),
         valid_length_device.tensor,
-        # TODO take scale from argument GEX-750
+        # TODO take scale from argument GRA-750
         isqrt(Float32(kv_params.head_size)),
         ctx,
     )
@@ -332,13 +350,10 @@ def execute_flash_attention[
     var test_out = test_output_host.tensor
     for bs in range(batch_size):
         for s in range(valid_length[bs]):
-            for h in range(kv_params.num_heads):
+            for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
-                    # print(bs, s, h, hd, test_out[bs, s, h, hd])
                     var expect = ref_out[Index(bs, s, int(h), int(hd))]
                     var actual = test_out[Index(bs, s, int(h), int(hd))]
-                    if not isclose(actual, expect, atol=1e-5, rtol=8e-3):
-                        print(bs, s, h, hd, actual, expect)
                     assert_almost_equal(
                         expect,
                         actual,
@@ -379,43 +394,77 @@ def execute_flash_attention_suite(ctx: DeviceContext):
 
     alias type = DType.bfloat16
 
-    # Replit context encoding [testing even query valid lengths].
+    # Replit & Llama3 context encoding [testing even query valid lengths].
     valid_length[0] = 128
     valid_length[1] = 64
     cache_valid_length[0] = 0
     cache_valid_length[1] = 0
-    execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-        bs, valid_length, 128, 1024, cache_valid_length, ctx
-    )
 
-    # Replit context encoding [testing odd query valid length].
+    execute_flash_attention[
+        replit_num_q_heads,
+        type,
+        kv_params_replit,
+    ](bs, valid_length, 128, 1024, cache_valid_length, ctx)
+
+    execute_flash_attention[
+        llama_num_q_heads,
+        type,
+        kv_params_llama3,
+    ](bs, valid_length, 128, 1024, cache_valid_length, ctx)
+
+    # Replit & Llama3 context encoding [testing odd query valid length].
     valid_length[0] = 128
     valid_length[1] = 65
     cache_valid_length[0] = 0
     cache_valid_length[1] = 0
-    execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-        bs, valid_length, 128, 1024, cache_valid_length, ctx
-    )
 
-    # Replit token gen [testing even cache valid lengths].
+    execute_flash_attention[
+        replit_num_q_heads,
+        type,
+        kv_params_replit,
+    ](bs, valid_length, 128, 1024, cache_valid_length, ctx)
+
+    execute_flash_attention[
+        llama_num_q_heads,
+        type,
+        kv_params_llama3,
+    ](bs, valid_length, 128, 1024, cache_valid_length, ctx)
+
+    # Replit & Llama3 token gen [testing even cache valid lengths].
     valid_length[0] = 1
     valid_length[1] = 1
     cache_valid_length[0] = 200
     cache_valid_length[1] = 256
 
-    execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-        bs, valid_length, 1, 1024, cache_valid_length, ctx
-    )
+    execute_flash_attention[
+        replit_num_q_heads,
+        type,
+        kv_params_replit,
+    ](bs, valid_length, 1, 1024, cache_valid_length, ctx)
 
-    # Replit token gen [testing even cache valid lengths].
+    execute_flash_attention[
+        llama_num_q_heads,
+        type,
+        kv_params_llama3,
+    ](bs, valid_length, 1, 1024, cache_valid_length, ctx)
+
+    # Replit & Llama3 token gen [testing even cache valid lengths].
     valid_length[0] = 1
     valid_length[1] = 1
     cache_valid_length[0] = 200
     cache_valid_length[1] = 255
 
-    execute_flash_attention[replit_num_q_heads, type, kv_params_replit](
-        bs, valid_length, 1, 1024, cache_valid_length, ctx
-    )
+    execute_flash_attention[
+        replit_num_q_heads,
+        type,
+        kv_params_replit,
+    ](bs, valid_length, 1, 1024, cache_valid_length, ctx)
+
+    execute_flash_attention[
+        llama_num_q_heads,
+        type,
+        kv_params_llama3,
+    ](bs, valid_length, 1, 1024, cache_valid_length, ctx)
 
 
 def main():
