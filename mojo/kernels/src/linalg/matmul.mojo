@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from collections import Optional, OptionalReg
 from math import align_up, ceildiv
-from sys.info import alignof, has_neon, has_nvidia_gpu, simdwidthof
+from sys.info import alignof, has_neon, has_nvidia_gpu_accelerator, simdwidthof
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import Buffer, NDBuffer

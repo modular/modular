@@ -12,7 +12,7 @@ from sys import (
     bitwidthof,
     env_get_bool,
     env_get_int,
-    has_nvidia_gpu,
+    has_nvidia_gpu_accelerator,
     is_defined,
     llvm_intrinsic,
     simdwidthof,
@@ -305,7 +305,7 @@ fn _matmul_gpu[
     @parameter
     if (
         matmul_supported_format
-        and has_nvidia_gpu()
+        and has_nvidia_gpu_accelerator()
         and use_tensor_core
         and multistage_gemm_supported_shape
     ):
@@ -1193,7 +1193,7 @@ fn _matmul_gpu[
             return
 
     @parameter
-    if has_nvidia_gpu():
+    if has_nvidia_gpu_accelerator():
         if m == 1 or n == 1:
             gemv_gpu[
                 transpose_b=transpose_b,
