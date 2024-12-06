@@ -710,8 +710,8 @@ struct RegExampleValue:
     self.x = RegExample()
 
   # Make sure the synthesized dtor is taken register style.
-  # CHECK: lit.func @"__del__{{.*}}(%self: !lit.ref<!RegExampleValue 
-  # CHECK-NEXT: lit.ref.struct.ger %self[x] 
+  # CHECK: lit.func @"__del__{{.*}}(%self: !lit.ref<!RegExampleValue
+  # CHECK-NEXT: lit.ref.struct.ger %self[x]
   # CHECK-NEXT: lit.call {{.*}}__del__
   # CHECK-NEXT: kgen.param.constant: none
   # CHECK: lit.ownership.mark_destroyed %self
@@ -910,7 +910,7 @@ struct HasMemExample:
       # CHECK-NEXT: } else {
 
       # On success, we overwrite the field.
-      # CHECK-NEXT:   [[FIELD2:%.*]] = lit.ref.struct.ger 
+      # CHECK-NEXT:   [[FIELD2:%.*]] = lit.ref.struct.ger
       # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}([[FIELD2]])
       # CHECK-NEXT:   mark_consumed %__try_error__
       # CHECK-NEXT:   lifetime.end %__try_error__
@@ -1028,7 +1028,7 @@ struct MyStructWithMarkDestroyed[T: CollectionElement]:
 
         # Full object bit is explicitly destroyed.
         # CHECK-NEXT: lit.ownership.mark_destroyed %self
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
+        __disable_del self
 
         # Transfer operator includes a lit.ownership.use.
         # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %self[b]

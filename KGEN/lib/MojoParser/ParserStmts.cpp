@@ -228,6 +228,7 @@ struct StmtParser : public ParserBase {
                             StringAttr target, SMLoc smLoc, SMLoc targetLoc);
   ParseResult parseTryStmt(size_t curIndent);
   ParseResult parseWithStmt(size_t curIndent);
+  ParseResult parseDisableDelStmt(size_t curIndent);
   ParseResult parseSingleWithStmt(size_t curIndent, SMLoc smLoc, Location loc);
   ParseResult
   handleRaisingFinallyRegion(TryOp tryOp, ASTType errorType, SMLoc loc,
@@ -492,6 +493,7 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 ///               | pass_stmt
 ///               | del_stmt [TODO]
 ///               | return_stmt
+///               | disable_del_stmt
 ///               | yield_stmt [TODO]
 ///               | raise_stmt [TODO]
 ///               | break_stmt [TODO]
@@ -596,6 +598,10 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
     return parseWithStmt(stmtIndent);
+  case Token::kw___disable_del:
+    rejectDecorator(); // Decorators not allowed.
+    rejectSimpleStmt();
+    return parseDisableDelStmt(stmtIndent);
   case Token::kw_async:
   case Token::kw_def:
   case Token::kw_fn:
@@ -1867,6 +1873,30 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
   });
 
   builder.create<TryYieldOp>(loc);
+  return success();
+}
+
+/// disable_del_stmt ::= "__disable_del" expression
+ParseResult StmtParser::parseDisableDelStmt(size_t curIndent) {
+  SMLoc smLoc = consumeToken(Token::kw___disable_del).getLoc();
+  Location loc = shared.translateLocation(smLoc);
+
+  ExprNode *expr;
+  if (parseExpression(expr, curIndent))
+    return failure();
+
+  auto emitter = getEmitter();
+  auto irValue = emitter.emitExpr(expr, EC_DisableDel);
+  if (!irValue)
+    return failure();
+  if (!irValue.isMValue()) {
+    emitter.emitError(smLoc, "cannot use non-memory value in __disable_del")
+        << expr->getRange();
+    return {};
+  }
+  Value refValue = irValue.getMValueReference();
+  ImplicitLocOpBuilder b(loc, builder);
+  emitter.emitMarkDestroyed(b, refValue);
   return success();
 }
 

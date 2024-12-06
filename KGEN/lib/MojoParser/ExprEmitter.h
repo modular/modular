@@ -81,6 +81,7 @@ enum ExprContext {
   EC_Origin,                // origin specifier
   EC_TypeOf,                // __type_of(x)
   EC_PyBindGen,             // within Python binding generation
+  EC_DisableDel,            // within Python binding generation
 };
 const char *getContextMessage(ExprContext context);
 
@@ -580,6 +581,9 @@ public:
                                const ASTDecl &funcDecl);
   static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                FuncOp funcDecl);
+
+  /// Emit a __disable_del, so the user can destroy explicitly-destroyed types.
+  static void emitMarkDestroyed(ImplicitLocOpBuilder &builder, Value value);
 
   //===--------------------------------------------------------------------===//
   // Var emission helpers.

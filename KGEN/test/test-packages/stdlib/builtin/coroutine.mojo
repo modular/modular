@@ -17,7 +17,7 @@ struct Coroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
         self.value = handle
 
     fn __await__(owned self) -> T:
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
+        __disable_del self
         while __mlir_attr.true:
             pass
 
@@ -32,6 +32,6 @@ struct RaisingCoroutine[T: AnyType, origins: __mlir_type.`!lit.origin.set`]:
         self.value = handle
 
     fn __await__(owned self) raises -> T:
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(self))
+        __disable_del self
         while __mlir_attr.true:
             pass

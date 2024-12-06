@@ -89,7 +89,7 @@ vfplist: vfpdef (',' vfpdef)* [',']
 
 stmt: simple_stmt | compound_stmt
 simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
-small_stmt: (expr_stmt | print_stmt | del_stmt | pass_stmt | flow_stmt |
+small_stmt: (expr_stmt | print_stmt | del_stmt | pass_stmt | disable_del_stmt | flow_stmt |
              import_stmt | global_stmt | exec_stmt | assert_stmt | var_stmt)
 expr_stmt: testlist_star_expr_stmt (annassign | augassign (yield_expr|testlist) |
                      ('=' (yield_expr|testlist_star_expr))*)
@@ -110,6 +110,7 @@ break_stmt: 'break'
 continue_stmt: 'continue'
 return_stmt: 'return' [testlist_star_expr]
 yield_stmt: yield_expr
+disable_del_stmt: disable_del_expr
 raise_stmt: 'raise' [test ['from' test | ',' test [',' test]]]
 import_stmt: import_name | import_from
 import_name: 'import' dotted_as_names
@@ -244,6 +245,7 @@ encoding_decl: NAME
 
 yield_expr: 'yield' [yield_arg]
 yield_arg: 'from' test | testlist_star_expr
+disable_del_expr: '__disable_del' expr
 
 
 # 3.10 match statement definition
