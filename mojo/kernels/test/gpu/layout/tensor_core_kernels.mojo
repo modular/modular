@@ -127,8 +127,11 @@ def test_load_and_mma_and_multiply_operands[
         dtype, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
     ]()
     arange(lhs.tensor)
+    alias rhs_layout = Layout.row_major(
+        N, K
+    ) if transpose_b else Layout.row_major(K, N)
     var rhs = ManagedLayoutTensor[
-        dtype, Layout.row_major(K, N), gpu_managed_alloc, gpu_free
+        dtype, rhs_layout, gpu_managed_alloc, gpu_free
     ]()
     arange(rhs.tensor)
     alias mma_load_and_print_kernel_fn = mma_load_and_multiply[
@@ -321,6 +324,46 @@ def test_load_and_mma_f32_bf16_16x8x16(ctx: DeviceContext):
     print("== test_load_and_mma_f32_bf16_16x8x16")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 8, 16)
+    ](ctx)
+
+
+# CHECK-LABEL: == test_load_and_mma_f32_bf16_16x8x16_b_transpose
+# CHECK: thread 0 a_vals=[0 1 128 129 8 9 136 137], b_vals=[0 1 8 9], d_vals=[1241 3161 16601 51289]
+# CHECK: thread 1 a_vals=[2 3 130 131 10 11 138 139], b_vals=[2 3 10 11], d_vals=[5081 7001 85977 120665]
+# CHECK: thread 2 a_vals=[4 5 132 133 12 13 140 141], b_vals=[4 5 12 13], d_vals=[8921 10841 155353 190041]
+# CHECK: thread 3 a_vals=[6 7 134 135 14 15 142 143], b_vals=[6 7 14 15], d_vals=[12761 14681 224729 259417]
+# CHECK: thread 4 a_vals=[16 17 144 145 24 25 152 153], b_vals=[16 17 24 25], d_vals=[3161 9177 18521 57305]
+# CHECK: thread 5 a_vals=[18 19 146 147 26 27 154 155], b_vals=[18 19 26 27], d_vals=[15193 21209 96089 134873]
+# CHECK: thread 6 a_vals=[20 21 148 149 28 29 156 157], b_vals=[20 21 28 29], d_vals=[27225 33241 173657 212441]
+# CHECK: thread 7 a_vals=[22 23 150 151 30 31 158 159], b_vals=[22 23 30 31], d_vals=[39257 45273 251225 290009]
+# CHECK: thread 8 a_vals=[32 33 160 161 40 41 168 169], b_vals=[32 33 40 41], d_vals=[5081 15193 20441 63321]
+# CHECK: thread 9 a_vals=[34 35 162 163 42 43 170 171], b_vals=[34 35 42 43], d_vals=[25305 35417 106201 149081]
+# CHECK: thread 10 a_vals=[36 37 164 165 44 45 172 173], b_vals=[36 37 44 45], d_vals=[45529 55641 191961 234841]
+# CHECK: thread 11 a_vals=[38 39 166 167 46 47 174 175], b_vals=[38 39 46 47], d_vals=[65753 75865 277721 320601]
+# CHECK: thread 12 a_vals=[48 49 176 177 56 57 184 185], b_vals=[48 49 56 57], d_vals=[7001 21209 22361 69337]
+# CHECK: thread 13 a_vals=[50 51 178 179 58 59 186 187], b_vals=[50 51 58 59], d_vals=[35417 49625 116313 163289]
+# CHECK: thread 14 a_vals=[52 53 180 181 60 61 188 189], b_vals=[52 53 60 61], d_vals=[63833 78041 210265 257241]
+# CHECK: thread 15 a_vals=[54 55 182 183 62 63 190 191], b_vals=[54 55 62 63], d_vals=[92249 106457 304217 351193]
+# CHECK: thread 16 a_vals=[64 65 192 193 72 73 200 201], b_vals=[64 65 72 73], d_vals=[8921 27225 24281 75353]
+# CHECK: thread 17 a_vals=[66 67 194 195 74 75 202 203], b_vals=[66 67 74 75], d_vals=[45529 63833 126425 177497]
+# CHECK: thread 18 a_vals=[68 69 196 197 76 77 204 205], b_vals=[68 69 76 77], d_vals=[82137 100441 228569 279641]
+# CHECK: thread 19 a_vals=[70 71 198 199 78 79 206 207], b_vals=[70 71 78 79], d_vals=[118745 137049 330713 381785]
+# CHECK: thread 20 a_vals=[80 81 208 209 88 89 216 217], b_vals=[80 81 88 89], d_vals=[10841 33241 26201 81369]
+# CHECK: thread 21 a_vals=[82 83 210 211 90 91 218 219], b_vals=[82 83 90 91], d_vals=[55641 78041 136537 191705]
+# CHECK: thread 22 a_vals=[84 85 212 213 92 93 220 221], b_vals=[84 85 92 93], d_vals=[100441 122841 246873 302041]
+# CHECK: thread 23 a_vals=[86 87 214 215 94 95 222 223], b_vals=[86 87 94 95], d_vals=[145241 167641 357209 412377]
+# CHECK: thread 24 a_vals=[96 97 224 225 104 105 232 233], b_vals=[96 97 104 105], d_vals=[12761 39257 28121 87385]
+# CHECK: thread 25 a_vals=[98 99 226 227 106 107 234 235], b_vals=[98 99 106 107], d_vals=[65753 92249 146649 205913]
+# CHECK: thread 26 a_vals=[100 101 228 229 108 109 236 237], b_vals=[100 101 108 109], d_vals=[118745 145241 265177 324441]
+# CHECK: thread 27 a_vals=[102 103 230 231 110 111 238 239], b_vals=[102 103 110 111], d_vals=[171737 198233 383705 442969]
+# CHECK: thread 28 a_vals=[112 113 240 241 120 121 248 249], b_vals=[112 113 120 121], d_vals=[14681 45273 30041 93401]
+# CHECK: thread 29 a_vals=[114 115 242 243 122 123 250 251], b_vals=[114 115 122 123], d_vals=[75865 106457 156761 220121]
+# CHECK: thread 30 a_vals=[116 117 244 245 124 125 252 253], b_vals=[116 117 124 125], d_vals=[137049 167641 283481 346841]
+# CHECK: thread 31 a_vals=[118 119 246 247 126 127 254 255], b_vals=[118 119 126 127], d_vals=[198233 228825 410201 473561]
+def test_load_and_mma_f32_bf16_16x8x16_b_transpose(ctx: DeviceContext):
+    print("== test_load_and_mma_f32_bf16_16x8x16_b_transpose")
+    test_load_and_mma_and_multiply_operands[
+        DType.float32, DType.bfloat16, Index(16, 8, 16), transpose_b=True
     ](ctx)
 
 
@@ -566,6 +609,7 @@ def main():
         test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx)
         test_load_and_mma_f32_f32_16x8x4(ctx)
         test_load_and_mma_f32_bf16_16x8x16(ctx)
+        test_load_and_mma_f32_bf16_16x8x16_b_transpose(ctx)
         test_write_f32_f32_16x8x8(ctx)
         test_write_f32_f32_16x8x4(ctx)
         # ldmatrix
