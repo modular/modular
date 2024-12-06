@@ -880,7 +880,7 @@ fn _matmul_kv_cache_ragged[
     if target != "cpu":
         cuda_ctx = context.get_device_context()
 
-    return _matmul_kv_cache_ragged_impl[target=target](
+    _matmul_kv_cache_ragged_impl[target=target](
         hidden_state,
         input_row_offsets,
         weight,
