@@ -23,7 +23,7 @@ from gpu.cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
-from linalg.gpu_blas import cublas_matmul
+from linalg.gpu_blas import vendor_matmul
 from gpu.host.info import DEFAULT_GPU_ARCH
 
 
@@ -41,7 +41,7 @@ fn _get_run_name[
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
-    var name = String("cublas_matmul" if use_cublas else "matmul") + "("
+    var name = String("vendor_matmul" if use_cublas else "matmul") + "("
     name += str(type)
     name += ") : "
     # M
@@ -135,7 +135,7 @@ fn bench_matmul[
 
             @parameter
             if use_cublas:
-                _ = cublas_matmul[use_tf32=True](
+                _ = vendor_matmul[use_tf32=True](
                     cublas_handle,
                     tensor_c,
                     tensor_a,
