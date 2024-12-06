@@ -1081,6 +1081,18 @@ struct DeviceContextV2:
         )
 
     @always_inline
+    fn enqueue_copy_from_device[
+        type: DType
+    ](
+        self,
+        dst: UnsafePointer[Scalar[type]],
+        src: UnsafePointer[Scalar[type]],
+        size: Int,
+    ) raises:
+        var src_buf = DeviceBufferV2(self, src, size, owning=False)
+        self.enqueue_copy_from_device[type](dst, src_buf)
+
+    @always_inline
     fn enqueue_copy_device_to_device[
         type: DType
     ](self, dst: DeviceBufferV2[type], src: DeviceBufferV2[type]) raises:
