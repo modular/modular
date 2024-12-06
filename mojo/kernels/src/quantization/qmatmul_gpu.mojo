@@ -739,6 +739,12 @@ fn pack_Q_tile(input: SIMD[DType.uint8, 16]) -> SIMD[DType.uint32, 4]:
     return res
 
 
+@always_inline
+fn unpack_4bit_int(val: SIMD[DType.uint32, _], idx: Int) -> Scalar[DType.uint8]:
+    var u32_val = rebind[Scalar[DType.uint32]](val)
+    return (u32_val >> (idx * 4)).cast[DType.uint8]() & 0x0F
+
+
 fn repack_Q4_0_for_sm8x[
     q_layout: Layout,
     repack_layout: Layout,
@@ -870,10 +876,10 @@ fn repack_Q4_0_for_sm8x[
             ]().distribute[thd_layout](lane_id)
 
             @parameter
-            for i_ele in range(16):
-                var val = thread_tile.load[2](i_ele // 2, i_ele % 2)
-                frag_0[i_ele] = (val[0] & 0x0F) | ((val[1] & 0x0F) << 4)
-                frag_1[i_ele] = ((val[0] & 0xF0) >> 4) | (val[1] & 0xF0)
+            for i_e in range(16):
+                var val = thread_tile.load[2](i_e // 2, i_e % 2)
+                frag_0[i_e] = (val[0] & 0x0F) | ((val[1] & 0x0F) << 4)
+                frag_1[i_e] = ((val[0] & 0xF0) >> 4) | (val[1] & 0xF0)
 
             var repack_warp_tile = repacked_gemm_iter[].tile[
                 64, group_size // pack_factor
@@ -924,10 +930,12 @@ fn repack_GPTQ_for_sm8x[
     scales_type: DType,
     group_size: Int,
     has_perm: Bool,
+    *,
+    perm_layout: Layout = Layout(),
 ](
     in_tensor: LayoutTensor[DType.uint8, in_layout],
     out_tensor: LayoutTensor[DType.uint8, out_layout],
-    perm_idx: OptionalReg[NDBuffer[DType.int32, 1, *_]],
+    perm_idx: OptionalReg[LayoutTensor[DType.int32, perm_layout]] = None,
 ):
     alias raw_scales_type = DType.float16
     alias weights_bytes_per_group = group_size // 2
@@ -1071,10 +1079,44 @@ fn repack_GPTQ_for_sm8x[
             @parameter
             for i_Q_tile in range(group_size // repack_tile[1]):
                 var tmp: SIMD[DType.uint8, 16] = 0
+                alias thd_layout = Layout.row_major(8, 4)
 
                 @parameter
                 if has_perm:
-                    pass
+                    var perm_idx = perm_idx.value()
+                    var p_block_idx = perm_idx.tile[BK](block_idx[1])
+                    var p_group_idx = p_block_idx.tile[group_size](
+                        2 * i + warp_y
+                    )
+                    var p_Qtile_idx = p_group_idx.tile[repack_tile[1]](i_Q_tile)
+                    var thd_idx = (
+                        p_Qtile_idx.vectorize[2]().distribute[
+                            thd_layout, axis=1
+                        ](lane_id)
+                    )
+                    var n_idx = lane_id // 4
+
+                    var weights_K = raw_weights.tile[BN, uint_K](
+                        block_idx[0], 0
+                    )
+                    var weights_K_wrap = weights_K.tile[repack_tile[0], uint_K](
+                        warp_x, 0
+                    )
+
+                    @parameter
+                    for i_e in range(16):
+                        if i_e % 2 == 0 and i_e > 0:
+                            n_idx += 8
+                        var k_idx: Int = int(thd_idx[i_e % 2][0])
+                        var packed_int = weights_K_wrap[
+                            n_idx, k_idx // pack_factor
+                        ]
+                        tmp[i_e] |= unpack_4bit_int(packed_int, k_idx % 8)
+
+                        k_idx = int(thd_idx[i_e % 2][1])
+                        packed_int = weights_K_wrap[n_idx, k_idx // pack_factor]
+                        tmp[i_e] |= unpack_4bit_int(packed_int, k_idx % 8) << 4
+
                 else:
                     var raw_weights_warp_tile = weights_smem.tile[
                         repack_tile[0], weights_bytes_per_group
@@ -1082,14 +1124,13 @@ fn repack_GPTQ_for_sm8x[
                     var raw_Q_tile = raw_weights_warp_tile.tile[
                         repack_tile[0], repack_tile[1] // 2
                     ](0, i_Q_tile)
-                    alias thd_layout = Layout.row_major(8, 4)
                     # This gets elements 0, 1, 8, 9 in each mma_tile for
                     # thread 0.
                     var thread_tile = raw_Q_tile.distribute[thd_layout](lane_id)
 
                     @parameter
-                    for i_ele in range(16):
-                        tmp[i_ele] = thread_tile.load[1](i_ele // 2, i_ele % 2)
+                    for i_e in range(16):
+                        tmp[i_e] = thread_tile.load[1](i_e // 2, i_e % 2)
 
                 var repacked_Q_tile = repacked_warp_tile.tile[
                     repack_tile[0], repack_tile[1] // pack_factor
@@ -1273,6 +1314,7 @@ fn gpu_qint4_repack_GPTQ[
 ](
     b: NDBuffer[DType.uint8, 2, b_shape],
     b_packed: NDBuffer[DType.uint8, 2, b_packed_shape],
+    perm_idx: OptionalReg[NDBuffer[DType.int32, 1]] = None,
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
     constrained["cuda" in target, "unsupported target"]()
@@ -1304,24 +1346,55 @@ fn gpu_qint4_repack_GPTQ[
 
     var smem_usage: Int = BN * 2 * group_bytes
 
-    alias repack = repack_GPTQ_for_sm8x[
-        tensor_b.layout,
-        tensor_packed_b.layout,
-        DType.bfloat16,
-        group_size,
-        False,
-    ]
+    if perm_idx:
+        alias perm_shape = DimList((K,))
+        var tensor_perm = from_ndbuffer_row_major(
+            rebind[NDBuffer[DType.int32, 1, perm_shape]](perm_idx.value())
+        )
 
-    var repack_func = cuda_ctx.compile_function[repack,](
-        threads_per_block=int(128),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_usage),
-    )
+        alias repack = repack_GPTQ_for_sm8x[
+            tensor_b.layout,
+            tensor_packed_b.layout,
+            DType.bfloat16,
+            group_size,
+            True,
+            perm_layout = tensor_perm.layout,
+        ]
 
-    cuda_ctx.enqueue_function(
-        repack_func,
-        tensor_b,
-        tensor_packed_b,
-        grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
-        block_dim=(128, 1, 1),
-        shared_mem_bytes=smem_usage,
-    )
+        var repack_func = cuda_ctx.compile_function[repack,](
+            threads_per_block=int(128),
+        )
+
+        cuda_ctx.enqueue_function(
+            repack_func,
+            tensor_b,
+            tensor_packed_b,
+            tensor_perm,
+            grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
+            block_dim=(128, 1, 1),
+        )
+
+    else:
+        alias repack = repack_GPTQ_for_sm8x[
+            tensor_b.layout,
+            tensor_packed_b.layout,
+            DType.bfloat16,
+            group_size,
+            False,
+        ]
+
+        var repack_func = cuda_ctx.compile_function[repack,](
+            threads_per_block=int(128),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                smem_usage
+            ),
+        )
+
+        cuda_ctx.enqueue_function(
+            repack_func,
+            tensor_b,
+            tensor_packed_b,
+            grid_dim=(ceildiv(N, BN), ceildiv(K, BK), 1),
+            block_dim=(128, 1, 1),
+            shared_mem_bytes=smem_usage,
+        )
