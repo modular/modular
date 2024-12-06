@@ -11,6 +11,7 @@ modular_py_library(
         "//SDK/lib/API/python/max/driver",
         "//SDK/lib/API/python/max/dtype",
         "//SDK/lib/API/python/max/graph",
+        "//SDK/lib/API/python/max/profiler",
         requirement("numpy"),
     ],
 )
