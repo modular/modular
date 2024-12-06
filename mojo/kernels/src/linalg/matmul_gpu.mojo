@@ -13,6 +13,7 @@ from sys import (
     env_get_bool,
     env_get_int,
     has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
     is_defined,
     llvm_intrinsic,
     simdwidthof,
@@ -284,6 +285,7 @@ fn _matmul_gpu[
     var m = shape.M
     var n = shape.N
     var k = shape.K
+
     alias s_type = DType.float32 if (
         a_type == DType.bfloat16 or a_type == DType.float16
     ) else c_type
@@ -305,7 +307,7 @@ fn _matmul_gpu[
     @parameter
     if (
         matmul_supported_format
-        and has_nvidia_gpu_accelerator()
+        and (has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator())
         and use_tensor_core
         and multistage_gemm_supported_shape
     ):
@@ -1370,7 +1372,6 @@ fn multistage_gemm[
             config.shared_mem_usage()
         ),
     )
-
     ctx.enqueue_function(
         gemm_kernel,
         tensor_c,

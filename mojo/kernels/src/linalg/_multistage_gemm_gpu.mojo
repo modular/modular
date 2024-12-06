@@ -7,6 +7,7 @@
 from collections import OptionalReg
 from math import ceildiv
 from sys import alignof, simdwidthof, sizeof
+from sys import is_nvidia_gpu
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
@@ -35,6 +36,7 @@ from layout.layout_tensor import (
     LayoutTensorIter,
     _swizzle_signature,
     copy_dram_to_sram_async,
+    copy_dram_to_sram,
     copy_local_to_dram,
     copy_local_to_local,
     copy_local_to_sram,
@@ -154,7 +156,9 @@ fn multistage_mma[
         // b_smem_layout.stride[0].value(),
         b_smem_layout.stride[0].value() // simd_size,
     )
-    alias swizzle_b = transpose_b or b_type.is_half_float()
+    alias swizzle_b = (
+        transpose_b or b_type.is_half_float()
+    ) and is_nvidia_gpu()
 
     @always_inline
     @parameter
@@ -176,14 +180,21 @@ fn multistage_mma[
     fn _copy_tensor_to_sram[
         thread_layout: Layout, swizzle: Bool
     ](dst: LayoutTensor, src: LayoutTensor,):
-        copy_dram_to_sram_async[
-            thread_layout=thread_layout,
-            swizzle=swizzle,
-            num_threads=num_threads,
-        ](
-            dst.vectorize[1, simd_size](),
-            src.vectorize[1, simd_size](),
-        )
+        @parameter
+        if is_nvidia_gpu():
+            copy_dram_to_sram_async[
+                thread_layout=thread_layout,
+                swizzle=swizzle,
+                num_threads=num_threads,
+            ](
+                dst.vectorize[1, simd_size](),
+                src.vectorize[1, simd_size](),
+            )
+        else:
+            copy_dram_to_sram[thread_layout=thread_layout](
+                dst.vectorize[1, simd_size](),
+                src.vectorize[1, simd_size](),
+            )
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
@@ -501,7 +512,6 @@ fn multistage_mma[
                     a_reg_tiles[next].vectorize[1, a_frag_size](),
                     kidx,
                 )
-
                 mma_op.load_b(
                     b_warp_tile,
                     b_reg_tiles[next],
@@ -563,7 +573,7 @@ fn multistage_gemm_kernel[
     var warp_id = warp_broadcast(tid // WARP_SIZE)
 
     # Only apply block swizzling for half precision types.
-    alias swizzle_block = a_type.is_half_float() and b_type.is_half_float()
+    alias swizzle_block = a_type.is_half_float() and b_type.is_half_float() and is_nvidia_gpu()
 
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
@@ -654,6 +664,7 @@ fn multistage_gemm_kernel[
         num_pipeline_stages,
         transpose_b,
         k_group_size = config.k_group_size,
+        swizzle_a = is_nvidia_gpu(),
     ](
         c_reg_tile,
         a_gmem_iter,
@@ -672,7 +683,7 @@ fn multistage_gemm_kernel[
     # directly storing to global memory results in 2 4B writes. Following cutlass,
     # we stage the fragments in shared memory so that each thread can store 16B.
     @parameter
-    if c_type.is_half_float():
+    if c_type.is_half_float() and is_nvidia_gpu():
         alias swizzle = make_swizzle[
             num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
@@ -752,6 +763,20 @@ fn multistage_gemm_kernel[
                 accum_smem_warp_tile.vectorize[1, simd_size](),
             )
 
+    elif c_type.is_half_float() and not is_nvidia_gpu():
+        var c_reg_tile_out = LayoutTensor[
+            c_type, c_reg_tile.layout, address_space = AddressSpace.LOCAL
+        ].stack_allocation()
+
+        @parameter
+        for i in range(c_reg_tile.shape[0]()):
+
+            @parameter
+            for j in range(c_reg_tile.shape[1]()):
+                c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
+        copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
+            c_gmem_warp_tile.vectorize[4, 1](), c_reg_tile_out.vectorize[1, 4]()
+        )
     # Store FP32 results to FP32 buffer in global memory.
     else:
 
@@ -786,10 +811,18 @@ fn multistage_gemm_kernel[
                     epilogue[alignment=alignment]((m, n), vec)
 
         else:
-            copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
-                c_gmem_warp_tile.vectorize[1, 2](),
-                c_reg_tile.vectorize[1, 2]().transpose(),
-            )
+
+            @parameter
+            if is_nvidia_gpu():
+                copy_local_to_dram[dst_thread_layout = Layout.row_major(8, 4)](
+                    c_gmem_warp_tile.vectorize[1, 2](),
+                    c_reg_tile.vectorize[1, 2]().transpose(),
+                )
+            else:
+                copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
+                    c_gmem_warp_tile.vectorize[4, 1](),
+                    c_reg_tile.vectorize[1, 4](),
+                )
 
 
 fn multistage_gemm_split_k_kernel[
