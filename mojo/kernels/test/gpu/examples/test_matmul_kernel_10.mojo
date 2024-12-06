@@ -8,7 +8,7 @@
 
 from collections import OptionalReg
 from math import ceildiv
-from sys import has_amd_gpu, llvm_intrinsic
+from sys import has_amd_gpu_accelerator, llvm_intrinsic
 from sys.info import alignof
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
@@ -309,7 +309,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # TODO: Find best for target GPU.
     #       For A100 see below (based on siboehm repo).
     #       For MI300X we need to further autotune (below is a working version).
-    # alias K10_NUM_THREADS = 256 if has_amd_gpu() else 128
+    # alias K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
     # alias K10_BN = 128
     # alias K10_BM = 64
     # alias K10_BK = 16
@@ -319,12 +319,12 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # alias K10_TN = 4
     # alias K10_TM = 4
     # Settings for A6000
-    alias K10_NUM_THREADS = 256 if has_amd_gpu() else 128
+    alias K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
     alias K10_BN = 128
-    alias K10_BM = 256 if has_amd_gpu() else 128
+    alias K10_BM = 256 if has_amd_gpu_accelerator() else 128
     alias K10_BK = 16
     alias K10_WN = 64
-    alias K10_WM = 128 if has_amd_gpu() else 64
+    alias K10_WM = 128 if has_amd_gpu_accelerator() else 64
     alias K10_WNITER = 4
     alias K10_TN = 4
     alias K10_TM = 8
@@ -439,7 +439,7 @@ fn bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     ]
     var func = ctx.compile_function[
         sgemm_type
-    ]() if has_amd_gpu() else ctx.compile_function[sgemm_type](
+    ]() if has_amd_gpu_accelerator() else ctx.compile_function[sgemm_type](
         threads_per_block=K10_NUM_THREADS
     )
 
