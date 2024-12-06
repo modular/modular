@@ -462,7 +462,6 @@ def graph_api_pixtral(
         connector,
         mistral,
         VOCAB_SIZE,
-        pad_token_id=-1,
         image_token_index=10,
         vision_feature_layer=-1,
         vision_feature_select_strategy="full",

@@ -13,6 +13,9 @@ from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
 from nn import Conv2D, Linear
 from nn.norm import RMSNorm
+from pixtral.vision_encoder.attention_utils import (
+    causal_attention_mask_2d_from_imgs,
+)
 from pixtral.vision_encoder.attention import Attention
 from pixtral.vision_encoder.rotary_embedding_2d import RotaryEmbedding2D
 from pixtral.vision_encoder.transformer import (
@@ -23,6 +26,9 @@ from pixtral.vision_encoder.transformer import (
 from pixtral.vision_encoder.vision_encoder import VisionEncoder
 from torch import nn
 from transformers import PixtralVisionConfig, PixtralVisionModel
+from transformers.models.pixtral.modeling_pixtral import (
+    generate_block_attention_mask,
+)
 
 ACCURACY_RTOL = 1e-1
 ACCURACY_ATOL = 1e-1
@@ -43,6 +49,7 @@ hidden_act = "gelu"  # Activation function used in the hidden layers.
 image_size = 1024  # Max dimension of the input images. Should be 1024
 attention_dropout = 0.0  # Dropout probability for the attention layers.
 variance_epsilon = 1e-5
+batch_size = 1
 
 
 @pytest.fixture
@@ -59,9 +66,7 @@ def img_dtype():
 def imgs(img_sizes, img_dtype):
     # generate imgs of shape (num_channels, height, width)
     return [
-        torch.randint(low=0, high=255, size=(num_channels, height, width)).to(
-            img_dtype
-        )
+        torch.rand(size=(num_channels, height, width)).to(img_dtype)
         for height, width in img_sizes
     ]
 
@@ -72,6 +77,26 @@ def pytorch_pixtral_vision_encoder():
     config = PixtralVisionConfig()
     model = PixtralVisionModel(config)
     return model
+
+
+@pytest.fixture
+def pytorch_attention_mask(imgs, pytorch_pixtral_vision_encoder):
+    # refer to https://github.com/huggingface/transformers/blob/53fad641cfdb5105e2470bcf3ef17ea8e25cc300/src/transformers/models/pixtral/modeling_pixtral.py#L477
+    model = pytorch_pixtral_vision_encoder
+    patch_embeds_list = [
+        model.patch_conv(img.unsqueeze(0).to(model.dtype)) for img in imgs
+    ]
+
+    # flatten to a single sequence
+    patch_embeds = torch.cat(
+        [p.flatten(2).permute(0, 2, 1) for p in patch_embeds_list], dim=1
+    )
+    patch_embeds = model.ln_pre(patch_embeds)
+
+    attention_mask = generate_block_attention_mask(
+        [p.shape[-2] * p.shape[-1] for p in patch_embeds_list], patch_embeds
+    )
+    return attention_mask
 
 
 @pytest.fixture
@@ -254,8 +279,9 @@ def test_vision_encoder(
     graph_encoder, weights_registry = vision_encoder
 
     with torch.no_grad():
-        encoder_output = pytorch_model(imgs).last_hidden_state
+        pytorch_encoder_output = pytorch_model(imgs).last_hidden_state
         ####### Permute torch inputs for the graph API and init weights ########
+        # Graph API image shape = (height, width, num_channels)
         imgs = [
             np.ascontiguousarray(torch.permute(img, (1, 2, 0))) for img in imgs
         ]
@@ -270,18 +296,32 @@ def test_vision_encoder(
             ],
         ) as graph:
             graph_inputs = graph.inputs
-            graph_encoder_output = graph_encoder(graph_inputs)
+            graph.output(graph_encoder(graph_inputs))
+        compiled = session.load(graph, weights_registry=weights_registry)
 
-            graph.output(graph_encoder_output)
-            compiled = session.load(graph, weights_registry=weights_registry)
+        graph_api_encoder_output = compiled.execute(*imgs)[0].to_numpy()  # type: ignore
+        np.testing.assert_allclose(
+            graph_api_encoder_output,
+            pytorch_encoder_output.detach().numpy(),
+            equal_nan=True,
+            rtol=ACCURACY_RTOL,
+            atol=ACCURACY_ATOL,
+        )
 
-            output = compiled.execute(*imgs)[0].to_numpy()  # type: ignore
-            print("Vision Encoder Output shape = ", output.shape)
 
-            np.testing.assert_allclose(
-                output,
-                encoder_output.detach().numpy(),
-                equal_nan=True,
-                rtol=ACCURACY_RTOL,
-                atol=ACCURACY_ATOL,
-            )
+def test_attention_mask(imgs, pytorch_attention_mask):
+    # Permute torch inputs for the graph API to be (height, width, num_channels)
+    imgs = [np.ascontiguousarray(torch.permute(img, (1, 2, 0))) for img in imgs]
+    # use pytorch model's fill value for testing to compare results
+    fill_value = torch.finfo(pytorch_attention_mask.dtype).min
+    attn_mask = causal_attention_mask_2d_from_imgs(
+        imgs, patch_size, batch_size, fill_value
+    )
+
+    np.testing.assert_allclose(
+        attn_mask,
+        pytorch_attention_mask.detach().numpy(),
+        equal_nan=True,
+        rtol=ACCURACY_RTOL,
+        atol=ACCURACY_ATOL,
+    )
