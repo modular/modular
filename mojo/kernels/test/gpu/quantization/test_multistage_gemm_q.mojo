@@ -77,6 +77,7 @@ from linalg.utils_gpu import (
 from memory import UnsafePointer
 from memory.unsafe import bitcast
 from quantization import Q4sym
+from quantization.qmatmul_gpu import pack_Q_tile
 
 from utils.index import Index, IndexList
 
@@ -785,18 +786,13 @@ fn repack_Q4_0_for_sm8x[
     )
     var scales_gmem_iter = scales_gmem_tile.tiled_iterator[2, BN, axis=0](0, 0)
 
-    # local regs store frags of repacked 64x16 tiles
-    var repack_reg_tile = tb[DType.uint32]().row_major[
-        2, 4
-    ]().local().alloc().fill(0)
-
     # We load 128x2 Q4_0 GGUF blocks to smem.
     # Each warp repacks 64x1 Q4_0 GGUF blocks, which are
     # 64x32 4-bit weights. We repack weights into 64x16
     # tiles for our quantized matmul kernel, so there are
     # two tile for each warp.
-    # repack_reg_tile[0] stores frags of the first 64x16 tile,
-    # repack_reg_tile[1] stores frags of the second,
+    # frag_0 stores frags of the first 64x16 tile,
+    # frag_1 stores frags of the second,
     for i in range(ceildiv(BK_groups, 2)):
         barrier()
         copy_dram_to_sram[thread_layout = Layout.row_major(128, 1),](
@@ -810,73 +806,33 @@ fn repack_Q4_0_for_sm8x[
         q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](warp_x, warp_y)
 
         if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
-            var warp_mma_iter = q_warp_tile.tiled_iterator[
-                8, group_bytes, axis=0
-            ]()
-            alias thd_mma_layout = Layout.row_major(8, 4)
+            var frag_0: SIMD[DType.uint8, 16] = 0
+            var frag_1: SIMD[DType.uint8, 16] = 0
+            var raw_Q_tile = q_warp_tile.tile[repack_tile[0], group_bytes]()
+            alias thd_layout = Layout.row_major(8, 4)
+            var thread_tile = raw_Q_tile.slice[:, 2:]().vectorize[
+                1, 2
+            ]().distribute[thd_layout](lane_id)
 
             @parameter
-            for i_mma_tile in range(0, 8, 2):
-                var frag: SIMD[DType.uint32, 2] = 0
+            for i_ele in range(16):
+                var val = thread_tile.load[2](i_ele // 2, i_ele % 2)
+                frag_0[i_ele] = (val[0] & 0x0F) | ((val[1] & 0x0F) << 4)
+                frag_1[i_ele] = ((val[0] & 0xF0) >> 4) | (val[1] & 0xF0)
 
-                # The first 2 Bytes is the scale for this Q4_0 block
-                # GGUF pack elements 0-15 in the lower 4-bit of the 16 Bytes,
-                # and elments 16-31 in the higher 4-bit of the 16 Bytes.
-                #
-                # This gets elements 0, 1, 8, 9, 16, 17, 24, 25 for
-                # thread 0.
-                var tmp = (
-                    warp_mma_iter[]
-                    .slice[:, 2:]()
-                    .vectorize[1, 2]()
-                    .distribute[thd_mma_layout](lane_id)
-                )
-                warp_mma_iter._incr()
-
-                for ind in range(2):
-                    frag[ind] |= tmp[0, 0][0].cast[DType.uint32]() & 0xF
-                    frag[ind] |= (tmp[0, 0][1].cast[DType.uint32]() & 0xF) << 16
-                    frag[ind] |= (tmp[0, 1][0].cast[DType.uint32]() & 0xF) << 4
-                    frag[ind] |= (tmp[0, 1][1].cast[DType.uint32]() & 0xF) << 20
-                    tmp[0, 0] = tmp[0, 0] >> 4
-                    tmp[0, 1] = tmp[0, 1] >> 4
-
-                # the first 2 Bytes is the scale for this Q4_0 block
-                tmp = (
-                    warp_mma_iter[]
-                    .slice[:, 2:]()
-                    .vectorize[1, 2]()
-                    .distribute[thd_mma_layout](lane_id)
-                )
-                warp_mma_iter._incr()
-
-                for ind in range(2):
-                    frag[ind] |= (tmp[0, 0][0].cast[DType.uint32]() & 0xF) << 8
-                    frag[ind] |= (tmp[0, 0][1].cast[DType.uint32]() & 0xF) << 24
-                    frag[ind] |= (tmp[0, 1][0].cast[DType.uint32]() & 0xF) << 12
-                    frag[ind] |= (tmp[0, 1][1].cast[DType.uint32]() & 0xF) << 28
-                    tmp[0, 0] = tmp[0, 0] >> 4
-                    tmp[0, 1] = tmp[0, 1] >> 4
-
-                repack_reg_tile[0, i_mma_tile // 2] = frag[0]
-                repack_reg_tile[1, i_mma_tile // 2] = frag[1]
-
+            var repack_warp_tile = repacked_gemm_iter[].tile[
+                64, group_size // pack_factor
+            ](warp_x, warp_y)
             # The repack_warp_tile is of shape [64, (2, 2)]. In this case,
             # elements [0, 0], [0, 1], [1, 0] and [1, 1] are stored continously
             # in the memory. We need to use a element shape of [2, 2] to
             # correctly vectorize this tenosr.
-            var repack_warp_tile = repacked_gemm_iter[].tile[
-                64, group_size // pack_factor
-            ](warp_x, warp_y)
-            alias write_back_type = __type_of(
-                repack_warp_tile.vectorize[2, 2]()[0, 0]
+            repack_warp_tile.vectorize[2, 2]().store(
+                lane_id, 0, pack_Q_tile(frag_0)
             )
-            repack_warp_tile.vectorize[2, 2]()[lane_id, 0] = rebind[
-                write_back_type
-            ](repack_reg_tile.vectorize[1, 4]()[0, 0])
-            repack_warp_tile.vectorize[2, 2]()[lane_id, 1] = rebind[
-                write_back_type
-            ](repack_reg_tile.vectorize[1, 4]()[1, 0])
+            repack_warp_tile.vectorize[2, 2]().store(
+                lane_id, 1, pack_Q_tile(frag_1)
+            )
             repacked_gemm_iter._incr()
 
             alias scales_thread_layout = Layout(
