@@ -7,6 +7,7 @@
 
 import asyncio
 import functools
+import os
 
 import click
 import max.serve.grpc_serve.grpc_serve as max_grpc
@@ -209,5 +210,8 @@ def serve(bypass_serve: bool, model: str, port: int, max_batch_size: int):
 
 
 if __name__ == "__main__":
+    if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+        os.chdir(directory)
+
     register_all_models()
     serve()
