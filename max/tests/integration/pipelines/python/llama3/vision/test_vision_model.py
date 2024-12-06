@@ -372,6 +372,48 @@ class WrappedVisionModel:
         )
 
 
+def _construct_transformer_weights_registry(
+    prefix: str, layers: torch.nn.ModuleList, is_gated=False
+) -> dict[str, torch.Tensor]:
+    curr_weights_registry: dict[str, torch.Tensor] = {}
+
+    for index, layer in enumerate(layers):
+        curr_weights_registry[f"{prefix}.{index}.mlp.fc1"] = (
+            layer.mlp.fc1.weight.detach()
+        )
+        curr_weights_registry[f"{prefix}.{index}.mlp.fc2"] = (
+            layer.mlp.fc2.weight.detach()
+        )
+        curr_weights_registry[f"{prefix}.{index}.input_layernorm"] = (
+            layer.input_layernorm.weight.detach()
+        )
+        curr_weights_registry[f"{prefix}.{index}.post_attention_layernorm"] = (
+            layer.post_attention_layernorm.weight.detach()
+        )
+        curr_weights_registry[f"{prefix}.{index}.self_attn.k_proj"] = (
+            layer.self_attn.k_proj.weight.detach()
+        )
+        curr_weights_registry[f"{prefix}.{index}.self_attn.v_proj"] = (
+            layer.self_attn.v_proj.weight.detach()
+        )
+        curr_weights_registry[f"{prefix}.{index}.self_attn.q_proj"] = (
+            layer.self_attn.q_proj.weight.detach()
+        )
+        curr_weights_registry[f"{prefix}.{index}.self_attn.o_proj"] = (
+            layer.self_attn.o_proj.weight.detach()
+        )
+
+        if is_gated:
+            curr_weights_registry[f"{prefix}.{index}.gate_attn"] = (
+                layer.gate_attn.detach()
+            )
+            curr_weights_registry[f"{prefix}.{index}.gate_ffn"] = (
+                layer.gate_ffn.detach()
+            )
+
+    return curr_weights_registry
+
+
 @pytest.mark.parametrize(
     "hidden_size,max_num_tiles,patch_size,attention_heads,num_channels,image_size",
     [
@@ -439,52 +481,13 @@ def test_vision_model(
 
     # Map torch weight values to their MAX graph counterparts.
 
-    def construct_transformer_weights_registry(
-        prefix: str, layers: torch.nn.ModuleList, is_gated=False
-    ) -> dict[str, torch.Tensor]:
-        curr_weights_registry: dict[str, torch.Tensor] = {}
-
-        for index, layer in enumerate(layers):
-            curr_weights_registry[f"{prefix}.{index}.mlp.fc1"] = (
-                layer.mlp.fc1.weight.detach()
-            )
-            curr_weights_registry[f"{prefix}.{index}.mlp.fc2"] = (
-                layer.mlp.fc2.weight.detach()
-            )
-            curr_weights_registry[f"{prefix}.{index}.input_layernorm"] = (
-                layer.input_layernorm.weight.detach()
-            )
-            curr_weights_registry[
-                f"{prefix}.{index}.post_attention_layernorm"
-            ] = layer.post_attention_layernorm.weight.detach()
-            curr_weights_registry[f"{prefix}.{index}.self_attn.k_proj"] = (
-                layer.self_attn.k_proj.weight.detach()
-            )
-            curr_weights_registry[f"{prefix}.{index}.self_attn.v_proj"] = (
-                layer.self_attn.v_proj.weight.detach()
-            )
-            curr_weights_registry[f"{prefix}.{index}.self_attn.q_proj"] = (
-                layer.self_attn.q_proj.weight.detach()
-            )
-            curr_weights_registry[f"{prefix}.{index}.self_attn.o_proj"] = (
-                layer.self_attn.o_proj.weight.detach()
-            )
-
-            if is_gated:
-                curr_weights_registry[f"{prefix}.{index}.gate_attn"] = (
-                    layer.gate_attn.detach()
-                )
-                curr_weights_registry[f"{prefix}.{index}.gate_ffn"] = (
-                    layer.gate_ffn.detach()
-                )
-
-        return curr_weights_registry
-
-    local_transformer_weights_registry = construct_transformer_weights_registry(
-        prefix="transformer", layers=torch_vision_model.transformer.layers
+    local_transformer_weights_registry = (
+        _construct_transformer_weights_registry(
+            prefix="transformer", layers=torch_vision_model.transformer.layers
+        )
     )
     global_transformer_weights_registry = (
-        construct_transformer_weights_registry(
+        _construct_transformer_weights_registry(
             prefix="global_transformer",
             layers=torch_vision_model.global_transformer.layers,
             is_gated=True,
