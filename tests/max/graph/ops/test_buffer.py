@@ -362,8 +362,8 @@ def test_custom_buffer_error() -> None:
         with pytest.raises(
             TypeError,
             match=(
-                "custom ops that take buffers to do in-place updates should "
-                "use ops.inplace_custom instead"
+                "custom ops that take buffers or opaque values to do in-place "
+                "updates should use ops.inplace_custom instead"
             ),
         ):
             _ = ops.custom(

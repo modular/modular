@@ -11,7 +11,7 @@ import pytest
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, ops, TensorType, _OpaqueType
+from max.graph import Graph, TensorType, _OpaqueType, ops
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def bumper_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     bumper_graph = Graph("bumper", input_types=[counter_type], output_types=[])
     with bumper_graph:
         # TODO(MSDK-950): Avoid DCE in the graph compiler and remove return value.
-        c = ops.custom(
+        c = ops.inplace_custom(
             "bump_counter",
             [bumper_graph.inputs[0]],
             [TensorType(DType.bool, [1])],
@@ -54,7 +54,7 @@ def reader_model(session: InferenceSession, counter_ops_path: Path) -> Model:
     counter_type = _OpaqueType("Counter")
     reader_graph = Graph("reader", input_types=[counter_type], output_types=[])
     with reader_graph:
-        c = ops.custom(
+        c = ops.inplace_custom(
             "read_counter",
             [reader_graph.inputs[0]],
             [TensorType(DType.int32, [2])],
@@ -146,10 +146,10 @@ def test_pyobject_opaque(
         "bumper", input_types=[python_type], output_types=[python_type]
     )
     with bumper_graph:
-        x = ops.custom(
+        x = ops.inplace_custom(
             "bump_python_counter", [bumper_graph.inputs[0]], [python_type]
         )[0]
-        y = ops.custom("bump_python_counter", [x], [python_type])[0]
+        y = ops.inplace_custom("bump_python_counter", [x], [python_type])[0]
         bumper_graph.output(y)
     bumper_compiled = session.load(
         bumper_graph, custom_extensions=counter_ops_path

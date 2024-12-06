@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Operations for invoking user-defined operations."""
 
+from __future__ import annotations
+
 from typing import Iterable
 
 from max.mlir import StringAttr
@@ -12,7 +14,7 @@ from max.mlir.dialects import mo
 
 from ..graph import Graph
 from ..type import Type, _ChainType
-from ..value import BufferValue, Value
+from ..value import BufferValue, Value, _OpaqueValue
 
 
 def custom(
@@ -36,10 +38,10 @@ def custom(
     graph = Graph.current
     symbol_attr = StringAttr.get(name, graph._context)
 
-    if any(isinstance(val, BufferValue) for val in values):
+    if any(isinstance(val, (BufferValue, _OpaqueValue)) for val in values):
         msg = (
-            "custom ops that take buffers to do in-place updates should use "
-            "ops.inplace_custom instead"
+            "custom ops that take buffers or opaque values to do in-place "
+            "updates should use ops.inplace_custom instead"
         )
         raise TypeError(msg)
 
@@ -48,7 +50,9 @@ def custom(
     )
 
 
-def inplace_custom(name: str, values: Iterable[Value]) -> None:
+def inplace_custom(
+    name: str, values: Iterable[Value], out_types: Iterable[Type] | None = None
+) -> list[Value]:
     """Creates a node to execute an in-place custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with
@@ -67,20 +71,25 @@ def inplace_custom(name: str, values: Iterable[Value]) -> None:
     #
     # Until that switch is made check that at least one input to the custom op
     # is a BufferValue to provide some level of safety.
-    if not any(isinstance(val, BufferValue) for val in values):
+    if not any(isinstance(val, (BufferValue, _OpaqueValue)) for val in values):
         msg = (
-            "expected at least one BufferValue as input to an in-place custom "
-            "op"
+            "expected at least one BufferValue or _OpaqueValue as input to an "
+            "in-place custom op"
         )
         raise TypeError(msg)
+
+    # Pass empty out_types if unspecified.
+    out_mlir_types = [t.to_mlir() for t in out_types] if out_types else []
 
     graph = Graph.current
     current_chain = graph._current_chain
 
-    out_chain = graph._add_op(
+    *results, out_chain = graph._add_op(
         mo.custom,
-        results_=[_ChainType().to_mlir()],
+        results_=[*out_mlir_types, _ChainType().to_mlir()],
         operands_=[*values, current_chain],
         symbol=StringAttr.get(name, graph._context),
-    )[0]
+    )
     graph._update_chain(out_chain._mlir_value)
+
+    return results
