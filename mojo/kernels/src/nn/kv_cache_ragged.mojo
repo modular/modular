@@ -39,16 +39,6 @@ from nn.kv_cache import (
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask
 from nn.mha_score_mod import IdentityScoreMod
-from nn.kv_cache import (
-    kv_params_h1_d16_bshd,
-    kv_params_h6_d48_bshd,
-    kv_params_h8_d128_bshd,
-    kv_params_h8_d16_bshd,
-    kv_params_h8_d512_bshd,
-    kv_params_h8_d32_bshd,
-    kv_params_h8_d64_bshd,
-    kv_params_h32_d128_bshd,
-)
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -803,7 +793,9 @@ fn matmul_kv_cache_h8_d128_cont_batch_ragged[
     hidden_state: NDBuffer[type, 2, _],
     input_row_offset: NDBuffer[DType.uint32, 1, *_],
     weight: NDBuffer[type, 2, _],
-    kv_collection: ContinuousBatchingKVCacheCollection,
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h8_d128_bshd
+    ],
     layer_idx: UInt32,
     ctx: MojoCallContextPtr,
 ) raises:
