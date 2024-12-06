@@ -451,24 +451,7 @@ fn MOGGExport():
     alias _matmul_kv_cache_h8_d128_cont_batch_ragged = matmul_kv_cache_h8_d128_cont_batch_ragged
 
 
-# ===-----------------------------------------------------------------------===#
-# Data structures used in MOGG/MGP ABI
-# ===-----------------------------------------------------------------------===#
-
-
-# NOTE the layout must match `CompiledKernelABI::Tensor`
-struct ABI_Tensor:
-    var dims: UnsafePointer[Int]
-    var data: UnsafePointer[NoneType]
-
-
-# NOTE the layout must match `CompiledKernelABI::List`
-struct ABI_List:
-    var num_elems: Int
-    var elements: UnsafePointer[NoneType]
-
-
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
 # ===-----------------------------------------------------------------------===#
 
@@ -622,6 +605,26 @@ fn to_buffer[
     return NDBuffer[type, rank](data, shape_tuple, stride_tuple)
 
 
+@always_inline
+fn _to_buffer_index_list_shape[
+    type: DType, rank: Int
+](
+    data: UnsafePointer[Scalar[type]],
+    shape_tuple: IndexList[rank],
+) -> NDBuffer[
+    type, rank
+]:
+    var stride_tuple = IndexList[rank]()
+    var stride: Int = 1
+
+    @parameter
+    for i in reversed(range(rank)):
+        stride_tuple[i] = stride
+        stride *= shape_tuple[i]
+
+    return NDBuffer[type, rank](data, shape_tuple, stride_tuple)
+
+
 @register_internal("to_shape")
 @always_inline
 fn to_shape[rank: Int](shape: UnsafePointer[Int]) -> IndexList[rank]:
@@ -693,22 +696,36 @@ fn to_buffer_list[
 ) -> InlinedFixedVector[
     NDBuffer[type, rank]
 ]:
-    # Cast input list Unsafepointer
-    var abi_list_ptr = raw_list_ptr.bitcast[ABI_List]()
-    var elems_ptr = abi_list_ptr[].elements
-    var abi_tensors_ptr = elems_ptr.bitcast[ABI_Tensor]()
+    var num_elements = external_call["MGP_RT_ListSize", Int64](
+        raw_list_ptr
+    ).__int__()
+
+    var data_ptrs = InlinedFixedVector[UnsafePointer[NoneType], 0](num_elements)
+    var dim_values = InlinedFixedVector[Int64, 0](num_elements * rank)
+
+    data_ptrs.current_size = num_elements
+    dim_values.current_size = num_elements * rank
+
+    # Collect the data pointers and dimensions of each element from the list.
+    external_call["MGP_RT_ListPopulate", NoneType](
+        raw_list_ptr, data_ptrs.dynamic_data, dim_values.dynamic_data
+    )
 
     # Create output list
-    var num_elements = abi_list_ptr[].num_elems
     var out_list = InlinedFixedVector[NDBuffer[type, rank]](num_elements)
 
     # Convert individual elements of the input list into NDBuffer, and
     # accumulate the results to output list.
     for i in range(num_elements):
-        var abi_tensor_ptr = abi_tensors_ptr + i
-        var dims = abi_tensor_ptr[].dims
-        var data = abi_tensor_ptr[].data.bitcast[Scalar[type]]()
-        var buffer = to_buffer[type, rank](data, dims)
+        var data = data_ptrs[i].bitcast[Scalar[type]]()
+
+        var dims = IndexList[rank]()
+
+        @parameter
+        for dim in range(rank):
+            dims[dim] = dim_values[dim + i * rank].__int__()
+
+        var buffer = _to_buffer_index_list_shape[type, rank](data, dims)
         out_list.append(buffer)
 
     return InlinedFixedVector(out_list)

@@ -23,7 +23,7 @@ from math import (
 )
 from nn.concat import _concat_cpu, test_concat_fusion
 from random import randn, seed
-from sys import llvm_intrinsic
+from sys import llvm_intrinsic, external_call
 from sys.info import bitwidthof, simdwidthof, sizeof
 
 import compiler_internal as compiler
@@ -400,6 +400,25 @@ fn to_managed_tensor_slice[
     return ManagedTensorSlice[type, rank](data, shape_tuple, stride_tuple)
 
 
+@always_inline
+fn _to_managed_tensor_slice_index_list_shape[
+    type: DType, rank: Int
+](
+    data: UnsafePointer[Scalar[type]],
+    shape_tuple: IndexList[rank],
+) -> ManagedTensorSlice[type, rank]:
+    var stride_tuple = IndexList[rank]()
+    var stride: Int = 1
+
+    @parameter
+    for i in reversed(range(rank)):
+        # Start from the back so we can accumulate the strides.
+        stride_tuple[i] = stride
+        stride *= shape_tuple[i]
+
+    return ManagedTensorSlice[type, rank](data, shape_tuple, stride_tuple)
+
+
 # Extract a value from a shape.
 @register_internal_override("get_scalar_from_ndbuffer", 1)
 @always_inline
@@ -540,24 +559,7 @@ fn reduce_shape[
     return output_shape
 
 
-# ===-----------------------------------------------------------------------===#
-# Data structures used in MOGG/MGP ABI
-# ===-----------------------------------------------------------------------===#
-
-
-# NOTE the layout must match `CompiledKernelABI::Tensor`
-struct ABI_Tensor:
-    var dims: UnsafePointer[Int]
-    var data: UnsafePointer[NoneType]
-
-
-# NOTE the layout must match `CompiledKernelABI::List`
-struct ABI_List:
-    var num_elems: Int
-    var elements: UnsafePointer[NoneType]
-
-
-# ===-----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------===#
 # Elementwise Kernels
 # ===-----------------------------------------------------------------------===#
 
@@ -4432,13 +4434,22 @@ fn to_managed_tensor_slice_list[
 ) -> InlinedFixedVector[
     ManagedTensorSlice[type, rank]
 ]:
-    # Cast input list Unsafepointer
-    var abi_list_ptr = raw_list_ptr.bitcast[ABI_List]()
-    var elems_ptr = abi_list_ptr[].elements
-    var abi_tensors_ptr = elems_ptr.bitcast[ABI_Tensor]()
+    var num_elements = external_call["MGP_RT_ListSize", Int64](
+        raw_list_ptr
+    ).__int__()
+
+    var data_ptrs = InlinedFixedVector[UnsafePointer[NoneType], 0](num_elements)
+    var dim_values = InlinedFixedVector[Int64, 0](num_elements * rank)
+
+    data_ptrs.current_size = num_elements
+    dim_values.current_size = num_elements * rank
+
+    # Collect the data pointers and dimensions of each element from the list.
+    external_call["MGP_RT_ListPopulate", NoneType](
+        raw_list_ptr, data_ptrs.dynamic_data, dim_values.dynamic_data
+    )
 
     # Create output list
-    var num_elements = abi_list_ptr[].num_elems
     var out_list = InlinedFixedVector[ManagedTensorSlice[type, rank]](
         num_elements
     )
@@ -4446,10 +4457,17 @@ fn to_managed_tensor_slice_list[
     # Convert individual elements of the input list into NDBuffer, and
     # accumulate the results to output list.
     for i in range(num_elements):
-        var abi_tensor_ptr = abi_tensors_ptr + i
-        var dims = abi_tensor_ptr[].dims
-        var data = abi_tensor_ptr[].data.bitcast[Scalar[type]]()
-        var buffer = to_managed_tensor_slice[type, rank](data, dims)
+        var data = data_ptrs[i].bitcast[Scalar[type]]()
+
+        var dims = IndexList[rank]()
+
+        @parameter
+        for dim in range(rank):
+            dims[dim] = dim_values[dim + i * rank].__int__()
+
+        var buffer = _to_managed_tensor_slice_index_list_shape[type, rank](
+            data, dims
+        )
         out_list.append(buffer)
 
     return InlinedFixedVector(out_list)
