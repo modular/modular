@@ -243,9 +243,12 @@ struct DeviceBufferV2[type: DType](Sized):
         )
 
     fn __len__(self) -> Int:
-        # int64_t AsyncRT_DeviceBuffer_len(const DeviceBuffer *buffer)
-        return external_call["AsyncRT_DeviceBuffer_len", Int, _DeviceBufferPtr](
-            self._handle
+        # int64_t AsyncRT_DeviceBuffer_bytesize(const DeviceBuffer *buffer)
+        return (
+            external_call[
+                "AsyncRT_DeviceBuffer_bytesize", Int, _DeviceBufferPtr
+            ](self._handle)
+            // sizeof[type]()
         )
 
     @always_inline
@@ -1186,7 +1189,7 @@ struct DeviceContextV2:
         else:
             value = bitcast[DType.uint32, 1](val)
 
-        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint32_t val, size_t elem_size)
+        # const char *AsyncRT_DeviceContext_setMemory_async(const DeviceContext *ctx, const DeviceBuffer *dst, uint32_t val, size_t val_size)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_setMemory_async",
@@ -1222,7 +1225,7 @@ struct DeviceContextV2:
         else:
             value = bitcast[DType.uint32, 1](val)
 
-        # const char *AsyncRT_DeviceContext_setMemory_sync(const DeviceContext *ctx, const DeviceBuffer *dst, uint32_t val, size_t elem_size)
+        # const char *AsyncRT_DeviceContext_setMemory_sync(const DeviceContext *ctx, const DeviceBuffer *dst, uint32_t val, size_t val_size)
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_setMemory_sync",
