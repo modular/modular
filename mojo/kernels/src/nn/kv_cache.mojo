@@ -1435,6 +1435,147 @@ fn flash_attention_kv_cache_h8_d64_bshd[
     )
 
 
+@register_internal("print_kv_cache_cont_batch_h16_d128")
+def print_kv_cache_cont_batch_h16_d128[
+    target: StringLiteral
+](
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        DType.float32, KVCacheStaticParams(num_heads=16, head_size=128)
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[DType.float32, 1, *_],
+    context: MojoCallContextPtr,
+):
+    print_kv_cache_cont_batch_generic[target](
+        valid_lengths, kv_collection, layer_idx, context
+    )
+
+
+@register_internal("print_kv_cache_cont_batch_h32_d128")
+def print_kv_cache_cont_batch_h32_d128[
+    target: StringLiteral
+](
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        DType.float32, KVCacheStaticParams(num_heads=32, head_size=128)
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[DType.float32, 1, *_],
+    context: MojoCallContextPtr,
+):
+    print_kv_cache_cont_batch_generic[target](
+        valid_lengths, kv_collection, layer_idx, context
+    )
+
+
+def print_kv_cache_cont_batch_generic[
+    target: StringLiteral, type: DType, kv_params: KVCacheStaticParams
+](
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
+    layer_idx: UInt32,
+    context: MojoCallContextPtr,
+):
+    var blocks_ptr = UnsafePointer[Scalar[type]].alloc(
+        kv_collection.blocks.num_elements()
+    )
+    var blocks_host_nd = __type_of(kv_collection.blocks)(
+        blocks_ptr, kv_collection.blocks.dynamic_shape
+    )
+    var dev_ctx = context.get_device_context()
+    dev_ctx.enqueue_copy_from_device(
+        blocks_host_nd.data,
+        kv_collection.blocks.data,
+        kv_collection.blocks.num_elements(),
+    )
+
+    var cache_lengths_ptr = UnsafePointer[UInt32].alloc(
+        kv_collection.cache_lengths.num_elements()
+    )
+    var cache_lengths_host_nd = __type_of(kv_collection.cache_lengths)(
+        cache_lengths_ptr, kv_collection.cache_lengths.dynamic_shape
+    )
+    dev_ctx.enqueue_copy_from_device(
+        cache_lengths_host_nd.data,
+        kv_collection.cache_lengths.data,
+        kv_collection.cache_lengths.num_elements(),
+    )
+
+    var lookup_table_ptr = UnsafePointer[UInt32].alloc(
+        kv_collection.lookup_table.num_elements()
+    )
+    var lookup_table_host_nd = __type_of(kv_collection.lookup_table)(
+        lookup_table_ptr, kv_collection.lookup_table.dynamic_shape
+    )
+    dev_ctx.enqueue_copy_from_device(
+        lookup_table_host_nd.data,
+        kv_collection.lookup_table.data,
+        kv_collection.lookup_table.num_elements(),
+    )
+
+    var host_kv_collection = __type_of(kv_collection)(
+        blocks_host_nd,
+        cache_lengths_host_nd,
+        lookup_table_host_nd,
+        kv_collection.is_cache_empty,
+        kv_collection.seq_ids,
+    )
+
+    var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(
+        valid_lengths.num_elements()
+    )
+    var valid_lengths_host_nd = __type_of(valid_lengths)(
+        valid_lengths_host_ptr, valid_lengths.dynamic_shape
+    )
+    dev_ctx.enqueue_copy_from_device(
+        valid_lengths_host_nd.data,
+        valid_lengths.data,
+        valid_lengths.num_elements(),
+    )
+
+    var k_cache = host_kv_collection.get_key_cache[
+        host_kv_collection.CacheType
+    ](int(layer_idx))
+    var v_cache = host_kv_collection.get_value_cache[
+        host_kv_collection.CacheType
+    ](int(layer_idx))
+    print("K:")
+    for b_idx in range(host_kv_collection.batch_size):
+        for t_idx in range(
+            valid_lengths_host_nd[b_idx] + k_cache.cache_length(b_idx)
+        ):
+            for h in range(host_kv_collection.kv_params.num_heads):
+                for hd in range(host_kv_collection.kv_params.head_size):
+                    print(
+                        k_cache.load[host_kv_collection.type, width=1](
+                            int(b_idx), int(h), int(t_idx), int(hd)
+                        ),
+                        end=", ",
+                    )
+            print()
+
+    print("V:")
+    for b_idx in range(host_kv_collection.batch_size):
+        for t_idx in range(
+            valid_lengths_host_nd[b_idx] + k_cache.cache_length(b_idx)
+        ):
+            for h in range(host_kv_collection.kv_params.num_heads):
+                for hd in range(host_kv_collection.kv_params.head_size):
+                    print(
+                        v_cache.load[DType.float32, width=1](
+                            int(b_idx), int(h), int(t_idx), int(hd)
+                        ),
+                        end=", ",
+                    )
+            print()
+
+    blocks_host_nd.data.free()
+    cache_lengths_host_nd.data.free()
+    lookup_table_host_nd.data.free()
+    valid_lengths_host_nd.data.free()
+
+
 @always_inline
 fn generic_flash_attention_kv_cache_continuous_batch[
     target: StringLiteral, type: DType
