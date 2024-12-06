@@ -219,7 +219,10 @@ class SpecInstance:
                 defines_str in KBENCH_CACHE.keys()
                 and os.path.exists(KBENCH_CACHE.get(defines_str))
             )
-            print(f"binary: {defines_str} found in cache: {found_in_cache}")
+            print(
+                f"binary: {file_abs_path.stem} {defines_str} found in cache:"
+                f" {found_in_cache}"
+            )
             print(f"vars  : {vars}")
 
             if not found_in_cache:

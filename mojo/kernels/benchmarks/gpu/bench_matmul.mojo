@@ -29,9 +29,6 @@ from gpu.host.info import DEFAULT_GPU_ARCH
 
 fn _get_run_name[
     type: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
     *,
     transpose_b: Bool,
     cache_busting: Bool,
@@ -47,20 +44,10 @@ fn _get_run_name[
     # M
     name += str(shape_c_dim[0])
     # N
-    name += (
-        "_dynamic"
-        + " x "
-        + str(shape_c_dim[1]) if shape_c.at[0]().is_dynamic() else " x "
-        + str(shape_c_dim[1])
-    )
+    name += " x " + str(shape_c_dim[1])
     # K
-    name += (
-        "_dynamic"
-        + " x "
-        + str(shape_a_dim[1]) if shape_c.at[1]().is_dynamic() else " x "
-        + str(shape_a_dim[1])
-    )
-    name += "_dynamic" if shape_a.at[1]().is_dynamic() else ""
+    name += " x " + str(shape_a_dim[1])
+    # name += "_dynamic" if shape_a.at[1]().is_dynamic() else ""
     name += " transpose_b" if transpose_b else ""
     name += " cache_busting" if cache_busting else ""
     return name
@@ -68,9 +55,6 @@ fn _get_run_name[
 
 fn bench_matmul[
     dtype: DType,
-    shape_c: DimList,
-    shape_a: DimList,
-    shape_b: DimList,
     *,
     cache_busting: Bool,
     use_cublas: Bool,
@@ -123,13 +107,13 @@ fn bench_matmul[
                 offset_a = (iteration * stride_a) % cache_a
                 offset_b = (iteration * stride_b) % cache_b
                 offset_c = (iteration * stride_c) % cache_c
-            var tensor_a = NDBuffer[dtype, 2, shape_a](
+            var tensor_a = NDBuffer[dtype, 2](
                 buffer_a.ptr + offset_a, shape_a_dim
             )
-            var tensor_b = NDBuffer[dtype, 2, shape_b](
+            var tensor_b = NDBuffer[dtype, 2](
                 buffer_b.ptr + offset_b, shape_b_dim
             )
-            var tensor_c = NDBuffer[dtype, 2, shape_c](
+            var tensor_c = NDBuffer[dtype, 2](
                 buffer_c.ptr + offset_c, shape_c_dim
             )
 
@@ -152,13 +136,14 @@ fn bench_matmul[
 
         b.iter_custom[kernel_launch](ctx)
 
+    alias shape_c_ = DimList(Dim(), Dim())
+    alias shape_a_ = DimList(Dim(), Dim())
+    alias shape_b_ = DimList(Dim(), Dim())
+
     b.bench_function[bench_func](
         BenchId(
             _get_run_name[
                 dtype,
-                shape_c,
-                shape_a,
-                shape_b,
                 transpose_b=transpose_b,
                 cache_busting=cache_busting,
                 use_cublas=use_cublas,
@@ -189,9 +174,6 @@ fn create_matmul_bench[
 ](
     ctx: DeviceContext, mut b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
 ) raises:
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
     var dynamic_b_shape = (n.value, k.value) if transpose_b else (
         k.value,
         n.value,
@@ -199,9 +181,6 @@ fn create_matmul_bench[
 
     bench_matmul[
         dtype,
-        DimList(m.dim, n.dim),
-        DimList(m.dim, k.dim),
-        static_b_shape,
         transpose_b=transpose_b,
         cache_busting=cache_busting,
         use_cublas=use_cublas,
@@ -212,8 +191,8 @@ fn main() raises:
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
     var M = int(arg_parse("M", 1))
-    alias N = env_get_int["N", 1]()
-    alias K = env_get_int["K", 1]()
+    var N = int(arg_parse("N", 1))
+    var K = int(arg_parse("K", 1))
 
     alias cache_busting = True
     alias transpose_b = True
@@ -231,8 +210,8 @@ fn main() raises:
             ctx,
             m,
             dynamic(M),
-            static[N](),
-            static[K](),
+            dynamic(N),
+            dynamic(K),
         )
 
     m.dump_report()
