@@ -683,6 +683,7 @@ def run(
 
     t_elapsed_total = time() - t_start_total
     output_lines = []
+    output_dict = {}
     ########################################################
     # Elapsed time per spec
     build_df = pd.DataFrame(
@@ -692,6 +693,7 @@ def run(
     build_df.insert(len(build_df.columns), "iters", 1)
     build_df["met (ms)"] = build_df["met (ms)"].fillna(0)
 
+    output_dict["build_df"] = build_df
     if verbose:
         output_lines += [LINE]
         output_lines += ["Build time stats:"]
@@ -732,14 +734,16 @@ def run(
         merged_df = pd.concat(valid_specs, axis=0, ignore_index=True)
         ########################################################
         # Get the name of column 2 (met (ms))
+        output_dict["merged_df"] = merged_df
         met_col = merged_df.columns[2]
-
         if mode == KBENCH_MODE.TUNE:
-            sorted_df = merged_df.sort_values([met_col], ascending=True)
-            output_lines += [sorted_df.to_string(index=False)]
+            tune_df = merged_df.sort_values([met_col], ascending=True)
+
+            output_dict["tune_df"] = tune_df
+            output_lines += [tune_df.to_string(index=False)]
             # Index to top spec after sort
-            top_spec_idx = sorted_df.iloc[0].mesh_idx
-            runtime = sorted_df.iloc[0][met_col]
+            top_spec_idx = tune_df.iloc[0].mesh_idx
+            runtime = tune_df.iloc[0][met_col]
 
             output_lines += [LINE]
             output_lines += ["Spec with the best measured time:"]
@@ -757,6 +761,8 @@ def run(
     print(output_str)
 
     if output_path:
+        store_pickle(f"{output_path}.pkl", output_dict)
+
         # KBENCH_MODE.RUN overrides everything else and just dumps the running results.
         # THIS IS CRITICAL FOR CI automated kernel benchmarks workflow.
         if mode == KBENCH_MODE.RUN and valid_specs:
