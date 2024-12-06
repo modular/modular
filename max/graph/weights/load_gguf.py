@@ -27,6 +27,7 @@ from max.dtype import DType
 from ..quantization import QuantizationEncoding
 from ..type import ShapeLike
 from ..weight import Weight
+from .weights import Weights
 
 _GGML_TO_DTYPE: dict[gguf.GGMLQuantizationType, DType] = {}
 _FROM_QUANTIZED_GGML_DTYPES = {}
@@ -90,7 +91,7 @@ def _check_gguf():
         }
 
 
-class GGUFWeights:
+class GGUFWeights(Weights):
     _reader: gguf.GGUFReader
     _tensors: dict[str, gguf.ReaderTensor]
     _prefix: str
@@ -163,7 +164,15 @@ class GGUFWeights:
             if name.startswith(self._prefix):
                 yield tensor
 
-    def raw_tensor(self) -> gguf.ReaderTensor:
+    def raw_tensor(self) -> np.ndarray:
+        """Returns the numpy tensor corresponding to this weights object.
+
+        Raises:
+            KeyError if this weights object isn't a tensor.
+        """
+        return self._raw_tensor().data
+
+    def _raw_tensor(self) -> gguf.ReaderTensor:
         """Returns the GGUF tensor corresponding to this weights object.
 
         Raises:
@@ -176,6 +185,9 @@ class GGUFWeights:
             )
 
         return self._tensors[self._prefix]
+
+    def exists(self) -> bool:
+        return self._prefix in self._tensors
 
     def _parse_weight(self, tensor: gguf.ReaderTensor) -> Weight:
         # Dims are reversed for some reason:
@@ -208,7 +220,7 @@ class GGUFWeights:
         quantization_encoding: Optional[QuantizationEncoding] = None,
     ) -> Weight:
         """Creates and optionally validates a new Weight."""
-        tensor = self.raw_tensor()
+        tensor = self._raw_tensor()
         weight = self._parse_weight(tensor)
         self._allocated[self._prefix] = tensor.data
 

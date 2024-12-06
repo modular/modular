@@ -9,7 +9,7 @@ from .load_gguf import GGUFWeights
 from .load_pytorch import PytorchWeights
 from .load_safetensors import SafetensorWeights
 from .random_weights import RandomWeights
-from .weights import Weights
+from .weights import Weights, WeightsConverter
 
 __all__ = [
     "GGUFWeights",
@@ -17,4 +17,5 @@ __all__ = [
     "RandomWeights",
     "SafetensorWeights",
     "Weights",
+    "WeightsConverter",
 ]

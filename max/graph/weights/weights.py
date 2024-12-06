@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from typing import Optional, Protocol, TypeVar
+from pathlib import Path
+from typing import Any, Optional, Protocol, TypeVar
 
 import numpy.typing as npt
 from max.dtype import DType
@@ -42,8 +43,20 @@ class Weights(Protocol):
 
     def __getitem__(self: _Self, idx: int | str) -> _Self: ...
 
+    def exists(self) -> bool:
+        "Returns whether a weight with this exact name exists."
+        ...
+
+    def raw_tensor(self) -> npt.NDArray[Any]:
+        """Returns the numpy tensor corresponding to this weights object.
+
+        Raises:
+            KeyError if this weights object isn't a tensor.
+        """
+        ...
+
     def allocate(
-        self: _Self,
+        self,
         dtype: Optional[DType] = None,
         shape: Optional[ShapeLike] = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
@@ -54,4 +67,11 @@ class Weights(Protocol):
     @property
     def allocated_weights(self) -> dict[str, npt.NDArray]:
         """Gets the values of all weights that were allocated previously."""
+        ...
+
+
+class WeightsConverter(Protocol):
+    @staticmethod
+    def load_weights(weight_path: list[Path], **kwargs) -> Weights:
+        """Loads the converted weights from a path."""
         ...

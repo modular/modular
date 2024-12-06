@@ -163,7 +163,7 @@ class PytorchWeights:
                 yield tensor_info
 
     def raw_tensor(self) -> Any:
-        """Returns the GGUF tensor corresponding to this weights object.
+        """Returns the tensor corresponding to this weights object.
 
         Raises:
             KeyError if this weights object isn't a tensor.
@@ -175,6 +175,9 @@ class PytorchWeights:
             )
 
         return self._tensor_infos[self._prefix]
+
+    def exists(self) -> bool:
+        return self._prefix in self._tensor_infos
 
     def allocate(
         self,
