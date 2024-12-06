@@ -6,10 +6,11 @@
 
 """MAX profiler python package.
 
-There are 2 ways to profile currently: context manager or decorator.
-(Decorators need to have the MODULAR_ENABLE_PROFILING = 1 env variable set.)
+There are 3 ways to profile currently: context manager, decorator, and manual stack.
 
-Context manager:
+@tracing and Tracer need to have the MODULAR_ENABLE_PROFILING = 1 env variable set.
+
+`Trace` Context manager:
 
 ```python
 with Trace("foo", color="blue"):
@@ -18,7 +19,7 @@ with Trace("foo", color="blue"):
 # The profiling span ends when the context manager exits.
 ```
 
-Decorator:
+`@traced` Decorator:
 
 ```python
 @traced(message="baz", color="red")
@@ -31,13 +32,33 @@ def bar() -> None:
     # The span is named "bar".
     pass
 ```
+
+`Tracer` Manual Stack manager (which can also be used as a context manager):
+
+Note: The `Tracer` object can also be used as a context manager the same way the
+`Trace` context manager is used.
+
+```python
+tracer = Tracer("foo", color="blue")
+tracer.push("bar")
+# ...
+tracer.pop()
+
+with Tracer("foo", color="blue") as tracer:
+    # The parent span is named "foo".
+    tracer.push("bar")
+    # The sub-span is named "bar".
+    tracer.pop()
+```
+
 """
 
 from max._profiler import Trace, is_profiling_enabled
-from max.profiler.tracing import traced
+from max.profiler.tracing import Tracer, traced
 
 __all__ = [
     "Trace",
-    "traced",
+    "Tracer",
     "is_profiling_enabled",
+    "traced",
 ]

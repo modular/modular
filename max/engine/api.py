@@ -22,6 +22,7 @@ from max._engine import TensorSpec as _TensorSpec
 from max._engine import TorchInputSpec as _TorchInputSpec
 from max.driver import CPU, Device, DLPackArray, Tensor
 from max.dtype import DType
+from max.profiler import Tracer, traced
 
 InputShape = Optional[List[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
@@ -115,6 +116,7 @@ class Model:
         """
         self._impl._export_mef(path)
 
+    @traced
     def execute(
         self,
         *args: InputType,
@@ -164,6 +166,7 @@ class Model:
               types, i.e. :obj:`np.ndarray`, :obj:`torch.Tensor`, and
               :obj:`max.driver.Tensor`.
         """
+        tracer = Tracer()
         input_impls: list[Union[_Tensor, MojoValue]] = []
 
         input_idx = 0
@@ -197,6 +200,7 @@ class Model:
                     f" currently support inputs of the type {type(arg)}."
                 )
             if copy_inputs_to_device:
+                tracer.push(f"copy_inputs_to_device_{input_idx}")
                 input_devices = self.input_devices
                 if input_idx >= len(input_devices):
                     raise ValueError(
@@ -205,14 +209,17 @@ class Model:
                     )
                 tensor = tensor.to(input_devices[input_idx])
                 input_idx = input_idx + 1
+                tracer.pop()
             input_impls.append(tensor._impl)
         results = self._impl.execute_device_tensors(input_impls)
 
         processed_results = []
         for idx, result in enumerate(results):
+            tracer.push(f"process_result_{idx}")
             # If the output is a MojoValue, we return it directly.
             if not isinstance(result, _Tensor):
                 processed_results.append(result)
+                tracer.pop()
                 continue
             wrapped_tensor = Tensor._from_impl(result)
             # If an output device is provided and it is different from the
@@ -221,6 +228,7 @@ class Model:
             if output_device and output_device != self.output_devices[idx]:
                 wrapped_tensor = wrapped_tensor.copy(output_device)
             processed_results.append(wrapped_tensor)
+            tracer.pop()
         return processed_results
 
     def __call__(
