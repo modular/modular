@@ -7,7 +7,7 @@
 
 from math import exp2, iota
 
-from nn.mha_score_mod import AddFactorMod, AlibiScoreMod, IdentityScoreMod
+from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from testing import assert_equal
 
 from utils.index import Index
@@ -22,8 +22,8 @@ fn generate_alibi_bias[
     q_idx: SIMD[DType.index, width],
     k_idx: SIMD[DType.index, width],
 ) -> SIMD[type, width]:
-    var scale = exp2(-((head_idx + 1).cast[type]() * 8.0 // num_heads))
-    var bias = (q_idx - k_idx).cast[type]() * scale
+    var scale = exp2(-((head_idx + 1).cast[type]() * 8.0 / num_heads))
+    var bias = (q_idx - k_idx - iota[DType.index, width]()).cast[type]() * scale
     return bias
 
 
@@ -33,7 +33,7 @@ def test_alibi_score_mod():
     alias width = 4
     alias num_heads = 4
 
-    var alibi_mod = AlibiScoreMod(num_heads)
+    var alibi_mod = AlibiScoreMod[num_heads]()
 
     var head_idx = SIMD[DType.index, width](0)
     var q_idx = SIMD[DType.index, width](2)
@@ -68,30 +68,6 @@ def test_identity_score_mod():
     assert_equal(reference, result)
 
 
-def test_add_factor_mod():
-    print("test_add_factor_mod")
-    alias type = DType.float32
-    alias width = 4
-    alias add_factor = 1500000
-
-    var add_factor_mod = AddFactorMod[add_factor]()
-    var q_idx = SIMD[DType.index, width](2)
-    var k_idx = SIMD[DType.index, width](1)
-
-    var score_vec = SIMD[type, width](0, 1, 2, 3)
-
-    var reference = (q_idx >= (k_idx + iota[DType.index, width]())).select(
-        score_vec + add_factor,
-        score_vec,
-    )
-    var result = add_factor_mod.score_mod(
-        Index(0, 0, 2, 1), SIMD[type, width](0, 1, 2, 3)
-    )
-
-    assert_equal(reference, result)
-
-
 def main():
     test_alibi_score_mod()
     test_identity_score_mod()
-    test_add_factor_mod()
