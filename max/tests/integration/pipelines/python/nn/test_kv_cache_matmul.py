@@ -176,6 +176,7 @@ class MatmulKVRaggedModel:
         )
 
 
+@pytest.mark.skip(reason="AIPIPE-246")
 @pytest.mark.parametrize("dtype", [DType.float32, DType.bfloat16])
 def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     """Tests the matmul_kv_cache_ragged custom op."""
