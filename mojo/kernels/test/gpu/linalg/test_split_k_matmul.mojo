@@ -29,7 +29,7 @@ from internal_utils import (
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout import UNKNOWN_VALUE
 from linalg._multistage_gemm_gpu import multistage_gemm_kernel
-from linalg.gpu_blas import cublas_matmul
+from linalg.gpu_blas import vendor_matmul
 from linalg.utils_gpu import MatmulKernels
 from memory import UnsafePointer
 
@@ -187,7 +187,7 @@ fn test_split_k_multistage_gemm[
     var handle = UnsafePointer[cublasContext]()
     check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
     check_cublas_error(
-        cublas_matmul(
+        vendor_matmul(
             handle,
             c_dev_list[0].tensor,
             a_submat[0].tensor,

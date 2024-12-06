@@ -37,7 +37,7 @@ from internal_utils import (
 )
 from internal_utils._measure import cosine
 from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.gpu_blas import cublas_matmul
+from linalg.gpu_blas import vendor_matmul
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels
@@ -213,7 +213,7 @@ fn test[
     var handle = UnsafePointer[cublasContext]()
     check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
     check_cublas_error(
-        cublas_matmul(
+        vendor_matmul(
             handle,
             c_device_ref.tensor,
             a_device.tensor,
