@@ -12,6 +12,7 @@ from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, ops
+from max.mlir import StringAttr
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
@@ -199,12 +200,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
             (2 * (kv_params.n_kv_heads)) * kv_params.head_dim,
         ],
     )
-    input_row_offset_type = TensorType(
-        DType.uint32,
-        [
-            "input_row_offset_len",
-        ],
-    )
+    input_row_offset_type = TensorType(DType.uint32, ["input_row_offset_len"])
 
     kv_manager = ContinuousBatchingKVCacheManager(
         kv_params,
@@ -262,3 +258,64 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
     )
     def test_runs_without_nan(execute, inputs, _torch_inputs):
         execute(list(inputs))
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [DType.float32, DType.bfloat16],
+)
+def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
+    """Tests that staging matmul_kv_cache_ragged threads chains."""
+    # Set up hyperparameters for the test.
+    num_q_heads = 32
+    kv_params = KVCacheParams(
+        dtype=dtype,
+        n_kv_heads=8,
+        head_dim=128,
+        cache_strategy=KVCacheStrategy.CONTINUOUS,
+    )
+
+    # Set MLIR types for the graph.
+    hidden_state_type = TensorType(
+        dtype, ["total_seq_len", num_q_heads * kv_params.head_dim]
+    )
+    wkv_type = TensorType(
+        dtype,
+        [
+            num_q_heads * kv_params.head_dim,
+            (2 * (kv_params.n_kv_heads)) * kv_params.head_dim,
+        ],
+    )
+    input_row_offset_type = TensorType(DType.uint32, ["input_row_offset_len"])
+
+    kv_manager = ContinuousBatchingKVCacheManager(
+        kv_params,
+        max_cache_batch_size=1,
+        max_seq_len=1,
+        num_layers=1,
+        devices=[CPU()],
+        session=InferenceSession(),
+    )
+    fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
+    # Stage the fetch op + custom matmul KV cache ragged op graph.
+    graph = Graph(
+        "matmul_kv_cache_ragged",
+        forward=MatmulKVRaggedModel(fetch_layer, kv_params, layer_idx=0),
+        input_types=[
+            hidden_state_type,
+            input_row_offset_type,
+            wkv_type,
+            *kv_manager.input_symbols()[0],
+        ],
+    )
+    matmul_kv_cache_op = [
+        op
+        for op in graph._mlir_op.regions[0].blocks[0].operations
+        if op.name == "mo.custom"
+        and "matmul_kv_cache" in StringAttr(op.attributes["symbol"]).value
+    ][0]
+    assert len(matmul_kv_cache_op.results) == 1
+    assert "!mo.chain" in str(matmul_kv_cache_op.results[0].type)
+
+    matmul_args = matmul_kv_cache_op.operands
+    assert "!mo.chain" in str(matmul_args[len(matmul_args) - 1].type)
