@@ -110,13 +110,8 @@ async def test_pipeline_static_batch_same_prompt_same_output(
         batch_id = str(i)
         context_batch[batch_id] = context
 
-    cur_tokens = len(context.tokens)
-    max_tokens = context.max_tokens
-    assert all(len(c.tokens) == cur_tokens for c in context_batch.values())
-    assert all(c.max_tokens == max_tokens for c in context_batch.values())
-
     # Execute these batches until they are complete
-    for _ in range(cur_tokens, max_tokens):
+    for _ in range(context.current_length, context.max_tokens):
         response = pipeline.next_token(context_batch)[0]
         assert context_batch.keys() == response.keys()
         response_tokens = list(response.values())
@@ -179,15 +174,15 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
         batch_id = str(i)
         context_batch[batch_id] = context
 
-    cur_tokens = len(context.tokens)
-    assert all(len(c.tokens) == cur_tokens for c in context_batch.values())
     max_tokens = max(c.max_tokens for c in context_batch.values())
-    print(f"CurTokens: {cur_tokens}, MaxTokensAcrossAllBatches: {max_tokens}")
+    print(
+        f"CurTokens: {context.current_length}, MaxTokensAcrossAllBatches: {max_tokens}"
+    )
 
     # Execute batches until they are complete
-    for i in range(cur_tokens, max_tokens):
+    for i in range(context.current_length, max_tokens):
         batch_ids_with_lengths = {
-            batch_id: len(c.tokens) for batch_id, c in context_batch.items()
+            batch_id: c.current_length for batch_id, c in context_batch.items()
         }
         print(f"{i}-Input: {batch_ids_with_lengths}")
         response = pipeline.next_token(context_batch)[0]
@@ -196,10 +191,10 @@ async def test_pipeline_static_batch_same_prompt_different_max_new_tokens(
         for batch_id in completed_batch_ids:
             context = context_batch[batch_id]
             print(
-                f"Completed {batch_id}, Tokens: {len(context.tokens)}, Max:"
+                f"Completed {batch_id}, Tokens: {context.current_length}, Max:"
                 f" {context.max_tokens}"
             )
-            assert len(context.tokens) > context.max_tokens
+            assert context.current_length > context.max_tokens
             del context_batch[batch_id]
 
     # The last execution must complete all batches
@@ -262,17 +257,15 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
             batch_id = str(i)
             context_batch[batch_id] = context
 
-        cur_tokens = len(context.tokens)
         max_tokens = context.max_tokens
-        assert all(len(c.tokens) == cur_tokens for c in context_batch.values())
         assert all(c.max_tokens == max_tokens for c in context_batch.values())
         print(
-            f"Batch: {batch_size} - CurTokens: {cur_tokens}, MaxTokens:"
+            f"Batch: {batch_size} - CurTokens: {context.current_length}, MaxTokens:"
             f" {max_tokens}"
         )
 
         # Execute these batches until they are complete
-        for _ in range(cur_tokens, max_tokens):
+        for _ in range(context.current_length, max_tokens):
             response = pipeline.next_token(context_batch)[0]
             assert context_batch.keys() == response.keys()
             response_tokens = list(response.values())
@@ -290,7 +283,7 @@ async def test_pipeline_dynamic_batch_same_prompt_same_output(
 
         print(
             f"Batch: {batch_size} - Completed with"
-            f" {len(context.tokens)} tokens."
+            f" {context.current_length} tokens."
         )
 
         for context in context_batch.values():

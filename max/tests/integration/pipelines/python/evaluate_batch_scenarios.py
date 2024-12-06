@@ -278,7 +278,7 @@ async def run_batch_scenario(
                             step_logger.info(
                                 "Encoded: %s, %d/%d, Completion:\n%s",
                                 batch_id,
-                                len(batch_context.tokens),
+                                batch_context.current_length,
                                 batch_context.max_tokens,
                                 batch_completions[batch_id],
                             )
@@ -328,7 +328,7 @@ async def run_batch_scenario(
                     step_logger.info(
                         "Executed: %s, %d/%d - Completion:\n%s",
                         batch_id,
-                        len(batch_context.tokens),
+                        batch_context.current_length,
                         batch_context.max_tokens,
                         batch_completions[batch_id],
                     )

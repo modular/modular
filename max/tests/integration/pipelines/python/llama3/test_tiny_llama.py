@@ -133,7 +133,7 @@ async def test_tinyllama_create_context(
 
     encoded_prompt = await pipeline_tokenizer.encode(prompt_fixture)
     prompt_len = len(encoded_prompt)
-    assert len(context.tokens) == prompt_len
+    assert context.current_length == prompt_len
 
     # Check that TextContext.seq_len is the prompt size for context encoding.
     assert context.seq_len == prompt_len
@@ -187,11 +187,10 @@ async def test_tinyllama_max_new_tokens(
             max_new_tokens=max_new_tokens_fixture,
         )
     )
-    prompt_size = len(context.tokens)
 
     # Max tokens of the context is set to prompt-size + max_new_tokens
     max_model_tokens = tinyllama_pipeline._pipeline_config.max_length
-    max_model_tokens_after_prompt = max_model_tokens - prompt_size
+    max_model_tokens_after_prompt = max_model_tokens - context.current_length
     requested_max_new_tokens = (
         max_new_tokens_fixture
         if max_new_tokens_fixture
@@ -202,7 +201,9 @@ async def test_tinyllama_max_new_tokens(
         if requested_max_new_tokens < 0
         else min(max_model_tokens_after_prompt, requested_max_new_tokens)
     )
-    assert context.max_tokens == prompt_size + configured_max_new_tokens
+    assert (
+        context.max_tokens == context.current_length + configured_max_new_tokens
+    )
 
     # Run the model for the first time.
     tokens = []
