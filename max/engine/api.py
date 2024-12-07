@@ -9,9 +9,10 @@ from __future__ import annotations
 import json
 from inspect import Parameter, Signature
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Type, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Type, Union
 
 import numpy as np
+import numpy.typing as npt
 from max._driver import Tensor as _Tensor
 from max._engine import FrameworkFormat as _FrameworkFormat
 from max._engine import InferenceSession as _InferenceSession
@@ -24,6 +25,9 @@ from max.driver import CPU, Device, DLPackArray, Tensor
 from max.dtype import DType
 from max.profiler import Tracer, traced
 
+# Manually define dlpack compatible types since MyPy isn't aware that ndarray
+# implements the protocol.
+DLPackCompatible = Union[DLPackArray, npt.NDArray]
 InputShape = Optional[List[Union[int, str, None]]]
 CustomExtensionType = Union[str, Path, Any]
 CustomExtensionsType = Union[List[CustomExtensionType], CustomExtensionType]
@@ -675,7 +679,7 @@ class InferenceSession:
         custom_extensions: CustomExtensionsType | None = None,
         custom_ops_path: str | None = None,
         input_specs: list[TorchInputSpec] | None = None,
-        weights_registry: dict[str, DLPackArray] | None = None,
+        weights_registry: Mapping[str, DLPackCompatible] | None = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
