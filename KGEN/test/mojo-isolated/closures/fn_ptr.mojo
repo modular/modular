@@ -48,7 +48,7 @@ struct Reg:
 
 
 fn top(y: fn (Reg) escaping raises -> Mem):
-    fn fn_ptr(x: Mem) -> Int:
+    fn fn_ptr(x: Mem) escaping -> Int:
         return 0
 
     var x: fn (Mem) escaping -> Int = fn_ptr

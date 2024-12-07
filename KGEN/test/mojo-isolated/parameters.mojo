@@ -15,10 +15,16 @@ struct Empty: pass
 @value
 @register_passable("trivial")
 struct DType:
-    var value: __mlir_type.`!kgen.dtype`
+    alias type = __mlir_type.`!kgen.dtype`
+    var value: Self.type
 
     alias float32 = __mlir_attr.`#kgen.dtype.constant<f32> : !kgen.dtype`
     alias int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Self.type):
+        self.value = value
 
 # CHECK-LABEL: lit.struct.decl @SIMD
 # CHECK-SAMEL <[[SIMDDT:.*]]: !DType, [[SIMDSIZE:.*]]: !Int>
@@ -393,6 +399,11 @@ fn test_upcast_trait[T: ASubTrait](tuples: StructWithTraitParam[T]):
 struct MemoryType:
     var value: Int
 
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Int):
+        self.value = value
+
 struct NonMovableMemoryType:
     var value: Int
 
@@ -467,6 +478,11 @@ struct InitSelfParam[x: InitSelfCtor]:
 @value
 struct IntBox:
     var x: Int
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Int):
+        self.x = value
 
 
 @always_inline
