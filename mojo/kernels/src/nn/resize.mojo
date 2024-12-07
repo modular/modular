@@ -24,6 +24,11 @@ struct CoordinateTransformationMode:
     alias HalfPixel1D = CoordinateTransformationMode(3)
 
     @always_inline
+    @implicit
+    fn __init__(out self, value: Int):
+        self.value = value
+
+    @always_inline
     fn __eq__(self, other: CoordinateTransformationMode) -> Bool:
         return self.value == other.value
 
@@ -66,6 +71,11 @@ struct RoundMode:
     alias HalfUp = RoundMode(1)
     alias Floor = RoundMode(2)
     alias Ceil = RoundMode(3)
+
+    @always_inline
+    @implicit
+    fn __init__(out self, value: Int):
+        self.value = value
 
     @always_inline
     fn __eq__(self, other: RoundMode) -> Bool:
