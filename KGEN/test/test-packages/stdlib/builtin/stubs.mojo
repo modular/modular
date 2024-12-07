@@ -652,7 +652,7 @@ struct Pointer[
 
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, *, _mlir_value: Self._mlir_type):
+    fn __init__(out self, _mlir_value: Self._mlir_type):
         self._value = _mlir_value
 
     @staticmethod
