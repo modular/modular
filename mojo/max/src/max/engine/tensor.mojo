@@ -90,6 +90,7 @@ struct EngineTensorView:
     var _data_ptr: UnsafePointer[NoneType]
     var _dtype: DType
 
+    @implicit
     fn __init__[type: DType](mut self, tensor: Tensor[type]):
         """Creates a non-owning view of given Tensor.
 

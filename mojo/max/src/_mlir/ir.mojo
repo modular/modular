@@ -79,6 +79,10 @@ struct Dialect(CollectionElement):
     alias cType = _c.IR.MlirDialect
     var c: Self.cType
 
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
+
     fn context(self) -> Context:
         return _c.IR.mlirDialectGetContext(self.c)
 
@@ -107,6 +111,10 @@ struct Context:
 
     fn __init__(out self):
         self.c = _c.IR.mlirContextCreateWithThreading(False)
+
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
 
     @implicit
     fn __init__(out self, threading_enabled: Bool):
@@ -201,6 +209,10 @@ struct Location(CollectionElement, Stringable):
     alias cType = _c.IR.MlirLocation
     var c: Self.cType
 
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
+
     fn __init__(mut self, ctx: Context, filename: String, line: Int, col: Int):
         self.c = _c.IR.mlirLocationFileLineColGet(
             ctx.c, StringRef(ptr=filename.unsafe_ptr()), line, col
@@ -238,6 +250,10 @@ struct Location(CollectionElement, Stringable):
 struct Module(Stringable, Writable):
     alias cType = _c.IR.MlirModule
     var c: Self.cType
+
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
 
     @implicit
     fn __init__(out self, location: Location):
@@ -662,6 +678,10 @@ struct Value(CollectionElement, Stringable):
     alias cType = _c.IR.MlirValue
     var c: Self.cType
 
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
+
     fn type(self) -> Type:
         return _c.IR.mlirValueGetType(self.c)
 
@@ -713,6 +733,10 @@ struct Attribute(CollectionElement, Stringable):
     fn __init__[T: DialectAttribute](mut self, attr: T):
         self = attr.to_mlir()
 
+    @implicit
+    fn __init__(mut self, c: Self.cType):
+        self.c = c
+
     fn context(self) -> Context:
         return _c.IR.mlirAttributeGetContext(self.c)
 
@@ -734,6 +758,10 @@ struct Attribute(CollectionElement, Stringable):
 struct Block(CollectionElement, Stringable):
     alias cType = _c.IR.MlirBlock
     var c: Self.cType
+
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
 
     @implicit
     fn __init__(out self, args: List[Type]):
@@ -801,6 +829,10 @@ struct Region(CollectionElement):
 
     fn __init__(out self):
         self.c = _c.IR.mlirRegionCreate()
+
+    @implicit
+    fn __init__(out self, c: Self.cType):
+        self.c = c
 
     fn append(self, block: Block):
         _c.IR.mlirRegionAppendOwnedBlock(self.c, block.c)

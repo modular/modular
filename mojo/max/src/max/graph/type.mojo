@@ -593,6 +593,11 @@ struct ListType(CollectionElement):
     Lists may not contain tensor elements of different ranks.
     """
 
+    @always_inline
+    @implicit
+    fn __init__(out self, eltype: TensorType):
+        self.eltype = eltype
+
     fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
         """Converts to an _mlir.Type instance.
 

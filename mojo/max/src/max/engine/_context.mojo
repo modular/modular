@@ -24,6 +24,11 @@ struct AllocatorType:
     alias CACHING = Int32(1)
 
     @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Int32):
+        self.value = value
+
+    @always_inline("nodebug")
     fn __ne__(self, rhs: Int32) -> Bool:
         return self.value != rhs.value
 
