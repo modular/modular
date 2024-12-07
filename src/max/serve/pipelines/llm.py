@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import AsyncGenerator, Callable, Generic, Optional, TypeVar
 
+import psutil
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
 from max.serve.scheduler.queues import (
     BatchingStrategy,
@@ -215,6 +216,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
 
         # Add global fanout worker.
         self.create_background_task(self.engine_queue.response_worker)
+
+        if not psutil.pid_exists(self.engine_queue.pid):
+            raise RuntimeError(
+                f"Worker process {self.engine_queue.pid} not running"
+            )
 
         self.logger.info(
             "%s: Started workers: %d tasks",
