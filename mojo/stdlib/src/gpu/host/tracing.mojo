@@ -7,6 +7,11 @@
 from collections import List, Optional
 from os import abort
 from pathlib import Path
+from sys import (
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+    has_accelerator,
+)
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import c_char
@@ -80,7 +85,7 @@ fn _get_dylib_function[
     func_name: StringLiteral, result_type: AnyTrivialRegType
 ]() -> result_type:
     return _ffi_get_dylib_function[
-        "CUDA_NVTX_LIBRARY",
+        "ROCTRACER_LIBRARY" if has_amd_gpu_accelerator() else "CUDA_NVTX_LIBRARY",
         func_name,
         _init_dylib,
         _destroy_dylib,
@@ -196,12 +201,14 @@ struct EventAttributes:
 
 
 # ===-----------------------------------------------------------------------===#
-# Binding
+# NVTX Bindings
 # ===-----------------------------------------------------------------------===#
 
 
 @register_passable("trivial")
 struct _dylib_function[fn_name: StringLiteral, type: AnyTrivialRegType]:
+    alias fn_type = type
+
     @staticmethod
     fn load() -> type:
         return _get_dylib_function[fn_name, type]()
@@ -228,6 +235,15 @@ alias _nvtxRangePushEx = _dylib_function[
 # NVTX_DECLSPEC int NVTX_API nvtxRangePop(void);
 alias _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
 
+# ===-----------------------------------------------------------------------===#
+# Bindings
+# ===-----------------------------------------------------------------------===#
+
+alias _markEx = _nvtxMarkEx
+alias _rangeStartEx = _nvtxRangeStartEx
+alias _rangeEnd = _nvtxRangeEnd
+alias _rangePushEx = _nvtxRangePushEx
+alias _rangePop = _nvtxRangePop
 
 # ===-----------------------------------------------------------------------===#
 # Functions
@@ -235,11 +251,14 @@ alias _nvtxRangePop = _dylib_function["nvtxRangePop", fn () -> Int32]
 
 
 fn _is_enabled_details() -> Bool:
-    return env_get_int["KERNEL_E2E_GPU_PROFILING_DETAILED", 0]() == 1
+    return (
+        has_accelerator()
+        and env_get_int["KERNEL_E2E_GPU_PROFILING_DETAILED", 0]() == 1
+    )
 
 
 fn _is_enabled() -> Bool:
-    return (
+    return has_accelerator() and (
         env_get_int["KERNEL_E2E_GPU_PROFILING", 0]() == 1
         or _is_enabled_details()
     )
@@ -260,7 +279,7 @@ fn _start_range(
     if _is_disabled():
         return 0
     var info = EventAttributes(message=message, color=color, category=category)
-    return _nvtxRangeStartEx.load()(UnsafePointer.address_of(info._value))
+    return _rangeStartEx.load()(UnsafePointer.address_of(info._value))
 
 
 @always_inline
@@ -268,7 +287,7 @@ fn _end_range(id: RangeID):
     @parameter
     if _is_disabled():
         return
-    _nvtxRangeEnd.load()(int(id))
+    _rangeEnd.load()(int(id))
 
 
 @always_inline
@@ -282,7 +301,7 @@ fn _mark(
     if _is_disabled():
         return
     var info = EventAttributes(message=message, color=color, category=category)
-    _nvtxMarkEx.load()(UnsafePointer.address_of(info._value))
+    _markEx.load()(UnsafePointer.address_of(info._value))
 
 
 struct Range:
@@ -304,8 +323,8 @@ struct Range:
             message=message, color=color, category=category
         )
         self._id = 0
-        self._start_fn = _nvtxRangeStartEx.load()
-        self._end_fn = _nvtxRangeEnd.load()
+        self._start_fn = _rangeStartEx.load()
+        self._end_fn = _rangeEnd.load()
 
     @always_inline
     fn __enter__(mut self):
@@ -347,8 +366,8 @@ struct RangeStack:
         self._info = EventAttributes(
             message=message, color=color, category=category
         )
-        self._push_fn = _nvtxRangePushEx.load()
-        self._pop_fn = _nvtxRangePop.load()
+        self._push_fn = _rangePushEx.load()
+        self._pop_fn = _rangePop.load()
 
     @always_inline
     fn __enter__(mut self):
