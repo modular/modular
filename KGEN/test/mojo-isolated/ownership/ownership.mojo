@@ -1364,3 +1364,7 @@ fn test_min2(a: String):
     # CHECK-NEXT: lit.call {{.*}}String::@"__del__{{.*}}(%y)
     # CHECK-NEXT: lit.var.lifetime.end %y
 
+# MOCO-1500: Can't take origin of read-only String arg
+def origin_of_def_arg(a: String):
+    o = __origin_of(a)
+
