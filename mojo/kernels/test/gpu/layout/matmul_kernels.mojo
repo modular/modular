@@ -32,7 +32,7 @@ from layout.runtime_layout import UNKNOWN_VALUE, RuntimeLayout
 from layout.runtime_tuple import RuntimeTuple
 from layout.tensor_builder import LayoutTensorBuild as tb
 from layout.tensor_core import TensorCore
-from linalg.gpu_blas import vendor_matmul
+import linalg.gpu_blas
 from memory import UnsafePointer
 from memory.pointer import _GPUAddressSpace as AddressSpace
 
@@ -88,7 +88,7 @@ fn run_cublas[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _ = vendor_matmul[use_tf32=enable_tc](
+            gpu_blas.matmul[use_tf32=enable_tc](
                 handle,
                 c_device_ref,
                 a_device,
@@ -113,15 +113,13 @@ fn run_cublas[
     )
     # Do one iteration for verification.
     ctx.memset(DeviceBuffer[dtype](ctx, c, M * N, owning=False), 0)
-    check_cublas_error(
-        vendor_matmul(
-            handle,
-            c_device_ref,
-            a_device,
-            b_device,
-            c_row_major=True,
-            transpose_b=False,
-        )
+    gpu_blas.matmul(
+        handle,
+        c_device_ref,
+        a_device,
+        b_device,
+        c_row_major=True,
+        transpose_b=False,
     )
 
     check_cublas_error(cublasDestroy(handle))

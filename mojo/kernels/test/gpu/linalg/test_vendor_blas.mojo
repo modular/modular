@@ -14,7 +14,7 @@ from buffer import DimList, NDBuffer
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.cublas.cublas import *
 from gpu.host import DeviceContext
-from linalg.gpu_blas import vendor_matmul
+import linalg.gpu_blas
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal
@@ -58,7 +58,7 @@ fn test_cublas(ctx: DeviceContext) raises:
 
     var handle = UnsafePointer[cublasContext]()
     check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
-    check_cublas_error(vendor_matmul(handle, c, a, b, c_row_major=True))
+    gpu_blas.matmul(handle, c, a, b, c_row_major=True)
     check_cublas_error(cublasDestroy(handle))
 
     ctx.enqueue_copy_from_device(c_host, c_device)

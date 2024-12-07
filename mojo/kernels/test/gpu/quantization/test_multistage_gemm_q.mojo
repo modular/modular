@@ -15,12 +15,6 @@ from sys._assembly import inlined_assembly
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
-from gpu.cublas.cublas import (
-    check_cublas_error,
-    cublasContext,
-    cublasCreate,
-    cublasDestroy,
-)
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.info import DEFAULT_GPU_ARCH
 from gpu.intrinsics import lop
@@ -66,7 +60,6 @@ from layout.tensor_core import (
     get_fragment_size,
     get_mma_shape,
 )
-from linalg.gpu_blas import vendor_matmul
 from linalg.matmul_gpu import _matmul_gpu
 from linalg.utils_gpu import (
     MatmulConfig,
