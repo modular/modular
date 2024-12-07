@@ -45,6 +45,11 @@ struct TensorSpec(
         self.shape = TensorShape()
 
     @always_inline
+    @implicit
+    fn __init__(out self, owned shape: TensorShape):
+        self.shape = shape^
+
+    @always_inline
     fn __init__(out self, type: DType, *shapes: Int):
         """Initializes a Tensorspec from the dtype and shapes provided.
 

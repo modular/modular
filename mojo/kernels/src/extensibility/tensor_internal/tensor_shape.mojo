@@ -701,6 +701,12 @@ struct TensorShape(Stringable, Writable, CollectionElement, EqualityComparable):
 
     @always_inline
     @implicit
+    fn __init__(out self, rep: _TensorShapeStorage):
+        """Default initializer for TensorShape."""
+        self._rep = rep
+
+    @always_inline
+    @implicit
     fn __init__[*Ts: CollectionElement](mut self, shapes: Tuple[*Ts]):
         """Initializes a TensorShape from the values provided.
 
