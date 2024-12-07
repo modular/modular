@@ -1,0 +1,41 @@
+"""Helper functions for creating Mojo LSP Server tests targets."""
+
+load("//bazel:api.bzl", "modular_cc_test")
+
+def lsp_test(name, pattern):
+    modular_cc_test(
+        name = name,
+        size = "large",
+        srcs = native.glob(
+            [pattern],
+        ),
+        data = native.glob([
+            "inputs/*.mojo",
+            "inputs_with_package/*.mojo",
+        ]) + [
+            "//KGEN/tools/mojo-lsp-server",
+            "//open-source/mojo/stdlib/stdlib:stdlib_srcs",
+            "@crashpad//:modular-crashpad-handler",
+        ],
+        env = {
+            "MODULAR_MOJO_MAX_IMPORT_PATH": "open-source/mojo/stdlib",
+            "MODULAR_PATH": ".",
+            "PRESERVE_LSP_IO_FILES": "1",
+        },
+        mojo_deps = [
+            "//open-source/mojo/stdlib/stdlib",
+            "//SDK/lib/API/mojo/max/tensor_utils",
+            "//Kernels/mojo/extensibility/compiler_internal",
+        ],
+        tags = [
+            "no-sandbox",  # The LSP server currently has issues with symlinks and non-canonical paths
+        ],
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        deps = [
+            ":Support",
+            "//Support:Globals",
+        ],
+    )
