@@ -11,11 +11,11 @@ from sys.param_env import env_get_int, is_defined
 
 import gpu.host.tracing
 from buffer import NDBuffer
-from gpu.host.tracing import _end_range as _end_nvtx_range
-from gpu.host.tracing import _is_enabled as _nvtx_is_enabled
-from gpu.host.tracing import _is_enabled_details as _nvtx_is_enabled_details
-from gpu.host.tracing import _mark as _mark_nvtx
-from gpu.host.tracing import _start_range as _start_nvtx_range
+from gpu.host.tracing import _end_range as _end_gpu_range
+from gpu.host.tracing import _is_enabled as _gpu_is_enabled
+from gpu.host.tracing import _is_enabled_details as _gpu_is_enabled_details
+from gpu.host.tracing import _mark as _mark_gpu
+from gpu.host.tracing import _start_range as _start_gpu_range
 
 from utils import IndexList, Variant
 
@@ -223,7 +223,7 @@ fn _is_gpu_profiler_enabled[type: TraceCategory, level: TraceLevel]() -> Bool:
     return (
         is_profiling_disabled[type, level]()
         and level <= TraceLevel.OP
-        and _nvtx_is_enabled()
+        and _gpu_is_enabled()
     )
 
 
@@ -236,7 +236,7 @@ fn _is_gpu_profiler_detailed_enabled[
     return (
         is_profiling_disabled[type, level]()
         and level <= TraceLevel.OP
-        and _nvtx_is_enabled_details()
+        and _gpu_is_enabled_details()
     )
 
 
@@ -322,7 +322,7 @@ struct Trace[
             self.name = name
 
             @parameter
-            if _nvtx_is_enabled_details():
+            if _gpu_is_enabled_details():
                 self.detail = detail
             else:
                 self.detail = ""
@@ -369,7 +369,7 @@ struct Trace[
             self.name = name
 
             @parameter
-            if _nvtx_is_enabled_details():
+            if _gpu_is_enabled_details():
                 self.detail = detail
             else:
                 self.detail = ""
@@ -400,12 +400,12 @@ struct Trace[
         if _is_gpu_profiler_enabled[category, level]():
 
             @parameter
-            if _nvtx_is_enabled_details():
+            if _gpu_is_enabled_details():
                 # Convert to String since nvtx range APIs copy messages anyway.
                 # TODO(KERN-1052): optimize by exposing explicit string
                 # registration.
                 self.event_id = int(
-                    _start_nvtx_range(
+                    _start_gpu_range(
                         message=self._get_name_as_str()
                         + (("/" + self.detail) if self.detail else ""),
                         category=int(category),
@@ -413,7 +413,7 @@ struct Trace[
                 )
             else:
                 self.event_id = int(
-                    _start_nvtx_range(
+                    _start_gpu_range(
                         message=self._get_name_as_str(), category=int(category)
                     )
                 )
@@ -473,7 +473,7 @@ struct Trace[
 
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
-            _end_nvtx_range(tracing.RangeID(self.event_id))
+            _end_gpu_range(tracing.RangeID(self.event_id))
             return
 
         @parameter
@@ -497,11 +497,11 @@ struct Trace[
             var message = self._get_name_as_str()
 
             @parameter
-            if _nvtx_is_enabled_details():
+            if _gpu_is_enabled_details():
                 if self.detail:
                     message += "/" + self.detail
 
-            _mark_nvtx(message=message)
+            _mark_gpu(message=message)
 
     @always_inline
     fn _get_name_as_str(self) -> String:
