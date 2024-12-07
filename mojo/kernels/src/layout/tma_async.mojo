@@ -67,6 +67,8 @@ struct TMATensorTile[
 ]:
     var descriptor: TMADescriptor
 
+    @always_inline
+    @implicit
     fn __init__(mut self, descriptor: TMADescriptor):
         self.descriptor = descriptor
 
