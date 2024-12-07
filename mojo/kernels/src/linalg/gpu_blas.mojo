@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from sys import sizeof
+from sys import sizeof, has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from buffer import DimList, NDBuffer
 from gpu.cublas.cublas import (
@@ -49,8 +49,49 @@ from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from memory import UnsafePointer
 
 
+@value
+@register_passable("trivial")
+struct Backend:
+    var _value: Int32
+
+    alias AUTOMATIC = Self(0)
+    alias CUBLAS = Self(1)
+    alias CUBLASLT = Self(2)
+    alias ROCBLAS = Self(3)
+
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
+    fn __is__(self, other: Self) -> Bool:
+        return self == other
+
+    fn __isnot__(self, other: Self) -> Bool:
+        return self != other
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    fn __int__(self) -> Int:
+        return int(self._value)
+
+
+fn _resolve_backend[backend: Backend, type: DType]() -> Backend:
+    @parameter
+    if backend is not Backend.AUTOMATIC:
+        return backend
+    elif has_amd_gpu_accelerator():
+        return Backend.ROCBLAS
+    elif type.is_float8():
+        return Backend.CUBLASLT
+    return Backend.CUBLAS
+
+
 fn matmul[
-    use_tf32: Bool = False,
+    use_tf32: Bool = False, *, backend: Backend = Backend.AUTOMATIC
 ](
     handle: UnsafePointer[cublasContext],
     c: NDBuffer[_, 2, _],
@@ -61,7 +102,22 @@ fn matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
 ) raises:
-    return _cublas_matmul[use_tf32=use_tf32](
+    alias resolved_backend = _resolve_backend[backend, a.type]()
+
+    constrained[
+        resolved_backend is Backend.CUBLAS,
+        "only the cuBLAS backend is hooked up right now",
+    ]()
+
+    @parameter
+    if resolved_backend is Backend.CUBLASLT:
+        if transpose_a or transpose_b:
+            raise Error(
+                "the cuBLASLT backend currently only is implemented for"
+                " transpose_a=False and transpose_a=False"
+            )
+
+    _cublas_matmul[use_tf32=use_tf32](
         handle,
         c,
         a,
