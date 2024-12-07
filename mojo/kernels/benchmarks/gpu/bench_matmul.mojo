@@ -23,7 +23,7 @@ from gpu.cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
-from linalg.gpu_blas import vendor_matmul
+import linalg.gpu_blas
 from gpu.host.info import DEFAULT_GPU_ARCH
 
 
@@ -119,7 +119,7 @@ fn bench_matmul[
 
             @parameter
             if use_cublas:
-                _ = vendor_matmul[use_tf32=True](
+                gpu_blas.matmul[use_tf32=True](
                     cublas_handle,
                     tensor_c,
                     tensor_a,
