@@ -177,7 +177,6 @@ export class MAXSDKManager extends DisposableContext {
 
   public async createAdHocSDKAndShowError(
     modularHomePath: string,
-    section: Optional<string>,
   ): Promise<Optional<MAXSDK>> {
     const hideRepeatedErrors = false;
     const allowInstallation = false;
@@ -192,8 +191,7 @@ export class MAXSDKManager extends DisposableContext {
     }
     if (
       this.activeSDK.state === 'selected' &&
-      this.activeSDK.sdkSpec?.modularHomePath === modularHomePath &&
-      this.activeSDK.sdkSpec.section === section
+      this.activeSDK.sdkSpec?.modularHomePath === modularHomePath
     ) {
       return this.createSDKAndShowError(
         this.activeSDK,
@@ -204,7 +202,6 @@ export class MAXSDKManager extends DisposableContext {
     const sdkSpec: MAXSDKSpec = {
       kind: 'custom',
       modularHomePath,
-      section: section || 'mojo-max' + (this.isNightly ? '-nightly' : ''),
       version: new MAXSDKVersion(
         modularHomePath,
         '0',
@@ -251,7 +248,7 @@ export class MAXSDKManager extends DisposableContext {
             }
           });
       } else if (selectedSDK.sdkSpec?.kind === 'custom') {
-        errorMessage += `\nPlease reinstall or rebuild the ${selectedSDK.sdkSpec.section} SDK given by ${selectedSDK.sdkSpec.modularHomePath}.`;
+        errorMessage += `\nPlease reinstall or rebuild the SDK given by ${selectedSDK.sdkSpec.modularHomePath}.`;
         vscode.window.showErrorMessage(errorMessage);
       }
       this.logger.main.logError(errorMessage);
@@ -323,10 +320,10 @@ export class MAXSDKManager extends DisposableContext {
       `'${modularConfigPath}' with contents`,
       modularConfig,
     );
-    const mojoConfig = modularConfig[spec.section];
+    const mojoConfig = modularConfig['mojo-max'];
     if (!mojoConfig) {
       return {
-        errorMessage: `The modular config file '${modularConfigPath}' doesn't have the expected section ${spec.section}`,
+        errorMessage: `The modular config file '${modularConfigPath}' doesn't have the expected section 'mojo-max'`,
       };
     }
     const sdkConfig = new MAXSDKConfig(
@@ -402,9 +399,6 @@ export class MAXSDKManager extends DisposableContext {
           );
           return undefined;
         }
-        const section = contents.includes('[mojo-max-nightly]')
-          ? 'mojo-max-nightly'
-          : 'mojo-max';
         const spec: MAXSDKSpec = {
           kind: 'custom',
           modularHomePath,
@@ -415,7 +409,6 @@ export class MAXSDKManager extends DisposableContext {
             '-1',
             modularHomePath,
           ),
-          section,
         };
         return spec;
       }),
@@ -486,7 +479,6 @@ export class MAXSDKManager extends DisposableContext {
         '0',
         modularHomePath,
       ),
-      section: 'mojo-max',
     };
     return spec;
   }

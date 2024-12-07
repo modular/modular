@@ -77,10 +77,7 @@ async function findSDKForDebugConfiguration(
   sdkManager: MAXSDKManager,
 ): Promise<Optional<MAXSDK>> {
   if (config.modularHomePath !== undefined) {
-    return sdkManager.createAdHocSDKAndShowError(
-      config.modularHomePath,
-      config.modularConfigMojoSection,
-    );
+    return sdkManager.createAdHocSDKAndShowError(config.modularHomePath);
   }
   return sdkManager.findSDK(/*hideRepeatedErrors=*/ false);
 }
