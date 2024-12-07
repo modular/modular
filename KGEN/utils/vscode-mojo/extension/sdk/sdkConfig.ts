@@ -109,10 +109,6 @@ export class MAXSDKConfig {
         title += ' Max';
       }
 
-      if (configSection.includes('nightly')) {
-        title += ' (nightly)';
-      }
-
       return new MAXSDKVersion(
         title,
         `${match[1]}`,

@@ -9,7 +9,6 @@ export type MAXSDKKind = 'dev' | 'magic' | 'custom';
 export type MAXSDKSpec = {
   kind: MAXSDKKind;
   modularHomePath: string;
-  section: string;
   version: MAXSDKVersion;
 };
 

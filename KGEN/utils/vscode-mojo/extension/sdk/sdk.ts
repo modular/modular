@@ -26,45 +26,6 @@ export class MAXSDK {
   }
 
   /**
-   * Return the configuration key for the SDK within the modular.cfg file.
-   */
-  static getConfigKey(
-    modularHomePath: string,
-    isNightly: boolean,
-    possibleKeys: string[],
-  ): Optional<string> {
-    // Bail early if we don't have any keys.
-    if (possibleKeys.length === 0) {
-      return undefined;
-    }
-
-    // If this is a dev-build path, there'll only be one key so just grab
-    // it.
-    if (modularHomePath.endsWith('.derived')) {
-      return possibleKeys[0];
-    }
-
-    // Filter the keys to only those that match the current extension.
-    possibleKeys = possibleKeys.filter(
-      (key) => isNightly === key.endsWith('-nightly'),
-    );
-
-    if (possibleKeys.length === 0) {
-      return undefined;
-    }
-
-    // Prefer the 'max' key if it exists.
-    const maxKey = possibleKeys.find((key) => key.includes('max'));
-
-    if (maxKey) {
-      return maxKey;
-    }
-
-    // Otherwise, just grab the first key.
-    return possibleKeys[0];
-  }
-
-  /**
    * Determine whether python scripting is functional in LLDB. As there
    * are many reasons why python scripting would fail (e.g. disabled in the build system,
    * wrong SDK installation, etc.), it's more effective to just execute a

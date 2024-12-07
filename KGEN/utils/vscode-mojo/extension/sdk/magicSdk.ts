@@ -462,7 +462,6 @@ export async function findMagicSDKSpec(
   return {
     kind: 'magic',
     modularHomePath,
-    section: 'mojo-max' + (isNightly ? '-nightly' : ''),
     version: new MaxSDKVersion(
       'MAX SDK ' + (isNightly ? '(nightly) ' : '(stable)'),
       downloadSpec.major,
