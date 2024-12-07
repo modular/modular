@@ -473,17 +473,37 @@ void FnSigDecorators::applyStaticMethod(const DeclRefNode &node) {
 }
 
 void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
-  // Drop any error and result slots.
-  ArrayRef<ParsedArgument> args = tcSignature.argList.parsedArgs;
-  while (!args.empty() &&
-         args.back().convention == ParsedArgument::kConventionByRefResult)
-    args = args.drop_back();
-
-  if (SpecialFunctionInfo::get(baseName).kind != SpecialFunctionKind::kInit ||
-      args.size() != 2) {
+  if (SpecialFunctionInfo::get(baseName).kind != SpecialFunctionKind::kInit) {
     emitError(node.getLoc())
-        << "'@implicit' may only be applied to single-argument '__init__' "
-           "methods";
+        << "'@implicit' may only be applied to '__init__' methods";
+    return;
+  }
+
+  ArrayRef<ParsedArgument> args = tcSignature.argList.parsedArgs;
+  if (args.size() <= 1) {
+    emitError(node.getLoc())
+        << "'@implicit' requires an argument to convert from";
+    return;
+  }
+
+  // Drop any error and result slots, default arguments and variadics.
+  // Things like `__init__(out x, x: T, y : T = 42)
+  while (args.size() > 2) {
+    auto &lastArg = args.back();
+    if (lastArg.convention == ParsedArgument::kConventionByRefResult ||
+        lastArg.initExpr ||                 // arg has a default.
+        lastArg.vararg != VarArgKind::None) // vararg lists can be empty
+      args = args.drop_back();
+    else
+      break;
+  }
+
+  // We must have an InitSelf and a position argument.
+  if (args.size() != 2 ||
+      (args[1].kwArgHandling != KWArgHandling::kPositionalOnly &&
+       args[1].kwArgHandling != KWArgHandling::kPositionalOrKeyword)) {
+    emitError(node.getLoc())
+        << "'@implicit' initializers must accept a single argument value";
     return;
   }
   funcOp.setIsImplicitConversion(true);
