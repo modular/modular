@@ -155,7 +155,7 @@ def _attention_layer(
                 x=x,  # type: ignore
                 kv_collection=kv_collection,
                 input_row_offsets=input_row_offsets,
-            )[0]
+            )
         )
     return graph, kv_cache_inputs
 

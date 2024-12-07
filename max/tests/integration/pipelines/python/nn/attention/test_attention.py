@@ -129,8 +129,8 @@ def _attention_layer(
             wo=Linear(wo),  # type: ignore
         )
 
-        attn_out, _ = attn_fn(
-            x,  # type: ignore
+        attn_out = attn_fn(
+            x.tensor,
             kv_collection,  # type: ignore
             valid_lengths=valid_lengths,
             attention_mask=attn_mask,

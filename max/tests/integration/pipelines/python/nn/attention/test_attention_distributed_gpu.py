@@ -73,14 +73,12 @@ def _attention_block(params, inputs):
         wo=Linear(wo),
     )
 
-    attn_out, _ = attn_fn(
+    return attn_fn(
         x,
         kv_collection,
         valid_lengths=valid_length,
         attention_mask=attn_mask,
     )
-
-    return attn_out
 
 
 def distribute_value(v, devices: List[Device]):
