@@ -165,26 +165,20 @@ fn _cublas_matmul[
     return result
 
 
-fn cublasLt_fp8_matmul[
-    M: Int,
-    N: Int,
-    K: Int,
-    a_type: DType,
-    b_type: DType,
-    d_type: DType,
-](
-    lt_handle: UnsafePointer[Context],
+fn _cublasLt_matmul(
     ctx: DeviceContext,
-    _a: ManagedLayoutTensor[
-        a_type, Layout.row_major(M, K), gpu_managed_alloc, gpu_free
-    ],
-    _b: ManagedLayoutTensor[
-        b_type, Layout.col_major(K, N), gpu_managed_alloc, gpu_free
-    ],
-    _d: ManagedLayoutTensor[
-        d_type, Layout.col_major(M, N), gpu_managed_alloc, gpu_free
-    ],
+    d: NDBuffer[_, 2, _],
+    a: NDBuffer[_, 2, _],
+    b: NDBuffer[_, 2, _],
+    c_row_major: Bool = True,
 ) raises -> Result:
+    alias a_type = a.type
+    alias b_type = b.type
+    alias d_type = d.type
+    var M = d.dim[0]()
+    var N = d.dim[1]()
+    var K = a.dim[1]()
+
     constrained[
         (
             a_type in [DType.float8e4m3, DType.float8e5m2]
@@ -198,6 +192,12 @@ fn cublasLt_fp8_matmul[
 
     if a_type is DType.float8e5m2 and b_type is DType.float8e4m3:
         raise Error("E5M2xE4M3 is not supported!")
+
+    var lt_handle = UnsafePointer[Context]()
+    check_cublas_error(cublasLtCreate(UnsafePointer.address_of(lt_handle)))
+
+    # CublasLt is by default column-major but we like to have the output in row-major
+    # to compare with our results. Use `c_row_major` to determine the output layout.
 
     # To use FP8 kernels, the following set of requirements must be satisfied:
     # 1) All matrix dimensions must meet the optimal requirements listed in Tensor Core Usage (See Below)
@@ -262,8 +262,8 @@ fn cublasLt_fp8_matmul[
         cublasLtMatrixLayoutCreate(
             UnsafePointer.address_of(_adesc),
             _convert_to_cublas_datatype[a_type](),
-            M if transa == cublasOperation_t.CUBLAS_OP_N else K,
-            K if transa == cublasOperation_t.CUBLAS_OP_N else M,
+            K,
+            N if c_row_major else M,
             K,
         )
     )
@@ -273,8 +273,8 @@ fn cublasLt_fp8_matmul[
         cublasLtMatrixLayoutCreate(
             UnsafePointer.address_of(_bdesc),
             _convert_to_cublas_datatype[b_type](),
-            K if transb == cublasOperation_t.CUBLAS_OP_N else N,
-            N if transb == cublasOperation_t.CUBLAS_OP_N else K,
+            K,
+            M if c_row_major else N,
             K,
         )
     )
@@ -284,9 +284,9 @@ fn cublasLt_fp8_matmul[
         cublasLtMatrixLayoutCreate(
             UnsafePointer.address_of(_ddesc),
             _convert_to_cublas_datatype[d_type](),
-            M,
-            N,
-            M,
+            N if c_row_major else M,
+            M if c_row_major else N,
+            N if c_row_major else M,
         )
     )
 
@@ -295,9 +295,9 @@ fn cublasLt_fp8_matmul[
         cublasLtMatrixLayoutCreate(
             UnsafePointer.address_of(_cdesc),
             _convert_to_cublas_datatype[d_type](),
-            M,
-            N,
-            M,
+            N if c_row_major else M,
+            M if c_row_major else N,
+            N if c_row_major else M,
         )
     )
 
@@ -340,24 +340,44 @@ fn cublasLt_fp8_matmul[
     var cuda_stream = CUDA(ctx.stream())
 
     var result: Result
-    result = cublasLtMatmul(
-        lt_handle,  # light_handle
-        operationDesc,  # compute_desc
-        UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
-        UnsafePointer(_a.tensor.ptr.bitcast[NoneType]()),  # _a
-        _adesc,  # _adesc
-        UnsafePointer(_b.tensor.ptr.bitcast[NoneType]()),  # _b
-        _bdesc,  # _bdesc
-        UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
-        UnsafePointer[NoneType](),  # _c
-        _cdesc,  # _cdesc
-        UnsafePointer(_d.tensor.ptr.bitcast[NoneType]()),  # _d
-        _ddesc,  # _ddesc
-        UnsafePointer.address_of(heuristicResult.algo),  # algo
-        UnsafePointer[NoneType](),  # workspace
-        workspaceSize,  # workspace_size_in_bytes
-        cuda_stream[],  # stream
-    )
+    if c_row_major:
+        result = cublasLtMatmul(
+            lt_handle,  # light_handle
+            operationDesc,  # compute_desc
+            UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
+            UnsafePointer(b.data.bitcast[NoneType]()),  # _a
+            _adesc,  # _adesc
+            UnsafePointer(a.data.bitcast[NoneType]()),  # _b
+            _bdesc,  # _bdesc
+            UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
+            UnsafePointer[NoneType](),  # _c
+            _cdesc,  # _cdesc
+            UnsafePointer(d.data.bitcast[NoneType]()),  # _d
+            _ddesc,  # _ddesc
+            UnsafePointer.address_of(heuristicResult.algo),  # algo
+            UnsafePointer[NoneType](),  # workspace
+            workspaceSize,  # workspace_size_in_bytes
+            cuda_stream[],  # stream
+        )
+    else:
+        result = cublasLtMatmul(
+            lt_handle,  # light_handle
+            operationDesc,  # compute_desc
+            UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
+            UnsafePointer(a.data.bitcast[NoneType]()),  # _a
+            _adesc,  # _adesc
+            UnsafePointer(b.data.bitcast[NoneType]()),  # _b
+            _bdesc,  # _bdesc
+            UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
+            UnsafePointer[NoneType](),  # _c
+            _cdesc,  # _cdesc
+            UnsafePointer(d.data.bitcast[NoneType]()),  # _d
+            _ddesc,  # _ddesc
+            UnsafePointer.address_of(heuristicResult.algo),  # algo
+            UnsafePointer[NoneType](),  # workspace
+            workspaceSize,  # workspace_size_in_bytes
+            cuda_stream[],  # stream
+        )
 
     ctx.synchronize()
 
@@ -367,5 +387,6 @@ fn cublasLt_fp8_matmul[
     check_cublas_error(cublasLtMatrixLayoutDestroy(_cdesc))
     check_cublas_error(cublasLtMatrixLayoutDestroy(_ddesc))
     check_cublas_error(cublasLtMatmulPreferenceDestroy(preference))
+    check_cublas_error(cublasLtDestroy(lt_handle))
 
     return result
