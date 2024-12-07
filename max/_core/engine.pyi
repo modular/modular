@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from enum import Enum
 from pathlib import Path
-from typing import Any, List, Optional, Union
+from typing import Any, List, Mapping, Optional, Union
 
 from max._driver import Device
 from max.driver.core import Tensor as TensorImpl
@@ -27,7 +27,7 @@ class Model:
     input_metadata: List[TensorSpec]
     output_metadata: List[TensorSpec]
 
-    def load(self, weights_registry: dict[str, Any]) -> None: ...
+    def load(self, weights_registry: Mapping[str, Any]) -> None: ...
     def execute(self, **kwargs) -> dict[str, Any]: ...
     def execute_device_tensors(
         self, *tensors: List[TensorImpl | "MojoValue"]
