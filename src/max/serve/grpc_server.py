@@ -28,29 +28,34 @@ from max.serve.pipelines.performance_fake import (
 from transformers import AutoTokenizer
 
 
-def get_default_replit_config() -> PipelineConfig:
+def get_default_replit_config(use_cpu: bool) -> PipelineConfig:
     pipeline_config = PipelineConfig(
         architecture="MPTForCausalLM",
         huggingface_repo_id="modularai/replit-code-1.5",
         trust_remote_code=True,
-        save_to_serialized_model_path="/tmp/replit_gpu_16.mef",
+        device_spec=DeviceSpec(id=0, device_type="cpu")
+        if use_cpu
+        else DeviceSpec(id=0, device_type="gpu"),
         quantization_encoding=SupportedEncoding.float32,
+        # save_to_serialized_model_path="/tmp/replit_gpu_16.mef",
         # serialized_model_path="/tmp/replit_gpu_16.mef",
         # pipeline_config.weight_path = hf_file.download()
     )
     return pipeline_config
 
 
-def get_default_llama31_config() -> PipelineConfig:
+def get_default_llama31_config(use_cpu: bool) -> PipelineConfig:
     return PipelineConfig(
         architecture="LlamaForCausalLM",
         # huggingface_repo_id="meta-llama/Meta-Llama-3.1-8B-Instruct",
         huggingface_repo_id="modularai/llama-3.1",
-        device_spec=DeviceSpec(id=0, device_type="gpu"),
+        device_spec=DeviceSpec(id=0, device_type="cpu")
+        if use_cpu
+        else DeviceSpec(id=0, device_type="gpu"),
         quantization_encoding=SupportedEncoding.bfloat16,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
-        save_to_serialized_model_path="/tmp/llama31_gpu_16.mef",
-        # serialized_model_path="/tmp/llama31_gpu_16.mef",
+        # save_to_serialized_model_path="/tmp/llama31_gpu_16.mef",
+        # serialized_model_path="/tmp/llama31_gpu_16.mefs",
     )
 
 
@@ -76,7 +81,19 @@ def get_default_llama31_config() -> PipelineConfig:
     type=int,
     default=8,
 )
-def serve(bypass_serve: bool, model: str, port: int, max_batch_size: int):
+@click.option(
+    "--use-cpu",
+    is_flag=True,
+    default=False,
+    help="Use the CPU to perform inference.",
+)
+def serve(
+    bypass_serve: bool,
+    model: str,
+    port: int,
+    max_batch_size: int,
+    use_cpu: bool,
+):
     server_config = max_grpc.GRPCConfig(
         port=port, num_workers=10, max_batch_size=max_batch_size
     )
@@ -110,10 +127,10 @@ def serve(bypass_serve: bool, model: str, port: int, max_batch_size: int):
             if model == "llama31":
                 # works!
                 model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-                pipeline_config = get_default_llama31_config()
+                pipeline_config = get_default_llama31_config(use_cpu)
             elif model == "replit":
                 model_name = "replit/replit-code-v1_5-3b"
-                pipeline_config = get_default_replit_config()
+                pipeline_config = get_default_replit_config(use_cpu)
             else:
                 # TODO arekay - better error handling
                 print(f"ERROR invalid model name {model}")
@@ -174,7 +191,7 @@ def serve(bypass_serve: bool, model: str, port: int, max_batch_size: int):
         elif model == "llama31":
             # Works!
             model_name = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-            pipeline_config = get_default_llama31_config()
+            pipeline_config = get_default_llama31_config(use_cpu)
             pipeline_config.max_cache_batch_size = max_batch_size
             llama_tokenizer, llama_pipeline = PIPELINE_REGISTRY.retrieve(
                 pipeline_config
@@ -188,7 +205,7 @@ def serve(bypass_serve: bool, model: str, port: int, max_batch_size: int):
             )
         elif model == "replit":
             model_name = "replit/replit-code-v1_5-3b"
-            pipeline_config = get_default_replit_config()
+            pipeline_config = get_default_replit_config(use_cpu)
             pipeline_config.max_cache_batch_size = max_batch_size
             replit_tokenizer, replit_pipeline_factory = (
                 PIPELINE_REGISTRY.retrieve_factory(
