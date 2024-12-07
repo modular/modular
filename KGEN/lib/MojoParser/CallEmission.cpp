@@ -230,6 +230,10 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
   const OverloadFitness *bestFitness =
       selectBestCandidates(fnDecls, evaluations, newFnDecls);
   if (newFnDecls.size() == 1) {
+    // We don't have arguments, so can't need re-emission.
+    assert(!bestFitness->getArgsNeedingOrigins().any() &&
+           "No arguments to require re-emission");
+
     // On success, wrap things up into one callee.
     ParamBindings newBindings(paramBindings.declScope);
     for (TypedAttr bind : bestFitness->getParamBindings())
@@ -262,6 +266,41 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
     }
   }
   return {};
+}
+
+static LogicalResult emitOperandsNeedingOriginsToMemory(
+    const OverloadFitness &info, LITSignatureType expectedSig,
+    CallOperands &operands, ExprEmitter &emitter) {
+  const auto &argsNeedingOrigins = info.getArgsNeedingOrigins();
+  assert(argsNeedingOrigins.any() && "should emit something");
+
+  // Emit each of the arguments that needs a origin to an MValue.
+  for (size_t i = 0, e = argsNeedingOrigins.size(); i != e; ++i) {
+    if (!argsNeedingOrigins[i])
+      continue;
+    // If the operand is a positional argument it will be in the normal
+    // operand list, otherwise it will be in the kwargs list.
+    assert(i < operands.size() && "argument index incorrect");
+
+    // The argument value may have implicit conversions necessary, so make
+    // sure to emit it into the expected type.
+    ASTType argType = expectedSig.getArguments()[i];
+    // Strip off the ref to get the RValue type.
+    argType = argType.getReferenceElementType();
+
+    assert(!operands[i].ir.isMValue() &&
+           "Should only emit values in registers to memory");
+
+    // We emit this as an MBValue instead of an MRValue specifically so we
+    // do not infer mutability from the temporary.  We don't want ref's with
+    // parametric origin to bind to these values.
+    auto newVal = emitter.emitMBValue({operands[i]},
+                                      ExprContext::EC_CallRefArgValue, argType);
+    if (!newVal)
+      return failure(); // Failed to emit the PValue/SValue to an MBValue.
+    operands.values[i].ir = newVal;
+  }
+  return success();
 }
 
 /// Evaluate the fnDecls candidates and see if there is an unambiguous
@@ -438,68 +477,37 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     // Finally, wrap things up into one callee, resolving it to a PValue with
     // the parameters bound and substituted into its signature.
-    ParamBindings newBindings(paramBindings.declScope);
-    for (TypedAttr bind : bestFitness->getParamBindings())
-      newBindings.addPrechecked(expr, bind);
+    auto newBindings = [&](OverloadFitness &fitness) -> PValue {
+      ParamBindings newBindings(paramBindings.declScope);
+      for (TypedAttr bind : fitness.getParamBindings())
+        newBindings.addPrechecked(expr, bind);
+      return getCallee(selectedDecl, baseName, newBindings, expr);
+    };
 
-    PValue boundFunction = getCallee(selectedDecl, baseName, newBindings, expr);
+    PValue boundFunction = newBindings(*bestFitness);
 
     // It is possible this candidate needs some arguments emitted as MValues
     // (from PValue or SValues) to be passed as 'ref' arguments.  If this
     // happens, emit them now and then re-infer the correct origins.  If not,
     // we're done.
-    const auto &argsNeedingOrigins = bestFitness->getArgsNeedingOrigins();
-    if (!argsNeedingOrigins.any() ||
+    if (bestFitness->getArgsNeedingOrigins().any() &&
         // Parameter emission can always use immortal origins.
-        !emitter.builder) {
-      // No arguments need to be spilled to boxes.
-      return boundFunction;
+        emitter.builder) {
+      // Emit one or more operands to memory.  We know this can't infinitely
+      // loop because there is a forward progress guarantee here.
+      if (failed(emitOperandsNeedingOriginsToMemory(
+              *bestFitness, cast<LITSignatureType>(boundFunction.getType()),
+              operands, emitter)))
+        return {};
+
+      // Now that we mutated the operand list by introducing some new memory
+      // types to provide origins, try again.  This will re-evaluate parameter
+      // bindings and either succeed or fail based on the new information.
+      return filterOverloadSet(operands, emitDiagnosticOnFailure, emitter);
     }
 
-    // Emit each of the arguments that needs a origin to an MValue.
-    for (size_t i = 0, e = argsNeedingOrigins.size(); i != e; ++i) {
-      if (!argsNeedingOrigins[i])
-        continue;
-      // If the operand is a positional argument it will be in the normal
-      // operand list, otherwise it will be in the kwargs list.
-      assert(i < operands.size() && "argument index incorrect");
-
-      // The argument value may have implicit conversions necessary, so make
-      // sure to emit it into the expected type.
-      ASTType argType =
-          cast<SignatureType>(boundFunction.getType()).getArguments()[i];
-      // Strip off the ref to get the RValue type.
-      argType = argType.getReferenceElementType();
-
-      // We emit this as an MBValue instead of an MRValue specifically so we
-      // do not infer mutability from the temporary.  We don't want ref's with
-      // parametric origin to bind to these values.
-      auto newVal = emitter.emitMBValue(
-          {operands[i]}, ExprContext::EC_CallRefArgValue, argType);
-      if (!newVal)
-        return {}; // Failed to emit the PValue/SValue to an MBValue.
-      operands.values[i].ir = newVal;
-    }
-
-    // Now that we have the operands set, we re-evaluate the bindings, which
-    // will reinfer parameters, getting the correct origins from the MValues
-    // that are required by this overload candidate.
-    auto newFitness =
-        OverloadFitness::evaluate(selectedFunc.getFullSignature(), selectedDecl,
-                                  *this, operands, allowImplicitConversions);
-
-    assert(newFitness.isValid() &&
-           "Re-emitting function to infer origins didn't work");
-    assert(newFitness.getArgsNeedingOrigins().none() &&
-           "Re-emitting function infer origins shouldn't need more MValues "
-           "emitted");
-
-    // Update boundFunction to include the newly inferred parameters.
-    newBindings = ParamBindings(paramBindings.declScope);
-    for (TypedAttr bind : newFitness.getParamBindings())
-      newBindings.addPrechecked(expr, bind);
-
-    return getCallee(selectedDecl, baseName, newBindings, expr);
+    // Otherwise, we're done!
+    return boundFunction;
   }
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
@@ -925,27 +933,37 @@ CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
 
   // If we have inferred parameters, bind them here. An indirect call with
   // inferred parameters must be a PValue.
+  auto boundCalleeRV = calleeRV;
   if (!fitness.getParamBindings().empty()) {
     SmallVector<TypedAttr> bindOperands;
-    if (auto calleePVal = calleeRV.getIfPValue()) {
-      bindOperands.push_back(calleePVal);
-    } else {
-      // The callee can be dynamic in cases where one of the parents had a
-      // resolution error but we are inside the body of a closure. In this case
-      // we want to silently error.
-      for (ASTDecl *scope = &declScope; scope; scope = scope->getParentDecl()) {
-        if (scope->isErroneous()) {
-          dest.resetForError();
-          return {};
-        }
-      }
-      llvm_unreachable("binding a dynamic callee?");
-    }
+    auto calleePVal = calleeRV.getIfPValue();
+    assert(calleePVal && "cannot call a parameterized function indirectly");
+    bindOperands.push_back(calleePVal);
     llvm::append_range(bindOperands, fitness.getParamBindings());
-    calleeRV = PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
+    boundCalleeRV =
+        PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
   }
 
-  return emitCallUnchecked(calleeRV, operands, dest, syntax, callExpr);
+  // If the selected candidate needs some register operands emitted to memory,
+  // do so and try again.
+  if (fitness.getArgsNeedingOrigins().any()) {
+    // Emit one or more operands to memory.  We know this can't infinitely
+    // loop because there is a forward progress guarantee here.
+    if (failed(emitOperandsNeedingOriginsToMemory(
+            fitness, cast<LITSignatureType>(boundCalleeRV.getType()), operands,
+            *this))) {
+      dest.resetForError();
+      return {};
+    }
+    // Now that we mutated the operand list by introducing some new memory
+    // types to provide origins, try again.  This will re-evaluate parameter
+    // bindings and either succeed or fail based on the new information.
+    return emitIndirectCall(calleeRV, std::move(operands), dest, syntax,
+                            callExpr);
+  }
+
+  // Otherwise, we resolved the callee correctly, emit the call.
+  return emitCallUnchecked(boundCalleeRV, operands, dest, syntax, callExpr);
 }
 
 CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,

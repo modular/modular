@@ -775,3 +775,25 @@ fn apply_in_memory[o: ImmutableOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -
 # expected-error @below {{argument #0 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
 # expected-note @below {{operand origin 'x' doesn't match expected origin 'o'}}
     f(x)
+
+
+# Problems binding SRValues to ref arguments.
+# https://github.com/modularml/mojo/issues/3830
+
+fn getSomeNonTrivRegPassable() -> SomeNonTrivRegPassable: pass
+# expected-note @below {{function declared here}}
+fn direct3830(ref a: SomeNonTrivRegPassable, ref[a] b: SomeNonTrivRegPassable): pass
+fn test3830():
+    # expected-error @below {{invalid call to 'direct3830':}}
+    # expected-note @below {{failed to infer parameter #1, parameter inferred to two different values}}
+    direct3830(getSomeNonTrivRegPassable(), getSomeNonTrivRegPassable())
+
+fn test3830_1[o: ImmutableOrigin](f: fn(ref[o] x: SomeNonTrivRegPassable) -> None):
+    # expected-error @below {{invalid indirect call: argument #0 cannot be converted from 'SomeNonTrivRegPassable' to ref 'SomeNonTrivRegPassable'}}
+    # expected-note @below {{operand origin '*"anonymous*"' doesn't match expected origin 'o'}}
+    f(getSomeNonTrivRegPassable())
+
+fn test3830_2[o: ImmutableOrigin](f: fn(ref[o] x: Int) -> None, x: Int):
+    # expected-error @below {{invalid indirect call: argument #0 cannot be converted from 'Int' to ref 'Int'}}
+    # expected-note @below {{operand origin '*"anonymous*"' doesn't match expected origin 'o'}}
+    f(x)
