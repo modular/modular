@@ -86,13 +86,13 @@ struct ParsedArgument {
   LexerCursor cursor;
   // Specify argument passing convention, e.g. owned/mut etc.
   enum PAArgConvention {
-    kConventionUnspec = 0,         // Nothing specified
-    kConventionMut = 1,            // mut x
-    kConventionOwned = 2,          // owned x
-    kConventionRead = 3,           // read x
-    kConventionRef = 4,            // ref [origin, addrspace] x
-    kConventionByRefResult = 5,    // No syntax: result slot
-    kConventionInitSelfResult = 6, // __init__(out self) argument
+    kConventionUnspec = 0,      // Nothing specified
+    kConventionMut = 1,         // mut x
+    kConventionOwned = 2,       // owned x
+    kConventionRead = 3,        // read x
+    kConventionRef = 4,         // ref [origin, addrspace] x
+    kConventionOut = 5,         // __init__(out self) argument
+    kConventionByRefResult = 6, // No syntax: result slot
   } convention = kConventionUnspec;
 
   // After type checking, this will hold the KGEN convention to use.

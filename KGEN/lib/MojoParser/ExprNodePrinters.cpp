@@ -414,8 +414,8 @@ void ParsedArgument::print(raw_indented_ostream &os) const {
       return "Ref";
     case ParsedArgument::kConventionByRefResult:
       return "RefResult";
-    case ParsedArgument::kConventionInitSelfResult:
-      return "InitSelfResult";
+    case ParsedArgument::kConventionOut:
+      return "Out";
     }
   };
 
