@@ -70,6 +70,12 @@ struct HostNDBuffer[
         )
 
     @always_inline
+    @implicit
+    fn __init__(out self, tensor: NDBuffer[type, rank, shape]):
+        self.tensor = tensor
+
+    @always_inline
+    @implicit
     fn __init__(
         mut self,
         dynamic_shape: IndexList[rank, **_],
@@ -80,6 +86,7 @@ struct HostNDBuffer[
         )
 
     @always_inline
+    @implicit
     fn __init__(
         mut self,
         dynamic_shape: DimList,
