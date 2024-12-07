@@ -129,7 +129,7 @@ struct DataType:
     alias F8_R = Self(170)
     alias BF8_R = Self(171)
 
-    alias INVAID = Self(255)
+    alias INVALID = Self(255)
 
     @implicit
     fn __init__(out self, value: Int):
@@ -155,7 +155,7 @@ struct ComputeType:
     alias F8_BF8_F32 = Self(302)
     alias BF8_F8_F32 = Self(303)
     alias BF8_BF8_F32 = Self(304)
-    alias INVAID = Self(455)
+    alias INVALID = Self(455)
 
     @implicit
     fn __init__(out self, value: Int):
