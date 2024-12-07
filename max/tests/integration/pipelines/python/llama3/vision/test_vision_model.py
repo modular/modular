@@ -23,6 +23,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, TensorValue, Weight
 from nn import Embedding, Linear, LPLayerNorm
+from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaVisionConfig
 from transformers.models.mllama.modeling_mllama import MllamaVisionModel
 
@@ -521,9 +522,9 @@ def test_vision_model(
         0, 9, aspect_ratio_ids_type.shape.static_dims, dtype=torch.long
     )
 
-    # This needs to be within the range of [0, num_embeddings - 1].
+    # This needs to be within the range of [0, 1].
     aspect_ratio_mask = torch.randint(
-        0, 9, aspect_ratio_mask_type.shape.static_dims, dtype=torch.long
+        0, 1, aspect_ratio_mask_type.shape.static_dims, dtype=torch.long
     )
 
     predicted = vision_model(
@@ -542,7 +543,6 @@ def test_vision_model(
 
     np.testing.assert_array_equal(predicted.to_numpy().shape, expected.shape)
 
-    # Compare the outputs.
-    # assert is_euclidean_distance_close(
-    #     result=predicted.to_numpy(), expected=expected, atol=1e05, rtol=1e05
-    # )
+    assert is_euclidean_distance_close(
+        predicted.to_numpy(), expected, rtol=0.01, atol=1e-4
+    )
