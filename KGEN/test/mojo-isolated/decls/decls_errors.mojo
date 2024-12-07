@@ -568,7 +568,7 @@ struct SpecialFunctions:
 
 @register_passable
 struct WrongType:
-  # expected-error @+1 {{'self' in struct '__init__' must be passed 'mut'}}
+  # expected-error @+1 {{'self' in struct '__init__' must be passed 'out'}}
   def __init__(self): pass
 
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}

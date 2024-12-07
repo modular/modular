@@ -253,7 +253,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     (void)p.parseRefSpecifier(refOriginExpr, /*isOriginRequired*/ false);
     convention = kConventionRef;
   } else if (p.consumeIfSoftIdentifier("out")) {
-    handleContextualArgConvention("out", kConventionInitSelfResult);
+    handleContextualArgConvention("out", kConventionOut);
   } else if (p.consumeIfSoftIdentifier("mut")) {
     handleContextualArgConvention("mut", kConventionMut);
   } else if (p.consumeIfSoftIdentifier("read")) {
@@ -294,6 +294,13 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   } else if (p.consumeIf(Token::star_star)) {
     vararg = VarArgKind::KWVarArg;
     kwArgHandling = KWArgHandling::kKeywordOnly;
+  }
+
+  // Reject attempts to make variadic output arguments.
+  if (vararg != VarArgKind::None && convention == kConventionOut) {
+    p.emitError(loc, "'out' convention may not be variadic");
+    isErroneous = true;
+    vararg = VarArgKind::None;
   }
 
   // Parse the argument name if present.
@@ -350,10 +357,9 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     if (p.parseExpression(initExpr))
       return failure();
 
-    if (convention == kConventionMut ||
-        convention == kConventionInitSelfResult) {
+    if (convention == kConventionMut || convention == kConventionOut) {
       p.emitError(equalLoc)
-          << (convention == kConventionInitSelfResult ? "'out'" : "'mut'")
+          << (convention == kConventionOut ? "'out'" : "'mut'")
           << " arguments may not have defaults" << initExpr->getRange();
       initExpr = nullptr;
     }
@@ -1172,7 +1178,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ParsedArgument::kConventionMut:
     arg.kgenConvention = ArgConvention::Mut;
     break;
-  case ParsedArgument::kConventionInitSelfResult:
+  case ParsedArgument::kConventionOut:
     arg.kgenConvention = ArgConvention::InitSelf;
     // Check that 'out' argument is only used how we support it.
     if (idx) {
@@ -1180,12 +1186,6 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
                        "'out' convention only supported on the first argument");
       arg.isErroneous = true;
       arg.kgenConvention = ArgConvention::Mut;
-      break;
-    }
-    if (arg.vararg != VarArgKind::None) {
-      shared.emitError(arg.loc, "'out' convention may not be variadic");
-      arg.isErroneous = true;
-      arg.vararg = VarArgKind::None;
       break;
     }
     break;
@@ -1201,7 +1201,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     case ParsedArgument::kConventionRef:
     case ParsedArgument::kConventionUnspec:
     case ParsedArgument::kConventionByRefResult:
-    case ParsedArgument::kConventionInitSelfResult:
+    case ParsedArgument::kConventionOut:
       llvm_unreachable("not a pack arg convention");
     case ParsedArgument::kConventionOwned:
       arg.kgenVariadicConvention = ArgConvention::OwnedMem;
@@ -1579,7 +1579,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     if (!argList.parsedArgs.empty() &&
         argList.parsedArgs[0].convention == ParsedArgument::kConventionMut) {
       auto &selfArg = argList.parsedArgs[0];
-      selfArg.convention = ParsedArgument::kConventionInitSelfResult;
+      selfArg.convention = ParsedArgument::kConventionOut;
     }
 
     // TODO(MOCO-789): Async initializers require a `byref_result` thunk to be
@@ -1831,12 +1831,12 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     assert(!parsedArgs.empty() && "arg count already checked above");
     SMLoc selfArgLoc = parsedArgs[0].loc;
 
-    // __init__ methods must take their self argument 'mut' syntactically.
-    if (parsedArgs[0].convention != ParsedArgument::kConventionInitSelfResult) {
+    // __init__ methods must take their self argument 'out' syntactically.
+    if (parsedArgs[0].convention != ParsedArgument::kConventionOut) {
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
-                  << name << " must be passed 'mut'";
+                  << name << " must be passed 'out'";
       if (parsedArgs[0].convention == ParsedArgument::kConventionUnspec)
-        diag << FixIt::insertBeforeToken(selfArgLoc, "mut ");
+        diag << FixIt::insertBeforeToken(selfArgLoc, "out ");
     }
 
     if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
