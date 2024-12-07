@@ -113,6 +113,10 @@ class DType(Enum):
             DType.uint16: np.uint16,
             DType.uint32: np.uint32,
             DType.uint64: np.uint64,
+            DType.f8e4m3: np.uint8,
+            DType.f8e4m3fnuz: np.uint8,
+            DType.f8e5m2: np.uint8,
+            DType.f8e5m2fnuz: np.uint8,
             DType.float16: np.float16,
             DType.float32: np.float32,
             DType.float64: np.float64,
@@ -171,6 +175,10 @@ class DType(Enum):
     def is_float(self) -> bool:  # type: ignore
         """Returns true if the dtype is floating point."""
         return self in [
+            DType.f8e4m3,
+            DType.f8e4m3fnuz,
+            DType.f8e5m2,
+            DType.f8e5m2fnuz,
             DType.bfloat16,
             DType.float16,
             DType.float32,
