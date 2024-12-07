@@ -10,6 +10,7 @@
 #include "Support/ML/Float16.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/bit.h"
+#include <cstdint>
 
 namespace M::Float8 {
 
@@ -52,12 +53,24 @@ private:
 };
 } // namespace Detail
 
-struct float8_e4m3_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3> {};
+struct float8_e4m3_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3> {
+  explicit float8_e4m3_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E4M3>(rawBits) {}
+};
 struct float8_e4m3fnuz_t
-    : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FNUZ> {};
-struct float8_e5m2_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2> {};
+    : Detail::float8_generic_t<llvm::APFloat::S_Float8E4M3FNUZ> {
+  explicit float8_e4m3fnuz_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E4M3FNUZ>(rawBits) {}
+};
+struct float8_e5m2_t : Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2> {
+  explicit float8_e5m2_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E5M2>(rawBits) {}
+};
 struct float8_e5m2fnuz_t
-    : Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2FNUZ> {};
+    : Detail::float8_generic_t<llvm::APFloat::S_Float8E5M2FNUZ> {
+  explicit float8_e5m2fnuz_t(uint8_t rawBits)
+      : float8_generic_t<llvm::APFloat::S_Float8E5M2FNUZ>(rawBits) {}
+};
 
 } // namespace M::Float8
 
