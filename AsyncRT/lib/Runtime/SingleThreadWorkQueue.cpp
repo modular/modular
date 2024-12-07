@@ -63,28 +63,6 @@ public:
 
   void await(llvm::ArrayRef<AnyAsyncValueRef> values) override;
 
-  bool callerIsForeign() const override { return false; }
-
-#if MODULAR_PARANOID
-  void pushDefaultUse(ResourceUse use) override {
-    assert(use);
-    std::lock_guard<std::mutex> guard(mu);
-    useStack.emplace_back(std::move(use));
-  }
-
-  void popDefaultUse() override {
-    std::lock_guard<std::mutex> guard(mu);
-    assert(!useStack.empty());
-    useStack.pop_back();
-  }
-
-  void taskIsDone() override {
-    std::lock_guard<std::mutex> guard(mu);
-    if (!useStack.empty())
-      useStack.back().reset();
-  }
-#endif
-
   size_t getParallelismLevel() const override { return 1; }
 
 private:

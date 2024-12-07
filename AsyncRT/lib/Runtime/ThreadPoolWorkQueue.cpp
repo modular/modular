@@ -809,8 +809,6 @@ public:
 
   void await(ArrayRef<AnyAsyncValueRef> values) override;
 
-  bool callerIsForeign() const override;
-
   size_t getParallelismLevel() const final {
     // `numWorkers` is set to the number of worker threads that are created
     // by the work queue, plus one for the 'main' thread if in mainWillDonate
@@ -818,30 +816,6 @@ public:
     // TODO(#1903): This is a poor heuristic for subdividing work.
     return numWorkers;
   }
-
-#if MODULAR_PARANOID
-  void pushDefaultUse(ResourceUse use) override {
-    assert(use && "cannot push a null sue");
-    WorkQueueThread *callerWorker = getOwningWorkQueueThread();
-    assert(callerWorker && "cannot push a use from a foreign thread");
-    callerWorker->useStack.emplace_back(std::move(use));
-  }
-
-  void popDefaultUse() override {
-    WorkQueueThread *callerWorker = getOwningWorkQueueThread();
-    assert(callerWorker && "cannot pop a use from a foreign thread");
-    assert(!callerWorker->useStack.empty() &&
-           "unbalanced pushes/pops on use stack");
-    callerWorker->useStack.pop_back();
-  }
-
-  void taskIsDone() override {
-    WorkQueueThread *callerWorker = getOwningWorkQueueThread();
-    assert(callerWorker && "cannot mark task as done from a foreign thread");
-    if (!callerWorker->useStack.empty())
-      callerWorker->useStack.back().reset();
-  }
-#endif
 
 private:
   /// If the caller is a worker thread or the 'main' thread for this work queue
@@ -1257,10 +1231,6 @@ void ThreadPoolWorkQueue::await(ArrayRef<AnyAsyncValueRef> values) {
   assert(sharedState.state != kShutdown &&
          "work queue was shutdown while waiting");
 #endif
-}
-
-bool ThreadPoolWorkQueue::callerIsForeign() const {
-  return getOwningWorkQueueThread() == nullptr;
 }
 
 //===----------------------------------------------------------------------===//

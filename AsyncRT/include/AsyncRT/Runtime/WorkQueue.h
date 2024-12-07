@@ -173,10 +173,6 @@ public:
   /// shutdown() can guarantee that all in-flight computation has completed.
   virtual void await(ArrayRef<AnyAsyncValueRef> values) = 0;
 
-  /// Returns true if the calling thread is known to be 'foreign' to this
-  /// work queue. What this means depends on the work queue implementation.
-  virtual bool callerIsForeign() const = 0;
-
   /// Return the pool size maintained by this work queue. Kernels can use
   /// this as a hint indicating the maximum useful number of work items
   /// they should break themselves into.
@@ -187,31 +183,6 @@ public:
   /// outside of any task. Depending on WorkQueue implementation, may need
   /// to be called from the same thread which created the WorkQueue.
   virtual void shutdown() = 0;
-
-#if MODULAR_PARANOID
-  /// Pushes use onto this thread's internal 'use stack'. When a task or local
-  /// task is added with a null use in its WorkItem (the default),
-  /// the current stack top of the calling thread is taken to be its implicit
-  /// use. While a work item is executing its use is similarly pushed onto the
-  /// stack of its executing thread. In this way pushing a single use from the
-  /// 'main' thread will cause it to be implicitly captured by the whole 'tree'
-  /// of tasks it launches, over all threads.
-  ///
-  /// Cannot be called from a foreign thread.
-  virtual void pushDefaultUse(ResourceUse use) = 0;
-
-  /// Pop a use from this thread's internal 'use stack'. Will assert fail if
-  /// use stack is empty.
-  ///
-  /// Cannot be called from a foreign thread.
-  virtual void popDefaultUse() = 0;
-
-  /// Indicates the caller's task is done for the purposes of detecting task
-  /// overhangs at runtime. May be called any number of times. Should be called
-  /// before an emplace() or setToError() which may cause the resource being
-  /// tracked to be marked as 'free'.
-  virtual void taskIsDone() = 0;
-#endif
 
 protected:
   WorkQueue() = default;
