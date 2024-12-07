@@ -13,6 +13,10 @@ from dataclasses import dataclass
 from typing import Callable
 
 import grpc
+
+# mypy: disable-error-code="import-not-found"
+import ModelServing.proto.grpc_predict_v2_pb2 as pb2
+import psutil
 from cli import TextGenerationMetrics
 from grpc_reflection.v1alpha import reflection
 from max.pipelines import PipelineConfig, PipelineTokenizer, TextTokenizer
@@ -23,9 +27,6 @@ from max.serve.pipelines.llm import (
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.telemetry.stopwatch import StopWatch
-
-# mypy: disable-error-code="import-not-found"
-import ModelServing.proto.grpc_predict_v2_pb2 as pb2
 from ModelServing.proto.grpc_predict_v2_pb2_grpc import (
     GRPCInferenceServiceServicer,
     add_GRPCInferenceServiceServicer_to_server,
@@ -366,6 +367,9 @@ async def grpc_serve(
                 model_name, tokenizer, worker_queue
             ) as pipeline,
         ):
+            if not psutil.pid_exists(worker_queue.pid):
+                logging.error("Process %d does not exist!", worker_queue.pid)
+                exit(-1)
             pipelines = {}
             pipelines[model_name] = pipeline
             add_GRPCInferenceServiceServicer_to_server(
@@ -379,10 +383,9 @@ async def grpc_serve(
             logging.info("Started server (via serve API)...")
             await server.wait_for_termination()
     except Exception as ex:
-        logging.error("Exception occurred ", ex)
-        await server.stop(None)
-        logging.info("server shutdown ")
+        logging.exception("Exception in grpc_serve ", ex)
     finally:
+        await server.stop(None)
         logging.info("Shutting down!")
 
 

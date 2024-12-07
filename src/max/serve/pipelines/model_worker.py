@@ -92,6 +92,7 @@ async def start_model_worker(
         ),
     )
     worker.start()
+    engine_queue.pid = worker.pid if worker.pid else -1
 
     async def worker_started():
         while not started_event.is_set():

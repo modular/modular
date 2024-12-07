@@ -68,6 +68,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self.response_q = MPQueue(max_size_bytes=10_000_000)
         self.cancel_q = MPQueue(max_size_bytes=1_000_000)
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
+        self.pid: int = -1
 
     @contextlib.contextmanager
     def open_channel(
