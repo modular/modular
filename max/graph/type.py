@@ -13,7 +13,7 @@ import re
 import sys
 from dataclasses import dataclass
 from enum import Enum, IntEnum
-from typing import Any, Iterable, Union, Optional
+from typing import Any, Iterable, Optional, Union
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -390,7 +390,11 @@ class StaticDim(Dim):
     dim: int
     """The size of the static dimension."""
 
-    def __init__(self, dim: int | StaticDim):
+    def __init__(self, dim: int | Dim):
+        if not isinstance(dim, (StaticDim, int)):
+            msg = "expected statically known dim"
+            raise TypeError(msg)
+
         # Can't assign directly to frozen dataclasses.
         super().__setattr__("dim", int(dim))
         if not -(2**63) <= self.dim < 2**63:
