@@ -1829,7 +1829,7 @@ static void resolveDeclForListenerLookup(DeclResolver &declResolver,
   (void)declResolver.resolveAllWildcardImports(decl);
 }
 
-/// Return if the given parser listner is interested in the given location.
+/// Return if the given parser listener is interested in the given location.
 static bool isListenerInterestedInLoc(ParserListener *listener, SMLoc loc) {
   return listener && listener->isInterestedInLoc(loc);
 }

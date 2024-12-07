@@ -370,7 +370,7 @@ Symbol *SymbolIndex::registerSymbol(MojoASTDeclRef declRef,
 void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMRange range,
                               StringRef spelling) {
   // We don't index empty spellings nor references in files other than the main
-  // one.
+  // doc.
   if (spelling.empty() || !mainDoc.containsLocation(range.Start))
     return;
 
