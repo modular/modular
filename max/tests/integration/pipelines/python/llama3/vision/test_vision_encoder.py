@@ -92,7 +92,9 @@ def test_vision_encoder_layer(
             gate_attn=gate_attn,
             gate_ffn=gate_ffn,
         )
-        graph.output(vision_encoder_layer(hidden_state, attn_mask)[0])  # type: ignore
+        graph.output(
+            vision_encoder_layer(hidden_state.tensor, attn_mask.tensor)
+        )
 
         @modular_graph_test(session, graph, max_magnitude=1 / 128)
         def test_correctness(execute, inputs, torch_inputs):
