@@ -49,19 +49,26 @@ from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from memory import UnsafePointer
 
 
-fn vendor_matmul[
+fn matmul[
     use_tf32: Bool = False,
 ](
     handle: UnsafePointer[cublasContext],
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
+    *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
-) -> Result:
+) raises:
     return _cublas_matmul[use_tf32=use_tf32](
-        handle, c, a, b, c_row_major, transpose_a, transpose_b
+        handle,
+        c,
+        a,
+        b,
+        c_row_major=c_row_major,
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
     )
 
 
@@ -72,10 +79,11 @@ fn _cublas_matmul[
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
+    *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
-) -> Result:
+) raises:
     constrained[
         a.type == b.type
         and (a.type is DType.float32 or a.type.is_half_float()),
@@ -116,32 +124,33 @@ fn _cublas_matmul[
     # transformation. To be rigorous though, we should set `c_is_row_major = True`
     # for accuracy validations and uses default column-major in benchmark.
 
-    var result: Result
     if c_row_major:
-        result = cublasGemmEx(
-            handle,
-            _convert_to_cublas_transpose(transpose_b),
-            _convert_to_cublas_transpose(transpose_a),
-            N,
-            M,
-            K,
-            UnsafePointer.address_of(alpha).bitcast[NoneType](),
-            UnsafePointer(b.data.bitcast[NoneType]()),
-            _convert_to_cublas_datatype[b.type](),
-            K if transpose_b else N,
-            UnsafePointer(a.data.bitcast[NoneType]()),
-            _convert_to_cublas_datatype[a.type](),
-            K,
-            UnsafePointer.address_of(beta).bitcast[NoneType](),
-            UnsafePointer(c.data.bitcast[NoneType]()),
-            _convert_to_cublas_datatype[c.type](),
-            N,
-            compute_type,
-            Algorithm.DEFAULT,
+        return check_cublas_error(
+            cublasGemmEx(
+                handle,
+                _convert_to_cublas_transpose(transpose_b),
+                _convert_to_cublas_transpose(transpose_a),
+                N,
+                M,
+                K,
+                UnsafePointer.address_of(alpha).bitcast[NoneType](),
+                UnsafePointer(b.data.bitcast[NoneType]()),
+                _convert_to_cublas_datatype[b.type](),
+                K if transpose_b else N,
+                UnsafePointer(a.data.bitcast[NoneType]()),
+                _convert_to_cublas_datatype[a.type](),
+                K,
+                UnsafePointer.address_of(beta).bitcast[NoneType](),
+                UnsafePointer(c.data.bitcast[NoneType]()),
+                _convert_to_cublas_datatype[c.type](),
+                N,
+                compute_type,
+                Algorithm.DEFAULT,
+            )
         )
     # Default column-major.
-    else:
-        result = cublasGemmEx(
+    check_cublas_error(
+        cublasGemmEx(
             handle,
             _convert_to_cublas_transpose(transpose_a),
             _convert_to_cublas_transpose(transpose_b),
@@ -162,7 +171,7 @@ fn _cublas_matmul[
             compute_type,
             Algorithm.DEFAULT,
         )
-    return result
+    )
 
 
 fn _cublasLt_matmul(
@@ -170,6 +179,7 @@ fn _cublasLt_matmul(
     d: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
+    *,
     c_row_major: Bool = True,
 ) raises -> Result:
     alias a_type = a.type
