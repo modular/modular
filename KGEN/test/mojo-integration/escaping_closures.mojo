@@ -127,7 +127,7 @@ fn take_closure[
 
 
 fn make_closure[c_type: DType]() -> fn (z: C[c_type]) escaping -> None:
-    fn foo(z: C[c_type]) -> None:
+    fn foo(z: C[c_type]) escaping -> None:
         print(z.get())
 
     return foo

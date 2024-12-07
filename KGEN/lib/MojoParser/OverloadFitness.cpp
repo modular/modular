@@ -62,6 +62,7 @@ struct DiagEmitter : public SharedStateUser {
   InflightDiag tooManyPosArgs(size_t maxAllowedArgs,
                               size_t numPosOperands) const;
   InflightDiag byPosAndKw(ArrayRef<StringAttr> names) const;
+  InflightDiag badImplicitConversion(ASTType fromType, ASTType toType) const;
 
 private:
   SMLoc callLoc;
@@ -387,6 +388,19 @@ InflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
 InflightDiag DiagEmitter::byPosAndKw(ArrayRef<StringAttr> names) const {
   InflightDiag diag = initDiag();
   emitByPosAndKw(diag, names, "argument");
+  return diag;
+}
+
+InflightDiag DiagEmitter::badImplicitConversion(ASTType fromType,
+                                                ASTType toType) const {
+  InflightDiag diag = initDiag();
+  diag << "cannot implicitly convert";
+  if (fromType)
+    diag << " " << fromType;
+
+  // Add target type to diag
+  if (toType)
+    diag << " to " << toType << ": add an explicit cast";
   return diag;
 }
 
@@ -1191,6 +1205,16 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   assert(posOperandIdx == numOperands &&
          "should handle argument mismatch above");
+
+  // Fail if this is an implicit conversion but the ctor is not marked @implicit
+  if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
+      !cast<LIT::FuncOp>(funcIfDirect).getIsImplicitConversion()) {
+    ASTType fromType = operands[1].ir.getRValueTypeIfResolvable();
+    ASTType toType = operands[0].ir.getRValueTypeIfResolvable();
+    if (toType) // Strip the reference off InitSelf argument.
+      toType = toType.getReferenceElementType();
+    return emitDiagFor.badImplicitConversion(fromType, toType);
+  }
 
   // Otherwise we succeeded!
   return result;

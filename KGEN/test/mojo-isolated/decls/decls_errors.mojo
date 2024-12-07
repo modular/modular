@@ -1000,6 +1000,49 @@ fn test_bad_struct():
     _ = OtherBadStruct(`2`)
 
 ##===----------------------------------------------------------------------===##
+# Bad implicit conversions.
+##===----------------------------------------------------------------------===##
+
+@value
+struct Foo:
+    var val: Int
+
+@value
+struct ContainsFoo:
+    var foo: Foo
+
+# expected-note @+1 {{function declared here}}
+fn take_foo(x: Foo): pass
+
+fn return_foo(x: Int) -> Foo:
+    return x # expected-error {{cannot implicitly convert 'Int' value to 'Foo'}}
+
+    return 1.2 # expected-error {{cannot implicitly convert 'FloatLiteral' value to 'Foo'}}
+
+# When attempting to do implicit conversions without an @implicit decorator
+fn implicit_conversions():
+    # assigning to expected type
+    var x = 42
+    var a: Foo = x # expected-error {{cannot implicitly convert 'Int' value to 'Foo'}}
+
+    # # reassigning
+    var b = Foo(42)
+    b = 42 # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Foo'}}
+
+    # # assigning to uninitialized
+    var c: Foo
+    c = 42 # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Foo'}}
+
+    # # assigning to member
+    var d = ContainsFoo(Foo(24))
+    d.foo = 42 # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Foo'}}
+
+    # # returning conversions
+    var e = return_foo(42)
+
+    take_foo(24) # expected-error {{invalid call to 'take_foo': argument #0 cannot be converted from 'IntLiteral' to 'Foo'}}
+
+##===----------------------------------------------------------------------===##
 # Top Level Code
 ##===----------------------------------------------------------------------===##
 
