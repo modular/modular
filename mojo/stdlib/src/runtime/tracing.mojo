@@ -9,13 +9,13 @@ from collections.optional import OptionalReg
 from sys import external_call
 from sys.param_env import env_get_int, is_defined
 
-import gpu.host.profiler
+import gpu.host.tracing
 from buffer import NDBuffer
-from gpu.host.profiler import _end_range as _end_nvtx_range
-from gpu.host.profiler import _is_enabled as _nvtx_is_enabled
-from gpu.host.profiler import _is_enabled_details as _nvtx_is_enabled_details
-from gpu.host.profiler import _mark as _mark_nvtx
-from gpu.host.profiler import _start_range as _start_nvtx_range
+from gpu.host.tracing import _end_range as _end_nvtx_range
+from gpu.host.tracing import _is_enabled as _nvtx_is_enabled
+from gpu.host.tracing import _is_enabled_details as _nvtx_is_enabled_details
+from gpu.host.tracing import _mark as _mark_nvtx
+from gpu.host.tracing import _start_range as _start_nvtx_range
 
 from utils import IndexList, Variant
 
@@ -473,7 +473,7 @@ struct Trace[
 
         @parameter
         if _is_gpu_profiler_enabled[category, level]():
-            _end_nvtx_range(profiler.RangeID(self.event_id))
+            _end_nvtx_range(tracing.RangeID(self.event_id))
             return
 
         @parameter
