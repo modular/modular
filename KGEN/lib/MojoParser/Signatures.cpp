@@ -61,6 +61,13 @@ static TypedAttr digOutSingleField(TypedAttr value, StringRef fieldName,
 /// analyze it to determine which origin it represents.  If it doesn't work,
 /// emit an error and return null.
 TypedAttr ExprEmitter::extractOriginOf(const ExprNode *expr, CValue value) {
+  // If this is a DLValue, it may be a def argument with an unresolved box.  We
+  // could materialize the box, but Python doesn't have origin_of, so we aren't
+  // in a compatibility situation: just collapse to immut ref.
+  if (auto dlVal = value.getIfDLValue())
+    if (MBValue resolved = dlVal->emitMBValueFromDefArgument(*this))
+      value = resolved;
+
   if (value.isMValue()) // We can get the origin of an MValue.
     return value.getMValueType().getOrigin();
 
