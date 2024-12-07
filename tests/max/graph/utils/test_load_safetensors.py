@@ -20,12 +20,14 @@ def test_load_safetensors_one(testdata_directory) -> None:
             key: graph.add_weight(weight.allocate())
             for key, weight in weights.items()
         }
-        assert len(data) == 5
+        assert len(data) == 7
         assert data["1.a"].type == TensorType(DType.int32, [5, 2])
         assert data["1.b"].type == TensorType(DType.float64, [1, 2, 3])
         assert data["1.c"].type == TensorType(DType.float32, [])
         assert data["1.fancy/name"].type == TensorType(DType.int64, [3])
         assert data["1.bf16"].type == TensorType(DType.bfloat16, [2])
+        assert data["1.float8_e4m3fn"].type == TensorType(DType.f8e4m3, [2])
+        assert data["1.float8_e5m2"].type == TensorType(DType.f8e5m2, [2])
 
 
 def test_load_safetensors_multi(testdata_directory) -> None:
@@ -40,17 +42,21 @@ def test_load_safetensors_multi(testdata_directory) -> None:
             key: graph.add_weight(weight.allocate())
             for key, weight in weights.items()
         }
-        assert len(data) == 10
+        assert len(data) == 14
         assert data["1.a"].type == TensorType(DType.int32, [5, 2])
         assert data["1.b"].type == TensorType(DType.float64, [1, 2, 3])
         assert data["1.c"].type == TensorType(DType.float32, [])
         assert data["1.fancy/name"].type == TensorType(DType.int64, [3])
         assert data["1.bf16"].type == TensorType(DType.bfloat16, [2])
+        assert data["1.float8_e4m3fn"].type == TensorType(DType.f8e4m3, [2])
+        assert data["1.float8_e5m2"].type == TensorType(DType.f8e5m2, [2])
         assert data["2.a"].type == TensorType(DType.int32, [5, 2])
         assert data["2.b"].type == TensorType(DType.float64, [1, 2, 3])
         assert data["2.c"].type == TensorType(DType.float32, [])
         assert data["2.fancy/name"].type == TensorType(DType.int64, [3])
         assert data["2.bf16"].type == TensorType(DType.bfloat16, [2])
+        assert data["2.float8_e4m3fn"].type == TensorType(DType.f8e4m3, [2])
+        assert data["2.float8_e5m2"].type == TensorType(DType.f8e5m2, [2])
 
 
 def test_load_using_prefix(testdata_directory) -> None:
@@ -89,7 +95,7 @@ def test_load_allocate_as_bytes(testdata_directory) -> None:
             key: graph.add_weight(weight.allocate_as_bytes())
             for key, weight in weights.items()
         }
-        assert len(data) == 5
+        assert len(data) == 7
         assert data["1.a"].type == TensorType(
             DType.uint8, [5, 8]
         )  # originally int32
@@ -105,3 +111,9 @@ def test_load_allocate_as_bytes(testdata_directory) -> None:
         assert data["1.bf16"].type == TensorType(
             DType.uint8, [4]
         )  # originally bfloat16
+        assert data["1.float8_e4m3fn"].type == TensorType(
+            DType.uint8, [2]
+        )  # originally float8_e4m3fn
+        assert data["1.float8_e5m2"].type == TensorType(
+            DType.uint8, [2]
+        )  # originally float8_e5m2

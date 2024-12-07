@@ -80,6 +80,12 @@ def write_safetensors(filename_prefix):
             f"{i}.c": torch.tensor(5432.1, dtype=torch.float32),
             f"{i}.fancy/name": torch.tensor([1, 2, 3], dtype=torch.int64),
             f"{i}.bf16": torch.tensor([123, 45], dtype=torch.bfloat16),
+            f"{i}.float8_e4m3fn": torch.tensor(
+                [11.0, 250.0], dtype=torch.float8_e4m3fn
+            ),
+            f"{i}.float8_e5m2": torch.tensor(
+                [13.0, 223.0], dtype=torch.float8_e5m2
+            ),
         }
 
         safe_torch.save_file(data, f"{filename_prefix}_{i}.safetensors")
