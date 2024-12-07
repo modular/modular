@@ -507,6 +507,11 @@ struct MemoryType:
     fn __init__(out self, value: String) raises:
         self.value = 4
 
+    # Default arguments and variadics.
+    @implicit
+    fn __init__(out self, value: SomeResultType, stuff: Int = 4,
+                *other: String):
+        self.value = 4
 
 # CHECK-LABEL: lit.func @"defaultArgumentNonRegisterType
 # CHECK-SAME: read_mem = apply_result_slot({{.*}}__init__

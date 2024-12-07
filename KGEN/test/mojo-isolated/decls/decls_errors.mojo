@@ -759,15 +759,15 @@ struct OkayStruct:
 
 
 struct CheckImplicit:
-  @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
+  @implicit # expected-error {{'@implicit' may only be applied to '__init__' methods}}
   fn foo(mut self): pass
-  @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
+  @implicit # expected-error {{'@implicit' requires an argument to convert from}}
   fn __init__(mut self): pass
   @implicit
   fn __init__(mut self, x: Int): pass
-  @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
+  @implicit # expected-error {{'@implicit' initializers must accept a single argument value}}
   fn __init__(mut self, x: Int, y: Int): pass
-  @implicit # expected-error {{'@implicit' may only be applied to single-argument '__init__' methods}}
+  @implicit # expected-error {{'@implicit' may only be applied to '__init__' methods}}
   fn __copyinit__(mut self, other: Self): pass
 
 
