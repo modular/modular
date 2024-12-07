@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from os import getenv
+from os import getenv, environ
 from pathlib import Path
 
 import pytest
@@ -70,3 +70,9 @@ def aliasing_outputs_path(modular_path: Path) -> Path:
 @pytest.fixture(scope="module")
 def gpu_session() -> InferenceSession:
     return InferenceSession(devices=[CUDA()])
+
+
+@pytest.fixture
+def graph_testdata() -> Path:
+    """Returns the path to the Modular .derived directory."""
+    return Path(environ["GRAPH_TESTDATA"])

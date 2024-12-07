@@ -164,6 +164,8 @@ modular_py_test(
     deps = [
         "//SDK/lib/API/python/max/engine",
         requirement("numpy"),
+        requirement("torch"),
+        requirement("safetensors"),
     ],
 )
 
