@@ -11,6 +11,11 @@
 struct MemType:
     var x: Int
 
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Int):
+        self.x = value
+
     fn __add__(self, rhs: MemType) -> MemType:
         return MemType(rhs.x + self.x)
 

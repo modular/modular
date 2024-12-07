@@ -153,11 +153,17 @@ struct NoneType:
 @nonmaterializable(Int)
 @register_passable("trivial")
 struct IntLiteral:
-    var value: __mlir_type.`!kgen.int_literal`
+    alias type = __mlir_type.`!kgen.int_literal`
+    var value: Self.type
 
     @always_inline("nodebug")
     fn __init__(out self):
         self.value = __mlir_attr.`#kgen.int_literal<0> : !kgen.int_literal`
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Self.type):
+        self.value = value
 
     @always_inline("nodebug")
     fn __ne__(self, rhs: Self) -> Bool:
@@ -182,7 +188,13 @@ struct IntLiteral:
 @nonmaterializable(FloatDyn)
 @register_passable("trivial")
 struct FloatLiteral:
-    var value: __mlir_type.`!kgen.float_literal`
+    alias type = __mlir_type.`!kgen.float_literal`
+    var value: Self.type
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Self.type):
+        self.value = value
 
 
 @value
@@ -190,7 +202,11 @@ struct FloatLiteral:
 struct FloatDyn:
     var value: __mlir_type.f64
 
+    @always_inline("nodebug")
     @implicit
+    fn __init__(out self, value: __mlir_type.f64):
+        self.value = value
+
     @always_inline("nodebug")
     @implicit
     fn __init__(out self, value: FloatLiteral):
@@ -209,7 +225,11 @@ struct Int(Copyable):
     fn __init__(out self):
         self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
 
+    @always_inline("nodebug")
     @implicit
+    fn __init__(out self, value: int):
+        self.value = value
+
     @always_inline("nodebug")
     @implicit
     fn __init__(out self, value: IntLiteral):
@@ -274,7 +294,13 @@ struct UInt8:
 @value
 @register_passable("trivial")
 struct StringLiteral:
-    var value: __mlir_type.`!kgen.string`
+    alias type = __mlir_type.`!kgen.string`
+    var value: Self.type
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Self.type):
+        self.value = value
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
@@ -468,18 +494,21 @@ struct VariadicListMem[
 
     alias reference_type = Pointer[element_type, origin]
 
+    @implicit
     fn __init__(
         mut self,
         value: __mlir_type[`!kgen.variadic<`, Self._mlir_type, `, read_mem>`],
     ):
         pass
 
+    @implicit
     fn __init__(
         mut self,
         value: __mlir_type[`!kgen.variadic<`, Self._mlir_type, `, mut>`],
     ):
         pass
 
+    @implicit
     fn __init__(
         mut self,
         value: __mlir_type[
@@ -553,7 +582,13 @@ struct VariadicPack[
 struct __ParameterClosureCaptureList[
     fn_type: AnyTrivialRegType, fn_ref: fn_type
 ]:
-    var value: __mlir_type.`!kgen.pointer<none>`
+    alias type = __mlir_type.`!kgen.pointer<none>`
+    var value: Self.type
+
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Self.type):
+        self.value = value
 
     # Parameter closure invariant requires this function be marked 'capturing'.
     @parameter
@@ -583,6 +618,11 @@ struct AddressSpace:
 
     var _value: Int
 
+    @always_inline("nodebug")
+    @implicit
+    fn __init__(out self, value: Int):
+        self._value = value
+
     alias GENERIC = AddressSpace(0)
 
     @always_inline("nodebug")
@@ -611,6 +651,7 @@ struct Pointer[
     var _value: Self._mlir_type
 
     @always_inline("nodebug")
+    @implicit
     fn __init__(out self, *, _mlir_value: Self._mlir_type):
         self._value = _mlir_value
 
