@@ -6,7 +6,8 @@
 """This module includes intrinsics for NVIDIA GPUs sync instructions."""
 
 from os import abort
-from sys import llvm_intrinsic
+from sys import llvm_intrinsic, is_nvidia_gpu, is_amd_gpu
+from sys.param_env import env_get_bool
 
 from memory import UnsafePointer
 from memory.pointer import AddressSpace
@@ -18,6 +19,10 @@ from .memory import AddressSpace as GPUAddressSpace
 # barrier
 # ===-----------------------------------------------------------------------===#
 
+alias _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
+    "USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM", False
+]()
+
 
 @always_inline("nodebug")
 fn barrier():
@@ -28,6 +33,10 @@ fn barrier():
     @parameter
     if is_nvidia_gpu():
         __mlir_op.`nvvm.barrier0`()
+    elif _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM:
+        constrained[is_amd_gpu()]()
+        llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
+        llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
     else:
         __mlir_op.`pop.fence`[
             _type=None,
