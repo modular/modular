@@ -4335,11 +4335,13 @@ fn get_inputs_lambdas[
     _rank: Int,
     size: Int,
     specs: StaticTuple[StaticTensorSpec[type, _rank, *_], size],
-]() -> StaticTuple[
-    fn[
-        width: Int, rank: Int
-    ] (IndexList[rank]) capturing -> SIMD[type, width], size
-] as result:
+](
+    out result: StaticTuple[
+        fn[
+            width: Int, rank: Int
+        ] (IndexList[rank]) capturing -> SIMD[type, width], size
+    ]
+):
     var res = __type_of(result)()
 
     @parameter

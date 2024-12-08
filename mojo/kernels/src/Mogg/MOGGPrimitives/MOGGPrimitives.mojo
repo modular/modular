@@ -568,9 +568,10 @@ fn mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
     type: DType,
-](buffer: NDBuffer[type, buffer_rank]) -> StaticTensorSpec[
-    tensor_rank
-] as result:
+](
+    buffer: NDBuffer[type, buffer_rank],
+    out result: StaticTensorSpec[tensor_rank],
+):
     @parameter
     if tensor_rank == 0:
         constrained[buffer_rank == 1]()
@@ -624,7 +625,7 @@ fn mgp_buffer_alloc[
 fn mgp_buffer_constant[
     bRawAlign: UInt64,
     resource_bytecount: Int,
-](resource_ptr: UnsafePointer[NoneType]) -> NDBuffer[DType.int8, 1] as result:
+](resource_ptr: UnsafePointer[NoneType], out result: NDBuffer[DType.int8, 1]):
     # Should we keep the alignment? It seems that the static alignment is
     # dropped in the kernels anyway.
     return __type_of(result)(resource_ptr.bitcast[Int8](), resource_bytecount)
