@@ -3,11 +3,12 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""This module provides abstractions for using Async Tensor Cores to perform asynchronous 
+"""This module provides abstractions for using Async Tensor Cores to perform asynchronous
 matrix multiplication operations.
 """
 from layout import IntTuple, Layout, LayoutTensor
 
+from gpu import WARP_SIZE
 from gpu.memory import AddressSpace
 from gpu.id import ThreadIdx
 from gpu.mma import (
@@ -20,24 +21,11 @@ from gpu.mma import (
 from utils import Index, IndexList
 
 
-# TODO: Remove when fix stdlib bug!
-fn _to_str(mma_shape: IndexList[3]) -> String:
-    return (
-        "["
-        + str(mma_shape[1])
-        + ", "
-        + str(mma_shape[1])
-        + ", "
-        + str(mma_shape[2])
-        + "]"
-    )
-
-
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
 fn _lhs_layout[mma_shape: IndexList[3]]() -> Layout:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA instruction shape `" + _to_str(mma_shape) + "` is not supported",
+        "WGMMA operation of shape '[" + str(mma_shape) + "]' is not supported",
     ]()
     return Layout(
         IntTuple(IntTuple(8, 8), IntTuple(4, 2)),
@@ -48,7 +36,7 @@ fn _lhs_layout[mma_shape: IndexList[3]]() -> Layout:
 fn _rhs_layout[mma_shape: IndexList[3]]() -> Layout:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA instruction shape `" + _to_str(mma_shape) + "` is not supported",
+        "WGMMA operation of shape '[" + str(mma_shape) + "]' is not supported",
     ]()
     return Layout(IntTuple(IntTuple(4, 2), 8), IntTuple(IntTuple(1, 32), 4))
 
@@ -60,7 +48,7 @@ fn _lhs_descriptor[
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA instruction shape`" + _to_str(mma_shape) + "` is not supported",
+        "WGMMA operation of shape '[" + str(mma_shape) + "]' is not supported",
     ]()
     return WGMMADescriptor.create[8, 64](tensor.ptr)
 
@@ -72,7 +60,7 @@ fn _rhs_descriptor[
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA instruction shape`" + _to_str(mma_shape) + "` is not supported",
+        "WGMMA operation of shape '[" + str(mma_shape) + "]' is not supported",
     ]()
     return WGMMADescriptor.create[1, 8](tensor.ptr)
 
@@ -83,7 +71,7 @@ fn _output_register_size[
 ](in_dtype: DType, out_dtype: DType) -> Int:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA instruction shape`" + _to_str(mma_shape) + "` is not supported",
+        "WGMMA operation of shape '[" + str(mma_shape) + "]' is not supported",
     ]()
     return 4
 
@@ -119,9 +107,9 @@ struct TensorCoreAsync[
     fn __init__(out self):
         constrained[
             mma_shape == Index(64, 8, 8),
-            "WGMMA instruction shape`"
-            + _to_str(mma_shape)
-            + "` is not supported",
+            "WGMMA operation of shape '["
+            + str(mma_shape)
+            + "]' is not supported",
         ]()
 
     @staticmethod
@@ -162,15 +150,14 @@ struct TensorCoreAsync[
     ):
         constrained[
             mma_shape == Index(64, 8, 8),
-            "WGMMA instruction shape`"
-            + _to_str(mma_shape)
-            + "` is not supported",
+            "WGMMA operation of shape '["
+            + str(mma_shape)
+            + "]' is not supported",
         ]()
-        warp_id = ThreadIdx.x // 32
-        lan_id = ThreadIdx.x % 32
+        warp_id, lan_id = divmod(ThreadIdx.x, UInt(WARP_SIZE))
         alias warp_row_major_layout = Layout.row_major(8, 4)
 
-        th_local_res = (
+        var th_local_res = (
             warp_group_tile.tile[16, 8](warp_id, 0)
             .vectorize[1, 2]()
             .distribute[warp_row_major_layout](lan_id)
