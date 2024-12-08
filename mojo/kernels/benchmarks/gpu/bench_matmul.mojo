@@ -86,12 +86,11 @@ fn bench_matmul[
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
     var buffer_c = ctx.enqueue_create_buffer[dtype](cache_c)
 
-    var cublas_handle = UnsafePointer[cublasContext]()
-    check_cublas_error(cublasCreate(UnsafePointer.address_of(cublas_handle)))
+    var handle = gpu_blas.create_handle[gpu_blas.Backend.CUBLAS]()
 
     @parameter
     @__copy_capture(
-        cache_a, cache_b, cache_c, stride_a, stride_b, stride_c, cublas_handle
+        cache_a, cache_b, cache_c, stride_a, stride_b, stride_c, handle
     )
     @always_inline
     fn bench_func(mut b: Bencher):
@@ -120,7 +119,7 @@ fn bench_matmul[
             @parameter
             if use_cublas:
                 gpu_blas.matmul[use_tf32=True](
-                    cublas_handle,
+                    handle,
                     tensor_c,
                     tensor_a,
                     tensor_b,
@@ -157,7 +156,7 @@ fn bench_matmul[
         ),
     )
 
-    check_cublas_error(cublasDestroy(cublas_handle))
+    gpu_blas.destroy_handle(handle)
 
     # Retain our buffers till the end.
     _ = buffer_a^
