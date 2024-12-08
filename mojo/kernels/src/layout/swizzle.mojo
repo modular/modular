@@ -7,7 +7,7 @@
 from collections import OptionalReg
 from sys import simdwidthof, sizeof
 
-from gpu.shuffle import _static_log2
+from bit import log2_floor
 
 from .int_tuple import flatten
 from .layout import LayoutTrait
@@ -322,12 +322,12 @@ fn make_ldmatrix_swizzle[type: DType, row_size: Int]() -> Swizzle:
     alias conflict_ways = min(
         8 * row_size * sizeof[type]() // bytes_32_banks, 8
     )
-    alias bits = _static_log2[conflict_ways]()
+    alias bits = log2_floor(conflict_ways)
 
     # One swizzle bit pattern e.g. ^01 is applied to the same row if the row
     # is longer than 32 banks or multiple rows that fits in 32 banks.
     alias simd_size = simdwidthof[type]()
-    alias shifts = _static_log2[max(row_size // simd_size, 8)]()
+    alias shifts = log2_floor(max(row_size // simd_size, 8))
 
     return Swizzle(bits, 0, shifts)
 
@@ -344,9 +344,9 @@ fn make_swizzle[num_rows: Int, row_size: Int, access_size: Int]() -> Swizzle:
     for bf16.
     """
 
-    alias bits = _static_log2[num_rows]()
-    alias base = _static_log2[access_size]()
-    alias shifts = _static_log2[row_size]() - base
+    alias bits = log2_floor(num_rows)
+    alias base = log2_floor(access_size)
+    alias shifts = log2_floor(row_size) - base
 
     constrained[
         shifts > 0, "Negatives shifts in swizzling is likely to be a bug."
