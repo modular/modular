@@ -165,8 +165,8 @@ fn parallelism_level() -> Int:
 
 
 fn create_task(
-    owned handle: Coroutine[*_],
-) -> Task[handle.type, handle.origins] as task:
+    owned handle: Coroutine[*_], out task: Task[handle.type, handle.origins]
+):
     """Run the coroutine as a task on the AsyncRT Runtime."""
     var ctx = handle._get_ctx[AsyncContext]()
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
@@ -176,12 +176,12 @@ fn create_task(
 
 
 @always_inline
-fn run(owned handle: Coroutine[*_]) -> handle.type as out:
+fn run(owned handle: Coroutine[*_], out result: handle.type):
     var ctx = handle._get_ctx[AsyncContext]()
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
-    handle._set_result_slot(UnsafePointer.address_of(out))
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
+    handle._set_result_slot(UnsafePointer.address_of(result))
     _async_execute[handle.type](handle._handle, -1)
     _async_wait(AsyncContext.get_chain(ctx))
     _del_asyncrt_chain(AsyncContext.get_chain(ctx))
@@ -189,12 +189,12 @@ fn run(owned handle: Coroutine[*_]) -> handle.type as out:
 
 
 @always_inline
-fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type as out:
+fn run(owned handle: RaisingCoroutine[*_], out result: handle.type) raises:
     var ctx = handle._get_ctx[AsyncContext]()
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
     handle._set_result_slot(
-        __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(out)),
+        __mlir_op.`lit.ref.to_pointer`(__get_mvalue_as_litref(result)),
         __mlir_op.`lit.ref.to_pointer`(
             __get_mvalue_as_litref(__get_nearest_error_slot())
         ),
@@ -208,7 +208,7 @@ fn run(owned handle: RaisingCoroutine[*_]) raises -> handle.type as out:
             __get_mvalue_as_litref(__get_nearest_error_slot())
         )
         __mlir_op.`lit.raise`()
-    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(out))
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(result))
     handle^.force_destroy()
 
 
