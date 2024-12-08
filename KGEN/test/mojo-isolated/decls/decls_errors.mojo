@@ -80,11 +80,20 @@ struct MemType:
 fn missingColon(x: Int)
   return x
 
-# expected-error @+1 {{'out' convention only supported on the first argument}}
-fn bad_out1(a: Int, out b: Int): pass
+fn out1(a: Int, out b: Int): pass
 
 # expected-error @+1 {{'out' convention may not be variadic}}
 fn bad_out2(out *b: Int): pass
+
+# expected-error @+1 {{parameters cannot be 'out'}}
+fn bad_out3[out x: Int](): pass
+
+# expected-error @+1 {{function may not have multiple 'out' arguments}}
+fn bad_out4(out a: Int, out b: Int): pass
+
+# expected-error @+1 {{function cannot have both an 'out' argument and an explicit result type}}
+fn bad_out5(out a: Int) -> Int: pass
+
 
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
@@ -723,7 +732,8 @@ fn function_with_struct2():
 # https://github.com/modularml/modular/issues/33557
 struct HasBadCtor:
     var v: Int
-    fn __init__(out self, v: Int) -> Self: # expected-error {{'__init__' result type must be elided (or None)}}
+    # expected-error @below {{function cannot have both an 'out' argument and an explicit result type}}
+    fn __init__(out self, v: Int) -> Self:
         self.v = v
 def useBadCtor():
     # Note that the key thing we're checking for here is that this does NOT have

@@ -402,9 +402,11 @@ PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
 /// This classification logic is described here:
 ///   https://peps.python.org/pep-0570/#how-to-teach-this
 ///
+/// 'resultArg' is non-null for argument lists, and allows handling of 'out'
+/// arguments.
 static ParseResult
 parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
-                    ArgListKind kind) {
+                    ParsedArgument *resultArg, ArgListKind kind) {
   // Figure out where to stop scanning.
   SmallVector<Token::Kind, 2> stopTokens;
   switch (kind) {
@@ -583,6 +585,17 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
             arg.loc,
             "non-owned variadic keyword arguments are not supported yet");
       }
+    }
+
+    // If this argument is an "out" argument, process it as a result.
+    if (arg.convention == ParsedArgument::kConventionOut) {
+      if (!resultArg)
+        return p.emitError(arg.loc, "parameters cannot be 'out'");
+      if (resultArg->convention == ParsedArgument::kConventionOut)
+        return p.emitError(arg.loc,
+                           "function may not have multiple 'out' arguments");
+      *resultArg = arg;
+      return success();
     }
 
     // Otherwise just remember the argument.
@@ -830,7 +843,7 @@ ParseResult ParsedParamList::parseOptionalParameters(ParserBase &p,
     return success();
 
   // Parse an actual parameter list.
-  if (parseArgOrParamList(p, params, kind))
+  if (parseArgOrParamList(p, params, /*resultArg=*/nullptr, kind))
     return failure();
 
   return p.parseToken(Token::r_square, "expected ']' for parameter list");
@@ -848,13 +861,13 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
   // If this is a bare lambda argument list, it won't be parenthesized and won't
   // have effects.
   if (kind == ArgListKind::kBareLambdaArgList)
-    return parseArgOrParamList(p, parsedArgs, kind);
+    return parseArgOrParamList(p, parsedArgs, &resultArg, kind);
 
   if (p.parseToken(Token::l_paren, "expected '(' for argument list"))
     return failure();
 
   if (!p.consumeIf(Token::r_paren)) {
-    if (parseArgOrParamList(p, parsedArgs, kind) ||
+    if (parseArgOrParamList(p, parsedArgs, &resultArg, kind) ||
         p.parseToken(Token::r_paren, "expected ')' in argument list"))
       return failure();
   }
@@ -903,9 +916,19 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 /// Parse the result specifier starting with a `->` if present.
 void ParsedArgumentList::parseResultIfPresent(
     ParserBase &p, std::optional<size_t> stmtIndent) {
-  resultArg.loc = p.getToken().getLoc();
-  if (!p.consumeIf(Token::minus_greater))
+  if (!p.consumeIf(Token::minus_greater)) {
+    resultArg.loc = p.getToken().getLoc();
     return;
+  }
+
+  // If we already have a result, emit an error but keep parsing.
+  if (resultArg.convention == ParsedArgument::kConventionOut)
+    p.emitError(resultArg.loc) << "function cannot have both an 'out' argument "
+                                  "and an explicit result type";
+
+  // Indicate a present result by setting its convention to 'out'.
+  resultArg.convention = ParsedArgument::kConventionOut;
+  resultArg.loc = p.getToken().getLoc();
 
   // Parse a result reference if present.
   if (p.getToken().is(Token::kw_ref)) {
@@ -1596,12 +1619,25 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       fnInfo = SpecialFunctionInfo();
     }
 
-    // TODO: Remove this legacy hack, to allow people to write inout/mut for
-    // self on init.
-    if (!argList.parsedArgs.empty() &&
-        argList.parsedArgs[0].convention == ParsedArgument::kConventionMut) {
-      auto &selfArg = argList.parsedArgs[0];
-      selfArg.convention = ParsedArgument::kConventionOut;
+    // Initializers allow an 'out' specifier which gets parsed as a result. For
+    // now we tack it onto the beginning of the argument list.
+    if (argList.resultArg.convention == ParsedArgument::kConventionOut) {
+      // Move the 'out' argument back to the beginning.
+      argList.parsedArgs.insert(argList.parsedArgs.begin(), argList.resultArg);
+      argList.resultArg = ParsedArgument();
+      // TODO: This is yuck, drop it when 'out self' isn't an argument.
+      if (argList.parsedArgs.size() > 1 &&
+          argList.parsedArgs[1].kwArgHandling == KWArgHandling::kPositionalOnly)
+        argList.parsedArgs[0].kwArgHandling =
+            argList.parsedArgs[1].kwArgHandling;
+    } else {
+      // TODO: Remove this legacy hack, to allow people to write inout/mut for
+      // self on init.
+      if (!argList.parsedArgs.empty() &&
+          argList.parsedArgs[0].convention == ParsedArgument::kConventionMut) {
+        auto &selfArg = argList.parsedArgs[0];
+        selfArg.convention = ParsedArgument::kConventionOut;
+      }
     }
 
     // TODO(MOCO-789): Async initializers require a `byref_result` thunk to be
