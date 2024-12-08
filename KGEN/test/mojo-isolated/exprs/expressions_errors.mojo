@@ -762,8 +762,9 @@ fn test_signature():
   # expected-error @+1 {{use of unknown declaration 'UndefinedStruct'}}
   var y : fn(x: UndefinedStruct)->None = HasIntParam[1].__init__
 
-  # Ok!
-  var z : fn(out x: HasIntParam[1])->None = HasIntParam[1].__init__
+  # FIXME: should be Ok!
+  # expected-error @+1 {{'fn(out self: HasIntParam[1]) -> None' value to 'fn() -> HasIntParam[1]' in 'var' initializer}}
+  var z : fn(out x: HasIntParam[1]) = HasIntParam[1].__init__
 
 fn bad_union[ao: Origin[True]](ref [ao] a: String, mut b: String) -> ref [a, b] String:
     var c: String

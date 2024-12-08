@@ -347,7 +347,7 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
     a + b
 
 # CHECK-LABEL: lit.func @"testContextSensitiveKeyword
-# CHECK-SAME: (%x: !lit.ref<!Int, mut *"x`"> init_self, %out: !Int)
+# CHECK-SAME: (%out: !Int, ?, %x: !lit.ref<!Int, mut *"x`"> byref_result)
 fn testContextSensitiveKeyword(out x: Int, out: Int):
     # out is an argument specifier, but that's a context sensitive keyword.
     # The identifier can be used like normal as well.
@@ -1060,7 +1060,7 @@ struct RaisingMemberwiseInit:
     var x: Int
 
     # CHECK-LABEL: lit.func @"__init__{{.*}} throws
-    fn __init__(out self, /, x: Int) raises:
+    fn __init__(out self, x: Int) raises:
         pass
 
 
