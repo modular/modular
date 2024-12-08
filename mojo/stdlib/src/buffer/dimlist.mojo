@@ -596,7 +596,7 @@ struct DimList(
 @always_inline
 fn _make_tuple[
     size: Int, *, unsigned: Bool = False
-](values: DimList) -> IndexList[size, unsigned=unsigned] as result:
+](values: DimList, out result: IndexList[size, unsigned=unsigned]):
     """Creates a tuple constant using the specified values.
 
     Args:

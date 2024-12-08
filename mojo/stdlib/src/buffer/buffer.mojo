@@ -1180,7 +1180,8 @@ struct NDBuffer[
     @always_inline
     fn flatten(
         self,
-    ) -> Buffer[type, shape.product(), address_space=address_space] as result:
+        out result: Buffer[type, shape.product(), address_space=address_space],
+    ):
         """Constructs a flattened Buffer counterpart for this NDBuffer.
 
         Constraints:
@@ -1196,8 +1197,8 @@ struct NDBuffer[
 
     @always_inline
     fn make_dims_unknown(
-        self,
-    ) -> NDBuffer[type, rank, address_space=address_space] as result:
+        self, out result: NDBuffer[type, rank, address_space=address_space]
+    ):
         """Rebinds the NDBuffer to one with unknown shape.
 
         Returns:
