@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug %s
+# RUN: %mojo-build-no-debug-no-assert %s
 from internal_utils import env_get_dtype, DeviceNDBuffer, HostNDBuffer, random
 from random import random_ui64, seed
 from sys import env_get_int, sizeof, env_get_bool

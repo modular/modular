@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug %s
+# RUN: %mojo-build-no-debug-no-assert %s
 
 from pathlib import Path
 from builtin._closure import __ownership_keepalive

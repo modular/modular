@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s -t | FileCheck %s
+# RUN: %mojo-no-debug-no-assert %s -t | FileCheck %s
 # CHECK: Benchmark results
 
 from sys.info import num_physical_cores

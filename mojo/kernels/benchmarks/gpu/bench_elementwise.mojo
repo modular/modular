@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-build-no-debug %s
+# RUN: %mojo-build-no-debug-no-assert %s
 
 from math import sqrt, isqrt, log, sin, tanh, exp, erf, fma, ceildiv, align_up
 from sys import (

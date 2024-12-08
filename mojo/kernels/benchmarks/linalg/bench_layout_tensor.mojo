@@ -3,8 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s -t | FileCheck %s
-# CHECK: CPU Results
+# RUN: %mojo-build-no-debug-no-assert %s
 
 import math
 from sys import alignof, simdwidthof

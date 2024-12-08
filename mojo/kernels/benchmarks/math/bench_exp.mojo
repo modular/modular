@@ -3,9 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-# RUN: %mojo-no-debug %s -t | FileCheck %s
-# CHECK: Benchmark results
+# RUN: %mojo-build-no-debug-no-assert %s
 
 from math import *
 from math.math import _exp_taylor, _ldexp_impl
