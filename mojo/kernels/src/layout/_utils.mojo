@@ -116,7 +116,8 @@ alias ManagedLayoutGPUTensor = ManagedLayoutTensor[
 
 fn load_to_simd(
     tensor: LayoutTensor,
-) -> SIMD[tensor.dtype, product(tensor.layout.shape)] as res:
+    out res: SIMD[tensor.dtype, product(tensor.layout.shape)],
+):
     constrained[
         tensor.layout.all_dims_known(),
         "load_to_simd is supported only for tensors with known layout",

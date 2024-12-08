@@ -96,9 +96,11 @@ fn _tile_mask[
     rank: Int,
     __sizes: IndexList[rank] = IndexList[rank](1),
     __element_stride: IndexList[rank] = IndexList[rank](1),
-](shape: IndexList[rank], tile_coords: IndexList[rank]) -> TileMask[
-    rank, __sizes, __element_stride
-] as result:
+](
+    shape: IndexList[rank],
+    tile_coords: IndexList[rank],
+    out result: TileMask[rank, __sizes, __element_stride],
+):
     var tile_offset = IndexList[rank]()
 
     @parameter
@@ -1334,11 +1336,12 @@ fn copy_from_nd_buffer_async[
 
 fn from_ndbuffer_row_major(
     buffer: NDBuffer,
-) -> LayoutTensor[
-    buffer.type,
-    Layout.row_major[buffer.rank](buffer.shape),
-    address_space = buffer.address_space,
-] as result:
+    out result: LayoutTensor[
+        buffer.type,
+        Layout.row_major[buffer.rank](buffer.shape),
+        address_space = buffer.address_space,
+    ],
+):
     """This function takes the underlying buffer from NDBuffer without explicitly
     copying any data.
     """

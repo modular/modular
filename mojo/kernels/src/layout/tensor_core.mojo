@@ -102,10 +102,7 @@ struct TensorCore[
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
 
     @always_inline
-    fn load_a(
-        self,
-        a: LayoutTensor,
-    ) -> Self.a_reg_tile_type as res:
+    fn load_a(self, a: LayoutTensor, out res: Self.a_reg_tile_type):
         @parameter
         if is_nvidia_gpu():
             return self._load_a_nvidia(a)
@@ -113,10 +110,7 @@ struct TensorCore[
             return self._load_a_amd(a)
 
     @always_inline
-    fn _load_a_amd(
-        self,
-        a: LayoutTensor,
-    ) -> Self.a_reg_tile_type as res:
+    fn _load_a_amd(self, a: LayoutTensor, out res: Self.a_reg_tile_type):
         alias mma_m = shape[0]
         alias mma_k = shape[2]
         var a_reg_tile = __type_of(res).stack_allocation()
@@ -155,10 +149,7 @@ struct TensorCore[
         return a_reg_tile
 
     @always_inline
-    fn _load_a_nvidia(
-        self,
-        a: LayoutTensor,
-    ) -> Self.a_reg_tile_type as res:
+    fn _load_a_nvidia(self, a: LayoutTensor, out res: Self.a_reg_tile_type):
         alias mma_m = shape[0]
         alias mma_k = shape[2]
         var a_reg_tile = __type_of(res).stack_allocation()
@@ -213,10 +204,7 @@ struct TensorCore[
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
-    fn load_b(
-        self,
-        b: LayoutTensor,
-    ) -> Self.b_reg_tile_type as res:
+    fn load_b(self, b: LayoutTensor, out res: Self.b_reg_tile_type):
         @parameter
         if is_nvidia_gpu():
             return self._load_b_nvidia(b)
@@ -225,10 +213,7 @@ struct TensorCore[
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
-    fn _load_b_amd(
-        self,
-        b: LayoutTensor,
-    ) -> Self.b_reg_tile_type as res:
+    fn _load_b_amd(self, b: LayoutTensor, out res: Self.b_reg_tile_type):
         alias mma_n = shape[1]
         alias mma_k = shape[2]
         var b_reg_tile = __type_of(res).stack_allocation()
@@ -263,10 +248,7 @@ struct TensorCore[
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
-    fn _load_b_nvidia(
-        self,
-        b: LayoutTensor,
-    ) -> Self.b_reg_tile_type as res:
+    fn _load_b_nvidia(self, b: LayoutTensor, out res: Self.b_reg_tile_type):
         alias mma_n = shape[1]
         alias mma_k = shape[2]
         var b_reg_tile = __type_of(res).stack_allocation()
@@ -320,10 +302,7 @@ struct TensorCore[
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
     @always_inline
-    fn load_c(
-        self,
-        c: LayoutTensor,
-    ) -> Self.c_reg_tile_type as res:
+    fn load_c(self, c: LayoutTensor, out res: Self.c_reg_tile_type):
         @parameter
         if is_nvidia_gpu():
             return self._load_c_nvidia(c)
@@ -331,10 +310,7 @@ struct TensorCore[
             return self._load_c_amd(c)
 
     @always_inline
-    fn _load_c_amd(
-        self,
-        c: LayoutTensor,
-    ) -> Self.c_reg_tile_type as res:
+    fn _load_c_amd(self, c: LayoutTensor, out res: Self.c_reg_tile_type):
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
@@ -357,10 +333,7 @@ struct TensorCore[
         return c_reg_tile
 
     @always_inline
-    fn _load_c_nvidia(
-        self,
-        c: LayoutTensor,
-    ) -> Self.c_reg_tile_type as res:
+    fn _load_c_nvidia(self, c: LayoutTensor, out res: Self.c_reg_tile_type):
         alias mma_m = shape[0]
         alias mma_n = shape[1]
         alias mma_k = shape[2]
@@ -452,7 +425,8 @@ struct TensorCore[
         a: LayoutTensor,
         b: LayoutTensor,
         c: LayoutTensor,
-    ) -> Self.c_reg_tile_type as res:
+        out res: Self.c_reg_tile_type,
+    ):
         var a_reg = load_to_simd(a)
         var b_reg = load_to_simd(b)
         var c_reg = load_to_simd(c)

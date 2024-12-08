@@ -79,15 +79,18 @@ struct TMATensorTile[
     # Schedules an asynchronous load of tile at and returns the memory barrier for the operation.
     @always_inline
     fn async_load(
-        self, coord_0: Int, coord_1: Int
-    ) -> Tuple[
-        LayoutTensor[
-            dtype,
-            layout,
-            address_space = AddressSpace.SHARED,
+        self,
+        coord_0: Int,
+        coord_1: Int,
+        out res: Tuple[
+            LayoutTensor[
+                dtype,
+                layout,
+                address_space = AddressSpace.SHARED,
+            ],
+            TMABarrier,
         ],
-        TMABarrier,
-    ] as res:
+    ):
         var sh_mem = LayoutTensor[
             dtype,
             layout,

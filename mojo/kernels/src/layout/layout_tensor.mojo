@@ -305,13 +305,16 @@ struct LayoutTensor[
         /,
         address_space: AddressSpace = Self.address_space,
         element_layout: Layout = Self.element_layout,
-    ](self) -> LayoutTensor[
-        new_type,
-        layout,
-        address_space=address_space,
-        element_layout=element_layout,
-        masked=masked,
-    ] as result:
+    ](
+        self,
+        out result: LayoutTensor[
+            new_type,
+            layout,
+            address_space=address_space,
+            element_layout=element_layout,
+            masked=masked,
+        ],
+    ):
         """Bitcast the underlying pointer to a new data type.
 
         Parameters:
@@ -1047,15 +1050,15 @@ struct LayoutTensor[
     @always_inline
     fn coalesce(
         self,
-    ) -> LayoutTensor[
-        dtype,
-        coalesce(layout),
-        address_space=address_space,
-        element_layout = self.element_layout,
-    ] as out:
+        out result: LayoutTensor[
+            dtype,
+            coalesce(layout),
+            address_space=address_space,
+            element_layout = self.element_layout,
+        ],
+    ):
         """Returns a LayoutTensor with a coalesced Layout."""
-
-        return __type_of(out)(self.ptr)
+        return __type_of(result)(self.ptr)
 
     @staticmethod
     fn _compute_tile_layout[*tile_sizes: Int]() -> Layout:
@@ -1089,12 +1092,16 @@ struct LayoutTensor[
     @always_inline
     fn tile[
         *tile_sizes: Int,
-    ](self, *tile_coords: Int) -> LayoutTensor[
-        dtype,
-        Self._compute_tile_layout[*tile_sizes]()[0],
-        address_space=address_space,
-        masked = masked or _tile_is_masked[layout, *tile_sizes](),
-    ] as result:
+    ](
+        self,
+        *tile_coords: Int,
+        out result: LayoutTensor[
+            dtype,
+            Self._compute_tile_layout[*tile_sizes]()[0],
+            address_space=address_space,
+            masked = masked or _tile_is_masked[layout, *tile_sizes](),
+        ],
+    ):
         """Tiles the layout and returns a tensor tile with the specified
         tile_sizes at specific tile coordinates.
 
@@ -1199,15 +1206,19 @@ struct LayoutTensor[
     fn tiled_iterator[
         *tile_sizes: Int,
         axis: Int = 0,
-    ](self, *tile_coords: Int) -> LayoutTensorIter[
-        dtype,
-        Self._compute_tile_layout[*tile_sizes]()[0],
-        address_space=address_space,
-        circular=False,
-        axis=axis,
-        layout_bitwidth = Self.layout_bitwidth,
-        masked = masked or _tile_is_masked[layout, *tile_sizes](),
-    ] as result:
+    ](
+        self,
+        *tile_coords: Int,
+        out result: LayoutTensorIter[
+            dtype,
+            Self._compute_tile_layout[*tile_sizes]()[0],
+            address_space=address_space,
+            circular=False,
+            axis=axis,
+            layout_bitwidth = Self.layout_bitwidth,
+            masked = masked or _tile_is_masked[layout, *tile_sizes](),
+        ],
+    ):
         """Returns the tiled iterator of the LayoutTensor.
 
         Parameters:
@@ -1325,17 +1336,20 @@ struct LayoutTensor[
     fn split[
         count: Int,
         axis: Int = 0,
-    ](self) -> StaticTuple[
-        LayoutTensor[
-            dtype,
-            Self._compute_tile_layout[
-                layout.shape[axis].value() // count, axis
-            ]()[0],
-            address_space=address_space,
-            element_layout=element_layout,
+    ](
+        self,
+        out result: StaticTuple[
+            LayoutTensor[
+                dtype,
+                Self._compute_tile_layout[
+                    layout.shape[axis].value() // count, axis
+                ]()[0],
+                address_space=address_space,
+                element_layout=element_layout,
+            ],
+            count,
         ],
-        count,
-    ] as result:
+    ):
         """Split the LayoutTensor along a axis and return an InlineArray of
         LayoutTensor.
 
@@ -1379,12 +1393,17 @@ struct LayoutTensor[
     fn split[
         axis: Int = 0,
         alignment: Int = 1,
-    ](self, count: Int, idx: Int) -> LayoutTensor[
-        dtype,
-        layout.make_shape_unknown[axis](),
-        address_space=address_space,
-        element_layout=element_layout,
-    ] as result:
+    ](
+        self,
+        count: Int,
+        idx: Int,
+        out result: LayoutTensor[
+            dtype,
+            layout.make_shape_unknown[axis](),
+            address_space=address_space,
+            element_layout=element_layout,
+        ],
+    ):
         constrained[
             layout.shape[axis].is_value(), "Can't split non-scalar dimension."
         ]()
@@ -1467,18 +1486,22 @@ struct LayoutTensor[
         axis: OptionalReg[Int] = None,
         swizzle: OptionalReg[Swizzle] = None,
         submode_axis: OptionalReg[Int] = None,
-    ](self, thread_id: UInt) -> LayoutTensor[
-        dtype,
-        _compute_distribute_layout[
-            layout,
-            threads_layout,
-            axis,
-        ]()[1],
-        address_space=address_space,
-        element_layout=element_layout,
-        masked = masked
-        or _distribute_is_masked[layout, threads_layout, axis](),
-    ] as result:
+    ](
+        self,
+        thread_id: UInt,
+        out result: LayoutTensor[
+            dtype,
+            _compute_distribute_layout[
+                layout,
+                threads_layout,
+                axis,
+            ]()[1],
+            address_space=address_space,
+            element_layout=element_layout,
+            masked = masked
+            or _distribute_is_masked[layout, threads_layout, axis](),
+        ],
+    ):
         """Distribute tiled workload to threads.
 
         If the `axis` is given, for example, using `axis = 0` for 4 threads:
@@ -1635,13 +1658,18 @@ struct LayoutTensor[
     @always_inline
     fn vectorize[
         *vector_shape: Int
-    ](self) -> LayoutTensor[
-        dtype,
-        coalesce(Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True),
-        address_space=address_space,
-        element_layout = Self._divide_tiles[*vector_shape]()[0],
-        masked=masked,
-    ] as result:
+    ](
+        self,
+        out result: LayoutTensor[
+            dtype,
+            coalesce(
+                Self._compute_tile_layout[*vector_shape]()[1], keep_rank=True
+            ),
+            address_space=address_space,
+            element_layout = Self._divide_tiles[*vector_shape]()[0],
+            masked=masked,
+        ],
+    ):
         @parameter
         @always_inline
         fn __check_vector_shape[*vec_shape: Int]():
@@ -1772,15 +1800,18 @@ struct LayoutTensor[
     fn slice[
         d0_slice: Slice,
         d1_slice: Slice,
-    ](self) -> LayoutTensor[
-        dtype,
-        Self.__compute_slice_layout(
-            d0_slice,
-            d1_slice,
-        ),
-        address_space=address_space,
-        element_layout=element_layout,
-    ] as result:
+    ](
+        self,
+        out result: LayoutTensor[
+            dtype,
+            Self.__compute_slice_layout(
+                d0_slice,
+                d1_slice,
+            ),
+            address_space=address_space,
+            element_layout=element_layout,
+        ],
+    ):
         constrained[
             d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
@@ -1804,14 +1835,15 @@ struct LayoutTensor[
     ](
         self,
         offsets: IndexList[__offset_dims],
-    ) -> LayoutTensor[
-        dtype,
-        Self.__compute_slice_layout(
-            d0_slice, d1_slice, slice_indices[0], slice_indices[1]
-        ),
-        address_space=address_space,
-        element_layout=element_layout,
-    ] as result:
+        out result: LayoutTensor[
+            dtype,
+            Self.__compute_slice_layout(
+                d0_slice, d1_slice, slice_indices[0], slice_indices[1]
+            ),
+            address_space=address_space,
+            element_layout=element_layout,
+        ],
+    ):
         constrained[
             d0_slice.step.or_else(1) == 1 and d1_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
@@ -1853,12 +1885,13 @@ struct LayoutTensor[
     ](
         self,
         offsets: IndexList[__offset_dims],
-    ) -> LayoutTensor[
-        dtype,
-        Self.__compute_slice_layout(d0_slice, slice_indices[0]),
-        address_space=address_space,
-        element_layout=element_layout,
-    ] as result:
+        out result: LayoutTensor[
+            dtype,
+            Self.__compute_slice_layout(d0_slice, slice_indices[0]),
+            address_space=address_space,
+            element_layout=element_layout,
+        ],
+    ):
         constrained[
             d0_slice.step.or_else(1) == 1,
             "Slice should have no gaps",
@@ -1889,27 +1922,33 @@ struct LayoutTensor[
     fn transpose[
         M: Int = Self.shape[0](),
         N: Int = Self.shape[1](),
-    ](self) -> LayoutTensor[
-        dtype,
-        composition(
-            layout,
-            Layout(IntTuple(N, M), IntTuple(M, 1)),
-        ),
-        address_space=address_space,
-        element_layout=element_layout,
-    ] as result:
+    ](
+        self,
+        out result: LayoutTensor[
+            dtype,
+            composition(
+                layout,
+                Layout(IntTuple(N, M), IntTuple(M, 1)),
+            ),
+            address_space=address_space,
+            element_layout=element_layout,
+        ],
+    ):
         return __type_of(result)(self.ptr)
 
     @always_inline
     fn reshape[
         dst_layout: Layout,
-    ](self) -> LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space=address_space,
-        element_layout=element_layout,
-        masked=masked,
-    ] as result:
+    ](
+        self,
+        out result: LayoutTensor[
+            dtype,
+            dst_layout,
+            address_space=address_space,
+            element_layout=element_layout,
+            masked=masked,
+        ],
+    ):
         constrained[not masked, "Masked tensor does not support reshape."]()
         return __type_of(result)(self.ptr)
 
@@ -1917,12 +1956,15 @@ struct LayoutTensor[
     fn composition[
         rhs_layout: Layout,
         dst_layout: Layout = composition(layout, rhs_layout),
-    ](self) -> LayoutTensor[
-        dtype,
-        dst_layout,
-        address_space=address_space,
-        element_layout=element_layout,
-    ] as result:
+    ](
+        self,
+        out result: LayoutTensor[
+            dtype,
+            dst_layout,
+            address_space=address_space,
+            element_layout=element_layout,
+        ],
+    ):
         return __type_of(result)(self.ptr)
 
     @always_inline
@@ -2239,10 +2281,14 @@ fn stack_allocation_like[
     address_space: AddressSpace,
     target_address_space: AddressSpace = AddressSpace.GENERIC,
 ](
-    in_tensor: LayoutTensor[dtype, layout, address_space=address_space, **_]
-) -> LayoutTensor[
-    dtype, layout, address_space=target_address_space, masked = in_tensor.masked
-] as result:
+    in_tensor: LayoutTensor[dtype, layout, address_space=address_space, **_],
+    out result: LayoutTensor[
+        dtype,
+        layout,
+        address_space=target_address_space,
+        masked = in_tensor.masked,
+    ],
+):
     return __type_of(result).stack_allocation()
 
 
@@ -2967,9 +3013,10 @@ struct LayoutTensorIter[
     @always_inline
     fn get(
         self,
-    ) -> LayoutTensor[
-        type, layout, address_space=address_space, masked=masked
-    ] as result:
+        out result: LayoutTensor[
+            type, layout, address_space=address_space, masked=masked
+        ],
+    ):
         """Return the layout tensor at current iterator."""
         # TODO: Use deref `[]` to be consistent with mojo feature.
 
@@ -3102,15 +3149,18 @@ struct LayoutTensorIter[
     @always_inline
     fn reshape[
         dst_layout: Layout,
-    ](self) -> LayoutTensorIter[
-        type,
-        dst_layout,
-        address_space=address_space,
-        alignment=alignment,
-        circular=circular,
-        layout_bitwidth=layout_bitwidth,
-        masked=masked,
-    ] as result:
+    ](
+        self,
+        out result: LayoutTensorIter[
+            type,
+            dst_layout,
+            address_space=address_space,
+            alignment=alignment,
+            circular=circular,
+            layout_bitwidth=layout_bitwidth,
+            masked=masked,
+        ],
+    ):
         """Reshape the iterator to a new layout.
 
         This method creates a new iterator with a different layout while preserving the
@@ -3159,15 +3209,18 @@ struct LayoutTensorIter[
         *,
         address_space: AddressSpace = Self.address_space,
         alignment: Int = Self.alignment,
-    ](self) -> LayoutTensorIter[
-        new_type,
-        layout,
-        address_space=address_space,
-        alignment=alignment,
-        circular = Self.circular,
-        layout_bitwidth=layout_bitwidth,
-        masked=masked,
-    ] as result:
+    ](
+        self,
+        out result: LayoutTensorIter[
+            new_type,
+            layout,
+            address_space=address_space,
+            alignment=alignment,
+            circular = Self.circular,
+            layout_bitwidth=layout_bitwidth,
+            masked=masked,
+        ],
+    ):
         """Reinterpret the iterator's underlying pointer as a different data type.
 
         This method performs a bitcast operation, allowing you to view the same

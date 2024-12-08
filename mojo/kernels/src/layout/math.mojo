@@ -159,14 +159,17 @@ fn _reduce_res_row_major_shape(axis: Int, in_layout: Layout) -> Layout:
 @always_inline
 fn max[
     axis: Int,
-](inp: LayoutTensor) -> LayoutTensor[
-    inp.dtype,
-    _reduce_res_row_major_shape(axis, inp.layout),
-    inp.rank - 1,
-    address_space = inp.address_space,
-    element_layout = inp.element_layout,
-    layout_bitwidth = inp.layout_bitwidth,
-] as res:
+](
+    inp: LayoutTensor,
+    out res: LayoutTensor[
+        inp.dtype,
+        _reduce_res_row_major_shape(axis, inp.layout),
+        inp.rank - 1,
+        address_space = inp.address_space,
+        element_layout = inp.element_layout,
+        layout_bitwidth = inp.layout_bitwidth,
+    ],
+):
     var res_tensor = __type_of(res).stack_allocation()
     max[axis](inp, res_tensor)
     return res_tensor
@@ -189,14 +192,17 @@ fn max(x: LayoutTensor, y: __type_of(x)) -> __type_of(x):
 @always_inline
 fn sum[
     axis: Int,
-](inp: LayoutTensor) -> LayoutTensor[
-    inp.dtype,
-    _reduce_res_row_major_shape(axis, inp.layout),
-    inp.rank - 1,
-    address_space = inp.address_space,
-    element_layout = inp.element_layout,
-    layout_bitwidth = inp.layout_bitwidth,
-] as res:
+](
+    inp: LayoutTensor,
+    out res: LayoutTensor[
+        inp.dtype,
+        _reduce_res_row_major_shape(axis, inp.layout),
+        inp.rank - 1,
+        address_space = inp.address_space,
+        element_layout = inp.element_layout,
+        layout_bitwidth = inp.layout_bitwidth,
+    ],
+):
     var res_tensor = __type_of(res).stack_allocation()
     sum[axis](inp, res_tensor)
     return res_tensor

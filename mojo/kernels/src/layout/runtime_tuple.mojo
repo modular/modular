@@ -145,9 +145,10 @@ struct RuntimeTuple[
         rhs: RuntimeTuple[
             R, element_bitwidth=element_bitwidth, unsigned=unsigned
         ],
-    ) -> RuntimeTuple[
-        concat(S, R), element_bitwidth=element_bitwidth, unsigned=unsigned
-    ] as result:
+        out result: RuntimeTuple[
+            concat(S, R), element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+    ):
         var out = __type_of(result)()
 
         alias S_flat = flatten(S)
@@ -173,9 +174,10 @@ struct RuntimeTuple[
     @always_inline
     fn flatten(
         self,
-    ) -> RuntimeTuple[
-        flatten(S), element_bitwidth=element_bitwidth, unsigned=unsigned
-    ] as result:
+        out result: RuntimeTuple[
+            flatten(S), element_bitwidth=element_bitwidth, unsigned=unsigned
+        ],
+    ):
         return __type_of(result)(self.value)
 
     fn write_to[W: Writer](self, mut writer: W):
@@ -203,9 +205,12 @@ struct RuntimeTuple[
     @always_inline
     fn cast[
         type: DType
-    ](self) -> RuntimeTuple[
-        S, element_bitwidth = bitwidthof[type](), unsigned=unsigned
-    ] as result:
+    ](
+        self,
+        out result: RuntimeTuple[
+            S, element_bitwidth = bitwidthof[type](), unsigned=unsigned
+        ],
+    ):
         return __type_of(result)(self.value.cast[type]())
 
 
@@ -263,11 +268,12 @@ fn idx2crd[
     idx: RuntimeTuple[idx_t, **_],
     shape: RuntimeTuple[shape_t, **_],
     stride: RuntimeTuple[stride_t, **_],
-) -> RuntimeTuple[
-    idx2crd_int_tuple(idx_t, shape_t, stride_t),
-    element_bitwidth = shape.element_bitwidth,
-    unsigned = shape.unsigned,
-] as result:
+    out result: RuntimeTuple[
+        idx2crd_int_tuple(idx_t, shape_t, stride_t),
+        element_bitwidth = shape.element_bitwidth,
+        unsigned = shape.unsigned,
+    ],
+):
     var res = __type_of(result)()
     constrained[idx_t.is_value(), "Only scalar index is supported"]()
     for i in range(res.scalar_length):

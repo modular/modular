@@ -71,7 +71,7 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     @always_inline
     fn cast[
         type: DType
-    ](self) -> RuntimeLayout[layout, bitwidth = bitwidthof[type]()] as result:
+    ](self, out result: RuntimeLayout[layout, bitwidth = bitwidthof[type]()]):
         return __type_of(result)(self.shape.cast[type](), self.stride)
 
     @no_inline
@@ -81,9 +81,10 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     @staticmethod
     fn row_major[
         rank: Int, //
-    ](shape: IndexList[rank, **_]) -> RuntimeLayout[
-        layout, bitwidth = shape.element_bitwidth
-    ] as result:
+    ](
+        shape: IndexList[rank, **_],
+        out result: RuntimeLayout[layout, bitwidth = shape.element_bitwidth],
+    ):
         var stride = __type_of(shape)()
         var c_stride = 1
         stride[rank - 1] = c_stride
@@ -98,9 +99,10 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
     @staticmethod
     fn col_major[
         rank: Int, //
-    ](shape: IndexList[rank, **_]) -> RuntimeLayout[
-        layout, bitwidth = shape.element_bitwidth
-    ] as result:
+    ](
+        shape: IndexList[rank, **_],
+        out result: RuntimeLayout[layout, bitwidth = shape.element_bitwidth],
+    ):
         var stride = __type_of(shape)()
         var c_stride = 1
         stride[0] = c_stride
@@ -122,7 +124,7 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
 
     fn sublayout[
         i: Int
-    ](self) -> RuntimeLayout[layout[i], bitwidth=bitwidth] as result:
+    ](self, out result: RuntimeLayout[layout[i], bitwidth=bitwidth]):
         return __type_of(result)(
             rebind[
                 RuntimeTuple[
@@ -147,9 +149,12 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
 fn coalesce[
     l: Layout,
     keep_rank: Bool = False,
-](layout: RuntimeLayout[l, **_]) -> RuntimeLayout[
-    coalesce_layout(l, keep_rank), bitwidth = layout.bitwidth
-] as result:
+](
+    layout: RuntimeLayout[l, **_],
+    out result: RuntimeLayout[
+        coalesce_layout(l, keep_rank), bitwidth = layout.bitwidth
+    ],
+):
     constrained[not keep_rank, "Unsupported coalesce mode"]()
 
     var res_shape = RuntimeTuple[
@@ -205,9 +210,10 @@ fn make_layout[
 ](
     a: RuntimeLayout[l1, **_],
     b: RuntimeLayout[l2, **_],
-) -> RuntimeLayout[
-    make_layout_static(l1, l2), bitwidth = b.bitwidth
-] as result:
+    out result: RuntimeLayout[
+        make_layout_static(l1, l2), bitwidth = b.bitwidth
+    ],
+):
     var res_shape = RuntimeTuple[
         make_layout_static(l1, l2).shape,
         element_bitwidth = b.bitwidth,
