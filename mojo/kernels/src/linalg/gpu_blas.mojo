@@ -15,6 +15,8 @@ from gpu.cublas.cublas import (
     cublasContext,
     cublasGemmEx,
     cublasOperation_t,
+    cublasCreate,
+    cublasDestroy,
 )
 from gpu.cublas.cublaslt import (
     Context,
@@ -47,6 +49,12 @@ from gpu.host.nvidia_cuda import CUDA
 from layout import Layout
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from memory import UnsafePointer
+from utils.variant import Variant
+import gpu.rocblas
+
+# ===----------------------------------------------------------------------===#
+# Backend
+# ===----------------------------------------------------------------------===#
 
 
 @value
@@ -78,8 +86,17 @@ struct Backend:
     fn __int__(self) -> Int:
         return int(self._value)
 
+    fn __str__(self) -> String:
+        if self is Self.AUTOMATIC:
+            return "AUTOMATIC"
+        if self is Self.CUBLAS:
+            return "CUBLAS"
+        if self is Self.CUBLASLT:
+            return "CUBLASLT"
+        return "ROCBLAS"
 
-fn _resolve_backend[backend: Backend, type: DType]() -> Backend:
+
+fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
     @parameter
     if backend is not Backend.AUTOMATIC:
         return backend
@@ -90,10 +107,53 @@ fn _resolve_backend[backend: Backend, type: DType]() -> Backend:
     return Backend.CUBLAS
 
 
+# ===----------------------------------------------------------------------===#
+# Handle
+# ===----------------------------------------------------------------------===#
+
+alias Handle = Variant[
+    UnsafePointer[cublasContext], UnsafePointer[Context], rocblas.Handle
+]
+
+
+fn create_handle[backend: Backend = Backend.AUTOMATIC]() raises -> Handle:
+    alias resolved_backend = _resolve_backend[backend]()
+
+    @parameter
+    if resolved_backend is Backend.CUBLAS:
+        var handle = UnsafePointer[cublasContext]()
+        check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
+        return handle
+    elif resolved_backend is Backend.CUBLASLT:
+        var handle = UnsafePointer[Context]()
+        check_cublas_error(cublasLtCreate(UnsafePointer.address_of(handle)))
+        return handle
+    raise Error(
+        "the backend '" + str(resolved_backend) + "' is not currently supported"
+    )
+
+
+fn destroy_handle(handle: Handle) raises:
+    if handle.isa[UnsafePointer[cublasContext]]():
+        return check_cublas_error(
+            cublasDestroy(handle[UnsafePointer[cublasContext]])
+        )
+    elif handle.isa[UnsafePointer[Context]]():
+        return check_cublas_error(
+            cublasLtDestroy(handle[UnsafePointer[Context]])
+        )
+    raise Error("the backend is not currently supported")
+
+
+# ===----------------------------------------------------------------------===#
+# Matmul
+# ===----------------------------------------------------------------------===#
+
+
 fn matmul[
     use_tf32: Bool = False, *, backend: Backend = Backend.AUTOMATIC
 ](
-    handle: UnsafePointer[cublasContext],
+    handle: Handle,
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
@@ -118,7 +178,7 @@ fn matmul[
             )
 
     _cublas_matmul[use_tf32=use_tf32](
-        handle,
+        handle[UnsafePointer[cublasContext]],
         c,
         a,
         b,
@@ -126,6 +186,11 @@ fn matmul[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
     )
+
+
+# ===----------------------------------------------------------------------===#
+# CUBLAS
+# ===----------------------------------------------------------------------===#
 
 
 fn _cublas_matmul[
@@ -228,6 +293,11 @@ fn _cublas_matmul[
             Algorithm.DEFAULT,
         )
     )
+
+
+# ===----------------------------------------------------------------------===#
+# CUBLASLT
+# ===----------------------------------------------------------------------===#
 
 
 fn _cublasLt_matmul(
