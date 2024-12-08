@@ -1908,7 +1908,9 @@ struct LayoutTensor[
         dst_layout,
         address_space=address_space,
         element_layout=element_layout,
+        masked=masked,
     ] as result:
+        constrained[not masked, "Masked tensor does not support reshape."]()
         return __type_of(result)(self.ptr)
 
     @always_inline
@@ -2270,7 +2272,65 @@ fn copy_dram_to_sram[
     var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
         ThreadIdx.x
     )
-    dst_fragments.copy_from(src_fragments)
+
+    alias simd_width = simdwidthof[dst.dtype]()
+    alias src_align = alignof[SIMD[src.dtype, simd_width]]()
+    alias dst_align = alignof[SIMD[dst.dtype, simd_width]]()
+
+    alias coalesce_src_element_layout = coalesce(src.element_layout)
+    alias coalesce_dst_element_layout = coalesce(dst.element_layout)
+
+    alias is_scalar = not (
+        src.element_layout.all_dims_known()
+        and coalesce_src_element_layout.rank() == 1
+        and coalesce_src_element_layout.stride[0] == 1
+        and coalesce_dst_element_layout.rank() == 1
+        and coalesce_dst_element_layout.stride[0] == 1
+    )
+
+    @parameter
+    if not src_fragments.masked or is_scalar:
+        constrained[
+            dst_fragments.layout.size() == src_fragments.layout.size(),
+            "dst fragments size and src fragments size mismatch.",
+        ]()
+
+        dst_fragments.copy_from(src_fragments)
+    else:
+        alias num_stores_per_thread = dst_fragments.layout.size()
+        alias static_stride = src.layout.stride[0].value()
+
+        @parameter
+        if src.layout.all_dims_known():
+            stride = static_stride
+        else:
+            stride = src.runtime_layout.stride.value[0]
+        var src_frag_offset = src_fragments.distance(src.ptr)
+        var src_idx_bound = (src.dim(0) * stride - src_frag_offset).cast[
+            src_fragments.index_type
+        ]()
+
+        @parameter
+        for i in range(num_stores_per_thread):
+            alias src_static_idx = src_fragments.layout(i)
+
+            alias dst_idx = dst_fragments.layout(i)
+
+            var src_idx: Scalar[src_fragments.index_type] = 0
+
+            @parameter
+            if src.layout.all_dims_known():
+                src_idx = src_static_idx
+            else:
+                src_idx = src_fragments.runtime_layout(i)
+
+            if src_idx < src_idx_bound:
+                var src_vec = (src.ptr).load[
+                    width=simd_width, alignment=src_align
+                ](int(src_frag_offset) + src_idx)
+                dst_fragments.ptr.store[alignment=dst_align](
+                    dst_idx, src_vec.cast[dst.dtype]()
+                )
 
 
 # Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.

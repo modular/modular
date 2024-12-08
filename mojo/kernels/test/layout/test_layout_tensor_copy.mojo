@@ -30,6 +30,7 @@ from layout.layout_tensor import (
     UNKNOWN_VALUE,
     LayoutTensor,
     copy_dram_to_sram_async,
+    copy_dram_to_sram,
     copy_local_to_dram,
     copy_local_to_local,
     copy_local_to_sram,
@@ -180,7 +181,7 @@ fn swizzle_copy[
 
 
 @always_inline
-fn masked_copy_kernel[
+fn masked_async_copy_kernel[
     layout: Layout, num_rows: Int
 ](input: LayoutTensor[DType.float32, layout]):
     alias thread_layout = Layout.row_major(4, 2)
@@ -203,6 +204,36 @@ fn masked_copy_kernel[
 
     async_copy_commit_group()
     async_copy_wait_all()
+
+    copy_sram_to_dram[thread_layout=thread_layout](
+        input.vectorize[1, 4](),
+        smem_tile.vectorize[1, 4](),
+    )
+
+
+@always_inline
+fn masked_copy_kernel[
+    layout: Layout, num_rows: Int
+](input: LayoutTensor[DType.float32, layout]):
+    alias thread_layout = Layout.row_major(4, 2)
+
+    var masked_input = LayoutTensor[DType.float32, layout, masked=True](
+        input.ptr,
+        RuntimeLayout(
+            RuntimeTuple[layout.shape, unsigned=True](num_rows, input.dim(1)),
+            input.runtime_layout.stride,
+        ),
+    )
+
+    var smem_tile = LayoutTensor[
+        DType.float32, layout, address_space = AddressSpace.SHARED
+    ].stack_allocation().fill(0)
+
+    copy_dram_to_sram[thread_layout=thread_layout](
+        smem_tile.vectorize[1, 4](), masked_input.vectorize[1, 4]()
+    )
+
+    barrier()
 
     copy_sram_to_dram[thread_layout=thread_layout](
         input.vectorize[1, 4](),
@@ -463,6 +494,41 @@ fn test_masked_async_copy[
 
     arange(input.tensor)
 
+    alias kernel_type = masked_async_copy_kernel[
+        Layout.row_major(M, N), M - skew_rows
+    ]
+    var kernel = ctx.compile_function[kernel_type]()
+
+    ctx.enqueue_function(
+        kernel,
+        input,
+        grid_dim=(1,),
+        block_dim=(8,),
+    )
+
+    ctx.synchronize()
+    print(input.tensor)
+
+    _ = input^
+
+
+fn test_masked_copy[
+    layout: Layout, M: Int, N: Int, skew_rows: Int
+](ctx: DeviceContext) raises:
+    print("=== test_masked_copy")
+
+    alias runtime_layout = RuntimeLayout[layout].row_major(IndexList[2](M, N))
+
+    var input = ManagedLayoutTensor[
+        DType.float32,
+        layout,
+        gpu_managed_alloc,
+        gpu_free,
+        gpu_managed_alloc_runtime,
+    ](runtime_layout)
+
+    arange(input.tensor)
+
     alias kernel_type = masked_copy_kernel[
         Layout.row_major(M, N), M - skew_rows
     ]
@@ -503,7 +569,7 @@ fn test_partial_copy_dram_to_sram_async[
         thread_layout,
         num_threads,
     ]
-    var kernel = ctx.compile_function[kernel_type, dump_asm=True]()
+    var kernel = ctx.compile_function[kernel_type]()
 
     ctx.enqueue_function(
         kernel,
@@ -782,6 +848,38 @@ fn main() raises:
         # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
         # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
         test_masked_async_copy[
+            Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+            M=8,
+            N=8,
+            skew_rows=1,
+        ](ctx)
+
+        # CHECK: === test_masked_copy
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+        # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+        # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+        # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+        # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+        # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+        # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+        test_masked_copy[
+            Layout.row_major(8, 8),
+            M=8,
+            N=8,
+            skew_rows=1,
+        ](ctx)
+
+        # CHECK: === test_masked_copy
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+        # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+        # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+        # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+        # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+        # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+        # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+        # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
+        test_masked_copy[
             Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
             M=8,
             N=8,
