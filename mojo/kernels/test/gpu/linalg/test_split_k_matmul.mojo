@@ -47,7 +47,8 @@ fn cublas_matrix_list[
     partition: Int,
     sub_dim: DimList,
     ctx: DeviceContext,
-) raises -> List[DeviceNDBuffer[type, 2]] as result:
+    out result: List[DeviceNDBuffer[type, 2]],
+) raises:
     var dev_list = List[DeviceNDBuffer[type, 2]]()
 
     var dim = sub_dim.get[0]()

@@ -44,9 +44,12 @@ fn test_elementwise_print[
 
 fn runtime_row_major[
     cols: Int
-](rows: Int) -> RuntimeLayout[
-    Layout(IntTuple(UNKNOWN_VALUE, cols), IntTuple(cols, 1))
-] as res:
+](
+    rows: Int,
+    out res: RuntimeLayout[
+        Layout(IntTuple(UNKNOWN_VALUE, cols), IntTuple(cols, 1))
+    ],
+):
     return __type_of(res).row_major(IndexList[2]((rows, cols)))
 
 
