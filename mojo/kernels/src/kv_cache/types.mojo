@@ -665,9 +665,8 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
         self,
         batch_idx: Int,
         new_seq_len: Int,
-    ) -> NDBuffer[
-        type, 3, block_shape
-    ] as result:
+        out result: NDBuffer[type, 3, block_shape],
+    ):
         """Returns a contiguous buffer for a given batch entry."""
         abort("paged block not used")
         return __type_of(result)()
