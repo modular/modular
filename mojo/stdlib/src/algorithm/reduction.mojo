@@ -16,6 +16,7 @@ from collections import OptionalReg
 from math import align_down, ceildiv, iota
 from os import abort
 from sys.info import bitwidthof, is_nvidia_gpu, simdwidthof, sizeof
+from bit import log2_floor
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
@@ -1934,16 +1935,6 @@ fn none_true(src: Buffer) -> Bool:
 
 
 @always_inline
-fn _floorlog2[n: Int]() -> Int:
-    return 0 if n <= 1 else 1 + _floorlog2[n >> 1]()
-
-
-@always_inline
-fn _static_log2[n: Int]() -> Int:
-    return 0 if n <= 1 else _floorlog2[n - 1]() + 1
-
-
-@always_inline
 fn _cumsum_small(dst: Buffer, src: Buffer[dst.type, *_]):
     dst[0] = src[0]
     for i in range(1, len(dst)):
@@ -1979,7 +1970,7 @@ fn cumsum(dst: Buffer, src: Buffer[dst.type, *_]):
     var div_size = align_down(len(dst), simd_width)
 
     # Number of inner-loop iterations (for shift previous result and add).
-    alias rep = _static_log2[simd_width]()
+    alias rep = log2_floor(simd_width)
 
     for i in range(0, div_size, simd_width):
         var x_simd = src.load[width=simd_width](i)
