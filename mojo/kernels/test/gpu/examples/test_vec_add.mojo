@@ -10,7 +10,7 @@
 # Run them with `./bazelw test Kernels/test-gpu-debugging/test_vec_add.mojo.test`
 
 # compile:
-# RUN: %if debugging-test %{ %mojo-build-no-debug -debug-level=line-tables -O0 %s %}
+# RUN: %if debugging-test %{ %mojo-build-no-debug-no-assert -debug-level=line-tables -O0 %s %}
 
 # execute:
 # GDB-COMMAND: b %breakpoint1:location
