@@ -6,6 +6,7 @@
 """This module includes intrinsics for NVIDIA GPUs shuffle instructions."""
 
 from sys import is_nvidia_gpu, llvm_intrinsic
+from bit import log2_floor
 
 from gpu import lane_id
 from memory import bitcast
@@ -424,16 +425,6 @@ fn shuffle_xor[
 
 
 @always_inline
-fn _floorlog2[n: Int]() -> Int:
-    return 0 if n <= 1 else 1 + _floorlog2[n >> 1]()
-
-
-@always_inline
-fn _static_log2[n: Int]() -> Int:
-    return 0 if n <= 1 else _floorlog2[n - 1]() + 1
-
-
-@always_inline
 fn lane_group_reduce[
     shuffle: fn[type: DType, simd_width: Int] (
         val: SIMD[type, simd_width], offset: UInt32
@@ -449,7 +440,7 @@ fn lane_group_reduce[
     """
     var res = val
 
-    alias limit = _static_log2[nthreads]()
+    alias limit = log2_floor(nthreads)
 
     @parameter
     for i in reversed(range(limit)):
