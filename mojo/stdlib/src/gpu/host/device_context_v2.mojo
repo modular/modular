@@ -883,12 +883,13 @@ struct DeviceContextV2:
         cache_mode: OptionalReg[CacheMode] = None,
         cache_config: OptionalReg[CacheConfig] = None,
         func_attribute: OptionalReg[FuncAttribute] = None,
-    ) raises -> DeviceFunctionV2[
-        func,
-        target=_target,
-        _is_failable=_is_failable,
-        _ptxas_info_verbose=_ptxas_info_verbose,
-    ] as result:
+        out result: DeviceFunctionV2[
+            func,
+            target=_target,
+            _is_failable=_is_failable,
+            _ptxas_info_verbose=_ptxas_info_verbose,
+        ],
+    ) raises:
         debug_assert(
             not func_attribute
             or func_attribute.value().attribute
