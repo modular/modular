@@ -917,7 +917,11 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 void ParsedArgumentList::parseResultIfPresent(
     ParserBase &p, std::optional<size_t> stmtIndent) {
   if (!p.consumeIf(Token::minus_greater)) {
-    resultArg.loc = p.getToken().getLoc();
+    // Make sure the result arg has a location of the end of the argument if not
+    // specified by an 'out' argument, so that synthesized results (none etc)
+    // have a location.
+    if (!resultArg.loc.isValid())
+      resultArg.loc = p.getToken().getLoc();
     return;
   }
 

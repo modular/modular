@@ -306,9 +306,6 @@ Summary of a_field.
 TEST(HoverTest, testHoverArgument) {
   Document doc = createDocumentFromInputFile("functions.mojo");
 
-  // FIXME(clattner): Reenable
-  return;
-
   lsp::Range rangeSelfField = *doc.findFirstRange("self");
   lsp::Range rangeBorrowedInput = *doc.findFirstRange("borrowed_input");
   lsp::Range rangeInitArg = *doc.findFirstRange("init_arg");
