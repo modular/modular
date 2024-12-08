@@ -45,7 +45,7 @@ fn _row_major_strides[
     var strides = IndexList[rank]()
 
     @parameter
-    for i in range(rank - 1, -1, -1):
+    for i in reversed(range(rank)):
         strides[i] = offset
         offset *= spec.shape[i]
     return strides
