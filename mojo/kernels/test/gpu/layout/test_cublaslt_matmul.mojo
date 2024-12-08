@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: H100-GPU
-# RUN: %mojo-no-debug %s
+# RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv
 from gpu.cublas.cublas import check_cublas_error

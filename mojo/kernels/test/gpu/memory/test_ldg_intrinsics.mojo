@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
-# RUN: %mojo-no-debug %s
+# RUN: %mojo-no-debug-no-assert %s
 
 from gpu import ThreadIdx
 from gpu.host._compile import _compile_code_asm, _get_gpu_target

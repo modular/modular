@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: AMD-GPU
-# RUN: %mojo-no-debug %s
+# RUN: %mojo-no-debug-no-assert %s
 
 from gpu.host._compile import _compile_code_asm, _get_gpu_target
 from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc

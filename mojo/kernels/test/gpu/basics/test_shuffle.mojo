@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
+# RUN: %mojo-no-debug-no-assert %s
 
 from gpu import ThreadIdx, barrier
 from gpu.globals import WARP_SIZE

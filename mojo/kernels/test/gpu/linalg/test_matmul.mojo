@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s
+# RUN: %mojo-no-debug-no-assert %s
 # COM: use
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.

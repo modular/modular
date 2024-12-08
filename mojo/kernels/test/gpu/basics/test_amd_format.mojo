@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: AMD-GPU
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from collections import InlineArray
 from os import abort

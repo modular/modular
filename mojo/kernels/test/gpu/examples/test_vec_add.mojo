@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %if !debugging-test %{ %mojo-no-debug %s | FileCheck %s %}
+# RUN: %if !debugging-test %{ %mojo-no-debug-no-assert %s | FileCheck %s %}
 
 # ===----------------------------------------------------------------------=== #
 # Debugging tests:

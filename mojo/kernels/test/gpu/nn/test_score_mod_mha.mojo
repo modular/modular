@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo-no-debug %s -t | FileCheck %s
+# RUN: %mojo-no-debug-no-assert %s -t | FileCheck %s
 # CHECK-NOT: CUDA ERROR
 
 
