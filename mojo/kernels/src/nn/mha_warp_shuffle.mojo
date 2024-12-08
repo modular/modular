@@ -6,6 +6,7 @@
 from math import align_up, ceildiv, exp
 from pathlib import Path
 from sys import alignof, simdwidthof, sizeof
+from bit import log2_floor
 
 from gpu import (
     WARP_SIZE,
@@ -19,7 +20,6 @@ from gpu import (
 from gpu.host import DeviceContext
 from gpu.memory import AddressSpace, external_memory
 from gpu.shuffle import (
-    _static_log2,
     lane_group_max,
     lane_group_sum,
     shuffle_down,
@@ -45,10 +45,10 @@ from gpu.shuffle import (
     lane_group_sum,
     lane_group_max,
     warp_sum,
-    _static_log2,
     shuffle_down,
     warp_broadcast,
 )
+from bit import log2_floor
 from pathlib import Path
 from layout.element import Element
 from gpu import (
@@ -432,8 +432,8 @@ fn mha_decoding_single_batch_warp_shuffle[
         # do reduction in in a warp
         @parameter
         for i in range(
-            _static_log2[WARP_SIZE // 2](),
-            _static_log2[thread_group_size]() - 1,
+            log2_floor(WARP_SIZE // 2),
+            log2_floor(thread_group_size) - 1,
             -1,
         ):
             alias offset = 1 << i
@@ -536,7 +536,7 @@ fn mha_decoding_single_batch_warp_shuffle[
 
     barrier()
 
-    alias nstages = _static_log2[num_warps]()
+    alias nstages = log2_floor(num_warps)
 
     @parameter
     for group_idx in range(group):

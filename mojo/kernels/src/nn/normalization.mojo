@@ -7,6 +7,7 @@
 from collections import OptionalReg
 from math import align_down, ceildiv, isqrt
 from sys.info import alignof, simdwidthof
+from bit import log2_floor
 
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import (
@@ -29,7 +30,6 @@ from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace
 from gpu.shuffle import (
-    _static_log2,
     shuffle_down,
     warp_broadcast,
     warp_sum,
@@ -135,7 +135,7 @@ fn welford_warp_reduce[
     res_m2 = thread_m2
     res_count = thread_count
 
-    alias limit = _static_log2[WARP_SIZE]()
+    alias limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):

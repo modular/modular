@@ -8,6 +8,7 @@
 from collections import OptionalReg
 from math import ceildiv, exp
 from sys import alignof, simdwidthof, sizeof
+from bit import log2_floor
 
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import DimList
@@ -27,7 +28,7 @@ from gpu.host import DeviceContext, FuncAttribute
 from gpu.host.dim import Dim
 from gpu.memory import AddressSpace, external_memory
 from gpu.random import Random
-from gpu.shuffle import _floorlog2, _static_log2, warp_reduce
+from gpu.shuffle import warp_reduce
 from memory import UnsafePointer, stack_allocation
 from nn.reshape import reshape
 
@@ -116,7 +117,7 @@ fn warp_reduce_topk[
             return a if a.u < b.u else b
 
     # Reimplement `warp_reduce` for TopK_2 reduce and shuffle function
-    alias limit = _static_log2[WARP_SIZE]()
+    alias limit = log2_floor(WARP_SIZE)
 
     @parameter
     for i in reversed(range(limit)):
