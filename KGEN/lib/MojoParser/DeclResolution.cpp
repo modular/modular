@@ -918,7 +918,6 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return failure();
   TypeCheckedParamList paramList(parsedParamList.params, sigDecl);
 
-  // Parse the function signature next.
   ParsedArgumentList fnSignature;
   // Set up the known effects.
   if (isAsync)
@@ -931,28 +930,11 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return failure();
 
   // Parse the result type if present.
-  ParsedArgument resultArg;
-  resultArg.loc = p.getToken().getLoc();
-  if (p.consumeIf(Token::minus_greater)) {
-    // Parse a result reference if present.
-    if (p.getToken().is(Token::kw_ref)) {
-      (void)p.parseRefSpecifier(resultArg.refOriginExpr,
-                                /*originRequired*/ true);
-    }
-
-    // Parse the result type expression.
-    // If this result parsing fails, then we just continue on as if none was
-    // specified.
-    (void)p.parseExpression(resultArg.typeExpr);
-
-    // Parse a name binding for the result if present.
-    if (p.consumeIf(Token::kw_as))
-      (void)p.parseIdentifier(resultArg.name, "expected result name");
-  }
+  fnSignature.parseResultIfPresent(p);
 
   // Emit the argument and result types.
   SpecialFunctionInfo fnInfo = SpecialFunctionInfo::get(baseName);
-  TypeCheckedFnSignature tcSignature(paramList, fnSignature, resultArg,
+  TypeCheckedFnSignature tcSignature(paramList, fnSignature,
                                      /*captureOrigins=*/nullptr, isDef, &decl,
                                      fnInfo);
 
@@ -1028,7 +1010,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   attrs.set(funcOp.getSourceNameAttrName(), baseName);
 
   // Set the result name binding if specified.
-  if (StringAttr resultName = tcSignature.resultArg.name)
+  if (StringAttr resultName = tcSignature.argList.resultArg.name)
     attrs.set(funcOp.getNamedResultAttrName(), resultName);
 
   // Remove the temporary "sym_namex" attribute set up in FuncOp::build, see

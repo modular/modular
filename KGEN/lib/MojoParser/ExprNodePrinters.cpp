@@ -481,10 +481,9 @@ void FunctionTypeNode::print(raw_indented_ostream &os) const {
     arg.print(os);
   os.unindent() << "]\n";
 
-  os << "results: [\n";
+  os << "result: [\n";
   os.indent();
-  for (const ParsedArgument &result : resultArgs)
-    result.print(os);
+  resultArg.print(os);
   os.unindent() << "]\n";
 
   os << "effects: " << stringifyFnEffects(effects.getImpl()) << "\n";

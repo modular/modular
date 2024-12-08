@@ -900,6 +900,29 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
   return success();
 }
 
+/// Parse the result specifier starting with a `->` if present.
+void ParsedArgumentList::parseResultIfPresent(
+    ParserBase &p, std::optional<size_t> stmtIndent) {
+  resultArg.loc = p.getToken().getLoc();
+  if (!p.consumeIf(Token::minus_greater))
+    return;
+
+  // Parse a result reference if present.
+  if (p.getToken().is(Token::kw_ref)) {
+    (void)p.parseRefSpecifier(resultArg.refOriginExpr,
+                              /*originRequired*/ true);
+  }
+
+  // Parse the result type expression.
+  // If this result parsing fails, then we just continue on as if none was
+  // specified.
+  (void)p.parseExpression(resultArg.typeExpr, stmtIndent);
+
+  // Parse a name binding for the result if present.
+  if (p.consumeIf(Token::kw_as))
+    (void)p.parseIdentifier(resultArg.name, "expected result name");
+}
+
 /// This function creates a new anonymous origin decl for the specified
 /// argument, and wraps the type with a RefType using that origin.
 static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
@@ -1542,11 +1565,10 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
 /// declaration.
 TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                ParsedArgumentList &argList,
-                                               const ParsedArgument &resultArg,
                                                const ExprNode *originExpr,
                                                bool isDef, ASTDecl *fnDecl,
                                                SpecialFunctionInfo &fnInfo)
-    : paramList(paramList), argList(argList), resultArg(resultArg) {
+    : paramList(paramList), argList(argList) {
   SharedState &shared = paramList.shared;
   ExprEmitter typeEmitter(paramList.declScope, EC_Type);
 
@@ -1636,7 +1658,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     typeCheckOneArgument(i, selfType, isDef, isStaticMethod, fnDecl, *this);
 
   // Compute the result type.
-  typeCheckResult(resultArg, isDef, fnInfo, fnDecl, *this);
+  typeCheckResult(argList.resultArg, isDef, fnInfo, fnDecl, *this);
 
   // If a capture origin set was specified, emit it. It will be added to the
   // signature type later.

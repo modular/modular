@@ -1008,31 +1008,15 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
 
   // Parse the result type.
   SMLoc endLoc = getToken().getEndLoc();
-  ParsedArgument resultArg;
-  resultArg.loc = getToken().getLoc();
-  if (!isDef || getToken().is(Token::minus_greater)) {
-    if (parseToken(Token::minus_greater, "expected '->' in function type"))
-      return failure();
 
-    // Parse a result reference if present.
-    if (getToken().is(Token::kw_ref))
-      (void)parseRefSpecifier(resultArg.refOriginExpr, /*originRequired*/ true);
-
-    // Parse the result type.
-    if (ParserBase::parseExpression(resultArg.typeExpr, stmtIndent))
-      return failure();
-
-    // Parse a result name binding if present.
-    if (consumeIf(Token::kw_as) &&
-        parseIdentifier(resultArg.name, "expected result name"))
-      return failure();
-  }
+  // Parse the result type if present.
+  fnSignature.parseResultIfPresent(*this, stmtIndent);
 
   result = alloc<FunctionTypeNode>(
       baseLoc, copyArrayRef<ParsedArgument>(paramList.params),
       copyArrayRef<ParsedArgument>(fnSignature.parsedArgs),
-      copyArrayRef<ParsedArgument>(resultArg), fnSignature.effects, originExpr,
-      endLoc, isDef);
+      copyArrayRef<ParsedArgument>(fnSignature.resultArg)[0],
+      fnSignature.effects, originExpr, endLoc, isDef);
   return success();
 }
 
@@ -1043,7 +1027,7 @@ ParseResult ExprParser::parseLambda(ExprNode *&result) {
   ParsedArgumentList parsedSignature;
 
   // Mojo supports naked parameters without type annotations for compatibility
-  // with Python, but also supports parethesized ones.  We can only support
+  // with Python, but also supports parenthesized ones.  We can only support
   // type annotations in parentheses since we'd otherwise have ambiguity with
   // the ":" in the lambda expression.
   if (getToken().is(Token::colon)) {
