@@ -117,9 +117,7 @@ struct CUDACompiledKernelArgs:
 
 fn compile[
     func_type: AnyTrivialRegType, //, func: func_type
-](device: Device, **kwargs: CompileArg) raises -> CompiledDeviceKernel[
-    func
-] as out:
+](device: Device, **kwargs: CompileArg) raises -> CompiledDeviceKernel[func]:
     """Compiles a function which can be executed on device.
 
     Args:
