@@ -8,6 +8,7 @@
 
 from math import erf
 from sys.info import is_nvidia_gpu, simdwidthof
+from bit import log2_floor
 
 from algorithm.functional import elementwise
 from builtin.io import _printf
@@ -359,20 +360,10 @@ def test_gemm_sm90():
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
-fn _floorlog2[n: Int]() -> Int:
-    return 0 if n <= 1 else 1 + _floorlog2[n >> 1]()
-
-
-@always_inline
-fn _static_log2[n: Int]() -> Int:
-    return 0 if n <= 1 else _floorlog2[n - 1]() + 1
-
-
 fn test_shuffle_up(val: Float32) -> Float32:
     var res = val
 
-    alias limit = _static_log2[WARP_SIZE]()
+    alias limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -403,7 +394,7 @@ def test_shuffle_up_sm90():
 fn test_shuffle_down(val: Int32) -> Int32:
     var res = val
 
-    alias limit = _static_log2[WARP_SIZE]()
+    alias limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -439,7 +430,7 @@ def test_shuffle_down_sm90():
 fn warp_sum_reduce(val: Float32) -> Float32:
     var res = val
 
-    alias limit = _static_log2[WARP_SIZE]()
+    alias limit = log2_floor(WARP_SIZE)
 
     @parameter
     for mask in reversed(range(limit)):
@@ -472,7 +463,7 @@ fn block_reduce(val: Float32) -> Float32:
         WARP_SIZE, DType.float32, address_space = AddressSpace.SHARED
     ]()
 
-    alias warp_shift = _static_log2[WARP_SIZE]()
+    alias warp_shift = log2_floor(WARP_SIZE)
 
     var lane = lane_id()
     var warp = ThreadIdx.x // 32
