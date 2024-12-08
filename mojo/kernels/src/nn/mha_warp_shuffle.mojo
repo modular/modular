@@ -236,7 +236,7 @@ fn block_sum_broadcast[
 @always_inline
 fn inner_product[
     accum_type: DType
-](x: LayoutTensor, y: LayoutTensor) -> Scalar[accum_type] as res:
+](x: LayoutTensor, y: LayoutTensor, out res: Scalar[accum_type]):
     constrained[
         x.layout.all_dims_known()
         and y.layout.all_dims_known()

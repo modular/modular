@@ -369,9 +369,8 @@ fn layer_norm_reshape[
 ](
     shape: IndexList[rank, **_],
     buf: NDBuffer[type, rank, *_],
-) -> NDBuffer[
-    type, output_rank
-] as result:
+    out result: NDBuffer[type, output_rank],
+):
     @parameter
     if rank == output_rank:
         return rebind[__type_of(result)](buf)

@@ -217,7 +217,8 @@ fn normalize(value: Scalar[DType.float32]) -> Scalar[DType.uint32]:
 @always_inline
 fn normalize(
     value: Scalar,
-) -> Scalar[_uint_type_of_width[bitwidthof[value.type]()]()] as result:
+    out result: Scalar[_uint_type_of_width[bitwidthof[value.type]()]()],
+):
     """
     Normalize the value to the appropriate unsigned integer type. This is needed
     for radix sort to work correctly.

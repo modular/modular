@@ -2478,7 +2478,8 @@ fn _contiguous_kv_cache_collection[
     # Note that num_layers and batch_size are scalars.
     num_layers: NDBuffer[DType.int32, 1],
     batch_size: NDBuffer[DType.int32, 1],
-) -> ContiguousKVCacheCollection[type, kv_params] as result:
+    out result: ContiguousKVCacheCollection[type, kv_params],
+):
     # Marshal NDBuffers into arguments expected by the
     # ContiguousKVCacheCollection constructor.
 
@@ -2507,7 +2508,8 @@ fn _continuous_batch_kv_cache_collection[
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
     is_cache_empty: NDBuffer[DType.bool, 1],
-) -> ContinuousBatchingKVCacheCollection[type, kv_params] as result:
+    out result: ContinuousBatchingKVCacheCollection[type, kv_params],
+):
     # Marshal NDBuffers into arguments expected by the
     # ContiguousKVCacheCollection constructor.
     batch_size = lookup_table.dim[0]()
@@ -2819,7 +2821,8 @@ fn generic_get_paged_cache[
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
     is_cache_empty: NDBuffer[DType.bool, 1],
-) -> PagedKVCacheCollection[type, kv_params] as result:
+    out result: PagedKVCacheCollection[type, kv_params],
+):
     batch_size = lookup_table.dim[0]()
     seq_ids_list = List[Int]()
     for _ in range(batch_size):
