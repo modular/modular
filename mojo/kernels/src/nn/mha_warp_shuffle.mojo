@@ -320,9 +320,7 @@ fn mha_decoding_single_batch_warp_shuffle[
 
     var q = tb[q_type]().row_major[num_heads, head_size]().view(q_ptr)
 
-    var q_gmem_tile = q.tile[group, head_size](kv_head_idx, 0).reshape[
-        Layout.row_major(thread_group_size, num_elems_per_thread)
-    ]()
+    var q_gmem_tile = q.tile[group, head_size](kv_head_idx, 0)
 
     var q_smem_tile = tb[q_type]().row_major[
         group, thread_group_size, num_elems_per_thread
