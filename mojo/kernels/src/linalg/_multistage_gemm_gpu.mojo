@@ -163,8 +163,8 @@ fn multistage_mma[
     @always_inline
     @parameter
     fn _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int
-    ) -> __type_of(tensor) as result:
+        tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
+    ):
         return __type_of(tensor)(
             tensor.ptr,
             RuntimeLayout(

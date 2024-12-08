@@ -145,8 +145,8 @@ fn multistage_dual_mma[
     @always_inline
     @parameter
     fn _mask_tensor_row(
-        tensor: LayoutTensor, num_rows: Int
-    ) -> __type_of(tensor) as result:
+        tensor: LayoutTensor, num_rows: Int, out result: __type_of(tensor)
+    ):
         return __type_of(tensor)(
             tensor.ptr,
             RuntimeLayout(
@@ -818,9 +818,8 @@ fn config_in_smem[
     max_smem: Int,
 ](
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
-) -> MatmulConfig[
-    a_type, b_type, c_type, transpose_b
-] as res:
+    out res: MatmulConfig[a_type, b_type, c_type, transpose_b],
+):
     var c: __type_of(res) = config
     var i = 0
     while c.shared_mem_usage() > max_smem:
