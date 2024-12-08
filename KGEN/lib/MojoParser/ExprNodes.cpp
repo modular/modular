@@ -3186,14 +3186,15 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Type check any parameters we have.
   TypeCheckedParamList paramList(parsedParams, dummyScope);
 
+  // Reinflate a ParsedArgumentList.
   ParsedArgumentList argList;
   argList.parsedArgs = llvm::to_vector(parsedArgs);
-  argList.effects = this->effects;
+  argList.resultArg = resultArg;
+  argList.effects = effects;
 
   SpecialFunctionInfo fnInfo; // Not a named function.
-  TypeCheckedFnSignature tcSignature(paramList, argList, resultArgs.front(),
-                                     originExpr, isDef, /*fnDecl=*/nullptr,
-                                     fnInfo);
+  TypeCheckedFnSignature tcSignature(paramList, argList, originExpr, isDef,
+                                     /*fnDecl=*/nullptr, fnInfo);
 
   // Compute the signature of the function.
   LITSignatureType signature = tcSignature.getLITSignatureType();

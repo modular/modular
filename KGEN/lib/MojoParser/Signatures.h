@@ -181,12 +181,19 @@ public:
 /// This is all the state built up when parsing a function signature.
 class ParsedArgumentList {
 public:
+  /// Any arguments specified.
   SmallVector<ParsedArgument> parsedArgs;
+  /// The result specifier if present.
+  ParsedArgument resultArg;
   FnEffects effects;
 
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
   ParseResult parseArgumentListAndEffects(ParserBase &p, ArgListKind kind);
+
+  /// Parse the result specifier starting with a `->` if present.
+  void parseResultIfPresent(ParserBase &p,
+                            std::optional<size_t> stmtIndent = std::nullopt);
 };
 
 /// This contains the result state from type checking a parameter signature.
@@ -199,12 +206,10 @@ public:
   /// declaration.
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
-                         const ParsedArgument &resultArg,
                          const ExprNode *originExpr, bool isDef,
                          ASTDecl *fnDecl, SpecialFunctionInfo &fnInfo);
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
-  const ParsedArgument &resultArg;
 
   // This is the type checked declared argument type, e.g. "String" or "Int".
   SmallVector<Type> argTypes;
