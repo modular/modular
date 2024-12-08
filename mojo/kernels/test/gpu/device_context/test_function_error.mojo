@@ -25,7 +25,10 @@ def test_function_error(ctx: DeviceContext):
         ctx.synchronize()
         res_host.free()
     except e:
-        assert_true("Kernels/test/gpu/test_function_error.mojo:27:24" in str(e))
+        assert_true(
+            "Kernels/test/gpu/device_context/test_function_error.mojo:27:24"
+            in str(e)
+        )
 
 
 def main():
