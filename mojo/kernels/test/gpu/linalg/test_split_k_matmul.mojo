@@ -9,12 +9,7 @@ from random import rand
 
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
-from gpu.cublas.cublas import (
-    check_cublas_error,
-    cublasContext,
-    cublasCreate,
-    cublasDestroy,
-)
+from gpu.cublas.cublas import check_cublas_error, cublasContext
 from gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from internal_utils import (
     DeviceNDBuffer,
@@ -185,8 +180,7 @@ fn test_split_k_multistage_gemm[
 
     print("copied from device")
 
-    var handle = UnsafePointer[cublasContext]()
-    check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
+    var handle = gpu_blas.create_handle[gpu_blas.Backend.CUBLAS]()
     gpu_blas.matmul(
         handle,
         c_dev_list[0].tensor,
@@ -195,7 +189,7 @@ fn test_split_k_multistage_gemm[
         c_row_major=True,
         transpose_b=transpose_b,
     )
-    check_cublas_error(cublasDestroy(handle))
+    gpu_blas.destroy_handle(handle)
 
     print("cublas'd")
 

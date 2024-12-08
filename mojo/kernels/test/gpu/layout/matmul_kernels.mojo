@@ -12,12 +12,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from builtin.io import _printf
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.cublas.cublas import (
-    check_cublas_error,
-    cublasContext,
-    cublasCreate,
-    cublasDestroy,
-)
+from gpu.cublas.cublas import check_cublas_error, cublasContext
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.memory import async_copy_wait_all
 from layout.int_tuple import IntTuple
@@ -80,8 +75,7 @@ fn run_cublas[
         DimList(M, N),
     )
 
-    var handle = UnsafePointer[cublasContext]()
-    check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
+    var handle = gpu_blas.create_handle[gpu_blas.Backend.CUBLAS]()
 
     @parameter
     fn bench_func(mut m: Bencher):
@@ -122,7 +116,7 @@ fn run_cublas[
         transpose_b=False,
     )
 
-    check_cublas_error(cublasDestroy(handle))
+    gpu_blas.destroy_handle(handle)
 
 
 fn gemm_kernel_1[

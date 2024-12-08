@@ -56,10 +56,9 @@ fn test_cublas(ctx: DeviceContext) raises:
     var c = NDBuffer[type, 2, DimList(M, N)](c_device.ptr)
     var c_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref.ptr)
 
-    var handle = UnsafePointer[cublasContext]()
-    check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
+    var handle = gpu_blas.create_handle[gpu_blas.Backend.CUBLAS]()
     gpu_blas.matmul(handle, c, a, b, c_row_major=True)
-    check_cublas_error(cublasDestroy(handle))
+    gpu_blas.destroy_handle(handle)
 
     ctx.enqueue_copy_from_device(c_host, c_device)
 

@@ -17,12 +17,6 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList, _make_tuple
 from builtin._location import __source_location
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.cublas.cublas import (
-    check_cublas_error,
-    cublasContext,
-    cublasCreate,
-    cublasDestroy,
-)
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.host.info import DEFAULT_GPU_ARCH
@@ -210,8 +204,7 @@ fn test[
 
     ctx.synchronize()
 
-    var handle = UnsafePointer[cublasContext]()
-    check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
+    var handle = gpu_blas.create_handle[gpu_blas.Backend.CUBLAS]()
     gpu_blas.matmul(
         handle,
         c_device_ref.tensor,
@@ -220,7 +213,7 @@ fn test[
         c_row_major=True,
         transpose_b=transpose_b,
     )
-    check_cublas_error(cublasDestroy(handle))
+    gpu_blas.destroy_handle(handle)
 
     var c_ref_tensor = c_device_ref.tensor
     alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
