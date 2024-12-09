@@ -166,7 +166,7 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
             rocblas.check_error(
                 rocblas.rocblas.rocblas_destroy_handle(self._get_rocblas())
             )
-            self._handle = Self._cublaslt_type()
+            self._handle = Self._rocblas_type()
             return
 
         raise Error("the backend is not currently supported")
