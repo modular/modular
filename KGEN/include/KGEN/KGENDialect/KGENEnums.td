@@ -96,6 +96,8 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   I32EnumAttrCase<"DataToStr", 39, "data_to_str">,
   /// Concatenate two values of !kgen.string type.
   I32EnumAttrCase<"StrConcat", 40, "str_concat">,
+  /// Get the arguments from a function signature as a kgen.variadic.
+  I32EnumAttrCase<"FunctionGetArgTypes", 41, "function_get_arg_types">,
 ]>;
 
 //===----------------------------------------------------------------------===//

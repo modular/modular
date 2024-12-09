@@ -1350,6 +1350,57 @@ LogicalResult ParamOperatorAttr::verify(
     if (operands.size() != 2 || !::isa<StringType>(operands[0].getType()))
       return emitError() << "'str_concat' expects two !kgen.string operands";
     break;
+  case POC::FunctionGetArgTypes:
+    // TODO(MOCO-1106): Clean these errors up and change all the messages once
+    // we're sure of the types and which invariants we can relax.
+    if (operands.size() != 1)
+      return emitError() << "'function_get_arg_types' expects one "
+                            "!kgen.signature operand, but got nothing.";
+    auto operand = operands[0];
+    if (auto paramRef1 = ::dyn_cast<ParamDeclRefAttr>(operand)) {
+      if (auto paramRefType1 = ::dyn_cast<ParamRefType>(paramRef1.getType())) {
+        auto param1 = paramRefType1.getParam();
+        if (!::isa<ParamDeclRefAttr>(param1))
+          return emitError() << "'function_get_arg_types' operand paramref's "
+                                "type should be a typeconstantattr, but got: "
+                             << param1;
+      } else {
+        return emitError() << "'function_get_arg_types' operand paramref's "
+                              "type should be a signature, but got: "
+                           << paramRef1.getType();
+      }
+    } else if (auto typeConstAttr = ::dyn_cast<TypeConstantAttr>(operand)) {
+      auto mlirType = typeConstAttr.getMlirType();
+      if (!::isa<SignatureType>(mlirType))
+        return emitError()
+               << "'function_get_arg_types' operand typeconstantattr's mlir "
+                  "type should be a signature, but got: "
+               << mlirType;
+    } else if (auto paramIndexRef = ::dyn_cast<ParamIndexRefAttr>(operand)) {
+      auto mlirType = paramIndexRef.getType();
+      if (::isa<ParamRefType>(mlirType)) {
+        // Do nothing, is fine
+      } else if (::isa<SignatureType>(mlirType)) {
+        // Do nothing, is fine
+      } else
+        return emitError()
+               << "'function_get_arg_types' operand paramindexref's type "
+                  "should be a paramref or signature, but got: "
+               << mlirType;
+    } else if (auto symConstAttr = ::dyn_cast<SymbolConstantAttr>(operand)) {
+      auto mlirType = symConstAttr.getType();
+      if (!::isa<SignatureType>(mlirType))
+        return emitError()
+               << "'function_get_arg_types' operand symbolconstantattr's mlir "
+                  "type should be a signature, but got: "
+               << mlirType;
+    } else {
+      return emitError()
+             << "'function_get_arg_types' expects one kgen.paramref or "
+                "typeconstantattr operand, but got: "
+             << operand;
+    }
+    break;
   }
   return success();
 }
@@ -2533,6 +2584,42 @@ static TypedAttr simplifyStrConcat(TypedAttr lhs, TypedAttr rhs) {
   return StringAttr::get(buffer, lhs.getType());
 }
 
+static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
+                                             TypedAttr operand,
+                                             Type resultType) {
+  assert(resultType && "rebind requires a result type");
+
+  if (!::isa<VariadicType>(resultType))
+    return {};
+  auto variadicType = ::dyn_cast<VariadicType>(resultType);
+  auto traitType = variadicType.getElementType();
+
+  Type mlirType;
+
+  if (auto paramRef1 = ::dyn_cast<ParamDeclRefAttr>(operand)) {
+    return {};
+  } else if (auto typeConstAttr = ::dyn_cast<TypeConstantAttr>(operand)) {
+    mlirType = typeConstAttr.getMlirType();
+  } else if (auto paramIndexRef = ::dyn_cast<ParamIndexRefAttr>(operand)) {
+    mlirType = paramIndexRef.getType();
+  } else if (auto symConstAttr = ::dyn_cast<SymbolConstantAttr>(operand)) {
+    mlirType = symConstAttr.getType();
+  } else {
+    return {};
+  }
+
+  if (!::isa<SignatureType>(mlirType))
+    return {};
+  auto signature = ::cast<SignatureType>(mlirType);
+  SmallVector<TypedAttr> results;
+  for (auto x : signature.getArguments()) {
+    // TODO(MOCO-1106): Add a vtable here, see
+    // https://www.notion.so/modularai/1571044d37bb80198d96f6772ebb1515
+    results.push_back(TypeConstantAttr::get(x, traitType));
+  }
+  return VariadicAttr::get(results, variadicType);
+}
+
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
@@ -2603,6 +2690,9 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::StrConcat:
     result = simplifyStrConcat(operands[0], operands[1]);
     resultType = StringType::get(ctx);
+    break;
+  case POC::FunctionGetArgTypes:
+    result = simplifyFunctionGetArgTypes(ctx, operands[0], resultType);
     break;
   case POC::In:
     result = simplifyIn(operands);
