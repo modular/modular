@@ -76,8 +76,8 @@ def record_ms(fn: Callable[[float], None], on_error: bool = False):
     sw = StopWatch()
     try:
         yield sw
-    except:
+        fn(sw.elapsed_ms)
+    except Exception:
         if on_error:
             fn(sw.elapsed_ms)
-    else:
-        fn(sw.elapsed_ms)
+        raise
