@@ -8,58 +8,19 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from collections.optional import Optional, OptionalReg
 from math import ceildiv
 from random import random_si64
-from sys import simdwidthof, alignof
-
-from algorithm.functional import elementwise
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList, _make_tuple
-from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
-
-# from gpu.cublas.cublas import (
-#    check_cublas_error,
-#    cublasContext,
-#    cublasCreate,
-#    cublasDestroy,
-# )
-from gpu.host._compile import _get_gpu_target
-from gpu.host import DeviceBuffer, DeviceContext
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_with_measure,
-    fill,
-    linspace,
-    random,
-    zero,
-)
-from internal_utils._utils import ValOrDim, dynamic, static
-
-# from linalg.cublas import cublas_matmul
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
-from linalg.utils import elementwise_epilogue_type
-from linalg.utils_gpu import MatmulConfig, MatmulKernels
-from memory import UnsafePointer, memset_zero, stack_allocation
-from memory.pointer import _GPUAddressSpace as GPUAddressSpace
-
+from memory import UnsafePointer
 from utils import IndexList
 from utils.index import Index
+from buffer import NDBuffer
+from buffer.dimlist import Dim, DimList
+from gpu.host import DeviceContext
+from internal_utils import DeviceNDBuffer, HostNDBuffer
+from internal_utils._utils import ValOrDim, dynamic, static
+from linalg.matmul_gpu import _matmul_gpu
 
-from builtin._location import __source_location
-from internal_utils._measure import cosine
-
-from math import exp2
-from utils.numerics import FPUtils
-from testing import assert_equal
-from gpu.host.info import DEFAULT_GPU_ARCH
-
-alias init_fn_type = fn (buff: NDBuffer) capturing -> None
-
-alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
-    IndexList[2], IndexList[2], SIMD[type, width]
-) capturing -> SIMD[type, width]
+from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 
 
 fn matmul_naive[
@@ -87,6 +48,11 @@ fn matmul_naive[
                     var av = a[k * i + l].cast[c_type]()
                     var bv = b[n * l + j].cast[c_type]()
                     c[n * i + j] += av * bv
+
+
+alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
+    IndexList[2], IndexList[2], SIMD[type, width]
+) capturing -> SIMD[type, width]
 
 
 @parameter
@@ -118,7 +84,13 @@ fn test[
     in_type: DType,
     out_type: DType,
     transpose_b: Bool,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim,) raises:
+](
+    mut bench: Bench,
+    ctx: DeviceContext,
+    m: ValOrDim,
+    n: ValOrDim,
+    k: ValOrDim,
+) raises:
     constrained[
         int(n.dim) > 0 and int(k.dim) > 0,
         "This test currently requires static N and K.",
@@ -207,6 +179,25 @@ fn test[
 
     print("errors", errors)
 
+    @parameter
+    fn bench_func(mut m: Bencher):
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b,](
+                c_device.tensor,
+                a_device.tensor,
+                b_device.tensor,
+                ctx,
+            )
+
+        m.iter_custom[kernel_launch](ctx)
+
+    bench.bench_function[bench_func](
+        BenchId("matmul"),
+        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+    )
+
     _ = c_device
     _ = c_device_ref
     _ = a_host
@@ -218,42 +209,52 @@ fn test[
 
 
 def main():
+    var bench = Bench()
+
     with DeviceContext() as ctx:
         test[
             in_type = DType.bfloat16,
             out_type = DType.float32,
             transpose_b=False,
-        ](ctx, dynamic(256), static[256](), static[128]())
+        ](bench, ctx, dynamic(256), static[256](), static[128]())
         test[
             in_type = DType.bfloat16,
             out_type = DType.float32,
             transpose_b=True,
-        ](ctx, dynamic(256), static[256](), static[128]())
+        ](bench, ctx, dynamic(256), static[256](), static[128]())
         test[
             in_type = DType.bfloat16,
             out_type = DType.bfloat16,
             transpose_b=False,
-        ](ctx, dynamic(256), static[256](), static[128]())
+        ](bench, ctx, dynamic(256), static[256](), static[128]())
         test[
             in_type = DType.bfloat16,
             out_type = DType.bfloat16,
             transpose_b=True,
-        ](ctx, dynamic(256), static[256](), static[128]())
+        ](bench, ctx, dynamic(256), static[256](), static[128]())
 
         test[
             in_type = DType.bfloat16,
             out_type = DType.bfloat16,
             transpose_b=False,
-        ](ctx, dynamic(1024), static[256](), static[128]())
+        ](bench, ctx, dynamic(1024), static[256](), static[128]())
 
         test[
             in_type = DType.bfloat16,
             out_type = DType.bfloat16,
             transpose_b=False,
-        ](ctx, dynamic(1024), static[256](), static[256]())
+        ](bench, ctx, dynamic(1024), static[256](), static[256]())
 
         test[
             in_type = DType.bfloat16,
             out_type = DType.float32,
             transpose_b=True,
-        ](ctx, dynamic(1024), static[256](), static[1024]())
+        ](bench, ctx, dynamic(1024), static[256](), static[1024]())
+
+        test[
+            in_type = DType.bfloat16,
+            out_type = DType.float32,
+            transpose_b=True,
+        ](bench, ctx, dynamic(1024), static[1024](), static[1024]())
+
+    bench.dump_report()
