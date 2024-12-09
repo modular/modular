@@ -86,7 +86,7 @@ fn bench_matmul[
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
     var buffer_c = ctx.enqueue_create_buffer[dtype](cache_c)
 
-    var handle = gpu_blas.Handle[gpu_blas.Backend.CUBLAS]()
+    var handle = gpu_blas.Handle()
 
     @parameter
     @__copy_capture(
