@@ -56,7 +56,7 @@ fn test_cublas(ctx: DeviceContext) raises:
     var c = NDBuffer[type, 2, DimList(M, N)](c_device.ptr)
     var c_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref.ptr)
 
-    with gpu_blas.Handle[gpu_blas.Backend.CUBLAS]() as handle:
+    with gpu_blas.Handle() as handle:
         gpu_blas.matmul(ctx, handle, c, a, b, c_row_major=True)
 
     ctx.enqueue_copy_from_device(c_host, c_device)

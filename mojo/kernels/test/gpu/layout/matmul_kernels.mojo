@@ -75,7 +75,7 @@ fn run_cublas[
         DimList(M, N),
     )
 
-    with gpu_blas.Handle[gpu_blas.Backend.CUBLAS]() as handle:
+    with gpu_blas.Handle() as handle:
 
         @parameter
         fn bench_func(mut m: Bencher):

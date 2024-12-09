@@ -180,7 +180,7 @@ fn test_split_k_multistage_gemm[
 
     print("copied from device")
 
-    with gpu_blas.Handle[gpu_blas.Backend.CUBLAS]() as handle:
+    with gpu_blas.Handle() as handle:
         gpu_blas.matmul(
             ctx,
             handle,
