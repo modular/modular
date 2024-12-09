@@ -420,9 +420,15 @@ class MistralPipelineOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             weight_path=[
                 pipelines.HuggingFaceFile(
-                    "mistralai/Mistral-Nemo-Instruct-2407",
-                    "consolidated.safetensors",
+                    "mistralai/Mistral-Nemo-Instruct-2407", f
                 ).download()
+                for f in [
+                    "model-00001-of-00005.safetensors",
+                    "model-00002-of-00005.safetensors",
+                    "model-00003-of-00005.safetensors",
+                    "model-00004-of-00005.safetensors",
+                    "model-00005-of-00005.safetensors",
+                ]
             ],
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
