@@ -401,6 +401,18 @@ fn arg_parse(handle: String, default: Int) raises -> Int:
     return default
 
 
+fn arg_parse(handle: String, default: Bool) raises -> Bool:
+    var args = argv()
+    for i in range(len(args)):
+        if String(args[i]).startswith("--" + handle):
+            var name_val = args[i].split("=")
+            if name_val[1] == "True":
+                return True
+            elif name_val[1] == "False":
+                return False
+    return default
+
+
 fn arg_parse(handle: String, default: String) raises -> String:
     # TODO: add constraints on dtype of return value
     var args = argv()
