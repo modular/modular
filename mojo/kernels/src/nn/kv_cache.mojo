@@ -1435,16 +1435,31 @@ fn flash_attention_kv_cache_h8_d64_bshd[
     )
 
 
+@register_internal("print_kv_cache_cont_batch_h8_d128")
+def print_kv_cache_cont_batch_h8_d128[
+    target: StringLiteral
+](
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        DType.float32, kv_params_h8_d128_bshd
+    ],
+    layer_idx: UInt32,
+    context: MojoCallContextPtr,
+):
+    print_kv_cache_cont_batch_generic[target](
+        valid_lengths, kv_collection, layer_idx, context
+    )
+
+
 @register_internal("print_kv_cache_cont_batch_h16_d128")
 def print_kv_cache_cont_batch_h16_d128[
     target: StringLiteral
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
     kv_collection: ContinuousBatchingKVCacheCollection[
-        DType.float32, KVCacheStaticParams(num_heads=16, head_size=128)
+        DType.float32, kv_params_h16_d128_bshd
     ],
     layer_idx: UInt32,
-    output: NDBuffer[DType.float32, 1, *_],
     context: MojoCallContextPtr,
 ):
     print_kv_cache_cont_batch_generic[target](
@@ -1458,10 +1473,9 @@ def print_kv_cache_cont_batch_h32_d128[
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
     kv_collection: ContinuousBatchingKVCacheCollection[
-        DType.float32, KVCacheStaticParams(num_heads=32, head_size=128)
+        DType.float32, kv_params_h32_d128_bshd
     ],
     layer_idx: UInt32,
-    output: NDBuffer[DType.float32, 1, *_],
     context: MojoCallContextPtr,
 ):
     print_kv_cache_cont_batch_generic[target](
@@ -1477,6 +1491,10 @@ def print_kv_cache_cont_batch_generic[
     layer_idx: UInt32,
     context: MojoCallContextPtr,
 ):
+    constrained[
+        target == "gpu", "KV cache printing lacks a CPU implementation"
+    ]()
+
     var blocks_ptr = UnsafePointer[Scalar[type]].alloc(
         kv_collection.blocks.num_elements()
     )
