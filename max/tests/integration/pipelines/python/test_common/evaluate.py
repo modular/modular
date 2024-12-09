@@ -167,7 +167,7 @@ def next_token_with_logits(
             }
         )
         # Update the context for the next input.
-        req_to_context_dict[req_id].next_tokens = next_token.reshape(-1)
+        req_to_context_dict[req_id].update(int(next_token))
         if next_token == eos_token:
             return True
     return False

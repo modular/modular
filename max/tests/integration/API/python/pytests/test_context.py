@@ -18,14 +18,14 @@ def test_context__current_length():
 
     assert context.current_length == 4
 
-    context.update(np.array([4]), num_steps=None)
+    context.update(4)
     assert context.current_length == 5
 
     # Currently, there are 5 tokens, we are saying
     # here is the next one, and we've generated 3 tokens
     # including that one, so increment the current length
     # accordingly.
-    context.update(np.array([5]), num_steps=3)
+    context.update(5, num_steps=3)
     assert context.current_length == 8
 
 
@@ -38,7 +38,7 @@ def test_context__seq_len():
     )
 
     assert context.seq_len == 4
-    context.update(np.array([4]), num_steps=None)
+    context.update(4)
     assert context.seq_len == 1
-    context.update(np.array([5]), num_steps=5)
+    context.update(5, num_steps=5)
     assert context.seq_len == 1
