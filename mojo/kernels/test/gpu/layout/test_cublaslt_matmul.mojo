@@ -7,9 +7,7 @@
 # RUN: %mojo-no-debug-no-assert %s
 
 from math import ceildiv
-from gpu.cublas.cublas import check_cublas_error
 from gpu.host import DeviceContext
-from linalg.gpu_blas import _cublasLt_matmul
 from linalg.matmul_gpu import matmul_kernel_naive
 from buffer import DimList, NDBuffer
 from internal_utils import (
@@ -18,6 +16,7 @@ from internal_utils import (
     DeviceNDBuffer,
     assert_almost_equal,
 )
+from linalg.gpu_blas import Handle, Backend, matmul
 
 
 fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
@@ -61,15 +60,15 @@ fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy_to_device(a_device.buffer, a_host.tensor.data)
     ctx.enqueue_copy_to_device(b_device.buffer, b_host.tensor.data)
 
-    check_cublas_error(
-        _cublasLt_matmul(
+    with Handle[Backend.CUBLASLT]() as handle:
+        matmul(
             ctx,
+            handle,
             c_device.tensor,
             a_device.tensor,
             b_device.tensor,
             c_row_major=True,
         )
-    )
 
     ctx.enqueue_copy_from_device(c_host.tensor.data, c_device.buffer)
 
