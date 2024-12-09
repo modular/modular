@@ -138,6 +138,21 @@ struct OpaqueAddToTensorSI32:
         out[0] = x.val + y.val
 
 
+@compiler.register("opaque_add_to_tensor_si32_raises")
+struct OpaqueAddToTensorSI32Raises:
+    @uses_opaque
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](
+        out: ManagedTensorSlice[DType.int32, rank=1],
+        x: MyCustomScalarSI32,
+        y: MyCustomScalarSI32,
+    ) raises:
+        out[0] = x.val + y.val
+
+
 # ===-----------------------------------------------------------------------===#
 # Other Kernels
 # ===-----------------------------------------------------------------------===#

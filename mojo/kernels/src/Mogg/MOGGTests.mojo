@@ -592,6 +592,13 @@ fn buff_to_my_custom_scalar_reg[
     return MyCustomScalarReg(x.data[0])
 
 
+@register_internal("buff_to_my_custom_scalar_reg_raises")
+fn buff_to_my_custom_scalar_reg_raises[
+    type: DType
+](x: NDBuffer[type, 1]) raises -> MyCustomScalarReg[type]:
+    return MyCustomScalarReg(x.data[0])
+
+
 @register_internal("my_custom_scalar_reg_to_buff")
 fn my_custom_scalar_reg_to_buff[
     type: DType
