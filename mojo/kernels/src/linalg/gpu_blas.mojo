@@ -115,6 +115,7 @@ fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
 
 @value
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
+    alias resolved_backend = _resolve_backend[backend]()
     alias _cublas_type = UnsafePointer[cublasContext]
     alias _cublaslt_type = UnsafePointer[Context]
     alias _rocblas_type = rocblas.Handle
@@ -125,13 +126,21 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 
     fn __init__(out self) raises:
         @parameter
-        if backend is Backend.CUBLAS:
-            var handle = UnsafePointer[cublasContext]()
+        if Self.resolved_backend is Backend.CUBLAS:
+            var handle = Self._cublas_type()
             check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
             self._handle = handle
-        elif backend is Backend.CUBLASLT:
-            var handle = UnsafePointer[Context]()
+        elif Self.resolved_backend is Backend.CUBLASLT:
+            var handle = Self._cublaslt_type()
             check_cublas_error(cublasLtCreate(UnsafePointer.address_of(handle)))
+            self._handle = handle
+        elif Self.resolved_backend is Backend.ROCBLAS:
+            var handle = Self._rocblas_type()
+            rocblas.check_error(
+                rocblas.rocblas.rocblas_create_handle(
+                    UnsafePointer.address_of(handle)
+                )
+            )
             self._handle = handle
         else:
             raise Error(
@@ -145,42 +154,58 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
     @always_inline
     fn __exit__(mut self) raises:
         @parameter
-        if backend is Backend.CUBLAS:
+        if Self.resolved_backend is Backend.CUBLAS:
             check_cublas_error(cublasDestroy(self._get_cublas()))
             self._handle[Self._cublas_type] = Self._cublas_type()
             return
-        elif backend is Backend.CUBLASLT:
+        elif Self.resolved_backend is Backend.CUBLASLT:
             check_cublas_error(cublasLtDestroy(self._get_cublaslt()))
             self._handle[Self._cublaslt_type] = Self._cublaslt_type()
             return
+        elif Self.resolved_backend is Backend.ROCBLAS:
+            rocblas.check_error(
+                rocblas.rocblas.rocblas_destroy_handle(self._get_rocblas())
+            )
+            self._handle[Self._cublaslt_type] = Self._cublaslt_type()
+            return
+
         raise Error("the backend is not currently supported")
 
     fn _is_null(self) -> Bool:
         @parameter
-        if backend is Backend.CUBLAS:
+        if Self.resolved_backend is Backend.CUBLAS:
             return self._get_cublas() == Self._cublas_type()
-        elif backend is Backend.CUBLASLT:
+        elif Self.resolved_backend is Backend.CUBLASLT:
             return self._get_cublaslt() == Self._cublaslt_type()
+        elif Self.resolved_backend is Backend.ROCBLAS:
+            return self._get_rocblas() == Self._rocblas_type()
 
         return False
 
     fn _get_cublas(self) -> Self._cublas_type:
-        constrained[backend is Backend.CUBLAS, "backend must be CUBLAS"]()
+        constrained[
+            Self.resolved_backend is Backend.CUBLAS, "backend must be CUBLAS"
+        ]()
         return self._handle[Self._cublas_type]
 
     fn _get_cublaslt(self) -> Self._cublas_type:
-        constrained[backend is Backend.CUBLASLT, "backend must be CUBLASLT"]()
+        constrained[
+            Self.resolved_backend is Backend.CUBLASLT,
+            "backend must be CUBLASLT",
+        ]()
         return self._handle[Self._cublaslt_type]
 
     fn _get_rocblas(self) -> Self._rocblas_type:
-        constrained[backend is Backend.ROCBLAS, "backend must be ROCBLAS"]()
+        constrained[
+            Self.resolved_backend is Backend.ROCBLAS, "backend must be ROCBLAS"
+        ]()
         return self._handle[Self._rocblas_type]
 
     fn __is__(self, other: Backend) -> Bool:
-        return Self.backend is other
+        return Self.resolved_backend is other
 
     fn __isnot__(self, other: Backend) -> Bool:
-        return Self.backend is not other
+        return Self.resolved_backend is not other
 
 
 # ===----------------------------------------------------------------------===#
@@ -189,10 +214,10 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
 
 
 fn matmul[
-    backend: Backend, //, use_tf32: Bool = False
+    use_tf32: Bool = False
 ](
     ctx: DeviceContext,
-    handle: Handle[backend],
+    handle: Handle,
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
@@ -202,7 +227,7 @@ fn matmul[
     transpose_b: Bool = False,
 ) raises:
     @parameter
-    if backend is Backend.CUBLAS:
+    if handle.resolved_backend is Backend.CUBLAS:
         _cublas_matmul[use_tf32=use_tf32](
             ctx,
             handle._get_cublas(),
@@ -213,7 +238,18 @@ fn matmul[
             transpose_a=transpose_a,
             transpose_b=transpose_b,
         )
-    elif backend is Backend.CUBLASLT:
+    elif handle.resolved_backend is Backend.ROCBLAS:
+        _rocblas_matmul[use_tf32=use_tf32](
+            ctx,
+            handle._get_rocblas(),
+            c,
+            a,
+            b,
+            c_row_major=c_row_major,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+        )
+    elif handle.resolved_backend is Backend.CUBLASLT:
         _cublas_matmul[use_tf32=use_tf32](
             ctx,
             handle._get_cublaslt(),
@@ -278,7 +314,7 @@ fn _cublas_matmul[
             ComputeType.COMPUTE_32F_FAST_TF32 if use_tf32 else ComputeType.COMPUTE_32F
         )
 
-    # Cublas is by default column-major but we like to have the output in row-major
+    # Rocblas is by default column-major but we like to have the output in row-major
     # to compare with our results. To do this without an explicit transpose, we
     # can swap A, B and output a NxM column-major matrix, which is same as
     # MxN row-major i.e.
@@ -336,6 +372,119 @@ fn _cublas_matmul[
             M,
             compute_type,
             Algorithm.DEFAULT,
+        )
+    )
+
+
+# ===----------------------------------------------------------------------===#
+# ROCBLAS
+# ===----------------------------------------------------------------------===#
+
+
+fn _rocblas_matmul[
+    use_tf32: Bool = False,
+](
+    ctx: DeviceContext,
+    handle: rocblas.Handle,
+    c: NDBuffer[_, 2, _],
+    a: NDBuffer[_, 2, _],
+    b: NDBuffer[_, 2, _],
+    *,
+    c_row_major: Bool = False,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+) raises:
+    constrained[
+        a.type == b.type
+        and (a.type is DType.float32 or a.type.is_half_float()),
+        (
+            "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
+            " it if more types are needed."
+        ),
+    ]()
+
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+    var K = a.dim[1]() if not transpose_a else a.dim[0]()
+
+    var alpha = Scalar[DType.float32](1.0)
+    var beta = Scalar[DType.float32](0.0)
+
+    var compute_type = rocblas.types.DataType(DType.float32)
+
+    # Cublas is by default column-major but we like to have the output in row-major
+    # to compare with our results. To do this without an explicit transpose, we
+    # can swap A, B and output a NxM column-major matrix, which is same as
+    # MxN row-major i.e.
+    #
+    #      C: MxN_row_major = A: MxK_row_major @ B: KxN_row_major
+    #   => C: NxM_col_major = B: NxK_col_major @ A: KxM_col_major
+    #
+    # I haven't seen any significant performance difference before and after this
+    # transformation. To be rigorous though, we should set `c_is_row_major = True`
+    # for accuracy validations and uses default column-major in benchmark.
+
+    fn _convert_to_rocblas_transpose(tr: Bool) -> rocblas.types.Operation:
+        if tr:
+            return rocblas.types.Operation.TRANSPOSE
+        return rocblas.types.Operation.NONE
+
+    if c_row_major:
+        return rocblas.check_error(
+            rocblas.rocblas.rocblas_gemm_ex(
+                handle,
+                _convert_to_rocblas_transpose(transpose_b),
+                _convert_to_rocblas_transpose(transpose_a),
+                N,
+                M,
+                K,
+                UnsafePointer.address_of(alpha).bitcast[NoneType](),
+                UnsafePointer(b.data.bitcast[NoneType]()),
+                rocblas.types.DataType(b.type),
+                K if transpose_b else N,
+                UnsafePointer(a.data.bitcast[NoneType]()),
+                rocblas.types.DataType(a.type),
+                K,
+                UnsafePointer.address_of(beta).bitcast[NoneType](),
+                UnsafePointer(c.data.bitcast[NoneType]()),
+                rocblas.types.DataType(c.type),
+                N,
+                UnsafePointer(c.data.bitcast[NoneType]()),
+                rocblas.types.DataType(c.type),
+                N,
+                compute_type,
+                rocblas.rocblas.types.Algorithm.STANDARD,
+                0,
+                0,
+            )
+        )
+    # Default column-major.
+    rocblas.check_error(
+        rocblas.rocblas.rocblas_gemm_ex(
+            handle,
+            _convert_to_rocblas_transpose(transpose_a),
+            _convert_to_rocblas_transpose(transpose_b),
+            M,
+            N,
+            K,
+            UnsafePointer.address_of(alpha).bitcast[NoneType](),
+            UnsafePointer(a.data.bitcast[NoneType]()),
+            rocblas.types.DataType(a.type),
+            M,
+            UnsafePointer(b.data.bitcast[NoneType]()),
+            rocblas.types.DataType(b.type),
+            N if transpose_b else K,
+            UnsafePointer.address_of(beta).bitcast[NoneType](),
+            UnsafePointer(c.data.bitcast[NoneType]()),
+            rocblas.types.DataType(c.type),
+            M,
+            UnsafePointer(c.data.bitcast[NoneType]()),
+            rocblas.types.DataType(c.type),
+            M,
+            compute_type,
+            rocblas.rocblas.types.Algorithm.STANDARD,
+            0,
+            0,
         )
     )
 
