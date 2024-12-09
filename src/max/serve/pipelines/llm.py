@@ -22,7 +22,7 @@ from max.serve.scheduler.queues import (
     EngineQueue,
 )
 from max.serve.telemetry.metrics import METRICS
-from max.serve.telemetry.stopwatch import StopWatch
+from max.serve.telemetry.stopwatch import StopWatch, record_ms
 
 
 @dataclass(frozen=True)
@@ -139,49 +139,57 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         request: TokenGeneratorRequest,
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
         """Generates and streams tokens for the provided request."""
-        total = StopWatch()
+        total_sw = StopWatch()
         self.logger.debug(
             "%s [%d]: Started: Elapsed: %0.2f ms",
             request.id,
             request.index,
-            total.elapsed_ms,
+            total_sw.elapsed_ms,
         )
 
         try:
-            context = await self.tokenizer.new_context(request)
+            with record_ms(METRICS.input_time):
+                context = await self.tokenizer.new_context(request)
             # TODO(MAXCORE-137): TokenGeneratorContext currently does not enforce
             # a seq_len property.
             if hasattr(context, "seq_len"):
                 METRICS.input_tokens(context.seq_len)
 
-            async for response in self.engine_queue.stream(request.id, context):
-                token_log_probabilities = None
-                top_log_probabilities = None
-                if log_prob := response.log_probabilities:
-                    token_log_probabilities = log_prob.token_log_probabilities
-                    top_log_probabilities = []
-                    for top_log_probs in log_prob.top_log_probabilities:
-                        decoded_log_probs = {}
-                        for token_id, value in top_log_probs.items():
-                            decoded_log_probs[
-                                await self.tokenizer.decode(context, token_id)
-                            ] = value
-                        top_log_probabilities.append(decoded_log_probs)
+            with record_ms(METRICS.output_time):
+                async for response in self.engine_queue.stream(
+                    request.id, context
+                ):
+                    token_log_probabilities = None
+                    top_log_probabilities = None
+                    if log_prob := response.log_probabilities:
+                        token_log_probabilities = (
+                            log_prob.token_log_probabilities
+                        )
+                        top_log_probabilities = []
+                        for top_log_probs in log_prob.top_log_probabilities:
+                            decoded_log_probs = {}
+                            for token_id, value in top_log_probs.items():
+                                decoded_log_probs[
+                                    await self.tokenizer.decode(
+                                        context, token_id
+                                    )
+                                ] = value
+                            top_log_probabilities.append(decoded_log_probs)
 
-                yield TokenGeneratorOutput(
-                    decoded_token=await self.tokenizer.decode(
-                        context, response.next_token
-                    ),
-                    token_log_probabilities=token_log_probabilities,
-                    top_log_probabilities=top_log_probabilities,
-                )
+                    yield TokenGeneratorOutput(
+                        decoded_token=await self.tokenizer.decode(
+                            context, response.next_token
+                        ),
+                        token_log_probabilities=token_log_probabilities,
+                        top_log_probabilities=top_log_probabilities,
+                    )
         finally:
             if self.debug_logging:
                 self.logger.debug(
                     "%s [%d]: Completed: Elapsed: %0.2f ms",
                     request.id,
                     request.index,
-                    total.elapsed_ms,
+                    total_sw.elapsed_ms,
                 )
 
     async def all_tokens(
