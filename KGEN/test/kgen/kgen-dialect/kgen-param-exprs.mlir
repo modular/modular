@@ -206,6 +206,10 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
 
   // CHECK: declare concat_str: string = <"hello world">
   kgen.param.declare concat_str: string = <str_concat("hello ", "world")>
+
+  // CHECK: constant: variadic<type> = <[index, f32]>
+  kgen.param.constant: variadic<!kgen.type> = <function_get_arg_types(:type (index,f32)->())>
+
   kgen.return
 }
 
