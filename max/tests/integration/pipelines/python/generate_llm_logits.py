@@ -6,32 +6,32 @@
 
 from __future__ import annotations
 
+import os
+
 # Standard library
 from dataclasses import dataclass
-import os
 from pathlib import Path
-from typing import Mapping, Sequence, Union, Optional
+from typing import Mapping, Optional, Sequence, Union
 
 # 3rd-party
 import click
 import huggingface_hub
-import torch
-import transformers
-
-# MAX
-from max import driver
-from max import pipelines
-from max.pipelines import interfaces
-
-# Pipelines
-from architectures import register_all_models
 import llama3
 
 # Tests
 import replit_compat
 import run_torch_llama
-from test_common import evaluate
-from test_common import numpy_encoder
+import torch
+import transformers
+
+# Pipelines
+from architectures import register_all_models
+
+# MAX
+from max import driver, pipelines
+from max.pipelines import interfaces
+from max.pipelines.kv_cache import KVCacheStrategy
+from test_common import evaluate, numpy_encoder
 
 
 @dataclass
@@ -263,35 +263,29 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
     ) -> bool:
         assert version in self.supported_versions
         assert encoding in self.supported_encodings
-        return device_spec.device_type == "gpu"
+        return device_spec.device_type in {"cpu", "gpu"}
 
     def create_max_pipeline(
         self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
     ) -> MaxPipelineAndTokenizer:
-        # TODO (AIPIPE-202): Implement MAX pipeline generation for Llama Vision.
-        raise NotImplementedError
-        # assert self.is_supported(
-        #     version=version, encoding=encoding, device_spec=device_spec
-        # )
-        # config = pipelines.PipelineConfig(
-        #     architecture="mllama",
-        #     device_spec=device_spec,
-        #     quantization_encoding=pipelines.SupportedEncoding[encoding],
-        #     cache_strategy=kv_cache.KVCacheStrategy.CONTINUOUS,
-        #     huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision",
-        #     trust_remote_code=True,
-        # )
-        # tokenizer = TextTokenizer(config)
-        # generator = pipelines.TextGenerationPipeline(
-        #     pipeline_config=config,
-        #     pipeline_model=ReplitModel,
-        #     eos_token_id=tokenizer.eos,
-        # )
-        # return MaxPipelineAndTokenizer(
-        #     model=generator._pipeline_model,
-        #     generator=generator,
-        #     tokenizer=tokenizer,
-        # )
+        assert self.is_supported(
+            version=version, encoding=encoding, device_spec=device_spec
+        )
+        config = pipelines.PipelineConfig(
+            architecture="MllamaForConditionalGeneration",
+            device_spec=device_spec,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            cache_strategy=KVCacheStrategy.CONTINUOUS,
+            huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision",
+            trust_remote_code=True,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
 
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device
@@ -472,7 +466,7 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
 
     @property
     def supported_encodings(self) -> Sequence[str]:
-        return ["bfloat16"]
+        return [pipelines.SupportedEncoding.bfloat16]
 
     def is_supported(
         self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
