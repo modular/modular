@@ -22,7 +22,6 @@
 #include "KGEN/include/KGEN/Support/ForceLinkMLIRC.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
-#include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/Process.h"
@@ -272,12 +271,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
     theModule = importMojoFile(runtime, mgr, config, litScope, &includedFiles);
-  } else if (options.getDebugInfoLevelForInput() >
-             CompilationOptions::kSynthetic) {
-    ctx->loadDialect<DebugInfo::DebugInfoDialect>();
-    theModule = DebugInfo::parseSourceFileWithDebugInfo(
-        mgr, ctx, options.getDIEmissionKind(),
-        static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage));
   } else {
     theModule = parseSourceFile<ModuleOp>(mgr, ctx);
   }

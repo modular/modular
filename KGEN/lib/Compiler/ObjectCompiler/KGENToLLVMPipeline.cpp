@@ -37,13 +37,6 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<LLVMFuncOp>(mlir::createCanonicalizerPass(config));
   pm.addNestedPass<LLVMFuncOp>(mlir::createCSEPass());
 
-  // If requested, generate debug info at the LLVM level.
-  if (options.debugAtLevel.hasValue() &&
-      options.debugAtLevel == CompilationOptions::kDebugAtLLVM) {
-    pm.addPass(DebugInfo::createDebugInfoSnapshot(
-        {options.debugInfoLevel, /*filename*/ "", options.debugInfoLanguage}));
-  }
-
   // Run the LLVM lowering for debug info last.
   pm.addPass(DebugInfo::createDebugInfoToLLVM(
       {/*tradeoffPerfForVariableDI=*/options.optimizationLevel == 0}));
