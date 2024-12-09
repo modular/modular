@@ -51,6 +51,7 @@ from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from memory import UnsafePointer
 from utils.variant import Variant
 import gpu.rocblas
+from os import abort
 
 # ===----------------------------------------------------------------------===#
 # Backend
@@ -111,38 +112,75 @@ fn _resolve_backend[backend: Backend, type: DType = DType.invalid]() -> Backend:
 # Handle
 # ===----------------------------------------------------------------------===#
 
-alias Handle = Variant[
-    UnsafePointer[cublasContext], UnsafePointer[Context], rocblas.Handle
-]
 
+@value
+struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
+    alias _cublas_type = UnsafePointer[cublasContext]
+    alias _cublaslt_type = UnsafePointer[Context]
+    alias _rocblas_type = rocblas.Handle
+    alias type = Variant[
+        Self._cublas_type, Self._cublaslt_type, Self._rocblas_type
+    ]
+    var _handle: Self.type
 
-fn create_handle[backend: Backend = Backend.AUTOMATIC]() raises -> Handle:
-    alias resolved_backend = _resolve_backend[backend]()
+    fn __init__(out self) raises:
+        @parameter
+        if backend is Backend.CUBLAS:
+            var handle = UnsafePointer[cublasContext]()
+            check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
+            self._handle = handle
+        elif backend is Backend.CUBLASLT:
+            var handle = UnsafePointer[Context]()
+            check_cublas_error(cublasLtCreate(UnsafePointer.address_of(handle)))
+            self._handle = handle
+        else:
+            raise Error(
+                "the backend '" + str(backend) + "' is not currently supported"
+            )
 
-    @parameter
-    if resolved_backend is Backend.CUBLAS:
-        var handle = UnsafePointer[cublasContext]()
-        check_cublas_error(cublasCreate(UnsafePointer.address_of(handle)))
-        return handle
-    elif resolved_backend is Backend.CUBLASLT:
-        var handle = UnsafePointer[Context]()
-        check_cublas_error(cublasLtCreate(UnsafePointer.address_of(handle)))
-        return handle
-    raise Error(
-        "the backend '" + str(resolved_backend) + "' is not currently supported"
-    )
+    @always_inline
+    fn __enter__(self) -> Self:
+        return self
 
+    @always_inline
+    fn __exit__(mut self) raises:
+        @parameter
+        if backend is Backend.CUBLAS:
+            check_cublas_error(cublasDestroy(self._get_cublas()))
+            self._handle[Self._cublas_type] = Self._cublas_type()
+            return
+        elif backend is Backend.CUBLASLT:
+            check_cublas_error(cublasLtDestroy(self._get_cublaslt()))
+            self._handle[Self._cublaslt_type] = Self._cublaslt_type()
+            return
+        raise Error("the backend is not currently supported")
 
-fn destroy_handle(handle: Handle) raises:
-    if handle.isa[UnsafePointer[cublasContext]]():
-        return check_cublas_error(
-            cublasDestroy(handle[UnsafePointer[cublasContext]])
-        )
-    elif handle.isa[UnsafePointer[Context]]():
-        return check_cublas_error(
-            cublasLtDestroy(handle[UnsafePointer[Context]])
-        )
-    raise Error("the backend is not currently supported")
+    fn _is_null(self) -> Bool:
+        @parameter
+        if backend is Backend.CUBLAS:
+            return self._get_cublas() == Self._cublas_type()
+        elif backend is Backend.CUBLASLT:
+            return self._get_cublaslt() == Self._cublaslt_type()
+
+        return False
+
+    fn _get_cublas(self) -> Self._cublas_type:
+        constrained[backend is Backend.CUBLAS, "backend must be CUBLAS"]()
+        return self._handle[Self._cublas_type]
+
+    fn _get_cublaslt(self) -> Self._cublas_type:
+        constrained[backend is Backend.CUBLASLT, "backend must be CUBLASLT"]()
+        return self._handle[Self._cublaslt_type]
+
+    fn _get_rocblas(self) -> Self._rocblas_type:
+        constrained[backend is Backend.ROCBLAS, "backend must be ROCBLAS"]()
+        return self._handle[Self._rocblas_type]
+
+    fn __is__(self, other: Backend) -> Bool:
+        return Self.backend is other
+
+    fn __isnot__(self, other: Backend) -> Bool:
+        return Self.backend is not other
 
 
 # ===----------------------------------------------------------------------===#
@@ -151,9 +189,10 @@ fn destroy_handle(handle: Handle) raises:
 
 
 fn matmul[
-    use_tf32: Bool = False, *, backend: Backend = Backend.AUTOMATIC
+    backend: Backend, //, use_tf32: Bool = False
 ](
-    handle: Handle,
+    ctx: DeviceContext,
+    handle: Handle[backend],
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
@@ -162,30 +201,35 @@ fn matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
 ) raises:
-    alias resolved_backend = _resolve_backend[backend, a.type]()
-
-    constrained[
-        resolved_backend is Backend.CUBLAS,
-        "only the cuBLAS backend is hooked up right now",
-    ]()
-
     @parameter
-    if resolved_backend is Backend.CUBLASLT:
-        if transpose_a or transpose_b:
-            raise Error(
-                "the cuBLASLT backend currently only is implemented for"
-                " transpose_a=False and transpose_a=False"
-            )
-
-    _cublas_matmul[use_tf32=use_tf32](
-        handle[UnsafePointer[cublasContext]],
-        c,
-        a,
-        b,
-        c_row_major=c_row_major,
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-    )
+    if backend is Backend.CUBLAS:
+        _cublas_matmul[use_tf32=use_tf32](
+            ctx,
+            handle._get_cublas(),
+            c,
+            a,
+            b,
+            c_row_major=c_row_major,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+        )
+    elif backend is Backend.CUBLASLT:
+        _cublas_matmul[use_tf32=use_tf32](
+            ctx,
+            handle._get_cublaslt(),
+            c,
+            a,
+            b,
+            c_row_major=c_row_major,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+        )
+    else:
+        raise Error(
+            "the backend '"
+            + str(handle.backend)
+            + "' is not currently supported"
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -196,6 +240,7 @@ fn matmul[
 fn _cublas_matmul[
     use_tf32: Bool = False,
 ](
+    ctx: DeviceContext,
     handle: UnsafePointer[cublasContext],
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
@@ -302,11 +347,14 @@ fn _cublas_matmul[
 
 fn _cublasLt_matmul(
     ctx: DeviceContext,
+    handle: UnsafePointer[cublasContext],
     d: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
     *,
     c_row_major: Bool = True,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
 ) raises -> Result:
     alias a_type = a.type
     alias b_type = b.type
@@ -326,11 +374,14 @@ fn _cublasLt_matmul(
         ),
     ]()
 
+    if transpose_a or transpose_b:
+        raise Error(
+            "the cuBLASLT backend currently only is implemented for"
+            " transpose_a=False and transpose_a=False"
+        )
+
     if a_type is DType.float8e5m2 and b_type is DType.float8e4m3:
         raise Error("E5M2xE4M3 is not supported!")
-
-    var lt_handle = UnsafePointer[Context]()
-    check_cublas_error(cublasLtCreate(UnsafePointer.address_of(lt_handle)))
 
     # CublasLt is by default column-major but we like to have the output in row-major
     # to compare with our results. Use `c_row_major` to determine the output layout.
@@ -457,7 +508,7 @@ fn _cublasLt_matmul(
     var returnedResults = 0
     check_cublas_error(
         cublasLtMatmulAlgoGetHeuristic(
-            lt_handle,
+            handle,
             operationDesc,
             _adesc,
             _bdesc,
@@ -478,7 +529,7 @@ fn _cublasLt_matmul(
     var result: Result
     if c_row_major:
         result = cublasLtMatmul(
-            lt_handle,  # light_handle
+            handle,  # light_handle
             operationDesc,  # compute_desc
             UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
             UnsafePointer(b.data.bitcast[NoneType]()),  # _a
@@ -497,7 +548,7 @@ fn _cublasLt_matmul(
         )
     else:
         result = cublasLtMatmul(
-            lt_handle,  # light_handle
+            handle,  # light_handle
             operationDesc,  # compute_desc
             UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
             UnsafePointer(a.data.bitcast[NoneType]()),  # _a
@@ -523,6 +574,5 @@ fn _cublasLt_matmul(
     check_cublas_error(cublasLtMatrixLayoutDestroy(_cdesc))
     check_cublas_error(cublasLtMatrixLayoutDestroy(_ddesc))
     check_cublas_error(cublasLtMatmulPreferenceDestroy(preference))
-    check_cublas_error(cublasLtDestroy(lt_handle))
 
     return result
