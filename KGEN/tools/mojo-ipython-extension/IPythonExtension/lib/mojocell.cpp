@@ -4,11 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-// Restrict to Python v3.9.0
-// https://docs.python.org/3/c-api/stable.html#c.Py_LIMITED_API
-// https://docs.python.org/3/c-api/apiabiversion.html#c.PY_VERSION_HEX
-#define Py_LIMITED_API 0x03009000
-
 #include "AsyncRT/CompilerSupport/Context.h"
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
