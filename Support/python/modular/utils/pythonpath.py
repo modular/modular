@@ -98,7 +98,9 @@ def get_libpython() -> Optional[Path]:
             return path
 
     # Bazel prebuilt python
-    libpython = Path(sys.executable).parent.parent / "lib" / var("INSTSONAME")
+    libpython = (
+        Path(sys.executable).resolve().parent.parent / "lib" / var("INSTSONAME")
+    )
     if libpython.exists():
         return libpython
     return None
