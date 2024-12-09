@@ -4,7 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-build-no-debug-no-assert %s
-from internal_utils import env_get_dtype, DeviceNDBuffer, HostNDBuffer, random
+from internal_utils import (
+    env_get_dtype,
+    DeviceNDBuffer,
+    HostNDBuffer,
+    random,
+    arg_parse,
+)
 from random import random_ui64, seed
 from sys import env_get_int, sizeof, env_get_bool
 from gpu.host import DeviceBuffer, DeviceContext
@@ -251,18 +257,15 @@ def execute_kv_cache_ragged_flash_attention[
 def main():
     alias dtype = env_get_dtype["dtype", DType.bfloat16]()
 
-    alias batch_size = env_get_int["batch_size", 1]()
-    alias use_random_seq_lengths = env_get_bool[
-        "use_random_seq_lengths", False
-    ]()
-    alias seq_len = env_get_int["seq_len", 1]()
     alias head_dim = env_get_int["head_dim", 128]()
     alias num_q_heads = env_get_int["num_q_heads", 32]()
     alias num_kv_heads = env_get_int["num_kv_heads", 8]()
-    alias cache_len = env_get_int["cache_len", 1]()
-    alias use_random_cache_lengths = env_get_bool[
-        "use_random_cache_lengths", False
-    ]()
+
+    var batch_size = arg_parse("batch_size", 1)
+    var use_random_seq_lengths = arg_parse("use_random_seq_lengths", False)
+    var seq_len = arg_parse("seq_len", 1)
+    var cache_len = arg_parse("cache_len", 1)
+    var use_random_cache_lengths = arg_parse("use_random_cache_lengths", False)
 
     seed(0)
 

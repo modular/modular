@@ -11,47 +11,47 @@ params:
 
 # llama3.1 shapes
 # token gen
-- seq_len: 1
-  cache_len: [215, 1024]
-  batch_size: [20, 250, 500]
+- $seq_len: 1
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
   num_q_heads: 32
   num_kv_heads: 8
   head_dim: 128
-  use_random_seq_lengths: False
-  use_random_cache_lengths: False
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
   metadata:
     MODEL: llama3.1
 
-- seq_len: [215, 1024]
-  cache_len: 0
-  batch_size: [20, 80]
+- $seq_len: [215, 1024]
+  $cache_len: 0
+  $batch_size: [20, 80]
   num_q_heads: 32
   num_kv_heads: 8
   head_dim: 128
-  use_random_seq_lengths: False
-  use_random_cache_lengths: False
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
   metadata:
     MODEL: llama3.1
 
 # llama 3.2 shape
-- seq_len: 1
-  cache_len: [215, 1024]
-  batch_size: [20, 250, 500]
+- $seq_len: 1
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
   num_q_heads: 24
   num_kv_heads: 8
   head_dim: 128
-  use_random_seq_lengths: False
-  use_random_cache_lengths: False
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
   metadata:
     MODEL: llama3.2
 
-- seq_len: [215, 1024]
-  cache_len: 0
-  batch_size: [20, 80]
+- $seq_len: [215, 1024]
+  $cache_len: 0
+  $batch_size: [20, 80]
   num_q_heads: 24
   num_kv_heads: 8
   head_dim: 128
-  use_random_seq_lengths: False
-  use_random_cache_lengths: False
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
   metadata:
     MODEL: llama3.2
