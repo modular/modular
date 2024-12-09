@@ -116,10 +116,11 @@ fn reduce_inner_test[
     ) capturing [_] -> SIMD[type, width],
     rank: Int,
     type: DType,
+    expected_vals_type: DType,
 ](
     shape: IndexList[rank],
     init: Scalar[type],
-    expected_vals: List[Float32],
+    expected_vals: List[Scalar[expected_vals_type]],
     ctx: DeviceContext,
 ) raises:
     alias num_reductions = 1
@@ -299,5 +300,13 @@ def main():
             StaticTuple[Float16, 2](Float16.MIN, 0.0),
             List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            ctx,
+        )
+
+        # bool tests
+        reduce_inner_test[reduce_max](
+            IndexList[2](5, 5),
+            Scalar[DType.bool].MIN,
+            List[Scalar[DType.bool]](True, False, True, False, True),
             ctx,
         )
