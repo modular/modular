@@ -1276,6 +1276,27 @@ LogicalResult PackGEPOp::inferReturnTypes(
 }
 
 //===----------------------------------------------------------------------===//
+// PackLoadOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult PackLoadOp::inferReturnTypes(
+    MLIRContext *ctx, std::optional<Location> loc, ValueRange operands,
+    DictionaryAttr attrs, mlir::OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &types) {
+  if (!isa<PackType>(operands[0].getType()))
+    return mlir::emitError(loc.value_or(operands[0].getLoc()),
+                           "expected one !kgen.pack operand, not ")
+           << operands[0].getType();
+  auto packType = cast<PackType>(operands[0].getType());
+  // The result type is the same as the input type, but with a layer of pointers
+  // stripped off.
+  auto mappedTypes =
+      ParamOperatorAttr::get(POC::VariadicPtrRemoveMap, packType.getVariadic());
+  types.push_back(PackType::get(mappedTypes));
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 
