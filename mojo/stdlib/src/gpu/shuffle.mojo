@@ -68,6 +68,11 @@ fn _shuffle[
                 mask, packed_val, offset
             )
             return bitcast[type, simd_width](result_packed)
+    elif type is DType.bool:
+        constrained[simd_width == 1, "unhandled simd width"]()
+        return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
+            mask, val.cast[DType.int32](), offset
+        ).cast[type]()
 
     else:
         constrained[False, "unhandled shuffle type"]()
@@ -329,6 +334,10 @@ fn shuffle_down[
         if bitwidthof[type]() == 16 and simd_width == 1:
             var val_splatted = SIMD[type, 2](rebind[Scalar[type]](val))
             return _shuffle_down_amd(mask, val_splatted, offset)[0]
+        elif type is DType.bool and simd_width == 1:
+            return _shuffle_down_amd(
+                mask, val.cast[DType.int32](), offset
+            ).cast[type]()
         else:
             return _shuffle_down_amd(mask, val, offset)
 
