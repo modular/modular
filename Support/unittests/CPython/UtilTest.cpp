@@ -4,6 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+// TODO: Ideally we wouldn't need this
+#undef Py_LIMITED_API
+
 #include "Support/CPython/Util.h"
 #include <Python.h>
 #include <gtest/gtest.h>
