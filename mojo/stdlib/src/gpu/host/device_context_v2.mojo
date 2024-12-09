@@ -643,9 +643,9 @@ struct DeviceFunctionV2[
             dense_args_addrs[arg_offset] = first_word_addr.bitcast[NoneType]()
 
         if cluster_dim:
-            not_implemented_yet[
-                "DeviceFunctionV2._call_with_pack: cluster_dim"
-            ]()
+            attributes.append(
+                LaunchAttribute.from_cluster_dim(cluster_dim.value())
+            )
 
         if constant_memory:
             for i in range(len(constant_memory)):
@@ -964,6 +964,7 @@ struct DeviceContextV2:
             args,
             grid_dim=grid_dim,
             block_dim=block_dim,
+            cluster_dim=cluster_dim,
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
