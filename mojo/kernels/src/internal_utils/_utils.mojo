@@ -399,3 +399,13 @@ fn arg_parse(handle: String, default: Int) raises -> Int:
             var name_val = args[i].split("=")
             return int(name_val[1])
     return default
+
+
+fn arg_parse(handle: String, default: String) raises -> String:
+    # TODO: add constraints on dtype of return value
+    var args = argv()
+    for i in range(len(args)):
+        if String(args[i]).startswith("--" + handle):
+            var name_val = args[i].split("=")
+            return name_val[1]
+    return default
