@@ -156,17 +156,17 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()]:
         @parameter
         if Self.resolved_backend is Backend.CUBLAS:
             check_cublas_error(cublasDestroy(self._get_cublas()))
-            self._handle[Self._cublas_type] = Self._cublas_type()
+            self._handle = Self._cublas_type()
             return
         elif Self.resolved_backend is Backend.CUBLASLT:
             check_cublas_error(cublasLtDestroy(self._get_cublaslt()))
-            self._handle[Self._cublaslt_type] = Self._cublaslt_type()
+            self._handle = Self._cublaslt_type()
             return
         elif Self.resolved_backend is Backend.ROCBLAS:
             rocblas.check_error(
                 rocblas.rocblas.rocblas_destroy_handle(self._get_rocblas())
             )
-            self._handle[Self._cublaslt_type] = Self._cublaslt_type()
+            self._handle = Self._cublaslt_type()
             return
 
         raise Error("the backend is not currently supported")
