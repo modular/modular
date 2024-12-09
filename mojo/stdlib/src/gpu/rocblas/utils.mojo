@@ -9,6 +9,7 @@ from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+from .types import Status
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -44,3 +45,9 @@ fn _get_dylib_function[
         _destroy_dylib,
         result_type,
     ]()
+
+
+@always_inline
+fn check_error(stat: Status) raises:
+    if stat != Status.SUCCESS:
+        raise Error("ROCBLAS ERROR:" + str(stat))

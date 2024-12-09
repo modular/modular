@@ -10,6 +10,12 @@
 struct Handle:
     var _value: UnsafePointer[NoneType]
 
+    fn __init__(out self):
+        self._value = UnsafePointer[NoneType]()
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self._value == other._value
+
 
 @value
 @register_passable("trivial")
@@ -135,6 +141,20 @@ struct DataType:
     fn __init__(out self, value: Int):
         self._value = value
 
+    fn __init__(out self, dtype: DType) raises:
+        if dtype is DType.float16:
+            self = Self.F16_R
+        elif dtype is DType.bfloat16:
+            self = Self.BF16_R
+        elif dtype is DType.float32:
+            self = Self.F32_R
+        elif dtype is DType.float64:
+            self = Self.F64_R
+        else:
+            raise "the dtype '" + str(
+                dtype
+            ) + "' is not currently handled by rocBLAS"
+
     fn __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
@@ -205,6 +225,47 @@ struct Status:
 
     fn __int__(self) -> Int:
         return int(self._value)
+
+    @no_inline
+    fn __str__(self) -> String:
+        return String.write(self)
+
+    @no_inline
+    fn write_to[W: Writer](self, mut writer: W):
+        if self == Self.SUCCESS:
+            return writer.write("SUCCESS")
+        if self == Self.INVALID_HANDLE:
+            return writer.write("INVALID_HANDLE")
+        if self == Self.NOT_IMPLEMENTED:
+            return writer.write("NOT_IMPLEMENTED")
+        if self == Self.INVALID_POINTER:
+            return writer.write("INVALID_POINTER")
+        if self == Self.INVALID_SIZE:
+            return writer.write("INVALID_SIZE")
+        if self == Self.MEMORY_ERROR:
+            return writer.write("MEMORY_ERROR")
+        if self == Self.INTERNAL_ERROR:
+            return writer.write("INTERNAL_ERROR")
+        if self == Self.PERF_DEGRADED:
+            return writer.write("PERF_DEGRADED")
+        if self == Self.SIZE_QUERY_MISMATCH:
+            return writer.write("SIZE_QUERY_MISMATCH")
+        if self == Self.SIZE_INCREASED:
+            return writer.write("SIZE_INCREASED")
+        if self == Self.SIZE_UNCHANGED:
+            return writer.write("SIZE_UNCHANGED")
+        if self == Self.INVALID_VALUE:
+            return writer.write("INVALID_VALUE")
+        if self == Self.CONTINUE:
+            return writer.write("CONTINUE")
+        if self == Self.CHECK_NUMERICS_FAIL:
+            return writer.write("CHECK_NUMERICS_FAIL")
+        if self == Self.EXCLUDED_FROM_BUILD:
+            return writer.write("EXCLUDED_FROM_BUILD")
+        if self == Self.ARCH_MISMATCH:
+            return writer.write("ARCH_MISMATCH")
+
+        return abort("unreachable: invalid Status entry")
 
 
 @value

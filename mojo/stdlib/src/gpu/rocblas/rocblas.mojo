@@ -22,6 +22,20 @@ from .types import (
 from .utils import _get_dylib_function
 
 
+fn rocblas_create_handle(handle: UnsafePointer[Handle]) -> Status:
+    return _get_dylib_function[
+        "rocblas_create_handle",
+        fn (UnsafePointer[Handle]) -> Status,
+    ]()(handle)
+
+
+fn rocblas_destroy_handle(handle: Handle) -> Status:
+    return _get_dylib_function[
+        "rocblas_destroy_handle",
+        fn (Handle) -> Status,
+    ]()(handle)
+
+
 fn rocblas_ctpsv_64(
     handle: Handle,
     uplo: Fill,
