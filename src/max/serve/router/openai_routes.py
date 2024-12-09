@@ -12,8 +12,15 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from time import perf_counter_ns
-from typing import Any, AsyncGenerator, List, Literal, Optional, Union, cast
-
+from typing import (
+    Any,
+    AsyncGenerator,
+    List,
+    Literal,
+    Optional,
+    Union,
+    cast,
+)
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -45,8 +52,24 @@ from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
 
+from max.serve.telemetry.stopwatch import StopWatch
+from max.serve.telemetry.metrics import METRICS
+
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger(__name__)
+
+
+def record_request_start():
+    METRICS.reqs_running(1)
+
+
+def record_request_end(
+    status_code: int, request_path: str, elapsed_ms: float, n_tokens: int
+) -> None:
+    METRICS.reqs_running(-1)
+    METRICS.request_count(status_code, request_path)
+    METRICS.request_time(elapsed_ms, request_path)
+    METRICS.output_tokens(n_tokens)
 
 
 class OpenAIResponseGenerator(ABC):
@@ -73,7 +96,8 @@ def get_pipeline(request: Request, model_name: str) -> TokenGeneratorPipeline:
     pipeline: TokenGeneratorPipeline = app_state.pipeline
     if pipeline.model_name != model_name:
         raise ValueError(
-            f"Unknown model '{model_name}', currently serving '{pipeline.model_name}'."
+            f"Unknown model '{model_name}', currently serving"
+            f" '{pipeline.model_name}'."
         )
     return pipeline
 
@@ -84,13 +108,17 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             "Streaming: Start: %s",
             request,
         )
+        record_request_start()
+        itl = StopWatch()
+        request_timer = StopWatch(start_ns=request.req_recv_time_ns)
+        n_tokens = 0
+        status_code = 200
         try:
-            response_idx = 0
             async for token in self.pipeline.next_token(request):
                 self.logger.debug(
                     "Streaming: %s, TOKEN: %d, %s",
                     request.id,
-                    response_idx,
+                    n_tokens,
                     token.decoded_token,
                 )
                 # We support N = 1 at the moment and will generate a single choice.
@@ -121,27 +149,48 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                     usage=None,
                     service_tier=None,
                 )
-                response_idx += 1
-                yield response.model_dump_json()
+                n_tokens += 1
+                payload = response.model_dump_json()
+                if n_tokens == 1:
+                    METRICS.ttft(request_timer.elapsed_ms)
+                else:
+                    METRICS.itl(itl.elapsed_ms)
+                    itl.reset()
+                yield payload
 
             logger.debug(
                 "Streaming: Done: %s, %d tokens",
                 request,
-                response_idx,
+                n_tokens,
             )
             yield "[DONE]"
         except ValueError as e:
+            status_code = 500
             logger.exception("ValueError in request %s", request.id)
             error_response = ErrorResponse(
-                error=Error(code="500", message=str(e), param="", type="")
+                error=Error(
+                    code=str(status_code), message=str(e), param="", type=""
+                )
             )
             yield error_response
+        finally:
+            record_request_end(
+                status_code,
+                request.request_path,
+                request_timer.elapsed_ms,
+                n_tokens,
+            )
 
     async def complete(
         self, request: TokenGeneratorRequest
     ) -> CreateChatCompletionResponse:
+        record_request_start()
+        n_tokens = 0
+        request_timer = StopWatch(start_ns=request.req_recv_time_ns)
+        status_code = 200
         try:
             completed_outputs = await self.pipeline.all_tokens(request)
+            n_tokens = len(completed_outputs)
             response_message = "".join(
                 output.decoded_token for output in completed_outputs
             )
@@ -170,8 +219,16 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
             return response
         except ValueError as e:
             logger.exception("ValueError in %s", request.id)
+            status_code = 500
             # TODO (SI-722) how to handle error in a stream response via ChatCompletion API.
             return json.dumps({"result": "error", "message": str(e)})
+        finally:
+            record_request_end(
+                status_code,
+                request.request_path,
+                request_timer.elapsed_ms,
+                n_tokens,
+            )
 
 
 def openai_parse_chat_completion_request(
@@ -274,7 +331,8 @@ async def openai_create_chat_completion(
             messages=request_messages,
             images=request_images,
             max_new_tokens=completion_request.max_tokens,
-            req_recv_time_ns=request.state.recv_time_ns,
+            req_recv_time_ns=request.state.request_timer.start_ns,
+            request_path=request.url.path,
         )
 
         if completion_request.stream:
@@ -335,13 +393,17 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
             "Streaming: Start: %s",
             request,
         )
+        record_request_start()
+        itl = StopWatch()
+        request_timer = StopWatch(start_ns=request.req_recv_time_ns)
+        n_tokens = 0
+        status_code = 200
         try:
-            response_idx = 0
             async for token in self.pipeline.next_token(request):
                 self.logger.debug(
                     "Streaming: %s, TOKEN: %d, %s",
                     request.id,
-                    response_idx,
+                    n_tokens,
                     token.decoded_token,
                 )
 
@@ -365,46 +427,76 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                     model="",
                     object="text_completion",
                 )
-                response_idx += 1
-                yield response.model_dump_json()
+                n_tokens += 1
+                payload = response.model_dump_json()
+                if n_tokens == 1:
+                    METRICS.ttft(request_timer.elapsed_ms)
+                else:
+                    METRICS.itl(itl.elapsed_ms)
+                    itl.reset()
+                yield payload
 
             logger.debug(
                 "Streaming: Done: %s, %d tokens",
                 request,
-                response_idx,
+                n_tokens,
             )
             yield "[DONE]"
         except ValueError as e:
+            status_code = 500
             logger.exception("ValueError in request %s", request.id)
             # TODO (SI-722) - propagate better errors back.
             yield json.dumps({"result": "error", "message": str(e)})
+        finally:
+            record_request_end(
+                status_code,
+                request.request_path,
+                request_timer.elapsed_ms,
+                n_tokens,
+            )
 
     async def complete(
         self, request: TokenGeneratorRequest
     ) -> CreateCompletionResponse:
-        completed_outputs = await self.pipeline.all_tokens(request)
+        record_request_start()
+        n_tokens = 0
+        request_timer = StopWatch(start_ns=request.req_recv_time_ns)
+        status_code = 200
+        try:
+            completed_outputs = await self.pipeline.all_tokens(request)
+            n_tokens = len(completed_outputs)
 
-        log_probs = _process_log_probabilities(completed_outputs)
-        response_message = "".join(
-            output.decoded_token for output in completed_outputs
-        )
-        response_choices = [
-            Choice(
-                index=0,
-                text=response_message,
-                finish_reason="stop",
-                logprobs=log_probs,
+            log_probs = _process_log_probabilities(completed_outputs)
+            response_message = "".join(
+                output.decoded_token for output in completed_outputs
             )
-        ]
-        response = CreateCompletionResponse(
-            id=request.id,
-            choices=response_choices,
-            created=int(datetime.now().timestamp()),
-            model="",
-            object="text_completion",
-            system_fingerprint=None,
-        )
-        return response
+            response_choices = [
+                Choice(
+                    index=0,
+                    text=response_message,
+                    finish_reason="stop",
+                    logprobs=log_probs,
+                )
+            ]
+            response = CreateCompletionResponse(
+                id=request.id,
+                choices=response_choices,
+                created=int(datetime.now().timestamp()),
+                model="",
+                object="text_completion",
+                system_fingerprint=None,
+            )
+            return response
+        except:
+            status_code = 500
+            raise
+        finally:
+            record_request_end(
+                status_code,
+                request.request_path,
+                request_timer.elapsed_ms,
+                n_tokens,
+            )
 
 
 def openai_get_prompt_from_completion_request(
@@ -443,7 +535,7 @@ async def openai_create_completion(
         request_timestamp_ns = request_json.get("timestamp", None)
         if request_timestamp_ns:
             request_timers["0_middleware"] = (
-                request.state.recv_time_ns - request_timestamp_ns
+                request.state.request_timer.start_ns - request_timestamp_ns
             ) / 1e6
             request_timers["1_handler"] = (
                 request_handler_ns - request_timestamp_ns
@@ -472,7 +564,8 @@ async def openai_create_completion(
             model_name=completion_request.model,
             prompt=request_content,
             max_new_tokens=completion_request.max_tokens,
-            req_recv_time_ns=request.state.recv_time_ns,
+            req_recv_time_ns=request.state.request_timer.start_ns,
+            request_path=request.url.path,
             logprobs=completion_request.logprobs,
             echo=completion_request.echo,
         )

@@ -24,7 +24,7 @@ from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.scheduler.queues import STOP_STREAM, BatchInputs, EngineQueue
 from max.serve.telemetry.metrics import METRICS
-from max.serve.telemetry.stopwatch import StopWatch
+from max.serve.telemetry.stopwatch import record_ms
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +161,8 @@ async def model_worker_run_v2(
         logger.info("Worker Queues: %s, Events: %s", queues, events)
 
         # Initialize all token generators.
-        with StopWatch() as timer, Tracer("model_factory"):
+        with record_ms(METRICS.model_load_time), Tracer("model_factory"):
             model = model_factory()
-            METRICS.modelLoadTime(int(timer.elapsed_ms))
         config = pipeline_config
         max_batch_size_tg = config.token_generation.size
         max_forward_steps_tg = config.token_generation.max_forward_steps

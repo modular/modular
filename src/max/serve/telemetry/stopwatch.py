@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import contextlib
 import time
+from typing import Callable, Optional
 
 
 class StopWatch:
@@ -25,15 +27,19 @@ class StopWatch:
         return sw
 
     @staticmethod
-    def time_ns():
+    def time_ns() -> int:
         return time.perf_counter_ns()
 
-    def __init__(self):
-        self.start_ns = 0
-        self.exit_ns = 0
+    def __init__(self, start_ns: Optional[int] = None):
+        self.start_ns: int = (
+            start_ns if start_ns is not None else self.time_ns()
+        )
+        self.exit_ns: int = 0
 
-    def reset(self):
-        self.start_ns = StopWatch.time_ns()
+    def reset(self, start_ns: Optional[int] = None):
+        if start_ns is None:
+            start_ns = self.time_ns()
+        self.start_ns = start_ns
 
     def __enter__(self):
         self.reset()
@@ -41,13 +47,13 @@ class StopWatch:
         return self
 
     def __exit__(self, _exc_type, _exc_value, _exc_tb):
-        self.exit_ns = StopWatch.time_ns()
+        self.exit_ns = self.time_ns()
 
     @property
     def elapsed_ns(self) -> int:
         if not self.start_ns:
             raise RuntimeError("Stopwatch not started")
-        end = self.exit_ns if self.exit_ns else StopWatch.time_ns()
+        end = self.exit_ns if self.exit_ns else self.time_ns()
         elapsed = end - self.start_ns
         return elapsed
 
@@ -58,3 +64,20 @@ class StopWatch:
     @property
     def elapsed_s(self) -> float:
         return self.elapsed_ns / 1e9
+
+
+@contextlib.contextmanager
+def record_ms(fn: Callable[[float], None], on_error: bool = False):
+    """Start a StopWatch and call fn(elapsed_ms) when complete. yields a stopwatch for intermediate timings.
+
+    fn: call this function with the duration of the stopwatch.  duration passed in ms
+    on_error: should results be recorded if an exception happens during execution?
+    """
+    sw = StopWatch()
+    try:
+        yield sw
+    except:
+        if on_error:
+            fn(sw.elapsed_ms)
+    else:
+        fn(sw.elapsed_ms)

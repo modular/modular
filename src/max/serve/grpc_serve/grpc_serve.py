@@ -46,7 +46,7 @@ def tokengen_request_from_grpc_request(
     """
     model_name = request.model_name
     max_tokens = DEFAULT_MAX_TOKENS
-    req_recv_time_ns = StopWatch.time_ns()
+    sw = StopWatch()
     if request.id:
         id = request.id
     else:
@@ -67,7 +67,7 @@ def tokengen_request_from_grpc_request(
         prompt=prompt_text,
         model_name=model_name,
         max_new_tokens=max_tokens,
-        req_recv_time_ns=req_recv_time_ns,
+        req_recv_time_ns=sw.start_ns,
     )
 
 

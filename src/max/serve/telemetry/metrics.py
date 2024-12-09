@@ -29,7 +29,7 @@ class _NoOpMetric:
 
 
 class _Metrics:
-    """Centralizes metrics to encapsulate the OTEL dependency and avoid breaking schema changes."""
+    """Centralizes metrics to encapsulate the OTEL dependency and avoid breaking schema changes"""
 
     def __init__(self):
         self._req_count: Any = _NoOpMetric()
@@ -42,6 +42,7 @@ class _Metrics:
         self._reqs_queued: Any = _NoOpMetric()
         self._reqs_running: Any = _NoOpMetric()
         self._model_load_time: Any = _NoOpMetric()
+        self._itl: Any = _NoOpMetric()
 
     def configure(self, egress_enabled: bool):
         meterProviders = [PrometheusMetricReader("metrics")]  # type: ignore
@@ -88,36 +89,42 @@ class _Metrics:
             unit="ms",
             description="Time to load a model",
         )
+        self._itl = _meter.create_histogram(
+            "maxserve.itl", unit="ms", description="inter token latency"
+        )
 
-    def requestCount(self, responseCode: int, urlPath: str) -> None:
+    def request_count(self, responseCode: int, urlPath: str) -> None:
         self._req_count.add(1, {"code": responseCode, "path": urlPath})
 
-    def requestTime(self, value: float, urlPath: str) -> None:
+    def request_time(self, value: float, urlPath: str) -> None:
         self._req_time.record(value, {"path": urlPath})
 
-    def inputTime(self, value: float) -> None:
+    def input_time(self, value: float) -> None:
         self._input_time.record(value)
 
-    def outputTime(self, value: float) -> None:
+    def output_time(self, value: float) -> None:
         self._output_time.record(value)
 
     def ttft(self, value: float) -> None:
         self._ttft.record(value)
 
-    def inputTokens(self, value: int) -> None:
+    def input_tokens(self, value: int) -> None:
         self._input_tokens.add(value)
 
-    def outputTokens(self, value: int) -> None:
+    def output_tokens(self, value: int) -> None:
         self._output_tokens.add(value)
 
-    def reqsQueued(self, value: int) -> None:
+    def reqs_queued(self, value: int) -> None:
         self._reqs_queued.add(value)
 
-    def reqsRunning(self, value: int) -> None:
+    def reqs_running(self, value: int) -> None:
         self._reqs_running.add(value)
 
-    def modelLoadTime(self, ms: int) -> None:
+    def model_load_time(self, ms: float) -> None:
         self._model_load_time.record(ms)
+
+    def itl(self, ms: float) -> None:
+        self._itl.record(ms)
 
 
 METRICS = _Metrics()

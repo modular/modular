@@ -10,7 +10,7 @@ import asyncio
 import logging
 import os
 import signal
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import partial
 from typing import AsyncGenerator, Callable, Generic, Optional, TypeVar
 
@@ -23,16 +23,6 @@ from max.serve.scheduler.queues import (
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
-
-
-@dataclass(frozen=True)
-class TokenGeneratorTimers:
-    context_creation: StopWatch = field(default_factory=StopWatch)
-    context_encoding: StopWatch = field(default_factory=StopWatch)
-    token_generation: StopWatch = field(default_factory=StopWatch)
-    ttft: StopWatch = field(default_factory=StopWatch)
-    # Started on creation
-    total: StopWatch = field(default_factory=StopWatch.start)
 
 
 @dataclass(frozen=True)
@@ -149,29 +139,22 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
         request: TokenGeneratorRequest,
     ) -> AsyncGenerator[TokenGeneratorOutput, None]:
         """Generates and streams tokens for the provided request."""
-        METRICS.reqsRunning(1)
-        timers = TokenGeneratorTimers()
-        timers.ttft.start_ns = request.req_recv_time_ns
+        total = StopWatch()
         self.logger.debug(
             "%s [%d]: Started: Elapsed: %0.2f ms",
             request.id,
             request.index,
-            timers.total.elapsed_ms,
+            total.elapsed_ms,
         )
 
-        token_idx = 0
         try:
             context = await self.tokenizer.new_context(request)
             # TODO(MAXCORE-137): TokenGeneratorContext currently does not enforce
             # a seq_len property.
             if hasattr(context, "seq_len"):
-                METRICS.inputTokens(context.seq_len)
+                METRICS.input_tokens(context.seq_len)
 
             async for response in self.engine_queue.stream(request.id, context):
-                if token_idx == 0:
-                    METRICS.ttft(timers.ttft.elapsed_ms)
-                token_idx += 1
-
                 token_log_probabilities = None
                 top_log_probabilities = None
                 if log_prob := response.log_probabilities:
@@ -193,16 +176,13 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
                     top_log_probabilities=top_log_probabilities,
                 )
         finally:
-            METRICS.reqsRunning(-1)
             if self.debug_logging:
                 self.logger.debug(
                     "%s [%d]: Completed: Elapsed: %0.2f ms",
                     request.id,
                     request.index,
-                    timers.total.elapsed_ms,
+                    total.elapsed_ms,
                 )
-
-            METRICS.outputTokens(token_idx)
 
     async def all_tokens(
         self, request: TokenGeneratorRequest
