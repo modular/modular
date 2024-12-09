@@ -75,48 +75,48 @@ fn run_cublas[
         DimList(M, N),
     )
 
-    var handle = gpu_blas.create_handle[gpu_blas.Backend.CUBLAS]()
+    with gpu_blas.Handle[gpu_blas.Backend.CUBLAS]() as handle:
 
-    @parameter
-    fn bench_func(mut m: Bencher):
         @parameter
-        @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
-            gpu_blas.matmul[use_tf32=enable_tc](
-                handle,
-                c_device_ref,
-                a_device,
-                b_device,
-                c_row_major=True,
-                transpose_b=False,
-            )
+        fn bench_func(mut m: Bencher):
+            @parameter
+            @always_inline
+            fn kernel_launch(ctx: DeviceContext) raises:
+                gpu_blas.matmul[use_tf32=enable_tc](
+                    ctx,
+                    handle,
+                    c_device_ref,
+                    a_device,
+                    b_device,
+                    c_row_major=True,
+                    transpose_b=False,
+                )
 
-        m.iter_custom[kernel_launch](ctx)
+            m.iter_custom[kernel_launch](ctx)
 
-    @parameter
-    fn get_bench_id() -> StringLiteral:
         @parameter
-        if enable_tc:
-            return "cublas_tensorcore"
-        else:
-            return "cublas"
+        fn get_bench_id() -> StringLiteral:
+            @parameter
+            if enable_tc:
+                return "cublas_tensorcore"
+            else:
+                return "cublas"
 
-    m.bench_function[bench_func](
-        BenchId(get_bench_id()),
-        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
-    )
-    # Do one iteration for verification.
-    ctx.memset(DeviceBuffer[dtype](ctx, c, M * N, owning=False), 0)
-    gpu_blas.matmul(
-        handle,
-        c_device_ref,
-        a_device,
-        b_device,
-        c_row_major=True,
-        transpose_b=False,
-    )
-
-    gpu_blas.destroy_handle(handle)
+        m.bench_function[bench_func](
+            BenchId(get_bench_id()),
+            ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+        )
+        # Do one iteration for verification.
+        ctx.memset(DeviceBuffer[dtype](ctx, c, M * N, owning=False), 0)
+        gpu_blas.matmul(
+            ctx,
+            handle,
+            c_device_ref,
+            a_device,
+            b_device,
+            c_row_major=True,
+            transpose_b=False,
+        )
 
 
 fn gemm_kernel_1[

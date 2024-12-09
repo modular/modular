@@ -180,16 +180,16 @@ fn test_split_k_multistage_gemm[
 
     print("copied from device")
 
-    var handle = gpu_blas.create_handle[gpu_blas.Backend.CUBLAS]()
-    gpu_blas.matmul(
-        handle,
-        c_dev_list[0].tensor,
-        a_submat[0].tensor,
-        b_submat[0].tensor,
-        c_row_major=True,
-        transpose_b=transpose_b,
-    )
-    gpu_blas.destroy_handle(handle)
+    with gpu_blas.Handle[gpu_blas.Backend.CUBLAS]() as handle:
+        gpu_blas.matmul(
+            ctx,
+            handle,
+            c_dev_list[0].tensor,
+            a_submat[0].tensor,
+            b_submat[0].tensor,
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )
 
     print("cublas'd")
 
@@ -207,6 +207,7 @@ fn test_split_k_multistage_gemm[
         atol=0.0001,
         rtol=0.01,
     )
+
     _ = a_submat^
     _ = b_submat^
 

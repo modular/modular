@@ -204,16 +204,16 @@ fn test[
 
     ctx.synchronize()
 
-    var handle = gpu_blas.create_handle[gpu_blas.Backend.CUBLAS]()
-    gpu_blas.matmul(
-        handle,
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
-        c_row_major=True,
-        transpose_b=transpose_b,
-    )
-    gpu_blas.destroy_handle(handle)
+    with gpu_blas.Handle[gpu_blas.Backend.CUBLAS]() as handle:
+        gpu_blas.matmul(
+            ctx,
+            handle,
+            c_device_ref.tensor,
+            a_device.tensor,
+            b_device.tensor,
+            c_row_major=True,
+            transpose_b=transpose_b,
+        )
 
     var c_ref_tensor = c_device_ref.tensor
     alias pack_size = simdwidthof[type, target = _get_gpu_target()]()
