@@ -250,7 +250,7 @@ fn matmul[
             transpose_b=transpose_b,
         )
     elif handle.resolved_backend is Backend.CUBLASLT:
-        _cublas_matmul[use_tf32=use_tf32](
+        _cublasLt_matmul(
             ctx,
             handle._get_cublaslt(),
             c,
@@ -496,7 +496,7 @@ fn _rocblas_matmul[
 
 fn _cublasLt_matmul(
     ctx: DeviceContext,
-    handle: UnsafePointer[cublasContext],
+    handle: UnsafePointer[Context],
     d: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
@@ -504,7 +504,7 @@ fn _cublasLt_matmul(
     c_row_major: Bool = True,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
-) raises -> Result:
+) raises:
     alias a_type = a.type
     alias b_type = b.type
     alias d_type = d.type
@@ -675,44 +675,47 @@ fn _cublasLt_matmul(
 
     var cuda_stream = CUDA(ctx.stream())
 
-    var result: Result
     if c_row_major:
-        result = cublasLtMatmul(
-            handle,  # light_handle
-            operationDesc,  # compute_desc
-            UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
-            UnsafePointer(b.data.bitcast[NoneType]()),  # _a
-            _adesc,  # _adesc
-            UnsafePointer(a.data.bitcast[NoneType]()),  # _b
-            _bdesc,  # _bdesc
-            UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
-            UnsafePointer[NoneType](),  # _c
-            _cdesc,  # _cdesc
-            UnsafePointer(d.data.bitcast[NoneType]()),  # _d
-            _ddesc,  # _ddesc
-            UnsafePointer.address_of(heuristicResult.algo),  # algo
-            UnsafePointer[NoneType](),  # workspace
-            workspaceSize,  # workspace_size_in_bytes
-            cuda_stream[],  # stream
+        check_cublas_error(
+            cublasLtMatmul(
+                handle,  # light_handle
+                operationDesc,  # compute_desc
+                UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
+                UnsafePointer(b.data.bitcast[NoneType]()),  # _a
+                _adesc,  # _adesc
+                UnsafePointer(a.data.bitcast[NoneType]()),  # _b
+                _bdesc,  # _bdesc
+                UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
+                UnsafePointer[NoneType](),  # _c
+                _cdesc,  # _cdesc
+                UnsafePointer(d.data.bitcast[NoneType]()),  # _d
+                _ddesc,  # _ddesc
+                UnsafePointer.address_of(heuristicResult.algo),  # algo
+                UnsafePointer[NoneType](),  # workspace
+                workspaceSize,  # workspace_size_in_bytes
+                cuda_stream[],  # stream
+            )
         )
     else:
-        result = cublasLtMatmul(
-            handle,  # light_handle
-            operationDesc,  # compute_desc
-            UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
-            UnsafePointer(a.data.bitcast[NoneType]()),  # _a
-            _adesc,  # _adesc
-            UnsafePointer(b.data.bitcast[NoneType]()),  # _b
-            _bdesc,  # _bdesc
-            UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
-            UnsafePointer[NoneType](),  # _c
-            _cdesc,  # _cdesc
-            UnsafePointer(d.data.bitcast[NoneType]()),  # _d
-            _ddesc,  # _ddesc
-            UnsafePointer.address_of(heuristicResult.algo),  # algo
-            UnsafePointer[NoneType](),  # workspace
-            workspaceSize,  # workspace_size_in_bytes
-            cuda_stream[],  # stream
+        check_cublas_error(
+            cublasLtMatmul(
+                handle,  # light_handle
+                operationDesc,  # compute_desc
+                UnsafePointer.address_of(alpha).bitcast[NoneType](),  # alpha
+                UnsafePointer(a.data.bitcast[NoneType]()),  # _a
+                _adesc,  # _adesc
+                UnsafePointer(b.data.bitcast[NoneType]()),  # _b
+                _bdesc,  # _bdesc
+                UnsafePointer.address_of(beta).bitcast[NoneType](),  # beta
+                UnsafePointer[NoneType](),  # _c
+                _cdesc,  # _cdesc
+                UnsafePointer(d.data.bitcast[NoneType]()),  # _d
+                _ddesc,  # _ddesc
+                UnsafePointer.address_of(heuristicResult.algo),  # algo
+                UnsafePointer[NoneType](),  # workspace
+                workspaceSize,  # workspace_size_in_bytes
+                cuda_stream[],  # stream
+            )
         )
 
     ctx.synchronize()
@@ -723,5 +726,3 @@ fn _cublasLt_matmul(
     check_cublas_error(cublasLtMatrixLayoutDestroy(_cdesc))
     check_cublas_error(cublasLtMatrixLayoutDestroy(_ddesc))
     check_cublas_error(cublasLtMatmulPreferenceDestroy(preference))
-
-    return result
