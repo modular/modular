@@ -14,7 +14,7 @@ from sys import (
     env_get_string,
     env_get_int,
 )
-from internal_utils import parse_shape
+from internal_utils import parse_shape, arg_parse
 
 from algorithm.functional import elementwise
 from buffer import DimList, NDBuffer
@@ -234,7 +234,7 @@ fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
 
 
 fn main() raises:
-    alias op = env_get_string["op", "sqrt"]()
+    var op = arg_parse("op", "sqrt")
     alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
     alias rank = env_get_int["rank", 3]()
     alias dims_str = env_get_string["dims", "1x1024x3072"]()
@@ -256,7 +256,6 @@ fn main() raises:
             # does a dynamic check on the stride.
             return
 
-        @parameter
         if op == "sqrt":
             run_elementwise[
                 dtype,
