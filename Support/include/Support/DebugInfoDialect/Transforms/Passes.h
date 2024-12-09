@@ -7,7 +7,10 @@
 #ifndef SUPPORT_DEBUGINFODIALECT_TRANSFORMS_PASSES_H
 #define SUPPORT_DEBUGINFODIALECT_TRANSFORMS_PASSES_H
 
-#include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
+#include "Support/LLVMCompilerForwardDecls.h"
+
+#include "mlir/Pass/Pass.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 
 namespace M::DebugInfo {
