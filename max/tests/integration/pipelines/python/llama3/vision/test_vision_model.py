@@ -460,10 +460,22 @@ def test_vision_model(
     dtype = DType.float32
 
     pixel_values_type = TensorType(
-        dtype, [1, 1, max_num_tiles, num_channels, image_size, image_size]
+        dtype,
+        [
+            "batch_size",
+            "num_concurrent_media",
+            max_num_tiles,
+            image_size,
+            image_size,
+            num_channels,
+        ],
     )
-    aspect_ratio_ids_type = TensorType(DType.int64, [1, 1])
-    aspect_ratio_mask_type = TensorType(DType.int64, [1, 1, max_num_tiles])
+    aspect_ratio_ids_type = TensorType(
+        DType.int64, ["batch_size", "num_concurrent_media"]
+    )
+    aspect_ratio_mask_type = TensorType(
+        DType.int64, ["batch_size", "num_concurrent_media", max_num_tiles]
+    )
 
     # Phase 1: op staging.
     graph = Graph(
@@ -513,18 +525,31 @@ def test_vision_model(
 
     vision_model = session.load(graph, weights_registry=weights_registry)
 
+    batch_size = 1
+    num_concurrent_media = 1
     pixel_values = torch.randn(
-        pixel_values_type.shape.static_dims, dtype=torch_dtype
+        [
+            batch_size,
+            num_concurrent_media,
+            max_num_tiles,
+            image_size,
+            image_size,
+            num_channels,
+        ],
+        dtype=torch_dtype,
     )
 
     # This needs to be within the range of [0, num_embeddings - 1].
     aspect_ratio_ids = torch.randint(
-        0, 9, aspect_ratio_ids_type.shape.static_dims, dtype=torch.long
+        0, 9, [batch_size, num_concurrent_media], dtype=torch.long
     )
 
     # This needs to be within the range of [0, 1].
     aspect_ratio_mask = torch.randint(
-        0, 1, aspect_ratio_mask_type.shape.static_dims, dtype=torch.long
+        0,
+        1,
+        [batch_size, num_concurrent_media, max_num_tiles],
+        dtype=torch.long,
     )
 
     predicted = vision_model(
@@ -534,6 +559,7 @@ def test_vision_model(
     )[0]
     assert isinstance(predicted, Tensor)
 
+    pixel_values = pixel_values.permute((0, 1, 2, 5, 3, 4))
     cross_attention_states = torch_vision_model(
         pixel_values=pixel_values,
         aspect_ratio_ids=aspect_ratio_ids,
