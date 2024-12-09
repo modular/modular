@@ -1206,9 +1206,9 @@ fn _matmul_gpu[
     alias BLOCK_DIM = 16
     var gpu_func = ctx.compile_function[
         matmul_kernel_naive[
+            c_type,
             a_type,
             b_type,
-            c_type,
             BLOCK_DIM,
             transpose_b,
             elementwise_lambda_fn=elementwise_lambda_fn,
