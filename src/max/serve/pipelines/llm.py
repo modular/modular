@@ -104,6 +104,29 @@ class TokenGeneratorPipelineConfig:
         )
         return config
 
+    @classmethod
+    def paged(
+        cls,
+        tg_batch_size: int,
+        ce_batch_size: int,
+        ce_batch_timeout: float = 0.1,
+        max_forward_steps: int = 1,
+        target_ce_batch_tokens: int = 4096,
+    ) -> TokenGeneratorPipelineConfig:
+        """The paged config creates 2 queues.
+        Context-encoding is done via dynamic batching.
+        Token-generation is done via continuous batching.
+
+        This config is identical to the config returned by continuous_heterogenous.
+        """
+        return cls.continuous_heterogenous(
+            tg_batch_size=tg_batch_size,
+            ce_batch_size=ce_batch_size,
+            ce_batch_timeout=ce_batch_timeout,
+            max_forward_steps=max_forward_steps,
+            target_ce_batch_tokens=target_ce_batch_tokens,
+        )
+
 
 @dataclass
 class TokenGeneratorStats:
