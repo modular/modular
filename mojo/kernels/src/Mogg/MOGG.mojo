@@ -178,6 +178,7 @@ from nn.kv_cache import (
 from nn.kv_cache_ragged import (
     flash_attention_kv_cache_h1_d16_cont_batch_ragged,
     flash_attention_kv_cache_h8_d64_cont_batch_ragged,
+    flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged,
     flash_attention_kv_cache_h8_d128_cont_batch_ragged,
     flash_attention_kv_cache_h8_d512_cont_batch_ragged,
     flash_attention_kv_cache_h32_d128_cont_batch_ragged,
@@ -461,6 +462,7 @@ fn MOGGExport():
     alias _fused_qk_rope_h8_d32_bshd_continuous_batch_ragged = fused_qk_rope_h8_d32_bshd_continuous_batch_ragged
     alias _fused_qk_rope_h8_d64_bshd_continuous_batch_ragged = fused_qk_rope_h8_d64_bshd_continuous_batch_ragged
     alias _flash_attention_kv_cache_h1_d16_cont_batch_ragged = flash_attention_kv_cache_h1_d16_cont_batch_ragged
+    alias _flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged = flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged
     alias _flash_attention_kv_cache_h8_d64_cont_batch_ragged = flash_attention_kv_cache_h8_d64_cont_batch_ragged
     alias _flash_attention_kv_cache_h8_d128_cont_batch_ragged = flash_attention_kv_cache_h8_d128_cont_batch_ragged
     alias _flash_attention_kv_cache_h8_d512_cont_batch_ragged = flash_attention_kv_cache_h8_d512_cont_batch_ragged
