@@ -21,7 +21,7 @@ from max.pipelines.kv_cache import (
 from modular_graph_test import modular_graph_test
 from nn import Linear
 from nn.attention import Attention
-from nn.kernels import flash_attention_ragged_with_causal_mask
+from nn.kernels import flash_attention_ragged_with_causal_mask, MaskVariant
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
@@ -283,7 +283,12 @@ def test_kv_cache_ragged_attention(session):
             blocks, cache_lengths, lookup_table, is_cache_empty
         )
         result = flash_attention_ragged_with_causal_mask(
-            kv_params, input, input_row_offsets, kv_collection, layer_idx
+            kv_params,
+            input,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            mask_variant=MaskVariant.CAUSAL_MASK,
         )
         g.output(result)
 
