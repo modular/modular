@@ -2487,14 +2487,6 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   builder.create<LIT::ReturnOp>(value);
 }
 
-//===----------------------------------------------------------------------===//
-// __disable_del emission helpers.
-
-void ExprEmitter::emitMarkDestroyed(ImplicitLocOpBuilder &builder,
-                                    Value value) {
-  builder.create<LIT::OwnershipMarkDestroyedOp>(value);
-}
-
 //===--------------------------------------------------------------------===//
 // Var/let emission helpers.
 

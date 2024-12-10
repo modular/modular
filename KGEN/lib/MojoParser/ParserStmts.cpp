@@ -1895,8 +1895,7 @@ ParseResult StmtParser::parseDisableDelStmt(size_t curIndent) {
     return {};
   }
   Value refValue = irValue.getMValueReference();
-  ImplicitLocOpBuilder b(loc, builder);
-  emitter.emitMarkDestroyed(b, refValue);
+  builder.create<LIT::OwnershipMarkDestroyedOp>(loc, refValue);
   return success();
 }
 
