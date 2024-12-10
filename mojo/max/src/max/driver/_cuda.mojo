@@ -141,7 +141,7 @@ fn compile[
 
     var compile_args = CUDACompiledKernelArgs(kwargs)
     var cuda_func = device_context[].compile_function[
-        func, _is_failable=False, _target = _get_gpu_target()
+        func, _target = _get_gpu_target()
     ](
         max_registers=OptionalReg(
             compile_args.max_registers.value()
