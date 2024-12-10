@@ -12,15 +12,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from time import perf_counter_ns
-from typing import (
-    Any,
-    AsyncGenerator,
-    List,
-    Literal,
-    Optional,
-    Union,
-    cast,
-)
+from typing import Any, AsyncGenerator, List, Literal, Optional, Union, cast
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -48,12 +40,11 @@ from max.serve.schemas.openai import (  # type: ignore
     Logprobs,
     Logprobs2,
 )
+from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.stopwatch import StopWatch
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
-
-from max.serve.telemetry.stopwatch import StopWatch
-from max.serve.telemetry.metrics import METRICS
 
 router = APIRouter(prefix="/v1")
 logger = logging.getLogger(__name__)
@@ -98,6 +89,10 @@ def get_pipeline(request: Request, model_name: str) -> TokenGeneratorPipeline:
         raise ValueError(
             f"Unknown model '{model_name}', currently serving"
             f" '{pipeline.model_name}'."
+        )
+    if not isinstance(pipeline.tokenizer, PipelineTokenizer):
+        raise ValueError(
+            f"Tokenizer for '{model_name}' pipelines does not implement the PipelineTokenizer protocol."
         )
     return pipeline
 
@@ -232,42 +227,45 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
 
 
 def openai_parse_chat_completion_request(
-    pipeline: TokenGeneratorPipeline,
     completion_request: CreateChatCompletionRequest,
+    wrap_content: bool,
 ) -> tuple[list[TokenGeneratorRequestMessage], list[AnyUrl]]:
     """Parse the OpenAI ChatCompletionRequest to build TokenGeneratorRequestMessages.
     These will be used as inputs to the chat template to build the prompt.
     Also extract the list of image references while we are here so they can be
     downloaded and bundled alongside the request for preprocessing by pipelines.
     """
-    if isinstance(pipeline.tokenizer, PipelineTokenizer):
-        messages: list[TokenGeneratorRequestMessage] = []
-        image_refs: list[AnyUrl] = []
-        for m in completion_request.messages:
-            if isinstance(m.root.content, list):
-                message_content: list[dict[str, Any]] = []
-                for content_part in m.root.content:
-                    if content_part.root.type == "image_url":
-                        image_refs.append(content_part.root.image_url.url)
+    messages: list[TokenGeneratorRequestMessage] = []
+    image_refs: list[AnyUrl] = []
+    for m in completion_request.messages:
+        if isinstance(m.root.content, list):
+            message_content: list[dict[str, Any]] = []
+            for content_part in m.root.content:
+                if content_part.root.type == "image_url":
+                    image_refs.append(content_part.root.image_url.url)
+                    if wrap_content:
+                        message_content.append({"type": "image"})
+                    else:
                         message_content.append(content_part.model_dump())
-                    elif content_part.root.type == "text":
+                elif content_part.root.type == "text":
+                    if wrap_content:
+                        message_content.append(
+                            {
+                                "type": content_part.root.type,
+                                "content": content_part.root.text,
+                            }
+                        )
+                    else:
                         message_content.append(content_part.model_dump())
-                messages.append(
-                    {"role": m.root.role, "content": message_content}
-                )
-            else:
-                messages.append(
-                    {
-                        "role": m.root.role,
-                        "content": m.root.content if m.root.content else "",
-                    }
-                )
-        return messages, image_refs
-    else:
-        msg = (
-            "pipeline.tokenizer must implement the PipelineTokenizer protocol."
-        )
-        raise ValueError(msg)
+            messages.append({"role": m.root.role, "content": message_content})
+        else:
+            messages.append(
+                {
+                    "role": m.root.role,
+                    "content": m.root.content if m.root.content else "",
+                }
+            )
+    return messages, image_refs
 
 
 async def resolve_image_from_url(image_ref: AnyUrl) -> bytes:
@@ -313,8 +311,11 @@ async def openai_create_chat_completion(
         )
 
         request_messages, request_images_urls = (
-            openai_parse_chat_completion_request(pipeline, completion_request)
+            openai_parse_chat_completion_request(
+                completion_request, pipeline.tokenizer.expects_content_wrapping
+            )
         )
+
         request_images = None
         if request_images_urls:
             resolve_image_tasks = [
