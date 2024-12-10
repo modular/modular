@@ -916,7 +916,8 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 /// Parse the result specifier starting with a `->` if present.
 void ParsedArgumentList::parseResultIfPresent(
     ParserBase &p, std::optional<size_t> stmtIndent) {
-  if (!p.consumeIf(Token::minus_greater)) {
+  SMLoc arrowLoc;
+  if (!p.consumeIf(Token::minus_greater, &arrowLoc)) {
     // Make sure the result arg has a location of the end of the argument if not
     // specified by an 'out' argument, so that synthesized results (none etc)
     // have a location.
@@ -925,13 +926,9 @@ void ParsedArgumentList::parseResultIfPresent(
     return;
   }
 
-  // If we already have a result, emit an error but keep parsing.
-  if (resultArg.convention == ParsedArgument::kConventionOut)
-    p.emitError(resultArg.loc) << "function cannot have both an 'out' argument "
-                                  "and an explicit result type";
-
-  // Indicate a present result by setting its convention to 'out'.
-  resultArg.convention = ParsedArgument::kConventionOut;
+  // We may have already parsed an 'out' argument.  If so, this will be an error
+  // and we may want to undo things.
+  auto oldResultArg = resultArg;
   resultArg.loc = p.getToken().getLoc();
 
   // Parse a result reference if present.
@@ -948,6 +945,25 @@ void ParsedArgumentList::parseResultIfPresent(
   // Parse a name binding for the result if present.
   if (p.consumeIf(Token::kw_as))
     (void)p.parseIdentifier(resultArg.name, "expected result name");
+
+  // If we already had a result, emit an error but keep parsing.
+  if (resultArg.convention == ParsedArgument::kConventionOut) {
+    auto diag = p.emitError(resultArg.loc)
+                << "function cannot have both an 'out' argument "
+                   "and an explicit result type";
+    // It is common to include -> None on initializers, provide a helpful
+    // message.
+    if (resultArg.typeExpr &&
+        resultArg.typeExpr->kind == ExprNode::kNoneLiteral) {
+      diag << "; remove the '-> None' to fix it";
+      diag.addFixIt(FixIt::remove(
+          SourceRange(arrowLoc, resultArg.typeExpr->getRangeEnd())));
+      resultArg = oldResultArg;
+    }
+  }
+
+  // Indicate a present result by setting its convention to 'out'.
+  resultArg.convention = ParsedArgument::kConventionOut;
 }
 
 /// This function creates a new anonymous origin decl for the specified
