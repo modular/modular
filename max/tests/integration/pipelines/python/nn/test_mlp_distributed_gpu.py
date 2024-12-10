@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List
-from max.driver import CPU, CUDA, Device, Tensor
+from max.driver import CPU, CUDA, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Device as GraphDevice
@@ -40,7 +40,7 @@ def distribute_value(v, devices: List[Device]):
 
 def shard_col_value(v, devices: List[Device]):
     n_devices = len(devices)
-    col_size = v.shape[1] // n_devices
+    col_size = v.shape[1].dim // n_devices
     return [
         v[:, i * col_size : (i + 1) * col_size].to(
             GraphDevice(device.label, device.id)
@@ -51,7 +51,7 @@ def shard_col_value(v, devices: List[Device]):
 
 def shard_row_value(v, devices: List[Device]):
     n_devices = len(devices)
-    row_size = v.shape[0] // n_devices
+    row_size = v.shape[0].dim // n_devices
     return [
         v[i * row_size : (i + 1) * row_size, :].to(
             GraphDevice(device.label, device.id)
@@ -60,12 +60,20 @@ def shard_row_value(v, devices: List[Device]):
     ]
 
 
-def distributed_mlp_graph(
-    types: List[TensorType], devices: List[Device]
-) -> Graph:
-    (input_type, w1_type, w2_type, w3_type) = types
+def distributed_mlp_graph(devices: List[Device], model_parameters) -> Graph:
+    (batch_size, intermediate_size, hidden_dim) = model_parameters
+
+    input_type: TensorType = TensorType(
+        DType.float32, [batch_size, hidden_dim], GraphDevice.CPU()
+    )
+    w1_type: TensorType = TensorType(
+        DType.float32, [intermediate_size, hidden_dim], GraphDevice.CPU()
+    )
+    w2_type: TensorType = TensorType(
+        DType.float32, [hidden_dim, intermediate_size], GraphDevice.CPU()
+    )
     with Graph(
-        "mlp", input_types=[input_type, w1_type, w2_type, w3_type]
+        "mlp", input_types=[input_type, w1_type, w2_type, w1_type]
     ) as graph:
         x_graph, w1_graph, w2_graph, w3_graph = graph.inputs
 
@@ -89,50 +97,24 @@ def distributed_mlp_graph(
 
 
 @pytest.mark.parametrize(
-    "input_type",
+    "batch_size, intermediate_size, hidden_dim, n_devices",
     [
-        TensorType(DType.float32, ["dim"], GraphDevice.CPU()),
-        TensorType(DType.float32, ["batch", "dim"], GraphDevice.CPU()),
+        (1, 14336, 4096, 4),  # llama3.1 8b config over 4 device
+        (1, 14336, 4096, 2),  # llama3.1 8b config over 2 device
     ],
 )
-def test_mlp(input_type: TensorType):
-    # Get Graph
+def test_mlp(batch_size, intermediate_size, hidden_dim, n_devices):
+    # Initialize the device-contexts
     host = CPU(0)
-    device0 = CUDA(0)
-    device1 = CUDA(1)
-    devices = [device0, device1]
-    devices_with_host = [host, *devices]
-    session = InferenceSession(devices=devices_with_host)
+    # Check we are parallelizing over legal amounts of devices and create contexts.
+    assert n_devices <= accelerator_count()
+    devices = [CUDA(id) for id in range(n_devices)]
 
-    dim = input_type.shape[-1]
-    w1_type: TensorType = TensorType(
-        input_type.dtype, ["hidden_dim", dim], GraphDevice.CPU()
-    )
-    w2_type: TensorType = TensorType(
-        input_type.dtype, [dim, "hidden_dim"], GraphDevice.CPU()
-    )
-    w3_type: TensorType = w1_type
-
-    graph = distributed_mlp_graph(
-        (input_type, w1_type, w2_type, w3_type),
-        devices,  # type: ignore
-    )
-
-    compiled = session.load(graph)
-    if input_type.rank == 1:
-        x_np = np.ones((128)).astype(np.float32)
-    else:
-        x_np = np.ones((32, 128)).astype(np.float32)
-    w1_np = np.ones((16, 128)).astype(np.float32)
-    w2_np = np.ones((128, 16)).astype(np.float32)
-    w3_np = np.ones((16, 128)).astype(np.float32)
-
-    x = Tensor.from_numpy(x_np)
-    w1 = Tensor.from_numpy(w1_np)
-    w2 = Tensor.from_numpy(w2_np)
-    w3 = Tensor.from_numpy(w3_np)
-
-    results = compiled.execute(x, w1, w2, w3)
+    # Initialize Torch inputs and expected
+    x_np = np.ones((batch_size, hidden_dim)).astype(np.float32)
+    w1_np = np.ones((intermediate_size, hidden_dim)).astype(np.float32)
+    w2_np = np.ones((hidden_dim, intermediate_size)).astype(np.float32)
+    w3_np = np.ones((intermediate_size, hidden_dim)).astype(np.float32)
     expected = (
         TorchMLP(torch.tensor(w1_np), torch.tensor(w2_np), torch.tensor(w3_np))(
             torch.tensor(x_np)
@@ -140,6 +122,24 @@ def test_mlp(input_type: TensorType):
         .detach()
         .numpy()
     )
+
+    # Initialize Model Inputs
+    x = Tensor.from_numpy(x_np)
+    w1 = Tensor.from_numpy(w1_np)
+    w2 = Tensor.from_numpy(w2_np)
+    w3 = Tensor.from_numpy(w3_np)
+
+    # Build/Compile/Execute graph.
+    devices_with_host = [host, *devices]
+    session = InferenceSession(devices=devices_with_host)
+    graph = distributed_mlp_graph(
+        devices,
+        (batch_size, intermediate_size, hidden_dim),
+    )
+    compiled = session.load(graph)
+    results = compiled.execute(x, w1, w2, w3)
+
+    # Compare to expected.
     ACCURACY_RTOL = 1e-1
     ACCURACY_ATOL = 1e-6
     for result in results:

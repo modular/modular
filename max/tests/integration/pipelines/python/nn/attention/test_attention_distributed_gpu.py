@@ -9,7 +9,7 @@ from typing import List
 
 import numpy as np
 import pytest
-from max.driver import CPU, CUDA, Device, Tensor
+from max.driver import CPU, CUDA, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Device as GraphDevice
@@ -26,16 +26,9 @@ from nn.attention import Attention
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-2
-N_HEADS = 32
-N_KV_HEADS = N_HEADS
-HEAD_DIM = 128
-HIDDEN_DIM = N_HEADS * HEAD_DIM
-MAX_SEQ_LEN = 512
-NUM_LAYERS = 10
+NUM_LAYERS = 1
 LAYER_IDX = 0
 BATCH_SIZE = 4
-
-N_DEVICES = 2
 
 
 def _attention_block(params, inputs):
@@ -124,10 +117,19 @@ def _attention_layer(
     cache_strategy: KVCacheStrategy,
     session: InferenceSession,
     devices: List[Device],
+    model_parameters,
 ) -> tuple[Graph, KVCacheParams, ContinuousBatchingKVCacheManager]:
+    (
+        hidden_dim,
+        n_heads,
+        n_kv_heads,
+        head_dim,
+        MAX_SEQ_LEN,
+    ) = model_parameters
+
     # Initialize input types
     input_type = TensorType(
-        dtype, ["batch_size", "seq_len", HIDDEN_DIM], device=GraphDevice.CPU()
+        dtype, ["batch_size", "seq_len", hidden_dim], device=GraphDevice.CPU()
     )
     attn_mask_type = TensorType(
         mask_dtype,
@@ -135,16 +137,16 @@ def _attention_layer(
         device=GraphDevice.CPU(),
     )
     wq_type = TensorType(
-        dtype, [HIDDEN_DIM, N_HEADS * HEAD_DIM], device=GraphDevice.CPU()
+        dtype, [hidden_dim, n_heads * head_dim], device=GraphDevice.CPU()
     )
     wk_type = TensorType(
-        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], device=GraphDevice.CPU()
+        dtype, [hidden_dim, n_kv_heads * head_dim], device=GraphDevice.CPU()
     )
     wv_type = TensorType(
-        dtype, [HIDDEN_DIM, N_KV_HEADS * HEAD_DIM], device=GraphDevice.CPU()
+        dtype, [hidden_dim, n_kv_heads * head_dim], device=GraphDevice.CPU()
     )
     wo_type = TensorType(
-        dtype, [N_HEADS * HEAD_DIM, HIDDEN_DIM], device=GraphDevice.CPU()
+        dtype, [n_kv_heads * head_dim, hidden_dim], device=GraphDevice.CPU()
     )
     valid_lengths_type = TensorType(
         DType.uint32, ["batch_size"], device=GraphDevice.CPU()
@@ -153,8 +155,8 @@ def _attention_layer(
     # Initialize kv cache params and manager
     kv_params = KVCacheParams(
         dtype=DType.float32,
-        n_kv_heads=N_KV_HEADS,
-        head_dim=HEAD_DIM,
+        n_kv_heads=n_kv_heads,
+        head_dim=head_dim,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
         n_devices=len(devices),
     )
@@ -235,7 +237,9 @@ def _attention_layer(
         return graph, kv_params, kv_manager  # type: ignore
 
 
-def execute_attn_for_devices(inputs, session, devices: List[Device]):
+def execute_attn_for_devices(
+    inputs, session, devices: List[Device], model_parameters
+):
     session = InferenceSession(devices=devices)
     graph, _, kv_manager = _attention_layer(
         DType.float32,
@@ -243,6 +247,7 @@ def execute_attn_for_devices(inputs, session, devices: List[Device]):
         KVCacheStrategy.CONTINUOUS,
         session,
         devices,
+        model_parameters,
     )
     # Claim seq_ids in cache
     seq_ids = kv_manager.claim(BATCH_SIZE)
@@ -261,61 +266,82 @@ def execute_attn_for_devices(inputs, session, devices: List[Device]):
 
 
 @pytest.mark.parametrize(
-    "start_pos,seq_len",
+    "seq_len,n_heads,n_kv_heads,head_dim,hidden_dim,max_seq_len,n_devices",
     [
-        (0, 128),
-        (9, 1),
+        (128, 32, 32, 128, 4096, 512, 4),  # llama3.1 8b config over 2 device
+        (128, 32, 32, 128, 4096, 512, 2),  # llama3.1 8b config over 4 device
+        (
+            128,
+            32,
+            8,
+            128,
+            4096,
+            512,
+            4,
+        ),  # llama3.1+ and llama3.1 n_kv_heads != n_heads
     ],
 )
-def test_attention(start_pos, seq_len):
+def test_attention(
+    seq_len, n_heads, n_kv_heads, head_dim, hidden_dim, max_seq_len, n_devices
+):
     # This tests that the attention mask is calculating valid logits.
     # It does not test that these logits match a reference implementation.
 
     # Initialize the device-contexts
     host = CPU(0)
-    device0 = CUDA(0)
-    device1 = CUDA(1)
+    # Check we are parallelizing over legal amounts of devices and create contexts.
+    assert n_devices <= accelerator_count()
+    devices = [CUDA(id) for id in range(n_devices)]
 
     # Initialize Model inputs
     hidden_states = Tensor.from_numpy(
-        np.ones((BATCH_SIZE, seq_len, HIDDEN_DIM), dtype=np.float32),
+        np.ones((BATCH_SIZE, seq_len, hidden_dim), dtype=np.float32),
     )
     attn_mask = Tensor.from_numpy(
-        np.ones((BATCH_SIZE, N_HEADS, seq_len, seq_len), dtype=np.float32),
+        np.ones((BATCH_SIZE, n_heads, seq_len, seq_len), dtype=np.float32),
     )
     wq = Tensor.from_numpy(
-        np.ones((HIDDEN_DIM, N_HEADS * HEAD_DIM), dtype=np.float32),
+        np.ones((hidden_dim, n_heads * head_dim), dtype=np.float32),
     )
     wk = Tensor.from_numpy(
-        np.ones((HIDDEN_DIM, N_KV_HEADS * HEAD_DIM), dtype=np.float32),
+        np.ones((hidden_dim, n_kv_heads * head_dim), dtype=np.float32),
     )
     wv = Tensor.from_numpy(
-        np.ones((HIDDEN_DIM, N_KV_HEADS * HEAD_DIM), dtype=np.float32),
+        np.ones((hidden_dim, n_kv_heads * head_dim), dtype=np.float32),
     )
     wo = Tensor.from_numpy(
-        np.ones((N_HEADS * HEAD_DIM, HIDDEN_DIM), dtype=np.float32),
+        np.ones((n_kv_heads * head_dim, hidden_dim), dtype=np.float32),
     )
     valid_lengths = Tensor.from_numpy(
         np.full((BATCH_SIZE), seq_len, dtype=np.uint32)
     )
     model_inputs = (hidden_states, attn_mask, wq, wk, wv, wo, valid_lengths)
-
+    model_parameters = (
+        hidden_dim,
+        n_heads,
+        n_kv_heads,
+        head_dim,
+        max_seq_len,
+    )
     # Run distributed and ensure all ranks are the same.
-    devices = [device0, device1]
     devices_with_host = [host, *devices]
-    res_rank0, res_rank1 = execute_attn_for_devices(
-        model_inputs, InferenceSession(devices=devices_with_host), devices
+    results = execute_attn_for_devices(
+        model_inputs,
+        InferenceSession(devices=devices_with_host),
+        devices,
+        model_parameters,
     )
-    np.testing.assert_allclose(
-        res_rank0.to(host).to_numpy(), res_rank1.to(host).to_numpy()
-    )
+    results_np = [result.to(host).to_numpy() for result in results]
+    for i in range(len(results_np) - 1):
+        np.testing.assert_allclose(results_np[i], results_np[i + 1])
 
     # Run on single device and ensure same result
-    devices = [device0]
+    devices = [CUDA(0)]
     devices_with_host = [host, *devices]
     (expected_res,) = execute_attn_for_devices(
-        model_inputs, InferenceSession(devices=devices_with_host), devices
+        model_inputs,
+        InferenceSession(devices=devices_with_host),
+        devices,
+        model_parameters,
     )
-    np.testing.assert_allclose(
-        res_rank0.to(host).to_numpy(), expected_res.to(host).to_numpy()
-    )
+    np.testing.assert_allclose(results_np[0], expected_res.to(host).to_numpy())
