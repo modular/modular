@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from max.driver import CPU, CUDA
-from max.graph import Device, DeviceType
+from max.graph import DeviceRef, DeviceKind
 
 
 def test_cuda_device():
@@ -15,17 +15,17 @@ def test_cuda_device():
 
 
 def test_cuda_device_label_id():
-    # Test the label property and attempt to map to graph.Device.
+    # Test the label property and attempt to map to graph.DeviceRef.
     dev_id = 0
     default_device = CUDA()
     device = CUDA(id=dev_id)
     assert "gpu" in device.label
     assert dev_id == device.id
     assert dev_id == default_device.id
-    dev_from_runtime = Device(device.label, device.id)
-    dev1_from_runtime = Device(DeviceType(device.label), device.id)
-    assert dev_from_runtime == Device.CUDA(dev_id)
-    assert dev1_from_runtime == Device.CUDA(dev_id)
+    dev_from_runtime = DeviceRef(device.label, device.id)
+    dev1_from_runtime = DeviceRef(DeviceKind(device.label), device.id)
+    assert dev_from_runtime == DeviceRef.GPU(dev_id)
+    assert dev1_from_runtime == DeviceRef.GPU(dev_id)
 
 
 def scoped_device():
