@@ -56,6 +56,8 @@ WORKDIR /app
 ENV ENV_DIR=/opt/venv
 COPY --from=build $ENV_DIR $ENV_DIR
 
+COPY Licenses/MAX-Platform-Software-License ./MAX-Platform-Software-License.txt
+COPY Licenses/Third-Party-Notices ./Third-Party-Notices.txt
 COPY SDK/lib/API/python/max/serve/README.PUBLIC.md README.md
 # Copy Pipelines code
 COPY SDK/public/max-repo/pipelines/python/ .
