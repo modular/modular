@@ -181,6 +181,175 @@ async def test_kv_cache_radix_trie_insert_at_node() -> None:
 
 
 @pytest.mark.asyncio
+async def test_kv_cache_radix_trie_insert_at_split_node() -> None:
+    trie = RadixTrie()
+    trie.insert(
+        ["i", "like", "to", "eat", "pie"],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 3", "BLOCK 4"],
+    )
+
+    node, _ = trie.match_prefix(["i", "like"])
+
+    trie.insert(
+        ["i", "like", "to", "eat", "pizza"],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 3", "BLOCK 5"],
+    )
+
+    trie.insert(
+        ["dancing", "all", "night"],
+        ["BLOCK 6", "BLOCK 7", "BLOCK 8"],
+        node=node,
+    )
+
+    print(trie.pretty_format())
+    assert trie.pretty_format() == [
+        "['i', 'like']",
+        "--['to', 'eat']",
+        "----['pie']",
+        "----['pizza']",
+        "--['dancing', 'all', 'night']",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_kv_cache_radix_trie_sequential_tok_gen() -> None:
+    trie = RadixTrie()
+
+    # "context encoding"
+    node = trie.insert(
+        ["i", "like", "to"],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2"],
+    )
+    assert trie.pretty_format() == ["['i', 'like', 'to']"]
+
+    # "sequential token generation"
+    node = trie.insert(["eat"], ["BLOCK 3"], node=node)
+    assert trie.pretty_format() == ["['i', 'like', 'to', 'eat']"]
+
+    node = trie.insert(
+        ["pie"],
+        ["BLOCK 4"],
+        node=node,
+    )
+    assert trie.pretty_format() == ["['i', 'like', 'to', 'eat', 'pie']"]
+
+
+@pytest.mark.asyncio
+async def test_kv_cache_radix_trie_eviction() -> None:
+    trie = RadixTrie()
+
+    seq0 = 0
+    seq1 = 1
+
+    node0 = trie.insert(
+        [
+            "i",
+            "like",
+            "to",
+        ],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2"],
+    )
+    trie.mark_in_use_by(node0, seq0)
+    node0 = trie.insert(["eat"], ["BLOCK 3"], node=node0)
+    trie.mark_in_use_by(node0, seq0)
+    node0 = trie.insert(["pie"], ["BLOCK 4"], node=node0)
+    trie.mark_in_use_by(node0, seq0)
+
+    node1 = trie.insert(
+        [
+            "i",
+            "like",
+            "to",
+            "dance",
+            "all",
+            "night",
+        ],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 5", "BLOCK 6", "BLOCK 7"],
+    )
+    trie.mark_in_use_by(node1, seq1)
+
+    evicted_blocks = trie.evict_blocks(desired_num_evicted=999)
+    assert len(evicted_blocks) == 0
+    assert trie.pretty_format() == [
+        "['i', 'like', 'to']",
+        "--['eat']",
+        "----['pie']",
+        "--['dance', 'all', 'night']",
+    ]
+
+    trie.mark_not_in_use_by(node1, seq1)
+    evicted_blocks = trie.evict_blocks(desired_num_evicted=1)
+    assert set(evicted_blocks) == set(["BLOCK 7"])
+    assert trie.pretty_format() == [
+        "['i', 'like', 'to']",
+        "--['eat']",
+        "----['pie']",
+        "--['dance', 'all']",
+    ]
+
+    evicted_blocks = trie.evict_blocks(desired_num_evicted=999)
+    assert set(evicted_blocks) == set(["BLOCK 6", "BLOCK 5"])
+    assert trie.pretty_format() == [
+        "['i', 'like', 'to']",
+        "--['eat']",
+        "----['pie']",
+    ]
+
+    evicted_blocks = trie.evict_blocks(desired_num_evicted=999)
+    assert len(evicted_blocks) == 0
+    assert trie.pretty_format() == [
+        "['i', 'like', 'to']",
+        "--['eat']",
+        "----['pie']",
+    ]
+
+    trie.mark_not_in_use_by(node0, seq0)
+    evicted_blocks = trie.evict_blocks(desired_num_evicted=999)
+    assert len(evicted_blocks) == 5
+    assert trie.pretty_format() == []
+
+
+@pytest.mark.asyncio
+async def test_kv_cache_radix_trie_eviction_lru() -> None:
+    trie = RadixTrie()
+
+    seq0 = 0
+    seq1 = 1
+    seq2 = 2
+
+    node0 = trie.insert(
+        ["i", "like", "to", "sleep", "snugly"],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 3", "BLOCK 4"],
+    )
+    node1 = trie.insert(
+        ["i", "like", "to", "sleep", "tight"],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 3", "BLOCK 5"],
+    )
+    node2 = trie.insert(
+        ["i", "like", "to", "eat", "hamburgers"],
+        ["BLOCK 0", "BLOCK 1", "BLOCK 2", "BLOCK 6", "BLOCK 7"],
+    )
+
+    trie.mark_in_use_by(node0, seq0)
+    trie.mark_in_use_by(node1, seq1)
+    trie.mark_in_use_by(node2, seq2)
+    trie.mark_not_in_use_by(node1, seq1)
+    trie.mark_not_in_use_by(node2, seq2)
+
+    # LRU: seq0 < seq1 < seq2
+
+    # As seq0 is still in use, it cannot be evicted.
+    # Thus, we free the next LRU leaf, which is the token "tight" of seq1 with block 5
+    evicted_blocks = trie.evict_blocks(desired_num_evicted=1)
+    assert set(evicted_blocks) == set(["BLOCK 5"])
+
+    evicted_blocks = trie.evict_blocks(desired_num_evicted=2)
+    assert set(evicted_blocks) == set(["BLOCK 6", "BLOCK 7"])
+    evicted_blocks = trie.evict_blocks(desired_num_evicted=999)
+    assert set(evicted_blocks) == set()
+
+
+@pytest.mark.asyncio
 async def test_kv_cache_radix_trie_raises() -> None:
     trie = RadixTrie()
     with pytest.raises(ValueError):
