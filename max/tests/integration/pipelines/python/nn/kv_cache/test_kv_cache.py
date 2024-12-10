@@ -40,6 +40,9 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
         kv_manager_kwargs["page_size"] = 128
 
     session = InferenceSession()
+
+    # let's set an arbitrary 100 Mb allocation
+    available_cache_memory = 100 * 2**20
     kv_manager = load_kv_manager(
         params=kv_params,
         max_cache_batch_size=1,
@@ -47,6 +50,7 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
         num_layers=32,
         devices=[CPU()],
         session=session,
+        available_cache_memory=available_cache_memory,
         **kv_manager_kwargs,
     )
 
