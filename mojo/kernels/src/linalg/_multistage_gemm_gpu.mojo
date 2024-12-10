@@ -70,6 +70,215 @@ fn distance[
 
 
 @always_inline
+fn attn_mma[
+    c_type: DType,
+    c_layout: Layout,
+    a_type: DType,
+    a_layout: Layout,
+    a_smem_layout: Layout,
+    b_type: DType,
+    b_smem_layout: Layout, //,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    num_k_iters: Int,
+    transpose_b: Bool,
+    # Hack:
+    /,
+    *,
+    swizzle_a: Bool = False,
+    k_group_size: UInt = 1,
+](
+    c: LayoutTensor[c_type, c_layout, address_space = AddressSpace.LOCAL, **_],
+    a_iter_arg: LayoutTensorIter[_, a_layout, **_],
+    a_smem_iter_arg: LayoutTensorIter[
+        a_type, a_smem_layout, address_space = AddressSpace.SHARED, **_
+    ],
+    b_smem_iter_arg: LayoutTensorIter[
+        b_type, b_smem_layout, address_space = AddressSpace.SHARED, **_
+    ],
+):
+    var tid: UInt32 = ThreadIdx.x
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
+
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
+    var warp_x = warp_id % num_warps_n
+    var warp_y = warp_id // num_warps_n
+
+    var a_iter = a_iter_arg
+    var a_smem_iter = a_smem_iter_arg
+    var b_smem_iter = b_smem_iter_arg
+
+    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
+    alias num_k_mmas: UInt = BK // MMA_K
+    alias num_k_mma_iters: UInt = num_k_mmas // k_group_size
+    alias num_m_mmas = WM // MMA_M
+    alias num_n_mmas = WN // MMA_N
+
+    constrained[
+        num_k_mmas % (2 * k_group_size) == 0,
+        "num_k_mmas must be an integer multiple of 2*k_group_size",
+    ]()
+
+    alias accum_type = get_accum_type[a_type]()
+    alias frag_size = get_fragment_size[mma_shape]()
+    alias a_frag_size = frag_size[0]
+    alias b_frag_size = frag_size[1]
+    alias c_frag_size = frag_size[2]
+
+    alias num_reg_tiles = 2 * k_group_size
+    # Register tiles.
+    var a_reg_tiles = tb[a_type]().row_major[
+        2 * k_group_size * num_m_mmas, a_frag_size
+    ]().local().alloc().split[2 * k_group_size]()
+
+    var b_reg_tiles = tb[b_type]().row_major[
+        2 * k_group_size * num_n_mmas, b_frag_size
+    ]().local().alloc().vectorize[1, b_frag_size]().split[2 * k_group_size]()
+
+    alias b_wtile_dim0 = WN if transpose_b else BK
+    alias b_wtile_dim1 = BK if transpose_b else WN
+    var b_wtile_coord0 = int(warp_x) if transpose_b else 0
+    var b_wtile_coord1 = 0 if transpose_b else int(warp_x)
+
+    var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+    var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
+        b_wtile_coord0, b_wtile_coord1
+    )
+
+    var mma_op = TensorCore[accum_type, a_type, mma_shape, transpose_b]()
+
+    @parameter
+    for i in range(int(k_group_size)):
+
+        @parameter
+        if a_iter.address_space == AddressSpace.LOCAL:
+            # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
+            # Need to cast address space because it's not known at parse time to be LOCAL.
+            copy_local_to_local(a_reg_tiles[i], a_iter[])
+            a_iter._incr()
+        else:
+            mma_op.load_a[swizzle_a](
+                a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
+            )
+
+        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, int(warp_x))
+
+    @parameter
+    if a_iter.address_space == AddressSpace.LOCAL:
+
+        @parameter
+        for _ in range(num_k_iters):
+            var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
+                b_wtile_coord0,
+                b_wtile_coord1,
+            )
+
+            @parameter
+            for k_mma0 in range(int(num_k_mma_iters)):
+
+                @parameter
+                for k_mma1 in range(int(k_group_size)):
+                    alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
+                    alias current = k_mma % num_reg_tiles
+                    alias k_mma_next = k_mma + k_group_size
+                    alias next = int(k_mma_next % num_reg_tiles)
+
+                    @parameter
+                    if k_mma_next == num_k_mmas:
+                        b_smem_iter._incr()
+
+                        a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                        b_warp_tile = b_smem_iter[].tile[
+                            b_wtile_dim0, b_wtile_dim1
+                        ](b_wtile_coord0, b_wtile_coord1)
+
+                    # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
+                    copy_local_to_local(a_reg_tiles[int(next)], a_iter[])
+                    a_iter._incr()
+
+                    alias kidx = k_mma_next % num_k_mmas
+                    mma_op.load_b(
+                        b_warp_tile,
+                        b_reg_tiles[int(next)],
+                        int(kidx),
+                        int(warp_x),
+                    )
+
+                @parameter
+                for k_mma1 in range(int(k_group_size)):
+                    alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
+                    alias current = k_mma % num_reg_tiles
+                    mma_op.mma(
+                        a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
+                        b_reg_tiles[int(current)],
+                        c.vectorize[1, c_frag_size](),
+                    )
+
+        return
+
+    @parameter
+    for _ in range(num_k_iters):
+        var a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+        var b_warp_tile = b_smem_iter[].tile[b_wtile_dim0, b_wtile_dim1](
+            b_wtile_coord0,
+            b_wtile_coord1,
+        )
+
+        # Perform prefetch registers and mma until current shared memory tile's
+        # data has all been loaded to registers.
+        @parameter
+        for k_mma0 in range(int(num_k_mma_iters)):
+
+            @parameter
+            for k_mma1 in range(int(k_group_size)):
+                alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
+                alias current = k_mma % num_reg_tiles
+                alias k_mma_next = k_mma + k_group_size
+                alias next = int(k_mma_next % num_reg_tiles)
+
+                @parameter
+                if k_mma_next == num_k_mmas:
+                    a_smem_iter._incr()
+                    b_smem_iter._incr()
+
+                    a_warp_tile = a_smem_iter[].tile[WM, BK](int(warp_y), 0)
+                    b_warp_tile = b_smem_iter[].tile[
+                        b_wtile_dim0, b_wtile_dim1
+                    ](b_wtile_coord0, b_wtile_coord1)
+
+                alias kidx = int(k_mma_next % num_k_mmas)
+                mma_op.load_a[swizzle_a](
+                    a_warp_tile,
+                    a_reg_tiles[next].vectorize[1, a_frag_size](),
+                    kidx,
+                )
+
+                mma_op.load_b(
+                    b_warp_tile,
+                    b_reg_tiles[next],
+                    kidx,
+                    int(warp_x),
+                )
+
+            @parameter
+            for k_mma1 in range(int(k_group_size)):
+                alias k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
+                alias current = k_mma % num_reg_tiles
+                mma_op.mma(
+                    a_reg_tiles[int(current)].vectorize[1, a_frag_size](),
+                    b_reg_tiles[int(current)],
+                    c.vectorize[1, c_frag_size](),
+                )
+
+
+@always_inline
 fn multistage_mma[
     c_type: DType,
     c_layout: Layout,
