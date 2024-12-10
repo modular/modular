@@ -582,9 +582,6 @@ public:
   static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                FuncOp funcDecl);
 
-  /// Emit a __disable_del, so the user can destroy explicitly-destroyed types.
-  static void emitMarkDestroyed(ImplicitLocOpBuilder &builder, Value value);
-
   //===--------------------------------------------------------------------===//
   // Var emission helpers.
 
