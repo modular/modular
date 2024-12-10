@@ -62,7 +62,6 @@ def install_kernel(
     user: bool,
     modular_home: str,
     kernel_name: str,
-    config_section: str,
     install_channel: str,
 ):
     """Install the kernel spec."""
@@ -92,8 +91,6 @@ def install_kernel(
             "{connection_file}",
             "--modular-home",
             str(modular_home),
-            "--mojo-config-section",
-            f"{config_section}",
         ],
         "language": "mojo",
         "codemirror_mode": "mojo",
@@ -125,14 +122,12 @@ def main():
     parser = create_argparser()
     args = parser.parse_args()
 
-    # Handle the installation channel. If present, prefix the kernel name and
-    # config key with the channel name.
+    # Handle the installation channel. If present, prefix the kernel name with
+    # the channel name.
     if args.mojo_install_channel == "stable":
         kernel_name = "mojo-jupyter-kernel"
-        config_section = "mojo-max"
     else:
         kernel_name = f"mojo-{args.mojo_install_channel}-jupyter-kernel"
-        config_section = f"mojo-max-{args.mojo_install_channel}"
 
     if args.command == "install":
         install_kernel(
@@ -140,7 +135,6 @@ def main():
             args.user,
             args.modular_home,
             kernel_name,
-            config_section,
             args.mojo_install_channel,
         )
     elif args.command == "uninstall":

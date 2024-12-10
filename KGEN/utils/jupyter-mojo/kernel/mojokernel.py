@@ -238,9 +238,8 @@ class MojoKernel(Kernel):
         # Grab the mojo repl executable from the config.
         config = ConfigParser()
         config.read(Path(os.environ["MODULAR_HOME"]) / "modular.cfg")
-        config_section = os.environ["MOJO_CONFIG_SECTION"]
         mojoReplExePath = Path(
-            config.get(config_section, "repl_entry_point").rstrip(";")
+            config.get("mojo-max", "repl_entry_point").rstrip(";")
         )
         if not mojoReplExePath.exists():
             raise RuntimeError(
@@ -255,7 +254,7 @@ class MojoKernel(Kernel):
         # Load the MojoJupyter library. This library provides the internal
         # implementation of the kernel.
         mojoJupyterPath = Path(
-            config.get(config_section, "jupyter_path").rstrip(";")
+            config.get("mojo-max", "jupyter_path").rstrip(";")
         )
         if not mojoJupyterPath.exists():
             raise RuntimeError("Unable to locate `MojoJupyter` library.")
@@ -375,15 +374,9 @@ if __name__ == "__main__":
         required=True,
         help="The value of the env var MODULAR_HOME.",
     )
-    parser.add_argument(
-        "--mojo-config-section",
-        required=True,
-        help="The name for the mojo section of the modular configuration.",
-    )
     args, jupyter_args = parser.parse_known_args()
 
     os.environ["MODULAR_HOME"] = args.modular_home
-    os.environ["MOJO_CONFIG_SECTION"] = args.mojo_config_section
 
     # We pass the kernel name as a command-line arg, since Jupyter gives those
     # highest priority (in particular overriding any system-wide config).
