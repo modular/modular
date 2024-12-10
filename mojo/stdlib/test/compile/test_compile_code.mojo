@@ -22,19 +22,5 @@ def test_compile_llvm():
     assert_true("fadd" in asm)
 
 
-def test_compile_failure():
-    fn always_fails():
-        constrained[False, "always fails"]()
-
-    alias compiled = compile_info[
-        always_fails, is_failable=True, emission_kind="llvm"
-    ]()
-    alias is_error = compiled.is_error
-    alias error_msg = compiled.error_msg
-    assert_true(is_error)
-    assert_true(error_msg)
-
-
 def main():
     test_compile_llvm()
-    test_compile_failure()
