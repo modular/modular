@@ -109,11 +109,11 @@ def next_token_with_logits(
 
         # Claim cache rows for our batch.
         for context in context_batch:
-            if context.cache_seq_id in model.kv_manager.slots_remaining:
+            if not model.kv_manager.contains(context.cache_seq_id):
                 model.kv_manager.external_claim([context.cache_seq_id])
 
         # Get cache seq ids for batch.
-        cache_seq_ids = [ctx.cache_seq_id for ctx in context_batch]
+        cache_seq_ids = {ctx.cache_seq_id: ctx.seq_len for ctx in context_batch}
 
         # Fetch kv inputs.
         kv_inputs = model.kv_manager.fetch(cache_seq_ids)[0]
@@ -140,10 +140,10 @@ def next_token_with_logits(
 
         # Claim cache rows for our batch
         for context in context_batch:
-            if context.cache_seq_id in kv_manager.slots_remaining:
+            if not kv_manager.contains(context.cache_seq_id):
                 kv_manager.external_claim([context.cache_seq_id])
 
-        cache_seq_ids = [ctx.cache_seq_id for ctx in context_batch]
+        cache_seq_ids = {ctx.cache_seq_id: ctx.seq_len for ctx in context_batch}
         token_input = model._prepare_initial_token_inputs(context_batch)
         kv_cache_inputs = kv_manager.fetch(cache_seq_ids)[0]
 

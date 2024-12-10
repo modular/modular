@@ -121,8 +121,9 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
 
+    cache_lengths = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(seq_ids)[0]
+        kv_manager.fetch(cache_lengths)[0]
     )
 
     @modular_graph_test(
@@ -261,7 +262,8 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
 
-    fetch_args = kv_manager.fetch(seq_ids)[0]
+    cache_lengths = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
+    fetch_args = kv_manager.fetch(cache_lengths)[0]
     kv_blocks = fetch_args[0]
     # First check that the KV cache was zeroed out on initialization.
     assert not kv_blocks.to_numpy().any()

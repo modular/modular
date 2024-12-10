@@ -282,7 +282,8 @@ def test_llava_mistral_decoder(pytorch_mistral_and_config):
     )
 
     seq_ids = kv_manager.claim(n=batch_size)
-    kv_cache_inputs = kv_manager.fetch(seq_ids)
+    cache_lengths = {s: seq_length for s in seq_ids}
+    kv_cache_inputs = kv_manager.fetch(cache_lengths)
 
     embeds_type = TensorType(
         DType.float32,

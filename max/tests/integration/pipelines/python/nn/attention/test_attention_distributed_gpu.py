@@ -238,7 +238,11 @@ def _attention_layer(
 
 
 def execute_attn_for_devices(
-    inputs, session, devices: List[Device], model_parameters
+    inputs,
+    session,
+    devices: List[Device],
+    model_parameters,
+    seq_len: int,
 ):
     session = InferenceSession(devices=devices)
     graph, _, kv_manager = _attention_layer(
@@ -251,8 +255,8 @@ def execute_attn_for_devices(
     )
     # Claim seq_ids in cache
     seq_ids = kv_manager.claim(BATCH_SIZE)
-
-    kv_cache_inputs = kv_manager.fetch(seq_ids)
+    valid_lengths = {s: seq_len for s in seq_ids}
+    kv_cache_inputs = kv_manager.fetch(valid_lengths)
     flattened_kv_cache_inputs = [
         inp for device_inputs in kv_cache_inputs for inp in device_inputs
     ]
@@ -330,6 +334,7 @@ def test_attention(
         InferenceSession(devices=devices_with_host),
         devices,
         model_parameters,
+        seq_len,
     )
     results_np = [result.to(host).to_numpy() for result in results]
     for i in range(len(results_np) - 1):
@@ -343,5 +348,6 @@ def test_attention(
         InferenceSession(devices=devices_with_host),
         devices,
         model_parameters,
+        seq_len,
     )
     np.testing.assert_allclose(results_np[0], expected_res.to(host).to_numpy())

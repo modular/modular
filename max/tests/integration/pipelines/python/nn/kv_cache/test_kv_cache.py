@@ -11,6 +11,7 @@ from max.engine import InferenceSession
 from max.graph import Graph
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     KVCacheParams,
     KVCacheStrategy,
     load_kv_manager,
@@ -18,14 +19,26 @@ from max.pipelines.kv_cache import (
 
 
 @pytest.mark.asyncio
-async def test_kv_collection_constructor_continuous() -> None:
+@pytest.mark.parametrize(
+    "cache_strategy, fetch_cls",
+    [
+        (KVCacheStrategy.CONTINUOUS, FetchContinuousBatchingKVCacheCollection),
+        (KVCacheStrategy.PAGED, FetchPagedKVCacheCollection),
+    ],
+)
+async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
     """Tests that KV cache collections return the expected cache length."""
     kv_params = KVCacheParams(
         dtype=DType.float32,
         n_kv_heads=8,
         head_dim=128,
-        cache_strategy=KVCacheStrategy.CONTINUOUS,
+        cache_strategy=cache_strategy,
     )
+
+    kv_manager_kwargs = {}
+    if cache_strategy == KVCacheStrategy.PAGED:
+        kv_manager_kwargs["page_size"] = 128
+
     session = InferenceSession()
     kv_manager = load_kv_manager(
         params=kv_params,
@@ -34,24 +47,32 @@ async def test_kv_collection_constructor_continuous() -> None:
         num_layers=32,
         devices=[CPU()],
         session=session,
+        **kv_manager_kwargs,
     )
 
     # Reserve a slot in the KV cache manager.
-    seq_id = kv_manager.claim(n=1)[0]
+    seq_id = 0
+    expected_cache_len = 42
+
+    kv_manager.external_claim(seq_ids=[seq_id])
+    kv_tuple_list = kv_manager.fetch(
+        seq_ids_and_lengths={seq_id: expected_cache_len}
+    )
 
     # Set the cache lengths first by "stepping".
     expected_cache_len = 42
     kv_manager.step(valid_lengths={seq_id: expected_cache_len})
 
     # Construct a KV cache collection with the given cache length.
-    kv_tuple_list = kv_manager.fetch(seq_ids=[seq_id])
+    cache_lengths = {seq_id: 1}
+    kv_tuple_list = kv_manager.fetch(cache_lengths)
     assert len(kv_tuple_list) == 1
     assert len(kv_tuple_list[0]) == 4
     kv_tuple = kv_tuple_list[0]
 
     graph = Graph(
         "create_collection",
-        FetchContinuousBatchingKVCacheCollection(kv_params),
+        fetch_cls(kv_params),
         input_types=kv_manager.input_symbols()[0],
     )
 

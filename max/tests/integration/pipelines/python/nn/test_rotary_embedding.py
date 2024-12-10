@@ -252,8 +252,9 @@ def test_kv_cache_ragged_rope(session):
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
+    cache_lengths = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(seq_ids)[0]
+        kv_manager.fetch(cache_lengths)[0]
     )
 
     @modular_graph_test(

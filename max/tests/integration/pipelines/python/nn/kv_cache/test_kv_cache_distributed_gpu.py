@@ -43,7 +43,9 @@ async def _test_kv_cache_gpu():
             session=inference_session,
         )
         seq_id = kv_manager.claim(n=1)[0]
-        list_of_kv_tuples = kv_manager.fetch([seq_id])
+
+        cache_lengths = {seq_id: 1}
+        list_of_kv_tuples = kv_manager.fetch(cache_lengths)
         for i in range(num_devices):
             kv_tuple = list_of_kv_tuples[i]
             assert isinstance(kv_tuple, tuple)

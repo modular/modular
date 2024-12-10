@@ -104,7 +104,8 @@ def _attention_layer(
     )
 
     seq_ids = kv_manager.claim(n=BATCH_SIZE)
-    kv_cache_inputs = kv_manager.fetch(seq_ids)[0]
+    cache_lengths = {s: seq_len for i, s in enumerate(seq_ids)}
+    kv_cache_inputs = kv_manager.fetch(cache_lengths)[0]
 
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
     kv_cache_types = [

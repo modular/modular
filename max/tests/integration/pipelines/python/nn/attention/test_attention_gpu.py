@@ -169,8 +169,9 @@ def test_attention_gpu(start_pos, seq_len):
         seq_id = kv_manager.claim(1)
         seq_ids.append(seq_id[0])
 
+    cache_valid_lengths = {s: seq_len for i, s in enumerate(seq_ids)}
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(seq_ids)[0]
+        kv_manager.fetch(cache_valid_lengths)[0]
     )
 
     hidden_states = Tensor.from_numpy(

@@ -112,11 +112,12 @@ async def test_fetch_continuous():
 
     # Raise on fetch when nothing has been claimed
     with pytest.raises(ValueError):
-        kv_collection = kv_manager.fetch(seq_ids=[0])[0]
+        bogus_seq_id = 100
+        kv_collection = kv_manager.fetch({bogus_seq_id: 1})[0]
 
     # Claim 5 items
     seq_ids = kv_manager.claim(n=5)
 
     # Fetch 3 of the 5 ids
-    kv_collection = kv_manager.fetch(seq_ids[:3])[0]
+    kv_collection = kv_manager.fetch({s: 1 for s in seq_ids[:3]})[0]
     assert kv_collection is not None
