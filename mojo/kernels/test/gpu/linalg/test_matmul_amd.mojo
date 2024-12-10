@@ -19,6 +19,7 @@ from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer
 from internal_utils._utils import ValOrDim, dynamic, static
 from linalg.matmul_gpu import _matmul_gpu
+import linalg.gpu_blas
 
 from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
 
@@ -170,6 +171,18 @@ fn test[
         a_host.tensor.data, b_host.tensor.data, c_host_ref.tensor.data, M, N, K
     )
 
+    var handle = gpu_blas.Handle()
+
+    gpu_blas.matmul(
+        ctx,
+        handle,
+        c_device_ref.tensor,
+        a_device.tensor,
+        b_device.tensor,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
+
     var errors = 0
     for i in range(M * N):
         # print(i // N, i % N, c_host.tensor.data[i], c_host_ref.tensor.data[i])
@@ -194,7 +207,29 @@ fn test[
         m.iter_custom[kernel_launch](ctx)
 
     bench.bench_function[bench_func](
-        BenchId("matmul"),
+        BenchId("mojo matmul"),
+        ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
+    )
+
+    @parameter
+    fn bench_func_gpu_blas(mut m: Bencher):
+        @parameter
+        @always_inline
+        fn kernel_launch(ctx: DeviceContext) raises:
+            gpu_blas.matmul(
+                ctx,
+                handle,
+                c_device_ref.tensor,
+                a_device.tensor,
+                b_device.tensor,
+                c_row_major=True,
+                transpose_b=transpose_b,
+            )
+
+        m.iter_custom[kernel_launch](ctx)
+
+    bench.bench_function[bench_func_gpu_blas](
+        BenchId("gpu_blas matmul"),
         ThroughputMeasure(BenchMetric.elements, 2 * M * N * K),
     )
 
