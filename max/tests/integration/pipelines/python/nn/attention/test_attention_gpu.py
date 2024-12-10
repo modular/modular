@@ -212,3 +212,23 @@ def test_attention_gpu(start_pos, seq_len):
     for result in results:
         if isinstance(result, Tensor):
             assert np.all(result.to(host).to_numpy() != np.inf)
+
+
+def test_aspect_ratio_mask() -> None:
+    """Regression test for accidentally assigning transpose_b = True to BMM,
+    which can't run on GPU.
+    """
+    # Create a graph consisting of a simple batch matmul with transpose.
+    aspect_ratio_mask_type = TensorType(
+        DType.bfloat16,
+        shape=["batch_size", "num_concurrent_media", 4, 1],
+    )
+    graph = Graph(
+        "aspect_ratio_mask",
+        forward=lambda mask: mask @ mask.transpose(-1, -2),
+        input_types=[aspect_ratio_mask_type],
+    )
+
+    # Compile and init the model.
+    session = InferenceSession(devices=[CUDA()])
+    session.load(graph)
