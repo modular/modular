@@ -66,7 +66,7 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
         )
 
     var ptr = UnsafePointer[DLHandle].alloc(1)
-    ptr.init_pointee_move(DLHandle(CUDA_NVTX_LIBRARY_PATH))
+    ptr.init_pointee_move(DLHandle(library_path))
 
     @parameter
     if has_nvidia_gpu_accelerator():
