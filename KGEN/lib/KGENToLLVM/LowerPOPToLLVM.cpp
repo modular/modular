@@ -1182,8 +1182,22 @@ public:
         getAtomicOrdering(op.getSuccessOrdering()),
         getAtomicOrdering(op.getFailureOrdering()),
         adaptor.getSyncscope() ? cast<StringAttr>(*adaptor.getSyncscope())
-                               : StringRef());
+                               : StringRef(),
+        resolveAlignment(adaptor));
     return success();
+  }
+
+  static unsigned resolveAlignment(AtomicCmpXchgOpAdaptor adaptor) {
+    if (auto alignment = adaptor.getAlignment())
+      return cast<IntegerAttr>(*alignment).getInt();
+
+    // If alignment is not set on the op, use the alignment of the pointer.
+    Value ptr = adaptor.getPtr();
+    if (!ptr.getDefiningOp()->hasAttr("alignment"))
+      return 0;
+
+    return cast<IntegerAttr>(ptr.getDefiningOp()->getAttr("alignment"))
+        .getInt();
   }
 };
 

@@ -733,6 +733,15 @@ kgen.func @atomic_cmpxchg(%ptr: !kgen.pointer<scalar<index>>,
   %2 = pop.atomic.cmpxchg %ptr, %cmp, %new syncscope("singlethread")
                     acq_rel monotonic : !kgen.pointer<scalar<index>>
 
+  // CHECK: llvm.cmpxchg {{.*}} acq_rel monotonic {alignment = 16 : i64}
+  %3 = pop.atomic.cmpxchg %ptr, %cmp, %new acq_rel monotonic align 16 :
+                    !kgen.pointer<scalar<index>>
+
+  %stack_ptr = pop.stack_allocation 1 x scalar<index> align 16 marked
+  // CHECK: llvm.cmpxchg {{.*}} monotonic monotonic {alignment = 16 : i64}
+  %4 = pop.atomic.cmpxchg %stack_ptr, %cmp, %new monotonic monotonic :
+                    !kgen.pointer<scalar<index>>
+
   kgen.return
 }
 
