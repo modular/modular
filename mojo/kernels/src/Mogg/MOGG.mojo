@@ -182,13 +182,13 @@ from nn.kv_cache_ragged import (
     flash_attention_kv_cache_h8_d128_cont_batch_ragged,
     flash_attention_kv_cache_h8_d512_cont_batch_ragged,
     flash_attention_kv_cache_h32_d128_cont_batch_ragged,
-    flash_attention_kv_cache_h1_d16_bshd_paged_ragged,
-    flash_attention_kv_cache_h6_d48_bshd_paged_ragged,
-    flash_attention_kv_cache_h8_d32_bshd_paged_ragged,
-    flash_attention_kv_cache_h8_d64_bshd_paged_ragged,
-    flash_attention_kv_cache_h8_d128_bshd_paged_ragged,
-    flash_attention_kv_cache_h8_d512_bshd_paged_ragged,
-    flash_attention_kv_cache_h32_d128_bshd_paged_ragged,
+    flash_attention_kv_cache_h1_d16_paged_ragged,
+    flash_attention_kv_cache_h6_d48_paged_ragged,
+    flash_attention_kv_cache_h8_d32_paged_ragged,
+    flash_attention_kv_cache_h8_d64_paged_ragged,
+    flash_attention_kv_cache_h8_d128_paged_ragged,
+    flash_attention_kv_cache_h8_d512_paged_ragged,
+    flash_attention_kv_cache_h32_d128_paged_ragged,
     fused_qk_rope_h1_d16_bshd_continuous_batch_ragged,
     fused_qk_rope_h1_d16_bshd_ragged,
     fused_qk_rope_h6_d48_bshd_ragged,
@@ -213,13 +213,13 @@ from nn.kv_cache_ragged import (
     fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged,
     fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged,
     fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged,
-    fused_qkv_matmul_kv_cache_h1_d16_bshd_paged_ragged,
-    fused_qkv_matmul_kv_cache_h6_d48_bshd_paged_ragged,
-    fused_qkv_matmul_kv_cache_h8_d32_bshd_paged_ragged,
-    fused_qkv_matmul_kv_cache_h8_d64_bshd_paged_ragged,
-    fused_qkv_matmul_kv_cache_h8_d128_bshd_paged_ragged,
-    fused_qkv_matmul_kv_cache_h8_d512_bshd_paged_ragged,
-    fused_qkv_matmul_kv_cache_h32_d128_bshd_paged_ragged,
+    fused_qkv_matmul_kv_cache_h1_d16_paged_ragged,
+    fused_qkv_matmul_kv_cache_h6_d48_paged_ragged,
+    fused_qkv_matmul_kv_cache_h8_d32_paged_ragged,
+    fused_qkv_matmul_kv_cache_h8_d64_paged_ragged,
+    fused_qkv_matmul_kv_cache_h8_d128_paged_ragged,
+    fused_qkv_matmul_kv_cache_h8_d512_paged_ragged,
+    fused_qkv_matmul_kv_cache_h32_d128_paged_ragged,
     matmul_kv_cache_h8_d128_cont_batch_ragged,
 )
 from nn.mha import flash_attention
@@ -378,13 +378,13 @@ fn MOGGExport():
     alias _fused_qkv_matmul_kv_cache_h2_d128_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h2_d128_bshd_continuous_batch
     alias _fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch
     alias _fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch = fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch
-    alias _fused_qkv_matmul_kv_cache_h1_d16_bshd_paged_ragged = fused_qkv_matmul_kv_cache_h1_d16_bshd_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h6_d48_bshd_paged_ragged = fused_qkv_matmul_kv_cache_h6_d48_bshd_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d32_bshd_paged_ragged = fused_qkv_matmul_kv_cache_h8_d32_bshd_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d64_bshd_paged_ragged = fused_qkv_matmul_kv_cache_h8_d64_bshd_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d128_bshd_paged_ragged = fused_qkv_matmul_kv_cache_h8_d128_bshd_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h8_d512_bshd_paged_ragged = fused_qkv_matmul_kv_cache_h8_d512_bshd_paged_ragged
-    alias _fused_qkv_matmul_kv_cache_h32_d128_bshd_paged_ragged = fused_qkv_matmul_kv_cache_h32_d128_bshd_paged_ragged
+    alias _fused_qkv_matmul_kv_cache_h1_d16_paged_ragged = fused_qkv_matmul_kv_cache_h1_d16_paged_ragged
+    alias _fused_qkv_matmul_kv_cache_h6_d48_paged_ragged = fused_qkv_matmul_kv_cache_h6_d48_paged_ragged
+    alias _fused_qkv_matmul_kv_cache_h8_d32_paged_ragged = fused_qkv_matmul_kv_cache_h8_d32_paged_ragged
+    alias _fused_qkv_matmul_kv_cache_h8_d64_paged_ragged = fused_qkv_matmul_kv_cache_h8_d64_paged_ragged
+    alias _fused_qkv_matmul_kv_cache_h8_d128_paged_ragged = fused_qkv_matmul_kv_cache_h8_d128_paged_ragged
+    alias _fused_qkv_matmul_kv_cache_h8_d512_paged_ragged = fused_qkv_matmul_kv_cache_h8_d512_paged_ragged
+    alias _fused_qkv_matmul_kv_cache_h32_d128_paged_ragged = fused_qkv_matmul_kv_cache_h32_d128_paged_ragged
     alias _fused_qk_rope_h6_d48_bshd = fused_qk_rope_h6_d48_bshd
     alias _fused_qk_rope_h8_d128_bshd = fused_qk_rope_h8_d128_bshd
     alias _fused_qk_rope_h1_d16_bshd = fused_qk_rope_h1_d16_bshd
@@ -467,13 +467,13 @@ fn MOGGExport():
     alias _flash_attention_kv_cache_h8_d128_cont_batch_ragged = flash_attention_kv_cache_h8_d128_cont_batch_ragged
     alias _flash_attention_kv_cache_h8_d512_cont_batch_ragged = flash_attention_kv_cache_h8_d512_cont_batch_ragged
     alias _flash_attention_kv_cache_h32_d128_cont_batch_ragged = flash_attention_kv_cache_h32_d128_cont_batch_ragged
-    alias _flash_attention_kv_cache_h1_d16_bshd_paged_ragged = flash_attention_kv_cache_h1_d16_bshd_paged_ragged
-    alias _flash_attention_kv_cache_h6_d48_bshd_paged_ragged = flash_attention_kv_cache_h6_d48_bshd_paged_ragged
-    alias _flash_attention_kv_cache_h8_d32_bshd_paged_ragged = flash_attention_kv_cache_h8_d32_bshd_paged_ragged
-    alias _flash_attention_kv_cache_h8_d64_bshd_paged_ragged = flash_attention_kv_cache_h8_d64_bshd_paged_ragged
-    alias _flash_attention_kv_cache_h8_d128_bshd_paged_ragged = flash_attention_kv_cache_h8_d128_bshd_paged_ragged
-    alias _flash_attention_kv_cache_h8_d512_bshd_paged_ragged = flash_attention_kv_cache_h8_d512_bshd_paged_ragged
-    alias _flash_attention_kv_cache_h32_d128_bshd_paged_ragged = flash_attention_kv_cache_h32_d128_bshd_paged_ragged
+    alias _flash_attention_kv_cache_h1_d16_paged_ragged = flash_attention_kv_cache_h1_d16_paged_ragged
+    alias _flash_attention_kv_cache_h6_d48_paged_ragged = flash_attention_kv_cache_h6_d48_paged_ragged
+    alias _flash_attention_kv_cache_h8_d32_paged_ragged = flash_attention_kv_cache_h8_d32_paged_ragged
+    alias _flash_attention_kv_cache_h8_d64_paged_ragged = flash_attention_kv_cache_h8_d64_paged_ragged
+    alias _flash_attention_kv_cache_h8_d128_paged_ragged = flash_attention_kv_cache_h8_d128_paged_ragged
+    alias _flash_attention_kv_cache_h8_d512_paged_ragged = flash_attention_kv_cache_h8_d512_paged_ragged
+    alias _flash_attention_kv_cache_h32_d128_paged_ragged = flash_attention_kv_cache_h32_d128_paged_ragged
     alias _matmul_kv_cache_h8_d128_cont_batch_ragged = matmul_kv_cache_h8_d128_cont_batch_ragged
 
 
