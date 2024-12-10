@@ -22,13 +22,15 @@ from llama_vision.language_model import (
     TextModel,
     instantiate_language_model,
 )
-from max.driver import CUDA, Tensor
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
 from max.graph.weights import SafetensorWeights
 from max.pipelines import PipelineConfig, SupportedEncoding
 from max.pipelines.kv_cache import KVCacheParams, load_kv_manager
+
+# from test_common.distance_metrics import is_euclidean_distance_close
 from nn import (
     MLP,
     AttentionWithRopeQKV,
@@ -42,15 +44,11 @@ from transformers import MllamaForCausalLM
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.testing_utils import torch_device
 
-# TODO: Change these to only pass the test if correct.
-ACCURACY_ATOL = 1e05
-ACCURACY_RTOL = 1e05
-
 # copied from https://github.com/huggingface/transformers/blob/main/tests/test_modeling_common.py
 global_rng = random.Random()
 
 
-def ids_tensor(shape, vocab_size, rng=None, name=None):
+def ids_tensor(shape, vocab_size, rng=None, name=None) -> torch.Tensor:
     #  Creates a random int32 tensor of the shape within the vocab size
     if rng is None:
         rng = global_rng
@@ -71,7 +69,7 @@ def ids_tensor(shape, vocab_size, rng=None, name=None):
 
 
 def weight(
-    name: str, weights_array: torch.tensor, weights_registry: dict
+    name: str, weights_array: torch.Tensor, weights_registry: dict
 ) -> Weight:
     """Creates a Linear layer backed by a weight."""
     weights_registry[name] = weights_array
@@ -168,36 +166,44 @@ def cross_attention_decoder_layer(
     return CrossAttentionDecoderLayer(
         cross_attn=sdpa_attn,
         input_layernorm=norm(
-            f"text.layers{layer_idx}.input_layernorm",
-            pytorch_layer.input_layernorm.weight.data,
-            rms_norm_eps,
-            weights_registry,
+            name=f"text.layers{layer_idx}.input_layernorm",
+            weights_array=pytorch_layer.input_layernorm.weight.data,
+            eps=rms_norm_eps,
+            weights_registry=weights_registry,
         ),
-        cross_attn_attn_gate=pytorch_layer.cross_attn_attn_gate.data,
+        cross_attn_attn_gate=weight(
+            name=f"text.layers{layer_idx}.cross_attn_attn_gate",
+            weights_array=pytorch_layer.cross_attn_attn_gate.data,
+            weights_registry=weights_registry,
+        ),
         mlp=MLP(
             gate_proj=linear(
-                f"text.layers{layer_idx}.mlp.gate_proj",
-                pytorch_layer.mlp.gate_proj.weight.data,
-                weights_registry,
+                name=f"text.layers{layer_idx}.mlp.gate_proj",
+                weights_array=pytorch_layer.mlp.gate_proj.weight.data,
+                weights_registry=weights_registry,
             ),
             down_proj=linear(
-                f"text.layers{layer_idx}.mlp.down_proj",
-                pytorch_layer.mlp.down_proj.weight.data,
-                weights_registry,
+                name=f"text.layers{layer_idx}.mlp.down_proj",
+                weights_array=pytorch_layer.mlp.down_proj.weight.data,
+                weights_registry=weights_registry,
             ),
             up_proj=linear(
-                f"text.layers{layer_idx}.mlp.up_proj",
-                pytorch_layer.mlp.up_proj.weight.data,
-                weights_registry,
+                name=f"text.layers{layer_idx}.mlp.up_proj",
+                weights_array=pytorch_layer.mlp.up_proj.weight.data,
+                weights_registry=weights_registry,
             ),
         ),
         post_attention_layernorm=norm(
-            f"text.layers{layer_idx}.post_attention_layernorm",
-            pytorch_layer.post_attention_layernorm.weight.data,
-            rms_norm_eps,
-            weights_registry,
+            name=f"text.layers{layer_idx}.post_attention_layernorm",
+            weights_array=pytorch_layer.post_attention_layernorm.weight.data,
+            eps=rms_norm_eps,
+            weights_registry=weights_registry,
         ),
-        cross_attn_mlp_gate=pytorch_layer.cross_attn_mlp_gate.data,
+        cross_attn_mlp_gate=weight(
+            name=f"text.layers{layer_idx}.cross_attn_mlp_gate",
+            weights_array=pytorch_layer.cross_attn_mlp_gate.data,
+            weights_registry=weights_registry,
+        ),
     )
 
 
@@ -286,7 +292,7 @@ def language_model_given_pytorch_model(
     rms_norm_eps,
     num_hidden_layers,
     cross_attention_layers,
-    max_position_embeddings: int,
+    max_seq_len: int,
     rope_theta: float,
     kv_params,
     weights_registry: dict,
@@ -297,7 +303,7 @@ def language_model_given_pytorch_model(
         n_heads=num_attention_heads,
         theta=rope_theta,
         # TODO: Check if this param value used is correct for "max_seq_len".
-        max_seq_len=max_position_embeddings,
+        max_seq_len=max_seq_len,
         # TODO: Figure out how we want to pass this
         # rope_scaling=params.rope_scaling,
     )
@@ -389,13 +395,13 @@ def generate_test_language_model() -> Graph:
         head_dim=text_config.hidden_size // text_config.num_key_value_heads,
     )
     with Graph("test_llama_vision") as graph:
-        print("building vision model...")
+        print("Building vision model...")
         language_model = instantiate_language_model(
             dtype=pipeline_config.dtype,
             hidden_size=text_config.hidden_size,
             n_heads=text_config.num_attention_heads,
             rope_theta=text_config.rope_theta,
-            max_seq_len=512,
+            max_seq_len=text_config.max_length,
             num_hidden_layers=text_config.num_hidden_layers,
             cross_attention_layers=text_config.cross_attention_layers,
             vocab_size=text_config.vocab_size,
@@ -427,155 +433,177 @@ def test_build_language_model():
     assert isinstance(vision_model, Graph)
 
 
-@pytest.mark.skip("doesnt work")
-def test_llama_language_model():
-    batch_size = 1
-    seq_length = 7
-    rms_norm_eps = 1e-5
-    cross_attention_layers = [1]
-    num_hidden_layers = 2
-    max_position_embeddings = 512
-    hidden_size = 1024
-    num_key_value_heads = 8
-    num_attention_heads = 8
-    rope_theta = 500000.0
-
+@pytest.mark.parametrize(
+    # num_vision_tokens = image_dim**2 // patch_dim**2 + 1 (cls token)
+    "batch_size,seq_len,num_tiles,num_vision_tokens,max_length",
+    [
+        (1, 7, 4, 1025, 512),
+    ],
+)
+def test_llama_language_model(
+    session: InferenceSession,
+    batch_size: int,
+    seq_len: int,
+    num_tiles: int,
+    num_vision_tokens: int,
+    max_length: int,
+):
     config_dict = {
-        "model_type": "mllama",
-        "vocab_size": 128,
-        "hidden_size": hidden_size,
-        "num_hidden_layers": num_hidden_layers,
-        "num_attention_heads": num_attention_heads,
-        "num_key_value_heads": num_key_value_heads,
-        "intermediate_size": hidden_size * 2,
-        "hidden_act": "gelu",
-        "max_position_embeddings": max_position_embeddings,
+        "bos_token_id": 128000,
+        "cross_attention_layers": [3, 8, 13, 18, 23, 28, 33, 38],
+        "dropout": 0,
+        "eos_token_id": 128001,
+        "hidden_act": "silu",
+        "hidden_size": 1024,  # original: 4096,
         "initializer_range": 0.02,
-        "rope_scaling": {"rope_type": "default"},
-        "pad_token_id": 0,
-        "bos_token_id": 1,
-        "eos_token_id": 2,
-        "cross_attention_layers": cross_attention_layers,
-        "rope_theta": rope_theta,
+        "intermediate_size": 14336,
+        "max_position_embeddings": 512,  # original: 131072
+        "model_type": "mllama_text_model",
+        "num_attention_heads": 8,  # original: 32
+        "num_hidden_layers": 5,  # original: 40
+        "num_key_value_heads": 8,
+        "pad_token_id": 128004,
+        "rms_norm_eps": 1e-05,
+        "rope_scaling": {
+            "factor": 8.0,
+            "high_freq_factor": 4.0,
+            "low_freq_factor": 1.0,
+            "original_max_position_embeddings": 8192,
+            "rope_type": "llama3",
+        },
+        "rope_theta": 500000.0,
+        "tie_word_embeddings": False,
+        "torch_dtype": "float32",  # original: "bfloat16"
+        "use_cache": True,
+        "vocab_size": 128256,
     }
-    pytorch_lm_config = MllamaTextConfig(**config_dict)
-    input_ids = (
-        ids_tensor(
-            [batch_size, seq_length],
-            pytorch_lm_config.vocab_size - 1,
-        )
-        + 1
-    )
-    attention_mask = input_ids.ne(1).to(dtype=torch.int64, device=torch_device)
 
-    pytorch_model = MllamaForCausalLM(config=pytorch_lm_config)
+    config = MllamaTextConfig(**config_dict)
+
+    pytorch_model = MllamaForCausalLM(config=config)
     pytorch_model.to(torch_device)
-    pytorch_model.eval()
-    with torch.autocast(device_type="cuda", dtype=torch.float32):
-        pytorch_logits = pytorch_model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            return_dict=True,
-        )["logits"]
-        assert not (torch.isnan(pytorch_logits).any().item())
 
-    # define kv_cache_inputs_types
     dtype = DType.float32
 
-    weights_registry: dict = {}
     # define kv_params
     kv_params = KVCacheParams(
         dtype=dtype,
-        n_kv_heads=num_key_value_heads,
-        head_dim=hidden_size // num_key_value_heads,
+        n_kv_heads=config.num_key_value_heads,
+        head_dim=config.hidden_size // config.num_key_value_heads,
     )
 
+    weights_registry: dict = {}
     graph_api_model = language_model_given_pytorch_model(
         pytorch_model,
-        hidden_size=hidden_size,
-        num_attention_heads=num_attention_heads,
-        num_key_value_heads=num_key_value_heads,
-        rms_norm_eps=rms_norm_eps,
-        num_hidden_layers=num_hidden_layers,
-        cross_attention_layers=cross_attention_layers,
-        max_position_embeddings=max_position_embeddings,
-        rope_theta=rope_theta,
+        hidden_size=config.hidden_size,
+        num_attention_heads=config.num_attention_heads,
+        num_key_value_heads=config.num_key_value_heads,
+        rms_norm_eps=config.rms_norm_eps,
+        num_hidden_layers=config.num_hidden_layers,
+        cross_attention_layers=config.cross_attention_layers,
+        max_seq_len=max_length,
+        rope_theta=config.rope_theta,
         kv_params=kv_params,
         weights_registry=weights_registry,
         dtype=dtype,
     )
 
-    session = InferenceSession(devices=[CUDA()])
+    session = InferenceSession(devices=[CPU()])
 
     kv_manager = load_kv_manager(
         params=kv_params,
         max_cache_batch_size=batch_size,  # verify this.
-        max_seq_len=max_position_embeddings,  # verify this.
-        num_layers=num_hidden_layers,
+        max_seq_len=max_length,
+        num_layers=config.num_hidden_layers,
         session=session,
-        devices=[CUDA()],
+        devices=[CPU()],
     )
 
-    seq_ids = kv_manager.claim(n=batch_size)
-    kv_cache_inputs = tuple(
-        [element for tup in kv_manager.fetch(seq_ids) for element in tup]
+    # seq_ids = kv_manager.claim(n=batch_size)
+    # kv_cache_inputs = tuple(
+    #     [element for tup in kv_manager.fetch(seq_ids) for element in tup]
+    # )
+
+    pytorch_input_ids = (
+        ids_tensor(
+            [batch_size, seq_len],
+            config.vocab_size - 1,
+        )
+        + 1
+    )
+    pytorch_attention_mask = pytorch_input_ids.ne(1).to(
+        dtype=torch.int64, device=torch_device
     )
 
-    # define graph API input types
+    # Define graph API input types
     input_ids_type = TensorType(
         DType.int64,
-        shape=input_ids.shape,  # batch_size, sequence_length
+        # Rank of 1 for ragged graph API input tensor.
+        shape=[batch_size, seq_len],
     )
-    attention_mask_type = input_ids_type
+    cross_attention_states_type = TensorType(
+        dtype,
+        shape=[batch_size * num_tiles * num_vision_tokens, config.hidden_size],
+    )
     input_row_offsets_type = TensorType(
         DType.uint32,
         [batch_size + 1],
     )
+
     input_types = [
         input_ids_type,
-        attention_mask_type,
+        cross_attention_states_type,
+        # Pass 2 sets of offsets for hidden and cross attn states.
+        input_row_offsets_type,
         input_row_offsets_type,
     ] + [element for tup in kv_manager.input_symbols() for element in tup]
     with Graph("test_language_model", input_types=input_types) as graph:
         (
             graph_input_ids,
-            graph_attention_mask,
-            graph_input_row_offsets,
+            graph_cross_attention_states,
+            graph_hidden_input_row_offsets,
+            graph_cross_input_row_offsets,
             *graph_kv_cache_inputs,
         ) = graph.inputs
 
         logits = graph_api_model(
             kv_cache_inputs=graph_kv_cache_inputs,
             input_ids=graph_input_ids,
-            attention_mask=graph_attention_mask,
-            input_row_offsets=graph_input_row_offsets,
+            cross_attention_states=graph_cross_attention_states,
+            hidden_input_row_offsets=graph_hidden_input_row_offsets,
+            cross_input_row_offsets=graph_cross_input_row_offsets,
         )
         graph.output(logits)
 
     compiled = session.load(graph, weights_registry=weights_registry)
 
-    prompt_lens = [30]
-    assert len(prompt_lens) == batch_size
-    input_row_offsets = Tensor(
-        [batch_size + 1],
-        DType.uint32,
-    )
-    running_sum = 0
-    for i in range(batch_size):
-        input_row_offsets[i] = running_sum
-        running_sum += prompt_lens[i]
-    input_row_offsets[batch_size] = running_sum
+    # prompt_lens = [30]
+    # assert len(prompt_lens) == batch_size
+    # input_row_offsets = Tensor(
+    #     [batch_size + 1],
+    #     DType.uint32,
+    # )
+    # running_sum = 0
+    # for i in range(batch_size):
+    #     input_row_offsets[i] = running_sum
+    #     running_sum += prompt_lens[i]
+    # input_row_offsets[batch_size] = running_sum
 
-    # output = compiled.execute(
+    # predicted = compiled.execute(
     #     input_ids, attention_mask, input_row_offsets, *kv_cache_inputs
-    # )[  # type: ignore
-    #     0
-    # ].to_numpy()
-    #
-    # np.testing.assert_allclose(
-    #     output,
-    #     pytorch_logits.detach().numpy(),
-    #     equal_nan=False,  # TODO: flip to True when language_model is correct
-    #     rtol=ACCURACY_RTOL,
-    #     atol=ACCURACY_ATOL,
+    # )[0]
+
+    # pytorch_model.eval()
+    # with torch.autocast(device_type="cuda", dtype=torch.float32):
+    expected = pytorch_model(
+        input_ids=pytorch_input_ids,
+        attention_mask=pytorch_attention_mask,
+        return_dict=True,
+    )["logits"]
+    assert not (torch.isnan(expected).any().item())
+    expected = expected.detach().numpy()
+
+    # # Compare the outputs.
+    # assert is_euclidean_distance_close(
+    #     result=predicted.to_numpy(), expected=expected, rtol=1e-4
     # )
