@@ -21,7 +21,7 @@ from max.dtype import DType
 from . import graph, ops
 from .type import (
     BufferType,
-    Device,
+    DeviceRef,
     Dim,
     DimLike,
     Shape,
@@ -179,7 +179,7 @@ class BufferValue(Value):
         return self.type.shape
 
     @property
-    def device(self) -> Optional[Device]:
+    def device(self) -> Optional[DeviceRef]:
         """Returns the device of the BufferValue."""
         return self.type.device
 
@@ -294,7 +294,7 @@ class TensorValue(Value):
         return self.type.shape
 
     @property
-    def device(self) -> Optional[Device]:
+    def device(self) -> Optional[DeviceRef]:
         """Returns the device of the TensorValue."""
         return self.type.device
 
@@ -341,7 +341,7 @@ class TensorValue(Value):
     def transpose(self, dim_1: int, dim_2: int) -> TensorValue:
         return ops.transpose(self, dim_1, dim_2)
 
-    def to(self, device: Device) -> TensorValue:
+    def to(self, device: DeviceRef) -> TensorValue:
         return ops.transfer_to(self, device)
 
     @property

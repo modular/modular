@@ -477,41 +477,41 @@ class Shape(list[Dim]):
 
 
 @dataclass(frozen=True)
-class DeviceType(str, Enum):
+class DeviceKind(str, Enum):
     """A device type representation."""
 
     CPU = "cpu"
-    CUDA = "gpu"
+    GPU = "gpu"
 
     def __str__(self) -> str:
         return self.value
 
 
-class Device:
-    """A device representation.
+class DeviceRef:
+    """A symbolic device representation.
 
-    Device representation consists of a DeviceType and an id. This is a direct
+    DeviceRef type representation consists of a DeviceKind and an id. This is a direct
     representation of the device attribute in mlir.
     """
 
-    device_type: DeviceType
+    device_type: DeviceKind
     id: int
 
     @staticmethod
-    def CPU(id: int = 0) -> Device:
+    def CPU(id: int = 0) -> DeviceRef:
         """Static Method for creating a CPU device."""
-        return Device(DeviceType.CPU, id)
+        return DeviceRef(DeviceKind.CPU, id)
 
     @staticmethod
-    def CUDA(id: int = 0) -> Device:
-        """Static Method for creating a CUDA device."""
-        return Device(DeviceType.CUDA, id)
+    def GPU(id: int = 0) -> DeviceRef:
+        """Static Method for creating a GPU device."""
+        return DeviceRef(DeviceKind.GPU, id)
 
-    def __init__(self, device_type: Union[DeviceType, str], id: int = 0):
-        if isinstance(device_type, DeviceType):
+    def __init__(self, device_type: Union[DeviceKind, str], id: int = 0):
+        if isinstance(device_type, DeviceKind):
             self.device_type = device_type
         else:
-            self.device_type = DeviceType(device_type)
+            self.device_type = DeviceKind(device_type)
         self.id = id
 
     def __str__(self) -> str:
@@ -531,10 +531,10 @@ class Device:
         )
 
     @staticmethod
-    def from_mlir(device_attr: mlir.Attribute) -> Device:
+    def from_mlir(device_attr: mlir.Attribute) -> DeviceRef:
         """Returns a device from mlir attribute"""
-        return Device(
-            device_type=DeviceType(_graph.device_attr_get_label(device_attr)),
+        return DeviceRef(
+            device_type=DeviceKind(_graph.device_attr_get_label(device_attr)),
             id=_graph.device_attr_get_id(device_attr),
         )
 
@@ -600,14 +600,14 @@ class TensorType(Type):
     """The element type of the tensor value."""
     shape: Shape
     """The dimensions of the tensor value."""
-    device: Optional[Device]
+    device: Optional[DeviceRef]
     """The device of the tensor value."""
 
     def __init__(
         self,
         dtype: DType,
         shape: ShapeLike,
-        device: Optional[Device] = None,
+        device: Optional[DeviceRef] = None,
     ) -> None:
         """Constructs a tensor type.
 
@@ -661,7 +661,7 @@ class TensorType(Type):
             Dim.from_mlir(_graph.tensor_type_get_dim(t, i)) for i in range(rank)
         ]
         mlir_device = _graph.tensor_type_get_device(t)
-        device = Device.from_mlir(mlir_device) if mlir_device else None
+        device = DeviceRef.from_mlir(mlir_device) if mlir_device else None
         return TensorType(DType(dtype), shape, device)
 
     # ===------------------------------------------------------------------=== #
@@ -758,14 +758,14 @@ class BufferType(Type):
     """The element type of the buffer value."""
     shape: Shape
     """The dimensions of the buffer value."""
-    device: Optional[Device]
+    device: Optional[DeviceRef]
     """The device of the tensor value."""
 
     def __init__(
         self,
         dtype: DType,
         shape: ShapeLike,
-        device: Optional[Device] = None,
+        device: Optional[DeviceRef] = None,
     ) -> None:
         """Constructs a buffer type.
 
@@ -819,7 +819,7 @@ class BufferType(Type):
             Dim.from_mlir(_graph.buffer_type_get_dim(t, i)) for i in range(rank)
         ]
         mlir_device = _graph.buffer_type_get_device(t)
-        device = Device.from_mlir(mlir_device) if mlir_device else None
+        device = DeviceRef.from_mlir(mlir_device) if mlir_device else None
 
         return BufferType(DType(dtype), shape, device)
 

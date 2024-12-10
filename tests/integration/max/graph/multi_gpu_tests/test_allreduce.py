@@ -12,15 +12,15 @@ import numpy as np
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Device, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def allreduce_graph() -> Graph:
     devices = [
-        Device.CUDA(id=0),
-        Device.CUDA(id=1),
-        Device.CUDA(id=2),
-        Device.CUDA(id=3),
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+        DeviceRef.GPU(id=2),
+        DeviceRef.GPU(id=3),
     ]
     with Graph(
         "allreduce",

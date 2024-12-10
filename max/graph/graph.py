@@ -20,8 +20,8 @@ from max.mlir.dialects import mo
 
 from .type import (
     BufferType,
-    Device,
-    DeviceType,
+    DeviceRef,
+    DeviceKind,
     Dim,
     SymbolicDim,
     TensorType,
@@ -428,8 +428,8 @@ class Graph:
         # This is needed to prevent AssignDevices from automatically assigning
         # mo.constant.external to the default device, which could be GPU.
         const_external_op = weight_tensor._mlir_value.owner
-        const_external_op.attributes["device"] = Device(
-            DeviceType.CPU, 0
+        const_external_op.attributes["device"] = DeviceRef(
+            DeviceKind.CPU, 0
         ).to_mlir()
 
         self._weights[weight.name] = _GraphWeight(weight, weight_tensor)

@@ -9,21 +9,21 @@ import numpy as np
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Device, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def create_multi_device_graph() -> Graph:
     m0 = TensorType(
-        dtype=DType.float32, shape=["m", "k"], device=Device.CUDA(0)
+        dtype=DType.float32, shape=["m", "k"], device=DeviceRef.GPU(0)
     )
     n0 = TensorType(
-        dtype=DType.float32, shape=["k", "n"], device=Device.CUDA(0)
+        dtype=DType.float32, shape=["k", "n"], device=DeviceRef.GPU(0)
     )
     m1 = TensorType(
-        dtype=DType.float32, shape=["m", "k"], device=Device.CUDA(1)
+        dtype=DType.float32, shape=["m", "k"], device=DeviceRef.GPU(1)
     )
     n1 = TensorType(
-        dtype=DType.float32, shape=["k", "n"], device=Device.CUDA(1)
+        dtype=DType.float32, shape=["k", "n"], device=DeviceRef.GPU(1)
     )
     with Graph("DistributedMatmul", input_types=(m0, n0, m1, n1)) as graph:
         m0, n0, m1, n1 = graph.inputs  # type: ignore
@@ -37,8 +37,8 @@ def test_gpu_io_graph_execution() -> None:
     """Tests multi-device transfers where inputs/outputs are on cpu."""
     graph = create_multi_device_graph()
     # Check built graph
-    assert str(Device.CUDA(0)) in str(graph)
-    assert str(Device.CUDA(1)) in str(graph)
+    assert str(DeviceRef.GPU(0)) in str(graph)
+    assert str(DeviceRef.GPU(1)) in str(graph)
     host = CPU()
     device0 = CUDA(0)
     device1 = CUDA(1)

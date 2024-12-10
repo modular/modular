@@ -9,7 +9,7 @@ import pytest
 from conftest import tensor_types
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import ops, Device, Graph, TensorType
+from max.graph import ops, DeviceRef, Graph, TensorType
 
 
 shared_types = st.shared(tensor_types())
@@ -18,10 +18,10 @@ shared_types = st.shared(tensor_types())
 def test_allreduce_no_device() -> None:
     """Test no device error for allreduce."""
     devices = [
-        Device.CUDA(id=0),
-        Device.CUDA(id=1),
-        Device.CUDA(id=2),
-        Device.CUDA(id=3),
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+        DeviceRef.GPU(id=2),
+        DeviceRef.GPU(id=3),
     ]
     with pytest.raises(
         ValueError,
@@ -57,10 +57,10 @@ def test_allreduce_no_device() -> None:
 def test_allreduce_rep_device() -> None:
     """Test unique device error for allreduce."""
     devices = [
-        Device.CUDA(id=0),
-        Device.CUDA(id=0),
-        Device.CUDA(id=2),
-        Device.CUDA(id=3),
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=2),
+        DeviceRef.GPU(id=3),
     ]
     with pytest.raises(
         ValueError,
@@ -98,10 +98,10 @@ def test_allreduce_rep_device() -> None:
 def test_allreduce_wrong_shape() -> None:
     """Test wrong shape error for allreduce."""
     devices = [
-        Device.CUDA(id=0),
-        Device.CUDA(id=1),
-        Device.CUDA(id=2),
-        Device.CUDA(id=3),
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+        DeviceRef.GPU(id=2),
+        DeviceRef.GPU(id=3),
     ]
 
     with pytest.raises(
@@ -140,10 +140,10 @@ def test_allreduce_wrong_shape() -> None:
 def test_allreduce_basic() -> None:
     """Test basic allreduce use case."""
     devices = [
-        Device.CUDA(id=0),
-        Device.CUDA(id=1),
-        Device.CUDA(id=2),
-        Device.CUDA(id=3),
+        DeviceRef.GPU(id=0),
+        DeviceRef.GPU(id=1),
+        DeviceRef.GPU(id=2),
+        DeviceRef.GPU(id=3),
     ]
     with Graph(
         "allreduce",

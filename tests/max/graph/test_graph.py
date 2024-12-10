@@ -13,7 +13,7 @@ from hypothesis import strategies as st
 from max import _graph, mlir
 from max.dtype import DType
 from max.graph import (
-    Device,
+    DeviceRef,
     Dim,
     Graph,
     TensorType,
@@ -62,12 +62,12 @@ def test_elementwise_add_graph_with_device_prop() -> None:
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device.CUDA(0),
+                device=DeviceRef.GPU(0),
             ),
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device.CUDA(0),
+                device=DeviceRef.GPU(0),
             ),
         ],
     ) as graph:
@@ -89,12 +89,12 @@ def test_elementwise_add_graph_with_device_prop_error() -> None:
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device.CUDA(0),
+                device=DeviceRef.GPU(0),
             ),
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device.CUDA(1),
+                device=DeviceRef.GPU(1),
             ),
         ],
     ) as graph:
@@ -110,7 +110,7 @@ def test_transpose_graph_with_device_prop() -> None:
             TensorType(
                 dtype=DType.float32,
                 shape=["batch", "channels"],
-                device=Device.CUDA(0),
+                device=DeviceRef.GPU(0),
             )
         ],
     ) as graph:

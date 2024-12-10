@@ -9,23 +9,25 @@ import numpy as np
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Device, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def create_multi_device_graph_with_cpu_io() -> Graph:
     input_type = TensorType(
-        dtype=DType.float32, shape=["batch", "channels"], device=Device.CPU()
+        dtype=DType.float32,
+        shape=["batch", "channels"],
+        device=DeviceRef.CPU(),
     )
     with Graph(
         "add", input_types=(input_type, input_type, input_type)
     ) as graph:
-        gpu0_input0 = graph.inputs[0].to(Device.CUDA(0))  # type: ignore
-        gpu1_input1 = graph.inputs[1].to(Device.CUDA(1))  # type: ignore
-        gpu0_input2 = graph.inputs[2].to(Device.CUDA(0))  # type: ignore
-        gpu0_input1 = gpu1_input1.to(Device.CUDA(0))
+        gpu0_input0 = graph.inputs[0].to(DeviceRef.GPU(0))  # type: ignore
+        gpu1_input1 = graph.inputs[1].to(DeviceRef.GPU(1))  # type: ignore
+        gpu0_input2 = graph.inputs[2].to(DeviceRef.GPU(0))  # type: ignore
+        gpu0_input1 = gpu1_input1.to(DeviceRef.GPU(0))
         sum = ops.add(gpu0_input0, gpu0_input2)
         sum2 = ops.add(sum, gpu0_input1)
-        cpu_output = sum2.to(Device.CPU())
+        cpu_output = sum2.to(DeviceRef.CPU())
         graph.output(cpu_output)
     return graph
 
@@ -34,17 +36,17 @@ def create_multi_device_graph_with_gpu_io() -> Graph:
     input_type0 = TensorType(
         dtype=DType.float32,
         shape=["batch", "channels"],
-        device=Device.CUDA(id=0),
+        device=DeviceRef.GPU(id=0),
     )
     input_type1 = TensorType(
         dtype=DType.float32,
         shape=["batch", "channels"],
-        device=Device.CUDA(id=1),
+        device=DeviceRef.GPU(id=1),
     )
     with Graph(
         "add", input_types=(input_type0, input_type1, input_type0)
     ) as graph:
-        gpu0_input1 = graph.inputs[1].to(Device.CUDA(0))  # type: ignore
+        gpu0_input1 = graph.inputs[1].to(DeviceRef.GPU(0))  # type: ignore
         sum = ops.add(graph.inputs[0], graph.inputs[2])
         sum2 = ops.add(sum, gpu0_input1)
         graph.output(sum2)
@@ -55,9 +57,9 @@ def test_cpu_io_graph_execution() -> None:
     """Tests multi-device transfers where inputs/outputs are on cpu."""
     graph = create_multi_device_graph_with_cpu_io()
     # Check built graph
-    assert str(Device.CPU(0)) in str(graph)
-    assert str(Device.CUDA(0)) in str(graph)
-    assert str(Device.CUDA(1)) in str(graph)
+    assert str(DeviceRef.CPU(0)) in str(graph)
+    assert str(DeviceRef.GPU(0)) in str(graph)
+    assert str(DeviceRef.GPU(1)) in str(graph)
     host = CPU()
     device0 = CUDA(0)
     device1 = CUDA(1)
@@ -82,8 +84,8 @@ def test_gpu_io_graph_execution() -> None:
     """Tests multi-device transfers where inputs/outputs are on cpu."""
     graph = create_multi_device_graph_with_gpu_io()
     # Check built graph
-    assert str(Device.CUDA(0)) in str(graph)
-    assert str(Device.CUDA(1)) in str(graph)
+    assert str(DeviceRef.GPU(0)) in str(graph)
+    assert str(DeviceRef.GPU(1)) in str(graph)
     host = CPU()
     device0 = CUDA(0)
     device1 = CUDA(1)

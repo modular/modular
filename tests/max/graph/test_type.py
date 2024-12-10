@@ -14,7 +14,7 @@ from max import _graph, mlir
 from max.dtype import DType
 from max.graph import (
     BufferType,
-    Device,
+    DeviceRef,
     Dim,
     StaticDim,
     SymbolicDim,
@@ -157,7 +157,7 @@ def test_tensor_type(mlir_context) -> None:
 
 def test_tensor_type_with_device(mlir_context: mlir.Context) -> None:
     """Tests tensor type creation."""
-    device_type = Device.CUDA(id=2)
+    device_type = DeviceRef.GPU(id=2)
     mlir_device_type = device_type.to_mlir()
     print(str(mlir_device_type))
     tensor_type = TensorType(DType.float32, shape=[3], device=device_type)
@@ -299,11 +299,11 @@ def test_buffer_type_with_device_accessors(mlir_context) -> None:
 
 def test_device_type(mlir_context) -> None:
     """Tests Device type."""
-    host = Device.CPU(0)
-    cuda0 = Device.CUDA(0)
-    cuda1 = Device.CUDA(1)
-    cuda1_2 = Device.CUDA(1)
+    host = DeviceRef.CPU(0)
+    cuda0 = DeviceRef.GPU(0)
+    cuda1 = DeviceRef.GPU(1)
+    cuda1_2 = DeviceRef.GPU(1)
     assert cuda0 != cuda1 != host
     assert cuda0 != cuda1_2 != host
-    assert cuda0 != Device.CPU()
+    assert cuda0 != DeviceRef.CPU()
     assert cuda1 == cuda1_2

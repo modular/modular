@@ -11,11 +11,11 @@ from __future__ import annotations
 from max.mlir.dialects import rmo
 
 from ..graph import Graph
-from ..type import Device, TensorType
+from ..type import DeviceRef, TensorType
 from ..value import TensorValue
 
 
-def transfer_to(x: TensorValue, device: Device) -> TensorValue:
+def transfer_to(x: TensorValue, device: DeviceRef) -> TensorValue:
     """Device-to-Device transfer operation.
 
     This op transfers the input tensor from its current device over to another. A device represents a
