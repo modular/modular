@@ -94,6 +94,10 @@ fn bad_out4(out a: Int, out b: Int): pass
 # expected-error @+1 {{function cannot have both an 'out' argument and an explicit result type}}
 fn bad_out5(out a: Int) -> Int: pass
 
+# expected-error @+1 {{function cannot have both an 'out' argument and an explicit result type; remove the '-> None' to fix it}}
+fn bad_out6(out self) -> None: pass
+
+
 
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
