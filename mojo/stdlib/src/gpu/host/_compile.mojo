@@ -44,7 +44,6 @@ fn _compile_code[
     /,
     *,
     emission_kind: StringLiteral = "asm",
-    is_failable: Bool = False,
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     compile_options: StringLiteral = HardwareInfo.from_target[
         target
@@ -54,7 +53,6 @@ fn _compile_code[
         func,
         emission_kind=emission_kind,
         compile_options=compile_options,
-        is_failable=is_failable,
         target=target,
     ]()
 
@@ -66,7 +64,6 @@ fn _compile_code_asm[
     /,
     *,
     emission_kind: StringLiteral = "asm",
-    is_failable: Bool = False,
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
     compile_options: StringLiteral = HardwareInfo.from_target[
         target
@@ -76,7 +73,6 @@ fn _compile_code_asm[
         func,
         emission_kind=emission_kind,
         compile_options=compile_options,
-        is_failable=is_failable,
         target=target,
     ]().asm
     return asm

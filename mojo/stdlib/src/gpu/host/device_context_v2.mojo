@@ -362,14 +362,12 @@ struct DeviceFunctionV2[
     func: func_type,
     *,
     target: __mlir_type.`!kgen.target` = _get_gpu_target(),
-    _is_failable: Bool = False,
     _ptxas_info_verbose: Bool = False,
 ]:
     alias emission_kind = "shared-obj" if _is_amd_gpu[target]() else "asm"
     var _handle: _DeviceFunctionPtr
     alias _func_impl = _compile_code[
         func,
-        is_failable=_is_failable,
         emission_kind = Self.emission_kind,
         target=target,
     ]()
@@ -528,7 +526,6 @@ struct DeviceFunctionV2[
                     return Self._func_impl.asm
                 return _compile_code_asm[
                     func,
-                    is_failable=_is_failable,
                     emission_kind="asm",
                     target=target,
                 ]()
@@ -567,7 +564,6 @@ struct DeviceFunctionV2[
             alias mlir = _compile_code_asm[
                 Self.func,
                 emission_kind="elab-mlir",
-                is_failable=_is_failable,
                 target=target,
             ]()
 
@@ -587,7 +583,6 @@ struct DeviceFunctionV2[
             alias llvm = _compile_code_asm[
                 Self.func,
                 emission_kind="llvm-opt",
-                is_failable=_is_failable,
                 target=target,
             ]()
 
@@ -873,7 +868,6 @@ struct DeviceContextV2:
         _dump_sass: Variant[Bool, Path, fn () capturing -> Path] = False,
         _dump_elabmlir: Variant[Bool, Path, fn () capturing -> Path] = False,
         _target: __mlir_type.`!kgen.target` = Self.device_info.target(),
-        _is_failable: Bool = False,
         _ptxas_info_verbose: Bool = False,
     ](
         self,
@@ -886,7 +880,6 @@ struct DeviceContextV2:
         out result: DeviceFunctionV2[
             func,
             target=_target,
-            _is_failable=_is_failable,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ],
     ) raises:
