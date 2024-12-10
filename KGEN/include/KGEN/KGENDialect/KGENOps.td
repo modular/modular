@@ -260,7 +260,7 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
     Example:
 
     ```mlir
-    kgen.struct.generator @struct_SIMD<dt: dtype, size> {
+    kgen.struct.generator @struct_SIMD<dt: dtype, size> : type {
       kgen.struct.info = #type_value : !kgen.type
     }
     ```
@@ -268,7 +268,7 @@ def KGEN_StructGeneratorOp : KGENOp<"struct.generator", [
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        KGEN_ParamDeclArrayAttr:$inputParams,
-                       TypeAttr:$type);
+                       TypeAttrOf<KGEN_GeneratorType>:$type);
   let regions = (region SizedRegion<1>:$body);
 
   let extraClassDeclaration = [{

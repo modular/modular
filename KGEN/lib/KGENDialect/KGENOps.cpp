@@ -536,10 +536,14 @@ static ParseResult parseStructGeneratorSpec(OpAsmParser &p,
     return failure();
   inputParams = ParamDeclArrayAttr::get(p.getContext(), paramAttrs);
 
+  // Derive generator type input params.
+  SmallVector<Type> inputParamTypes(llvm::map_range(
+      paramAttrs, [](ParamDeclAttr decl) { return decl.getType(); }));
+
   Type resultType;
-  if (p.parseColon() || p.parseType(resultType))
+  if (p.parseColon() || parseKGENType(p, resultType))
     return failure();
-  type = TypeAttr::get(resultType);
+  type = TypeAttr::get(GeneratorType::get(inputParamTypes, resultType));
   return success();
 }
 
@@ -551,7 +555,9 @@ static void printStructGeneratorSpec(OpAsmPrinter &p, Operation *op,
     printParamDeclAttrs(p, inputParams);
     p << '>';
   }
-  p << " : " << type.getValue();
+  auto genType = cast<GeneratorType>(type.getValue());
+  p << " : ";
+  printKGENType(p, genType.getBody());
 }
 
 //===----------------------------------------------------------------------===//

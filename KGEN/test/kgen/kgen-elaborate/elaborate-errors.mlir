@@ -218,7 +218,7 @@ kgen.generator @recursive() -> index {
 }
 
 // expected-note @below {{function instantiation failed}}
-kgen.struct.generator @WeirdStruct<T: type> : !kgen.type {
+kgen.struct.generator @WeirdStruct<T: type> : type {
   kgen.struct.info :type struct_inst<"WeirdStruct"(data: array<apply(:() -> index @recursive), index>)>
 }
 
