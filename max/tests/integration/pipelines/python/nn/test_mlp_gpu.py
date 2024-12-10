@@ -12,8 +12,7 @@ from typing import List
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Device as GraphDevice
-from max.graph import Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType
 from nn import MLP, Linear
 
 
@@ -48,8 +47,8 @@ def mlp_graph(types: List[TensorType]) -> Graph:
 @pytest.mark.parametrize(
     "input_type",
     [
-        TensorType(DType.float32, ["dim"], GraphDevice.CUDA(id=0)),
-        TensorType(DType.float32, ["batch", "dim"], GraphDevice.CUDA(id=0)),
+        TensorType(DType.float32, ["dim"], DeviceRef.GPU(id=0)),
+        TensorType(DType.float32, ["batch", "dim"], DeviceRef.GPU(id=0)),
     ],
 )
 def test_mlp(input_type: TensorType):
@@ -60,10 +59,10 @@ def test_mlp(input_type: TensorType):
 
     dim = input_type.shape[-1]
     w1_type: TensorType = TensorType(
-        input_type.dtype, ["hidden_dim", dim], GraphDevice.CUDA(id=0)
+        input_type.dtype, ["hidden_dim", dim], DeviceRef.GPU(id=0)
     )
     w2_type: TensorType = TensorType(
-        input_type.dtype, [dim, "hidden_dim"], GraphDevice.CUDA(id=0)
+        input_type.dtype, [dim, "hidden_dim"], DeviceRef.GPU(id=0)
     )
     w3_type: TensorType = w1_type
 

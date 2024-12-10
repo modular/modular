@@ -17,7 +17,7 @@ import torch
 from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model, TensorSpec, TorchInputSpec
-from max.graph import Device, DeviceType, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType, Value
 from max.mlir.dialects import mo
 
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
@@ -501,9 +501,7 @@ class ExternalWeightsModel:
 
         # Set the constant external op's device explicitly.
         const_external_op = weights_tensor._mlir_value.owner
-        const_external_op.attributes["device"] = Device(
-            DeviceType.CPU, 0
-        ).to_mlir()
+        const_external_op.attributes["device"] = DeviceRef.CPU().to_mlir()
 
         return input + weights_tensor
 

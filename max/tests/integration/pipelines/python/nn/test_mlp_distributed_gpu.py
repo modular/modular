@@ -12,8 +12,7 @@ from typing import List
 from max.driver import CPU, CUDA, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Device as GraphDevice
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from nn import MLP, Linear
 
 
@@ -35,7 +34,7 @@ class TorchMLP(nn.Module):
 
 
 def distribute_value(v, devices: List[Device]):
-    return [v.to(GraphDevice(device.label, device.id)) for device in devices]
+    return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 
 def shard_col_value(v, devices: List[Device]):
@@ -43,7 +42,7 @@ def shard_col_value(v, devices: List[Device]):
     col_size = v.shape[1].dim // n_devices
     return [
         v[:, i * col_size : (i + 1) * col_size].to(
-            GraphDevice(device.label, device.id)
+            DeviceRef(device.label, device.id)
         )
         for i, device in enumerate(devices)
     ]
@@ -54,7 +53,7 @@ def shard_row_value(v, devices: List[Device]):
     row_size = v.shape[0].dim // n_devices
     return [
         v[i * row_size : (i + 1) * row_size, :].to(
-            GraphDevice(device.label, device.id)
+            DeviceRef(device.label, device.id)
         )
         for i, device in enumerate(devices)
     ]
@@ -64,13 +63,13 @@ def distributed_mlp_graph(devices: List[Device], model_parameters) -> Graph:
     (batch_size, intermediate_size, hidden_dim) = model_parameters
 
     input_type: TensorType = TensorType(
-        DType.float32, [batch_size, hidden_dim], GraphDevice.CPU()
+        DType.float32, [batch_size, hidden_dim], DeviceRef.CPU()
     )
     w1_type: TensorType = TensorType(
-        DType.float32, [intermediate_size, hidden_dim], GraphDevice.CPU()
+        DType.float32, [intermediate_size, hidden_dim], DeviceRef.CPU()
     )
     w2_type: TensorType = TensorType(
-        DType.float32, [hidden_dim, intermediate_size], GraphDevice.CPU()
+        DType.float32, [hidden_dim, intermediate_size], DeviceRef.CPU()
     )
     with Graph(
         "mlp", input_types=[input_type, w1_type, w2_type, w1_type]

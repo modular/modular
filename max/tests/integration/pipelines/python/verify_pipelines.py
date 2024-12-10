@@ -18,7 +18,7 @@ from typing import Callable, Mapping, Optional, Sequence, TextIO, Union
 import click
 
 
-class DeviceType(enum.Enum):
+class DeviceKind(enum.Enum):
     CPU = "cpu"
     GPU = "gpu"
 
@@ -113,7 +113,7 @@ class TagFilterParamType(click.ParamType):
 def generate_llm_logits(
     *,
     framework: str,
-    device: DeviceType,
+    device: DeviceKind,
     pipeline: str,
     version: str,
     encoding: str,
@@ -137,7 +137,7 @@ def generate_llm_logits(
 
 def run_llm_verification(
     *,
-    device_type: DeviceType,
+    device_type: DeviceKind,
     pipeline: str,
     version: str,
     encoding: str,
@@ -216,11 +216,11 @@ class PipelineDef:
     raising an exception (same as returning VerificationVerdict.ERROR).
     """
 
-    compatible_with: Sequence[DeviceType]
-    run: Callable[[DeviceType], VerificationVerdict]
+    compatible_with: Sequence[DeviceKind]
+    run: Callable[[DeviceKind], VerificationVerdict]
     tags: Sequence[str] = field(default_factory=list)
 
-    def run_protected(self, device_type: DeviceType) -> VerificationVerdict:
+    def run_protected(self, device_type: DeviceKind) -> VerificationVerdict:
         try:
             return self.run(device_type)
         except Exception:
@@ -230,7 +230,7 @@ class PipelineDef:
 
 PIPELINES = {
     "llama3_1-q4_k": PipelineDef(
-        compatible_with=[DeviceType.CPU],
+        compatible_with=[DeviceKind.CPU],
         run=lambda device_type: run_llm_verification(
             device_type=device_type,
             pipeline="llama",
@@ -247,7 +247,7 @@ PIPELINES = {
         ),
     ),
     "llama3_1-float32": PipelineDef(
-        compatible_with=[DeviceType.CPU],
+        compatible_with=[DeviceKind.CPU],
         run=lambda device_type: run_llm_verification(
             device_type=device_type,
             pipeline="llama",
@@ -262,7 +262,7 @@ PIPELINES = {
         ),
     ),
     "llama3_1-bfloat16": PipelineDef(
-        compatible_with=[DeviceType.GPU],
+        compatible_with=[DeviceKind.GPU],
         run=lambda device_type: run_llm_verification(
             device_type=device_type,
             pipeline="llama",
@@ -280,7 +280,7 @@ PIPELINES = {
         ),
     ),
     "replit-code-v1_5-3b-float32": PipelineDef(
-        compatible_with=[DeviceType.CPU],
+        compatible_with=[DeviceKind.CPU],
         run=lambda device_type: run_llm_verification(
             device_type=device_type,
             pipeline="replit",
@@ -293,7 +293,7 @@ PIPELINES = {
         ),
     ),
     "replit-code-v1_5-3b-bfloat16": PipelineDef(
-        compatible_with=[DeviceType.GPU],
+        compatible_with=[DeviceKind.GPU],
         run=lambda device_type: run_llm_verification(
             device_type=device_type,
             pipeline="replit",
@@ -312,7 +312,7 @@ PIPELINES = {
         ),
     ),
     "mistral-nemo-instruct-2407-bfloat16": PipelineDef(
-        compatible_with=[DeviceType.GPU],
+        compatible_with=[DeviceKind.GPU],
         tags=["big"],
         run=lambda device_type: run_llm_verification(
             device_type=device_type,
@@ -358,9 +358,9 @@ def main(
             "Only one device at a time currently supported"
         )
     if devices_str is None:
-        device_type = DeviceType.CPU
+        device_type = DeviceKind.CPU
     else:
-        device_type = DeviceType(devices_str)
+        device_type = DeviceKind(devices_str)
 
     verdicts: dict[str, VerificationVerdict] = {}
     if pipeline is None:

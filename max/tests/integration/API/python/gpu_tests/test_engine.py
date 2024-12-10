@@ -11,7 +11,7 @@ import numpy as np
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceType, Device, Graph, TensorType, Value
+from max.graph import DeviceRef, Graph, TensorType, Value
 from max.mlir.dialects import mo
 
 
@@ -100,7 +100,7 @@ class Model:
     """Model that performs elementwise add with a weights tensor."""
 
     num_elems: int
-    device: Device = field(default_factory=CPU)
+    device: DeviceRef = field(default_factory=CPU)
 
     def __call__(self, input: Value) -> Value:
         weights_tensor_type = TensorType(
@@ -116,9 +116,9 @@ class Model:
         # Set the constant external op's device explicitly.
         const_external_op = weights_tensor._mlir_value.owner
         const_external_op.attributes["device"] = (
-            Device.CPU().to_mlir()
+            DeviceRef.CPU().to_mlir()
             if self.device.is_host
-            else Device(DeviceType.CUDA, 0).to_mlir()
+            else DeviceRef.GPU(0).to_mlir()
         )
 
         return input + weights_tensor

@@ -12,8 +12,7 @@ import pytest
 from max.driver import CPU, CUDA, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Device as GraphDevice
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
@@ -75,7 +74,7 @@ def _attention_block(params, inputs):
 
 
 def distribute_value(v, devices: List[Device]):
-    return [v.to(GraphDevice(device.label, device.id)) for device in devices]
+    return [v.to(DeviceRef(device.label, device.id)) for device in devices]
 
 
 def shard_attn_mask_value(v, devices: List[Device]):
@@ -83,7 +82,7 @@ def shard_attn_mask_value(v, devices: List[Device]):
     size = v.shape[1] // n_devices
     return [
         v[:, i * size : (i + 1) * size, :, :].to(
-            GraphDevice(device.label, device.id)
+            DeviceRef(device.label, device.id)
         )
         for i, device in enumerate(devices)
     ]
@@ -94,7 +93,7 @@ def shard_col_value(v, devices: List[Device]):
     col_size = v.shape[1].dim // n_devices
     return [
         v[:, i * col_size : (i + 1) * col_size].to(
-            GraphDevice(device.label, device.id)
+            DeviceRef(device.label, device.id)
         )
         for i, device in enumerate(devices)
     ]
@@ -105,7 +104,7 @@ def shard_row_value(v, devices: List[Device]):
     row_size = v.shape[0].dim // n_devices
     return [
         v[i * row_size : (i + 1) * row_size, :].to(
-            GraphDevice(device.label, device.id)
+            DeviceRef(device.label, device.id)
         )
         for i, device in enumerate(devices)
     ]
@@ -129,27 +128,27 @@ def _attention_layer(
 
     # Initialize input types
     input_type = TensorType(
-        dtype, ["batch_size", "seq_len", hidden_dim], device=GraphDevice.CPU()
+        dtype, ["batch_size", "seq_len", hidden_dim], device=DeviceRef.CPU()
     )
     attn_mask_type = TensorType(
         mask_dtype,
         ["batch_size", "n_heads", "seq_len", "post_seq_len"],
-        device=GraphDevice.CPU(),
+        device=DeviceRef.CPU(),
     )
     wq_type = TensorType(
-        dtype, [hidden_dim, n_heads * head_dim], device=GraphDevice.CPU()
+        dtype, [hidden_dim, n_heads * head_dim], device=DeviceRef.CPU()
     )
     wk_type = TensorType(
-        dtype, [hidden_dim, n_kv_heads * head_dim], device=GraphDevice.CPU()
+        dtype, [hidden_dim, n_kv_heads * head_dim], device=DeviceRef.CPU()
     )
     wv_type = TensorType(
-        dtype, [hidden_dim, n_kv_heads * head_dim], device=GraphDevice.CPU()
+        dtype, [hidden_dim, n_kv_heads * head_dim], device=DeviceRef.CPU()
     )
     wo_type = TensorType(
-        dtype, [n_kv_heads * head_dim, hidden_dim], device=GraphDevice.CPU()
+        dtype, [n_kv_heads * head_dim, hidden_dim], device=DeviceRef.CPU()
     )
     valid_lengths_type = TensorType(
-        DType.uint32, ["batch_size"], device=GraphDevice.CPU()
+        DType.uint32, ["batch_size"], device=DeviceRef.CPU()
     )
 
     # Initialize kv cache params and manager

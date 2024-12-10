@@ -10,18 +10,20 @@ import pytest
 from max.driver import CPU, CUDA, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Device, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 
 def create_test_graph_with_transfer() -> Graph:
     input_type = TensorType(
-        dtype=DType.float32, shape=["batch", "channels"], device=Device.CUDA(0)
+        dtype=DType.float32,
+        shape=["batch", "channels"],
+        device=DeviceRef.GPU(0),
     )
     with Graph(
         "add", input_types=(input_type, input_type, input_type)
     ) as graph:
         sum = ops.add(graph.inputs[0], graph.inputs[1])
-        cuda_input = graph.inputs[2].to(Device.CUDA(0))  # type: ignore
+        cuda_input = graph.inputs[2].to(DeviceRef.GPU(0))  # type: ignore
         sum2 = ops.add(sum, cuda_input)
         graph.output(sum2)
     return graph
@@ -29,10 +31,14 @@ def create_test_graph_with_transfer() -> Graph:
 
 def create_test_graph_io_devices() -> Graph:
     cuda_input_type = TensorType(
-        dtype=DType.float32, shape=["batch", "channels"], device=Device.CUDA(0)
+        dtype=DType.float32,
+        shape=["batch", "channels"],
+        device=DeviceRef.GPU(0),
     )
     cpu_input_type = TensorType(
-        dtype=DType.float32, shape=["batch", "channels"], device=Device.CPU(0)
+        dtype=DType.float32,
+        shape=["batch", "channels"],
+        device=DeviceRef.CPU(0),
     )
     with Graph(
         "add",
@@ -43,8 +49,8 @@ def create_test_graph_io_devices() -> Graph:
             cuda_input_type,
         ),
     ) as graph:
-        cuda_input1 = graph.inputs[1].to(Device.CUDA(0))  # type: ignore
-        cuda_input2 = graph.inputs[2].to(Device.CUDA(0))  # type: ignore
+        cuda_input1 = graph.inputs[1].to(DeviceRef.GPU(0))  # type: ignore
+        cuda_input2 = graph.inputs[2].to(DeviceRef.GPU(0))  # type: ignore
         sum = ops.add(graph.inputs[0], cuda_input1)
         sum2 = ops.add(sum, cuda_input2)
         graph.output(sum2)
