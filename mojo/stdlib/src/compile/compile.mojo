@@ -100,57 +100,6 @@ fn _hash_module_name(s: StringLiteral) -> StringLiteral:
 
 
 @always_inline
-fn _compile_info_failable_impl[
-    func_type: AnyTrivialRegType,
-    func: func_type,
-    /,
-    emission_kind: IntLiteral,
-    compile_options: StringLiteral,
-    target: __mlir_type.`!kgen.target`,
-]() -> Info:
-    alias impl = __mlir_attr[
-        `#kgen.param.expr<compile_assembly,`,
-        target,
-        `,`,
-        emission_kind.__as_mlir_index(),
-        `,`,
-        compile_options.value,
-        `,`,
-        True.__mlir_i1__(),
-        `,`,
-        func,
-        `> : `,
-        _Info,
-    ]
-
-    @parameter
-    if Int(impl.num_captures) == -1:
-        alias result = Info {
-            asm: "",
-            module_name: "",
-            function_name: "",
-            num_captures: 0,
-            populate: _noop_populate,
-            error_msg: impl.asm,
-            is_error: True,
-        }
-        return result
-
-    alias result = Info {
-        asm: impl.asm,
-        function_name: get_linkage_name[target, func](),
-        module_name: _hash_module_name(impl.asm),
-        num_captures: impl.num_captures,
-        populate: rebind[fn (UnsafePointer[NoneType]) capturing -> None](
-            impl.populate
-        ),
-        error_msg: "",
-        is_error: False,
-    }
-    return result
-
-
-@always_inline
 fn _compile_info_non_failable_impl[
     func_type: AnyTrivialRegType,
     func: func_type,
@@ -196,28 +145,17 @@ fn compile_info[
     func: func_type,
     /,
     *,
-    is_failable: Bool = False,
     emission_kind: StringLiteral = "asm",
     compile_options: StringLiteral = "",
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> Info:
-    @parameter
-    if is_failable:
-        return _compile_info_failable_impl[
-            func_type,
-            func,
-            emission_kind = _get_emission_kind_id[emission_kind]().value,
-            compile_options=compile_options,
-            target=target,
-        ]()
-    else:
-        return _compile_info_non_failable_impl[
-            func_type,
-            func,
-            emission_kind = _get_emission_kind_id[emission_kind]().value,
-            compile_options=compile_options,
-            target=target,
-        ]()
+    return _compile_info_non_failable_impl[
+        func_type,
+        func,
+        emission_kind = _get_emission_kind_id[emission_kind]().value,
+        compile_options=compile_options,
+        target=target,
+    ]()
 
 
 # ===-----------------------------------------------------------------------===#
