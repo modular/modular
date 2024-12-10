@@ -378,8 +378,8 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged[
         )
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h1_d16_bshd_paged_ragged")
-fn fused_qkv_matmul_kv_cache_h1_d16_bshd_paged_ragged[
+@register_internal("fused_qkv_matmul_kv_cache_h1_d16_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h1_d16_paged_ragged[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -405,8 +405,8 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h6_d48_bshd_paged_ragged")
-fn fused_qkv_matmul_kv_cache_h6_d48_bshd_paged_ragged[
+@register_internal("fused_qkv_matmul_kv_cache_h6_d48_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h6_d48_paged_ragged[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -432,8 +432,8 @@ fn fused_qkv_matmul_kv_cache_h6_d48_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h8_d128_bshd_paged_ragged")
-fn fused_qkv_matmul_kv_cache_h8_d128_bshd_paged_ragged[
+@register_internal("fused_qkv_matmul_kv_cache_h8_d128_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d128_paged_ragged[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -459,8 +459,8 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h8_d16_bshd_paged_ragged")
-fn fused_qkv_matmul_kv_cache_h8_d16_bshd_paged_ragged[
+@register_internal("fused_qkv_matmul_kv_cache_h8_d16_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d16_paged_ragged[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -486,8 +486,8 @@ fn fused_qkv_matmul_kv_cache_h8_d16_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h8_d512_bshd_paged_ragged")
-fn fused_qkv_matmul_kv_cache_h8_d512_bshd_paged_ragged[
+@register_internal("fused_qkv_matmul_kv_cache_h8_d512_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d512_paged_ragged[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -513,8 +513,8 @@ fn fused_qkv_matmul_kv_cache_h8_d512_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h8_d32_bshd_paged_ragged")
-fn fused_qkv_matmul_kv_cache_h8_d32_bshd_paged_ragged[
+@register_internal("fused_qkv_matmul_kv_cache_h8_d32_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d32_paged_ragged[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -540,8 +540,8 @@ fn fused_qkv_matmul_kv_cache_h8_d32_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h8_d64_bshd_paged_ragged")
-fn fused_qkv_matmul_kv_cache_h8_d64_bshd_paged_ragged[
+@register_internal("fused_qkv_matmul_kv_cache_h8_d64_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h8_d64_paged_ragged[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -567,8 +567,8 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd_paged_ragged[
     )
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h32_d128_bshd_paged_ragged")
-fn fused_qkv_matmul_kv_cache_h32_d128_bshd_paged_ragged[
+@register_internal("fused_qkv_matmul_kv_cache_h32_d128_paged_ragged")
+fn fused_qkv_matmul_kv_cache_h32_d128_paged_ragged[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -1897,7 +1897,7 @@ fn generic_flash_attention_kv_cache_paged_ragged[
 
     alias name = "flash_attention_kv_cache_h" + str(
         kv_collection.kv_params.num_heads
-    ) + "_d" + str(kv_collection.kv_params.head_size) + "_bshd_paged_ragged"
+    ) + "_d" + str(kv_collection.kv_params.head_size) + "_paged_ragged"
 
     with Trace[TraceLevel.OP, target=target](
         name,
@@ -1916,8 +1916,8 @@ fn generic_flash_attention_kv_cache_paged_ragged[
         )
 
 
-@register_internal("flash_attention_kv_cache_h1_d16_bshd_paged_ragged")
-fn flash_attention_kv_cache_h1_d16_bshd_paged_ragged[
+@register_internal("flash_attention_kv_cache_h1_d16_paged_ragged")
+fn flash_attention_kv_cache_h1_d16_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1934,8 +1934,8 @@ fn flash_attention_kv_cache_h1_d16_bshd_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h6_d48_bshd_paged_ragged")
-fn flash_attention_kv_cache_h6_d48_bshd_paged_ragged[
+@register_internal("flash_attention_kv_cache_h6_d48_paged_ragged")
+fn flash_attention_kv_cache_h6_d48_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1952,8 +1952,8 @@ fn flash_attention_kv_cache_h6_d48_bshd_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d128_bshd_paged_ragged")
-fn flash_attention_kv_cache_h8_d128_bshd_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d128_paged_ragged")
+fn flash_attention_kv_cache_h8_d128_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1970,8 +1970,8 @@ fn flash_attention_kv_cache_h8_d128_bshd_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d16_bshd_paged_ragged")
-fn flash_attention_kv_cache_h8_d16_bshd_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d16_paged_ragged")
+fn flash_attention_kv_cache_h8_d16_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1988,8 +1988,8 @@ fn flash_attention_kv_cache_h8_d16_bshd_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d512_bshd_paged_ragged")
-fn flash_attention_kv_cache_h8_d512_bshd_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d512_paged_ragged")
+fn flash_attention_kv_cache_h8_d512_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2006,8 +2006,8 @@ fn flash_attention_kv_cache_h8_d512_bshd_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d32_bshd_paged_ragged")
-fn flash_attention_kv_cache_h8_d32_bshd_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d32_paged_ragged")
+fn flash_attention_kv_cache_h8_d32_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2024,8 +2024,8 @@ fn flash_attention_kv_cache_h8_d32_bshd_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d64_bshd_paged_ragged")
-fn flash_attention_kv_cache_h8_d64_bshd_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d64_paged_ragged")
+fn flash_attention_kv_cache_h8_d64_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2042,8 +2042,8 @@ fn flash_attention_kv_cache_h8_d64_bshd_paged_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h32_d128_bshd_paged_ragged")
-fn flash_attention_kv_cache_h32_d128_bshd_paged_ragged[
+@register_internal("flash_attention_kv_cache_h32_d128_paged_ragged")
+fn flash_attention_kv_cache_h32_d128_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
