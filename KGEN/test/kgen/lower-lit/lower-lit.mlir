@@ -27,7 +27,7 @@ lit.func @async_fn_throws(%err: !lit.ref<index, mut #lit.any.origin> byref_error
 lit.func @async_call[imm a, mut b]() async {
   // CHECK: co.invoke[() async -> (): @async_call]()
   lit.async.call[!lit.signature<[2]() async -> ()>: @async_call][imm a, mut b]()
-  // CHECK: co.invoke[(!kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> (): @async_fn_throws]() 
+  // CHECK: co.invoke[(!kgen.pointer<index> byref_error, !kgen.pointer<index> byref_result) throws|async -> (): @async_fn_throws]()
   lit.async.call[!lit.signature<("err": !lit.ref<index, mut #lit.any.origin> byref_error, "res": !lit.ref<index, mut #lit.any.origin> byref_result) throws|async -> ()>: @async_fn_throws]()
   kgen.return
 }
@@ -125,7 +125,7 @@ lit.struct.decl @StructWithNestedFn<a_param> {
   }
 }
 
-// CHECK-LABEL: kgen.struct.generator @StructWithNestedFn<a_param>
+// CHECK-LABEL: kgen.struct.generator @StructWithNestedFn<a_param> : type
 
 // CHECK-LABEL: kgen.generator @topFunc
 lit.func @topFunc() {
@@ -182,7 +182,7 @@ lit.struct.decl @Adder<size> {
 
 // CHECK-LABEL: kgen.generator @"A::foo"
 
-// CHECK-LABEL: kgen.struct.generator @A 
+// CHECK-LABEL: kgen.struct.generator @A : type
 lit.struct.decl @A {
   lit.func @foo(%self: !lit.struct<@A>) {
     kgen.return
@@ -192,7 +192,7 @@ lit.struct.decl @A {
 // CHECK-LABEL: kgen.generator @"B::foo"
 // CHECK-NEXT: call_param[(!kgen.struct<() memoryOnly>) -> (): @"A::foo"]
 
-// CHECK-LABEL: kgen.struct.generator @B
+// CHECK-LABEL: kgen.struct.generator @B : type
 lit.struct.decl @B {
   lit.func @foo(%self: !lit.struct<@B>, %a: !lit.struct<@A>) {
     kgen.call_param[!lit.signature<("self": !lit.struct<@A>) -> ()>: @A::@foo](%a)
@@ -213,7 +213,7 @@ lit.func @main(%a: !lit.struct<@A>, %b: !lit.struct<@B>) {
 
 // CHECK-LABEL: kgen.generator @"A::foo"<N, M>
 
-// CHECK-LABEL: kgen.struct.generator @A<N>
+// CHECK-LABEL: kgen.struct.generator @A<N> : type
 lit.struct.decl @A<N> {
   lit.func @foo<M>(%self: !lit.struct<@A<N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
@@ -289,12 +289,12 @@ lit.struct.decl @Error {}
 lit.func @throwing_func() throws -> !kgen.variant<@Error, none> {
   %1 = lit.struct.create() : () -> !lit.struct<@Error>
   %2 = kgen.variant.create %1, 0 : <@Error, none>
-  // CHECK: kgen.return %1 : !kgen.variant<struct<() memoryOnly>, none> 
+  // CHECK: kgen.return %1 : !kgen.variant<struct<() memoryOnly>, none>
   lit.error_return %2 : !kgen.variant<@Error, none>
 }
 
 // CHECK-LABEL: kgen.generator @return_raise_or
-// CHECK-SAME: -> !kgen.variant<struct<() memoryOnly>, none> 
+// CHECK-SAME: -> !kgen.variant<struct<() memoryOnly>, none>
 lit.func @return_raise_or(%cond: i1, %err: !lit.struct<@Error>) -> !kgen.variant<@Error, none> {
   // CHECK-NEXT: hlcf.if %arg0
   hlcf.elif {
@@ -409,7 +409,7 @@ lit.file_module @module {
     }
   }
 
-  // CHECK-LABEL: kgen.struct.generator @"module::Adder"<size> : !kgen.type {
+  // CHECK-LABEL: kgen.struct.generator @"module::Adder"<size> : type {
 }
 
 // CHECK-LABEL: kgen.generator @caller(%arg0: !kgen.struct<() memoryOnly>)

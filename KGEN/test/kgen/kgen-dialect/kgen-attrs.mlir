@@ -108,7 +108,7 @@ kgen.generator @entry2() -> index {
   d = #kgen<tailkind notail>
 } : () -> ()
 
-kgen.struct.generator @LinkedList<T: type, x: !kgen.paramref<T>> : !kgen.type {
+kgen.struct.generator @LinkedList<T: type, x: !kgen.paramref<T>> : type {
   // CHECK: kgen.struct.info :type struct_inst<
   // CHECK-SAME: "LinkedList"
   // CHECK-SAME: [T, x]

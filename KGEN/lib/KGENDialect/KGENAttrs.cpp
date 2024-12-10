@@ -316,6 +316,7 @@ TypeConstantRefAttr::verifySymbolUses(Operation *module,
     remappedParamDecls.push_back(ParamDeclAttr::get(
         decl.getName(), evaluator.getReboundType(decl.getType())));
     evaluator.setParameterValue(decl.getName(), value);
+    evaluator.addInputValue(value);
   }
 
   // Check parameter types.
@@ -326,10 +327,11 @@ TypeConstantRefAttr::verifySymbolUses(Operation *module,
     return failure();
 
   // Check result type. Most likely it's not parameterized.
-  Type specializedType = evaluator.getReboundType(structGen.getType());
+  Type specializedType =
+      evaluator.getReboundType(structGen.getType().getBody());
   if (getType() != specializedType) {
     return emitError(loc) << " result type mismatch. Reference has type "
-                          << getType() << ", symbol has type "
+                          << getType() << ", symbol has specialized type "
                           << specializedType;
   }
 
