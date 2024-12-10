@@ -1641,7 +1641,8 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
     // Initializers allow an 'out' specifier which gets parsed as a result. For
     // now we tack it onto the beginning of the argument list.
-    if (argList.resultArg.convention == ParsedArgument::kConventionOut) {
+    if (argList.resultArg.convention == ParsedArgument::kConventionOut &&
+        argList.resultArg.name) {
       // Move the 'out' argument back to the beginning.
       argList.parsedArgs.insert(argList.parsedArgs.begin(), argList.resultArg);
       argList.resultArg = ParsedArgument();
@@ -1650,11 +1651,13 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
           argList.parsedArgs[1].kwArgHandling == KWArgHandling::kPositionalOnly)
         argList.parsedArgs[0].kwArgHandling =
             argList.parsedArgs[1].kwArgHandling;
-    } else {
+    } else if (!argList.resultArg.name) {
       // TODO: Remove this legacy hack, to allow people to write inout/mut for
       // self on init.
       if (!argList.parsedArgs.empty() &&
-          argList.parsedArgs[0].convention == ParsedArgument::kConventionMut) {
+          argList.parsedArgs[0].convention == ParsedArgument::kConventionMut &&
+          (!argList.resultArg.typeExpr || // Allow "no ->" and "-> None"
+           argList.resultArg.typeExpr->kind == ExprNode::kNoneLiteral)) {
         auto &selfArg = argList.parsedArgs[0];
         selfArg.convention = ParsedArgument::kConventionOut;
       }
