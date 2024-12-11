@@ -3421,7 +3421,11 @@ fn mha_decoding_single_batch[
         warp_offset
     ) + start
 
-    for kv_tile_start_row in range(start, end, BN):
+    @always_inline
+    @parameter
+    fn loop_over_kvcache[
+        tile_size: Int, not_last_iter: Bool
+    ](kv_tile_start_row: Int, seq_len: Int):
         var k_ptr = k.block_paged_ptr[k_type, BN](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
         )
@@ -3431,7 +3435,7 @@ fn mha_decoding_single_batch[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-            masked=True,
+            masked = not not_last_iter,
         ](k_ptr)
         var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
 
@@ -3524,7 +3528,7 @@ fn mha_decoding_single_batch[
                 IntTuple(Int(BN), Int(depth)),
                 IntTuple(Int(kv_num_heads * depth), 1),
             ),
-            masked=True,
+            masked = not not_last_iter,
         ](v_ptr)
         var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
 
@@ -3554,6 +3558,8 @@ fn mha_decoding_single_batch[
             BN // BK,
             num_b_rows=Int(kv_tile_num_rows),
         )
+
+    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](start, end)
 
     # Apply softmax denumerator.
     @parameter
