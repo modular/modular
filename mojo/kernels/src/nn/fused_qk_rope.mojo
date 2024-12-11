@@ -163,7 +163,6 @@ fn fused_qk_rope[
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
             var is_q_proj = head_idx < num_q_heads
-            var val: SIMD[type, width]
             var f_idx = IndexList[2](post_seq_idx, head_dim_idx)
             var f_c_temp = freqs_cis.load[width=width](f_idx)
 
@@ -257,7 +256,6 @@ fn fused_qk_rope_ragged[
             # WARN assumes head_size % simd_width == 0
             # guarded by constrained statement below
             var is_q_proj = head_idx < num_q_heads
-            var val: SIMD[type, width]
             var f_idx = IndexList[2](post_seq_idx, head_dim_idx)
             var f_c_temp = freqs_cis.load[width=width](f_idx)
 
