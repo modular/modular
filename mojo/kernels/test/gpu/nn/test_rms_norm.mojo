@@ -49,7 +49,6 @@ fn run_rms_norm_gpu[
 
     var data_d = ctx.enqueue_create_buffer[type](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[type](cols)
-    var beta_d = ctx.enqueue_create_buffer[type](cols)
 
     var param_shape = Index(cols)
 
@@ -68,7 +67,15 @@ fn run_rms_norm_gpu[
     ](idx: IndexList[_rank]) -> SIMD[type, width]:
         return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
-    rms_norm_gpu[input_fn](shape, gamma, epsilon, data_buf, ctx)
+    @always_inline
+    @__copy_capture(data_buf)
+    @parameter
+    fn identity_output_fn[
+        width: Int
+    ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+        data_buf.store(idx, val)
+
+    rms_norm_gpu[input_fn, identity_output_fn](shape, gamma, epsilon, ctx)
     ctx.enqueue_copy_from_device(res, data_d)
     ctx.synchronize()
 
