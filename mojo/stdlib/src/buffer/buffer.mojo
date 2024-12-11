@@ -365,7 +365,6 @@ fn _compute_ndbuffer_offset(
         _GPUAddressSpace.SHARED,
         _GPUAddressSpace.LOCAL,
         _GPUAddressSpace.CONSTANT,
-        _GPUAddressSpace.PARAM,
     ):
         var result: Int32 = 0
 
