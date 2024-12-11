@@ -33,6 +33,7 @@ from nn.fused_qk_rope import fused_qk_rope
 from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
+from nn.normalization import _rms_norm_impl
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -2368,6 +2369,70 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
         scale,
         context,
     )
+
+
+@register_internal("rms_norm_key_cache_h8_d128_cont_batch")
+def rms_norm_key_cache_h8_d128_cont_batch[
+    type: DType, //, *, target: StringLiteral
+](
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h8_d128_bshd
+    ],
+    gamma: NDBuffer[type, 1],
+    epsilon: Scalar[type],
+    layer_idx: UInt32,
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    context: MojoCallContextPtr,
+):
+    alias rank = 4
+    var k_cache = kv_collection.get_key_cache[kv_collection.CacheType](
+        int(layer_idx)
+    )
+
+    # Use `valid_lengths` to specify which values to RMS norm here, since cache
+    # lengths increment in between model forwards.
+    var total_seq_len: Int = 0
+    for i in range(valid_lengths.size()):
+        total_seq_len += int(valid_lengths[i])
+
+    var kv_params = k_cache.get_kv_params()
+    var shape = IndexList[rank](
+        total_seq_len * kv_params.num_heads, kv_params.head_size
+    )
+
+    @always_inline
+    @parameter
+    @__copy_capture(k_cache)
+    fn key_cache_input_fn[
+        width: Int, rank_: Int
+    ](idx: IndexList[rank_]) -> SIMD[type, width]:
+        constrained[
+            rank_ == rank,
+            "rms_norm_key_cache input lambda index should have rank 4",
+        ]()
+
+        return k_cache.load[type, width](
+            bs=idx[0], head_idx=idx[1], tok_idx=idx[2], head_dim_idx=idx[3]
+        )
+
+    @always_inline
+    @parameter
+    @__copy_capture(k_cache)
+    fn key_cache_output_fn[
+        width: Int
+    ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+        k_cache.store(
+            bs=idx[0],
+            head_idx=idx[1],
+            tok_idx=idx[2],
+            head_dim_idx=idx[3],
+            val=val,
+        )
+
+    with Trace[TraceLevel.OP]("rms_norm_key_cache_h8_d128_cont_batch"):
+        _rms_norm_impl[
+            type, rank, key_cache_input_fn, key_cache_output_fn, target=target
+        ](shape, gamma, epsilon, context)
 
 
 @register_internal("print_kv_cache_cont_batch_h8_d128")
