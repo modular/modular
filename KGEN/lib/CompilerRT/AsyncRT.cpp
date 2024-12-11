@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AsyncRT/DeviceContext/DeviceContext.h"
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/Allocator.h"
 #include "AsyncRT/Runtime/AsyncValueRef.h"
@@ -48,6 +49,7 @@ AsyncRTWrapper<T> wrap(T *ptr) {
 
 using AsyncRTRuntimeRef = AsyncRTWrapper<Runtime>;
 using AsyncRTMojoCallContextRef = AsyncRTWrapper<MojoCallContext>;
+using AsyncRTDeviceContextRef = AsyncRTWrapper<DeviceContext>;
 using AsyncRTAsyncChainRef = AsyncRTWrapper<AsyncValueRef<Chain>>;
 using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
 
@@ -233,21 +235,14 @@ KGEN_CompilerRT_AsyncRT_ParallelismLevel(AsyncRTRuntimeRef rt) {
 // MojoCallContext
 //===----------------------------------------------------------------------===//
 
-/// Get cuda device from cuda runtime.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+/// Get accelerator device context.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTDeviceContextRef
 KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext(
     AsyncRTMojoCallContextRef callContext) {
-  auto mojoValueDataPtr =
-      reinterpret_cast<M::MojoValue *>(unwrap(callContext).deviceContext)
-          ->getData();
-  return mojoValueDataPtr;
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate(AsyncRTMojoCallContextRef ctx,
-                                                 int64_t size,
-                                                 int64_t alignment) {
-  return unwrap(ctx).runtime->getAllocator()->allocateBytes(size, alignment);
+  // This is an RCRef, we extract and return it as a pointer for FFI.
+  auto deviceContextRef = unwrap(callContext).deviceContext;
+  return wrap(
+      const_cast<AsyncRT::DeviceContext *>(deviceContextRef.getPointer()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -357,6 +352,35 @@ KGEN_CompilerRT_CreateAsyncNonTrackedBufferRef(
     value = value.createReady<TensorBufferRef>(
         runtime, TensorBufferRef::createWithNonTrackedMemory(
                      data, size, /*alignment=*/std::nullopt));
+  }
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsyncDeviceBufferRef(
+    void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> async,
+    AsyncRTWrapper<Runtime> runtimePtr, AsyncRTMojoCallContextRef contextPtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+  auto devCtx = unwrap(contextPtr).deviceContext;
+
+  // Wrap the raw pointer in an owning DeviceBuffer.
+  // This will be freed by the DeviceContext when the refcount drops to 0.
+  auto buf = devCtx->createBufferOwning(data, size,
+                                        /*owning=*/true);
+  // Wrap the DeviceBuffer in an AsyncValue.
+  auto asyncDeviceBufferRef =
+      AnyAsyncValueRef::createReady<DeviceBufferRef>(runtime, std::move(buf));
+
+  // Finally, wrap the pointer and the AsyncValue wrapper in a TensorBufferRef.
+  auto tensorBufferRef = ::M::TensorBufferRef::create(
+      data, size, std::move(asyncDeviceBufferRef), std::optional<size_t>{});
+
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<TensorBufferRef>(std::move(tensorBufferRef));
+  } else {
+    assert(!value.isReady());
+    value =
+        value.createReady<TensorBufferRef>(runtime, std::move(tensorBufferRef));
   }
 }
 
