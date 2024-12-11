@@ -149,8 +149,10 @@ class OpenAIChatResponseGenerator(OpenAIResponseGenerator):
                 if n_tokens == 1:
                     METRICS.ttft(request_timer.elapsed_ms)
                 else:
-                    METRICS.itl(itl.elapsed_ms)
-                    itl.reset()
+                    # TODO: re-instate ITL measurement when we find a fast way to do it
+                    # METRICS.itl(itl.elapsed_ms)
+                    pass
+                itl.reset()
                 yield payload
 
             logger.debug(
@@ -433,8 +435,10 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 if n_tokens == 1:
                     METRICS.ttft(request_timer.elapsed_ms)
                 else:
-                    METRICS.itl(itl.elapsed_ms)
-                    itl.reset()
+                    # TODO: re-instate ITL measurement when we find a fast way to do it
+                    # METRICS.itl(itl.elapsed_ms)
+                    pass
+                itl.reset()
                 yield payload
 
             logger.debug(
