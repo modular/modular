@@ -52,7 +52,7 @@ def test_abs():
 
     # Set the sign bit to zero.
     assert_true(
-        "s_bitset0_b32 s2, 31"
+        "s_and_b32 s0, s4, 0x7fffffff"
         in _compile_code_asm[
             do_abs_noreturn[DType.float32], target=MI300X_TARGET
         ]()
@@ -60,21 +60,21 @@ def test_abs():
 
     # Mask out the lower half sign bit.
     assert_true(
-        "s_and_b32 s2, s2, 0x7fff"
+        "s_and_b32 s0, s4, 0x7fff"
         in _compile_code_asm[
             do_abs_noreturn[DType.float16, width=1], target=MI300X_TARGET
         ]()
     )
     # Mask out the lower and upper half sign bit
     assert_true(
-        "s_and_b32 s2, s2, 0x7fff7fff"
+        "s_and_b32 s0, s4, 0x7fff7fff"
         in _compile_code_asm[
             do_abs_noreturn[DType.float16, width=2], target=MI300X_TARGET
         ]()
     )
     # Mask out the sign bit.
     assert_true(
-        "s_and_b32 s2, s2, 0x7fff"
+        "s_and_b32 s0, s4, 0x7fff"
         in _compile_code_asm[
             do_abs_noreturn[DType.bfloat16, width=1], target=MI300X_TARGET
         ]()
@@ -85,7 +85,7 @@ def test_abs():
     # s_lshr_b32 s2, s2, 16
     # s_and_b32 s2, s2, 0x7fff
     assert_false(
-        "s_and_b32 s2, s2, 0x7fff7fff"
+        "s_and_b32 s0, s4, 0x7fff7fff"
         in _compile_code_asm[
             do_abs_noreturn[DType.bfloat16, width=2], target=MI300X_TARGET
         ]()
