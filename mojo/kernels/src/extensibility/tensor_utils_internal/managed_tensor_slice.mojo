@@ -275,7 +275,6 @@ struct ManagedTensorSlice[
             _GPUAddressSpace.SHARED,
             _GPUAddressSpace.LOCAL,
             _GPUAddressSpace.CONSTANT,
-            _GPUAddressSpace.PARAM,
         ):
             var offset: Int32 = 0
 
