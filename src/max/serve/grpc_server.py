@@ -33,9 +33,11 @@ def get_default_replit_config(use_cpu: bool) -> PipelineConfig:
         architecture="MPTForCausalLM",
         huggingface_repo_id="modularai/replit-code-1.5",
         trust_remote_code=True,
-        device_spec=DeviceSpec(id=0, device_type="cpu")
-        if use_cpu
-        else DeviceSpec(id=0, device_type="gpu"),
+        device_specs=[
+            DeviceSpec(id=0, device_type="cpu")
+            if use_cpu
+            else DeviceSpec(id=0, device_type="gpu")
+        ],
         quantization_encoding=SupportedEncoding.float32,
         # save_to_serialized_model_path="/tmp/replit_gpu_16.mef",
         # serialized_model_path="/tmp/replit_gpu_16.mef",
@@ -49,9 +51,11 @@ def get_default_llama31_config(use_cpu: bool) -> PipelineConfig:
         architecture="LlamaForCausalLM",
         # huggingface_repo_id="meta-llama/Meta-Llama-3.1-8B-Instruct",
         huggingface_repo_id="modularai/llama-3.1",
-        device_spec=DeviceSpec(id=0, device_type="cpu")
-        if use_cpu
-        else DeviceSpec(id=0, device_type="gpu"),
+        device_specs=[
+            DeviceSpec(id=0, device_type="cpu")
+            if use_cpu
+            else DeviceSpec(id=0, device_type="gpu")
+        ],
         quantization_encoding=SupportedEncoding.bfloat16,
         cache_strategy=KVCacheStrategy.CONTINUOUS,
         # save_to_serialized_model_path="/tmp/llama31_gpu_16.mef",
