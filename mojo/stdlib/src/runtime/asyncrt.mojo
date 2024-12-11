@@ -410,25 +410,14 @@ struct MojoCallContextPtr:
 
     @always_inline
     fn get_device_context(self) -> ref [ImmutableAnyOrigin] DeviceContext:
-        """Get the device context held by the MojoCallContext.
-
-        Note: it is safe to use ImmutableAnyOrigin here because get_device_context()
-        is only used within kernels and the DeviceContext lifetime is managed by
-        the graph compiler.
-        """
+        """Get the device context held by the MojoCallContext."""
         var ctx_ptr = external_call[
             "KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext",
-            UnsafePointer[DeviceContext],
+            DeviceContextPtr,
         ](
             self.ptr,
         )
         return ctx_ptr[]
-
-    fn alloc(self, byte_size: Int, alignment: Int) -> UnsafePointer[NoneType]:
-        return external_call[
-            "KGEN_CompilerRT_AsyncRT_MojoCallContext_Allocate",
-            UnsafePointer[NoneType],
-        ](self.ptr, byte_size, alignment)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -438,12 +427,18 @@ struct MojoCallContextPtr:
 
 @register_passable("trivial")
 struct DeviceContextPtr:
-    """Exposes a pointer to a C++ DeviceContext to Mojo."""
+    """Exposes a pointer to a C++ DeviceContext to Mojo.
+
+    Note: When initializing a DeviceContext from a pointer, the refcount is not
+    incremented. This is considered safe because get_device_context()
+    is only used within kernels and the DeviceContext lifetime is managed
+    by the graph compiler.
+    """
 
     var handle_: UnsafePointer[NoneType]
 
     fn __init__(mut self, handle: UnsafePointer[NoneType]):
         self.handle_ = handle
 
-    fn __getitem__(self) raises -> DeviceContext:
+    fn __getitem__(self) -> DeviceContext:
         return DeviceContext(self.handle_)
