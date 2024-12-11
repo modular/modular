@@ -265,7 +265,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
 
     @property
     def supported_encodings(self) -> Sequence[str]:
-        return list(pipelines.SupportedEncoding)
+        return [pipelines.SupportedEncoding.bfloat16]
 
     def is_supported(
         self, *, version: str, encoding: str, device_spec: driver.DeviceSpec

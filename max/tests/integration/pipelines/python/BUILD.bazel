@@ -41,6 +41,7 @@ modular_py_binary(
         "//Kernels/tools/gpu-query",
         "//SDK/integration-test/pipelines/python/llama3:verify",
         "@llvm-project//compiler-rt:orc_rt",
+        "@torch_llama3-vision_golden",
         "@torch_llama_golden",
         "@torch_mistral_golden",
         "@torch_replit_golden",

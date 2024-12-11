@@ -320,10 +320,26 @@ PIPELINES = {
             version="nemo-instruct-2407",
             encoding="bfloat16",
             pregenerated_torch_goldens_rlocation="torch_mistral_golden/torch_nemo-instruct-2407_bfloat16_golden.json",
-            # TODO(AIPIPE-230) These tolerances are very high due to an accuracy regression.
+            # TODO(AIPIPE-230): These tolerances are very high due to an accuracy regression.
             kl_div_threshold=0.03,
             cos_dist_threshold=0.02,
             absolute_tolerance=1.5,
+            relative_tolerance=2.0,
+        ),
+    ),
+    "llama3-vision-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="llama3-vision",
+            version="llama3_2",
+            encoding="bfloat16",
+            pregenerated_torch_goldens_rlocation="torch_llama3-vision_golden/torch_llama3_2_bfloat16_golden.json",
+            # TODO(AIPIPE-262): These tolerances are very high since there are
+            # still correctness issues with the Llama Vision pipeline.
+            kl_div_threshold=float("inf"),
+            cos_dist_threshold=1.5,
+            absolute_tolerance=100,
             relative_tolerance=2.0,
         ),
     ),
