@@ -80,7 +80,6 @@ fn _get_index_type(address_space: AddressSpace) -> DType:
     if address_space in (
         _GPUAddressSpace.SHARED,
         _GPUAddressSpace.CONSTANT,
-        _GPUAddressSpace.PARAM,
     ):
         return DType.int32
     else:
