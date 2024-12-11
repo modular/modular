@@ -429,7 +429,7 @@ def test_llama_language_model(
     # Define graph API input types
     input_ids_type = TensorType(
         DType.int64,
-        shape=[batch_size, max(seq_lens)],
+        shape=[batch_size * max(seq_lens)],
     )
     cross_attention_states_type = TensorType(
         dtype,
