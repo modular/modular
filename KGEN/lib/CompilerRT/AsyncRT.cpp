@@ -53,11 +53,6 @@ using AsyncRTDeviceContextRef = AsyncRTWrapper<DeviceContext>;
 using AsyncRTAsyncChainRef = AsyncRTWrapper<AsyncValueRef<Chain>>;
 using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
 
-/// Dummy entry point to force loading.
-/// (All the other entry points use AsyncRTWrapper which we don't want to
-/// have to include in the header).
-COMPILERRT_EXPORT void KGEN_CompilerRT_AsyncRT_Dummy() {}
-
 enum BorroweeType : size_t {
   kHandle = 0,
   kBuffer = 1,
@@ -385,22 +380,6 @@ KGEN_CompilerRT_CreateAsyncDeviceBufferRef(
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
-                                     AsyncRTWrapper<AnyAsyncValueRef> async,
-                                     AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
-  AnyAsyncValueRef &value = unwrap(async);
-  if (value.getPointer() && value.getPointer()->isIndirect()) {
-    value.copy().emplaceIndirect<TensorBufferRef>(
-        ::M::TensorBufferRef::take(runtime, size, data));
-  } else {
-    assert(!value.isReady());
-    value = value.createReady<TensorBufferRef>(
-        runtime, ::M::TensorBufferRef::take(runtime, size, data));
-  }
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsyncBufferWithBorrow(
     void *data, size_t size, AsyncRTWrapper<AnyAsyncValueRef> toBorrowFrom,
     size_t borroweeType, AsyncRTWrapper<AnyAsyncValueRef> async,
@@ -459,28 +438,6 @@ KGEN_CompilerRT_CreateAsyncTensorWithBorrow(
     outVal.copy().emplaceIndirect<Tensor>(std::move(buf), std::move(spec));
   else
     outVal = outVal.createReady<Tensor>(rt, std::move(buf), std::move(spec));
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsyncMojoValueBufferRef(
-    void *data, size_t size, void *mojoValue, void (*destructorFn)(void *),
-    AsyncRTWrapper<AnyAsyncValueRef> async,
-    AsyncRTWrapper<Runtime> runtimePtr) {
-  Runtime &runtime = unwrap(runtimePtr);
-  AnyAsyncValueRef &value = unwrap(async);
-  AnyAsyncValueRef storageRef;
-  storageRef =
-      storageRef.createReady<MojoValue>(runtime, mojoValue, destructorFn);
-
-  if (value.getPointer() && value.getPointer()->isIndirect()) {
-    value.copy().emplaceIndirect<TensorBufferRef>(TensorBufferRef::create(
-        data, size, std::move(storageRef), /*alignment=*/1));
-  } else {
-    assert(!value.isReady());
-    value = value.createReady<TensorBufferRef>(
-        runtime, TensorBufferRef::create(data, size, std::move(storageRef),
-                                         /*alignment=*/1));
-  }
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
