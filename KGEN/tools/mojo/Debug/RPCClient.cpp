@@ -138,6 +138,7 @@ createBasicDebugConfiguration(bool useCudaGdb,
       {"modularHomePath", modularHome->string()},
       {"modularConfigMojoSection", configOr->getMojoConfigSection().str()},
       {"mojoDriverPath", configOr->getDriverPath().str()},
+      {"debuggerRoot", std::filesystem::current_path().string()},
       {"type", useCudaGdb ? "mojo-cuda-gdb" : "mojo-lldb"}};
 
   if (!initCommands.empty()) {
