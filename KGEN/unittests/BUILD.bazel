@@ -17,3 +17,12 @@ modular_cc_library(
     includes = ["."],
     visibility = ["//KGEN/unittests:__subpackages__"],
 )
+
+modular_cc_test(
+    name = "KGENDialectTest",
+    srcs = glob(["kgen-dialect/*.cpp"]),
+    deps = [
+        "//KGEN:KGENDialect",
+        "//KGEN:LITDialect",
+    ],
+)

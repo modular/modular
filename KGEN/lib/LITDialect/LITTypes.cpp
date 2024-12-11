@@ -1157,6 +1157,13 @@ LITSignatureType::LITSignatureType(SignatureType sig) : SignatureType(sig) {
          "expected LIT function metadata");
 }
 
+SignatureGeneratorType LITSignatureType::asSignatureGenerator() {
+  FnMetadataAttr metadata = getMetadata();
+  return SignatureGeneratorType::get(getInputParamTypes(), getValues(),
+                                     getArgConventions(), getFnEffects(),
+                                     metadata, metadata.getParamListAttrs());
+}
+
 FnMetadataAttr LITSignatureType::getMetadata() {
   return ::cast<FnMetadataAttr>(SignatureType::getMetadata());
 }
