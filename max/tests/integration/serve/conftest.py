@@ -41,7 +41,7 @@ def pipeline_model_config(testdata_directory, request):
         testdata_directory,
         max_length=request.param.max_length,
         max_new_tokens=request.param.max_new_tokens,
-        device_spec=request.param.device_spec,
+        device_specs=[request.param.device_spec],
         cache_strategy=KVCacheStrategy.CONTINUOUS,
         max_cache_batch_size=16,
     )

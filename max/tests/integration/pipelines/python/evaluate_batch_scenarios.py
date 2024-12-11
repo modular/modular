@@ -438,12 +438,14 @@ def main(
     if use_gpu:
         config_kwargs.update(
             {
-                "device_spec": DeviceSpec.cuda(id=use_gpu[0]),
+                "device_specs": [
+                    DeviceSpec.cuda(id=gpu_id) for gpu_id in use_gpu
+                ],
                 "quantization_encoding": SupportedEncoding.bfloat16,
             }
         )
     else:
-        config_kwargs.update({"device_spec": DeviceSpec.cpu()})
+        config_kwargs.update({"device_specs": [DeviceSpec.cpu()]})
 
     if config_kwargs["architecture"] is None:
         config_kwargs["architecture"] = "LlamaForCausalLM"

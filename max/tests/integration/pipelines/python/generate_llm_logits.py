@@ -99,7 +99,11 @@ class PipelineOracle:
         raise NotImplementedError
 
     def create_max_pipeline(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self,
+        *,
+        version: str,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         """Instantiate a MAX pipeline for the given version/encoding/device."""
         raise NotImplementedError
@@ -190,11 +194,16 @@ class LlamaPipelineOracle(PipelineOracle):
         )
 
     def create_max_pipeline(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self,
+        *,
+        version: str,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        assert self.is_supported(
-            version=version, encoding=encoding, device_spec=device_spec
-        )
+        for device_spec in device_specs:
+            assert self.is_supported(
+                version=version, encoding=encoding, device_spec=device_spec
+            )
         internal_version = self._map_to_internal_version(version)
         config = pipelines.PipelineConfig(
             architecture="LlamaForCausalLM",
@@ -205,7 +214,7 @@ class LlamaPipelineOracle(PipelineOracle):
             weight_path=[
                 self._weight_path_for(version=version, encoding=encoding)
             ],
-            device_spec=device_spec,
+            device_specs=device_specs,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
         assert isinstance(pipeline, pipelines.TextGenerationPipeline)
@@ -266,14 +275,19 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
         return device_spec.device_type in {"cpu", "gpu"}
 
     def create_max_pipeline(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self,
+        *,
+        version: str,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        assert self.is_supported(
-            version=version, encoding=encoding, device_spec=device_spec
-        )
+        for device_spec in device_specs:
+            assert self.is_supported(
+                version=version, encoding=encoding, device_spec=device_spec
+            )
         config = pipelines.PipelineConfig(
             architecture="MllamaForConditionalGeneration",
-            device_spec=device_spec,
+            device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=KVCacheStrategy.CONTINUOUS,
             huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision",
@@ -327,14 +341,19 @@ class ReplitPipelineOracle(PipelineOracle):
         return True
 
     def create_max_pipeline(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self,
+        *,
+        version: str,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        assert self.is_supported(
-            version=version, encoding=encoding, device_spec=device_spec
-        )
+        for device_spec in device_specs:
+            assert self.is_supported(
+                version=version, encoding=encoding, device_spec=device_spec
+            )
         config = pipelines.PipelineConfig(
             architecture="MPTForCausalLM",
-            device_spec=device_spec,
+            device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             huggingface_repo_id="modularai/replit-code-1.5",
             trust_remote_code=True,
@@ -409,14 +428,19 @@ class MistralPipelineOracle(PipelineOracle):
         return device_spec.device_type == "gpu"
 
     def create_max_pipeline(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self,
+        *,
+        version: str,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
-        assert self.is_supported(
-            version=version, encoding=encoding, device_spec=device_spec
-        )
+        for device_spec in device_specs:
+            assert self.is_supported(
+                version=version, encoding=encoding, device_spec=device_spec
+            )
         config = pipelines.PipelineConfig(
             architecture="MistralForCausalLM",
-            device_spec=device_spec,
+            device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             weight_path=[
                 pipelines.HuggingFaceFile(
@@ -482,12 +506,17 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         return device_spec.device_type == "gpu"
 
     def create_max_pipeline(
-        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+        self,
+        *,
+        version: str,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
     ) -> MaxPipelineAndTokenizer:
         # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
-        assert self.is_supported(
-            version=version, encoding=encoding, device_spec=device_spec
-        )
+        for device_spec in device_specs:
+            assert self.is_supported(
+                version=version, encoding=encoding, device_spec=device_spec
+            )
         raise NotImplementedError
 
     def create_torch_pipeline(
@@ -597,24 +626,28 @@ def main(
             f"{pipeline_oracle.supported_encodings}"
         )
 
-    device_spec: driver.DeviceSpec
+    device_specs: list[driver.DeviceSpec]
     if device_type == "cpu":
-        device_spec = driver.DeviceSpec.cpu()
+        device_specs = [driver.DeviceSpec.cpu()]
     elif device_type == "gpu":
-        device_spec = driver.DeviceSpec.cuda()
+        device_specs = [driver.DeviceSpec.cuda()]
     else:
         raise ValueError(f"Unknown device type {device_type!r}")
-
-    if not pipeline_oracle.is_supported(
-        version=version_name, encoding=encoding_name, device_spec=device_spec
-    ):
-        raise ValueError("Combination of version/encoding/device not supported")
+    for device_spec in device_specs:
+        if not pipeline_oracle.is_supported(
+            version=version_name,
+            encoding=encoding_name,
+            device_spec=device_spec,
+        ):
+            raise ValueError(
+                "Combination of version/encoding/device not supported"
+            )
 
     if framework_name == "max":
         max_pipeline_and_tokenizer = pipeline_oracle.create_max_pipeline(
             version=version_name,
             encoding=encoding_name,
-            device_spec=device_spec,
+            device_specs=device_specs,
         )
         results = evaluate.run_model(
             max_pipeline_and_tokenizer.model,

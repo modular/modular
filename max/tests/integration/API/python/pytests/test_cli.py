@@ -35,7 +35,9 @@ class TestConfig:
     bool_field: bool = False
     enum_field: TestEnum = TestEnum.DEFAULT
     path_sequence_field: list[Path] = field(default_factory=list)
-    device_spec_field: DeviceSpec = DeviceSpec.cpu()
+    device_specs_field: list[DeviceSpec] = field(
+        default_factory=lambda: [DeviceSpec.cpu()]
+    )
     optional_str_field: Optional[str] = None
     optional_enum_field: Optional[TestEnum] = None
 
@@ -71,11 +73,11 @@ VALID_RESULTS = {
         multiple=True,
         optional=False,
     ),
-    "device_spec_field": Output(
-        default=DeviceSpec.cpu(),
+    "device_specs_field": Output(
+        default=[DeviceSpec.cpu()],
         field_type=DeviceSpec,
         flag=False,
-        multiple=False,
+        multiple=True,
         optional=False,
     ),
     "optional_str_field": Output(
@@ -281,7 +283,7 @@ VALID_COMMANDS = [
                 Path("model2.safetensors"),
                 Path("model3.safetensors"),
             ],
-            "device_spec": DeviceSpec.cuda(id=0),
+            "device_specs": [DeviceSpec.cuda(id=0)],
         },
         valid=True,
     ),

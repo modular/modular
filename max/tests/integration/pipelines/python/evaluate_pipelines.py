@@ -241,13 +241,13 @@ def main(output_path: str, log_samples: bool):
     pipeline_name = "llama"
     version_name = "llama3_1"
     encoding_name = "bfloat16"
-    device_spec = driver.DeviceSpec.cuda()
+    device_specs = [driver.DeviceSpec.cuda()]
 
     pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
     max_pipeline_and_tokenizer = pipeline_oracle.create_max_pipeline(
         version=version_name,
         encoding=encoding_name,
-        device_spec=device_spec,
+        device_specs=device_specs,
     )
     lm_model = PipelineLM(max_pipeline_and_tokenizer)
 
