@@ -8,11 +8,11 @@
 import asyncio
 import contextlib
 import logging
-import multiprocessing as mp
 import os
 import queue
 from dataclasses import dataclass
 from enum import Enum
+from multiprocessing.context import SpawnProcess
 from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 
 import psutil
@@ -72,7 +72,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self.cancel_q = MPQueue(max_size_bytes=1_000_000)
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.pid: int = -1
-        self.process: Optional[mp.Process] = None
+        self.process: Optional[SpawnProcess] = None
 
     @contextlib.contextmanager
     def open_channel(

@@ -12,7 +12,6 @@ import queue
 import time
 import uuid
 from contextlib import asynccontextmanager
-from multiprocessing import Process
 from multiprocessing import get_context as mp_get_context
 from multiprocessing.synchronize import Event as MPEvent
 from typing import AsyncGenerator, Mapping, Optional
@@ -86,7 +85,7 @@ async def start_model_worker(
     }
 
     logger.info("Starting worker: %s", name)
-    worker = Process(
+    worker = mp_context.Process(
         name=name,
         target=_model_worker_process_fn,
         daemon=True,
