@@ -10,7 +10,7 @@ from utils.index import Index, IndexList
 
 @value
 @register_passable("trivial")
-struct Dim(Stringable):
+struct Dim(Stringable, Writable):
     var _value: IndexList[3]
 
     @implicit
@@ -54,6 +54,9 @@ struct Dim(Stringable):
 
     fn __repr__(self) -> String:
         return self.__str__()
+
+    fn write_to[W: Writer](self, mut writer: W):
+        writer.write(repr(self))
 
     fn z(self) -> Int:
         return self[2]
