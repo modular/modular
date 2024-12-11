@@ -1465,11 +1465,26 @@ def print_kv_cache_cont_batch_h8_d128[
         DType.float32, kv_params_h8_d128_bshd
     ],
     layer_idx: UInt32,
+    is_print_compact: NDBuffer[DType.bool, 1],
     context: MojoCallContextPtr,
 ):
-    print_kv_cache_cont_batch_generic[target](
-        valid_lengths, kv_collection, layer_idx, context
-    )
+    @parameter
+    if target == "gpu":
+        print_kv_cache_cont_batch_generic_gpu[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
+    elif target == "cpu":
+        print_kv_cache_cont_batch_generic_cpu[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
 
 
 @register_internal("print_kv_cache_cont_batch_h2_d128")
@@ -1481,11 +1496,26 @@ def print_kv_cache_cont_batch_h2_d128[
         DType.float32, kv_params_h2_d128_bshd
     ],
     layer_idx: UInt32,
+    is_print_compact: NDBuffer[DType.bool, 1],
     context: MojoCallContextPtr,
 ):
-    print_kv_cache_cont_batch_generic[target](
-        valid_lengths, kv_collection, layer_idx, context
-    )
+    @parameter
+    if target == "gpu":
+        print_kv_cache_cont_batch_generic_gpu[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
+    elif target == "cpu":
+        print_kv_cache_cont_batch_generic_cpu[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
 
 
 @register_internal("print_kv_cache_cont_batch_h16_d128")
@@ -1497,11 +1527,26 @@ def print_kv_cache_cont_batch_h16_d128[
         DType.float32, kv_params_h16_d128_bshd
     ],
     layer_idx: UInt32,
+    is_print_compact: NDBuffer[DType.bool, 1],
     context: MojoCallContextPtr,
 ):
-    print_kv_cache_cont_batch_generic[target](
-        valid_lengths, kv_collection, layer_idx, context
-    )
+    @parameter
+    if target == "gpu":
+        print_kv_cache_cont_batch_generic_gpu[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
+    elif target == "cpu":
+        print_kv_cache_cont_batch_generic_cpu[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
 
 
 @register_internal("print_kv_cache_cont_batch_h32_d128")
@@ -1513,25 +1558,96 @@ def print_kv_cache_cont_batch_h32_d128[
         DType.float32, kv_params_h32_d128_bshd
     ],
     layer_idx: UInt32,
+    is_print_compact: NDBuffer[DType.bool, 1],
     context: MojoCallContextPtr,
 ):
-    print_kv_cache_cont_batch_generic[target](
-        valid_lengths, kv_collection, layer_idx, context
-    )
+    @parameter
+    if target == "gpu":
+        print_kv_cache_cont_batch_generic_gpu[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
+    elif target == "cpu":
+        print_kv_cache_cont_batch_generic_cpu[target](
+            valid_lengths,
+            kv_collection,
+            layer_idx,
+            is_print_compact[0],
+            context,
+        )
 
 
-def print_kv_cache_cont_batch_generic[
+def _print_cache[
+    cache_t: KVCacheT, *, type: DType, kv_params: KVCacheStaticParams
+](
+    cache: cache_t,
+    kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    is_print_compact: Bool,
+) -> None:
+    """Prints a cache buffer, abbreviating output with ellipses."""
+    # Only abbreviate output when `is_print_compact` is set.
+    var num_to_print: Int = 7 if is_print_compact else Int.MAX
+    for b_idx in range(kv_collection.batch_size):
+        var total_cache_length = int(
+            valid_lengths[b_idx] + cache.cache_length(b_idx)
+        )
+        for t_idx in range(min(num_to_print, total_cache_length)):
+            for h in range(kv_collection.kv_params.num_heads):
+                for hd in range(
+                    min(
+                        num_to_print,
+                        int(kv_collection.kv_params.head_size),
+                    )
+                ):
+                    print(
+                        cache.load[kv_collection.type, width=1](
+                            int(b_idx), int(h), int(t_idx), int(hd)
+                        ),
+                        end=", ",
+                    )
+                if kv_collection.kv_params.head_size > num_to_print:
+                    print("...", end=", ")
+            if total_cache_length > num_to_print:
+                print("\n...", end=",")
+            print()
+
+
+def print_kv_cache_cont_batch_generic_cpu[
     target: StringLiteral, type: DType, kv_params: KVCacheStaticParams
 ](
     valid_lengths: NDBuffer[DType.uint32, 1],
     kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
     layer_idx: UInt32,
+    is_print_compact: Bool,
     context: MojoCallContextPtr,
 ):
-    constrained[
-        target == "gpu", "KV cache printing lacks a CPU implementation"
-    ]()
+    var k_cache = kv_collection.get_key_cache[kv_collection.CacheType](
+        int(layer_idx)
+    )
+    var v_cache = kv_collection.get_key_cache[kv_collection.CacheType](
+        int(layer_idx)
+    )
 
+    print("K:")
+    _print_cache(k_cache, kv_collection, valid_lengths, is_print_compact)
+
+    print("V:")
+    _print_cache(v_cache, kv_collection, valid_lengths, is_print_compact)
+
+
+def print_kv_cache_cont_batch_generic_gpu[
+    target: StringLiteral, type: DType, kv_params: KVCacheStaticParams
+](
+    valid_lengths: NDBuffer[DType.uint32, 1],
+    kv_collection: ContinuousBatchingKVCacheCollection[type, kv_params],
+    layer_idx: UInt32,
+    is_print_compact: Bool,
+    context: MojoCallContextPtr,
+):
     var blocks_ptr = UnsafePointer[Scalar[type]].alloc(
         kv_collection.blocks.num_elements()
     )
@@ -1595,35 +1711,12 @@ def print_kv_cache_cont_batch_generic[
     var v_cache = host_kv_collection.get_value_cache[
         host_kv_collection.CacheType
     ](int(layer_idx))
+
     print("K:")
-    for b_idx in range(host_kv_collection.batch_size):
-        for t_idx in range(
-            valid_lengths_host_nd[b_idx] + k_cache.cache_length(b_idx)
-        ):
-            for h in range(host_kv_collection.kv_params.num_heads):
-                for hd in range(host_kv_collection.kv_params.head_size):
-                    print(
-                        k_cache.load[host_kv_collection.type, width=1](
-                            int(b_idx), int(h), int(t_idx), int(hd)
-                        ),
-                        end=", ",
-                    )
-            print()
+    _print_cache(k_cache, host_kv_collection, valid_lengths, is_print_compact)
 
     print("V:")
-    for b_idx in range(host_kv_collection.batch_size):
-        for t_idx in range(
-            valid_lengths_host_nd[b_idx] + k_cache.cache_length(b_idx)
-        ):
-            for h in range(host_kv_collection.kv_params.num_heads):
-                for hd in range(host_kv_collection.kv_params.head_size):
-                    print(
-                        v_cache.load[DType.float32, width=1](
-                            int(b_idx), int(h), int(t_idx), int(hd)
-                        ),
-                        end=", ",
-                    )
-            print()
+    _print_cache(v_cache, host_kv_collection, valid_lengths, is_print_compact)
 
     blocks_host_nd.data.free()
     cache_lengths_host_nd.data.free()
