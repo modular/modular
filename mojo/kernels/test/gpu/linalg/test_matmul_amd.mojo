@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s
 # COM: use
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
