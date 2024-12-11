@@ -275,6 +275,36 @@ void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
   p << '>';
 }
 
+SignatureType
+PogListAttr::asOldSignature(SignatureGeneratorType generator) const {
+  LITNewSignatureType base(generator.getBody());
+  return SignatureType::get(base.getValues(), generator.getInputParamTypes(),
+                            /*resultParamTypes=*/{}, base.getArgConventions(),
+                            base.getFnEffects(), base.getMetadata());
+}
+
+GeneratorMetadataAttrInterface
+PogListAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
+  SmallVector<TypedAttr> newDefaultPosParams;
+  SmallVector<TypedAttr> newDefaultKwOnlyParams;
+  SmallVector<PogMetadataAttr> newPogs;
+
+  DefaultValueHandler defaultHandler(*this);
+  size_t numParams = boundParams.size();
+  for (size_t idx = 0; idx < numParams; ++idx) {
+    if (!boundParams[idx]) {
+      newPogs.emplace_back(getPogs()[idx]);
+      if (TypedAttr defaultOr = defaultHandler.getPosDefault(idx))
+        newDefaultPosParams.emplace_back(defaultOr);
+      else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(idx))
+        newDefaultKwOnlyParams.emplace_back(defaultOr);
+    }
+  }
+
+  return PogListAttr::get(getContext(), newPogs, newDefaultPosParams,
+                          newDefaultKwOnlyParams);
+}
+
 //===----------------------------------------------------------------------===//
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
@@ -473,6 +503,19 @@ LogicalResult FnMetadataAttr::verifySignature(
                           "input parameter types";
   }
 
+  if (failed(verifyNewSignature(emitError, values, argConventions, effects)))
+    return failure();
+
+  if (failed(verifyDefaultTypes(emitError, getDefaultPosParams(),
+                                getDefaultKwOnlyParams(), paramListAttr,
+                                inputParamTypes, "parameter")))
+    return failure();
+  return success();
+}
+
+LogicalResult FnMetadataAttr::verifyNewSignature(
+    function_ref<InFlightDiagnostic()> emitError, FunctionType values,
+    ArrayRef<ArgConvention> argConventions, FnEffects effects) const {
   // Verify input conventions.
   size_t numInputs = values.getNumInputs();
   if (size_t numArgConv = argConventions.size(); numInputs != numArgConv) {
@@ -521,10 +564,7 @@ LogicalResult FnMetadataAttr::verifySignature(
 
   if (failed(verifyDefaultTypes(
           emitError, getDefaultPosArgs(), getDefaultKwOnlyArgs(),
-          getArgListAttrs(), values.getInputs(), "argument", argConventions)) ||
-      failed(verifyDefaultTypes(emitError, getDefaultPosParams(),
-                                getDefaultKwOnlyParams(), paramListAttr,
-                                inputParamTypes, "parameter")))
+          getArgListAttrs(), values.getInputs(), "argument", argConventions)))
     return failure();
   return success();
 }

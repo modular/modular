@@ -38,6 +38,7 @@ namespace M::KGEN::LIT {
 //===----------------------------------------------------------------------===//
 
 class LITGeneratorType : public GeneratorType {
+public:
   using GeneratorType::GeneratorType;
   LITGeneratorType(GeneratorType gen);
 
@@ -58,6 +59,9 @@ class LITSignatureType : public SignatureType {
 public:
   using SignatureType::SignatureType;
   LITSignatureType(SignatureType sig);
+
+  /// Convert into the new SignatureGeneratorType.
+  SignatureGeneratorType asSignatureGenerator();
 
   /// Get the signature metadata.
   FnMetadataAttr getMetadata();

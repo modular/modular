@@ -136,6 +136,13 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       "ArrayRef<ArgConvention>":$argConventions,
       "FnEffects":$effects)>,
     InterfaceMethod<[{
+      Verify the new signature type parameters using the current metadata.
+    }], "LogicalResult", "verifyNewSignature", (ins
+      "function_ref<InFlightDiagnostic()>":$emitError,
+      "FunctionType":$values,
+      "ArrayRef<ArgConvention>":$argConventions,
+      "FnEffects":$effects)>,
+    InterfaceMethod<[{
       Request the custom metadata attribute print the provided signature.
     }], "void", "printSignature", (ins "AsmPrinter &":$p,
                                        "SignatureType":$sig)>,
@@ -188,6 +195,17 @@ def GeneratorMetadataAttrInterface
       Request the custom metadata attribute print the provided generator.
     }], "void", "printGenerator", (ins "AsmPrinter &":$p,
                                        "GeneratorType":$generator)>,
+    InterfaceMethod<[{
+      Request the custom metadata attribute to convert a Generator that wraps a
+      NewSignatureType into an old SignatureType.
+    }], "SignatureType", "asOldSignature", (ins
+      "SignatureGeneratorType":$generator)>,
+    InterfaceMethod<[{
+      Get a new metadata attribute for a generator where the parameters
+      indicated by set bits in `boundParams` been removed from the generator by
+      being explicitly bound to values, such as those in call signatures.
+    }], "GeneratorMetadataAttrInterface", "getWithBoundParams", (ins
+      "const llvm::BitVector &":$boundParams)>,
   ];
 }
 

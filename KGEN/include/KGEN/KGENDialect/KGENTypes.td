@@ -209,10 +209,27 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
   ];
 
   let extraClassDeclaration = [{
+    /// Returns true if the signature has no input params.
+    bool isFullyBound() { return getInputParamTypes().empty(); };
+
+    /// Returns the body while asserting that the generator is fully bound.
+    Type getInstantiatedBody() {
+      assert(isFullyBound() && "cannot instantiate parameterized body");
+      return getBody();
+    }
+
     /// TODO: Remove result parameters entirely.
     ArrayRef<Type> getResultParamTypes() { return {}; }
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// SignatureGeneratorType
+//===----------------------------------------------------------------------===//
+
+def KGEN_SignatureGeneratorType : DialectType<KGENDialect,
+    CPred<"llvm::isa<SignatureGeneratorType>($_self)">,
+    "KGEN GeneratorType wrapping a NewSignatureType", "SignatureGeneratorType">;
 
 //===----------------------------------------------------------------------===//
 // NewSignatureType
@@ -294,6 +311,10 @@ def KGEN_NewSignatureType : KGENType<"NewSignature", "new_signature", [
     /// `byref_result` arguments. If this is an async function, return the
     /// number of result slots it has. Otherwise, return 0.
     size_t getNumAsyncReturnSlots();
+
+    /// Temporary back-compat.
+    SignatureType asOldSignature();
+    static NewSignatureType fromOldSignature(SignatureType sig);
   }];
 
   let genVerifyDecl = 1;
@@ -451,6 +472,9 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
                      ArrayRef<ArgConvention> argConventions = {},
                      FnEffects effects = {}, Attribute metadata = {},
                      function_ref<InFlightDiagnostic()> emitError = {});
+
+    /// Convert to new SignatureGeneratorType.
+    SignatureGeneratorType asSignatureGenerator() const;
   }];
 
   let genVerifyDecl = 1;

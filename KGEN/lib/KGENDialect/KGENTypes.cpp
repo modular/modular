@@ -380,9 +380,8 @@ NewSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   // If the signature has metadata, defer to it for further verification.
   // Otherwise, run the standard KGEN signature verification.
   if (metadata) {
-    return metadata.verifySignature(emitError, /*inputParamTypes=*/{},
-                                    /*resultParamTypes=*/{}, values,
-                                    argConventions, effects);
+    return metadata.verifyNewSignature(emitError, values, argConventions,
+                                       effects);
   }
 
   // Verify input convention and argument types.
@@ -419,6 +418,17 @@ NewSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   }
 
   return success();
+}
+
+SignatureType NewSignatureType::asOldSignature() {
+  return SignatureType::get(getValues(), {}, {}, getArgConventions(),
+                            getFnEffects(), getMetadata());
+}
+
+NewSignatureType NewSignatureType::fromOldSignature(SignatureType sig) {
+  assert(sig.isConcrete());
+  return NewSignatureType::get(sig.getValues(), sig.getArgConventions(),
+                               sig.getFnEffects(), sig.getMetadata());
 }
 
 //===----------------------------------------------------------------------===//
@@ -538,31 +548,56 @@ SignatureType::getSpecializedSignature(ArrayRef<TypedAttr> inputParamValues,
   });
 }
 
-/// Return a signature with the specified parameter bindings substituted
-/// into it as happens in a call.  The types specified in the parameter
-/// bindings affects the type signature of the argument and results, and
-/// also can remap the signature in the parameter list itself.
-///
-/// If an error occurs making the substitution, report it with emitErrorFn
-/// and return null. If `emitErrorFn` is not specified, the callee will
-/// assume that the substitution cannot fail. If a location is specified,
-/// a default diagnostic is created with it and used as emitErrorFn.
-SignatureType SignatureType::getSpecializedSignature(
-    ArrayRef<TypedAttr> inputParamValues,
-    function_ref<InFlightDiagnostic()> emitErrorFn,
-    ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
-    FunctionType values, ArrayRef<ArgConvention> argConventions,
-    FnEffects effects, FnMetadataAttrInterface metadata) {
+/// A temporary shared implementation for specialize signature generators during
+/// the migration process. When the old KGEN::SignatureType goes away, this will
+/// be merged into SignatureGeneratorType.
+struct SpecializeSignatureResult {
+  SpecializeSignatureResult()
+      : success(false), genMetadata({}), inputParamTypes({}),
+        resultParamTypes({}), values({}), argConventions({}), effects({}),
+        fnMetadata({}) {}
+  SpecializeSignatureResult(GeneratorMetadataAttrInterface genMetadata,
+                            ArrayRef<Type> inputParamTypes,
+                            ArrayRef<Type> resultParamTypes,
+                            FunctionType values,
+                            ArrayRef<ArgConvention> argConventions,
+                            FnEffects effects,
+                            FnMetadataAttrInterface fnMetadata)
+      : success(true), genMetadata(genMetadata),
+        inputParamTypes(inputParamTypes), resultParamTypes(resultParamTypes),
+        values(values), argConventions(argConventions), effects(effects),
+        fnMetadata(fnMetadata) {}
+
+  bool success = false;
+  GeneratorMetadataAttrInterface genMetadata;
+
+  SmallVector<Type> inputParamTypes;
+  SmallVector<Type> resultParamTypes;
+  FunctionType values;
+  SmallVector<ArgConvention> argConventions;
+  FnEffects effects;
+  FnMetadataAttrInterface fnMetadata;
+};
+
+static SpecializeSignatureResult
+specializeSignature(ArrayRef<TypedAttr> inputParamValues,
+                    GeneratorMetadataAttrInterface genMetadata,
+                    function_ref<InFlightDiagnostic()> emitErrorFn,
+                    ArrayRef<Type> inputParamTypes,
+                    ArrayRef<Type> resultParamTypes, FunctionType values,
+                    ArrayRef<ArgConvention> argConventions, FnEffects effects,
+                    FnMetadataAttrInterface fnMetadata) {
   VerboseCompilerTimeTraceScope traceScope(
       "SignatureType::getSpecializedSignature");
 
-  // If the signature isn't parameterized, then there are no substitutions to
-  // perform.
+  // If the signature isn't parameterized, then there
+  // are no substitutions to perform.
   if (inputParamValues.empty()) {
-    return SignatureType::get(values, inputParamTypes, resultParamTypes,
-                              argConventions, effects, metadata);
+    return {genMetadata,    inputParamTypes, resultParamTypes, values,
+            argConventions, effects,         fnMetadata};
   }
 
+  MLIRContext *ctx = inputParamValues.front().getContext();
   // Verify the number of input parameters.
   if (inputParamTypes.size() != inputParamValues.size()) {
     assert(emitErrorFn && "unexpected invalid signature");
@@ -624,7 +659,7 @@ SignatureType SignatureType::getSpecializedSignature(
         emitErrorFn() << "caller input parameter #" << paramNo << " has type "
                       << reboundType << " but callee expected type "
                       << remappedDeclType;
-        return SignatureType();
+        return {};
       }
 
       evaluator.addInputValue(value);
@@ -649,17 +684,51 @@ SignatureType SignatureType::getSpecializedSignature(
   llvm::append_range(resultTypes,
                      llvm::map_range(values.getResults(), remapType));
 
-  if (metadata) {
-    // Rebind input parameter references in the metadata.
-    metadata = ::cast<FnMetadataAttrInterface>(
-        evaluator.getReboundAttribute(metadata));
-    // Tell the metadata which input parameters have been bound.
-    metadata = metadata.getWithBoundParams(boundParams);
+  if (genMetadata) {
+    genMetadata = ::cast<GeneratorMetadataAttrInterface>(
+        evaluator.getReboundAttribute(genMetadata));
+    genMetadata = genMetadata.getWithBoundParams(boundParams);
   }
-  return SignatureType::get(
-      FunctionType::get(values.getContext(), inputTypes, resultTypes),
-      unboundParamTypes, newParamResultTypes, argConventions, effects,
-      metadata);
+
+  if (fnMetadata) {
+    // Rebind input parameter references in the metadata.
+    fnMetadata = ::cast<FnMetadataAttrInterface>(
+        evaluator.getReboundAttribute(fnMetadata));
+    // Tell the metadata which input parameters have been bound.
+    fnMetadata = fnMetadata.getWithBoundParams(boundParams);
+  }
+
+  return {genMetadata,         unboundParamTypes,
+          newParamResultTypes, FunctionType::get(ctx, inputTypes, resultTypes),
+          argConventions,      effects,
+          fnMetadata};
+}
+
+/// Return a signature with the specified parameter bindings substituted
+/// like what happens in a call. The types specified in the parameter
+/// bindings affect the type signature of the argument and results, and
+/// also can remap the signature in the parameter list itself.
+///
+/// If an error occurs making the substitution, report it with emitErrorFn
+/// and return null. If `emitErrorFn` is not specified, the callee will
+/// assume that the substitution cannot fail. If a location is specified,
+/// a default diagnostic is created with it and used as emitErrorFn.
+SignatureType SignatureType::getSpecializedSignature(
+    ArrayRef<TypedAttr> inputParamValues,
+    function_ref<InFlightDiagnostic()> emitErrorFn,
+    ArrayRef<Type> inputParamTypes, ArrayRef<Type> resultParamTypes,
+    FunctionType values, ArrayRef<ArgConvention> argConventions,
+    FnEffects effects, FnMetadataAttrInterface metadata) {
+
+  SpecializeSignatureResult result = specializeSignature(
+      inputParamValues, /*genMetadata=*/{}, emitErrorFn, inputParamTypes,
+      resultParamTypes, values, argConventions, effects, metadata);
+  if (!result.success)
+    return {};
+
+  return SignatureType::get(result.values, result.inputParamTypes,
+                            result.resultParamTypes, result.argConventions,
+                            result.effects, result.fnMetadata);
 }
 
 SignatureType SignatureType::remapToSignature(
@@ -684,6 +753,10 @@ SignatureType SignatureType::remapToSignature(
       emitError, remapper.replace(functionType), inputParamTypes,
       resultParamTypes, argConventions, effects,
       metadata ? remapper.replace(metadata) : nullptr);
+}
+
+SignatureGeneratorType SignatureType::asSignatureGenerator() const {
+  return SignatureGeneratorType::get(*this);
 }
 
 OptionalParseResult SignatureType::parseValue(AsmParser &p,
@@ -849,6 +922,114 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   }
 
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// SignatureGeneratorType
+//===----------------------------------------------------------------------===//
+
+SignatureGeneratorType::SignatureGeneratorType(GeneratorType gen)
+    : GeneratorType(gen) {
+  assert((!gen || ::isa_and_nonnull<NewSignatureType>(gen.getBody())) &&
+         "expected NewSignatureType as body");
+}
+
+SignatureGeneratorType
+SignatureGeneratorType::get(ArrayRef<Type> inputParamTypes, FunctionType values,
+                            ArrayRef<ArgConvention> argConvs, FnEffects effects,
+                            Attribute fnMetadata, Attribute genMetadata) {
+  auto sig = NewSignatureType::get(
+      values, argConvs, effects,
+      ::cast_or_null<FnMetadataAttrInterface>(fnMetadata));
+  return SignatureGeneratorType(GeneratorType::get(
+      inputParamTypes, sig,
+      ::cast_or_null<GeneratorMetadataAttrInterface>(genMetadata)));
+}
+
+SignatureGeneratorType SignatureGeneratorType::getSpecializedGenerator(
+    ArrayRef<TypedAttr> inputParamValues,
+    function_ref<InFlightDiagnostic()> emitErrorFn) {
+  if (inputParamValues.empty())
+    return *this;
+  NewSignatureType sig = getBody();
+  SpecializeSignatureResult result = specializeSignature(
+      inputParamValues, getMetadata(), emitErrorFn, getInputParamTypes(),
+      /*resultParamTypes=*/{}, sig.getValues(), sig.getArgConventions(),
+      sig.getFnEffects(), sig.getMetadata());
+  if (!result.success)
+    return {};
+  return SignatureGeneratorType::get(result.inputParamTypes, result.values,
+                                     result.argConventions, result.effects,
+                                     result.fnMetadata, result.genMetadata);
+}
+
+SignatureGeneratorType SignatureGeneratorType::getSpecializedGenerator(
+    ArrayRef<TypedAttr> inputParamValues, Location location) {
+  return getSpecializedGenerator(inputParamValues, [&]() -> InFlightDiagnostic {
+    return emitError(location);
+  });
+}
+
+SignatureGeneratorType SignatureGeneratorType::remapToSignatureGenerator(
+    ArrayRef<ParamDeclAttr> inputParams, FunctionType functionType,
+    ArrayRef<ArgConvention> argConventions, FnEffects effects,
+    Attribute fnMetadata, Attribute genMetadata,
+    function_ref<InFlightDiagnostic()> emitError) {
+  IndexRefRemapper remapper(inputParams, {});
+  SmallVector<Type> inputParamTypes;
+  for (ParamDeclAttr param : inputParams)
+    inputParamTypes.push_back(remapper.replace(param.getType()));
+
+  if (!emitError) {
+    emitError = []() -> InFlightDiagnostic {
+      llvm_unreachable("invalid signature generator");
+    };
+  }
+
+  auto newSig = NewSignatureType::getChecked(
+      emitError, remapper.replace(functionType), argConventions, effects,
+      fnMetadata ? remapper.replace(fnMetadata) : nullptr);
+  return GeneratorType::get(inputParamTypes, newSig,
+                            genMetadata ? remapper.replace(genMetadata)
+                                        : nullptr);
+}
+
+SignatureGeneratorType SignatureGeneratorType::get(SignatureType sig) {
+  assert(!sig.getMetadata() && "cannot convert signature with metadata");
+  return SignatureGeneratorType::get(sig.getInputParamTypes(), sig.getValues(),
+                                     sig.getArgConventions(),
+                                     sig.getFnEffects());
+}
+
+SignatureType SignatureGeneratorType::asOldSignature() {
+  if (GeneratorMetadataAttrInterface metadata = getMetadata()) {
+    return metadata.asOldSignature(*this);
+  }
+
+  NewSignatureType sig = getBody();
+  assert(!sig.getMetadata() &&
+         "inconsistent metadata between generator & wrapped signature");
+  return SignatureType::get(sig.getValues(), getInputParamTypes(),
+                            /*resultParamTypes=*/{}, sig.getArgConventions(),
+                            sig.getFnEffects(), /*metadata=*/{});
+}
+
+NewSignatureType SignatureGeneratorType::getBody() {
+  return ::cast<NewSignatureType>(GeneratorType::getBody());
+}
+
+NewSignatureType SignatureGeneratorType::getInstantiatedBody() {
+  return ::cast<NewSignatureType>(GeneratorType::getInstantiatedBody());
+}
+
+bool SignatureGeneratorType::classof(GeneratorType type) {
+  return ::isa_and_nonnull<NewSignatureType>(type.getBody());
+}
+
+bool SignatureGeneratorType::classof(Type type) {
+  if (auto gen = ::dyn_cast<GeneratorType>(type))
+    return classof(gen);
+  return false;
 }
 
 //===----------------------------------------------------------------------===//
