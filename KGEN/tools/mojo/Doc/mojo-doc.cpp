@@ -13,9 +13,8 @@
 #include "Config/Version.h"
 #include "Init/Init.h"
 #include "KGEN/MojoParser/EntryPoint.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
-#include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "Support/Driver/DiagnosticFormat.h"
@@ -132,15 +131,15 @@ static int doc(const State &subcommandState) {
   if (!moduleDecl || parserContext.wasErrorEmitted())
     return state.reportError("could not generate documentation");
 
-  std::unique_ptr<DeclView> declView = moduleDecl.getView();
-  if (!declView)
+  std::unique_ptr<PublicDecl> PublicDecl = moduleDecl.getDecl();
+  if (!PublicDecl)
     return state.reportError("could not generate documentation");
 
   llvm::json::OStream jsonOS(out->os(), /*IndentSize=*/2);
 
   ModularVersion version = getModularVersion();
   jsonOS.value(llvm::json::Object({
-      {"decl", declView->toJSON(parserContext)},
+      {"decl", PublicDecl->toJSON(parserContext)},
       {"version", llvm::formatv("{0}.{1}.{2}{3}", version.major, version.minor,
                                 version.patch, version.label)
                       .str()},

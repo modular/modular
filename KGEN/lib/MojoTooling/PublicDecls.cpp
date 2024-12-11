@@ -4,14 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DocString.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
@@ -239,13 +238,13 @@ static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
 
 /// Parse the given docstring lines and augment the provided decls with the
 /// appropriate documentation using the description.
-template <typename DeclViewT>
+template <typename PublicDeclT>
 static void augmentDeclsWithDocumentation(ArrayRef<StringRef> lines,
                                           size_t &line, size_t lineE,
-                                          SmallVector<DeclViewT> &decls) {
+                                          SmallVector<PublicDeclT> &decls) {
   std::string fullArgDesc;
   llvm::raw_string_ostream fullArgDescOS(fullArgDesc);
-  DenseMap<StringRef, DeclViewT *> declMap;
+  DenseMap<StringRef, PublicDeclT *> declMap;
   for (auto &decl : decls)
     declMap.try_emplace(decl.getName(), &decl);
 
@@ -298,12 +297,12 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
 /// children whose name start with _, except for special functions that start
 /// and end with __. `shouldHideFn` allows for additional filtering of decls to
 /// hide.
-template <typename DeclViewType, typename OpType>
-static SmallVector<DeclViewType, 2>
+template <typename PublicDeclType, typename OpType>
+static SmallVector<PublicDeclType, 2>
 extractChildDecls(const ASTDecl &decl,
                   function_ref<bool(OpType, StringRef)> shouldHideFn = {}) {
   DenseSet<Operation *> seenOps;
-  SmallVector<DeclViewType, 2> children;
+  SmallVector<PublicDeclType, 2> children;
 
   for (const auto &[name, decls] : decl.getDeclsInScope()) {
     if (decls.empty() || !isa<OpType>(**decls.begin()))
@@ -323,7 +322,8 @@ extractChildDecls(const ASTDecl &decl,
         continue;
       if (shouldHideFn && shouldHideFn(childOp, name))
         continue;
-      children.push_back(cast<DeclViewType>(*MojoASTDeclRef(child).getView()));
+      children.push_back(
+          cast<PublicDeclType>(*MojoASTDeclRef(child).getDecl()));
     }
   }
 
@@ -371,10 +371,10 @@ static void dumpMarkdownSectionTitle(llvm::raw_ostream &os, StringRef title) {
 /// Dump a markdown section with a list of decls. Each decl is printed with the
 /// format `name: description`. Decls without description are ommitted, and the
 /// section title is only dumped if there is at least one decl to show.
-template <typename DeclViewList>
+template <typename PublicDeclList>
 static void dumpMarkdownDeclListSection(llvm::raw_ostream &os,
                                         StringRef sectionTitle,
-                                        const DeclViewList &decls) {
+                                        const PublicDeclList &decls) {
   bool isFirst = true;
   for (const auto &decl : decls) {
     if (decl.getDescription().empty())
@@ -404,38 +404,38 @@ static void dumpMarkdownTextSection(llvm::raw_ostream &os,
 }
 
 //===----------------------------------------------------------------------===//
-// DeclView
+// PublicDecl
 //===----------------------------------------------------------------------===//
 
-StringRef DeclView::getKindAsString(DeclViewKind kind) {
+StringRef PublicDecl::getKindAsString(PublicDeclKind kind) {
   switch (kind) {
-  case DeclViewKind::DK_AliasDeclView:
+  case PublicDeclKind::DK_PublicAliasDecl:
     return "alias";
-  case DeclViewKind::DK_ArgumentDeclView:
+  case PublicDeclKind::DK_PublicArgumentDecl:
     return "argument";
-  case DeclViewKind::DK_FunctionDeclView:
+  case PublicDeclKind::DK_PublicFunctionDecl:
     return "function";
-  case DeclViewKind::DK_ModuleDeclView:
+  case PublicDeclKind::DK_PublicModuleDecl:
     return "module";
-  case DeclViewKind::DK_PackageDeclView:
+  case PublicDeclKind::DK_PublicPackageDecl:
     return "package";
-  case DeclViewKind::DK_ParameterDeclView:
+  case PublicDeclKind::DK_PublicParameterDecl:
     return "parameter";
-  case DeclViewKind::DK_StructDeclView:
+  case PublicDeclKind::DK_PublicStructDecl:
     return "struct";
-  case DeclViewKind::DK_StructFieldDeclView:
+  case PublicDeclKind::DK_PublicStructFieldDecl:
     return "field";
-  case DeclViewKind::DK_TraitDeclView:
+  case PublicDeclKind::DK_PublicTraitDecl:
     return "trait";
-  case DeclViewKind::DK_VariableDeclView:
+  case PublicDeclKind::DK_PublicVariableDecl:
     return "variable";
   }
   llvm_unreachable("invalid kind");
 }
 
-StringRef DeclView::getKindAsString() const { return getKindAsString(kind); }
+StringRef PublicDecl::getKindAsString() const { return getKindAsString(kind); }
 
-std::string DeclView::getFullMarkdownString() const {
+std::string PublicDecl::getFullMarkdownString() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
@@ -465,10 +465,10 @@ std::string DeclView::getFullMarkdownString() const {
 }
 
 //===----------------------------------------------------------------------===//
-// VariableDeclView
+// PublicVariableDecl
 //===----------------------------------------------------------------------===//
 
-std::string VariableDeclView::getDeclarationSnippet() const {
+std::string PublicVariableDecl::getDeclarationSnippet() const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   os << "var ";
@@ -476,7 +476,7 @@ std::string VariableDeclView::getDeclarationSnippet() const {
   return snippet;
 }
 
-llvm::json::Object VariableDeclView::toJSON(MojoParserContext &ctx) const {
+llvm::json::Object PublicVariableDecl::toJSON(MojoParserContext &ctx) const {
   return llvm::json::Object{
       {"deprecated", deprecated},
       {"kind", getKindAsString()},
@@ -485,9 +485,9 @@ llvm::json::Object VariableDeclView::toJSON(MojoParserContext &ctx) const {
   };
 }
 
-VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
-    : DeclView(DeclViewKind::DK_VariableDeclView,
-               declRef.getName().value_or(StringRef{})),
+PublicVariableDecl::PublicVariableDecl(MojoASTDeclRef declRef)
+    : PublicDecl(PublicDeclKind::DK_PublicVariableDecl,
+                 declRef.getName().value_or(StringRef{})),
       isGlobalVariable(false),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef())) {
   auto &shared = *declRef.getShared();
@@ -502,10 +502,10 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
 }
 
 //===----------------------------------------------------------------------===//
-// ParameterDeclView
+// PublicParameterDecl
 //===----------------------------------------------------------------------===//
 
-std::string ParameterDeclView::getDeclarationSnippet() const {
+std::string PublicParameterDecl::getDeclarationSnippet() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
   dumpIdentifierWithType(os, getName(), type, variadicKind);
@@ -514,14 +514,14 @@ std::string ParameterDeclView::getDeclarationSnippet() const {
   return buff;
 }
 
-std::string ParameterDeclView::getMarkdownDocString() const {
+std::string PublicParameterDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
   dumpMarkdownDocumentationHeader(os, description);
   return markdown;
 }
 
-llvm::json::Object ParameterDeclView::toJSON(MojoParserContext &ctx) const {
+llvm::json::Object PublicParameterDecl::toJSON(MojoParserContext &ctx) const {
   llvm::json::Object object{
       {"kind", getKindAsString()},
       {"name", prependVariadicIdentifiers(getName(), variadicKind).str()},
@@ -535,10 +535,10 @@ llvm::json::Object ParameterDeclView::toJSON(MojoParserContext &ctx) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ArgumentDeclView
+// PublicArgumentDecl
 //===----------------------------------------------------------------------===//
 
-static StringRef getConventionString(ArgumentDeclView::Convention conv) {
+static StringRef getConventionString(PublicArgumentDecl::Convention conv) {
   StringRef conventions[] = {"read", "mut", "owned", "ref", "out"};
   auto convIdx = static_cast<size_t>(conv);
   assert(convIdx < sizeof(conventions) / sizeof(conventions[0]) &&
@@ -546,7 +546,7 @@ static StringRef getConventionString(ArgumentDeclView::Convention conv) {
   return conventions[convIdx];
 }
 
-std::string ArgumentDeclView::getDeclarationSnippet() const {
+std::string PublicArgumentDecl::getDeclarationSnippet() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
@@ -564,14 +564,14 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
   return buff;
 }
 
-std::string ArgumentDeclView::getMarkdownDocString() const {
+std::string PublicArgumentDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
   dumpMarkdownDocumentationHeader(os, description);
   return markdown;
 }
 
-llvm::json::Object ArgumentDeclView::toJSON(MojoParserContext &ctx) const {
+llvm::json::Object PublicArgumentDecl::toJSON(MojoParserContext &ctx) const {
   StringRef conventions[] = {"read", "mut", "owned", "ref", "out"};
   assert(static_cast<size_t>(convention) <
              sizeof(conventions) / sizeof(conventions[0]) &&
@@ -591,10 +591,10 @@ llvm::json::Object ArgumentDeclView::toJSON(MojoParserContext &ctx) const {
 }
 
 //===----------------------------------------------------------------------===//
-// AliasDeclView
+// PublicAliasDecl
 //===----------------------------------------------------------------------===//
 
-std::string AliasDeclView::getDeclarationSnippet() const {
+std::string PublicAliasDecl::getDeclarationSnippet() const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   os << "alias " << getName();
@@ -603,14 +603,14 @@ std::string AliasDeclView::getDeclarationSnippet() const {
   return snippet;
 }
 
-std::string AliasDeclView::getMarkdownDocString() const {
+std::string PublicAliasDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
   dumpMarkdownDocumentationHeader(os, summary, description);
   return markdown;
 }
 
-llvm::json::Object AliasDeclView::toJSON(MojoParserContext &ctx) const {
+llvm::json::Object PublicAliasDecl::toJSON(MojoParserContext &ctx) const {
   return llvm::json::Object{
       {"deprecated", deprecated},  {"description", description},
       {"kind", getKindAsString()}, {"name", getName().str()},
@@ -623,9 +623,9 @@ static bool isGlobalAliasDecl(MojoASTDeclRef declRef) {
   return isa<FileModuleOp, PackageOp, StructDeclOp>(*declRef->getParentDecl());
 }
 
-AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
-    : DeclView(DeclViewKind::DK_AliasDeclView,
-               declRef.getName().value_or(StringRef())),
+PublicAliasDecl::PublicAliasDecl(MojoASTDeclRef declRef)
+    : PublicDecl(PublicDeclKind::DK_PublicAliasDecl,
+                 declRef.getName().value_or(StringRef())),
       isGlobalAlias(isGlobalAliasDecl(declRef)),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef())) {
   auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
@@ -641,10 +641,10 @@ AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
 }
 
 //===----------------------------------------------------------------------===//
-// FunctionDeclView
+// PublicFunctionDecl
 //===----------------------------------------------------------------------===//
 
-void FunctionDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
+void PublicFunctionDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   // Process the lines of the description, looking for markers.
   SmallVector<StringRef> pureDescriptionLines;
   for (size_t line = 0, lineE = desc.size(); line < lineE; ++line) {
@@ -670,12 +670,12 @@ void FunctionDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   description = DocString::formatDescription(pureDescriptionLines);
 }
 
-std::string FunctionDeclView::getDeclarationSnippet() const {
+std::string PublicFunctionDecl::getDeclarationSnippet() const {
   return getDeclarationSnippet(/*parameterOffsets=*/nullptr,
                                /*argumentOffsets=*/nullptr);
 }
 
-std::string FunctionDeclView::getDeclarationSnippet(
+std::string PublicFunctionDecl::getDeclarationSnippet(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) const {
   std::string snippet;
@@ -712,7 +712,7 @@ std::string FunctionDeclView::getDeclarationSnippet(
   return snippet;
 }
 
-std::string FunctionDeclView::getMarkdownDocString() const {
+std::string PublicFunctionDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
 
@@ -747,12 +747,12 @@ static void printArgOrParameterSignature(
     // Check if we are at the end; if so, we might still have to print a '/'.
     passingKindPrinter.printOptionalTrailingSlash(idx++);
   };
-  os << (std::is_same_v<T, ArgumentDeclView> ? "(" : "[");
+  os << (std::is_same_v<T, PublicArgumentDecl> ? "(" : "[");
   interleaveComma(args, os, printArg);
-  os << (std::is_same_v<T, ArgumentDeclView> ? ")" : "]");
+  os << (std::is_same_v<T, PublicArgumentDecl> ? ")" : "]");
 }
 
-std::string FunctionDeclView::getSignature(
+std::string PublicFunctionDecl::getSignature(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets,
     unsigned *returnOffset) const {
@@ -779,7 +779,7 @@ std::string FunctionDeclView::getSignature(
   return signatureOS.str();
 }
 
-llvm::json::Object FunctionDeclView::toJSON(MojoParserContext &ctx) const {
+llvm::json::Object PublicFunctionDecl::toJSON(MojoParserContext &ctx) const {
   return llvm::json::Object{
       {"args", toJSONArray(ctx, args)},
       {"async", isAsync()},
@@ -800,9 +800,9 @@ llvm::json::Object FunctionDeclView::toJSON(MojoParserContext &ctx) const {
   };
 }
 
-FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
-    : DeclView(DeclViewKind::DK_FunctionDeclView,
-               declRef.getName().value_or(StringRef{})),
+PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef)
+    : PublicDecl(PublicDeclKind::DK_PublicFunctionDecl,
+                 declRef.getName().value_or(StringRef{})),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef{})) {
   auto funcOp = cast<LIT::FuncOp>(declRef.getIfOperation());
   isStaticFlag = funcOp.getIsStatic();
@@ -812,17 +812,18 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
                     funcOp.getUserResultType());
 }
 
-FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef,
-                                   KGEN::LIT::LITSignatureType signature)
-    : DeclView(DeclViewKind::DK_FunctionDeclView, /*name=*/StringRef()) {
+PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef,
+                                       KGEN::LIT::LITSignatureType signature)
+    : PublicDecl(PublicDeclKind::DK_PublicFunctionDecl,
+                 /*name=*/StringRef()) {
   initFromSignature(declRef, signature, signature.getArguments(),
                     signature.getUserResultType());
 }
 
-void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
-                                         LITSignatureType signature,
-                                         ArrayRef<Type> userArgTypes,
-                                         Type userResultType) {
+void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
+                                           LITSignatureType signature,
+                                           ArrayRef<Type> userArgTypes,
+                                           Type userResultType) {
   auto &shared = *declRef.getShared();
   raisesFlag = signature.isThrows();
   isAsyncFlag = signature.isAsync();
@@ -852,7 +853,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
 
   // If this is a method, grab the expected "Self" type.
   std::optional<ASTType> selfType;
-  if (isa<StructDeclOp>(*declRef.getParentDecl()))
+  if (isa<StructDeclOp>(*declRef.getParent()))
     selfType = declRef->getParentDecl()->getTypeDeclSelf();
 
   // Grab the types of the arguments to the function.
@@ -865,7 +866,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
       defaultValue = generatePValueString(shared, defaultAttr);
 
     std::string prefix;
-    auto declConvention = ArgumentDeclView::Convention::kBorrowed;
+    auto declConvention = PublicArgumentDecl::Convention::kBorrowed;
     switch (convention) {
     case ArgConvention::ReadReg:
     case ArgConvention::ReadMem:
@@ -873,31 +874,31 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
     case ArgConvention::ByRefError:
       break; // already handled.
     case ArgConvention::Mut:
-      declConvention = ArgumentDeclView::Convention::kInOut;
+      declConvention = PublicArgumentDecl::Convention::kInOut;
       break;
     case ArgConvention::InitSelf:
-      declConvention = ArgumentDeclView::Convention::kOut;
+      declConvention = PublicArgumentDecl::Convention::kOut;
       break;
     case ArgConvention::Ref:
     case ArgConvention::MutRef:
-      declConvention = ArgumentDeclView::Convention::kRef;
+      declConvention = PublicArgumentDecl::Convention::kRef;
       prefix = getRefPrefixAsString(shared, cast<RefType>(sigType), signature,
                                     /*isRefResult*/ false);
       break;
     case ArgConvention::OwnedMem:
     case ArgConvention::OwnedReg:
-      declConvention = ArgumentDeclView::Convention::kOwned;
+      declConvention = PublicArgumentDecl::Convention::kOwned;
       break;
     }
     VariadicKind variadicKind =
         getVariadicKind(signature.getArgListAttrs(), argIdx);
     bool isSelf = selfType && argIdx == 0;
     args.push_back(
-        ArgumentDeclView(pogAttr.getName(), std::move(prefix),
-                         generateTypeString(shared, userType, variadicKind,
-                                            selfType, convention),
-                         pogAttr.getPassingKind(), variadicKind,
-                         std::move(defaultValue), declConvention, isSelf));
+        PublicArgumentDecl(pogAttr.getName(), std::move(prefix),
+                           generateTypeString(shared, userType, variadicKind,
+                                              selfType, convention),
+                           pogAttr.getPassingKind(), variadicKind,
+                           std::move(defaultValue), declConvention, isSelf));
   }
 
   // Grab the types of the parameters to the function.
@@ -913,7 +914,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
       defaultValue = generatePValueString(shared, defaultAttr);
     VariadicKind variadicKind =
         getVariadicKind(signature.getParamListAttrs(), parIdx);
-    parameters.push_back(ParameterDeclView(
+    parameters.push_back(PublicParameterDecl(
         signature.getParamName(parIdx),
         generateTypeString(shared, paramTypes[parIdx], variadicKind, selfType),
         passingKind, variadicKind, std::move(defaultValue)));
@@ -946,10 +947,10 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
 }
 
 //===----------------------------------------------------------------------===//
-// StructFieldDeclView
+// PublicStructFieldDecl
 //===----------------------------------------------------------------------===//
 
-std::string StructFieldDeclView::getDeclarationSnippet() const {
+std::string PublicStructFieldDecl::getDeclarationSnippet() const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   os << "var ";
@@ -957,14 +958,14 @@ std::string StructFieldDeclView::getDeclarationSnippet() const {
   return snippet;
 }
 
-std::string StructFieldDeclView::getMarkdownDocString() const {
+std::string PublicStructFieldDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
   dumpMarkdownDocumentationHeader(os, summary, description);
   return markdown;
 }
 
-llvm::json::Object StructFieldDeclView::toJSON(MojoParserContext &ctx) const {
+llvm::json::Object PublicStructFieldDecl::toJSON(MojoParserContext &ctx) const {
   return llvm::json::Object{
       {"description", description},
       {"kind", getKindAsString()},
@@ -974,9 +975,9 @@ llvm::json::Object StructFieldDeclView::toJSON(MojoParserContext &ctx) const {
   };
 }
 
-StructFieldDeclView::StructFieldDeclView(MojoASTDeclRef declRef)
-    : DeclView(DeclViewKind::DK_StructFieldDeclView,
-               declRef.getName().value_or(StringRef{})) {
+PublicStructFieldDecl::PublicStructFieldDecl(MojoASTDeclRef declRef)
+    : PublicDecl(PublicDeclKind::DK_PublicStructFieldDecl,
+                 declRef.getName().value_or(StringRef{})) {
   auto fieldOp = cast<StructFieldOp>(declRef.getIfOperation());
 
   llvm::raw_string_ostream typeOS(type);
@@ -989,17 +990,17 @@ StructFieldDeclView::StructFieldDeclView(MojoASTDeclRef declRef)
 }
 
 //===----------------------------------------------------------------------===//
-// FunctionDeclOverloadSetView
+// FunctionDeclOverloadSet
 //===----------------------------------------------------------------------===//
 
-SmallVector<FunctionDeclOverloadSetView, 2>
-FunctionDeclOverloadSetView::fromSortedFunctions(
-    SmallVector<FunctionDeclView, 2> &&functions) {
-  SmallVector<FunctionDeclOverloadSetView, 2> overloads;
+SmallVector<FunctionDeclOverloadSet, 2>
+FunctionDeclOverloadSet::fromSortedFunctions(
+    SmallVector<PublicFunctionDecl, 2> &&functions) {
+  SmallVector<FunctionDeclOverloadSet, 2> overloads;
   for (auto &function : functions) {
     if (overloads.empty() ||
         overloads.back().getBaseName() != function.getName())
-      overloads.emplace_back(FunctionDeclOverloadSetView(function.getName()));
+      overloads.emplace_back(FunctionDeclOverloadSet(function.getName()));
 
     overloads.back().append(std::move(function));
   }
@@ -1007,14 +1008,14 @@ FunctionDeclOverloadSetView::fromSortedFunctions(
 }
 
 llvm::json::Object
-FunctionDeclOverloadSetView::toJSON(MojoParserContext &ctx) const {
+FunctionDeclOverloadSet::toJSON(MojoParserContext &ctx) const {
   return llvm::json::Object{{"kind", "function"},
                             {"name", baseName},
                             {"overloads", toJSONArray(ctx, functions)}};
 }
 
 //===----------------------------------------------------------------------===//
-// TraitDeclView
+// PublicTraitDecl
 //===----------------------------------------------------------------------===//
 
 /// Collect the names of the various parent types of the given set of type
@@ -1046,25 +1047,25 @@ static void collectParentTypes(MojoParserContext &ctx,
   llvm::sort(parentTraits);
 }
 
-std::string TraitDeclView::getDeclarationSnippet() const {
+std::string PublicTraitDecl::getDeclarationSnippet() const {
   return "trait " + getName().str();
 }
 
-std::string TraitDeclView::getMarkdownDocString() const {
+std::string PublicTraitDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
   dumpMarkdownDocumentationHeader(os, summary, description);
   return markdown;
 }
 
-llvm::json::Object TraitDeclView::toJSON(MojoParserContext &ctx) const {
+llvm::json::Object PublicTraitDecl::toJSON(MojoParserContext &ctx) const {
   // Ignore some inherited functions.
   auto shouldHideFn = [](LIT::FuncOp decl, StringRef name) {
     return decl.getIsInherited() && name == "__del__";
   };
 
-  auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, LIT::FuncOp>(*decl, shouldHideFn));
+  auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
+      extractChildDecls<PublicFunctionDecl, LIT::FuncOp>(*decl, shouldHideFn));
   SmallVector<StringRef> parentTraits;
   collectParentTypes(ctx, parentTraits,
                      cast<TraitDeclOp>(*decl).getParentTypes());
@@ -1080,9 +1081,9 @@ llvm::json::Object TraitDeclView::toJSON(MojoParserContext &ctx) const {
   };
 }
 
-TraitDeclView::TraitDeclView(MojoASTDeclRef declRef)
-    : DeclView(DeclViewKind::DK_TraitDeclView,
-               declRef.getName().value_or(StringRef())),
+PublicTraitDecl::PublicTraitDecl(MojoASTDeclRef declRef)
+    : PublicDecl(PublicDeclKind::DK_PublicTraitDecl,
+                 declRef.getName().value_or(StringRef())),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef())),
       decl(declRef) {
   if (auto docStr = decl->getParsedDocString()) {
@@ -1092,10 +1093,10 @@ TraitDeclView::TraitDeclView(MojoASTDeclRef declRef)
 }
 
 //===----------------------------------------------------------------------===//
-// StructDeclView
+// PublicStructDecl
 //===----------------------------------------------------------------------===//
 
-void StructDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
+void PublicStructDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   // Process the lines of the description, looking for markers.
   SmallVector<StringRef> pureDescriptionLines;
   for (size_t line = 0, lineE = desc.size(); line < lineE; ++line) {
@@ -1110,11 +1111,11 @@ void StructDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   description = DocString::formatDescription(pureDescriptionLines);
 }
 
-std::string StructDeclView::getDeclarationSnippet() const {
+std::string PublicStructDecl::getDeclarationSnippet() const {
   return getDeclarationSnippet(/*parameterOffsets=*/nullptr);
 }
 
-std::string StructDeclView::getDeclarationSnippet(
+std::string PublicStructDecl::getDeclarationSnippet(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
@@ -1126,7 +1127,7 @@ std::string StructDeclView::getDeclarationSnippet(
   return snippet;
 }
 
-std::string StructDeclView::getMarkdownDocString() const {
+std::string PublicStructDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
 
@@ -1150,11 +1151,11 @@ static StringRef toString(TypeConvention convention) {
   }
 }
 
-llvm::json::Object StructDeclView::toJSON(MojoParserContext &ctx) const {
-  auto aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(*decl);
-  auto fields = extractChildDecls<StructFieldDeclView, StructFieldOp>(*decl);
-  auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, LIT::FuncOp>(*decl));
+llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
+  auto aliases = extractChildDecls<PublicAliasDecl, AliasDeclOp>(*decl);
+  auto fields = extractChildDecls<PublicStructFieldDecl, StructFieldOp>(*decl);
+  auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
+      extractChildDecls<PublicFunctionDecl, LIT::FuncOp>(*decl));
   SmallVector<StringRef> parentTraits;
   collectParentTypes(ctx, parentTraits,
                      cast<StructDeclOp>(*decl).getParentTypes());
@@ -1174,9 +1175,9 @@ llvm::json::Object StructDeclView::toJSON(MojoParserContext &ctx) const {
   };
 }
 
-StructDeclView::StructDeclView(MojoASTDeclRef declRef)
-    : DeclView(DeclViewKind::DK_StructDeclView,
-               declRef.getName().value_or(StringRef())),
+PublicStructDecl::PublicStructDecl(MojoASTDeclRef declRef)
+    : PublicDecl(PublicDeclKind::DK_PublicStructDecl,
+                 declRef.getName().value_or(StringRef())),
       deprecated(declRef.getDeprecationWarning().value_or(StringRef())),
       decl(declRef) {
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
@@ -1194,7 +1195,7 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
       defaultValue = generatePValueString(shared, defaultAttr);
     VariadicKind variadicKind =
         getVariadicKind(signature.getParamListAttrs(), idx);
-    parameters.push_back(ParameterDeclView(
+    parameters.push_back(PublicParameterDecl(
         demangleIfNeeded(param).getName().getValue(),
         generateTypeString(shared, param.getType(), variadicKind),
         paramListAttr.getPassingKind(idx), variadicKind,
@@ -1208,24 +1209,24 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
 }
 
 //===----------------------------------------------------------------------===//
-// ModuleDeclView
+// PublicModuleDecl
 //===----------------------------------------------------------------------===//
 
-std::string ModuleDeclView::getDeclarationSnippet() const { return {}; }
+std::string PublicModuleDecl::getDeclarationSnippet() const { return {}; }
 
-std::string ModuleDeclView::getMarkdownDocString() const {
+std::string PublicModuleDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
   dumpMarkdownDocumentationHeader(os, summary, description);
   return markdown;
 }
 
-llvm::json::Object ModuleDeclView::toJSON(MojoParserContext &ctx) const {
-  auto aliases = extractChildDecls<AliasDeclView, AliasDeclOp>(*decl);
-  auto structs = extractChildDecls<StructDeclView, StructDeclOp>(*decl);
-  auto traits = extractChildDecls<TraitDeclView, TraitDeclOp>(*decl);
-  auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, LIT::FuncOp>(*decl));
+llvm::json::Object PublicModuleDecl::toJSON(MojoParserContext &ctx) const {
+  auto aliases = extractChildDecls<PublicAliasDecl, AliasDeclOp>(*decl);
+  auto structs = extractChildDecls<PublicStructDecl, StructDeclOp>(*decl);
+  auto traits = extractChildDecls<PublicTraitDecl, TraitDeclOp>(*decl);
+  auto functionOverloads = FunctionDeclOverloadSet::fromSortedFunctions(
+      extractChildDecls<PublicFunctionDecl, LIT::FuncOp>(*decl));
 
   return llvm::json::Object{{"aliases", toJSONArray(ctx, aliases)},
                             {"description", description},
@@ -1237,9 +1238,9 @@ llvm::json::Object ModuleDeclView::toJSON(MojoParserContext &ctx) const {
                             {"summary", summary}};
 }
 
-ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
-    : DeclView(DeclViewKind::DK_ModuleDeclView,
-               declRef.getName().value_or(StringRef())),
+PublicModuleDecl::PublicModuleDecl(MojoASTDeclRef declRef)
+    : PublicDecl(PublicDeclKind::DK_PublicModuleDecl,
+                 declRef.getName().value_or(StringRef())),
       decl(declRef) {
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();
@@ -1248,21 +1249,21 @@ ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
 }
 
 //===----------------------------------------------------------------------===//
-// PackageDeclView
+// PublicPackageDecl
 //===----------------------------------------------------------------------===//
 
-std::string PackageDeclView::getDeclarationSnippet() const { return {}; }
+std::string PublicPackageDecl::getDeclarationSnippet() const { return {}; }
 
-std::string PackageDeclView::getMarkdownDocString() const {
+std::string PublicPackageDecl::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
   dumpMarkdownDocumentationHeader(os, summary, description);
   return markdown;
 }
 
-llvm::json::Object PackageDeclView::toJSON(MojoParserContext &ctx) const {
-  auto packages = extractChildDecls<PackageDeclView, PackageOp>(*decl);
-  auto modules = extractChildDecls<ModuleDeclView, FileModuleOp>(*decl);
+llvm::json::Object PublicPackageDecl::toJSON(MojoParserContext &ctx) const {
+  auto packages = extractChildDecls<PublicPackageDecl, PackageOp>(*decl);
+  auto modules = extractChildDecls<PublicModuleDecl, FileModuleOp>(*decl);
   return llvm::json::Object{
       {"description", description},
       {"kind", getKindAsString()},
@@ -1273,9 +1274,9 @@ llvm::json::Object PackageDeclView::toJSON(MojoParserContext &ctx) const {
   };
 }
 
-PackageDeclView::PackageDeclView(MojoASTDeclRef declRef)
-    : DeclView(DeclViewKind::DK_PackageDeclView,
-               declRef.getName().value_or(StringRef())),
+PublicPackageDecl::PublicPackageDecl(MojoASTDeclRef declRef)
+    : PublicDecl(PublicDeclKind::DK_PublicPackageDecl,
+                 declRef.getName().value_or(StringRef())),
       decl(declRef) {
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();

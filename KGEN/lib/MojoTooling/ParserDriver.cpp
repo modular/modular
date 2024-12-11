@@ -17,8 +17,7 @@
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
-#include "KGEN/MojoTooling/ASTDeclView.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 

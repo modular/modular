@@ -8,7 +8,7 @@
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 
 #include "AsyncRT/Runtime/Runtime.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "MojoDWARFParser.h"
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"

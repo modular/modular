@@ -8,7 +8,7 @@
 #include "../../TypeSystem/MojoTypeSystem.h"
 #include "../../Utils/Errors.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "lldb/DataFormatters/DataVisualization.h"
 #include "lldb/DataFormatters/FormatManager.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"

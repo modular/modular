@@ -72,6 +72,9 @@ TEST(CompletionTest, testCompletionRelativeImport) {
 }
 
 TEST(CompletionTest, testCompletionImportMember) {
+  // This test is some times flaky on Mac when running under Bazel, but still
+  // gives good signal. It fails by crashing somewhere in the parser. Fresh
+  // builds seem not to have this issue though.
   Document doc("test:///foo.mojo",
                R"(
 from memory.unsafe import b

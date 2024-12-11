@@ -17,10 +17,9 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/EntryPoint.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
-#include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/MojoTooling/REPLPythonExprUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -94,7 +93,7 @@ struct SymbolRef;
 struct Symbol {
   Symbol(MojoASTDeclRef declRef, StringRef identifier, SMLoc identifierLoc)
       : identifier(identifier), declRef(declRef),
-        approximateViewKind(declRef.getApproximateViewKind()) {
+        approximateViewKind(declRef.getApproximateDeclKind()) {
     // Modules/Packages just point to the direct location, they don't have a
     // name in the source code.
     if (isa<FileModuleOp, PackageOp>(*declRef))
@@ -117,7 +116,7 @@ struct Symbol {
 
   /// The approximate view kind for the decl of this symbol. This can provide a
   /// rough estimate for what kind of decl this is.
-  std::optional<DeclViewKind> approximateViewKind;
+  std::optional<PublicDeclKind> approximateViewKind;
 
   /// The location of the identifier of this symbol.
   SMRange range;
@@ -129,13 +128,13 @@ struct Symbol {
 
 /// Return if the given view kind should be included in the markdown
 /// declaration.
-static bool shouldIncludeViewKindInMarkdown(DeclViewKind kind) {
-  return kind != DeclViewKind::DK_AliasDeclView &&
-         kind != DeclViewKind::DK_StructDeclView;
+static bool shouldIncludeViewKindInMarkdown(PublicDeclKind kind) {
+  return kind != PublicDeclKind::DK_PublicAliasDecl &&
+         kind != PublicDeclKind::DK_PublicStructDecl;
 }
 
 std::string Symbol::getMarkdownDeclaration() const {
-  auto processView = [&](const DeclView &view) -> std::string {
+  auto processView = [&](const PublicDecl &view) -> std::string {
     std::string buff;
     llvm::raw_string_ostream os(buff);
     if (auto snippet = view.getDeclarationSnippet(); !snippet.empty()) {
@@ -164,7 +163,7 @@ std::string Symbol::getMarkdownDeclaration() const {
     return buff;
   };
 
-  if (auto view = declRef.getView())
+  if (auto view = declRef.getDecl())
     return processView(*view);
   // If didn't get a view, we fall back to simply printing the name of the
   // entity.
@@ -390,7 +389,7 @@ void SymbolIndex::registerRef(ArrayRef<MojoASTDeclRef> declRefs, SMRange range,
       // a reference to an argument which could manifest while type checking
       // the signature (so the normal way of computing the name isn't ready
       // yet).
-      if (ref.getApproximateViewKind() == DeclViewKind::DK_ArgumentDeclView)
+      if (ref.getApproximateDeclKind() == PublicDeclKind::DK_PublicArgumentDecl)
         symName = spelling;
     }
 
@@ -614,7 +613,7 @@ struct MojoDocument::Context {
 static std::vector<lsp::Diagnostic> checkUnusedVariables(SymbolIndex &index,
                                                          MojoDocument &doc) {
   std::vector<lsp::Diagnostic> diags;
-  DenseMap<const ASTDecl *, std::unique_ptr<DeclView>> parentViews;
+  DenseMap<const ASTDecl *, std::unique_ptr<PublicDecl>> parentViews;
 
   index.walkSymbols([&](const Symbol &symbol) {
     if (!doc.containsLocation(symbol.declRef->getLoc()))
@@ -631,10 +630,10 @@ static std::vector<lsp::Diagnostic> checkUnusedVariables(SymbolIndex &index,
     if (StringRef(symbol.identifier).starts_with("_"))
       return;
 
-    std::optional<DeclViewKind> declKind =
-        symbol.declRef.getApproximateViewKind();
+    std::optional<PublicDeclKind> declKind =
+        symbol.declRef.getApproximateDeclKind();
 
-    if (declKind != DeclViewKind::DK_VariableDeclView)
+    if (declKind != PublicDeclKind::DK_PublicVariableDecl)
       return;
 
     lsp::Diagnostic lspDiag;
@@ -1171,7 +1170,7 @@ void MojoDocument::getDocumentSymbols(
   StringRef declBufferRef = declBuffer->getBuffer();
   getDocumentSymbols(decl, symbols, [declBufferRef](MojoASTDeclRef decl) {
     // We do not want to traverse into module imports at all.
-    if (decl.getApproximateViewKind() == DeclViewKind::DK_ModuleDeclView)
+    if (decl.getApproximateDeclKind() == PublicDeclKind::DK_PublicModuleDecl)
       return false;
 
     // Imported decls may be in a different buffer, only consider decls in the
@@ -1197,11 +1196,11 @@ void MojoDocument::getDocumentSymbols(
   // Check for symbol information for this decl.
   auto *symbol = context->symbolIndex.findSymbol(decl);
   if (symbol && symbol->range.isValid()) {
-    if (std::unique_ptr<DeclView> declView = decl.getView()) {
+    if (std::unique_ptr<PublicDecl> publicDecl = decl.getDecl()) {
       lsp::Range range(getSourceMgr(), symbol->range);
 
-      TypeSwitch<DeclView *>(declView.get())
-          .Case([&](AliasDeclView *alias) {
+      TypeSwitch<PublicDecl *>(publicDecl.get())
+          .Case([&](PublicAliasDecl *alias) {
             // We only consider global aliases here, we don't want to show every
             // conceivable decl.
             if (!alias->isGlobal())
@@ -1210,21 +1209,21 @@ void MojoDocument::getDocumentSymbols(
             addSymbol(alias->getName(), lsp::SymbolKind::Property, range,
                       alias->getValue().str());
           })
-          .Case([&](FunctionDeclView *fn) {
+          .Case([&](PublicFunctionDecl *fn) {
             addSymbol(fn->getName(), lsp::SymbolKind::Function, range,
                       fn->getSignature());
           })
-          .Case([&](StructDeclView *structDecl) {
+          .Case([&](PublicStructDecl *structDecl) {
             addSymbol(structDecl->getName(), lsp::SymbolKind::Struct, range);
           })
-          .Case([&](StructFieldDeclView *field) {
+          .Case([&](PublicStructFieldDecl *field) {
             addSymbol(field->getName(), lsp::SymbolKind::Field, range,
                       field->getType().str());
           })
-          .Case([&](TraitDeclView *traitDecl) {
+          .Case([&](PublicTraitDecl *traitDecl) {
             addSymbol(traitDecl->getName(), lsp::SymbolKind::Interface, range);
           })
-          .Case([&](VariableDeclView *var) {
+          .Case([&](PublicVariableDecl *var) {
             // We only consider global variables here, we don't want to show
             // every conceivable decl.
             if (!var->isGlobal())
@@ -1296,7 +1295,7 @@ void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
   StringRef declBufferRef = sourceMgr.getMemoryBuffer(bufferId)->getBuffer();
   auto processFn = [declBufferRef](MojoASTDeclRef decl) {
     // We do not want to traverse into module imports at all.
-    if (decl.getApproximateViewKind() == DeclViewKind::DK_ModuleDeclView)
+    if (decl.getApproximateDeclKind() == PublicDeclKind::DK_PublicModuleDecl)
       return false;
 
     // Imported decls may be in a different buffer, only consider decls in the
@@ -1444,13 +1443,13 @@ static bool isSelfArgument(MojoASTDeclRef decl) {
 /// Return a semantic token kind for the given ast decl.
 static SemanticTokenKind
 getSemanticTokenKind(MojoASTDeclRef symDecl,
-                     std::optional<DeclViewKind> declKind) {
+                     std::optional<PublicDeclKind> declKind) {
   // If we can't decipher the kind, it's nearly always a variable.
   if (!declKind)
     return SemanticTokenKind::kVariable;
 
   switch (*declKind) {
-  case DeclViewKind::DK_AliasDeclView: {
+  case PublicDeclKind::DK_PublicAliasDecl: {
     auto aliasOp = cast<KGEN::LIT::AliasDeclOp>(symDecl->getIfOperation());
     if (Attribute aliasValue = aliasOp.getValueAttr()) {
       // Try to decipher a token kind from the alias value.
@@ -1461,24 +1460,24 @@ getSemanticTokenKind(MojoASTDeclRef symDecl,
     }
     return SemanticTokenKind::kVariable;
   }
-  case DeclViewKind::DK_ArgumentDeclView:
+  case PublicDeclKind::DK_PublicArgumentDecl:
     if (isSelfArgument(symDecl))
       return SemanticTokenKind::kSpecialVariable;
     return SemanticTokenKind::kVariable;
-  case DeclViewKind::DK_FunctionDeclView:
+  case PublicDeclKind::DK_PublicFunctionDecl:
     return SemanticTokenKind::kFunction;
-  case DeclViewKind::DK_ModuleDeclView:
-  case DeclViewKind::DK_PackageDeclView:
+  case PublicDeclKind::DK_PublicModuleDecl:
+  case PublicDeclKind::DK_PublicPackageDecl:
     return SemanticTokenKind::kModule;
-  case DeclViewKind::DK_ParameterDeclView:
+  case PublicDeclKind::DK_PublicParameterDecl:
     return SemanticTokenKind::kParameter;
-  case DeclViewKind::DK_StructDeclView:
+  case PublicDeclKind::DK_PublicStructDecl:
     return SemanticTokenKind::kClass;
-  case DeclViewKind::DK_StructFieldDeclView:
+  case PublicDeclKind::DK_PublicStructFieldDecl:
     return SemanticTokenKind::kField;
-  case DeclViewKind::DK_TraitDeclView:
+  case PublicDeclKind::DK_PublicTraitDecl:
     return SemanticTokenKind::kTrait;
-  case DeclViewKind::DK_VariableDeclView:
+  case PublicDeclKind::DK_PublicVariableDecl:
     return SemanticTokenKind::kVariable;
   }
   llvm_unreachable("invalid decl kind");
@@ -1594,12 +1593,13 @@ void MojoDocument::onRename(const lsp::URIForFile &uri,
 }
 
 static bool isLocalVariable(const Symbol &symbol) {
-  if (symbol.approximateViewKind != DeclViewKind::DK_VariableDeclView)
+  if (symbol.approximateViewKind != PublicDeclKind::DK_PublicVariableDecl)
     return false;
 
-  std::unique_ptr<DeclView> declView = symbol.declRef.getView();
-  if (const auto *varDeclView = dyn_cast<VariableDeclView>(declView.get()))
-    return !varDeclView->isGlobal();
+  std::unique_ptr<PublicDecl> publicDecl = symbol.declRef.getDecl();
+  if (const auto *varPublicDecl =
+          dyn_cast<PublicVariableDecl>(publicDecl.get()))
+    return !varPublicDecl->isGlobal();
 
   return false;
 }
