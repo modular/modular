@@ -887,6 +887,64 @@ fn multistage_gemm_kernel[
     var c_gmem_tile = c.tile[BM, BN](block_idx[1], block_idx[0])
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
 
+    @always_inline
+    @parameter
+    fn apply_epilogue():
+        # This block is identical to the one used for f32 case
+        # but putting this in a lambda function leads to test failures
+        # TODO: Refactor to remove code duplication
+        constrained[
+            elementwise_lambda_fn is not None,
+            "elementwise_lambda_fn is not valid",
+        ]()
+        alias thread_layout = Layout.row_major(
+            8, 4
+        ) if is_nvidia_gpu() else Layout.row_major(4, 16)
+        alias dst_simd_width_x = 1 if is_nvidia_gpu() else 4
+        alias dst_simd_width_y = 2 if is_nvidia_gpu() else 1
+        alias src_simd_width_x = 1 if is_nvidia_gpu() else 1
+        alias src_simd_width_y = 2 if is_nvidia_gpu() else 4
+        alias epilogue = elementwise_lambda_fn.value()
+        var c_gmem_frag = c_gmem_warp_tile.vectorize[
+            dst_simd_width_x, dst_simd_width_y
+        ]().distribute[thread_layout](ln_id)
+        var c_reg_frag = c_reg_tile.vectorize[
+            src_simd_width_x, src_simd_width_y
+        ]().transpose()
+        var thread_offset = c_gmem_frag.distance(c.ptr)
+
+        @parameter
+        for i in range(__type_of(c_gmem_frag).layout.size()):
+            alias src_idx = c_reg_frag.layout(i)
+            alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
+            var dst_idx = 0
+
+            @parameter
+            if c_gmem_frag.layout.all_dims_known():
+                dst_idx = dst_static_idx
+            else:
+                dst_idx = c_gmem_frag.runtime_layout(i)
+            alias alignment = alignof[SIMD[c_type, src_simd_width_y]]()
+            var m = int((thread_offset + dst_idx) // N)
+            var n = int((thread_offset + dst_idx) % N)
+            if m < M and n < N:
+                var vec = c_reg_frag.ptr.offset(src_idx).load[
+                    width=src_simd_width_y,
+                    alignment = alignof[SIMD[c_type, src_simd_width_y]](),
+                ]()
+
+                @parameter
+                if dst_simd_width_x == 1:
+                    epilogue[alignment=alignment]((m, n), vec)
+                else:
+
+                    @parameter
+                    for j in range(dst_simd_width_x):
+                        if m + j < M:
+                            epilogue[alignment=alignment](
+                                (m + j, n), vec[j].cast[c_type]()
+                            )
+
     # Store FP32 mma results to half precision buffer in global memory.
     # Each thread's fragment has 2x2 fp32 values. Casting to half float and
     # directly storing to global memory results in 2 4B writes. Following cutlass,
@@ -973,52 +1031,32 @@ fn multistage_gemm_kernel[
             )
 
     elif c_type.is_half_float() and not is_nvidia_gpu():
-        var c_reg_tile_out = LayoutTensor[
-            c_type, c_reg_tile.layout, address_space = AddressSpace.LOCAL
-        ].stack_allocation()
 
         @parameter
-        for i in range(c_reg_tile.shape[0]()):
+        if elementwise_lambda_fn:
+            apply_epilogue()
+
+        else:
+            var c_reg_tile_out = LayoutTensor[
+                c_type, c_reg_tile.layout, address_space = AddressSpace.LOCAL
+            ].stack_allocation()
 
             @parameter
-            for j in range(c_reg_tile.shape[1]()):
-                c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
-        copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
-            c_gmem_warp_tile.vectorize[4, 1](), c_reg_tile_out.vectorize[1, 4]()
-        )
+            for i in range(c_reg_tile.shape[0]()):
+
+                @parameter
+                for j in range(c_reg_tile.shape[1]()):
+                    c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
+            copy_local_to_dram[dst_thread_layout = Layout.row_major(4, 16)](
+                c_gmem_warp_tile.vectorize[4, 1](),
+                c_reg_tile_out.vectorize[1, 4](),
+            )
     # Store FP32 results to FP32 buffer in global memory.
     else:
 
         @parameter
         if elementwise_lambda_fn:
-            alias epilogue = elementwise_lambda_fn.value()
-            var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
-                Layout.row_major(8, 4)
-            ](ln_id)
-            var c_reg_frag = c_reg_tile.vectorize[1, 2]().transpose()
-            var thread_offset = c_gmem_frag.distance(c.ptr)
-
-            @parameter
-            for i in range(__type_of(c_gmem_frag).layout.size()):
-                alias src_idx = c_reg_frag.layout(i)
-                alias dst_static_idx: UInt = __type_of(c_gmem_frag).layout(i)
-                var dst_idx = 0
-
-                @parameter
-                if c_gmem_frag.layout.all_dims_known():
-                    dst_idx = dst_static_idx
-                else:
-                    dst_idx = c_gmem_frag.runtime_layout(i)
-
-                alias alignment = alignof[SIMD[c_type, 2]]()
-                var m = int((thread_offset + dst_idx) // N)
-                var n = int((thread_offset + dst_idx) % N)
-                if m < M and n < N:
-                    var vec = c_reg_frag.ptr.offset(src_idx).load[
-                        width=2, alignment = alignof[SIMD[c_type, 2]]()
-                    ]()
-                    epilogue[alignment=alignment]((m, n), vec)
-
+            apply_epilogue()
         else:
 
             @parameter

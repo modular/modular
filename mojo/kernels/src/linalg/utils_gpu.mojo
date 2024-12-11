@@ -5,7 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from math import ceildiv
-from sys import env_get_bool, env_get_int, env_get_string, sizeof
+from sys import (
+    env_get_bool,
+    env_get_int,
+    env_get_string,
+    sizeof,
+    has_nvidia_gpu_accelerator,
+)
 
 from gpu import WARP_SIZE
 from gpu.host import DeviceContext
@@ -262,7 +268,8 @@ fn select_config[
 
     alias gpu_info = ctx.device_info
 
-    alias max_num_k_partitions = 8
+    # TODO(KERN-1310): This disables split-k for AMD, enable it after fixing KERN-1310.
+    alias max_num_k_partitions = 8 if has_nvidia_gpu_accelerator() else 1
     alias min_k_partition = 1024
 
     # Initial values overwritten in loop
