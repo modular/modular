@@ -706,11 +706,13 @@ fn rms_norm_gpu_warp_tiling[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
-](output: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
+    output_fn: fn[width: Int] (
+        row: Int, col: Int, val: SIMD[type, width]
+    ) capturing -> None,
+](gamma: NDBuffer[type, 1], epsilon: Scalar[type], num_cols: Int):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
-    var num_cols = output.dim[1]()
     var tid: UInt = ThreadIdx.x
     var row: UInt = BlockIdx.x
 
@@ -734,7 +736,7 @@ fn rms_norm_gpu_warp_tiling[
             Index(idx)
         )
         var norm_val = vec_data * norm_factor * gamma_val.cast[accum_type]()
-        output.store[alignment=align](Index(row, idx), norm_val.cast[type]())
+        output_fn(row, idx, norm_val.cast[type]())
 
 
 fn rms_norm_gpu_block[
@@ -744,11 +746,13 @@ fn rms_norm_gpu_block[
     input_fn: fn[width: Int] (row: Int, col: Int) capturing -> SIMD[
         type, width
     ],
-](output: NDBuffer[type, 2], gamma: NDBuffer[type, 1], epsilon: Scalar[type]):
+    output_fn: fn[width: Int] (
+        row: Int, col: Int, val: SIMD[type, width]
+    ) capturing -> None,
+](gamma: NDBuffer[type, 1], epsilon: Scalar[type], num_cols: Int):
     alias align = alignof[SIMD[type, simd_width]]()
     alias accum_type = get_accum_type[type]()
 
-    var num_cols = output.dim[1]()
     var tid: UInt = ThreadIdx.x
     var row: UInt = BlockIdx.x
     var thread_m2 = Scalar[accum_type](0)
@@ -778,9 +782,7 @@ fn rms_norm_gpu_block[
             var norm_val = (
                 vec_data * norm_factor * gamma_val.cast[accum_type]()
             )
-            output.store[alignment=align](
-                Index(row, offset), norm_val.cast[type]()
-            )
+            output_fn(row, offset, norm_val.cast[type]())
 
 
 fn rms_norm_gpu[
@@ -789,11 +791,13 @@ fn rms_norm_gpu[
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         type, width
     ],
+    output_fn: fn[width: Int] (
+        IndexList[rank], SIMD[type, width]
+    ) capturing -> None,
 ](
     shape: IndexList[rank, **_],
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
-    output: NDBuffer[type, rank, *_],
     ctx: DeviceContext,
 ) raises:
     if rank == 0:
@@ -804,10 +808,18 @@ fn rms_norm_gpu[
     if last_dim == 0:
         return
 
-    alias rank_rs = 2
-    var output_rs = layer_norm_reshape[rank_rs](shape, output)
-    var rows = output_rs.dim[0]()
-    var cols = output_rs.dim[1]()
+    var rows = shape.flattened_length() // last_dim
+    var cols = last_dim
+
+    @parameter
+    @always_inline
+    fn output_fn_2d[
+        simd_width: Int
+    ](row: Int, col: Int, val: SIMD[type, simd_width]) -> None:
+        # Translate given 2d index back to original Nd tensor
+        var indices = _get_start_indices_of_nth_subvolume(row, shape)
+        indices[rank - 1] = col
+        output_fn(indices.canonicalize(), val)
 
     @parameter
     @always_inline
@@ -835,38 +847,42 @@ fn rms_norm_gpu[
         if cols <= (WARP_SIZE * simd_width * max_warps_per_block):
             var gpu_func = ctx.compile_function[
                 rms_norm_gpu_warp_tiling[
-                    simd_width, max_warps_per_block, input_fn_2d
+                    simd_width, max_warps_per_block, input_fn_2d, output_fn_2d
                 ]
             ]()
             ctx.enqueue_function(
                 gpu_func,
-                output_rs,
                 gamma,
                 epsilon,
+                cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
             )
         else:
             var gpu_func = ctx.compile_function[
-                rms_norm_gpu_block[simd_width, max_warps_per_block, input_fn_2d]
+                rms_norm_gpu_block[
+                    simd_width, max_warps_per_block, input_fn_2d, output_fn_2d
+                ]
             ]()
             ctx.enqueue_function(
                 gpu_func,
-                output_rs,
                 gamma,
                 epsilon,
+                cols,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
             )
     else:
         var gpu_func = ctx.compile_function[
-            rms_norm_gpu_block[1, max_warps_per_block, input_fn_2d]
+            rms_norm_gpu_block[
+                1, max_warps_per_block, input_fn_2d, output_fn_2d
+            ]
         ]()
         ctx.enqueue_function(
             gpu_func,
-            output_rs,
             gamma,
             epsilon,
+            cols,
             grid_dim=grid_dim,
             block_dim=block_dim,
         )
@@ -875,15 +891,12 @@ fn rms_norm_gpu[
 fn rms_norm_cpu[
     type: DType, //,
     input_fn: fn[width: Int] (Int, Int) capturing -> SIMD[type, width],
-](
-    out_buf: NDBuffer[type, 2, _],
-    gamma: NDBuffer[type, 1],
-    epsilon: Scalar[type],
-):
+    output_fn: fn[width: Int] (Int, Int, SIMD[type, width]) capturing -> None,
+](gamma: NDBuffer[type, 1], epsilon: Scalar[type], out_shape: IndexList[2]):
     alias simd_width = simdwidthof[type]()
 
-    var num_rows = out_buf.dim[0]()
-    var num_cols = out_buf.dim[1]()
+    var num_rows = out_shape[0]
+    var num_cols = out_shape[1]
 
     var simd_loop_end = align_down(num_cols, simd_width)
 
@@ -905,7 +918,7 @@ fn rms_norm_cpu[
             var input_val = input_fn[simd_width](row, col)
             var gamma_val = gamma.load[width=simd_width](col)
             var norm_val = input_val * norm_factor * gamma_val
-            out_buf.store(Index(row, col), norm_val)
+            output_fn[simd_width](row, col, norm_val)
 
         vectorize[_normalize, simd_width](num_cols)
 
@@ -916,35 +929,36 @@ fn rms_norm_cpu[
     input_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
         type, width
     ],
-](
-    shape: IndexList[rank],
-    gamma: NDBuffer[type, 1],
-    epsilon: Scalar[type],
-    output: NDBuffer[type, rank, *_],
-):
+    output_fn: fn[width: Int] (
+        IndexList[rank], SIMD[type, width]
+    ) capturing -> None,
+](shape: IndexList[rank], gamma: NDBuffer[type, 1], epsilon: Scalar[type],):
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
-    var flat_shape = Index(prod_all_but_last_dim, last_dim)
-
-    var output_buf = reshape[2](output, flat_shape)
 
     var num_workers = min(parallelism_level(), prod_all_but_last_dim)
     var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
 
-    @__copy_capture(
-        chunk_size, prod_all_but_last_dim, last_dim, output_buf, epsilon
-    )
+    @__copy_capture(chunk_size, prod_all_but_last_dim, last_dim, epsilon)
     @parameter
     fn task_func(thread_id: Int):
         var num_rows = min(
             chunk_size, prod_all_but_last_dim - thread_id * chunk_size
         )
         var row_idx = thread_id * chunk_size
-        var thread_starting_coord = Index(row_idx, 0)
-        var per_thread_dims = DimList(num_rows, last_dim)
-        var output_buf_view = NDBuffer[type, 2](
-            output_buf._offset(thread_starting_coord), per_thread_dims
-        )
+
+        @__copy_capture(row_idx)
+        @parameter
+        @always_inline
+        fn output_fn_2d[
+            simd_width: Int
+        ](row: Int, col: Int, val: SIMD[type, simd_width]) -> None:
+            # Translate given 2d index back to the original Nd tensor.
+            var indices = _get_start_indices_of_nth_subvolume(
+                row_idx + row, shape
+            )
+            indices[rank - 1] = col
+            output_fn[simd_width](indices, val)
 
         @__copy_capture(row_idx)
         @parameter
@@ -952,16 +966,57 @@ fn rms_norm_cpu[
         fn input_fn_2d[
             simd_width: Int
         ](row: Int, col: Int) -> SIMD[type, simd_width]:
-            # Translate given 2d index back to original Nd tensor
+            # Translate given 2d index back to the original Nd tensor.
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
             indices[rank - 1] = col
             return input_fn[simd_width, rank](indices)
 
-        rms_norm_cpu[input_fn_2d](output_buf_view, gamma, epsilon)
+        rms_norm_cpu[input_fn_2d, output_fn_2d](
+            gamma, epsilon, out_shape=IndexList[2](num_rows, last_dim)
+        )
 
     sync_parallelize[task_func](num_workers)
+
+
+@always_inline
+fn _rms_norm_impl[
+    type: DType,
+    rank: Int,
+    input_0_fn: fn[width: Int, rank: Int] (IndexList[rank]) capturing -> SIMD[
+        type, width
+    ],
+    output_fn: fn[width: Int] (
+        IndexList[rank], SIMD[type, width]
+    ) capturing -> None,
+    /,
+    target: StringLiteral = "cpu",
+](
+    shape: IndexList[rank],
+    gamma: NDBuffer[type, 1],
+    epsilon: Scalar[type],
+    ctx: MojoCallContextPtr,
+) raises:
+    # Note: we only support reduction along the last dimension
+    if gamma.dynamic_shape[0] != shape[rank - 1]:
+        raise Error(
+            "Gamma size "
+            + str(gamma.dynamic_shape[0])
+            + " does not match dimension of reduction "
+            + str(shape[rank - 1])
+            + "."
+        )
+
+    @parameter
+    if target == "cpu":
+        rms_norm_cpu[input_0_fn, output_fn](shape, gamma, epsilon)
+    elif "cuda" in target:
+        rms_norm_gpu[input_0_fn, output_fn](
+            shape, gamma, epsilon, ctx.get_device_context()
+        )
+    else:
+        constrained[False, "unsupported target " + target]()
 
 
 @register_internal("rms_norm")
@@ -981,18 +1036,18 @@ fn rms_norm[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    # Note: we only support reduction along the last dimension
-    if gamma.dynamic_shape[0] != shape[rank - 1]:
-        raise Error(
-            "Gamma size "
-            + str(gamma.dynamic_shape[0])
-            + " does not match dimension of reduction "
-            + str(shape[rank - 1])
-            + "."
-        )
-
     if output.dynamic_shape.canonicalize() != shape.canonicalize():
         raise Error("Input and output buffers are not same shape")
+
+    alias align = simdwidthof[type]()
+
+    @always_inline
+    @__copy_capture(output)
+    @parameter
+    fn identity_output_fn[
+        width: Int
+    ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+        output.store(idx, val)
 
     @always_inline
     @parameter
@@ -1003,16 +1058,9 @@ fn rms_norm[
         "rms_norm",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
-
-        @parameter
-        if target == "cpu":
-            rms_norm_cpu[input_0_fn](shape, gamma, epsilon, output)
-        elif "cuda" in target:
-            rms_norm_gpu[input_0_fn](
-                shape, gamma, epsilon, output, ctx.get_device_context()
-            )
-        else:
-            constrained[False, "unsupported target " + target]()
+        _rms_norm_impl[
+            type, rank, input_0_fn, identity_output_fn, target=target
+        ](shape, gamma, epsilon, ctx)
 
 
 @register_internal_shape_func("rms_norm_shape")

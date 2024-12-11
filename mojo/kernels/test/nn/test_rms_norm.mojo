@@ -58,7 +58,15 @@ fn run_rms_norm_cpu[
     ](idx: IndexList[_rank]) -> SIMD[type, width]:
         return input_buf.load[width=width](rebind[IndexList[rank]](idx))
 
-    rms_norm_cpu[input_fn](shape, gamma, epsilon, output_buf)
+    @always_inline
+    @__copy_capture(output_buf)
+    @parameter
+    fn identity_output_fn[
+        width: Int
+    ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+        output_buf.store(idx, val)
+
+    rms_norm_cpu[input_fn, identity_output_fn](shape, gamma, epsilon)
 
     for r in range(rows):
         var vec = Buffer[type](input_ptr + r * cols, cols)
