@@ -147,10 +147,14 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
     os << "from testing import assert_not_equal\n";
     os << "from collections import Set\n";
     os << "from memory import UnsafePointer\n";
+    os << "from os import getenv\n";
     os << "fn main() raises:\n";
 
     os.indent();
+    os << "var runAll = bool(getenv('MOJO_TEST_RUN_ALL'))\n";
     os << "var ids = Set[String]()\n";
+    os << "if not runAll:\n";
+    os.indent();
     os << "var filePath = argv()[1]\n";
     os << "with open(filePath, 'r') as idFile:\n";
     os.indent();
@@ -159,6 +163,7 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
     os.indent();
     os << "print(line[])\n";
     os << "ids.add(line[].strip())\n";
+    os.unindent();
     os.unindent();
     os.unindent();
     os << "var executed = 0\n";
@@ -178,7 +183,7 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
       if (names.isError())
         return names.takeError();
 
-      os << llvm::formatv("if not ids or '{0}::{1}()' in ids:\n",
+      os << llvm::formatv("if not ids or '{0}::{1}()' in ids or runAll:\n",
                           id.getFilePath(), llvm::join(*names, "."));
       os.indent();
       os << formatv("`{0}`.`{1}`()\n", id.getFilePath().stem(),
