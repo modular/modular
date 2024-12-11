@@ -20,9 +20,9 @@ from testing import assert_equal, assert_true
 def test_constant_memory_compile(ctx: DeviceContext):
     fn alloc[
         n: Int
-    ]() -> UnsafePointer[Float32, address_space = _GPUAddressSpace.PARAM]:
+    ]() -> UnsafePointer[Float32, address_space = _GPUAddressSpace.CONSTANT]:
         return stack_allocation[
-            n, Float32, address_space = _GPUAddressSpace.PARAM
+            n, Float32, address_space = _GPUAddressSpace.CONSTANT
         ]()
 
     assert_true(".const .align 4 .b8 " in _compile_code_asm[alloc[20]]())
@@ -37,9 +37,9 @@ def test_constant_mem(ctx: DeviceContext):
 
     fn _fill_impl[
         n: Int
-    ]() -> UnsafePointer[Float32, address_space = AddressSpace.PARAM]:
+    ]() -> UnsafePointer[Float32, address_space = AddressSpace.CONSTANT]:
         var ptr = stack_allocation[
-            n, Float32, address_space = AddressSpace.PARAM
+            n, Float32, address_space = AddressSpace.CONSTANT
         ]()
 
         @parameter
@@ -79,9 +79,9 @@ def test_constant_mem_via_func(ctx: DeviceContext):
 
     fn _fill_impl[
         n: Int
-    ]() -> UnsafePointer[Float32, address_space = AddressSpace.PARAM]:
+    ]() -> UnsafePointer[Float32, address_space = AddressSpace.CONSTANT]:
         var ptr = stack_allocation[
-            n, Float32, address_space = AddressSpace.PARAM
+            n, Float32, address_space = AddressSpace.CONSTANT
         ]()
 
         @parameter
@@ -91,7 +91,7 @@ def test_constant_mem_via_func(ctx: DeviceContext):
 
     fn static_constant_kernel[
         get_constant_memory: fn () -> UnsafePointer[
-            Float32, address_space = AddressSpace.PARAM
+            Float32, address_space = AddressSpace.CONSTANT
         ]
     ](data: UnsafePointer[Float32]):
         alias val = get_constant_memory()
@@ -126,7 +126,7 @@ def test_external_constant_mem(ctx: DeviceContext):
             16,
             Float32,
             name="static_constant",
-            address_space = AddressSpace.PARAM,
+            address_space = AddressSpace.CONSTANT,
             alignment=8,
         ]()
         data[ThreadIdx.x] = static_constant[ThreadIdx.x]
