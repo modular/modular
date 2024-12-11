@@ -151,13 +151,23 @@ fn bench_rms_norm_gpu[
         return data_buf.load[width=width](rebind[IndexList[rank]](idx))
 
     @always_inline
-    @__copy_capture(shape, gamma, epsilon, data_buf)
+    @__copy_capture(data_buf)
+    @parameter
+    fn identity_output_fn[
+        width: Int
+    ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+        data_buf.store(idx, val)
+
+    @always_inline
+    @__copy_capture(shape, gamma, epsilon)
     @parameter
     fn bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            rms_norm_gpu[input_fn](shape, gamma, epsilon, data_buf, ctx)
+            rms_norm_gpu[input_fn, identity_output_fn](
+                shape, gamma, epsilon, ctx
+            )
 
         b.iter_custom[kernel_launch](ctx)
 
