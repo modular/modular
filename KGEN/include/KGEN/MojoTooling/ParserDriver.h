@@ -8,7 +8,7 @@
 #define KGEN_MOJOTOOLING_PARSERDRIVER_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <filesystem>
@@ -32,7 +32,7 @@ struct SignatureHelpResult;
 } // namespace Mojo
 } // namespace KGEN
 
-class DeclView;
+class PublicDecl;
 class MojoASTDeclRef;
 class MojoASTTypeRef;
 

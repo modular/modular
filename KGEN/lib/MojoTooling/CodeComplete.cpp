@@ -10,9 +10,8 @@
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoParser/ExprNode.h"
 #include "KGEN/MojoParser/SharedState.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
-#include "KGEN/MojoTooling/ASTDeclView.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "Support/Filesystem/Paths.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
@@ -61,10 +60,10 @@ struct BaseCompletionListener : public ParserListener {
 
 /// Returns true if the given member should be shown during lookup within
 /// `decl`. If `isModuleLookup` is true, we are looking up nested modules.
-static bool showDeclDuringLookup(MojoASTDeclRef decl, StringRef &member,
+static bool showDeclDuringLookup(MojoASTDeclRef declRef, StringRef &member,
                                  MojoASTDeclRef child,
                                  bool isModuleLookup = false) {
-  if (llvm::isa_and_present<PackageOp>(decl.getIfOperation())) {
+  if (llvm::isa_and_present<PackageOp>(declRef.getIfOperation())) {
     bool childIsPackageOrModule =
         llvm::isa_and_present<FileModuleOp, PackageOp>(child.getIfOperation());
     // If this is a module lookup, we only want to show non-init modules defined
@@ -109,8 +108,8 @@ struct CodeCompletionListener : public BaseCompletionListener {
       ParserConfig config(&ctx, parserContext->getCompilationOptions());
       MojoParserContext importContext(sourceMgr, config);
       if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
-        if (auto view = module.getView())
-          results.back().documentation = view->getFullMarkdownString();
+        if (auto decl = module.getDecl())
+          results.back().documentation = decl->getFullMarkdownString();
       }
     };
 
@@ -185,19 +184,19 @@ struct CodeCompletionListener : public BaseCompletionListener {
     // Collect all of the decls in the current scope and all parent scopes.
     do {
       collectDeclChildren(decl);
-      decl = decl.getParentDecl();
+      decl = decl.getParent();
     } while (
         !llvm::isa_and_present<PackageOp, ModuleOp>(decl.getIfOperation()));
   }
 
   /// Utility function to add a completion result for the given decl. An
   /// optional filter that returns which operations should be considered.
-  void addCompletionForOp(StringRef name, MojoASTDeclRef decl,
+  void addCompletionForOp(StringRef name, MojoASTDeclRef declRef,
                           function_ref<bool(Operation *)> filter = {}) {
-    if (!addedResults.insert(&*decl).second)
+    if (!addedResults.insert(&*declRef).second)
       return;
 
-    Operation *op = decl.getIfOperation();
+    Operation *op = declRef.getIfOperation();
     if (!op || (filter && !filter(op)))
       return;
     auto kind =
@@ -212,8 +211,8 @@ struct CodeCompletionListener : public BaseCompletionListener {
             .Default(CodeCompletionResult::kUnknown);
 
     CodeCompletionResult result(name, kind);
-    if (auto view = decl.getView())
-      result.documentation = view->getFullMarkdownString();
+    if (auto decl = declRef.getDecl())
+      result.documentation = decl->getFullMarkdownString();
     results.emplace_back(result);
   }
 
@@ -267,24 +266,24 @@ struct SignatureHelpListener : public BaseCompletionListener {
 
     // Collect the signatures for each of the decls.
     for (MojoASTDeclRef decl : decls) {
-      std::unique_ptr<DeclView> declView = decl.getView();
-      if (!declView)
+      std::unique_ptr<PublicDecl> publicDecl = decl.getDecl();
+      if (!publicDecl)
         continue;
-      if (auto *fnView = dyn_cast<FunctionDeclView>(declView.get())) {
-        if (operands.size() > fnView->getArguments().size())
+      if (auto *fnDecl = dyn_cast<PublicFunctionDecl>(publicDecl.get())) {
+        if (operands.size() > fnDecl->getArguments().size())
           continue;
 
         // If this is the first function and it's a method, bump the active
         // parameter past the self argument.
-        if (result.signatures.empty() && fnView->isMethod())
+        if (result.signatures.empty() && fnDecl->isMethod())
           ++result.activeParameter;
 
         SignatureHelpResult::Signature signature;
         SmallVector<std::pair<unsigned, unsigned>> argOffsets;
-        signature.label = fnView->getDeclarationSnippet(
+        signature.label = fnDecl->getDeclarationSnippet(
             /*parameterOffsets=*/nullptr, &argOffsets);
-        addDeclDocAndParametersToSignature(signature, *fnView,
-                                           fnView->getArguments(), argOffsets);
+        addDeclDocAndParametersToSignature(signature, *fnDecl,
+                                           fnDecl->getArguments(), argOffsets);
         result.signatures.emplace_back(std::move(signature));
       }
     }
@@ -310,19 +309,20 @@ struct SignatureHelpListener : public BaseCompletionListener {
     result.activeParameter = *paramIndex;
 
     // Collect the signatures for each of the decls.
-    for (MojoASTDeclRef decl : decls) {
-      std::unique_ptr<DeclView> declView = decl.getView();
-      if (!declView)
+    for (MojoASTDeclRef declRef : decls) {
+      std::unique_ptr<PublicDecl> publicDecl = declRef.getDecl();
+      if (!publicDecl)
         continue;
-      TypeSwitch<DeclView *>(declView.get())
-          .Case<FunctionDeclView, StructDeclView>([&](auto *declView) {
-            if (parameters.size() > declView->getParameters().size())
+      TypeSwitch<PublicDecl *>(publicDecl.get())
+          .Case<PublicFunctionDecl, PublicStructDecl>([&](auto *publicDecl) {
+            if (parameters.size() > publicDecl->getParameters().size())
               return;
             SignatureHelpResult::Signature signature;
             SmallVector<std::pair<unsigned, unsigned>> paramOffsets;
-            signature.label = declView->getDeclarationSnippet(&paramOffsets);
-            addDeclDocAndParametersToSignature(
-                signature, *declView, declView->getParameters(), paramOffsets);
+            signature.label = publicDecl->getDeclarationSnippet(&paramOffsets);
+            addDeclDocAndParametersToSignature(signature, *publicDecl,
+                                               publicDecl->getParameters(),
+                                               paramOffsets);
             result.signatures.emplace_back(std::move(signature));
           });
     }
@@ -332,9 +332,9 @@ struct SignatureHelpListener : public BaseCompletionListener {
   /// form the given decl to a signature.
   template <typename RangeT>
   static void addDeclDocAndParametersToSignature(
-      SignatureHelpResult::Signature &signature, DeclView &declView,
+      SignatureHelpResult::Signature &signature, PublicDecl &publicDecl,
       RangeT &&range, ArrayRef<std::pair<unsigned, unsigned>> offsets) {
-    signature.documentation = declView.getFullMarkdownString();
+    signature.documentation = publicDecl.getFullMarkdownString();
     for (const auto &[arg, offset] : llvm::zip(range, offsets))
       signature.parameters.push_back({offset, arg.getMarkdownDocString()});
   }

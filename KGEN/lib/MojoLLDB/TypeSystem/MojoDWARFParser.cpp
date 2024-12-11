@@ -6,7 +6,7 @@
 
 #include "MojoDWARFParser.h"
 #include "KGEN/KGENDialect/KGENDType.h"
-#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/Support/DebugInfoEncoding.h"
 #include "MojoTypeSystem.h"
 #include "Support/ErrorOr.h"

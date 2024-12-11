@@ -7,7 +7,7 @@
 #ifndef KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPEDATALAYOUT_H
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPEDATALAYOUT_H
 
-#include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "lldb/lldb-enumerations.h"
