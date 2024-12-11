@@ -43,12 +43,8 @@ from typing import (
 )
 
 import click
-from click.core import ParameterSource
-from mypy_extensions import mypyc_attr
-from pathspec import PathSpec
-from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
-
 from _mblack_version import version as __version__
+from click.core import ParameterSource
 from mblack.cache import Cache, get_cache_info, read_cache, write_cache
 from mblack.comments import normalize_fmt_off
 from mblack.const import (
@@ -100,6 +96,9 @@ from mblack.report import Changed, NothingChanged, Report
 from mblack.trans import iter_fexpr_spans
 from mblib2to3.pgen2 import token
 from mblib2to3.pytree import Leaf, Node
+from mypy_extensions import mypyc_attr
+from pathspec import PathSpec
+from pathspec.patterns.gitwildmatch import GitWildMatchPatternError
 
 COMPILED = Path(__file__).suffix in (".pyd", ".so")
 
@@ -501,16 +500,20 @@ def main(  # noqa: C901
             )
 
             normalized = [
-                (source, source)
-                if source == "-"
-                else (normalize_path_maybe_ignore(Path(source), root), source)
+                (
+                    (source, source)
+                    if source == "-"
+                    else (normalize_path_maybe_ignore(Path(source), root), source)
+                )
                 for source in src
             ]
             srcs_string = ", ".join(
                 [
-                    f'"{_norm}"'
-                    if _norm
-                    else f'\033[31m"{source} (skipping - invalid)"\033[34m'
+                    (
+                        f'"{_norm}"'
+                        if _norm
+                        else f'\033[31m"{source} (skipping - invalid)"\033[34m'
+                    )
                     for _norm, source in normalized
                 ]
             )
@@ -571,7 +574,7 @@ def main(  # noqa: C901
         experimental_string_processing=experimental_string_processing,
         preview=preview,
         python_cell_magics=set(python_cell_magics),
-        is_mojo=is_mojo
+        is_mojo=is_mojo,
     )
 
     if code is not None:
@@ -608,7 +611,7 @@ def main(  # noqa: C901
 
         path_empty(
             sources,
-            "No Python files are present to be formatted. Nothing to do 😴",
+            "No Mojo files are present to be formatted. Nothing to do 😴",
             quiet,
             verbose,
             ctx,
@@ -721,6 +724,12 @@ def get_sources(
             sources.add(p)
         else:
             err(f"invalid path: {s}")
+
+    def filter_mojo_sources(source: Path):
+        return source.suffix in [".mojo", ".🔥"] or source.name == "-"
+
+    sources = set(filter(filter_mojo_sources, sources))
+
     return sources
 
 
