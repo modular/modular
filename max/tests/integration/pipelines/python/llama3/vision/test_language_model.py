@@ -17,7 +17,7 @@ from llama_vision.cross_attention_decoder import (
     CrossSdpaAttention,
 )
 from llama_vision.language_model import CausalLanguageModel, TextModel
-from max.driver import CPU, Tensor
+from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
@@ -34,6 +34,7 @@ from nn import (
 from transformers import MllamaForCausalLM
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.testing_utils import torch_device
+
 
 def weight(
     name: str, weights_array: torch.Tensor, weights_registry: dict
