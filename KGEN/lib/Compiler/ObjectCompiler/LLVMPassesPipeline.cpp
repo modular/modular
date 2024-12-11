@@ -96,6 +96,15 @@ adjustSimplifyCFGOptions(SimplifyCFGOptions simplifyCFGOptions,
   return simplifyCFGOptions.bonusInstThreshold(2);
 }
 
+static OptimizationLevel getOptimizationLevel(unsigned level) {
+  switch (level) {
+  case 0:
+    return OptimizationLevel::O0;
+  default:
+    return OptimizationLevel::O3;
+  }
+}
+
 static void addSanitizers(ModulePassManager &modulePassManager,
                           const CompilationOptions &options) {
   // LLVM's sanitizer instrumentation is not supported for GPUs.
@@ -118,7 +127,9 @@ static void addSanitizers(ModulePassManager &modulePassManager,
 }
 
 static FunctionPassManager
-buildFunctionSimplificationPipeline(const CompilationOptions &options) {
+buildFunctionSimplificationPipeline(PassBuilder passBuilder,
+                                    const CompilationOptions &options) {
+  OptimizationLevel level = getOptimizationLevel(options.optimizationLevel);
   FunctionPassManager FPM;
   // Form SSA out of local memory accesses after breaking apart aggregates into
   // scalars.
@@ -140,6 +151,7 @@ buildFunctionSimplificationPipeline(const CompilationOptions &options) {
   FPM.addPass(SimplifyCFGPass(simplifyCFGOptions));
   FPM.addPass(InstCombinePass());
   FPM.addPass(AggressiveInstCombinePass());
+  passBuilder.invokePeepholeEPCallbacks(FPM, level);
 
   FPM.addPass(ConstraintEliminationPass());
 
@@ -230,6 +242,7 @@ buildFunctionSimplificationPipeline(const CompilationOptions &options) {
   // Run instcombine after redundancy and dead bit elimination to exploit
   // opportunities opened up by them.
   FPM.addPass(InstCombinePass());
+  passBuilder.invokePeepholeEPCallbacks(FPM, level);
 
   FPM.addPass(JumpThreadingPass());
   FPM.addPass(CorrelatedValuePropagationPass());
@@ -255,11 +268,12 @@ buildFunctionSimplificationPipeline(const CompilationOptions &options) {
                                    .sinkCommonInsts(true),
                                options)));
   FPM.addPass(InstCombinePass());
+  passBuilder.invokePeepholeEPCallbacks(FPM, level);
 
   return FPM;
 }
 
-static void addInlinerPasses(ModulePassManager &MPM,
+static void addInlinerPasses(PassBuilder passBuilder, ModulePassManager &MPM,
                              const CompilationOptions &options) {
   ModuleInlinerWrapperPass MIWP(
       getInlineParams(/*speed*/ 3, /*size*/ 0),
@@ -296,7 +310,7 @@ static void addInlinerPasses(ModulePassManager &MPM,
   // Lastly, add the core function simplification pipeline nested inside the
   // CGSCC walk.
   MainCGPipeline.addPass(createCGSCCToFunctionPassAdaptor(
-      buildFunctionSimplificationPipeline(options),
+      buildFunctionSimplificationPipeline(passBuilder, options),
       /*EagerlyInvalidateAnalyses*/ true,
       /*EnableNoRerunSimplificationPipeline*/ true));
 
@@ -358,6 +372,7 @@ static void addVectorPasses(FunctionPassManager &FPM,
 
 static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
                                          const CompilationOptions &options) {
+  OptimizationLevel level = OptimizationLevel::O3;
   ModulePassManager MPM;
 
   // Do basic inference of function attributes from known properties of system
@@ -381,6 +396,9 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
       createModuleToFunctionPassAdaptor(std::move(EarlyFPM),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
+  passBuilder.invokePipelineEarlySimplificationEPCallbacks(
+      MPM, OptimizationLevel::O3, ThinOrFullLTOPhase::None);
+
   // Promote any localized globals to SSA registers.
   // FIXME: Should this instead by a run of SROA?
   // FIXME: We should probably run instcombine and simplifycfg afterward to
@@ -392,6 +410,7 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
   // optimizations.
   FunctionPassManager GlobalCleanupPM;
   GlobalCleanupPM.addPass(InstCombinePass());
+  passBuilder.invokePeepholeEPCallbacks(GlobalCleanupPM, OptimizationLevel::O3);
 
   SimplifyCFGOptions simplifyCFGOptions = adjustSimplifyCFGOptions(
       SimplifyCFGOptions().convertSwitchRangeToICmp(true), options);
@@ -401,10 +420,14 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
       createModuleToFunctionPassAdaptor(std::move(GlobalCleanupPM),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
-  addInlinerPasses(MPM, options);
+  addInlinerPasses(passBuilder, MPM, options);
 
   // Optimize globals now that the module is fully simplified.
   MPM.addPass(GlobalDCEPass());
+
+  CGSCCPassManager CGPM;
+  passBuilder.invokeCGSCCOptimizerLateEPCallbacks(CGPM, level);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
 
   // Do RPO function attribute inference across the module to forward-propagate
   // attributes where applicable.
@@ -483,6 +506,11 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
       createModuleToFunctionPassAdaptor(std::move(OptimizePM),
                                         /*EagerlyInvalidateAnalyses*/ true));
 
+  passBuilder.invokeOptimizerLastEPCallbacks(MPM, level,
+                                             ThinOrFullLTOPhase::None);
+  // FIXME: We don't officially have full-lto, therefore no passes from
+  // invokeFullLinkTimeOptimizationEarlyEPCallbacks are added here.
+
   // Add any relevant sanitizers.
   addSanitizers(MPM, options);
 
@@ -508,8 +536,12 @@ static ModulePassManager buildO3Pipeline(PassBuilder &passBuilder,
 
 static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
                                          const CompilationOptions &options) {
+  OptimizationLevel level = getOptimizationLevel(options.optimizationLevel);
   ModulePassManager MPM;
   passBuilder.invokePipelineStartEPCallbacks(MPM, OptimizationLevel::O0);
+
+  passBuilder.invokePipelineEarlySimplificationEPCallbacks(
+      MPM, OptimizationLevel::O0, ThinOrFullLTOPhase::None);
 
   // Build a minimal pipeline based on the semantics required by LLVM,
   // which is just that always inlining occurs. Further, disable generating
@@ -517,6 +549,12 @@ static ModulePassManager buildO0Pipeline(PassBuilder &passBuilder,
   // code generation.
   MPM.addPass(AlwaysInlinerPass(
       /*InsertLifetimeIntrinsics=*/false));
+  CGSCCPassManager CGPM;
+  passBuilder.invokeCGSCCOptimizerLateEPCallbacks(CGPM, level);
+  MPM.addPass(createModuleToPostOrderCGSCCPassAdaptor(std::move(CGPM)));
+
+  passBuilder.invokeOptimizerLastEPCallbacks(MPM, level,
+                                             ThinOrFullLTOPhase::None);
 
   // Add any relevant sanitizers.
   addSanitizers(MPM, options);
