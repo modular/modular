@@ -224,6 +224,11 @@ class TokenGeneratorPipeline(Generic[TokenGeneratorContext]):
     async def __aenter__(self):
         self.logger.info("%s: Starting workers:", self.model_name)
         assert not self._background_tasks
+        # TODO arekay - replace with better signalling
+        if not psutil.pid_exists(self.engine_queue.pid):
+            raise RuntimeError(
+                f"Worker process {self.engine_queue.pid} not running"
+            )
 
         # Add global fanout worker.
         self.create_background_task(self.engine_queue.response_worker)

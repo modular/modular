@@ -10,7 +10,7 @@ import logging
 import threading
 from os import environ
 from time import sleep, time
-from typing import Any, Iterable, List, Literal, Optional, Union
+from typing import Any, Callable, Iterable, List, Literal, Optional, Union
 
 import numpy as np
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
@@ -111,6 +111,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         tg_rate_per_context_token: float,
         tg_padding: bool,
         busy_wait: bool,
+        failure_predicate: Optional[Callable[[], bool]] = None,
     ):
         """Parameterize a performance fake
 
@@ -133,6 +134,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         self.tg_rate_per_context_token = tg_rate_per_context_token
         self.tg_padding = tg_padding
         self.busy_wait = busy_wait
+        self.failure_predicate = failure_predicate
 
         self.batch_info_output_fname: Optional[str] = environ.get(
             "MAX_BATCH_INFO_FILENAME"
@@ -170,6 +172,8 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             # context encoding mode
             wait_time = self._ce_time_ms([x.prompt_len for x in batch.values()])
             for _, ctx in batch.items():
+                if self.failure_predicate and self.failure_predicate():
+                    raise Exception("performance fake simulated failure in CE")
                 ctx.context_len += ctx.prompt_len
                 ctx.seq_len = 1
         else:
@@ -181,6 +185,8 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
                 [x.context_len for x in batch.values()]
             )
             for _, ctx in batch.items():
+                if self.failure_predicate and self.failure_predicate():
+                    raise Exception("performance fake simulated failure in TG")
                 ctx.context_len += 1
 
         # actually wait here
@@ -267,6 +273,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
 
 def get_performance_fake(
     mode: Literal["no-op", "speed-of-light", "vllm"],
+    failure_predicate: Optional[Callable[[], bool]] = None,
 ) -> PerformanceFakingTokenGenerator:
     """Construct a performance fake for the given performance mode."""
     if mode == "no-op":
@@ -279,6 +286,7 @@ def get_performance_fake(
             tg_rate_per_context_token=0,
             tg_padding=False,
             busy_wait=False,
+            failure_predicate=failure_predicate,
         )
     elif mode == "speed-of-light":
         # current defaults are speed-of-light on A100-80GB
@@ -291,6 +299,7 @@ def get_performance_fake(
             tg_rate_per_context_token=(21.11 / 256 - 12.67 / 256) / 512,
             tg_padding=False,
             busy_wait=False,
+            failure_predicate=failure_predicate,
         )
     elif mode == "vllm":
         # this is for A100-80GB
@@ -303,6 +312,7 @@ def get_performance_fake(
             tg_rate_per_context_token=(59.79 - 33.66) / 256 / 1024,
             tg_padding=False,
             busy_wait=False,
+            failure_predicate=failure_predicate,
         )
     else:
         raise ValueError(f"Unexpected mode: {mode}")

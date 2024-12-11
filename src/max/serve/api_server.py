@@ -83,17 +83,22 @@ class ServingTokenGeneratorSettings:
 async def lifespan(
     app: FastAPI, serving_settings: ServingTokenGeneratorSettings
 ):
-    async with start_model_worker(
-        serving_settings.model_factory, serving_settings.pipeline_config
-    ) as engine_queue:
-        pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
-            model_name=serving_settings.model_name,
-            tokenizer=serving_settings.tokenizer,
-            engine_queue=engine_queue,
-        )
-        app.state.pipeline = pipeline
-        async with pipeline:
-            yield
+    try:
+        async with start_model_worker(
+            serving_settings.model_factory, serving_settings.pipeline_config
+        ) as engine_queue:
+            pipeline: TokenGeneratorPipeline = TokenGeneratorPipeline(
+                model_name=serving_settings.model_name,
+                tokenizer=serving_settings.tokenizer,
+                engine_queue=engine_queue,
+            )
+            app.state.pipeline = pipeline
+            async with pipeline:
+                yield
+    except Exception as e:
+        logger.exception("Error occurred in model worker.", e)
+    finally:
+        logger.critical("start_model_worker has completed")
 
 
 def fastapi_app(

@@ -41,6 +41,12 @@ def _model_worker_process_fn(
         )
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        logger.exception(
+            "Encountered an error in _model_worker_process_fn ",
+            e,
+            stack_info=True,
+        )
 
 
 @asynccontextmanager
@@ -93,6 +99,7 @@ async def start_model_worker(
     )
     worker.start()
     engine_queue.pid = worker.pid if worker.pid else -1
+    engine_queue.process = worker
 
     async def worker_started():
         while not started_event.is_set():

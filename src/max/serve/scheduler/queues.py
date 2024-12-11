@@ -8,11 +8,14 @@
 import asyncio
 import contextlib
 import logging
+import multiprocessing as mp
+import os
 import queue
 from dataclasses import dataclass
 from enum import Enum
 from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 
+import psutil
 from faster_fifo import Queue as MPQueue  # type: ignore
 
 BatchReqId = TypeVar("BatchReqId")
@@ -69,6 +72,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self.cancel_q = MPQueue(max_size_bytes=1_000_000)
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.pid: int = -1
+        self.process: Optional[mp.Process] = None
 
     @contextlib.contextmanager
     def open_channel(
@@ -93,7 +97,17 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         try:
             while True:
                 try:
+                    if not psutil.pid_exists(self.pid):
+                        raise Exception("Worker failed!")
                     while self.response_q.empty():
+                        # If the worker dies this loop will keep running,
+                        # so we have to check the worker status.
+                        if not psutil.pid_exists(self.pid):
+                            self.logger.error(
+                                "Process failed with error code %d",
+                                self.process.exitcode if self.process else "",
+                            )
+                            raise Exception("Worker failed!")
                         await asyncio.sleep(0)
 
                     cancelled = set()
@@ -113,3 +127,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                     await asyncio.sleep(0)
         except asyncio.CancelledError:
             raise
+        finally:
+            self.logger.info(
+                "Terminating response worker [work=%s, self=%s]",
+                self.pid,
+                os.getpid(),
+            )
