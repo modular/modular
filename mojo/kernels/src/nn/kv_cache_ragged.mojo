@@ -2274,6 +2274,28 @@ fn flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged[
     ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
 
 
+@register_internal(
+    "flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged"
+)
+fn flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged[
+    type: DType, //,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h8_d128_bshd
+    ],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
+
+
 @always_inline
 fn _flash_attention_kv_cache_ragged[
     type: DType,
