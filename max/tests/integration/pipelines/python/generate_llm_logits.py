@@ -517,7 +517,20 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
             assert self.is_supported(
                 version=version, encoding=encoding, device_spec=device_spec
             )
-        raise NotImplementedError
+        hf_repo_id = "mistral-community/pixtral-12b"
+        config = pipelines.PipelineConfig(
+            device_specs=device_specs,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            huggingface_repo_id=hf_repo_id,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
 
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device

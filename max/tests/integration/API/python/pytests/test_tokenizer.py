@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 import asyncio
-import pytest
 from max.pipelines import (
     PipelineConfig,
     TextAndVisionTokenizer,
@@ -12,6 +11,21 @@ from max.pipelines import (
     TextAndVisionContext,
 )
 from max.pipelines import TokenGeneratorRequestMessage
+
+import requests
+import pytest
+
+
+def convert_image_url_to_base64(image_url):
+    """Fetches an image from a URL and converts it to Base64 encoded bytes."""
+    try:
+        # Fetch the image from the URL
+        response = requests.get(image_url)
+        response.raise_for_status()  # Raise an error for bad responses
+        return response.content
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching image: {e}")
+        return None
 
 
 @pytest.mark.skip("this requires authorized huggingface access")
@@ -22,38 +36,42 @@ def test_text_and_vision_tokenizer():
 
     VALID_REPOS = {
         # This is not currently working for pixtral.
-        # "mistral-community/pixtral-12b": "<|image|>",
+        "mistral-community/pixtral-12b": "[IMG]",
         "meta-llama/Llama-3.2-11B-Vision-Instruct": "<|image|>",
     }
-
+    img_url = "https://picsum.photos/id/237/200/300"
+    img = convert_image_url_to_base64(img_url)
+    imgs = [[], [img], [img, img]]
     for repo_id, check_str in VALID_REPOS.items():
         pipeline_config = PipelineConfig(
             huggingface_repo_id=repo_id, trust_remote_code=True
         )
         tokenizer = TextAndVisionTokenizer(pipeline_config)
+        for imgs_list in imgs:
+            content = [
+                {"type": "text", "text": "What is in this image?"},
+            ] + [{"type": "image"} for _ in imgs_list]
+            request = TokenGeneratorRequest(
+                id="request...",
+                index=0,
+                model_name=repo_id,
+                messages=[
+                    TokenGeneratorRequestMessage(
+                        role="user",
+                        content=content,
+                    )
+                ],
+                images=imgs_list,
+            )
 
-        request = TokenGeneratorRequest(
-            id="request...",
-            index=0,
-            model_name=repo_id,
-            messages=[
-                TokenGeneratorRequestMessage(
-                    role="user",
-                    content=[
-                        {"type": "text", "text": "What is in this image?"},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
-                            },
-                        },
-                    ],
-                )
-            ],
-        )
+            context: TextAndVisionContext = asyncio.run(
+                tokenizer.new_context(request)
+            )
 
-        context: TextAndVisionContext = asyncio.run(
-            tokenizer.new_context(request)
-        )
-
-        assert check_str in context.prompt, context.prompt
+            if not imgs_list:
+                assert context.pixel_values is None
+                assert check_str not in context.prompt, context.prompt
+            else:
+                assert check_str in context.prompt, context.prompt
+                assert context.pixel_values is not None
+                assert len(context.pixel_values) == len(imgs_list)
