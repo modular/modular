@@ -18,7 +18,7 @@ from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
 from nn.concat import concat
 from register import *
-from runtime.asyncrt import MojoCallContextPtr
+from runtime.asyncrt import MojoCallContextPtr, DeviceContextPtr
 from weights_registry import WeightsRegistry
 
 from utils import Index, IndexList, StaticTuple
@@ -115,24 +115,15 @@ fn byte_buffer_alloc[
     alignment: Int,
 ](
     byte_size: Int,
-    device_context: UnsafePointer[DeviceContext],
+    device_context: DeviceContextPtr,
     call_ctx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
     """Function will allocate a 1-D buffer with the specified size/alignment on device.
     """
     # This primitive has a byte-size input, so always assume a byte format
     var shape = IndexList[1](byte_size)
-
-    @parameter
-    if "gpu" in target:
-        # For now, only gpu targets can use device context directly
-        var buf = device_context[].enqueue_create_buffer[DType.int8](byte_size)
-        return NDBuffer[DType.int8, 1](buf^.take_ptr(), shape)
-    else:
-        return NDBuffer[DType.int8, 1](
-            call_ctx.alloc(byte_size, alignment).bitcast[Int8](),
-            shape,
-        )
+    var buf = device_context[].enqueue_create_buffer[DType.int8](byte_size)
+    return NDBuffer[DType.int8, 1](buf^.take_ptr(), shape)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -211,18 +202,6 @@ fn create_i1_async(
     )
 
 
-# TODO: this should contain a pointer or reference to the DeviceContext, NOT
-# a copy of it. This is not possible until GEX-902 is resolved.
-alias DeviceBufferMojoValueType = Tuple[DeviceContext, UnsafePointer[Int8]]
-
-
-fn _destroy_device_buffer(ptr: UnsafePointer[NoneType]):
-    var cast_ptr = ptr.bitcast[DeviceBufferMojoValueType]()
-    var ctx = cast_ptr[][0]
-    var data = cast_ptr[][1]
-    _ = DeviceBuffer(ctx, data, 0, owning=True)
-
-
 @register_internal("builtin.create_buffer_ref_async")
 @always_inline
 fn create_buffer_ref_async[
@@ -233,41 +212,12 @@ fn create_buffer_ref_async[
     runtime: UnsafePointer[NoneType],
     call_ctx: MojoCallContextPtr,
 ):
-    # DeviceContext does not support CPU so handle this specially.
-    # We could also use the MojoValue approach below for CPU, but it is harder
-    # to destroy the buffer in mojo because the runtime (which holds the allocator)
-    # is not currently available in mojo.
-    @parameter
-    if target == "cpu":
-        external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
-            buffer.data, len(buffer), async_ptr, runtime
-        )
-        return
-
-    # Otherwise, create a MojoValue containing the DeviceContext, which is used
-    # to free the data pointer.
-    alias size = sizeof[DeviceBufferMojoValueType]()
-    alias align = alignof[DeviceBufferMojoValueType]()
-
-    var mojo_value_ptr = external_call[
-        "KGEN_CompilerRT_MojoValueAllocateBuffer",
-        UnsafePointer[DeviceBufferMojoValueType],
-    ](size, align)
-    # Note: We need to make a copy of the DeviceContext here because the graph
-    # compiler does not share the same DeviceContext object as the MAX Driver
-    # (GEX-902). The members are shared so this is OK.
-    # The DeviceContext is currently really big (1700B) so this needs to be fixed.
-    mojo_value_ptr.init_pointee_move(
-        (call_ctx.get_device_context(), buffer.data)
-    )
-
-    external_call["KGEN_CompilerRT_CreateAsyncMojoValueBufferRef", NoneType](
+    external_call["KGEN_CompilerRT_CreateAsyncDeviceBufferRef", NoneType](
         buffer.data,
         len(buffer),
-        mojo_value_ptr,
-        _destroy_device_buffer,
         async_ptr,
         runtime,
+        call_ctx,
     )
 
 
@@ -610,7 +560,7 @@ fn mgp_buffer_alloc[
     cDevice: StringLiteral,
 ](
     byte_size: Int,
-    dev_context: UnsafePointer[DeviceContext],
+    dev_context: DeviceContextPtr,
     call_ctx: MojoCallContextPtr,
 ) raises -> NDBuffer[DType.int8, 1]:
     # Default to alignment of 0 which means kPreferredMemoryAlignment if cRawAlign is kUnknownSize (SizeUtils.h).
@@ -761,7 +711,7 @@ fn mgp_buffer_device_to_host[
 ](
     dev_buf: NDBuffer[DType.uint8, 1],
     host_buf: NDBuffer[DType.uint8, 1],
-    dev_ctx: UnsafePointer[DeviceContext],
+    dev_ctx: DeviceContextPtr,
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
@@ -788,8 +738,8 @@ fn mgp_buffer_device_to_device[
 ](
     src_buf: NDBuffer[DType.uint8, 1],
     dst_buf: NDBuffer[DType.uint8, 1],
-    src_dev_ctx: UnsafePointer[DeviceContext],
-    dst_dev_ctx: UnsafePointer[DeviceContext],
+    src_dev_ctx: DeviceContextPtr,
+    dst_dev_ctx: DeviceContextPtr,
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
@@ -826,7 +776,7 @@ fn mgp_buffer_host_to_device[
 ](
     host_buf: NDBuffer[DType.uint8, 1],
     dev_buf: NDBuffer[DType.uint8, 1],
-    dev_ctx: UnsafePointer[DeviceContext],
+    dev_ctx: DeviceContextPtr,
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
@@ -957,8 +907,9 @@ fn mgp_tensor_spec_get_dim[
 
 
 @export
-fn mgp_device_context_destroy(dev_ctx: UnsafePointer[DeviceContext]):
-    _ = dev_ctx.destroy_pointee()
+fn mgp_device_context_destroy(dev_ctx: DeviceContextPtr):
+    # DeviceContext is refcounted, we don't need to explicitly destroy it
+    pass
 
 
 @register_internal("mgp.sync")
@@ -967,7 +918,7 @@ fn mgp_sync[
     bDevice: StringLiteral,
 ](
     ctx: StateContext,
-    dev_ctx: UnsafePointer[DeviceContext],
+    dev_ctx: DeviceContextPtr,
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     dev_ctx[].synchronize()
