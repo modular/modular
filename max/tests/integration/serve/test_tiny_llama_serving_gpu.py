@@ -14,7 +14,10 @@ from evaluate_llama import SupportedTestModels
 from max.driver import DeviceSpec
 from max.pipelines import SupportedEncoding, TextTokenizer
 from max.serve.mocks.mock_api_requests import simple_openai_request
-from max.serve.schemas.openai import CreateChatCompletionResponse  # type: ignore
+from max.serve.schemas.openai import (  # type: ignore
+    CreateChatCompletionResponse,
+    CreateCompletionResponse,
+)
 from test_common.evaluate import PROMPTS
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
@@ -68,6 +71,41 @@ async def test_tinyllama_serve_gpu(app):
 
             assert len(response.choices) == 1
             assert response.choices[0].finish_reason == "stop"
+
+
+@pytest.mark.skip(
+    reason=(
+        "app fixture crashes when reused with 'is bound to a different event"
+        " loop'"
+    )
+)
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pipeline_model_config",
+    [
+        ModelParams(
+            weight_path="tiny_llama.gguf",
+            max_length=512,
+            max_new_tokens=10,
+            device_spec=DeviceSpec.cuda(),
+            encoding=SupportedEncoding.bfloat16,
+        )
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "prompt", ["Hello world", ["Hello world"], [1, 2, 3], [[1, 2, 3]]]
+)
+async def test_tinyllama_serve_gpu_nonchat_completions(app, prompt):
+    async with TestClient(app, timeout=90.0) as client:
+        # Completions endpoint instead of chat completions
+        raw_response = await client.post(
+            "/v1/completions",
+            json={"model": "modularai/llama-3.1", "prompt": prompt},
+        )
+        response = CreateCompletionResponse.model_validate(raw_response.json())
+        assert len(response.choices) == 1
+        assert response.choices[0].finish_reason == "stop"
 
 
 @pytest.mark.skip("TODO(ylou): Fix!!")

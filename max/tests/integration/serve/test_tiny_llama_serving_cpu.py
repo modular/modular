@@ -16,6 +16,7 @@ from max.pipelines.config import SupportedEncoding
 from max.pipelines.tokenizer import TextTokenizer
 from max.serve.schemas.openai import (  # type: ignore
     CreateChatCompletionResponse,
+    CreateCompletionResponse,
 )
 from test_common.evaluate import PROMPTS
 from test_common.numpy_encoder import NumpyDecoder
@@ -55,6 +56,35 @@ async def test_tinyllama_serve_cpu(app):
             raw_response.json()
         )
 
+        assert len(response.choices) == 1
+        assert response.choices[0].finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pipeline_model_config",
+    [
+        ModelParams(
+            weight_path="tiny_llama.gguf",
+            max_length=512,
+            max_new_tokens=10,
+            device_spec=DeviceSpec.cpu(),
+            encoding=SupportedEncoding.float32,
+        )
+    ],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "prompt", ["Hello world", ["Hello world"], [1, 2, 3], [[1, 2, 3]]]
+)
+async def test_tinyllama_serve_cpu_nonchat_completions(app, prompt):
+    async with TestClient(app, timeout=90.0) as client:
+        # Completions endpoint instead of chat completions
+        raw_response = await client.post(
+            "/v1/completions",
+            json={"model": "modularai/llama-3.1", "prompt": prompt},
+        )
+        response = CreateCompletionResponse.model_validate(raw_response.json())
         assert len(response.choices) == 1
         assert response.choices[0].finish_reason == "stop"
 
