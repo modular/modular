@@ -156,7 +156,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    TypeAttrOf<KGEN_SignatureType>:$signature,
+    TypeAttrOf<KGEN_SignatureGeneratorType>:$signatureGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_DecoratorsAttr:$decorators,
@@ -168,9 +168,9 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    `` custom<GeneratorOp>($exportKind, $sym_name, $signature, $functionType,
-                           $inputParams, $inlineLevel, $decorators, attr-dict,
-                           $bodyRegion)
+    `` custom<GeneratorOp>($exportKind, $sym_name, $signatureGenerator,
+                           $functionType, $inputParams, $inlineLevel,
+                           $decorators, attr-dict, $bodyRegion)
   }];
 
   let extraClassDeclaration = [{
@@ -179,22 +179,27 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
     // TODO: Remove this when result parameters are gone.
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+
+    // Temporary Back-Compat
+    SignatureType getSignature() {
+      return getSignatureGenerator().asOldSignature();
+    }
   }];
 
   let builders = [
-    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
+    OpBuilder<(ins "StringAttr":$name, "SignatureGeneratorType":$type,
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"DictionaryAttr", "{}">:$llvmMetadata), [{
       if (!llvmMetadata)
         llvmMetadata = DictionaryAttr::get(name.getContext());
-      build($_builder, $_state, name, signature, functionType, inputParams,
+      build($_builder, $_state, name, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
             llvmMetadata, /*patterns=*/{});
     }]>,
-    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature), [{
-      build($_builder, $_state, name, signature, signature.getValues(), {}, {});
+    OpBuilder<(ins "StringAttr":$name, "SignatureGeneratorType":$type), [{
+      build($_builder, $_state, name, type, type.getBody().getValues(), {}, {});
     }]>
   ];
 }
@@ -221,23 +226,30 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
     ```
   }];
 
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<KGEN_SignatureType>:$signature,
-                       TypeAttrOf<FunctionType>:$functionType,
-                       KGEN_ParamDeclArrayAttr:$inputParams,
-                       KGEN_ExportKindAttr:$exportKind,
-                       OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    TypeAttrOf<KGEN_SignatureGeneratorType>:$signatureGenerator,
+    TypeAttrOf<FunctionType>:$functionType,
+    KGEN_ParamDeclArrayAttr:$inputParams,
+    KGEN_ExportKindAttr:$exportKind,
+    OptionalAttr<FlatSymbolRefAttr>:$preCompiledModuleRef
+  );
   let regions = (region SizedRegion<0>:$body);
 
   let extraClassDeclaration = [{
     InlineLevel getInlineLevel() { return InlineLevel::Never; }
     Region *getCallableRegion() { return &getBody(); }
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+
+    // Temporary Back-Compat
+    SignatureType getSignature() {
+      return getSignatureGenerator().asOldSignature();
+    }
   }];
 
   let assemblyFormat = [{
     `` custom<SymbolExport>($exportKind) $sym_name ``
-    custom<ExternGenerator>($signature, $functionType, $inputParams)
+    custom<ExternGenerator>($signatureGenerator, $functionType, $inputParams)
     attr-dict-with-keyword ($body^)?
   }];
 }

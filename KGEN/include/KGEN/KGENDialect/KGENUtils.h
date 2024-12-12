@@ -346,14 +346,26 @@ ParseResult parseFunctionSignature(OpAsmParser &p,
                                    FunctionType &functionType,
                                    SignatureType &signature,
                                    ParamDeclParseHookTy parseDeclElt = {});
-/// Print a function signature with optional metadata. If `region` is non-null,
-/// then the SSA value names of the region arguments are printed.
+ParseResult parseFunctionSignatureGenerator(
+    OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
+    ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
+    FunctionType &functionType, SignatureGeneratorType &signature,
+    ParamDeclParseHookTy parseDeclElt = {});
+/// Print a function signature with optional metadata. If `region` is
+/// non-null, then the SSA value names of the region arguments are printed.
 void printFunctionSignature(OpAsmPrinter &p, Region *region,
                             ArrayRef<ParamDeclAttr> inputParams,
                             ArrayRef<ParamDeclAttr> resultParams,
                             FunctionType functionType, SignatureType signature,
                             ParamDeclPrintHookTy printInputElt = {},
                             ParamDeclPrintHookTy printResultElt = {});
+void printFunctionSignatureGenerator(OpAsmPrinter &p, Region *region,
+                                     ArrayRef<ParamDeclAttr> inputParams,
+                                     ArrayRef<ParamDeclAttr> resultParams,
+                                     FunctionType functionType,
+                                     SignatureGeneratorType signature,
+                                     ParamDeclPrintHookTy printInputElt = {},
+                                     ParamDeclPrintHookTy printResultElt = {});
 
 /// Parse the always_inline related keywords if present.
 ParseResult parseOptionalInline(OpAsmParser &parser, InlineLevelAttr &attr);

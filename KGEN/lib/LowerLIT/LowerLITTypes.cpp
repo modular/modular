@@ -203,6 +203,18 @@ void StructDecls::buildReplacer(LowerLITReplacer &replacer, MLIRContext *ctx) {
               sig.getFnEffects(), metadata);
         },
         domain);
+    replacer.addNonRecursiveReplacement(
+        [domain, replaceAsType, &replacer](GeneratorType gen) {
+          SmallVector<Type> inputParamTypes(
+              map_range(gen.getInputParamTypes(), replaceAsType));
+          Attribute metadata = gen.getMetadata();
+          if (metadata)
+            metadata = replacer.replace(metadata, domain);
+          return GeneratorType::get(inputParamTypes,
+                                    replacer.replace(gen.getBody(), domain),
+                                    metadata);
+        },
+        domain);
   }
 
   // Partially bound types never have any uses in KGEN. This attribute is

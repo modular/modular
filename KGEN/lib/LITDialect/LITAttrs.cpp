@@ -554,11 +554,9 @@ LogicalResult FnMetadataAttr::verifyNewSignature(
     if (SignatureType::hasAddress(conv)) {
       if (::isa<RefType>(type))
         continue;
-      return emitError() << "argument #" << i << " with convention '"
-                         << stringifyEnum(conv)
-                         << "' in signature type should be a `!kgen.pointer` "
-                            "or `!lit.ref` but got: "
-                         << type;
+      return emitError()
+             << "argument #" << i << " with convention '" << stringifyEnum(conv)
+             << "' in signature type should be a `!lit.ref` but got: " << type;
     }
   }
 

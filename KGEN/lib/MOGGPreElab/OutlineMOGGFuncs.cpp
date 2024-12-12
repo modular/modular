@@ -192,9 +192,10 @@ private:
 
     // Create the outlined function to call.
     auto newFuncType = FunctionType::get(ctx, inputArgTypes, returnTypes);
-    auto sigType = SignatureType::remapToSignature(
-        asDecls, {}, newFuncType,
-        /*argConventions=*/{}, KGEN::impl::FnEffects::Capturing);
+    SignatureGeneratorType sigType =
+        SignatureGeneratorType::remapToSignatureGenerator(
+            asDecls, newFuncType,
+            /*argConventions=*/{}, KGEN::impl::FnEffects::Capturing);
 
     std::string name = (Twine(gen.getSymName()) + Twine("_OUTLINED")).str();
     auto outlinedFunction = builder.create<KGEN::GeneratorOp>(
@@ -246,10 +247,10 @@ private:
     auto flatSym = FlatSymbolRefAttr::get(ctx, outlinedFunction.getNameAttr());
 
     auto specializedSig =
-        outlinedFunction.getSignature().getSpecializedSignature(
+        outlinedFunction.getSignatureGenerator().getSpecializedGenerator(
             paramArgs, outlinedFunction.getLoc());
-    auto symbol =
-        KGEN::SymbolConstantAttr::get(flatSym, specializedSig, paramArgs);
+    auto symbol = KGEN::SymbolConstantAttr::get(
+        flatSym, specializedSig.asOldSignature(), paramArgs);
 
     // Create the KGEN parameter bindings. I.E the <> "template" parameters.
     // Note this is empty as we expect all parameters to be bound in the above

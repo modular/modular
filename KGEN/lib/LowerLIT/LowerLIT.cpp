@@ -376,7 +376,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
 
   OpBuilder b(func->getContext());
   auto inputParamsArr = ParamDeclArrayAttr::get(b.getContext(), inputParams);
-  auto sigAttr = TypeAttr::get(signature);
+  auto sigAttr = TypeAttr::get(signature.asSignatureGenerator());
 
   // Directly lower since these operations are exactly identical right now.
   OperationState state(func.getLoc(), GeneratorOp::getOperationName());
@@ -554,9 +554,9 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
 /// Check to see if any of the parameters of the specified signature are
 /// singletons like origin parameters.  If so, bind them to a dummy value and
 /// return the updated signature without them.
-static SignatureType
-removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
-                      SignatureType signature) {
+template <typename SigTy>
+static SigTy removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
+                                   SigTy signature) {
   llvm::SmallVector<TypedAttr> paramsToBind;
   size_t numRemoved = 0;
 
@@ -589,7 +589,10 @@ removeSingletonParams(SingletonTypeHelper &singletonTypeHelper,
 
   // Update the signature type if we dropped anything.
   if (numRemoved) {
-    signature = signature.getSpecializedSignature(paramsToBind);
+    if constexpr (std::is_same_v<SigTy, SignatureType>)
+      signature = signature.getSpecializedSignature(paramsToBind);
+    else
+      signature = signature.getSpecializedGenerator(paramsToBind);
     assert(signature && "didn't replace lifetimes correctly");
   }
   return signature;
@@ -625,6 +628,24 @@ lowerAttributesAndTypes(Operation *op,
         sig.getFnEffects());
     // Remove the singleton parameter declarations.
     return removeSingletonParams(singletonTypeHelper, sig);
+  });
+
+  // Remove signature metadata.
+  replacer.addReplacement([&](NewSignatureType sig) {
+    return NewSignatureType::get(
+        cast<FunctionType>(replacer.replace(sig.getValues())),
+        sig.getArgConventions(), sig.getFnEffects());
+  });
+
+  replacer.addReplacement([&](SignatureGeneratorType gen) {
+    // Remove uses of any singleton attributes.
+    SmallVector<Type> paramTypes;
+    for (auto ty : gen.getInputParamTypes())
+      paramTypes.push_back(replacer.replace(ty));
+
+    gen = GeneratorType::get(paramTypes, replacer.replace(gen.getBody()));
+    // Remove the singleton parameter declarations.
+    return removeSingletonParams(singletonTypeHelper, gen);
   });
 
   auto *debugInfoDialect =

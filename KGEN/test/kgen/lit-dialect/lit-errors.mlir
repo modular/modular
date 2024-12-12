@@ -347,7 +347,7 @@ lit.func @f() -> !kgen.none {
 
 // -----
 
-// expected-error @below {{argument #0 with convention 'read_mem' in signature type should be a `!kgen.pointer` or `!lit.ref` but got: 'index'}}
+// expected-error @below {{argument #0 with convention 'read_mem' in signature type should be a `!lit.ref` but got: 'index'}}
 !type = !lit.signature<(index read_mem) -> ()>
 
 // -----

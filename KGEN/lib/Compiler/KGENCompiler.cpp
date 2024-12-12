@@ -88,7 +88,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   sliced.setNotExported();
   sliced.setInlineLevel(InlineLevel::Always);
   sliced.setSymNameAttr(stubName);
-  auto wrapper = b.create<GeneratorOp>(name, sig);
+  auto wrapper = b.create<GeneratorOp>(name, sig.asSignatureGenerator());
   wrapper.setExported();
   wrapper.setLLVMMetadataAttr(sliced.getLLVMMetadataAttr());
   Block *entry =

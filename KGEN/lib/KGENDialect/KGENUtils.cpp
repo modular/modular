@@ -1513,16 +1513,14 @@ void KGEN::printSignatureValues(AsmPrinter &p,
     p.printArrowTypeList(functionType.getResults());
 }
 
-ParseResult KGEN::parseFunctionSignature(
+static ParseResult parseFunctionSignatureCommon(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
-    FunctionType &functionType, SignatureType &signature,
-    ParamDeclParseHookTy parseDeclElt) {
-  llvm::SMLoc loc = p.getCurrentLocation();
+    FunctionType &functionType, ParamDeclParseHookTy parseDeclElt,
+    SmallVectorImpl<ArgConvention> &argConventions, FnEffects &effects) {
   if (parseOptionalParameterSpec(p, inputParams, resultParams, parseDeclElt))
     return failure();
 
-  SmallVector<ArgConvention> argConventions;
   auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
     // Parse the argument type and its input convention.
     OpAsmParser::Argument &arg = args.emplace_back();
@@ -1551,13 +1549,46 @@ ParseResult KGEN::parseFunctionSignature(
     return success();
   };
 
-  FnEffects effects;
   if (failed(parseSignatureValues(p, parseArg, functionType, effects,
                                   /*optionalResultList=*/true)))
+    return failure();
+  return success();
+}
+
+ParseResult KGEN::parseFunctionSignature(
+    OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
+    ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
+    FunctionType &functionType, SignatureType &signature,
+    ParamDeclParseHookTy parseDeclElt) {
+  llvm::SMLoc loc = p.getCurrentLocation();
+  SmallVector<ArgConvention> argConventions;
+  FnEffects effects;
+  if (failed(parseFunctionSignatureCommon(p, args, inputParams, resultParams,
+                                          functionType, parseDeclElt,
+                                          argConventions, effects)))
     return failure();
 
   signature = SignatureType::remapToSignature(
       inputParams, resultParams, functionType, argConventions, effects, {},
+      [&] { return p.emitError(loc); });
+  return success(!!signature);
+}
+
+ParseResult KGEN::parseFunctionSignatureGenerator(
+    OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
+    ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
+    FunctionType &functionType, SignatureGeneratorType &signature,
+    ParamDeclParseHookTy parseDeclElt) {
+  llvm::SMLoc loc = p.getCurrentLocation();
+  SmallVector<ArgConvention> argConventions;
+  FnEffects effects;
+  if (failed(parseFunctionSignatureCommon(p, args, inputParams, resultParams,
+                                          functionType, parseDeclElt,
+                                          argConventions, effects)))
+    return failure();
+
+  signature = SignatureGeneratorType::remapToSignatureGenerator(
+      inputParams, functionType, argConventions, effects, {}, {},
       [&] { return p.emitError(loc); });
   return success(!!signature);
 }
@@ -1582,6 +1613,29 @@ void KGEN::printFunctionSignature(OpAsmPrinter &p, Region *region,
   printOptionalParameterSpec(p, inputParams, resultParams, printInputElt,
                              printResultElt);
   printSignatureValues(p, printElt, functionType, signature,
+                       /*optionalResultList=*/true);
+}
+
+void KGEN::printFunctionSignatureGenerator(
+    OpAsmPrinter &p, Region *region, ArrayRef<ParamDeclAttr> inputParams,
+    ArrayRef<ParamDeclAttr> resultParams, FunctionType functionType,
+    SignatureGeneratorType signature, ParamDeclPrintHookTy printInputElt,
+    ParamDeclPrintHookTy printResultElt) {
+  // Print the function arguments.
+  NewSignatureType sigBase = signature.getBody();
+  auto printElt = [&](unsigned i) {
+    if (!region)
+      p << functionType.getInput(i);
+    else
+      p.printRegionArgument(region->getArgument(i));
+
+    printArgConvention(p, sigBase.getArgConvention(i));
+  };
+
+  printOptionalParameterSpec(p, inputParams, resultParams, printInputElt,
+                             printResultElt);
+  printSignatureValues(p, printElt, functionType, sigBase.getArgConventions(),
+                       sigBase.getFnEffects(),
                        /*optionalResultList=*/true);
 }
 
