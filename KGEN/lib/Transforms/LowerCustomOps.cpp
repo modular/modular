@@ -112,8 +112,9 @@ static StringAttr generateInstantiateStub(SymbolTable &symtab, StringAttr name,
   SignatureType calleeSig = callee.getSignature().getSpecializedSignature(
       params, [&] { return mlir::emitError(callee.getLoc()); });
   auto inst = b.create<GeneratorOp>(
-      instName, SignatureType::get(funcType, calleeSig.getArgConventions(),
-                                   calleeSig.getFnEffects()));
+      instName,
+      SignatureGeneratorType::get({}, funcType, calleeSig.getArgConventions(),
+                                  calleeSig.getFnEffects()));
   inst.setExported();
   symtab.insert(inst);
 

@@ -346,11 +346,11 @@ static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
     return failure();
 
   SmallVector<OpAsmParser::Argument> args;
-  SignatureType signature;
+  SignatureGeneratorType signature;
   FunctionType functionType;
   ParamDeclArrayAttr resultParams;
-  if (parseFunctionSignature(p, args, inputParams, resultParams, functionType,
-                             signature))
+  if (parseFunctionSignatureGenerator(p, args, inputParams, resultParams,
+                                      functionType, signature))
     return failure();
   if (!resultParams.empty())
     return p.emitError(p.getCurrentLocation(), "invalid result parameters");
@@ -376,17 +376,18 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
   printSymbolExport(p, op, exportKind);
   p << ' ';
   p.printSymbolName(name);
-  printFunctionSignature(p, &body, inputParams, /*resultParams=*/{},
-                         cast<FunctionType>(functionType.getValue()),
-                         cast<SignatureType>(signature.getValue()));
+  printFunctionSignatureGenerator(
+      p, &body, inputParams, /*resultParams=*/{},
+      cast<FunctionType>(functionType.getValue()),
+      cast<SignatureGeneratorType>(signature.getValue()));
   printOptionalInline(p, inlineLevel.getValue());
   printOptionalDecorators(p, op, decorators);
 
   auto gen = cast<GeneratorOp>(op);
   SmallVector<StringRef, 10> elidedAttrs{
-      gen.getExportKindAttrName(),  gen.getSymNameAttrName(),
-      gen.getSignatureAttrName(),   gen.getFunctionTypeAttrName(),
-      gen.getInputParamsAttrName(), gen.getInlineLevelAttrName(),
+      gen.getExportKindAttrName(),         gen.getSymNameAttrName(),
+      gen.getSignatureGeneratorAttrName(), gen.getFunctionTypeAttrName(),
+      gen.getInputParamsAttrName(),        gen.getInlineLevelAttrName(),
       gen.getDecoratorsAttrName()};
   if (attrs.get(gen.getLLVMMetadataAttrName()) ==
       DictionaryAttr::get(op->getContext()))
@@ -510,17 +511,17 @@ static ParseResult parseExternGenerator(OpAsmParser &p, TypeAttr &signature,
   if (!resultParams.empty())
     return p.emitError(p.getCurrentLocation(), "invalid result parameters");
   functionType = TypeAttr::get(funcType);
-  signature = TypeAttr::get(sigType);
+  signature = TypeAttr::get(SignatureGeneratorType::get(sigType));
   return success();
 }
 
 static void printExternGenerator(OpAsmPrinter &p, Operation *op,
                                  TypeAttr signature, TypeAttr functionType,
                                  ParamDeclArrayAttr inputParams) {
-  printFunctionSignature(p, /*region=*/nullptr, inputParams,
-                         /*resultParams=*/{},
-                         cast<FunctionType>(functionType.getValue()),
-                         cast<SignatureType>(signature.getValue()));
+  printFunctionSignature(
+      p, /*region=*/nullptr, inputParams,
+      /*resultParams=*/{}, cast<FunctionType>(functionType.getValue()),
+      cast<SignatureGeneratorType>(signature.getValue()).asOldSignature());
 }
 
 //===----------------------------------------------------------------------===//

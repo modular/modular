@@ -1375,9 +1375,10 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   if (auto generatorOp = dyn_cast<GeneratorOp>(*gen)) {
     instance = cast<InstantiatedOpInterface>(*b.create<FuncOp>(
         gen.getLoc(), mangledName,
-        SignatureType::get(generatorOp.getFunctionType(),
-                           generatorOp.getSignature().getArgConventions(),
-                           generatorOp.getSignature().getFnEffects()),
+        SignatureType::get(
+            generatorOp.getFunctionType(),
+            generatorOp.getSignatureGenerator().getBody().getArgConventions(),
+            generatorOp.getSignatureGenerator().getBody().getFnEffects()),
         generatorOp.getInlineLevel(), generatorOp.getExportKind(),
         generatorOp.getDecorators(), generatorOp.getLLVMMetadata()));
     if (ArrayAttr patterns = generatorOp.getPatternsAttr())

@@ -183,7 +183,7 @@ public:
 
       // Currently we only support kernels which return something. We will
       // later enforce that this is a tensor.
-      if (!userKernel.getSignature().hasMemoryOnlyResult())
+      if (!userKernel.getSignatureGenerator().getBody().hasMemoryOnlyResult())
         continue;
 
       // Slice out a new compute kernel. This replaces the old kernel as the
@@ -235,7 +235,9 @@ public:
       outputLambdaNames.resize(1, "");
 
       // Output tensor is the last argument.
-      assert(slicedComputeFunction.getSignature().hasMemoryOnlyResult());
+      assert(slicedComputeFunction.getSignatureGenerator()
+                 .getBody()
+                 .hasMemoryOnlyResult());
       Value outputTensor =
           slicedComputeFunction.getBody()->getArguments().back();
 

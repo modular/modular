@@ -66,13 +66,13 @@ private:
 
   void identifyUnusedArguments(GeneratorOp oldFunction, StringAttr oldSymbol,
                                bool isRecursive) {
-    SignatureType oldSig = oldFunction.getSignature();
+    NewSignatureType oldBaseSig = oldFunction.getSignatureGenerator().getBody();
 
     unusedArgs = llvm::BitVector(oldFunction.getNumArguments(), true);
 
     // Identify unused parameters.
     for (auto [idx, arg, argConvention] : llvm::enumerate(
-             oldFunction.getArguments(), oldSig.getArgConventions())) {
+             oldFunction.getArguments(), oldBaseSig.getArgConventions())) {
       // If the function is recursive check that this argument has users beyond
       // the recursive call.
       if (isRecursive) {
@@ -465,7 +465,8 @@ void RemoveUnusedParams::runOnOperation() {
 
     bool isRecursive = recursiveFuncs.contains(oldFunction);
     StringAttr oldSymbol = oldFunction.getSymNameAttr();
-    SignatureType oldSig = oldFunction.getSignature();
+    SignatureGeneratorType oldSigGen = oldFunction.getSignatureGenerator();
+    NewSignatureType oldBaseSig = oldSigGen.getBody();
 
     // Collate information about unused parameters + arguments in the shared
     // state.
@@ -503,14 +504,17 @@ void RemoveUnusedParams::runOnOperation() {
         ctx, inputTypes, oldFunction.getFunctionType().getResults());
 
     // Update the sig to partially specialize on those function types.
-    newFunc.setSignature(SignatureType::remapToSignature(
-        inputParams, {}, functionType,
-        /*argConventions=*/conventions,
-        /*fnEffects=*/oldSig.getFnEffects(),
-        /*metadata*/ oldSig.getMetadata(), [&] {
-          llvm_unreachable("Failed to remap generator signature.");
-          return oldFunction.emitError("Failed to remap generator signature.");
-        }));
+    newFunc.setSignatureGenerator(
+        SignatureGeneratorType::remapToSignatureGenerator(
+            inputParams, functionType,
+            /*argConventions=*/conventions,
+            /*fnEffects=*/oldBaseSig.getFnEffects(),
+            /*fnMetadata=*/oldBaseSig.getMetadata(),
+            /*genMetadata=*/oldSigGen.getMetadata(), [&] {
+              llvm_unreachable("Failed to remap generator signature.");
+              return oldFunction.emitError(
+                  "Failed to remap generator signature.");
+            }));
     newFunc.setFunctionType(functionType);
     newFunc.setInputParams(inputParams);
 

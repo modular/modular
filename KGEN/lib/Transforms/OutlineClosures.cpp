@@ -167,8 +167,10 @@ void OutlineClosuresPass::runOnOperation() {
           capturedParamDecls.getArrayRef());
       llvm::append_range(inputParamDecls, regionDecl.getInputParams());
 
-      SignatureType wrapperSignature = prependParams(
-          regionDecl.getSignature(), capturedParamDecls.getArrayRef());
+      SignatureGeneratorType wrapperSignature =
+          prependParams(regionDecl.getSignature(),
+                        capturedParamDecls.getArrayRef())
+              .asSignatureGenerator();
 
       b.setInsertionPoint(generator);
       auto uniqueName = b.getStringAttr(getUniqueSymbolName(
