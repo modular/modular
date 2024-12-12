@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Sequence, Union, cast
 
 from max.pipelines.interfaces import (
     TokenGenerator,
@@ -18,7 +18,7 @@ from max.pipelines.tokenizer import IdentityPipelineTokenizer
 
 @dataclass
 class EchoTokenGeneratorContext:
-    prompt: str
+    prompt: Union[str, Sequence[int]]
     index: int
     max_tokens: int
     seq_len: int
@@ -36,7 +36,7 @@ class EchoPipelineTokenizer(
         # 1. Context creation can use the tokenizer but it doesn't need to be a part of it.
         # 2. EchoTokenGeneratorContext should be a TextContext
         # 3. TokenGeneratorRequestMessages will be more strongly typed soon.
-        prompt: str
+        prompt: Union[str, Sequence[int]]
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages is not None:
@@ -73,9 +73,9 @@ class EchoTokenGenerator(TokenGenerator[EchoTokenGeneratorContext]):
         for _, ctx in batch.items():
             ctx.index += 1
             if ctx.index <= len(ctx.prompt) and ctx.index <= ctx.max_tokens:
-                ctx.tokens += ctx.prompt[-ctx.index]
+                ctx.tokens += str(ctx.prompt[-ctx.index])
         return {
-            rid: TextResponse(next_token=ctx.prompt[-ctx.index])
+            rid: TextResponse(next_token=str(ctx.prompt[-ctx.index]))
             for rid, ctx in batch.items()
             if ctx.index <= len(ctx.prompt) and ctx.index <= ctx.max_tokens
         }

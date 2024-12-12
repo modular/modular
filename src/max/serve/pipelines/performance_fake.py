@@ -10,7 +10,16 @@ import logging
 import threading
 from os import environ
 from time import sleep, time
-from typing import Any, Callable, Iterable, List, Literal, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Union,
+)
 
 import numpy as np
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
@@ -28,7 +37,7 @@ class PerformanceFakingContext:
     max_tokens: int
 
     # correctness attributes
-    prompt: str
+    prompt: Union[str, Sequence[int]]
     encoded_prompt: np.ndarray
 
 
@@ -51,7 +60,7 @@ class PerformanceFakingPipelineTokenizer(
 ):
     def __init__(
         self, delegate: Union[PreTrainedTokenizer, PreTrainedTokenizerFast]
-    ):
+    ) -> None:
         super().__init__(delegate)
         self.logger = logging.getLogger(self.__class__.__name__)
         # amount of time spent in the tokenizer
@@ -60,7 +69,7 @@ class PerformanceFakingPipelineTokenizer(
     async def new_context(
         self, request: TokenGeneratorRequest
     ) -> PerformanceFakingContext:
-        prompt: str
+        prompt: Union[str, Sequence[int]]
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages is not None:
@@ -79,9 +88,12 @@ class PerformanceFakingPipelineTokenizer(
             np.array(encoded_prompt),
         )
 
-    async def encode(self, prompt: str) -> np.ndarray:
+    async def encode(self, prompt: Union[str, Sequence[int]]) -> np.ndarray:
         start = time()
-        encoded = await super().encode(prompt)
+        if isinstance(prompt, str):
+            encoded = await super().encode(prompt)
+        else:
+            encoded = np.array(list(prompt))
         self.tokenizer_secs += time() - start
         return encoded
 
@@ -93,7 +105,7 @@ class PerformanceFakingPipelineTokenizer(
         # Not actually an np.ndarray!
         return logits  # type: ignore
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.logger.info(
             "PerformanceFake: tokenized for"
             f" {self.tokenizer_secs:.4f} sec total"
@@ -112,7 +124,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         tg_padding: bool,
         busy_wait: bool,
         failure_predicate: Optional[Callable[[], bool]] = None,
-    ):
+    ) -> None:
         """Parameterize a performance fake
 
         Args:
@@ -145,7 +157,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         # lock to prevent concurrent usage of the fake GPU
         self.wait_lock = threading.Lock()
         # amount of time waited in the fake GPU
-        self.wait_secs = 0
+        self.wait_secs = 0.0
         # number of times waited in the fake GPU
         self.wait_count = 0
         # timestamp of the end of the last GPU wait
@@ -202,10 +214,10 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             if ctx.context_len - ctx.prompt_len < ctx.max_tokens
         }
 
-    def release(self, context: PerformanceFakingContext):
+    def release(self, context: PerformanceFakingContext) -> None:
         pass
 
-    def _wait(self, wait_time_ms):
+    def _wait(self, wait_time_ms: float) -> None:
         self.logger.debug(f"PerformanceFake: waiting {wait_time_ms} ms")
         self.wait_secs += wait_time_ms * 0.001
         self.wait_count += 1
@@ -224,14 +236,14 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
                 sleep(wait_time_ms * 0.001)
             self.last_wait_end = time()
 
-    def _ce_time_ms(self, prompt_sizes):
+    def _ce_time_ms(self, prompt_sizes: Sequence[int]) -> float:
         if self.ce_padding:
             N = len(prompt_sizes) * max(prompt_sizes)
         else:
             N = sum(prompt_sizes)
         return max(self.ce_rate * N, self.ce_baseline)
 
-    def _tg_time_ms(self, context_sizes):
+    def _tg_time_ms(self, context_sizes: Sequence[int]) -> float:
         if self.tg_padding:
             N = len(context_sizes) * max(context_sizes)
         else:
@@ -244,7 +256,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
 
     def _record_batch_info(
         self, contexts: Iterable[PerformanceFakingContext], num_steps: int
-    ):
+    ) -> None:
         self.batch_infos.append(
             BatchInfo(
                 past_seq_lens=[x.context_len for x in contexts],
@@ -253,7 +265,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
             )
         )
 
-    def __del__(self):
+    def __del__(self) -> None:
         # print the total wait time for benchmarking/debugging purposes
         self.logger.info(
             f"PerformanceFake: waited {self.wait_count} times for"

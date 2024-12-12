@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from time import perf_counter_ns
-from typing import Any, AsyncGenerator, List, Literal, Optional, Union, cast
+from typing import Any, AsyncGenerator, List, Literal, Optional, Sequence, Union
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
@@ -40,6 +40,7 @@ from max.serve.schemas.openai import (  # type: ignore
     ErrorResponse,
     Logprobs,
     Logprobs2,
+    PromptItem,
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
@@ -522,16 +523,25 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
 
 def openai_get_prompt_from_completion_request(
     request: CreateCompletionRequest,
-) -> str:
-    if isinstance(request.prompt, str):
-        return request.prompt
-    elif isinstance(request.prompt, list):
-        if isinstance(request.prompt[0], str):
-            prompt = "".join(cast(list[str], request.prompt))
-            return prompt
-    # We can do this for functional equivalent if needed.
-    # However, the /completions API is already legacy.
-    raise ValueError("Prompts of types other than strings are not supported.")
+) -> Union[str, Sequence[int]]:
+    prompt = request.prompt
+    if isinstance(prompt, str):
+        return prompt
+    if len(prompt) == 0:
+        return []
+    if isinstance(prompt[0], str):
+        if len(prompt) != 1:
+            raise NotImplementedError("Batched requests are not supported")
+        return prompt[0]
+    if isinstance(prompt[0], PromptItem):
+        if len(prompt) != 1:
+            raise NotImplementedError("Batched requests are not supported")
+        return prompt[0].root
+    tokens: List[int] = []
+    for token in prompt:
+        assert isinstance(token, int)
+        tokens.append(token)
+    return tokens
 
 
 @router.post("/completions", response_model=None)
