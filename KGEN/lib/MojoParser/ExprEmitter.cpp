@@ -1261,8 +1261,25 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       auto implAlias = cast<LIT::AliasDeclOp>(structMatchingMembers.front());
       assert(implAlias.getValueAttr() && "struct's alias should have value");
 
-      auto newValue = implAlias.getValueAttr();
+      TypedAttr newValue = implAlias.getValueAttr();
       newValue = implGenericsReplacer.replace(newValue);
+      // If a decl has a parameter "T : Trait" where Trait defines an associated
+      // type "U : Trait2", then when we emit vtable for T, we must also emit
+      // vtable for T.U.
+      if (auto subTraitType =
+              dyn_cast<LIT::TraitType>(traitAliasDecl.getType())) {
+        if (isa<AnyStructType>(newValue.getType())) {
+          SyntheticNode syntheticNode(declScope.getLoc());
+          PValue subvalue = emitMetaTypeToTraitConversion(
+              {newValue, syntheticNode}, subTraitType);
+          newValue = subvalue.get();
+        } else if (!isa<TraitType>(newValue.getType())) {
+          SyntheticNode syntheticNode(declScope.getLoc());
+          PValue subvalue =
+              bindMLIRTypeToTrait({newValue, syntheticNode}, subTraitType);
+          newValue = subvalue.get();
+        }
+      }
 
       vtable.push_back(VTableEntryAttr::get(name, newValue));
 
