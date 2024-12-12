@@ -8488,14 +8488,14 @@ struct Struct_contiguous_kv_cache_collection_h8_d64_bshd:
 
 
 @always_inline
-fn generic_get_contiguous_cache_kernel_api[
+fn generic_get_continuous_cache_kernel_api[
     type: DType,
     kv_params: KVCacheStaticParams,
 ](
     blocks: ManagedTensorSlice[type, 6],
     cache_lengths: ManagedTensorSlice[DType.uint32, 1],
     lookup_table: ManagedTensorSlice[DType.uint32, 1],
-    is_cache_empty: ManagedTensorSlice[DType.bool, 1],
+    max_lengths: ManagedTensorSlice[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params,
@@ -8504,7 +8504,7 @@ fn generic_get_contiguous_cache_kernel_api[
         managed_tensor_slice_to_ndbuffer(blocks),
         managed_tensor_slice_to_ndbuffer(cache_lengths),
         managed_tensor_slice_to_ndbuffer(lookup_table),
-        managed_tensor_slice_to_ndbuffer(is_cache_empty),
+        managed_tensor_slice_to_ndbuffer(max_lengths),
     )
 
 
@@ -8521,14 +8521,14 @@ struct Struct_continuous_batching_kv_cache_collection_h8_d128_bshd:
         blocks: ManagedTensorSlice[type, 6],
         cache_lengths: ManagedTensorSlice[DType.uint32, 1],
         lookup_table: ManagedTensorSlice[DType.uint32, 1],
-        is_cache_empty: ManagedTensorSlice[DType.bool, 1],
+        max_lengths: ManagedTensorSlice[DType.uint32, 2],
     ) -> ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h8_d128_bshd,
     ]:
-        return generic_get_contiguous_cache_kernel_api[
+        return generic_get_continuous_cache_kernel_api[
             kv_params=kv_params_h8_d128_bshd
-        ](blocks, cache_lengths, lookup_table, is_cache_empty)
+        ](blocks, cache_lengths, lookup_table, max_lengths)
 
 
 @compiler.register(
@@ -8544,14 +8544,14 @@ struct Struct_continuous_batching_kv_cache_collection_h8_d32_bshd:
         blocks: ManagedTensorSlice[type, 6],
         cache_lengths: ManagedTensorSlice[DType.uint32, 1],
         lookup_table: ManagedTensorSlice[DType.uint32, 1],
-        is_cache_empty: ManagedTensorSlice[DType.bool, 1],
+        max_lengths: ManagedTensorSlice[DType.uint32, 2],
     ) -> ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h8_d32_bshd,
     ]:
-        return generic_get_contiguous_cache_kernel_api[
+        return generic_get_continuous_cache_kernel_api[
             kv_params=kv_params_h8_d32_bshd
-        ](blocks, cache_lengths, lookup_table, is_cache_empty)
+        ](blocks, cache_lengths, lookup_table, max_lengths)
 
 
 @compiler.register(
@@ -8567,14 +8567,14 @@ struct Struct_continuous_batching_kv_cache_collection_h8_d64_bshd:
         blocks: ManagedTensorSlice[type, 6],
         cache_lengths: ManagedTensorSlice[DType.uint32, 1],
         lookup_table: ManagedTensorSlice[DType.uint32, 1],
-        is_cache_empty: ManagedTensorSlice[DType.bool, 1],
+        max_lengths: ManagedTensorSlice[DType.uint32, 2],
     ) -> ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h8_d64_bshd,
     ]:
-        return generic_get_contiguous_cache_kernel_api[
+        return generic_get_continuous_cache_kernel_api[
             kv_params=kv_params_h8_d64_bshd
-        ](blocks, cache_lengths, lookup_table, is_cache_empty)
+        ](blocks, cache_lengths, lookup_table, max_lengths)
 
 
 @compiler.register(
@@ -8590,14 +8590,14 @@ struct Struct_continuous_batching_kv_cache_collection_h8_d512_bshd:
         blocks: ManagedTensorSlice[type, 6],
         cache_lengths: ManagedTensorSlice[DType.uint32, 1],
         lookup_table: ManagedTensorSlice[DType.uint32, 1],
-        is_cache_empty: ManagedTensorSlice[DType.bool, 1],
+        max_lengths: ManagedTensorSlice[DType.uint32, 2],
     ) -> ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h8_d512_bshd,
     ]:
-        return generic_get_contiguous_cache_kernel_api[
+        return generic_get_continuous_cache_kernel_api[
             kv_params=kv_params_h8_d512_bshd
-        ](blocks, cache_lengths, lookup_table, is_cache_empty)
+        ](blocks, cache_lengths, lookup_table, max_lengths)
 
 
 @compiler.register(
@@ -8613,14 +8613,14 @@ struct Struct_continuous_batching_kv_cache_collection_h32_d128_bshd:
         blocks: ManagedTensorSlice[type, 6],
         cache_lengths: ManagedTensorSlice[DType.uint32, 1],
         lookup_table: ManagedTensorSlice[DType.uint32, 1],
-        is_cache_empty: ManagedTensorSlice[DType.bool, 1],
+        max_lengths: ManagedTensorSlice[DType.uint32, 2],
     ) -> ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h32_d128_bshd,
     ]:
-        return generic_get_contiguous_cache_kernel_api[
+        return generic_get_continuous_cache_kernel_api[
             kv_params=kv_params_h32_d128_bshd
-        ](blocks, cache_lengths, lookup_table, is_cache_empty)
+        ](blocks, cache_lengths, lookup_table, max_lengths)
 
 
 @compiler.register(
@@ -8636,14 +8636,14 @@ struct Struct_continuous_batching_kv_cache_collection_h1_d16_bshd:
         blocks: ManagedTensorSlice[type, 6],
         cache_lengths: ManagedTensorSlice[DType.uint32, 1],
         lookup_table: ManagedTensorSlice[DType.uint32, 1],
-        is_cache_empty: ManagedTensorSlice[DType.bool, 1],
+        max_lengths: ManagedTensorSlice[DType.uint32, 2],
     ) -> ContinuousBatchingKVCacheCollection[
         type,
         kv_params_h1_d16_bshd,
     ]:
-        return generic_get_contiguous_cache_kernel_api[
+        return generic_get_continuous_cache_kernel_api[
             kv_params=kv_params_h1_d16_bshd
-        ](blocks, cache_lengths, lookup_table, is_cache_empty)
+        ](blocks, cache_lengths, lookup_table, max_lengths)
 
 
 # ===-----------------------------------------------------------------------===#
