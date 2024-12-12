@@ -2690,7 +2690,8 @@ def print_kv_cache_cont_batch_generic_gpu[
         blocks_host_nd,
         cache_lengths_host_nd,
         lookup_table_host_nd,
-        kv_collection.is_cache_empty,
+        kv_collection.max_seq_length,
+        kv_collection.max_cache_length,
         kv_collection.seq_ids,
     )
 
@@ -2764,7 +2765,7 @@ fn _continuous_batch_kv_cache_collection[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
     out result: ContinuousBatchingKVCacheCollection[type, kv_params],
 ):
     # Marshal NDBuffers into arguments expected by the
@@ -2778,11 +2779,12 @@ fn _continuous_batch_kv_cache_collection[
         seq_ids_list.append(-1)
 
     return __type_of(result)(
-        blocks,
-        cache_lengths,
-        lookup_table,
-        is_cache_empty[0],
-        seq_ids_list,
+        blocks=blocks,
+        cache_lengths=cache_lengths,
+        lookup_table=lookup_table,
+        max_seq_length=max_lengths[Index(0, 0)],
+        max_cache_length=max_lengths[Index(0, 1)],
+        seq_ids=seq_ids_list,
     )
 
 
@@ -2938,16 +2940,13 @@ fn generic_get_continuous_cache[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params,
 ]:
     return _continuous_batch_kv_cache_collection[kv_params](
-        blocks,
-        cache_lengths,
-        lookup_table,
-        is_cache_empty,
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -2958,13 +2957,13 @@ fn continuous_batching_kv_cache_collection_h8_d128_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h8_d128_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h8_d128_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -2975,13 +2974,13 @@ fn continuous_batching_kv_cache_collection_h8_d32_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h8_d32_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h8_d32_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -2992,13 +2991,13 @@ fn continuous_batching_kv_cache_collection_h8_d64_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h8_d64_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h8_d64_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3009,13 +3008,13 @@ fn continuous_batching_kv_cache_collection_h1_d16_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h1_d16_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h1_d16_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3026,13 +3025,13 @@ fn continuous_batching_kv_cache_collection_h8_d512_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h8_d512_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h8_d512_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3043,13 +3042,13 @@ fn continuous_batching_kv_cache_collection_h2_d128_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h2_d128_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h2_d128_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3060,13 +3059,13 @@ fn continuous_batching_kv_cache_collection_h16_d128_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h16_d128_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h16_d128_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3077,13 +3076,13 @@ fn continuous_batching_kv_cache_collection_h32_d128_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 1],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> ContinuousBatchingKVCacheCollection[
     type,
     kv_params_h32_d128_bshd,
 ]:
     return generic_get_continuous_cache[kv_params=kv_params_h32_d128_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3094,7 +3093,7 @@ fn generic_get_paged_cache[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
     out result: PagedKVCacheCollection[type, kv_params],
 ):
     batch_size = lookup_table.dim[0]()
@@ -3106,11 +3105,12 @@ fn generic_get_paged_cache[
         seq_ids_list.append(-1)
 
     return __type_of(result)(
-        blocks,
-        cache_lengths,
-        lookup_table,
-        is_cache_empty[0],
-        seq_ids_list,
+        blocks=blocks,
+        cache_lengths=cache_lengths,
+        lookup_table=lookup_table,
+        max_seq_length=max_lengths[Index(0, 0)],
+        max_cache_length=max_lengths[Index(0, 1)],
+        seq_ids=seq_ids_list,
     )
 
 
@@ -3122,10 +3122,10 @@ fn paged_kv_cache_collection_h1_d16_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> PagedKVCacheCollection[type, kv_params_h1_d16_bshd]:
     return generic_get_paged_cache[kv_params=kv_params_h1_d16_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3137,10 +3137,10 @@ fn paged_kv_cache_collection_h6_d48_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> PagedKVCacheCollection[type, kv_params_h6_d48_bshd]:
     return generic_get_paged_cache[kv_params=kv_params_h6_d48_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3152,10 +3152,10 @@ fn paged_kv_cache_collection_h8_d128_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> PagedKVCacheCollection[type, kv_params_h8_d128_bshd]:
     return generic_get_paged_cache[kv_params=kv_params_h8_d128_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3167,10 +3167,10 @@ fn paged_kv_cache_collection_h8_d16_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> PagedKVCacheCollection[type, kv_params_h8_d16_bshd]:
     return generic_get_paged_cache[kv_params=kv_params_h8_d16_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3182,10 +3182,10 @@ fn paged_kv_cache_collection_h8_d512_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> PagedKVCacheCollection[type, kv_params_h8_d512_bshd]:
     return generic_get_paged_cache[kv_params=kv_params_h8_d512_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3197,10 +3197,10 @@ fn paged_kv_cache_collection_h8_d32_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> PagedKVCacheCollection[type, kv_params_h8_d32_bshd]:
     return generic_get_paged_cache[kv_params=kv_params_h8_d32_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3212,10 +3212,10 @@ fn paged_kv_cache_collection_h8_d64_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> PagedKVCacheCollection[type, kv_params_h8_d64_bshd]:
     return generic_get_paged_cache[kv_params=kv_params_h8_d64_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )
 
 
@@ -3227,8 +3227,8 @@ fn paged_kv_cache_collection_h32_d128_bshd[
     blocks: NDBuffer[type, 6],
     cache_lengths: NDBuffer[DType.uint32, 1],
     lookup_table: NDBuffer[DType.uint32, 2],
-    is_cache_empty: NDBuffer[DType.bool, 1],
+    max_lengths: NDBuffer[DType.uint32, 2],
 ) -> PagedKVCacheCollection[type, kv_params_h32_d128_bshd]:
     return generic_get_paged_cache[kv_params=kv_params_h32_d128_bshd](
-        blocks, cache_lengths, lookup_table, is_cache_empty
+        blocks, cache_lengths, lookup_table, max_lengths
     )

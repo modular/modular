@@ -14,7 +14,6 @@ from sys import (
     has_nvidia_gpu_accelerator,
     simdwidthof,
     sizeof,
-    is_nvidia_gpu,
 )
 from bit import bit_ceil
 from algorithm import elementwise
@@ -537,20 +536,12 @@ fn flash_attention[
                 mask.dim[mask.rank - 1]() - mask.dim[mask.rank - 2]()
             )
         else:
-            # Hard code this to large enough value. We'll only use this in our
-            # naive MHA codepath. TODO KERN-1104
-            max_cache_valid_length = 16384 if is_nvidia_gpu() else 2048
+            max_cache_valid_length = int(k.get_max_cache_length())
 
         @parameter
         if ragged:
             batch_size = valid_length.dim[0]() - 1
-
-            # Hard code this to a large enough value. We'll use this during
-            # our naive MHA fallback to allocate the p-matrix
-            # TODO KERN-1104
-            max_prompt_len = (
-                16384 if is_nvidia_gpu() else 2048
-            ) if is_context_encoding else 1
+            max_prompt_len = int(k.get_max_seq_length())
         else:
             batch_size = q.dim[0]()
             max_prompt_len = q.dim[1]()

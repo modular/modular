@@ -6,7 +6,6 @@
 
 # RUN: %mojo-no-debug %s -t
 
-from algorithm import max
 from buffer import Buffer, NDBuffer, Dim, DimList
 from kv_cache.types import (
     ContinuousBatchingKVCache,
@@ -24,13 +23,9 @@ from internal_utils import (
     fill,
 )
 from memory import memcpy
-from runtime.asyncrt import (
-    MojoCallContextPtr,
-)
 from testing import assert_almost_equal
 from utils import IndexList
 from utils.index import Index
-from utils.numerics import min_or_neg_inf
 from collections import Set
 from random import random_ui64, seed
 
@@ -77,22 +72,17 @@ def execute_ragged_flash_attention[
     )
 
     var total_length = 0
-    var max_context_length = -1
-    var max_prompt_length = -1
-    var is_context_encoding = True
+    var max_context_length = 0
+    var max_full_context_length = 0
+    var max_prompt_length = 0
     for i in range(batch_size):
         input_row_offsets.tensor[i] = total_length
         cache_lengths_nd.tensor[i] = cache_lengths[i]
-        full_context_length = cache_lengths[i] + valid_lengths[i]
-        if full_context_length > max_context_length:
-            max_context_length = full_context_length
-
-        if valid_lengths[i] > max_prompt_length:
-            max_prompt_length = valid_lengths[i]
-
-        if cache_lengths[i] > 0:
-            is_context_encoding = False
-
+        max_context_length = max(max_context_length, cache_lengths[i])
+        max_full_context_length = max(
+            max_full_context_length, cache_lengths[i] + valid_lengths[i]
+        )
+        max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
     input_row_offsets.tensor[batch_size] = total_length
 
@@ -154,7 +144,8 @@ def execute_ragged_flash_attention[
         kv_block_continuous.tensor,
         cache_lengths_nd.tensor,
         lookup_table_continuous.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         ContinuousBatchCacheType.KeyIdx,
     )
@@ -162,7 +153,8 @@ def execute_ragged_flash_attention[
         kv_block_continuous.tensor,
         cache_lengths_nd.tensor,
         lookup_table_continuous.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         ContinuousBatchCacheType.ValueIdx,
     )
@@ -179,7 +171,7 @@ def execute_ragged_flash_attention[
     )
 
     paged_lut = HostNDBuffer[DType.uint32, 2](
-        IndexList[2](batch_size, ceildiv(max_context_length, block_size))
+        IndexList[2](batch_size, ceildiv(max_full_context_length, block_size))
     )
     paged_lut_set = Set[Int]()
     for bs in range(batch_size):
@@ -216,7 +208,8 @@ def execute_ragged_flash_attention[
         kv_block_paged.tensor,
         cache_lengths_nd.tensor,
         paged_lut.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         PagedCacheType.KeyIdx,
     )
@@ -225,7 +218,8 @@ def execute_ragged_flash_attention[
         kv_block_paged.tensor,
         cache_lengths_nd.tensor,
         paged_lut.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         PagedCacheType.ValueIdx,
     )

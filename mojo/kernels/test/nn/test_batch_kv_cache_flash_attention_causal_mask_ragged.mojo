@@ -10,20 +10,16 @@ from collections import Set
 from math import isclose, isqrt
 from random import random_ui64, seed
 
-from algorithm import max
 from buffer import Buffer, Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
 from memory import UnsafePointer, memcpy
 from nn.flash_attention import flash_attention_kv_cache
 from nn.mha_mask import CausalMask, NullMask
-from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 from utils import IndexList
 from utils.index import Index
-from utils.numerics import min_or_neg_inf
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
@@ -68,23 +64,14 @@ def execute_ragged_flash_attention[
     var valid_lengths = HostNDBuffer[DType.uint32, 1](IndexList[1](batch_size))
 
     var total_length = 0
-    var max_context_length = -1
-    var max_prompt_length = -1
-    var is_context_encoding = True
+    var max_context_length = 0
+    var max_prompt_length = 0
     for i in range(batch_size):
         input_row_offsets.tensor[i] = total_length
         cache_lengths.tensor[i] = cache_lengths_list[i]
         valid_lengths.tensor[i] = valid_lengths_list[i]
-        full_context_length = cache_lengths_list[i] + valid_lengths_list[i]
-        if full_context_length > max_context_length:
-            max_context_length = full_context_length
-
-        if valid_lengths_list[i] > max_prompt_length:
-            max_prompt_length = valid_lengths_list[i]
-
-        if cache_lengths_list[i] > 0:
-            is_context_encoding = False
-
+        max_context_length = max(max_context_length, cache_lengths_list[i])
+        max_prompt_length = max(max_prompt_length, valid_lengths_list[i])
         total_length += valid_lengths_list[i]
     input_row_offsets.tensor[batch_size] = total_length
 
@@ -170,7 +157,8 @@ def execute_ragged_flash_attention[
         kv_block.tensor,
         cache_lengths.tensor,
         lookup_table.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         CacheType.KeyIdx,
     )
@@ -178,7 +166,8 @@ def execute_ragged_flash_attention[
         kv_block.tensor,
         cache_lengths.tensor,
         lookup_table.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         CacheType.ValueIdx,
     )
