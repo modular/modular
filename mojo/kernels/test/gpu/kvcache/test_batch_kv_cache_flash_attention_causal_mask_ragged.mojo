@@ -10,7 +10,6 @@ from collections import Set
 from math import isclose, isqrt
 from random import random_ui64, seed
 
-from algorithm import max
 from buffer import Buffer, Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
@@ -19,12 +18,10 @@ from memory import UnsafePointer, memcpy
 from nn.mha import flash_attention, mha_gpu_naive
 from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
-from runtime.asyncrt import MojoCallContextPtr
 from testing import assert_almost_equal
 
 from utils import IndexList
 from utils.index import Index
-from utils.numerics import min_or_neg_inf
 
 alias kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 alias replit_num_q_heads = 24
@@ -74,23 +71,14 @@ def execute_ragged_flash_attention[
     )
 
     var total_length = 0
-    var max_context_length = -1
-    var max_prompt_length = -1
-    var is_context_encoding = True
+    var max_context_length = 0
+    var max_prompt_length = 0
     for i in range(batch_size):
         input_row_offsets_host.tensor[i] = total_length
         cache_lengths_host.tensor[i] = cache_lengths[i]
         valid_lengths_host.tensor[i] = valid_lengths[i]
-        full_context_length = cache_lengths[i] + valid_lengths[i]
-        if full_context_length > max_context_length:
-            max_context_length = full_context_length
-
-        if valid_lengths[i] > max_prompt_length:
-            max_prompt_length = valid_lengths[i]
-
-        if cache_lengths[i] > 0:
-            is_context_encoding = False
-
+        max_context_length = max(max_context_length, cache_lengths[i])
+        max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
     input_row_offsets_host.tensor[batch_size] = total_length
 
@@ -189,7 +177,8 @@ def execute_ragged_flash_attention[
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         CacheType.KeyIdx,
     )
@@ -197,7 +186,8 @@ def execute_ragged_flash_attention[
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         lookup_table_host.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         CacheType.KeyIdx,
     )
@@ -205,7 +195,8 @@ def execute_ragged_flash_attention[
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         CacheType.ValueIdx,
     )
@@ -213,7 +204,8 @@ def execute_ragged_flash_attention[
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         lookup_table_host.tensor,
-        is_context_encoding,
+        max_prompt_length,
+        max_context_length,
         layer_idx,
         CacheType.ValueIdx,
     )
