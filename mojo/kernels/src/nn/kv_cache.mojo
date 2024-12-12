@@ -2628,7 +2628,7 @@ def print_kv_cache_cont_batch_generic_cpu[
     var k_cache = kv_collection.get_key_cache[kv_collection.CacheType](
         int(layer_idx)
     )
-    var v_cache = kv_collection.get_key_cache[kv_collection.CacheType](
+    var v_cache = kv_collection.get_value_cache[kv_collection.CacheType](
         int(layer_idx)
     )
 
