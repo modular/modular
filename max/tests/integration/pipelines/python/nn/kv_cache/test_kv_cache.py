@@ -57,15 +57,13 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
     # Reserve a slot in the KV cache manager.
     seq_id = 0
     expected_cache_len = 42
+    seq_ids_and_lengths = {seq_id: expected_cache_len}
 
     kv_manager.external_claim(seq_ids=[seq_id])
-    kv_tuple_list = kv_manager.fetch(
-        seq_ids_and_lengths={seq_id: expected_cache_len}
-    )
+    kv_tuple_list = kv_manager.fetch(seq_ids_and_lengths=seq_ids_and_lengths)
 
     # Set the cache lengths first by "stepping".
-    expected_cache_len = 42
-    kv_manager.step(valid_lengths={seq_id: expected_cache_len})
+    kv_manager.step(seq_ids_and_lengths=seq_ids_and_lengths)
 
     # Construct a KV cache collection with the given cache length.
     cache_lengths = {seq_id: 1}

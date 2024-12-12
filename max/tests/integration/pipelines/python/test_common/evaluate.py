@@ -124,11 +124,7 @@ def next_token_with_logits(
         model_outputs = model.execute(*model_inputs, *kv_inputs)
         logits = model_outputs.next_token_logits.to(CPU())
 
-        model.kv_manager.step(
-            valid_lengths={
-                ctx.cache_seq_id: ctx.seq_len for ctx in context_batch
-            }
-        )
+        model.kv_manager.step(cache_seq_ids)
 
     # Llama3's _execute method has a different signature and set of calling
     # expectations than Replit and Mistral do.  Use the Llama3 logic only if it
