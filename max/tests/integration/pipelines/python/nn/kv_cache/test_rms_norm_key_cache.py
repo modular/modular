@@ -58,12 +58,12 @@ class RMSNormKeyCacheModel:
 
 
 @pytest.mark.parametrize(
-    "dtype",
-    [
-        DType.float32,
-    ],
+    "dtype,torch_dtype",
+    [(DType.float32, np.float32)],
 )
-def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
+def test_rms_norm_key_cache(
+    session: InferenceSession, dtype: DType, torch_dtype: np.dtype
+) -> None:
     seq_lens = [10, 4]
     batch_size = 2
     max_seq_len = 16
@@ -84,7 +84,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     fetch_layer = FetchContinuousBatchingKVCacheCollection(kv_params)
 
     # Stage the fetch op + custom matmul KV cache ragged op graph.
-    gamma_type = TensorType(DType.float32, shape=[kv_params.head_dim])
+    gamma_type = TensorType(dtype, shape=[kv_params.head_dim])
     input_row_offsets_type = TensorType(DType.uint32, ["batch_size_plus_1"])
     total_seq_len_type = TensorType(DType.uint32, shape=[])
     graph = Graph(
@@ -113,7 +113,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     # Copy so that we can reuse `all_ones` in a comparison later.
     fetch_args = (Tensor.from_numpy(all_ones.copy()), *fetch_args[1:])
 
-    gamma = np.random.randn(kv_params.head_dim).astype(np.float32)
+    gamma = np.random.randn(kv_params.head_dim).astype(torch_dtype)
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
     total_seq_len = np.array(sum(input_row_offsets), dtype=np.uint32)
     model(gamma, total_seq_len, input_row_offsets, *fetch_args)
