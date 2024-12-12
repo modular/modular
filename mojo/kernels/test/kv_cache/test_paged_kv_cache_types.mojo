@@ -42,7 +42,8 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
         for j in range(max_num_blocks):
             lookup_table.tensor[i, j] = j
 
-    var is_cache_empty = Bool(False)
+    var max_seq_length = UInt32(2048)
+    var max_cache_length = UInt32(2048)
     var seq_ids = List[Int]()
     for i in range(batch_size):
         seq_ids.append(i)
@@ -51,7 +52,8 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
         blocks.tensor,
         cache_lengths.tensor,
         lookup_table.tensor,
-        is_cache_empty,
+        max_seq_length,
+        max_cache_length,
         seq_ids,
     )
 

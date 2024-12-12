@@ -107,6 +107,16 @@ trait KVCacheT(CollectionElement):
         false otherwise."""
         ...
 
+    fn get_max_seq_length(self) -> UInt32:
+        """Returns the maximum sequence length across all batches of the current
+        request."""
+        ...
+
+    fn get_max_cache_length(self) -> UInt32:
+        """Returns the maximum cache length used across all batches of the
+        current request."""
+        ...
+
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
     @always_inline
     fn block_paged_ptr[
@@ -298,6 +308,14 @@ struct ContiguousKVCache[
     fn empty_cache(self) -> Bool:
         return self.is_cache_empty
 
+    fn get_max_seq_length(self) -> UInt32:
+        # This cache type does not support ragged tensors.
+        constrained[False, "get_max_seq_length not implemented"]()
+        return 0
+
+    fn get_max_cache_length(self) -> UInt32:
+        return UInt32(self._block.dim[1]())
+
     @always_inline
     fn block_paged_ptr[
         type: DType, tile_size: Int
@@ -343,7 +361,8 @@ struct ContinuousBatchingKVCache[
     var blocks: Self.BlocksType
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 1]
-    var is_cache_empty: Bool
+    var max_seq_length: UInt32
+    var max_cache_length: UInt32
     var batch_size: Int
     var layer_idx: Int
     var kv_idx: Int
@@ -377,7 +396,8 @@ struct ContinuousBatchingKVCache[
         blocks: Self.BlocksType,
         cache_lengths: NDBuffer[DType.uint32, 1],
         lookup_table: NDBuffer[DType.uint32, 1],
-        is_cache_empty: Bool,
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
         layer_idx: Int,
         kv_idx: Int,
     ):
@@ -386,7 +406,29 @@ struct ContinuousBatchingKVCache[
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.batch_size = cache_lengths.dim[0]()
-        self.is_cache_empty = is_cache_empty
+        self.max_seq_length = max_seq_length
+        self.max_cache_length = max_cache_length
+        self.layer_idx = layer_idx
+        self.kv_idx = kv_idx
+
+    fn __init__(
+        mut self,
+        blocks: Self.BlocksType,
+        cache_lengths: NDBuffer[DType.uint32, 1],
+        lookup_table: NDBuffer[DType.uint32, 1],
+        is_cache_empty: Bool,
+        layer_idx: Int,
+        kv_idx: Int,
+    ):
+        # Compatiblity wrapper for older test code to enable breaking up the
+        # changes to remove `is_cache_empty`.
+        constrained[_type_is_eq[__type_of(blocks), self.BlocksType]()]()
+        self.blocks = rebind[Self.BlocksType](blocks)
+        self.cache_lengths = cache_lengths
+        self.lookup_table = lookup_table
+        self.batch_size = cache_lengths.dim[0]()
+        self.max_seq_length = blocks.dim[3]()
+        self.max_cache_length = 0 if is_cache_empty else self.max_seq_length
         self.layer_idx = layer_idx
         self.kv_idx = kv_idx
 
@@ -514,7 +556,17 @@ struct ContinuousBatchingKVCache[
     fn empty_cache(self) -> Bool:
         """Returns true if the cache_lengths for all requests is 0,
         false otherwise."""
-        return self.is_cache_empty
+        return self.max_cache_length == 0
+
+    fn get_max_seq_length(self) -> UInt32:
+        """Returns the maximum sequence length across all batches of the current
+        request."""
+        return self.max_seq_length
+
+    fn get_max_cache_length(self) -> UInt32:
+        """Returns the maximum cache length used across all batches of the
+        current request."""
+        return self.max_cache_length
 
     @always_inline
     fn block_paged_ptr[
@@ -551,7 +603,8 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
     var page_size: Int
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 2]
-    var is_cache_empty: Bool
+    var max_seq_length: UInt32
+    var max_cache_length: UInt32
     var layer_idx: Int
     var kv_idx: Int
 
@@ -560,7 +613,8 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
         blocks: __type_of(self.blocks),
         cache_lengths: __type_of(self.cache_lengths),
         lookup_table: __type_of(self.lookup_table),
-        is_cache_empty: Bool,
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
         layer_idx: Int,
         kv_idx: Int,
     ):
@@ -568,7 +622,8 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
         self.page_size = blocks.dim[3]()
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
-        self.is_cache_empty = is_cache_empty
+        self.max_seq_length = max_seq_length
+        self.max_cache_length = max_cache_length
         self.layer_idx = layer_idx
         self.kv_idx = kv_idx
 
@@ -674,7 +729,17 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
     fn empty_cache(self) -> Bool:
         """Returns true if the cache_lengths for all requests is 0,
         false otherwise."""
-        return self.is_cache_empty
+        return self.max_cache_length == 0
+
+    fn get_max_seq_length(self) -> UInt32:
+        """Returns the maximum sequence length across all batches of the current
+        request."""
+        return self.max_seq_length
+
+    fn get_max_cache_length(self) -> UInt32:
+        """Returns the maximum cache length used across all batches of the
+        current request."""
+        return self.max_cache_length
 
     @always_inline
     fn block_paged_ptr[
@@ -877,10 +942,29 @@ struct ContinuousBatchingKVCacheCollection[
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 1]
     var blocks: Self.CacheType.BlocksType
-    var is_cache_empty: Bool
+    var max_seq_length: UInt32
+    var max_cache_length: UInt32
     var seq_ids: List[Int]
     var num_layers: Int
     var batch_size: Int
+
+    fn __init__(
+        mut self,
+        blocks: Self.CacheType.BlocksType,
+        cache_lengths: NDBuffer[DType.uint32, 1],
+        lookup_table: NDBuffer[DType.uint32, 1],
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
+        seq_ids: List[Int],
+    ):
+        self.blocks = rebind[self.CacheType.BlocksType](blocks)
+        self.cache_lengths = cache_lengths
+        self.lookup_table = lookup_table
+        self.seq_ids = seq_ids
+        self.max_seq_length = max_seq_length
+        self.max_cache_length = max_cache_length
+        self.num_layers = blocks.dim[2]()
+        self.batch_size = cache_lengths.dim[0]()
 
     fn __init__(
         mut self,
@@ -894,7 +978,8 @@ struct ContinuousBatchingKVCacheCollection[
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.seq_ids = seq_ids
-        self.is_cache_empty = is_cache_empty
+        self.max_seq_length = blocks.dim[3]()
+        self.max_cache_length = 0 if is_cache_empty else self.max_seq_length
         self.num_layers = blocks.dim[2]()
         self.batch_size = cache_lengths.dim[0]()
 
@@ -905,7 +990,8 @@ struct ContinuousBatchingKVCacheCollection[
         self.lookup_table = other.lookup_table
         self.num_layers = other.num_layers
         self.batch_size = other.batch_size
-        self.is_cache_empty = other.is_cache_empty
+        self.max_seq_length = other.max_seq_length
+        self.max_cache_length = other.max_cache_length
 
     fn __copyinit__(out self, other: Self):
         self.blocks = other.blocks
@@ -914,7 +1000,8 @@ struct ContinuousBatchingKVCacheCollection[
         self.lookup_table = other.lookup_table
         self.num_layers = other.num_layers
         self.batch_size = other.batch_size
-        self.is_cache_empty = other.is_cache_empty
+        self.max_seq_length = other.max_seq_length
+        self.max_cache_length = other.max_cache_length
 
     @staticmethod
     fn id() -> String:
@@ -929,7 +1016,8 @@ struct ContinuousBatchingKVCacheCollection[
                 self.blocks,
                 self.cache_lengths,
                 self.lookup_table,
-                self.is_cache_empty,
+                self.max_seq_length,
+                self.max_cache_length,
                 layer_idx,
                 Self.CacheType.KeyIdx,
             )
@@ -942,7 +1030,8 @@ struct ContinuousBatchingKVCacheCollection[
                 self.blocks,
                 self.cache_lengths,
                 self.lookup_table,
-                self.is_cache_empty,
+                self.max_seq_length,
+                self.max_cache_length,
                 layer_idx,
                 Self.CacheType.ValueIdx,
             )
@@ -966,7 +1055,8 @@ struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
     var blocks: NDBuffer[type, 6]
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 2]
-    var is_cache_empty: Bool
+    var max_seq_length: UInt32
+    var max_cache_length: UInt32
     var seq_ids: List[Int]
 
     fn __init__(
@@ -974,27 +1064,31 @@ struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
         blocks: __type_of(self.blocks),
         cache_lengths: __type_of(self.cache_lengths),
         lookup_table: __type_of(self.lookup_table),
-        is_cache_empty: Bool,
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
         seq_ids: List[Int],
     ):
         self.blocks = blocks
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
-        self.is_cache_empty = is_cache_empty
+        self.max_seq_length = max_seq_length
+        self.max_cache_length = max_cache_length
         self.seq_ids = seq_ids
 
     fn __copyinit__(out self, other: Self):
         self.blocks = other.blocks
         self.cache_lengths = other.cache_lengths
         self.lookup_table = other.lookup_table
-        self.is_cache_empty = other.is_cache_empty
+        self.max_seq_length = other.max_seq_length
+        self.max_cache_length = other.max_cache_length
         self.seq_ids = other.seq_ids
 
     fn __moveinit__(out self, owned other: Self):
         self.blocks = other.blocks
         self.cache_lengths = other.cache_lengths
         self.lookup_table = other.lookup_table
-        self.is_cache_empty = other.is_cache_empty
+        self.max_seq_length = other.max_seq_length
+        self.max_cache_length = other.max_cache_length
         self.seq_ids = other.seq_ids^
 
     @staticmethod
@@ -1014,7 +1108,8 @@ struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
                 self.blocks,
                 self.cache_lengths,
                 self.lookup_table,
-                self.is_cache_empty,
+                self.max_seq_length,
+                self.max_cache_length,
                 layer_idx,
                 Self.CacheType.KeyIdx,
             )
@@ -1033,7 +1128,8 @@ struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
                 self.blocks,
                 self.cache_lengths,
                 self.lookup_table,
-                self.is_cache_empty,
+                self.max_seq_length,
+                self.max_cache_length,
                 layer_idx,
                 Self.CacheType.KeyIdx,
             )
