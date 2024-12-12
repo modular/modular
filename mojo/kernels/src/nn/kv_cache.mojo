@@ -26,6 +26,7 @@ from kv_cache.types import (
 from linalg import transpose
 from linalg.matmul import elementwise_epilogue_type, matmul
 from memory import UnsafePointer, memcpy
+from nn._ragged_utils import get_batch_from_row_offsets
 from nn.flash_attention import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
@@ -2381,28 +2382,33 @@ def rms_norm_key_cache_h8_d128_cont_batch[
     gamma: NDBuffer[type, 1],
     epsilon: Scalar[type],
     layer_idx: UInt32,
-    valid_lengths: NDBuffer[DType.uint32, 1],
+    total_seq_len: UInt32,
+    input_row_offsets: NDBuffer[DType.uint32, 1],
     context: MojoCallContextPtr,
 ):
-    alias rank = 4
+    """Performs RMSNorm in place on new entries in the key cache.
+
+    This is done by first creating the ragged tensor weight_shape
+    (total_seq_len, num_heads, head_dim) of the new token tensor.
+    To do this we need to pass in `total_seq_len` on host.
+    Then, using `input_row_offsets` we find the corresponding batch and token
+    index, and use that together with the static head and channel indices to
+    store to/load from the key cache.
+    This uses the input/output lambdas on the RMSNorm kernel.
+    """
+    # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
+    alias rank = 3
     var k_cache = kv_collection.get_key_cache[kv_collection.CacheType](
         int(layer_idx)
     )
-
-    # Use `valid_lengths` to specify which values to RMS norm here, since cache
-    # lengths increment in between model forwards.
-    var total_seq_len: Int = 0
-    for i in range(valid_lengths.size()):
-        total_seq_len += int(valid_lengths[i])
-
-    var kv_params = k_cache.get_kv_params()
+    var kv_params = k_cache.kv_params
     var shape = IndexList[rank](
-        total_seq_len * kv_params.num_heads, kv_params.head_size
+        int(total_seq_len), kv_params.num_heads, kv_params.head_size
     )
 
     @always_inline
     @parameter
-    @__copy_capture(k_cache)
+    @__copy_capture(k_cache, input_row_offsets)
     fn key_cache_input_fn[
         width: Int, rank_: Int
     ](idx: IndexList[rank_]) -> SIMD[type, width]:
@@ -2411,8 +2417,17 @@ def rms_norm_key_cache_h8_d128_cont_batch[
             "rms_norm_key_cache input lambda index should have rank 4",
         ]()
 
+        var global_token_idx = idx[0]
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = int(global_token_idx - input_row_offsets[batch_idx])
+
         return k_cache.load[type, width](
-            bs=idx[0], head_idx=idx[1], tok_idx=idx[2], head_dim_idx=idx[3]
+            bs=batch_idx,
+            tok_idx=token_idx,
+            head_idx=idx[1],
+            head_dim_idx=idx[2],
         )
 
     @always_inline
@@ -2421,11 +2436,17 @@ def rms_norm_key_cache_h8_d128_cont_batch[
     fn key_cache_output_fn[
         width: Int
     ](idx: IndexList[rank], val: SIMD[type, width]) -> None:
+        var global_token_idx = idx[0]
+        var batch_idx = get_batch_from_row_offsets(
+            input_row_offsets, global_token_idx
+        )
+        var token_idx = int(global_token_idx - input_row_offsets[batch_idx])
+
         k_cache.store(
-            bs=idx[0],
+            bs=batch_idx,
+            tok_idx=token_idx,
             head_idx=idx[1],
-            tok_idx=idx[2],
-            head_dim_idx=idx[3],
+            head_dim_idx=idx[2],
             val=val,
         )
 
