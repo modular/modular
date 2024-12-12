@@ -2353,7 +2353,8 @@ fn _flash_attention_kv_cache_causal_alibi_mask_gpu[
         UnsafePointer[Scalar[type]](), IndexList[4]()
     )
 
-    alias num_q_heads = cache_t.get_kv_params().num_heads
+    # This assumes that, the q tensor is static in the 1 dim.
+    alias num_q_heads = int(q.shape.at[1]())
 
     # GPU flash attention kernel gets the cache length from the k tensor shape
     # TODO remove this an instead pass in explicit KVCache lengths to the GPU kernel.

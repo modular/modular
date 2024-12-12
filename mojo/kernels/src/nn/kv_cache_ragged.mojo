@@ -2521,7 +2521,8 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_gpu[
         DimList.create_unknown[4](),
     ]()
 
-    alias num_q_heads = cache_t.get_kv_params().num_heads
+    # This assumes that, the q tensor is static in the 1 dim.
+    alias num_q_heads = int(q.shape.at[1]())
 
     gpu_flash_attention[add_attn_mask=False, use_score_mod=True, ragged=True](
         output,
