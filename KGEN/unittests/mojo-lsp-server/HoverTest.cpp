@@ -189,6 +189,7 @@ TEST(HoverTest, testHoverStructDecls) {
                EXPECT_EQ(hover.range, rangeSomeStruct);
                EXPECT_EQ(hover.contents.value, R"(```mojo
 struct SomeStruct[size: Int, other_param: Bool]
+# Traits: AnyType, UnknownDestructibility
 ```
 ---
 
@@ -519,6 +520,7 @@ These are Mojo built-ins, so you don't need to import them.
                EXPECT_EQ(hover.range, rangeStructWithAlias);
                EXPECT_EQ(hover.contents.value, R"(```mojo
 struct StructWithAlias
+# Traits: AnyType, UnknownDestructibility
 ```)");
              })
       .execute();
