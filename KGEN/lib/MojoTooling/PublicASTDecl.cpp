@@ -797,6 +797,7 @@ llvm::json::Object PublicFunctionDecl::toJSON(MojoParserContext &ctx) const {
       {"description", description},
       {"isDef", isDef()},
       {"isStatic", isStatic()},
+      {"isImplicitConversion", isImplicitConversion()},
       {"kind", getKindAsString()},
       {"name", getName().str()},
       {"parameters", toJSONArray(ctx, parameters)},
@@ -815,6 +816,7 @@ PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef)
       deprecated(declRef.getDeprecationWarning().value_or(StringRef{})) {
   auto funcOp = cast<LIT::FuncOp>(declRef.getIfOperation());
   isStaticFlag = funcOp.getIsStatic();
+  isImplicitConversionFlag = funcOp.getIsImplicitConversion();
   isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
   isDefFlag = funcOp.isDef();
   initFromSignature(declRef, funcOp.getSignature(), funcOp.getArgumentTypes(),

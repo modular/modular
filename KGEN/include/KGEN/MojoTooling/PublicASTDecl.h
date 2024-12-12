@@ -515,6 +515,10 @@ public:
   /// declared with `fn`.
   bool isDef() const { return isDefFlag; }
 
+  /// Return true if this is an __init__ function decorated with the @implicit
+  /// decorator
+  bool isImplicitConversion() const { return isImplicitConversionFlag; }
+
   /// Return true if this is a static struct method, i.e., marked with @static.
   bool isStatic() const { return isStaticFlag; }
 
@@ -573,6 +577,7 @@ public:
   ///   "constraints": string,
   ///   "description": string,
   ///   "isDef": boolean,
+  ///   "isImplicitConversion", boolean,
   ///   "isStatic": boolean,
   ///   "parameters": PublicParameterDecl[],
   ///   "raises": boolean,
@@ -624,6 +629,7 @@ private:
 
   bool isAsyncFlag = false;
   bool isDefFlag = false;
+  bool isImplicitConversionFlag = false;
   bool isMethodFlag = false;
   bool isStaticFlag = false;
   bool raisesFlag = false;
