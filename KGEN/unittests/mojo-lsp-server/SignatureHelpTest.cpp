@@ -153,7 +153,8 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "struct SomeStruct[dtype: DType]");
+                                 R"(struct SomeStruct[dtype: DType]
+# Traits: AnyType, UnknownDestructibility)");
                      })
       .execute();
 }

@@ -231,7 +231,7 @@ public:
   virtual ~PublicDecl() = default;
 
   /// Generate a correct piece of code that summarizes this decl.
-  virtual std::string getDeclarationSnippet() const = 0;
+  virtual std::string getDeclarationSnippet(MojoParserContext &ctx) const = 0;
 
   /// Get the name of the decl. It might be empty.
   StringRef getName() const { return name; }
@@ -251,7 +251,7 @@ public:
 
   /// Return a nicely formatted markdown blob containing the declaration snippet
   /// and doc string of the decl.
-  std::string getFullMarkdownString() const;
+  std::string getFullMarkdownString(MojoParserContext &ctx) const;
 
 public:
   //===----------------------------------------------------------------------===//
@@ -277,7 +277,7 @@ public:
   /// Return the type of this variable.
   StringRef getType() const { return type; }
 
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   /// The output of the generation is defined in the following schema:
   ///
@@ -323,7 +323,7 @@ public:
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
 
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   /// Get the description of this decl extracted from its docstring. It might be
   /// empty.
@@ -393,7 +393,7 @@ public:
         defaultValue(std::move(defaultValue)), convention(convention),
         isSelf(isSelf) {}
 
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   /// Get the description of this decl extracted from its docstring. It might be
   /// empty.
@@ -454,7 +454,7 @@ private:
 /// Decl for alias.
 class PublicAliasDecl : public PublicDecl {
 public:
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   std::string getMarkdownDocString() const override;
 
@@ -524,13 +524,14 @@ public:
   /// Return the list of arguments of this function.
   ArrayRef<PublicArgumentDecl> getArguments() const { return args; }
 
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   /// Get the declaration snippet for the function. The positions of parameters
   /// and arguments within the printed signature may be extracted via the
   /// optional `parameterOffsets` and `argumentOffsets`. nullptr should be
   /// provided if collecting the offsets isn't desired.
   std::string getDeclarationSnippet(
+      MojoParserContext &ctx,
       SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
       SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
           nullptr) const;
@@ -554,6 +555,7 @@ public:
   /// within the printed signature may be extracted via the optionally null
   /// `parameterOffsets`, `argumentOffsets`, and `returnOffset` parameters.
   std::string getSignature(
+      MojoParserContext &ctx,
       SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
           nullptr,
       SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets = nullptr,
@@ -645,7 +647,7 @@ public:
       : PublicDecl(PublicDeclKind::DK_PublicStructFieldDecl, name), type(type) {
   }
 
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   std::string getMarkdownDocString() const override;
 
@@ -733,7 +735,7 @@ private:
 // Decl for trait decls.
 class PublicTraitDecl : public PublicDecl {
 public:
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   std::string getMarkdownDocString() const override;
 
@@ -779,15 +781,23 @@ private:
 /// Decl for structs.
 class PublicStructDecl : public PublicDecl {
 public:
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   /// Get the declaration snippet for the struct. The positions of parameters
   /// within the printed snippet may be extracted via `parameterOffsets`, which
   /// may be null if parameter offsets are not desired.
   std::string getDeclarationSnippet(
+      MojoParserContext &ctx,
       SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const;
 
   std::string getMarkdownDocString() const override;
+
+  /// Generate a string for the signature of this function, given its
+  /// components. The positions of parameters within the printed signature may
+  /// be extracted via the optionally null `parameterOffsets`.
+  std::string getSignature(MojoParserContext &ctx,
+                           SmallVectorImpl<std::pair<unsigned, unsigned>>
+                               *parameterOffsets = nullptr) const;
 
   /// Return the parameters of this struct.
   ArrayRef<PublicParameterDecl> getParameters() const { return parameters; }
@@ -803,6 +813,7 @@ public:
   ///   "parameters": PublicParameterDecl[],
   ///   "parentTraits": string[],
   ///   "fields": PublicStructFieldDecl[],
+  ///   "signature": string,
   ///   "summary": string
   /// }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
@@ -847,7 +858,7 @@ private:
 /// Decl for module.
 class PublicModuleDecl : public PublicDecl {
 public:
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   /// Get the description of this decl extracted from its docstring. It might be
   /// empty.
@@ -898,7 +909,7 @@ private:
 
 class PublicPackageDecl : public PublicDecl {
 public:
-  std::string getDeclarationSnippet() const override;
+  std::string getDeclarationSnippet(MojoParserContext &ctx) const override;
 
   /// Get the description of this decl extracted from its docstring. It might be
   /// empty.

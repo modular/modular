@@ -106,7 +106,7 @@ struct Symbol {
   Symbol &operator=(const Symbol &) = delete;
 
   /// Return a nicely formatted markdown text of the declaration of this symbol.
-  std::string getMarkdownDeclaration() const;
+  std::string getMarkdownDeclaration(MojoParserContext &ctx) const;
 
   /// Identifier of the symbol as specified in the source code.
   std::string identifier;
@@ -133,11 +133,11 @@ static bool shouldIncludeViewKindInMarkdown(PublicDeclKind kind) {
          kind != PublicDeclKind::DK_PublicStructDecl;
 }
 
-std::string Symbol::getMarkdownDeclaration() const {
+std::string Symbol::getMarkdownDeclaration(MojoParserContext &ctx) const {
   auto processView = [&](const PublicDecl &view) -> std::string {
     std::string buff;
     llvm::raw_string_ostream os(buff);
-    if (auto snippet = view.getDeclarationSnippet(); !snippet.empty()) {
+    if (auto snippet = view.getDeclarationSnippet(ctx); !snippet.empty()) {
       // Add the decl prefix to the snippet, unless it's superfluous.
       std::string declPrefix;
       if (shouldIncludeViewKindInMarkdown(view.getKind()))
@@ -185,7 +185,7 @@ struct SymbolRef {
   SymbolRef(Symbol &symbol, SMRange range) : SymbolRef(&symbol, range) {}
 
   /// Return a nicely formatted markdown text of this reference.
-  std::string getMarkdownDeclaration() const;
+  std::string getMarkdownDeclaration(MojoParserContext &ctx) const;
 
   /// The symbols being referenced.
   SmallVector<Symbol *, 1> symbols;
@@ -206,17 +206,17 @@ struct SymbolRef {
 };
 } // namespace
 
-std::string SymbolRef::getMarkdownDeclaration() const {
+std::string SymbolRef::getMarkdownDeclaration(MojoParserContext &ctx) const {
   // If there is only one symbol, we can simply return its markdown declaration.
   if (symbols.size() == 1)
-    return symbols[0]->getMarkdownDeclaration();
+    return symbols[0]->getMarkdownDeclaration(ctx);
 
   // Otherwise, build a markdown string that lists all the symbols.
   std::string output;
   llvm::raw_string_ostream os(output);
   llvm::interleave(
       symbols,
-      [&](const Symbol *symbol) { os << symbol->getMarkdownDeclaration(); },
+      [&](const Symbol *symbol) { os << symbol->getMarkdownDeclaration(ctx); },
       [&] { os << "\n---\n\n"; });
   return os.str();
 }
@@ -1211,10 +1211,11 @@ void MojoDocument::getDocumentSymbols(
           })
           .Case([&](PublicFunctionDecl *fn) {
             addSymbol(fn->getName(), lsp::SymbolKind::Function, range,
-                      fn->getSignature());
+                      fn->getSignature(*context->parserContext));
           })
           .Case([&](PublicStructDecl *structDecl) {
-            addSymbol(structDecl->getName(), lsp::SymbolKind::Struct, range);
+            addSymbol(structDecl->getName(), lsp::SymbolKind::Struct, range,
+                      structDecl->getSignature(*context->parserContext));
           })
           .Case([&](PublicStructFieldDecl *field) {
             addSymbol(field->getName(), lsp::SymbolKind::Field, range,
@@ -1328,7 +1329,8 @@ std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) {
   if (auto symbolRef = context->symbolIndex.getSymbolAt(loc)) {
     lsp::Hover hover(lsp::Range(getSourceMgr(), symbolRef->range));
     hover.contents.kind = lsp::MarkupKind::Markdown;
-    hover.contents.value = symbolRef->getMarkdownDeclaration();
+    hover.contents.value =
+        symbolRef->getMarkdownDeclaration(*context->parserContext);
     return hover;
   }
   return std::nullopt;

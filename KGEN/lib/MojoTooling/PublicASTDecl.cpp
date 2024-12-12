@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
-#include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/JSON.h"
@@ -20,7 +20,7 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 /// Two spaces that are forcefully added to markdown lines that can be used for
-/// identation.
+/// indentation.
 static constexpr const char *kMarkdownIndent = "&nbsp;&nbsp;";
 
 /// Return an ordering priority number for the given decl name. Lower numbers
@@ -435,7 +435,7 @@ StringRef PublicDecl::getKindAsString(PublicDeclKind kind) {
 
 StringRef PublicDecl::getKindAsString() const { return getKindAsString(kind); }
 
-std::string PublicDecl::getFullMarkdownString() const {
+std::string PublicDecl::getFullMarkdownString(MojoParserContext &ctx) const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
@@ -460,7 +460,7 @@ std::string PublicDecl::getFullMarkdownString() const {
   if (auto docString = getMarkdownDocString(); !docString.empty())
     os << llvm::formatv(docStringSnippet, docString);
 
-  os << llvm::formatv(declarationSnippet, getDeclarationSnippet());
+  os << llvm::formatv(declarationSnippet, getDeclarationSnippet(ctx));
   return buff;
 }
 
@@ -468,7 +468,8 @@ std::string PublicDecl::getFullMarkdownString() const {
 // PublicVariableDecl
 //===----------------------------------------------------------------------===//
 
-std::string PublicVariableDecl::getDeclarationSnippet() const {
+std::string
+PublicVariableDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   os << "var ";
@@ -505,7 +506,8 @@ PublicVariableDecl::PublicVariableDecl(MojoASTDeclRef declRef)
 // PublicParameterDecl
 //===----------------------------------------------------------------------===//
 
-std::string PublicParameterDecl::getDeclarationSnippet() const {
+std::string
+PublicParameterDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
   dumpIdentifierWithType(os, getName(), type, variadicKind);
@@ -546,7 +548,8 @@ static StringRef getConventionString(PublicArgumentDecl::Convention conv) {
   return conventions[convIdx];
 }
 
-std::string PublicArgumentDecl::getDeclarationSnippet() const {
+std::string
+PublicArgumentDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
@@ -594,7 +597,8 @@ llvm::json::Object PublicArgumentDecl::toJSON(MojoParserContext &ctx) const {
 // PublicAliasDecl
 //===----------------------------------------------------------------------===//
 
-std::string PublicAliasDecl::getDeclarationSnippet() const {
+std::string
+PublicAliasDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   os << "alias " << getName();
@@ -670,12 +674,14 @@ void PublicFunctionDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   description = DocString::formatDescription(pureDescriptionLines);
 }
 
-std::string PublicFunctionDecl::getDeclarationSnippet() const {
-  return getDeclarationSnippet(/*parameterOffsets=*/nullptr,
+std::string
+PublicFunctionDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
+  return getDeclarationSnippet(ctx, /*parameterOffsets=*/nullptr,
                                /*argumentOffsets=*/nullptr);
 }
 
 std::string PublicFunctionDecl::getDeclarationSnippet(
+    MojoParserContext &ctx,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) const {
   std::string snippet;
@@ -685,7 +691,7 @@ std::string PublicFunctionDecl::getDeclarationSnippet(
 
   unsigned returnOffset = 0;
   std::string signature =
-      getSignature(parameterOffsets, argumentOffsets, &returnOffset);
+      getSignature(ctx, parameterOffsets, argumentOffsets, &returnOffset);
   StringRef resultLessSignature(signature.data(), returnOffset);
   os << (isDef() ? "def" : "fn") << " ";
 
@@ -730,7 +736,8 @@ std::string PublicFunctionDecl::getMarkdownDocString() const {
 /// Print the signatures for a list of arguments or parameters.
 template <typename T>
 static void printArgOrParameterSignature(
-    ArrayRef<T> args, SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets,
+    MojoParserContext &ctx, ArrayRef<T> args,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets,
     llvm::raw_string_ostream &os, bool suppressSlashAfterSelf = false) {
   PassingKindPrinter passingKindPrinter(
       os, args.size(), [&](size_t idx) { return args[idx].getPassingKind(); },
@@ -740,7 +747,7 @@ static void printArgOrParameterSignature(
     passingKindPrinter.printOptionalStarSlash(idx);
 
     unsigned argStart = os.str().size();
-    os << arg.getDeclarationSnippet();
+    os << arg.getDeclarationSnippet(ctx);
     if (offsets)
       offsets->push_back({argStart, os.str().size()});
 
@@ -753,6 +760,7 @@ static void printArgOrParameterSignature(
 }
 
 std::string PublicFunctionDecl::getSignature(
+    MojoParserContext &ctx,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets,
     unsigned *returnOffset) const {
@@ -764,11 +772,12 @@ std::string PublicFunctionDecl::getSignature(
 
   // Emit the parameters of the function.
   if (!parameters.empty())
-    printArgOrParameterSignature(ArrayRef(parameters), parameterOffsets,
+    printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
                                  signatureOS);
 
   // Emit the arguments of the function.
-  printArgOrParameterSignature(ArrayRef(args), argumentOffsets, signatureOS,
+  printArgOrParameterSignature(ctx, ArrayRef(args), argumentOffsets,
+                               signatureOS,
                                /*suppressSlashAfterSelf=*/isMethodFlag);
 
   // Emit the result type.
@@ -795,7 +804,7 @@ llvm::json::Object PublicFunctionDecl::toJSON(MojoParserContext &ctx) const {
       {"raisesDoc", raisesDoc},
       {"returnsDoc", returnsDoc},
       {"returnType", returnType},
-      {"signature", getSignature()},
+      {"signature", getSignature(ctx)},
       {"summary", summary},
   };
 }
@@ -950,7 +959,8 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
 // PublicStructFieldDecl
 //===----------------------------------------------------------------------===//
 
-std::string PublicStructFieldDecl::getDeclarationSnippet() const {
+std::string
+PublicStructFieldDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   os << "var ";
@@ -1047,7 +1057,8 @@ static void collectParentTypes(MojoParserContext &ctx,
   llvm::sort(parentTraits);
 }
 
-std::string PublicTraitDecl::getDeclarationSnippet() const {
+std::string
+PublicTraitDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
   return "trait " + getName().str();
 }
 
@@ -1111,18 +1122,30 @@ void PublicStructDecl::augmentWithDocumentation(ArrayRef<StringRef> desc) {
   description = DocString::formatDescription(pureDescriptionLines);
 }
 
-std::string PublicStructDecl::getDeclarationSnippet() const {
-  return getDeclarationSnippet(/*parameterOffsets=*/nullptr);
+std::string
+PublicStructDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
+  return getDeclarationSnippet(ctx, /*parameterOffsets=*/nullptr);
 }
 
 std::string PublicStructDecl::getDeclarationSnippet(
+    MojoParserContext &ctx,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
   std::string snippet;
   llvm::raw_string_ostream os(snippet);
   os << "struct " << getName();
 
   if (!parameters.empty())
-    printArgOrParameterSignature(ArrayRef(parameters), parameterOffsets, os);
+    printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
+                                 os);
+
+  SmallVector<StringRef> parentTraits;
+  collectParentTypes(ctx, parentTraits,
+                     cast<StructDeclOp>(*decl).getParentTypes());
+  if (!parentTraits.empty()) {
+    os << "\n# Traits: ";
+    llvm::interleaveComma(parentTraits, os,
+                          [&](StringRef token) { os << token; });
+  }
 
   return snippet;
 }
@@ -1136,6 +1159,18 @@ std::string PublicStructDecl::getMarkdownDocString() const {
   dumpMarkdownTextSection(os, DocString::kSectionConstraints, constraints);
 
   return markdown;
+}
+
+std::string PublicStructDecl::getSignature(
+    MojoParserContext &ctx,
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets) const {
+  std::string output;
+  llvm::raw_string_ostream os(output);
+  os << "struct " << getName();
+  if (!parameters.empty())
+    printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
+                                 os);
+  return output;
 }
 
 static StringRef toString(TypeConvention convention) {
@@ -1170,6 +1205,7 @@ llvm::json::Object PublicStructDecl::toJSON(MojoParserContext &ctx) const {
       {"name", getName().str()},
       {"parameters", toJSONArray(ctx, parameters)},
       {"parentTraits", llvm::json::Array(parentTraits)},
+      {"signature", getSignature(ctx)},
       {"summary", summary},
       {"convention", toString(convention)},
   };
@@ -1212,7 +1248,10 @@ PublicStructDecl::PublicStructDecl(MojoASTDeclRef declRef)
 // PublicModuleDecl
 //===----------------------------------------------------------------------===//
 
-std::string PublicModuleDecl::getDeclarationSnippet() const { return {}; }
+std::string
+PublicModuleDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
+  return {};
+}
 
 std::string PublicModuleDecl::getMarkdownDocString() const {
   std::string markdown;
@@ -1252,7 +1291,10 @@ PublicModuleDecl::PublicModuleDecl(MojoASTDeclRef declRef)
 // PublicPackageDecl
 //===----------------------------------------------------------------------===//
 
-std::string PublicPackageDecl::getDeclarationSnippet() const { return {}; }
+std::string
+PublicPackageDecl::getDeclarationSnippet(MojoParserContext &ctx) const {
+  return {};
+}
 
 std::string PublicPackageDecl::getMarkdownDocString() const {
   std::string markdown;

@@ -608,10 +608,16 @@ struct HMyUnsafePointer[
         pass
 
 
+# CHECK:  "signature": "struct HMyUnsafePointer[T: AnyType, address_space: AddressSpace = 0]",
+
+
 struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
     # CHECK: "signature": "__getitem__(ref self, idx: Int) -> ref [self] T",
     fn __getitem__(ref self, idx: Int) -> ref [self] T:
         pass
+
+
+# CHECK: "signature": "struct HList[T: CollectionElement, hint_trivial_type: Bool = False]",
 
 
 # Check that we don't generate any synthesized thunk methods
@@ -657,6 +663,7 @@ struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
 # CHECK:  "parentTraits": [
 # CHECK-NEXT:   "AnyType"
 # CHECK-NEXT:   "Sized"
+# CHECK:  "signature": "struct InMemoryStruct"
 
 
 struct InMemoryStruct(Sized):
@@ -710,6 +717,7 @@ struct InMemoryStruct(Sized):
 # CHECK:      "name": "_type"
 # CHECK:      "type": "dtype"
 # CHECK:  ],
+# CHECK:  "signature": "struct ParameterClass[_type: dtype]",
 # CHECK:  "summary": "This is a class summary."
 
 
