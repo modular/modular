@@ -93,9 +93,8 @@ def execute_kv_cache_ragged_flash_attention[
     var cache_lengths_host = HostNDBuffer[DType.uint32, 1](
         IndexList[1](batch_size)
     )
-    var max_context_length = 0
-    var max_prompt_length = 0
-    var is_context_encoding = True
+    var max_cache_length: UInt32 = 0
+    var max_seq_length: UInt32 = 0
     var total_seq_len: UInt32 = 0
 
     var flop_count = 0
@@ -112,14 +111,8 @@ def execute_kv_cache_ragged_flash_attention[
         else:
             curr_cache_length = cache_len
 
-        if curr_seq_length > max_prompt_length:
-            max_prompt_length = int(curr_seq_length)
-
-        if curr_cache_length > max_context_length:
-            max_context_length = int(curr_cache_length)
-
-        if curr_cache_length > 0:
-            is_context_encoding = False
+        max_cache_length = max(max_cache_length, curr_cache_length)
+        max_seq_length = max(max_seq_length, curr_seq_length)
 
         input_row_offsets_host.tensor[i] = total_seq_len
         cache_lengths_host.tensor[i] = curr_cache_length
@@ -192,7 +185,8 @@ def execute_kv_cache_ragged_flash_attention[
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_seq_length,
+        max_cache_length,
         0,
         CacheType.KeyIdx,
     )
@@ -200,7 +194,8 @@ def execute_kv_cache_ragged_flash_attention[
         kv_block_device.tensor,
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
-        is_context_encoding,
+        max_seq_length,
+        max_cache_length,
         0,
         CacheType.ValueIdx,
     )
