@@ -155,7 +155,7 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
 } // namespace
 
 namespace {
-/// Information pertaining to the the tensor spec as represented in KGEN.
+/// Information pertaining to the tensor spec as represented in KGEN.
 struct TensorSpecKGEN {
   void pullMetadataFromFunc(GeneratorOp);
 
@@ -185,6 +185,36 @@ void TensorSpecKGEN::pullMetadataFromFunc(GeneratorOp gen) {
 
 } // namespace
 
+/// If the operator attribute corresponds to a getter function, return the
+/// StringAttr representing the name of the tensor, otherwise return nullptr.
+static StringAttr parseGetterFunction(ParamOperatorAttr attr,
+                                      const SymbolTable &symtab) {
+  // Our intrinsic should always be Apply(intrinsicFunc, "name_of_tensor")
+  if (attr.getOpcode() != KGEN::POC::Apply || attr.getOperands().size() != 2)
+    return nullptr;
+
+  auto sym = dyn_cast<SymbolConstantAttr>(attr.getOperands()[0]);
+  if (!sym)
+    return nullptr;
+
+  // Pull the name of the function being targeted off of the parameter
+  // expression.
+  auto asStr = cast<FlatSymbolRefAttr>(sym.getSymbol()).getValue();
+  auto invokedFunc = symtab.lookup<GeneratorOp>(asStr);
+  auto name = dyn_cast<StringAttr>(attr.getOperands()[1]);
+  if (!invokedFunc || !name)
+    return nullptr;
+
+  // Check if the targeted function is the known intrinsic function and
+  // attach that as metadata for the function if so.
+  if (!invokedFunc->hasAttr(MOGGPreElab::MOGG_INTRINSIC_TENSOR_SPEC_HOOK) &&
+      !invokedFunc->hasAttr(MOGGPreElab::MOGG_INTRINSIC_TENSOR_SPEC_TUPLE_HOOK))
+    return nullptr;
+
+  // Identify which tensor is getting the spec.
+  return dyn_cast<StringAttr>(attr.getOperand(1));
+}
+
 /// Find the intrinsic functions which are used to access the spec.
 /// This function is responsible for validating the uses of compiler.specsof
 /// as well and will produce an error when the given node contains a specsof
@@ -195,46 +225,25 @@ static ErrorOrSuccess identifyGetterFunctions(CallGraphNode *node,
 
   mlir::AttrTypeWalker walker;
 
-  // Walk the attribute operators to identify an operator refering to the
+  // Walk the attribute operators to identify an operator referring to the
   // 'getSpec' function. This function is used to materialize the parameter
   // static spec info for a given tensor within a function.
   walker.addWalk([&](ParamOperatorAttr attr) -> WalkResult {
     // Our intrinsic should always be Apply(intrinsicFunc, "name_of_tensor")
-    if (attr.getOpcode() != KGEN::POC::Apply || attr.getOperands().size() != 2)
+    StringAttr tensorName = parseGetterFunction(attr, symTab);
+    if (!tensorName)
       return WalkResult::advance();
 
-    auto sym = dyn_cast<SymbolConstantAttr>(attr.getOperands()[0]);
-    if (!sym)
-      return WalkResult::advance();
+    if (!llvm::is_contained(node->getterFunctions, attr))
+      node->getterFunctions.push_back(attr);
 
-    // Pull the name of the function being targeted off of the parameter
-    // expression.
-    auto asStr = cast<FlatSymbolRefAttr>(sym.getSymbol()).getValue();
-    auto invokedFunc = symTab.lookup<GeneratorOp>(asStr);
-    auto name = dyn_cast<StringAttr>(attr.getOperands()[1]);
-    if (!invokedFunc || !name)
-      return WalkResult::advance();
-
-    // Check if the targetted function is the known intrinsic function and
-    // attach that as metadata for the function if so.
-    if (invokedFunc->hasAttr(MOGGPreElab::MOGG_INTRINSIC_TENSOR_SPEC_HOOK) ||
-        invokedFunc->hasAttr(
-            MOGGPreElab::MOGG_INTRINSIC_TENSOR_SPEC_TUPLE_HOOK)) {
-      if (!llvm::is_contained(node->getterFunctions, attr))
-        node->getterFunctions.push_back(attr);
-
-      // Identify which tensor is getting the spec.
-      StringAttr tensorName = cast<StringAttr>(attr.getOperand(1));
-
-      if (!node->hasArgumentOfName(tensorName)) {
-        result = Error(Twine("Unable to resolve specsof for variable named '") +
-                       tensorName.strref() + "'");
-        return WalkResult::interrupt();
-      }
-
-      node->setParamInfoIfNeeded(tensorName, attr.getType());
+    if (!node->hasArgumentOfName(tensorName)) {
+      result = Error(Twine("Unable to resolve specsof for variable named '") +
+                     tensorName.strref() + "'");
+      return WalkResult::interrupt();
     }
 
+    node->setParamInfoIfNeeded(tensorName, attr.getType());
     return WalkResult::advance();
   });
 
@@ -628,6 +637,34 @@ static void createSpecializations(ModuleOp module, CallGraph &cg,
   }
 }
 
+static LogicalResult validateSpecsofUses(GeneratorOp generator,
+                                         SymbolTable &symtab) {
+  StringAttr failingTensorName;
+
+  auto argParams = generator->getAttrOfType<ArrayAttr>(MOGG_ARG_PARAMS);
+  if (!argParams)
+    return success();
+
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](ParamOperatorAttr attr) -> WalkResult {
+    if (auto tensorName = parseGetterFunction(attr, symtab)) {
+      failingTensorName = tensorName;
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+
+  for (Attribute attr : argParams) {
+    if (walker.walk(attr).wasInterrupted()) {
+      return generator.emitError()
+             << "compiler.specsof in function signture through specsof('"
+             << failingTensorName.getValue() << "')";
+    }
+  }
+
+  return success();
+}
+
 namespace {
 class MOGGAutospecializePass
     : public M::KGEN::MOGGPreElab::impl::MOGGAutospecializeBase<
@@ -662,6 +699,13 @@ public:
         signalPassFailure();
       }
       return;
+    }
+
+    // Before attempting specialization, validate that none of the tensor
+    // specs will leak out through the result types of functions.
+    for (GeneratorOp func : mod.getOps<GeneratorOp>()) {
+      if (failed(validateSpecsofUses(func, symTab)))
+        return signalPassFailure();
     }
 
     // Build a callgraph of all calls so we have something to traverse

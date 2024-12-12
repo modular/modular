@@ -157,7 +157,7 @@ static LogicalResult annotateTypes(LIT::FuncOp func) {
     sourceName.push_back(func.getSignature().getArgName(i));
   }
 
-  // Attach the parameter mapping infomation to the kernel.
+  // Attach the parameter mapping information to the kernel.
   if (!observedParams.empty()) {
     func->setDiscardableAttr(MOGG_ARG_PARAMS,
                              builder.getArrayAttr(observedParams));
