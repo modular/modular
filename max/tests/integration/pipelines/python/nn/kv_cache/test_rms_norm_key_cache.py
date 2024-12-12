@@ -58,12 +58,10 @@ class RMSNormKeyCacheModel:
 
 
 @pytest.mark.parametrize(
-    "dtype,torch_dtype",
-    [(DType.float32, np.float32)],
+    "dtype",
+    [DType.float32],
 )
-def test_rms_norm_key_cache(
-    session: InferenceSession, dtype: DType, torch_dtype: np.dtype
-) -> None:
+def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     seq_lens = [10, 4]
     batch_size = 2
     max_seq_len = 16
@@ -113,7 +111,7 @@ def test_rms_norm_key_cache(
     # Copy so that we can reuse `all_ones` in a comparison later.
     fetch_args = (Tensor.from_numpy(all_ones.copy()), *fetch_args[1:])
 
-    gamma = np.random.randn(kv_params.head_dim).astype(torch_dtype)
+    gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
     total_seq_len = np.array(sum(input_row_offsets), dtype=np.uint32)
     model(gamma, total_seq_len, input_row_offsets, *fetch_args)
