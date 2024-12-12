@@ -23,8 +23,6 @@ def main():
     var outputs = model.execute(inputs)
     # Process the outputs here.
 ```
-
-For details, see how to [run inference with Mojo](/max/tutorials/run-inference-with-mojo).
 """
 
 from .info import get_version
