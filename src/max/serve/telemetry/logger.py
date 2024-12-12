@@ -51,7 +51,7 @@ def configureLogging(
     else:
         console_formatter = logging.Formatter(
             (
-                "%(asctime)s.%(msecs)03d %(levelname)s: %(threadName)s:"
+                "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
                 " %(name)s: %(message)s"
             ),
             datefmt="%H:%M:%S",
@@ -69,7 +69,7 @@ def configureLogging(
         else:
             file_formatter = logging.Formatter(
                 (
-                    "%(asctime)s.%(msecs)03d %(levelname)s: %(threadName)s:"
+                    "%(asctime)s.%(msecs)03d %(levelname)s: %(process)d %(threadName)s:"
                     " %(name)s: %(message)s"
                 ),
                 datefmt="%y:%m:%d-%H:%M:%S",
