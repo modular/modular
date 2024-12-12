@@ -8,6 +8,7 @@ import asyncio
 import base64
 import json
 import logging
+import queue
 from abc import ABC, abstractmethod
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -15,7 +16,7 @@ from time import perf_counter_ns
 from typing import Any, AsyncGenerator, List, Literal, Optional, Union, cast
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from httpx import AsyncClient
 from max.pipelines import (
     PipelineTokenizer,
@@ -339,7 +340,11 @@ async def openai_create_chat_completion(
         )
 
         if completion_request.stream:
-            return EventSourceResponse(response_generator.stream(token_request))
+            # We set a large timeout for ping otherwise benchmarking scripts
+            # such as sglang will fail in parsing the ping message.
+            return EventSourceResponse(
+                response_generator.stream(token_request), ping=100000
+            )
 
         response = await response_generator.complete(token_request)
         return response
@@ -447,11 +452,22 @@ class OpenAICompletionResponseGenerator(OpenAIResponseGenerator):
                 n_tokens,
             )
             yield "[DONE]"
+        except queue.Full as qe:
+            status_code = 529
+            logger.exception("Request queue full %s", request.id)
+            yield JSONResponse(
+                status_code=status_code,
+                content={"detail": "Too Many Requests"},
+                headers={"Retry-After": "30"},
+            )
         except ValueError as e:
             status_code = 500
             logger.exception("ValueError in request %s", request.id)
             # TODO (SI-722) - propagate better errors back.
-            yield json.dumps({"result": "error", "message": str(e)})
+            yield JSONResponse(
+                status_code=status_code,
+                content={"detail": "Value error", "message": str(e)},
+            )
         finally:
             record_request_end(
                 status_code,
@@ -576,7 +592,11 @@ async def openai_create_completion(
         )
 
         if completion_request.stream:
-            return EventSourceResponse(response_generator.stream(token_request))
+            # We set a large timeout for ping otherwise benchmarking scripts
+            # such as sglang will fail in parsing the ping message.
+            return EventSourceResponse(
+                response_generator.stream(token_request), ping=100000
+            )
 
         response = await response_generator.complete(token_request)
         return response

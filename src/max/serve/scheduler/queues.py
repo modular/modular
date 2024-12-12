@@ -67,9 +67,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
     def __init__(self):
         super().__init__()
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.request_q = MPQueue(max_size_bytes=10_000_000)
-        self.response_q = MPQueue(max_size_bytes=10_000_000)
-        self.cancel_q = MPQueue(max_size_bytes=1_000_000)
+        self.request_q = MPQueue(max_size_bytes=1_000_000_000)
+        self.response_q = MPQueue(max_size_bytes=100_000_000)
+        self.cancel_q = MPQueue(max_size_bytes=10_000_000)
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.pid: int = -1
         self.process: Optional[SpawnProcess] = None
@@ -83,6 +83,21 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
             self.pending_out_queues[req_id] = out_queue
             self.request_q.put_nowait((req_id, data))
             yield out_queue
+        except queue.Full:
+            for name, q in {
+                "REQ": self.request_q,
+                "RESP": self.response_q,
+                "CANC": self.cancel_q,
+            }.items():
+                logging.critical(
+                    "FULL[%s]@ size: %d (bytes: %d) max: %d (bytes:%d)",
+                    name,
+                    q.qsize(),
+                    q.data_size(),
+                    q.maxsize,
+                    q.max_size_bytes,
+                )
+            raise
         finally:
             del self.pending_out_queues[req_id]
 
