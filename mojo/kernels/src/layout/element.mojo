@@ -281,7 +281,7 @@ struct Element[
                 ]
         return Element(element_data, runtime_layout)
 
-    fn store(self, ptr: UnsafePointer[Scalar[dtype], is_mutable=True, **_]):
+    fn store(self, ptr: UnsafePointer[Scalar[dtype], mut=True, **_]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
@@ -340,9 +340,7 @@ struct Element[
                     self.element_data[i + j * dim_0]
                 )
 
-    fn masked_store(
-        self, ptr: UnsafePointer[Scalar[dtype], is_mutable=True, **_]
-    ):
+    fn masked_store(self, ptr: UnsafePointer[Scalar[dtype], mut=True, **_]):
         constrained[layout.rank() <= 2, "Only supports rank <= 2"]()
 
         @parameter
