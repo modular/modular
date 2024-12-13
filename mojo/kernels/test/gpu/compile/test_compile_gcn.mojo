@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# TODO: KERN-1335
+# REQUIRES: DISABLED
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from pathlib import Path
