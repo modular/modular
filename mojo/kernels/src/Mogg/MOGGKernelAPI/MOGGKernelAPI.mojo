@@ -8114,7 +8114,7 @@ struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_continuous_batch:
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[
+fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -8147,8 +8147,10 @@ fn generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[
     )
 
 
-@compiler.register("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
-struct Struct_flash_attention_kv_cache_h1_d16_cont_batch_ragged:
+@compiler.register(
+    "flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged"
+)
+struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8166,7 +8168,9 @@ struct Struct_flash_attention_kv_cache_h1_d16_cont_batch_ragged:
         scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
+        generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
+            target
+        ](
             q,
             input_row_offsets,
             kv_collection,
@@ -8177,8 +8181,10 @@ struct Struct_flash_attention_kv_cache_h1_d16_cont_batch_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
-struct Struct_flash_attention_kv_cache_h8_d64_cont_batch_ragged:
+@compiler.register(
+    "flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged"
+)
+struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8196,7 +8202,9 @@ struct Struct_flash_attention_kv_cache_h8_d64_cont_batch_ragged:
         scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
+        generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
+            target
+        ](
             q,
             input_row_offsets,
             kv_collection,
@@ -8207,8 +8215,10 @@ struct Struct_flash_attention_kv_cache_h8_d64_cont_batch_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
-struct Struct_flash_attention_kv_cache_h8_d128_cont_batch_ragged:
+@compiler.register(
+    "flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged"
+)
+struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8226,7 +8236,9 @@ struct Struct_flash_attention_kv_cache_h8_d128_cont_batch_ragged:
         scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
+        generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
+            target
+        ](
             q,
             input_row_offsets,
             kv_collection,
@@ -8237,8 +8249,10 @@ struct Struct_flash_attention_kv_cache_h8_d128_cont_batch_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h8_d512_cont_batch_ragged")
-struct Struct_flash_attention_kv_cache_h8_d512_cont_batch_ragged:
+@compiler.register(
+    "flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged"
+)
+struct Struct_flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8256,7 +8270,9 @@ struct Struct_flash_attention_kv_cache_h8_d512_cont_batch_ragged:
         scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
+        generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
+            target
+        ](
             q,
             input_row_offsets,
             kv_collection,
@@ -8267,8 +8283,10 @@ struct Struct_flash_attention_kv_cache_h8_d512_cont_batch_ragged:
         )
 
 
-@compiler.register("flash_attention_kv_cache_h32_d128_cont_batch_ragged")
-struct Struct_flash_attention_kv_cache_h32_d128_cont_batch_ragged:
+@compiler.register(
+    "flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged"
+)
+struct Struct_flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged:
     @uses_opaque
     @always_inline
     @staticmethod
@@ -8286,7 +8304,9 @@ struct Struct_flash_attention_kv_cache_h32_d128_cont_batch_ragged:
         scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[target](
+        generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
+            target
+        ](
             q,
             input_row_offsets,
             kv_collection,
