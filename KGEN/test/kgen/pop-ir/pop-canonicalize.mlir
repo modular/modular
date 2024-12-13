@@ -870,6 +870,17 @@ kgen.func @array_get() -> index {
   kgen.return %1 : index
 }
 
+// CHECK-LABEL: @array_get_unknown
+kgen.func @array_get_unknown() -> index {
+  %array = kgen.param.constant: array<4, index> = <*?>
+  %0 = pop.array.get %array[0] : !pop.array<4, index>
+  
+  // CHECK: %[[OUT:.*]] = kgen.param.constant = <*?>
+  // CHECK-NEXT: kgen.return %[[OUT]]
+
+  kgen.return %0 : index
+}
+
 // CHECK-LABEL: @array_get_non_const_0
 kgen.func @array_get_non_const_0(%arg0: index, %arg1: index) -> index {
   // CHECK: (%[[ARG0:.*]]: index, %[[ARG1:.*]]: index)
@@ -1241,6 +1252,15 @@ kgen.func @load_bitcast_func_ptr(%arg0: !kgen.signature<() -> ()>) ->
   // CHECK-NEXT: pop.load volatile invariant %0
   %3 = pop.load volatile invariant %0 : !kgen.pointer<pointer<index>>
   kgen.return %1, %2, %3 : !kgen.pointer<index>, !kgen.pointer<index>, !kgen.pointer<index>
+}
+
+// CHECK-LABEL: @store_unknown
+kgen.func @store_unknown(%ptr : !kgen.pointer<array<4, index>>) {
+  %array = kgen.param.constant: array<4, index> = <*?>
+  pop.store %array, %ptr align<1> : !kgen.pointer<array<4, index>>
+
+  // CHECK-NEXT: kgen.return
+  kgen.return
 }
 
 // CHECK-LABEL: @store_bitcast

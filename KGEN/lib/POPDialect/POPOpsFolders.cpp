@@ -1052,6 +1052,17 @@ OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
+
+  // Storing an unknown to a pointer is a nop as it is legal to assume the
+  // memory is already the same value.
+  if (auto cst = dyn_cast_or_null<KGEN::ParamConstantOp>(
+          op.getArg().getDefiningOp())) {
+    if (isa<UnknownAttr>(cst.getValue())) {
+      b.eraseOp(op);
+      return success();
+    }
+  }
+
   // Canonicalize `store x, bitcast(ptr) -> store bitcast(x), ptr` if the
   // element type is a pointer type.
   if (!isa<PointerType>(op.getArg().getType()))
@@ -1455,6 +1466,15 @@ OpFoldResult ArrayRepeatOp::fold(FoldAdaptor adaptor) {
 //===----------------------------------------------------------------------===//
 
 OpFoldResult ArrayGetOp::fold(FoldAdaptor adaptor) {
+
+  // If the array comes from an unknown constant then the result is also
+  // unknown, irrespective of the index.
+  if (auto cst =
+          dyn_cast_or_null<KGEN::ParamConstantOp>(getArray().getDefiningOp())) {
+    if (isa<UnknownAttr>(cst.getValue()))
+      return UnknownAttr::get(getType());
+  }
+
   auto index = dyn_cast<IntegerAttr>(getIndex());
   if (!index)
     return {};
