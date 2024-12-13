@@ -2022,11 +2022,20 @@ fn mha_single_batch[
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
 
+        alias reg_layout_by_mma_unit = Layout.row_major(
+            2 * num_m_mmas * num_n_mmas, 2
+        )
         _online_softmax_iter_for_mma_output[
-            num_m_mmas, num_n_mmas, num_warps_n, mma_shape
+            accum_type,
+            # score layout by mma unit
+            # TODO: generalize beyond 16x8 layout
+            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            # threads layout by warp
+            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(8, 4),
         ](
-            output_reg_tile,
-            p_reg_tile,
+            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
+            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
             rowmax,
             rowsum,
@@ -2672,11 +2681,20 @@ fn mha_single_batch_pipelined[
         # Increment mask to next BM x BN block.
         mask_warp_col += BN
 
+        alias reg_layout_by_mma_unit = Layout.row_major(
+            2 * num_m_mmas * num_n_mmas, 2
+        )
         _online_softmax_iter_for_mma_output[
-            num_m_mmas, num_n_mmas, num_warps_n, mma_shape
+            accum_type,
+            # score layout by mma unit
+            # TODO: generalize beyond 16x8 layout
+            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            # threads layout by warp
+            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(8, 4),
         ](
-            output_reg_tile,
-            p_reg_tile,
+            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
+            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
             rowmax,
             rowsum,
@@ -3503,11 +3521,17 @@ fn mha_decoding_single_batch[
         # Increment mask to next BM x BN block.
         mask_warp_ptr += BN
 
+        alias reg_layout_by_mma_unit = Layout.row_major(
+            2 * num_m_mmas * num_n_mmas, 2
+        )
         _online_softmax_iter_for_mma_output[
-            num_m_mmas, num_n_mmas, num_warps_n, mma_shape
+            accum_type,
+            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(8, 4),
         ](
-            output_reg_tile,
-            p_reg_tile,
+            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
+            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
             rowmax,
             rowsum,

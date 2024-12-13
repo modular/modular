@@ -14,6 +14,7 @@ from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
+from bit import log2_floor
 from buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from builtin.uint import _temp_uint_from_int
@@ -873,9 +874,18 @@ fn _online_softmax_kernel[
     alias num_m_mmas = WM // mma_shape[0]
     alias num_n_mmas = WN // mma_shape[1]
 
+    # Each 16x8 mma tile has two 8x8 units and corresponds to 8x4 thread layout
+    # in a single warp.
+    alias num_mma_units = num_m_mmas * num_n_mmas * 2
+    alias score_layout_by_mma_unit = Layout.row_major(
+        num_m_mmas * 2, num_n_mmas
+    )
+    alias warp_layout = Layout.row_major(8, 4)
+
     # Only consider 2 iterations in this test. The number of warps is based on
     # half sequence length.
     alias num_rowwise_warps = seqlen // 2 // WN
+    alias block_layout_by_warp = Layout.row_major(1, num_rowwise_warps)
 
     alias frag_size = get_fragment_size[mma_shape]()[2]
 
@@ -904,12 +914,18 @@ fn _online_softmax_kernel[
             lane
         )
     )
+    var p_vecs = p.reshape[
+        Layout.row_major(num_mma_units, frag_size // 2)
+    ]().vectorize[1, frag_size // 2]()
 
     var o = LayoutTensor[
         type,
         Layout.row_major(num_m_mmas * num_n_mmas, frag_size),
         address_space = AddressSpace.LOCAL,
     ].stack_allocation().fill(0.0)
+    var o_vecs = o.reshape[
+        Layout.row_major(num_mma_units, frag_size // 2)
+    ]().vectorize[1, frag_size // 2]()
 
     alias row_alignment = alignof[SIMD[type, simdwidthof[type]()]]()
     var rowmax = stack_allocation[
@@ -931,8 +947,8 @@ fn _online_softmax_kernel[
         rowsum.store(i, SIMD[type, 2](0))
 
     _online_softmax_iter_for_mma_output[
-        num_m_mmas, num_n_mmas, num_rowwise_warps, mma_shape, type
-    ](o, p, warp_scratch, rowmax, rowsum)
+        type, score_layout_by_mma_unit, block_layout_by_warp, warp_layout
+    ](o_vecs, p_vecs, warp_scratch, rowmax, rowsum)
 
     # P has the softmax numerator for the first half, save it in q.
     o.copy_from(p)
@@ -943,8 +959,8 @@ fn _online_softmax_kernel[
     )
 
     _online_softmax_iter_for_mma_output[
-        num_m_mmas, num_n_mmas, num_rowwise_warps, mma_shape, type
-    ](o, p, warp_scratch, rowmax, rowsum)
+        type, score_layout_by_mma_unit, block_layout_by_warp, warp_layout
+    ](o_vecs, p_vecs, warp_scratch, rowmax, rowsum)
 
     # o, p has the correct softmax numerator for the 1st and 2nd half.
     # rowsum has the correct sum. Ready for correction.
@@ -975,283 +991,241 @@ fn _online_softmax_kernel[
 
 @always_inline
 fn _online_softmax_iter_for_mma_output[
-    num_m_mmas: Int,
-    num_n_mmas: Int,
-    num_rowwise_warps: Int,
-    mma_shape: IndexList[3],
     type: DType,
+    score_layout_by_mma_unit: Layout,
+    block_layout_by_warp: Layout,
+    warp_layout: Layout,
 ](
     output_reg_tile: LayoutTensor[type, *_, **_],
-    p_reg_tile: LayoutTensor[type, *_, **_],
+    score_reg_tile: LayoutTensor[type, *_, **_],
     warp_scratch: LayoutTensor[type, *_, **_],
     rowmax: UnsafePointer[Scalar[type], **_],
     rowsum: UnsafePointer[Scalar[type], **_],
 ):
-    constrained[num_m_mmas * num_n_mmas == p_reg_tile.shape[0]()]()
+    alias num_colwise_warps = block_layout_by_warp.shape[0].value()
+    alias num_rowwise_warps = block_layout_by_warp.shape[1].value()
 
     var tid = ThreadIdx.x
     var lane = lane_id()
     var warp_x = warp_broadcast(tid // WARP_SIZE) % UInt(num_rowwise_warps)
 
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias p_frag_simdwidth = 2
-    alias p_frag_size: UInt = p_reg_tile.shape[1]()
+    # Assume p_reg_tile has been properly vectorized. The element layout
+    # represents number elements per thread in a row or column
+    # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
+    alias fragment_layout = score_reg_tile.element_layout
+    alias frag_type = score_reg_tile.element_type
+    alias frag_num_rows = fragment_layout.shape[0].value()
+    alias frag_num_cols = fragment_layout.shape[1].value()
 
-    # Sum of fragment elements in the same row.
-    # MMA output has two sub-matrices. Each thread's fragments are on two rows.
-    alias frag_alignment = alignof[SIMD[type, simdwidthof[type]()]]()
-    var p_frag_rowmax = stack_allocation[
-        num_m_mmas * 2, type, alignment=frag_alignment
-    ]()
-    var p_frag_rowsum = stack_allocation[
-        num_m_mmas * 2, type, alignment=frag_alignment
-    ]()
-    var correction = stack_allocation[
-        num_m_mmas * 2, type, alignment=frag_alignment
+    constrained[
+        frag_num_rows == 1,
+        (
+            "Nvidia mma C/D fragments is a row vector. We should support"
+            " frag_num_rwos > 1 for AMD GPU."
+        ),
     ]()
 
+    # Number of mma unit tiles in the score matrix.
+    alias num_colwise_tiles = score_layout_by_mma_unit.shape[0].value()
+    alias num_rowwise_tiles = score_layout_by_mma_unit.shape[1].value()
+    # The online softmax attributes for each thread's elements (fragments).
+    alias num_rows_per_thread = num_colwise_tiles * frag_num_rows
+    var score_frag_rowmax = stack_allocation[num_rows_per_thread, type]()
+    var score_frag_rowsum = stack_allocation[num_rows_per_thread, type]()
+    var correction = stack_allocation[num_rows_per_thread, type]()
+
+    # Initialize local max with the running max, and local sum with zero.
     @parameter
-    for i in range(0, 2 * num_m_mmas, 2):
-        p_frag_rowmax.store(i, rowmax.load[width=2]())
-        p_frag_rowsum.store(i, SIMD[type, 2](0))
+    for col_tile in range(num_colwise_tiles):
+        score_frag_rowmax[col_tile] = rowmax[col_tile]
+        score_frag_rowsum[col_tile] = 0
+
+    alias num_shuffles_per_row = log2_floor(warp_layout.shape[1].value())
 
     # Online softmax
     @parameter
-    for m_mma in range(num_m_mmas):
+    for col_tile in range(num_colwise_tiles):
 
         @parameter
-        for n_mma in range(num_n_mmas):
+        for row_tile in range(num_rowwise_tiles):
+            alias tile_id = col_tile + row_tile * num_colwise_tiles
+
+            # Assume this is a rowwise vector for now see above constraint.
+            var frag = score_reg_tile[tile_id, 0]
 
             @parameter
-            for i in range(int(p_frag_size // 2)):
-                var curr = SIMD[type, 2](
-                    rebind[Scalar[type]](
-                        p_reg_tile[n_mma * num_m_mmas + m_mma, i]
-                    ),
-                    rebind[Scalar[type]](
-                        p_reg_tile[
-                            n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
-                        ]
-                    ),
-                )
-                p_frag_rowmax.store[alignment = p_frag_rowmax.alignment](
-                    2 * m_mma,
-                    max(
-                        p_frag_rowmax.load[
-                            width=2, alignment = p_frag_rowmax.alignment
-                        ](2 * m_mma),
-                        curr,
-                    ),
+            for col in range(frag_num_cols):
+                score_frag_rowmax[col_tile] = max(
+                    score_frag_rowmax[col_tile], frag[col]
                 )
 
         # Every four threads have elements on the same row.
         # Reduce max for T0-T3, T4-T7, etc
-        # TODO: Consider using 2 registers instead of 2 * m_mma.
         @parameter
-        for i in range(2):
+        for shift in range(1, num_shuffles_per_row + 1):
+            score_frag_rowmax[col_tile] = max(
+                score_frag_rowmax[col_tile],
+                shuffle_xor(score_frag_rowmax[col_tile], shift),
+            )
 
-            @parameter
-            for j in reversed(range(1, 3)):
-                p_frag_rowmax[2 * m_mma + i] = max(
-                    p_frag_rowmax[2 * m_mma + i],
-                    shuffle_xor(p_frag_rowmax[2 * m_mma + i], j),
-                )
+    alias num_colwise_lanes = UInt32(warp_layout.shape[0].value())
+    alias num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
     # If a row is split across multiple warps, communicate via shared memory
     # to achieve the rowwise max.
     @parameter
     if num_rowwise_warps > 1:
         # Write per warp rowmax to shared memory.
-        if lane % 4 == 0:
+        if lane % num_rowwise_lanes == 0:
 
             @parameter
-            for m_mma0 in range(num_m_mmas):
-                alias m_mma = UInt(m_mma0)
-                # Each thread handle two rows in the mma output.
-                var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
-                var row1 = row0 + MMA_M // 2
-                warp_scratch[int(warp_x), row0] = p_frag_rowmax[2 * m_mma]
-                warp_scratch[int(warp_x), row1] = p_frag_rowmax[2 * m_mma + 1]
+            for col_tile in range(num_colwise_tiles):
+                var score_row_idx = col_tile * num_colwise_lanes + (
+                    lane // num_rowwise_lanes
+                )
+                # warp scratch has layout row_major(num_warps, num_rows). The
+                # "score_row_idx" is the idx-th row in the score matrix.
+                warp_scratch[
+                    int(warp_x), int(score_row_idx)
+                ] = score_frag_rowmax[col_tile]
 
         barrier()
 
         # Reduce the warpwise rowmax.
-        if lane % 4 == 0:
+        if lane % num_rowwise_lanes == 0:
 
             @parameter
-            for m_mma in range(num_m_mmas):
-                var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
-                var row1 = row0 + MMA_M // 2
+            for col_tile in range(num_colwise_tiles):
+                var score_row_idx = col_tile * num_colwise_lanes + (
+                    lane // num_rowwise_lanes
+                )
 
-                # Reduce rowmax. Warps in the same row do the same reduction.
                 @parameter
-                for w in range(num_rowwise_warps):
-                    var curr = SIMD[type, 2](
-                        rebind[Scalar[type]](warp_scratch[w, row0]),
-                        rebind[Scalar[type]](warp_scratch[w, row1]),
-                    )
-                    p_frag_rowmax.store(
-                        2 * m_mma,
-                        max(
-                            p_frag_rowmax.load[
-                                width=2, alignment = p_frag_rowmax.alignment
-                            ](2 * m_mma),
-                            curr,
+                for row_warp in range(num_rowwise_warps):
+                    score_frag_rowmax[col_tile] = max(
+                        rebind[Scalar[type]](score_frag_rowmax[col_tile]),
+                        rebind[Scalar[type]](
+                            warp_scratch[row_warp, int(score_row_idx)]
                         ),
                     )
 
+    # TODO: We can let all threads read shared memory in the above so that
+    # we don't need to use warp shuffling.
     @parameter
-    for m_mma in range(num_m_mmas):
+    for col_tile in range(num_colwise_tiles):
         # Broadcast to 4 threads in the same row.
         @parameter
         if num_rowwise_warps > 1:
 
             @parameter
-            for shift in range(1, 3):
-
-                @parameter
-                for i in range(2):
-                    p_frag_rowmax[2 * m_mma + i] = max(
-                        p_frag_rowmax[2 * m_mma + i],
-                        shuffle_xor(p_frag_rowmax[2 * m_mma + i], shift),
-                    )
+            for shift in range(1, num_shuffles_per_row + 1):
+                score_frag_rowmax[col_tile] = max(
+                    score_frag_rowmax[col_tile],
+                    shuffle_xor(score_frag_rowmax[col_tile], shift),
+                )
 
         # Corrention since previous max may be updated.
-        correction.store[alignment = correction.alignment](
-            2 * m_mma,
-            exp(
-                rowmax.load[width=2, alignment = rowmax.alignment](2 * m_mma)
-                - p_frag_rowmax.load[width=2, alignment = rowmax.alignment](
-                    2 * m_mma
-                )
-            ),
+        correction[col_tile] = exp(
+            rowmax[col_tile] - score_frag_rowmax[col_tile]
         )
 
         # Softmax numerator based on mma results.
         @parameter
-        for n_mma in range(num_n_mmas):
-
-            @parameter
-            for i in range(int(p_frag_size // 2)):
-                p_reg_tile[n_mma * num_m_mmas + m_mma, i] = exp(
-                    p_reg_tile[n_mma * num_m_mmas + m_mma, i]
-                    - p_frag_rowmax[2 * m_mma]
+        for row_tile in range(num_rowwise_tiles):
+            alias tile_id = col_tile + num_colwise_tiles * row_tile
+            score_reg_tile[tile_id, 0] = exp(
+                score_reg_tile[tile_id, 0]
+                - rebind[frag_type](
+                    SIMD[type, frag_num_cols](score_frag_rowmax[col_tile])
                 )
-                p_reg_tile[
-                    n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
-                ] = exp(
-                    p_reg_tile[n_mma * num_m_mmas + m_mma, i + p_frag_size // 2]
-                    - p_frag_rowmax[2 * m_mma + 1]
-                )
-
-        p_frag_rowsum.store[alignment = p_frag_rowsum.alignment](
-            2 * m_mma, SIMD[type, 2](0.0)
-        )
+            )
 
         # Sum softmax numerator from a thread's fragments.
         @parameter
-        for n_mma in range(num_n_mmas):
+        for row_tile in range(num_rowwise_tiles):
+            alias tile_id = col_tile + num_colwise_tiles * row_tile
+            var frag = score_reg_tile[tile_id, 0]
 
             @parameter
-            for i in range(int(p_frag_size // 2)):
-                p_frag_rowsum[2 * m_mma] += rebind[Scalar[type]](
-                    p_reg_tile[n_mma * num_m_mmas + m_mma, i]
-                )
-                p_frag_rowsum[2 * m_mma + 1] += rebind[Scalar[type]](
-                    p_reg_tile[n_mma * num_m_mmas + m_mma, i + p_frag_size // 2]
-                )
+            for i in range(frag_num_cols):
+                score_frag_rowsum[col_tile] += frag[i]
 
         # Sum numerator within a warp.
         @parameter
-        for shift in range(1, 3):
+        for shift in range(1, num_shuffles_per_row + 1):
+            score_frag_rowsum[col_tile] += shuffle_xor(
+                score_frag_rowsum[col_tile], shift
+            )
 
-            @parameter
-            for i in range(2):
-                p_frag_rowsum[2 * m_mma + i] += shuffle_xor(
-                    p_frag_rowsum[2 * m_mma + i], shift
-                )
-
+    # Reduce rowsum via shared memory.
     @parameter
     if num_rowwise_warps > 1:
         # Write per warp rowmax to shared memory.
-        if lane % 4 == 0:
+        if lane % num_rowwise_lanes == 0:
 
             @parameter
-            for m_mma0 in range(num_m_mmas):
-                alias m_mma = UInt(m_mma0)
+            for col_tile in range(num_colwise_tiles):
                 # Each thread handle two rows in the mma output.
-                var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
-                var row1 = row0 + MMA_M // 2
-                warp_scratch[warp_x + num_rowwise_warps, row0] = p_frag_rowsum[
-                    2 * m_mma
-                ]
-                warp_scratch[warp_x + num_rowwise_warps, row1] = p_frag_rowsum[
-                    2 * m_mma + 1
-                ]
+                var score_row_idx = col_tile * num_colwise_lanes + (
+                    lane // num_rowwise_lanes
+                )
+
+                warp_scratch[
+                    warp_x + num_rowwise_warps, int(score_row_idx)
+                ] = score_frag_rowsum[col_tile]
+
         # Guard writing warp_scratch
         barrier()
 
         # Reduce the warpwise rowsum.
-        if lane % 4 == 0:
+        if lane % num_rowwise_lanes == 0:
 
             @parameter
-            for m_mma0 in range(num_m_mmas):
-                alias m_mma = UInt(m_mma0)
-                var row0 = m_mma * MMA_M + lane // (MMA_N // p_frag_simdwidth)
-                var row1 = row0 + MMA_M // 2
-                p_frag_rowsum[2 * m_mma] = 0.0
-                p_frag_rowsum[2 * m_mma + 1] = 0.0
+            for col_tile in range(num_colwise_tiles):
+                var score_row_idx = col_tile * num_colwise_lanes + (
+                    lane // num_rowwise_lanes
+                )
+                score_frag_rowsum[col_tile] = 0
 
                 # Reduce rowmax. Warps in the same row do the same reduction.
                 @parameter
-                for w in range(num_rowwise_warps):
-                    p_frag_rowsum[2 * m_mma] += rebind[Scalar[type]](
-                        warp_scratch[w + num_rowwise_warps, row0]
-                    )
-
-                    p_frag_rowsum[2 * m_mma + 1] += rebind[Scalar[type]](
-                        warp_scratch[w + num_rowwise_warps, row1]
+                for row_warp in range(num_rowwise_warps):
+                    score_frag_rowsum[col_tile] += rebind[Scalar[type]](
+                        warp_scratch[
+                            row_warp + num_rowwise_warps, int(score_row_idx)
+                        ]
                     )
 
         # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
-        # TODO: Use Shuffle up
         @parameter
-        for m_mma in range(num_m_mmas):
+        for col_tile in range(num_colwise_tiles):
             # Broadcast to 4 threads in the same row.
             @parameter
-            for shift in range(1, 3):
-
-                @parameter
-                for i in range(2):
-                    p_frag_rowsum[2 * m_mma + i] = max(
-                        p_frag_rowsum[2 * m_mma + i],
-                        shuffle_xor(p_frag_rowsum[2 * m_mma + i], shift),
-                    )
+            for shift in range(1, num_shuffles_per_row + 1):
+                score_frag_rowsum[col_tile] = max(
+                    score_frag_rowsum[col_tile],
+                    shuffle_xor(score_frag_rowsum[col_tile], shift),
+                )
 
     # Correct previous result
     @parameter
-    for m_mma in range(num_m_mmas):
+    for col_tile in range(num_colwise_tiles):
 
         @parameter
-        for n_mma in range(num_n_mmas):
+        for row_tile in range(num_rowwise_tiles):
+            alias tile_id = col_tile + row_tile * num_colwise_tiles
 
-            @parameter
-            for i in range(int(p_frag_size // 2)):
-                output_reg_tile[n_mma * num_m_mmas + m_mma, i] *= correction[
-                    2 * m_mma
-                ]
-                output_reg_tile[
-                    n_mma * num_m_mmas + m_mma, i + p_frag_size // 2
-                ] *= correction[2 * m_mma + 1]
+            alias output_frag_type = __type_of(output_reg_tile).element_type
+            output_reg_tile[tile_id, 0] = output_reg_tile[
+                tile_id, 0
+            ] * output_frag_type(correction[col_tile])
 
     # Save current rowmax and rowsum
     @parameter
-    for m_mma in range(num_m_mmas):
-        rowmax.store(2 * m_mma, p_frag_rowmax.load[width=2](2 * m_mma))
+    for col_tile in range(num_colwise_tiles):
+        rowmax.store(col_tile, score_frag_rowmax[col_tile])
         rowsum.store(
-            2 * m_mma,
-            rowsum.load[width=2](2 * m_mma)
-            * correction.load[width=2](2 * m_mma)
-            + p_frag_rowsum.load[width=2](2 * m_mma),
+            col_tile,
+            rowsum[col_tile] * correction[col_tile]
+            + score_frag_rowsum[col_tile],
         )
