@@ -416,8 +416,8 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
   removeSingletonParamDecls(singletonTypeHelper, inputParams);
 
   auto region = b.create<ParamDeclareRegionOp>(
-      decl, func.getSignature(), func.getFunctionType(), inputParams,
-      func.getInlineLevel(), func.getLLVMMetadata());
+      decl, func.getSignature().asSignatureGenerator(), func.getFunctionType(),
+      inputParams, func.getInlineLevel(), func.getLLVMMetadata());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
 }

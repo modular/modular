@@ -644,7 +644,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
   let arguments = (ins
     KGEN_ParamDeclAttr:$paramDecl,
-    TypeAttrOf<KGEN_SignatureType>:$signature,
+    TypeAttrOf<KGEN_SignatureGeneratorType>:$type,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_InlineLevelAttr:$inlineLevel,
@@ -654,8 +654,8 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<RegionDeclaration>($paramDecl, $inputParams, $functionType,
-                              $signature, $inlineLevel, $bodyRegion) attr-dict
+    custom<RegionDeclaration>($paramDecl, $inputParams, $functionType, $type,
+                              $inlineLevel, $bodyRegion) attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -667,14 +667,17 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     bool isOptionalSymbol() { return true; }
 
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
+
+    // Temporary Back-Compat
+    SignatureType getSignature() { return getType().asOldSignature(); }
   }];
 
   let builders = [
-    OpBuilder<(ins "ParamDeclAttr":$paramDecl, "SignatureType":$signature,
+    OpBuilder<(ins "ParamDeclAttr":$paramDecl, "SignatureGeneratorType":$type,
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
-      build($_builder, $_state, paramDecl, signature, functionType, inputParams,
+      build($_builder, $_state, paramDecl, type, functionType, inputParams,
             inlineLevel,
             /*llvmMetadata=*/DictionaryAttr::get(paramDecl.getContext()),
             /*isolated=*/false);

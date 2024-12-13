@@ -157,17 +157,17 @@ LogicalResult ParamDeclareOp::verify() {
 static ParseResult
 parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
                        ParamDeclArrayAttr &inputParams, TypeAttr &functionType,
-                       TypeAttr &signature, InlineLevelAttr &inlineLevel,
+                       TypeAttr &type, InlineLevelAttr &inlineLevel,
                        Region &body) {
   StringAttr paramName;
   SmallVector<OpAsmParser::Argument> args;
   FunctionType functionTypeValue;
-  SignatureType signatureType;
+  SignatureGeneratorType sigGenType;
   llvm::SMLoc bodyLoc;
   ParamDeclArrayAttr resultParams;
   if (parseParamName(p, paramName) || p.parseEqual() ||
-      parseFunctionSignature(p, args, inputParams, resultParams,
-                             functionTypeValue, signatureType) ||
+      parseFunctionSignatureGenerator(p, args, inputParams, resultParams,
+                                      functionTypeValue, sigGenType) ||
       parseOptionalInline(p, inlineLevel) || p.getCurrentLocation(&bodyLoc) ||
       p.parseRegion(body, args))
     return failure();
@@ -179,21 +179,21 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
   for (const OpAsmParser::Argument &arg : args)
     argTypes.push_back(arg.type);
   functionType = TypeAttr::get(functionTypeValue);
-  signature = TypeAttr::get(signatureType);
-  paramDecl = ParamDeclAttr::get(paramName, signatureType);
+  type = TypeAttr::get(sigGenType);
+  paramDecl = ParamDeclAttr::get(paramName, sigGenType.asOldSignature());
   return success();
 }
 
 static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
                                    ParamDeclAttr paramDecl,
                                    ParamDeclArrayAttr inputParams,
-                                   TypeAttr functionType, TypeAttr signature,
+                                   TypeAttr functionType, TypeAttr type,
                                    InlineLevelAttr inlineLevel, Region &body) {
   printParamName(p, paramDecl.getName());
   p << " = ";
-  printFunctionSignature(p, &body, inputParams, {},
-                         cast<FunctionType>(functionType.getValue()),
-                         cast<SignatureType>(signature.getValue()));
+  printFunctionSignatureGenerator(
+      p, &body, inputParams, {}, cast<FunctionType>(functionType.getValue()),
+      cast<SignatureGeneratorType>(type.getValue()));
   printOptionalInline(p, inlineLevel.getValue());
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
