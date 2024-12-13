@@ -176,8 +176,17 @@ def main(
         lm_eval_path = _must_rlocation(
             runfiles, "_main/SDK/integration-test/pipelines/python/lm-eval"
         )
-    logger.debug("Pipelines binary at:", pipelines_path)
-    logger.debug("lm-eval binary at:", lm_eval_path)
+    logger.debug("Pipelines binary at: %s", pipelines_path)
+    logger.debug("lm-eval binary at: %s", lm_eval_path)
+
+    lm_eval_args = list(lm_eval_args)
+    if not any(arg.startswith("--include_path") for arg in lm_eval_args):
+        include_path = _must_rlocation(
+            runfiles,
+            "_main/SDK/integration-test/pipelines/python/eval_tasks/BUILD.bazel",
+        ).parent
+        lm_eval_args.append(f"--include_path={include_path}")
+        logger.debug("Including path: %s", include_path)
 
     with PipelineSitter(
         [str(pipelines_path)] + list(pipelines_args)
@@ -187,7 +196,7 @@ def main(
                 probe_port=pipelines_probe_port, timeout=pipelines_probe_timeout
             )
         logger.info(f"Running lm-eval with provided args: {lm_eval_args}")
-        lm_eval_proc = subprocess.run([str(lm_eval_path)] + list(lm_eval_args))
+        lm_eval_proc = subprocess.run([str(lm_eval_path)] + lm_eval_args)
         logger.info(
             f"lm-eval exited with status code {lm_eval_proc.returncode}"
         )

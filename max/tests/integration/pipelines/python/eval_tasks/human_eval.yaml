@@ -1,0 +1,26 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+task: human_eval
+dataset_path: openai/openai_humaneval
+training_split: null
+validation_split: null
+test_split: test
+output_type: generate_until
+generation_kwargs:
+  max_gen_toks: 512
+  temperature: 0
+  until:
+    "<|endoftext|>"
+doc_to_text: !function human_eval_utils.doc_to_text
+doc_to_target: !function human_eval_utils.doc_to_target
+process_results: !function human_eval_utils.check_correctness
+metric_list:
+  - metric: pass@1
+    aggregation: mean
+    higher_is_better: True
+metadata:
+  version: 1.0
