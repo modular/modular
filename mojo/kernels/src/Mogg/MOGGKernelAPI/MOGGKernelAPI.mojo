@@ -499,7 +499,7 @@ fn managed_tensor_slice_to_ndbuffer[
     type: DType,
     rank: Int,
     static_shape: DimList = DimList.create_unknown[rank](),
-    *,
+    static_strides: DimList = DimList.create_unknown[rank](),
     alignment: Int = 1,
     address_space: AddressSpace = AddressSpace.GENERIC,
     exclusive: Bool = True,
@@ -507,6 +507,7 @@ fn managed_tensor_slice_to_ndbuffer[
     type,
     rank,
     static_shape,
+    static_strides,
     alignment=alignment,
     address_space=address_space,
     exclusive=exclusive,
@@ -516,6 +517,7 @@ fn managed_tensor_slice_to_ndbuffer[
         type,
         rank,
         static_shape,
+        static_strides,
         alignment=alignment,
         address_space=address_space,
         exclusive=exclusive,
@@ -4044,10 +4046,18 @@ struct ROIAlign:
         spatial_scale: Scalar,
         sampling_ratio: Scalar,
     ):
+        alias input_spec = compiler.specsof[input.type, input.rank]("input")
+        alias rois_spec = compiler.specsof[rois.type, rois.rank]("rois")
         roi_align_nhwc[aligned, mode](
             managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(rois),
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = input_spec.shape,
+                static_strides = input_spec.strides,
+            ](input),
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = rois_spec.shape,
+                static_strides = rois_spec.strides,
+            ](rois),
             int(output_height),
             int(output_width),
             spatial_scale,
@@ -5002,12 +5012,34 @@ struct MaskedFlashAttentionGPU:
         """
         constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
+        var output_buffer = managed_tensor_slice_to_ndbuffer[
+            static_shape = compiler.specsof[output.type, output.rank](
+                "output"
+            ).shape,
+            static_strides = compiler.specsof[output.type, output.rank](
+                "output"
+            ).strides,
+        ](output)
+        var q_buffer = managed_tensor_slice_to_ndbuffer[
+            static_shape = compiler.specsof[q.type, q.rank]("q").shape,
+            static_strides = compiler.specsof[q.type, q.rank]("q").strides,
+        ](q)
+        var k_buffer = managed_tensor_slice_to_ndbuffer[
+            static_shape = compiler.specsof[k.type, k.rank]("k").shape,
+            static_strides = compiler.specsof[k.type, k.rank]("k").strides,
+        ](k)
+        var v_buffer = managed_tensor_slice_to_ndbuffer[
+            static_shape = compiler.specsof[v.type, v.rank]("v").shape,
+            static_strides = compiler.specsof[v.type, v.rank]("v").strides,
+        ](v)
+        var mask_buffer = managed_tensor_slice_to_ndbuffer(mask)
+
         flash_attention[add_attn_mask=True](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer(q),
-            managed_tensor_slice_to_ndbuffer(k),
-            managed_tensor_slice_to_ndbuffer(v),
-            managed_tensor_slice_to_ndbuffer(mask),
+            output_buffer,
+            q_buffer,
+            k_buffer,
+            v_buffer,
+            mask_buffer,
             scale,
             context=ctx,
         )
@@ -5264,7 +5296,9 @@ struct WithMaskFlashAttentionSplitKVCPU:
             v_cache_input_fn,
             mask_input_fn,
         ](
-            managed_tensor_slice_to_ndbuffer(q),
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = compiler.specsof[q.type, q.rank]("q").shape
+            ](q),
             k.get_runtime_spec().shape,
             v.get_runtime_spec().shape,
             k_cache.get_runtime_spec().shape,
