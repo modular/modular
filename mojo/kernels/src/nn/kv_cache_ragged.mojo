@@ -1873,7 +1873,7 @@ fn fused_qk_rope_h32_d128_bshd_paged_ragged[
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_paged_ragged[
+fn generic_flash_attention_kv_cache_causal_mask_paged_ragged[
     target: StringLiteral, type: DType
 ](
     q: NDBuffer[type, 3, *_],
@@ -1917,8 +1917,8 @@ fn generic_flash_attention_kv_cache_paged_ragged[
         )
 
 
-@register_internal("flash_attention_kv_cache_h1_d16_paged_ragged")
-fn flash_attention_kv_cache_h1_d16_paged_ragged[
+@register_internal("flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged")
+fn flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1930,13 +1930,13 @@ fn flash_attention_kv_cache_h1_d16_paged_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_paged_ragged[target](
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target](
         q, input_row_offsets, kv_collection, layer_idx, scale, output, context
     )
 
 
-@register_internal("flash_attention_kv_cache_h6_d48_paged_ragged")
-fn flash_attention_kv_cache_h6_d48_paged_ragged[
+@register_internal("flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged")
+fn flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1948,13 +1948,13 @@ fn flash_attention_kv_cache_h6_d48_paged_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_paged_ragged[target](
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target](
         q, input_row_offsets, kv_collection, layer_idx, scale, output, context
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d128_paged_ragged")
-fn flash_attention_kv_cache_h8_d128_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged")
+fn flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1966,13 +1966,13 @@ fn flash_attention_kv_cache_h8_d128_paged_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_paged_ragged[target](
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target](
         q, input_row_offsets, kv_collection, layer_idx, scale, output, context
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d16_paged_ragged")
-fn flash_attention_kv_cache_h8_d16_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged")
+fn flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -1984,13 +1984,13 @@ fn flash_attention_kv_cache_h8_d16_paged_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_paged_ragged[target](
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target](
         q, input_row_offsets, kv_collection, layer_idx, scale, output, context
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d512_paged_ragged")
-fn flash_attention_kv_cache_h8_d512_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged")
+fn flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2002,13 +2002,13 @@ fn flash_attention_kv_cache_h8_d512_paged_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_paged_ragged[target](
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target](
         q, input_row_offsets, kv_collection, layer_idx, scale, output, context
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d32_paged_ragged")
-fn flash_attention_kv_cache_h8_d32_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged")
+fn flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2020,13 +2020,13 @@ fn flash_attention_kv_cache_h8_d32_paged_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_paged_ragged[target](
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target](
         q, input_row_offsets, kv_collection, layer_idx, scale, output, context
     )
 
 
-@register_internal("flash_attention_kv_cache_h8_d64_paged_ragged")
-fn flash_attention_kv_cache_h8_d64_paged_ragged[
+@register_internal("flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged")
+fn flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2038,13 +2038,13 @@ fn flash_attention_kv_cache_h8_d64_paged_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_paged_ragged[target](
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target](
         q, input_row_offsets, kv_collection, layer_idx, scale, output, context
     )
 
 
-@register_internal("flash_attention_kv_cache_h32_d128_paged_ragged")
-fn flash_attention_kv_cache_h32_d128_paged_ragged[
+@register_internal("flash_attention_kv_cache_h32_d128_causal_mask_paged_ragged")
+fn flash_attention_kv_cache_h32_d128_causal_mask_paged_ragged[
     type: DType, //,
     target: StringLiteral = "cpu",
 ](
@@ -2056,13 +2056,13 @@ fn flash_attention_kv_cache_h32_d128_paged_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_paged_ragged[target](
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target](
         q, input_row_offsets, kv_collection, layer_idx, scale, output, context
     )
 
 
 @always_inline
-fn generic_flash_attention_kv_cache_cont_batch_ragged[
+fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2091,7 +2091,7 @@ fn generic_flash_attention_kv_cache_cont_batch_ragged[
         + str(kv_collection.kv_params.num_heads)
         + "_d"
         + str(kv_collection.kv_params.head_size)
-        + "_cont_batch_ragged",
+        + "_causal_mask_cont_batch_ragged",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _flash_attention_kv_cache_ragged[
@@ -2221,8 +2221,10 @@ fn flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged[
     )
 
 
-@register_internal("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
-fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
+@register_internal(
+    "flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged"
+)
+fn flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2236,13 +2238,15 @@ fn flash_attention_kv_cache_h1_d16_cont_batch_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_cont_batch_ragged[target=target](
-        q, input_row_offsets, kv_collection, layer_idx, scale, output, context
-    )
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
 
 
-@register_internal("flash_attention_kv_cache_h8_d64_cont_batch_ragged")
-fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
+@register_internal(
+    "flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged"
+)
+fn flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2256,13 +2260,15 @@ fn flash_attention_kv_cache_h8_d64_cont_batch_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_cont_batch_ragged[target=target](
-        q, input_row_offsets, kv_collection, layer_idx, scale, output, context
-    )
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
 
 
-@register_internal("flash_attention_kv_cache_h8_d128_cont_batch_ragged")
-fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
+@register_internal(
+    "flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged"
+)
+fn flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2276,13 +2282,15 @@ fn flash_attention_kv_cache_h8_d128_cont_batch_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_cont_batch_ragged[target=target](
-        q, input_row_offsets, kv_collection, layer_idx, scale, output, context
-    )
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
 
 
-@register_internal("flash_attention_kv_cache_h8_d512_cont_batch_ragged")
-fn flash_attention_kv_cache_h8_d512_cont_batch_ragged[
+@register_internal(
+    "flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged"
+)
+fn flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2296,13 +2304,15 @@ fn flash_attention_kv_cache_h8_d512_cont_batch_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_cont_batch_ragged[target=target](
-        q, input_row_offsets, kv_collection, layer_idx, scale, output, context
-    )
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
 
 
-@register_internal("flash_attention_kv_cache_h32_d128_cont_batch_ragged")
-fn flash_attention_kv_cache_h32_d128_cont_batch_ragged[
+@register_internal(
+    "flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged"
+)
+fn flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged[
     type: DType, //,
     target: StringLiteral,
 ](
@@ -2316,9 +2326,9 @@ fn flash_attention_kv_cache_h32_d128_cont_batch_ragged[
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
 ) raises:
-    generic_flash_attention_kv_cache_cont_batch_ragged[target=target](
-        q, input_row_offsets, kv_collection, layer_idx, scale, output, context
-    )
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
 
 
 @register_internal(
