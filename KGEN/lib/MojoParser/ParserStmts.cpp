@@ -2173,7 +2173,7 @@ ParseResult StmtParser::parseFromImportStmt() {
   // Check for a wildcard import.
   if (consumeIf(Token::star)) {
     builder.create<LIT::UnresolvedWildcardImportOp>(
-        translateLocation(importLoc), moduleAttr);
+        translateLocation(importLoc), moduleAttr, /*isFullImport=*/false);
     getParentDecl().addUnresolvedWildCardImport(
         moduleAttr, /*isFullImport=*/false, importLoc);
     return success();
