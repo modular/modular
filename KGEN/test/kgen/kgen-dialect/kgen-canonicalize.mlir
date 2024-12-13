@@ -480,10 +480,8 @@ kgen.generator @param_if_known_trivial(%arg0: index) -> index {
 
 // CHECK-LABEL: @param_if_known_dead
 kgen.generator @param_if_known_dead(%arg0: !kgen.pointer<index>, %arg1: index) {
-  // CHECK-NEXT: param.if <0>
+  // CHECK-NEXT: pop.store
   kgen.param.if <0> {
-    // CHECK-NEXT: unreachable
-    pop.store %arg1, %arg0 : !kgen.pointer<index>
     kgen.param.yield
   } else {
     pop.store %arg1, %arg0 : !kgen.pointer<index>
@@ -491,6 +489,51 @@ kgen.generator @param_if_known_dead(%arg0: !kgen.pointer<index>, %arg1: index) {
   }
   kgen.return
 }
+
+// Isn't allowed to fold fully due to the param decl within.
+// CHECK-LABEL: @param_if_known_dead_with_param
+kgen.generator @param_if_known_dead_with_param<dt: dtype>(%arg0: !kgen.pointer<index>, %arg1: index) {
+  // CHECK-NEXT: param.if <0>
+  kgen.param.if <0> {
+    // CHECK-NEXT: unreachable
+    pop.store %arg1, %arg0 : !kgen.pointer<index>
+    kgen.param.yield
+  } else {
+    kgen.param.declare dt1: dtype = <dt>
+    pop.store %arg1, %arg0 : !kgen.pointer<index>
+    kgen.param.yield
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @param_if_break
+kgen.generator @param_if_break(%arg0: !kgen.pointer<index>, %arg1: index) {
+  // CHECK-NEXT: hlcf.loop
+  // CHECK-NEXT: pop.store
+  // CHECK-NEXT: hlcf.break
+  hlcf.loop {
+    kgen.param.if <0> {
+      kgen.param.yield
+    } else {
+      pop.store %arg1, %arg0 : !kgen.pointer<index>
+      hlcf.break
+    }
+    kgen.unreachable
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @param_if_unreachable
+kgen.generator @param_if_unreachable(%arg0: !kgen.pointer<index>, %arg1: index) {
+  // CHECK-NEXT: unreachable
+  kgen.param.if <0> {
+    kgen.param.yield
+  } else {
+    kgen.unreachable
+  }
+  kgen.return
+}
+
 
 // CHECK-LABEL: @trivial_struct_copy
 kgen.func @trivial_struct_copy(%arg0: !kgen.struct<(i1)>, %arg1: !kgen.struct<(i1, i1)>) -> (!kgen.struct<()>, !kgen.struct<(i1)>, !kgen.struct<(i1, i1)>, !kgen.struct<(i1, i1)>) {
