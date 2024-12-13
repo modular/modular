@@ -81,7 +81,7 @@ def KGEN_FuncOp : KGENOp<"func", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    TypeAttrOf<KGEN_SignatureType>:$signature,
+    TypeAttrOf<KGEN_SignatureGeneratorType>:$signatureGenerator,
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
@@ -93,7 +93,7 @@ def KGEN_FuncOp : KGENOp<"func", [
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    `` custom<FuncOp>($exportKind, $sym_name, $signature, $inlineLevel,
+    `` custom<FuncOp>($exportKind, $sym_name, $signatureGenerator, $inlineLevel,
                      $decorators, attr-dict, $bodyRegion)
   }];
 
@@ -102,13 +102,20 @@ def KGEN_FuncOp : KGENOp<"func", [
 
     ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
-    FunctionType getFunctionType() { return getSignature().getValues(); }
+    FunctionType getFunctionType() {
+      return getSignatureGenerator().getBody().getValues();
+    }
     Region *getCallableRegion() { return &getBodyRegion(); }
+
+    // Temporary Back-Compat
+    SignatureType getSignature() {
+      return getSignatureGenerator().asOldSignature();
+    }
   }];
 
   let builders = [
     // Builder to be used when there is no precompiled body.
-    OpBuilder<(ins "StringAttr":$name, "SignatureType":$signature,
+    OpBuilder<(ins "StringAttr":$name, "NewSignatureType":$type,
                    CArg<"InlineLevel",
                         "InlineLevel::Automatic">:$inlineLevel,
                    CArg<"ExportKind", "ExportKind::NotExported">:$exportKind,
@@ -116,7 +123,8 @@ def KGEN_FuncOp : KGENOp<"func", [
                    CArg<"DictionaryAttr", "{}">:$llvmMetadata), [{
       if (!llvmMetadata)
         llvmMetadata = DictionaryAttr::get(name.getContext());
-      build($_builder, $_state, name, signature, decorators, inlineLevel,
+      auto sigGen = GeneratorType::get(/*inputParamTypes=*/{}, type);
+      build($_builder, $_state, name, sigGen, decorators, inlineLevel,
             exportKind, llvmMetadata, /*crossDeviceCaptures=*/{},
             /*coroutineType=*/{}, /*patterns=*/{});
     }]>,

@@ -396,7 +396,10 @@ static void lowerFuncOp(FuncOp funcOp) {
       returnOp->insertOperands(1, newRes);
     });
   }
-  funcOp.setSignature(newSig);
+  funcOp.setSignatureGenerator(GeneratorType::get(
+      /*inputParamTypes=*/{},
+      NewSignatureType::get(newSig.getValues(), newSig.getArgConventions(),
+                            newSig.getFnEffects(), newSig.getMetadata())));
 }
 
 void LowerArgConventionsPass::runOnOperation() {

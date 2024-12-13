@@ -92,24 +92,28 @@ void ExpandStructsPass::rewriteFn(Operation *op,
   return recursiveRewrite(op, replacer);
 }
 
+template <typename SigT>
+SigT replaceSignature(SigT sig) {
+  SmallVector<Type> newArgTypes, newResTypes;
+  SmallVector<ArgConvention> newConvs;
+
+  for (Type type : sig.getResults())
+    flattenTypeIfStruct(type, newResTypes);
+  for (auto [type, conv] :
+       llvm::zip(sig.getArguments(), sig.getArgConventions())) {
+    unsigned curSize = newArgTypes.size();
+    flattenTypeIfStruct(type, newArgTypes);
+    newConvs.append(newArgTypes.size() - curSize, conv);
+  }
+
+  auto func = FunctionType::get(sig.getContext(), newArgTypes, newResTypes);
+  return SigT::get(func, newConvs, sig.getFnEffects());
+}
+
 void ExpandStructsPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([](SignatureType sig) {
-    SmallVector<Type> newArgTypes, newResTypes;
-    SmallVector<ArgConvention> newConvs;
-
-    for (Type type : sig.getResults())
-      flattenTypeIfStruct(type, newResTypes);
-    for (auto [type, conv] :
-         llvm::zip(sig.getArguments(), sig.getArgConventions())) {
-      unsigned curSize = newArgTypes.size();
-      flattenTypeIfStruct(type, newArgTypes);
-      newConvs.append(newArgTypes.size() - curSize, conv);
-    }
-
-    auto func = FunctionType::get(sig.getContext(), newArgTypes, newResTypes);
-    return SignatureType::get(func, newConvs, sig.getFnEffects());
-  });
+  replacer.addReplacement(replaceSignature<SignatureType>);
+  replacer.addReplacement(replaceSignature<NewSignatureType>);
 
   rewriteFn(getOperation(), replacer);
 }

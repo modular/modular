@@ -486,7 +486,8 @@ static Value getIdentifiedVariable(Value value) {
   auto func = dyn_cast<FuncOp>(arg.getOwner()->getParentOp());
   if (!func)
     return {};
-  ArgConvention conv = func.getSignature().getArgConvention(arg.getArgNumber());
+  ArgConvention conv = func.getSignatureGenerator().getBody().getArgConvention(
+      arg.getArgNumber());
   if (SignatureType::hasAddress(conv))
     return arg;
   return {};

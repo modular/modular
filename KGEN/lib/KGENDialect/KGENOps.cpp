@@ -426,11 +426,11 @@ static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
   if (parseSignatureValues(p, parseArg, functionType, effects,
                            /*optionalResultList=*/true))
     return failure();
-  auto sig = SignatureType::getChecked([&] { return p.emitError(loc); },
-                                       functionType, conventions, effects);
+  auto sig = NewSignatureType::getChecked([&] { return p.emitError(loc); },
+                                          functionType, conventions, effects);
   if (!sig)
     return failure();
-  signature = TypeAttr::get(sig);
+  signature = TypeAttr::get(GeneratorType::get(/*inputParamTypes=*/{}, sig));
 
   if (parseOptionalInline(p, inlineLevel) ||
       parseOptionalDecorators(p, decorators) ||
@@ -445,7 +445,8 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
                         TypeAttr signature, InlineLevelAttr inlineLevel,
                         DecoratorsAttr decorators, DictionaryAttr attrs,
                         Region &body) {
-  auto sig = cast<SignatureType>(signature.getValue());
+  NewSignatureType sig =
+      cast<SignatureGeneratorType>(signature.getValue()).getBody();
   auto func = cast<FuncOp>(op);
 
   printSymbolExport(p, op, exportKind);
@@ -455,14 +456,15 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
     p.printRegionArgument(body.getArgument(i));
     printArgConvention(p, sig.getArgConvention(i));
   };
-  printSignatureValues(p, printArg, sig.getValues(), sig,
+  printSignatureValues(p, printArg, sig.getValues(), sig.getArgConventions(),
+                       sig.getFnEffects(),
                        /*optionalResultList=*/true);
   printOptionalInline(p, inlineLevel.getValue());
   printOptionalDecorators(p, op, decorators);
 
   SmallVector<StringRef, 8> elidedAttrs{
       func.getExportKindAttrName(), func.getSymNameAttrName(),
-      func.getSignatureAttrName(), func.getInlineLevelAttrName(),
+      func.getSignatureGeneratorAttrName(), func.getInlineLevelAttrName(),
       func.getDecoratorsAttrName()};
   if (attrs.get(func.getLLVMMetadataAttrName()) ==
       DictionaryAttr::get(op->getContext()))

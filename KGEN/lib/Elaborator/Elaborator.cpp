@@ -939,7 +939,10 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   if (!*func)
     return ElaborationState::skipNode();
 
-  if (LLVM_UNLIKELY(!FuncOp(*func).getSignature().hasMemoryOnlyResult())) {
+  if (LLVM_UNLIKELY(!FuncOp(*func)
+                         .getSignatureGenerator()
+                         .getBody()
+                         .hasMemoryOnlyResult())) {
     parent->setToError(
         ErrorTree(op.getLoc(),
                   "INTERNAL ERROR: iterator should have memory-only result"));
@@ -1375,7 +1378,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
   if (auto generatorOp = dyn_cast<GeneratorOp>(*gen)) {
     instance = cast<InstantiatedOpInterface>(*b.create<FuncOp>(
         gen.getLoc(), mangledName,
-        SignatureType::get(
+        NewSignatureType::get(
             generatorOp.getFunctionType(),
             generatorOp.getSignatureGenerator().getBody().getArgConventions(),
             generatorOp.getSignatureGenerator().getBody().getFnEffects()),
