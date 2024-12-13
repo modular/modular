@@ -373,15 +373,21 @@ initializeAnalysis(CallGraph &cg) {
 /// the last time it was analyzed. When a new parameter is found, that
 /// parameter is associated with a parameter to the `current` generator by
 /// associating it to one of the block arguments.
-static void analyzeCallsite(CallGraphNode *current,
-                            const CallGraph::EdgeT &edge) {
+static LogicalResult analyzeCallsite(CallGraphNode *current,
+                                     const CallGraph::EdgeT &edge) {
   KGEN::CallOp callsite = edge.call;
   CallGraphNode *calleeNode = edge.node;
 
+  bool argNeedSpecParam = false;
+  bool argNeedNoneSpec = false;
+
   for (auto calleeIdx : calleeNode->argsNeedingSpec.set_bits()) {
     auto blockArg = dyn_cast<BlockArgument>(callsite.getOperand(calleeIdx));
-    if (!blockArg)
+    if (!blockArg) {
+      argNeedNoneSpec = true;
       continue;
+    }
+    argNeedSpecParam = true;
 
     auto callerIdx = blockArg.getArgNumber();
 
@@ -403,6 +409,17 @@ static void analyzeCallsite(CallGraphNode *current,
 
     current->setParamInfoIfNeeded(callerIdx, callerParamTy);
   }
+
+  if (argNeedSpecParam && argNeedNoneSpec) {
+    // TODO(GEX-1486): support a mix of non-specialized and specialized
+    // arguments.
+    return callsite.emitOpError()
+           << "TODO(GEX-1486): autospecialization not supported for "
+              "callee with a "
+              "mix of non-specialized and specialized arguments.\n";
+  }
+
+  return success();
 }
 
 static LogicalResult analyzeCallgraph(CallGraph &cg) {
@@ -432,7 +449,8 @@ static LogicalResult analyzeCallgraph(CallGraph &cg) {
     // Go through each callsite and identify the tensor values which require
     // spects at the callsite.
     for (const CallGraph::EdgeT &edge : current->callsites)
-      analyzeCallsite(current, edge);
+      if (failed(analyzeCallsite(current, edge)))
+        return failure();
 
     unsigned afterNumArgsNeedingSpec = current->argsNeedingSpec.count();
     ASSERT_STREAM(afterNumArgsNeedingSpec >= beforeNumArgsNeedingSpec,
@@ -561,6 +579,33 @@ static void updateCallOps(CallGraphNode *node, CallGraph &cg,
     // Add the old unchanged parameters.
     auto calleeParams = oldCall.getCallee().getParamValues();
 
+    // Check if the callee arguments that require spec correspond to an function
+    // arg (propagate the param) or not (pass a none spec).
+    bool addNoneSpecParam = false;
+    bool addArgSpecParam = false;
+    for (unsigned index : calledFuncNode->argsNeedingSpec.set_bits()) {
+      auto val = oldCall->getOperand(index);
+      auto itr = tensorsToSpecs.find(val);
+      if (itr == tensorsToSpecs.end())
+        addNoneSpecParam = true;
+      else
+        addArgSpecParam = true;
+    }
+
+    // If the callee required tensor spec arguments are all none_spec,
+    // we can just leave the original call (the non specialized version pass
+    // the none spec parameters).
+    if (addNoneSpecParam) {
+      // We just assert here, the analysis already ensured that we don't mix
+      // both none spec and arg spec.
+      assert(!addArgSpecParam &&
+             "mix of non-specialized and specialized arguments");
+      LLVM_DEBUG(llvm::dbgs() << "Fixup call: no need for specialization "
+                                 "since all tensor specs are none (@"
+                              << oldCall.getCalleeSymbol() << ").\n");
+      return;
+    }
+
     // New parameters to put on the call.
     auto newParamBuffer = llvm::to_vector_of<TypedAttr>(calleeParams);
 
@@ -573,7 +618,7 @@ static void updateCallOps(CallGraphNode *node, CallGraph &cg,
                  << "Fixup call: add parameter for input #" << index << " "
                  << val << " (@" << oldCall.getCalleeSymbol() << ").\n");
       if (itr == tensorsToSpecs.end()) {
-        newParamBuffer.push_back(specTemplate.getValue());
+        llvm_unreachable("TODO(GEX-1486): Add support for none spec");
       } else {
         newParamBuffer.push_back(itr->second);
       }
