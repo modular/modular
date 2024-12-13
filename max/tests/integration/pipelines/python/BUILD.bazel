@@ -236,6 +236,9 @@ modular_py_binary(
             "langdetect",
             "immutabledict",
             "nltk",
+            # lm-eval[math] dependencies
+            "sympy",
+            "antlr4-python3-runtime",
         ]
     ],
 )
