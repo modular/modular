@@ -84,7 +84,7 @@ struct CallGraph : public SCCGraph<CallGraph, CallGraphNode> {
   /// Only add nodes to the graph that are to functions that are capturing,
   /// since those are the only functions we need to handle.
   bool shouldAddToGraph(CallLikeOp call, CallGraphNode *node) {
-    return node->func.getSignature().isCapturing() ||
+    return node->func.getSignatureGenerator().getBody().isCapturing() ||
            isa<CaptureListCreateOp, CaptureListCopyOp>(*call);
   }
 
@@ -355,7 +355,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
     }
   });
 
-  if (!func.getSignature().isCapturing())
+  if (!func.getSignatureGenerator().getBody().isCapturing())
     return node->requiredPromises.size() != curNumPromises;
 
   // At the end of the walk, assess the leftover required promises. Prepend
@@ -376,7 +376,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
     }
   }
 
-  SignatureType sig = func.getSignature();
+  NewSignatureType sig = func.getSignatureGenerator().getBody();
   // TODO: What conventions do we use for captures.
   SmallVector<ArgConvention> convs(i, ArgConvention::ReadReg);
   convs.append(sig.getArgConventions().begin(), sig.getArgConventions().end());
@@ -385,7 +385,9 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
   // Update the function signature.
   auto fnType = FunctionType::get(func.getContext(), body->getArgumentTypes(),
                                   func.getResultTypes());
-  func.setSignature(SignatureType::get(fnType, convs, sig.getFnEffects()));
+  func.setSignatureGenerator(GeneratorType::get(
+      /*inputParamTypes=*/{},
+      NewSignatureType::get(fnType, convs, sig.getFnEffects())));
 
   // If captures went up to an exported function, propagate them through
   // the ABI boundary by encoding the capture names on the function.

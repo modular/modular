@@ -45,7 +45,8 @@ struct Node : public SCCNode<Node, FuncOp, CallOp> {
     // treat all other argument conventions as capturing if a pointer is passed
     // to them. This sets them to a fixed point, so we don't need to check them.
     bool exported = func.isExported();
-    for (ArgConvention conv : func.getSignature().getArgConventions()) {
+    for (ArgConvention conv :
+         func.getSignatureGenerator().getBody().getArgConventions()) {
       // We can't change the ABI of exported functions.
       argStates.push_back(!exported && SignatureType::hasAddress(conv)
                               ? State::NoCapture
@@ -245,7 +246,7 @@ void Graph::doRewrite(const Node *node) {
   // arguments are passed in by value. 'out' arguments are dropped and returned
   // through SSA results.
   Block *body = func.getBody();
-  SignatureType signature = func.getSignature();
+  NewSignatureType signature = func.getSignatureGenerator().getBody();
   SmallVector<ArgConvention> convs;
   ImplicitLocOpBuilder b{func.getLoc(), OpBuilder::atBlockBegin(body)};
   SmallVector<mlir::TypedValue<PointerType>> outArgs;
@@ -312,8 +313,10 @@ void Graph::doRewrite(const Node *node) {
     newResultTypes.push_back(arg.getType().getElementType());
   auto functionType = FunctionType::get(
       func.getContext(), body->getArgumentTypes(), newResultTypes);
-  signature = SignatureType::get(functionType, convs, signature.getFnEffects());
-  func.setSignature(signature);
+  signature =
+      NewSignatureType::get(functionType, convs, signature.getFnEffects());
+  func.setSignatureGenerator(
+      GeneratorType::get(/*inputParamTypes=*/{}, signature));
 
   // For the second part of the rewrite, we perform the corresponding rewrite of
   // calls in this function.

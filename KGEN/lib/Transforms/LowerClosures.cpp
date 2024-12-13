@@ -142,7 +142,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   if (numByRefResults)
     conventions.push_back(ArgConvention::ByRefResult);
 
-  auto sig = SignatureType::get(
+  auto sig = NewSignatureType::get(
       b.getFunctionType(body.getArgumentTypes(), op.getTypes()), conventions,
       FnEffects().setAsync().setThrows(numByRefResults == 2));
   auto lifted = b.create<FuncOp>(name, sig);
@@ -160,7 +160,8 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   if (callLoc)
     b.setLoc(callLoc);
   Value call = b.create<CO::InvokeOp>(
-      op.getType(), SymbolConstantAttr::get(name, sig), captures);
+      op.getType(), SymbolConstantAttr::get(name, sig.asOldSignature()),
+      captures);
   op.replaceAllUsesWith(call);
   op.erase();
 
@@ -255,9 +256,8 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   ImplicitLocOpBuilder b(op.getLoc(), ctx);
   FunctionType functionType =
       b.getFunctionType(body.getArgumentTypes(), oldSig.getResults());
-  auto sig = SignatureType::get(functionType, /*inputParamTypes=*/{},
-                                /*resultParamTypes=*/{}, newConventions,
-                                oldSig.getFnEffects());
+  auto sig = NewSignatureType::get(functionType, newConventions,
+                                   oldSig.getFnEffects());
 
   // Create the lifted function. Make sure it doesn't get inlined back.
   StringAttr name;
@@ -280,7 +280,8 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   if (callLoc)
     b.setLoc(callLoc);
   auto create = b.create<CreateClosureOp>(
-      op.getType(), SymbolConstantAttr::get(name, sig), captures);
+      op.getType(), SymbolConstantAttr::get(name, sig.asOldSignature()),
+      captures);
   op.replaceAllUsesWith(create.getResult());
   op.erase();
 

@@ -184,9 +184,13 @@ fn test_pattern(
             attributes=attrs,
         )
         copy.set_inherent_attr(
-            "signature",
+            "signatureGenerator",
             Attribute.parse(
-                op.context(), "!kgen.signature<() capturing -> index>"
+                op.context(),
+                (
+                    "!kgen.generator<<> !kgen.new_signature<() capturing ->"
+                    " index>>"
+                ),
             ),
         )
         copy.region(0).first_block().argument(0).replace_all_uses_with(

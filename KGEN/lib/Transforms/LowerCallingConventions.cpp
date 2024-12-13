@@ -54,6 +54,19 @@ static SignatureType lowerResult(SignatureType signature) {
       signature.getArgConventions(), signature.getFnEffects().setThrows(false));
 }
 
+/// Same as `lowerResult` but for `NewSignatureType`. Both are needed until
+/// CallOps also switch over.
+static NewSignatureType lowerNewResult(NewSignatureType signature) {
+  auto [anyNone, newResults] = removeNoneTypes(signature.getResults());
+  // Micro-optimization: don't hash a new type if it won't change.
+  if (!anyNone)
+    return signature;
+  return NewSignatureType::get(
+      FunctionType::get(signature.getContext(), signature.getArguments(),
+                        newResults),
+      signature.getArgConventions(), signature.getFnEffects().setThrows(false));
+}
+
 /// Remove none types from the results of debuginfo subroutine types as well.
 static DebugInfo::DISubroutineType
 removeDINoneResults(DebugInfo::DISubroutineType type) {
@@ -369,6 +382,7 @@ void LowerCallingConventionsPass::runOnOperation() {
 
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement(lowerResult);
+  replacer.addReplacement(lowerNewResult);
   replacer.addReplacement(removeDINoneResults);
   replacer.addReplacement(lowerPackTypeToStruct);
   replacer.addReplacement(lowerPackAttrToStruct);
