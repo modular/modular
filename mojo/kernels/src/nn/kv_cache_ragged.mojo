@@ -37,7 +37,7 @@ from nn.kv_cache import (
     kv_params_h32_d128_bshd,
 )
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import CausalMask
+from nn.mha_mask import CausalMask, MHAMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
@@ -1910,6 +1910,7 @@ fn generic_flash_attention_kv_cache_paged_ragged[
             input_row_offsets,
             kv_collection,
             layer_idx,
+            CausalMask(),
             scale,
             output,
             context,
@@ -2100,6 +2101,7 @@ fn generic_flash_attention_kv_cache_cont_batch_ragged[
             input_row_offsets,
             kv_collection,
             layer_idx,
+            CausalMask(),
             scale,
             output,
             context,
@@ -2299,7 +2301,8 @@ fn flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged[
 @always_inline
 fn _flash_attention_kv_cache_ragged[
     type: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    mask_t: MHAMask, //,
     cache_t: KVCacheT,
     target: StringLiteral,
 ](
@@ -2307,6 +2310,7 @@ fn _flash_attention_kv_cache_ragged[
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
+    mask: mask_t,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
     context: MojoCallContextPtr,
@@ -2318,6 +2322,7 @@ fn _flash_attention_kv_cache_ragged[
         input_row_offsets: The start and end position of each entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        mask: Mask functor that computes a masked score vector and tile status from coords.
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
@@ -2334,6 +2339,7 @@ fn _flash_attention_kv_cache_ragged[
         input_row_offsets,
         kv_collection,
         layer_idx,
+        mask,
         scale,
         output,
         cuda_ctx,
@@ -2387,7 +2393,8 @@ fn _flash_attention_kv_cache_alibi_mask_ragged[
 @always_inline
 fn _flash_attention_kv_cache_ragged_impl[
     type: DType,
-    collection_t: KVCollectionT, //,
+    collection_t: KVCollectionT,
+    mask_t: MHAMask, //,
     cache_t: KVCacheT,
     target: StringLiteral,
 ](
@@ -2395,6 +2402,7 @@ fn _flash_attention_kv_cache_ragged_impl[
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: collection_t,
     layer_idx: UInt32,
+    mask: mask_t,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
     context: Optional[DeviceContext],
@@ -2406,6 +2414,7 @@ fn _flash_attention_kv_cache_ragged_impl[
         input_row_offsets: The start and end position of each entry in the batch.
         kv_collection: The Collection object storing out KVCache entries for this layer
         layer_idx: The current layer, used to retrieve kv_cache objects from kv_colleciton
+        mask: Mask functor that computes a masked score vector and tile status from coords.
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (sum(seq_lens in batch), num_heads, head_size).
@@ -2419,11 +2428,11 @@ fn _flash_attention_kv_cache_ragged_impl[
     @parameter
     if target == "cpu":
         return flash_attention_kv_cache_cpu(
-            q, input_row_offsets, k, v, CausalMask(), scale, output
+            q, input_row_offsets, k, v, mask, scale, output
         )
     else:
         return _flash_attention_kv_cache_ragged_gpu[target=target](
-            q, input_row_offsets, k, v, scale, output, context.value()
+            q, input_row_offsets, k, v, mask, scale, output, context.value()
         )
 
 
@@ -2473,12 +2482,17 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
 
 @always_inline
 fn _flash_attention_kv_cache_ragged_gpu[
-    type: DType, cache_t: KVCacheT, //, *, target: StringLiteral
+    type: DType,
+    cache_t: KVCacheT,
+    mask_t: MHAMask, //,
+    *,
+    target: StringLiteral,
 ](
     q: NDBuffer[type, 3, *_],
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     k: cache_t,
     v: cache_t,
+    mask: mask_t,
     scale: Float32,
     output: NDBuffer[type, 3, *_],
     context: DeviceContext,
@@ -2495,7 +2509,7 @@ fn _flash_attention_kv_cache_ragged_gpu[
         k,
         v,
         dummy_mask,
-        CausalMask(),
+        mask,
         IdentityScoreMod(),
         input_row_offsets,
         scale,

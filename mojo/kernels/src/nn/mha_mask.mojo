@@ -54,7 +54,8 @@ struct TileMaskStatus(Stringable, Writable):
 
 
 trait MHAMask:
-    """The MHAMask trait desctribes mask for mha kernel like causal mask."""
+    """The MHAMask trait describes masks for MHA kernels, such as the causal mask.
+    """
 
     fn mask[
         type: DType,
@@ -90,7 +91,7 @@ trait MHAMask:
             2, element_bitwidth=element_bitwidth, unsigned=unsigned
         ],
     ) -> TileMaskStatus:
-        """Given a tile' index range, return its masking status."""
+        """Given a tile's index range, return its masking status."""
         ...
 
 
