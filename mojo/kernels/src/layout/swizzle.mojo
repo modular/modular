@@ -299,7 +299,9 @@ struct Swizzle(LayoutTrait, Stringable, Writable):
 
 
 @always_inline
-fn make_ldmatrix_swizzle[type: DType, row_size: Int]() -> Swizzle:
+fn make_ldmatrix_swizzle[
+    type: DType, row_size: Int, log2_vector_width: Int = 0
+]() -> Swizzle:
     """Make a swizzle to avoid bank conflict for ldmatrix."""
 
     # For Nvidia GPU, there are 32 4B banks.
@@ -329,7 +331,7 @@ fn make_ldmatrix_swizzle[type: DType, row_size: Int]() -> Swizzle:
     alias simd_size = simdwidthof[type]()
     alias shifts = log2_floor(max(row_size // simd_size, 8))
 
-    return Swizzle(bits, 0, shifts)
+    return Swizzle(bits, log2_vector_width, shifts)
 
 
 @always_inline
