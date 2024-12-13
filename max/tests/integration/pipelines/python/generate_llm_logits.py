@@ -665,7 +665,10 @@ def main(
         results = evaluate.run_model(
             max_pipeline_and_tokenizer.model,
             max_pipeline_and_tokenizer.tokenizer,
-            pipeline_oracle.prompts,
+            prompts=pipeline_oracle.prompts,
+            images=pipeline_oracle.images
+            if isinstance(pipeline_oracle, MultiModalPipelineOracle)
+            else None,
         )
     elif framework_name == "torch":
         torch_device: torch.device

@@ -10,11 +10,12 @@ import uuid
 from typing import Any, Iterable, Optional
 
 import numpy as np
+import requests
 from max.driver import CPU
 from max.pipelines import PipelineModel
 from max.pipelines.interfaces import (
-    TokenGeneratorRequest,
     PipelineTokenizer,
+    TokenGeneratorRequest,
 )
 
 NUM_STEPS = 10
@@ -46,23 +47,57 @@ PIXTRAL_PROMPT = "<s>[INST]Describe the images.\n[IMG][/INST]"
 PIXTRAL_IMG_URL = "https://picsum.photos/id/237/400/300"
 
 
+def resolve_image_from_url(image_ref: str) -> bytes:
+    return requests.get(image_ref).content
+
+
 def run_model(
     model: Any,  # TODO(kathywu): Update to PipelineModel
     tokenizer: PipelineTokenizer,
     prompts: Iterable[str] = PROMPTS,
+    images: Optional[Iterable[str]] = None,
     num_steps: int = NUM_STEPS,
 ) -> list[dict[str, Any]]:
     """Runs the model for N steps on each prompt provide."""
+    return asyncio.run(
+        run_model_async(
+            model,
+            tokenizer,
+            prompts=prompts,
+            images=images,
+            num_steps=num_steps,
+        )
+    )
+
+
+async def run_model_async(
+    model: Any,  # TODO(kathywu): Update to PipelineModel
+    tokenizer: PipelineTokenizer,
+    prompts: Iterable[str] = PROMPTS,
+    images: Optional[Iterable[str]] = None,
+    num_steps: int = NUM_STEPS,
+) -> list[dict[str, Any]]:
+    """Runs the model for N steps on each prompt provide."""
+
+    # Download images.
+    downloaded_images: Optional[list[bytes]] = None
+    if images:
+        downloaded_images = []
+        for url in images:
+            downloaded_images.append(resolve_image_from_url(url))
+
     results = []
     # Evaluate prompts individually (not batched).
     # TODO: add batched version of run_model.
     for prompt in prompts:
         curr_req_id = str(uuid.uuid4())
-        context = asyncio.run(
-            tokenizer.new_context(
-                TokenGeneratorRequest(
-                    id="", index=0, prompt=prompt, model_name="llama3"
-                )
+        context = await tokenizer.new_context(
+            TokenGeneratorRequest(
+                id="",
+                index=0,
+                prompt=prompt,
+                model_name="llama3",
+                images=downloaded_images,
             )
         )
         values: dict[str, list[Any]] = {curr_req_id: []}
