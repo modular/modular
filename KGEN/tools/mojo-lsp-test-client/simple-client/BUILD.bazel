@@ -5,7 +5,6 @@ modular_cc_binary(
     srcs = glob(["*.cpp"]),
     deps = [
         "//KGEN/tools/common/lsp-protocol",
-        "//KGEN/tools/mojo-lsp-server",
         "//KGEN/tools/mojo-lsp-test-client",
     ],
 )
