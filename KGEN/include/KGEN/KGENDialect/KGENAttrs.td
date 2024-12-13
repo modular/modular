@@ -554,10 +554,12 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
       return get(func.getSymNameAttr(), type, paramValues);
     }]>,
     AttrBuilderWithInferredContext<(ins "GeneratorOp":$func), [{
-      return get(func.getSymNameAttr(), func.getSignature());
+      return get(func.getSymNameAttr(),
+                 func.getSignatureGenerator().asOldSignature());
     }]>,
     AttrBuilderWithInferredContext<(ins "FuncOp":$func), [{
-      return get(func.getSymNameAttr(), func.getSignature());
+      return get(func.getSymNameAttr(),
+                 func.getSignatureGenerator().asOldSignature());
     }]>,
   ];
 

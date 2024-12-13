@@ -225,8 +225,9 @@ void CallGraph::deduplicateNode(CallGraphNode *node) {
         }
       }
       if (replaceTo) {
-        call.setCalleeAttr(SymbolConstantAttr::get(replaceTo.getSymNameAttr(),
-                                                   replaceTo.getSignature()));
+        call.setCalleeAttr(SymbolConstantAttr::get(
+            replaceTo.getSymNameAttr(),
+            replaceTo.getSignatureGenerator().asOldSignature()));
       }
     }
 

@@ -970,6 +970,24 @@ SignatureGeneratorType SignatureGeneratorType::getSpecializedGenerator(
   });
 }
 
+SignatureGeneratorType SignatureGeneratorType::getSpecializedGenerator(
+    ArrayRef<TypedAttr> inputParamValues,
+    function_ref<InFlightDiagnostic()> emitErrorFn,
+    ArrayRef<Type> inputParamTypes, FunctionType values,
+    ArrayRef<ArgConvention> argConventions, FnEffects effects,
+    FnMetadataAttrInterface fnMetadata,
+    GeneratorMetadataAttrInterface genMetadata) {
+  SpecializeSignatureResult result = specializeSignature(
+      inputParamValues, genMetadata, emitErrorFn, inputParamTypes,
+      /*resultParamTypes=*/{}, values, argConventions, effects, fnMetadata);
+  if (!result.success)
+    return {};
+
+  return SignatureGeneratorType::get(result.inputParamTypes, result.values,
+                                     result.argConventions, result.effects,
+                                     result.fnMetadata, result.genMetadata);
+}
+
 SignatureGeneratorType SignatureGeneratorType::remapToSignatureGenerator(
     ArrayRef<ParamDeclAttr> inputParams, FunctionType functionType,
     ArrayRef<ArgConvention> argConventions, FnEffects effects,

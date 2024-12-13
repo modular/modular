@@ -89,7 +89,7 @@ ParameterSimplifier::evaluateExpression(ParamOperatorAttr op) {
     value = cast<TypedAttr>(result->front());
   } else {
     auto func = cast<FuncInterface>(body.getParentOp());
-    bool isInitSelf = func.getSignature().hasInitSelfArg();
+    bool isInitSelf = func.getSignatureGenerator().getBody().hasInitSelfArg();
     Value resultArg =
         isInitSelf ? body.getArgument(0) : body.getArguments().back();
     Type resultType = cast<PointerType>(resultArg.getType()).getElementType();

@@ -2027,25 +2027,26 @@ static ParseResult verifyMatchingLists(
 
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
-LogicalResult
-KGEN::verifyDeclSignaturesMatch(StringRef lhsName, SignatureType lhsSig,
-                                Location lhsLoc, StringRef rhsName,
-                                SignatureType rhsSig, Location rhsLoc) {
+LogicalResult KGEN::verifyDeclSignaturesMatch(
+    StringRef lhsName, SignatureType lhsSig, Location lhsLoc, StringRef rhsName,
+    SignatureGeneratorType rhsSigGen, Location rhsLoc) {
   VerboseCompilerTimeTraceScope traceScope("verifyDeclSignaturesMatch");
+
+  NewSignatureType rhsSig = rhsSigGen.getBody();
 
   FunctionType lhsType = lhsSig.getValues();
   FunctionType rhsType = rhsSig.getValues();
+
+  if (!lhsSig.getResultParamTypes().empty())
+    return emitError(lhsLoc, lhsName) << " result parameters not supported";
 
   /// Verify that a list of parameter declarations from a generator or func
   /// matches those of an interface.  This produces an error diagnostic and
   /// returns failure when a problem is detected, or returns true if
   /// everything is ok.
-  if (failed(verifyMatchingLists(lhsSig.getInputParamTypes(),
-                                 rhsSig.getInputParamTypes(), lhsName, lhsLoc,
-                                 rhsName, rhsLoc, "input parameter", "type")) ||
-      failed(verifyMatchingLists(
-          lhsSig.getResultParamTypes(), rhsSig.getResultParamTypes(), lhsName,
-          lhsLoc, rhsName, rhsLoc, "result parameter", "type")) ||
+  if (failed(verifyMatchingLists(
+          lhsSig.getInputParamTypes(), rhsSigGen.getInputParamTypes(), lhsName,
+          lhsLoc, rhsName, rhsLoc, "input parameter", "type")) ||
       verifyMatchingLists(lhsType.getInputs(), rhsType.getInputs(), lhsName,
                           lhsLoc, rhsName, rhsLoc, "argument", "type") ||
       verifyMatchingLists(lhsType.getResults(), rhsType.getResults(), lhsName,

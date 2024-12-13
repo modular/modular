@@ -90,8 +90,8 @@ def FuncInterface : OpInterface<"FuncInterface"> {
 
   let methods = [
     InterfaceMethod<[{
-      Return the function's signature.
-    }], "SignatureType", "getSignature", (ins)>,
+      Return the function's signature generator type.
+    }], "SignatureGeneratorType", "getSignatureGenerator", (ins)>,
     InterfaceMethod<[{
       Return the function's body argument and result types.
     }], "FunctionType", "getFunctionType", (ins)>,
@@ -117,11 +117,11 @@ def FuncInterface : OpInterface<"FuncInterface"> {
 
     /// Return true if the function throws.
     bool isThrows() {
-      return $_op.getSignature().isThrows();
+      return $_op.getSignatureGenerator().getBody().getFnEffects().isThrows();
     }
     /// Return true if the function is async.
     bool isAsync() {
-      return $_op.getSignature().isAsync();
+      return $_op.getSignatureGenerator().getBody().getFnEffects().isAsync();
     }
 
     //===------------------------------------------------------------------===//

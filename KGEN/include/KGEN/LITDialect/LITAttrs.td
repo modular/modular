@@ -202,6 +202,13 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
     static SmallVector<PogMetadataAttr> toPogs(
       ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
       ArrayRef<size_t> indices);
+
+    /// Get a new metadata attribute for a generator with the given number of
+    /// positional input parameters prepended to the generator. An additional
+    /// array of bool corresponding to the variadic mask of the prepended
+    /// parameters is also required.
+    PogListAttr prependPosParams(size_t numNewParams,
+                                 ArrayRef<bool> variadicMask) const;
   }];
 
   let genVerifyDecl = 1;
@@ -887,7 +894,7 @@ def LIT_StructAttr : LITAttr<"LITStruct", "struct", [TypedAttrInterface,
 //===----------------------------------------------------------------------===//
 
 def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
-    TypedAttrInterface, 
+    TypedAttrInterface,
     DeclareAttrInterfaceMethods<ParameterAttrInterface, ["isLessThan"]>
   ]> {
   let summary = "Extract an element from a struct value";

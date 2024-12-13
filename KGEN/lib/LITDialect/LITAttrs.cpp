@@ -305,6 +305,49 @@ PogListAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
                           newDefaultKwOnlyParams);
 }
 
+/// Get a new metadata attribute for a generator with the given number of
+/// positional input parameters prepended to the generator. An additional
+/// array of bool corresponding to the variadic mask of the prepended
+/// parameters is also required.
+PogListAttr PogListAttr::prependPosParams(size_t numNewParams,
+                                          ArrayRef<bool> variadicMask) const {
+  assert(variadicMask.size() == numNewParams);
+  if (numNewParams == 0)
+    return *this;
+
+  auto emptyStr = StringAttr::get(getContext());
+  SmallVector<PogMetadataAttr> newPogs =
+      llvm::map_to_vector(variadicMask, [&](bool isVariadic) {
+        return PogMetadataAttr::get(emptyStr, PassingKind::PosOnly, isVariadic);
+      });
+
+  SmallVector<PogMetadataAttr> mergedPogs;
+  for (size_t iNew = 0, iOld = 0, eOld = size(), eNew = newPogs.size();
+       iOld < eOld || iNew < eNew;) {
+    // Put inferred parameters first.
+    if (iOld < eOld && getPassingKind(iOld) == PassingKind::Inferred) {
+      mergedPogs.push_back(getPogs()[iOld]);
+      iOld++;
+    } else if (iNew < eNew) {
+      mergedPogs.push_back(newPogs[iNew]);
+      iNew++;
+    } else {
+      mergedPogs.push_back(getPogs()[iOld]);
+      iOld++;
+    }
+  }
+
+  assert(getPackIndex() && "no param packs");
+  return PogListAttr::get(getContext(), mergedPogs, getDefaultPos(),
+                          getDefaultKwOnly());
+}
+
+GeneratorMetadataAttrInterface
+PogListAttr::prependPosParamsFromOps(ArrayRef<Operation *> ops) const {
+  SmallVector<bool> variadicMask = getContextualVariadicMask(ops);
+  return prependPosParams(variadicMask.size(), variadicMask);
+}
+
 //===----------------------------------------------------------------------===//
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
@@ -426,41 +469,9 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
 FnMetadataAttr
 FnMetadataAttr::prependPosParams(size_t numNewParams,
                                  ArrayRef<bool> variadicMask) const {
-  assert(variadicMask.size() == numNewParams);
-  if (numNewParams == 0)
-    return *this;
-
-  auto emptyStr = StringAttr::get(getContext());
-  SmallVector<PogMetadataAttr> newPogs =
-      llvm::map_to_vector(variadicMask, [&](bool isVariadic) {
-        return PogMetadataAttr::get(emptyStr, PassingKind::PosOnly, isVariadic);
-      });
-
-  PogListAttr oldParamListAttr = getParamListAttrs();
-  SmallVector<PogMetadataAttr> mergedPogs;
-  for (size_t iNew = 0, iOld = 0, eOld = oldParamListAttr.size(),
-              eNew = newPogs.size();
-       iOld < eOld || iNew < eNew;) {
-    // Put inferred parameters first.
-    if (iOld < eOld &&
-        oldParamListAttr.getPassingKind(iOld) == PassingKind::Inferred) {
-      mergedPogs.push_back(oldParamListAttr.getPogs()[iOld]);
-      iOld++;
-    } else if (iNew < eNew) {
-      mergedPogs.push_back(newPogs[iNew]);
-      iNew++;
-    } else {
-      mergedPogs.push_back(oldParamListAttr.getPogs()[iOld]);
-      iOld++;
-    }
-  }
-
-  assert(oldParamListAttr.getPackIndex() && "no param packs");
-  auto newParamListAttr =
-      PogListAttr::get(getContext(), mergedPogs, getDefaultPosParams(),
-                       getDefaultKwOnlyParams());
-  return get(getArgListAttrs(), newParamListAttr, getNumImplicitOriginDecls(),
-             getCaptureOrigins(),
+  return get(getArgListAttrs(),
+             getParamListAttrs().prependPosParams(numNewParams, variadicMask),
+             getNumImplicitOriginDecls(), getCaptureOrigins(),
              getIsNestedOriginExclusivityCheckingDisabled());
 }
 

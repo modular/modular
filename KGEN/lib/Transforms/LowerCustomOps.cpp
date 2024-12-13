@@ -109,12 +109,13 @@ static StringAttr generateInstantiateStub(SymbolTable &symtab, StringAttr name,
       cast<FunctionType>(evaluator.getReboundType(callee.getFunctionType()));
   ImplicitLocOpBuilder b{callee.getLoc(), OpBuilder(name.getContext())};
   StringAttr instName = b.getStringAttr(prefix + Twine(counter++));
-  SignatureType calleeSig = callee.getSignature().getSpecializedSignature(
-      params, [&] { return mlir::emitError(callee.getLoc()); });
+  SignatureGeneratorType calleeSig =
+      callee.getSignatureGenerator().getSpecializedGenerator(
+          params, [&] { return mlir::emitError(callee.getLoc()); });
   auto inst = b.create<GeneratorOp>(
-      instName,
-      SignatureGeneratorType::get({}, funcType, calleeSig.getArgConventions(),
-                                  calleeSig.getFnEffects()));
+      instName, SignatureGeneratorType::get(
+                    {}, funcType, calleeSig.getBody().getArgConventions(),
+                    calleeSig.getBody().getFnEffects()));
   inst.setExported();
   symtab.insert(inst);
 
@@ -122,8 +123,8 @@ static StringAttr generateInstantiateStub(SymbolTable &symtab, StringAttr name,
   SmallVector<Value> args;
   for (Type type : funcType.getInputs())
     args.push_back(body->addArgument(type, b.getLoc()));
-  auto call =
-      b.create<CallOp>(SymbolConstantAttr::get(name, calleeSig, params), args);
+  auto call = b.create<CallOp>(
+      SymbolConstantAttr::get(name, calleeSig.asOldSignature(), params), args);
   b.create<ReturnOp>(call.getResults());
 
   return instName;

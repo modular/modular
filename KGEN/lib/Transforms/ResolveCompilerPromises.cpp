@@ -311,8 +311,8 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
       // Append any new captures starting from the front and update the callee
       // signature on the call. The function already has the updated signature.
       call->insertOperands(fulfilled, captures);
-      call.setCalleeAttr(
-          SymbolConstantAttr::get(symbol.getSymbol(), callee.getSignature()));
+      call.setCalleeAttr(SymbolConstantAttr::get(
+          symbol.getSymbol(), callee.getSignatureGenerator().asOldSignature()));
       return;
     }
 
