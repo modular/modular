@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/Interpreter/InterpreterState.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
@@ -148,19 +149,60 @@ LogicalResult ParamIfOp::canonicalize(ParamIfOp op, PatternRewriter &b) {
   Block &liveBlock = op->getRegion(!condAttr.getValue()).front();
   Block &deadBlock = op->getRegion(condAttr.getValue()).front();
 
-  // If the live block happens to be trivial, we can actually remove the whole
-  // operation. Replace the results with the operands to the yield.
-  if (auto yield = dyn_cast<ParamYieldOp>(&liveBlock.front())) {
-    b.replaceOp(op, yield.getOperands());
-    return success();
-  }
-
   // Don't match again if the dead block is already purged.
   if (isa<UnreachableOp>(deadBlock.front()))
     return b.notifyMatchFailure(op.getLoc(), "dead block already purged");
 
-  for (Operation &op : llvm::make_early_inc_range(llvm::reverse(deadBlock)))
-    b.eraseOp(&op);
+  // We can still hoist all the non parameter defining ops out of the live
+  // region.
+  for (Operation &subOp : llvm::make_early_inc_range(liveBlock)) {
+    // Stop if we hit an operation defining a parameter. We don't hoist these as
+    // the parameter regions could conflict.
+    if (auto paramOp = dyn_cast<ParamOpInterface>(subOp)) {
+      bool hasParam = false;
+      paramOp.walkDeclarations([&](ParamDeclAttr attr) { hasParam = true; });
+      if (hasParam)
+        break;
+    }
+
+    // If we reach the terminator we can kill the block.
+    if (liveBlock.getTerminator() == &subOp) {
+      // If the live block is now trivial, we can actually remove the whole
+      // operation. Replace the results with the operands to the yield.
+      if (auto yield = dyn_cast<ParamYieldOp>(subOp)) {
+        b.replaceOp(op, yield.getOperands());
+        return success();
+      }
+
+      // If we are ending control flow we can hoist it out but we have to delete
+      // all following ops to retain legality (In principle this should be a
+      // kgen.unreachable).
+      if (isa<KGEN::UnreachableOp, HLCF::BreakOp, HLCF::ContinueOp>(subOp)) {
+        mlir::Block *block = op->getBlock();
+
+        // Delete all trailing ops.
+        bool afterOp = false;
+        for (Operation &o : llvm::make_early_inc_range(*block)) {
+          if (afterOp)
+            b.eraseOp(&o);
+          else if (&o == op)
+            afterOp = true;
+        }
+        b.moveOpBefore(&subOp, op);
+        b.eraseOp(op);
+        return success();
+      }
+
+      // Otherwise we are an unknown form of control flow, just leave it in.
+      break;
+    }
+
+    // Otherwise just move as normal.
+    b.moveOpBefore(&subOp, op);
+  }
+
+  for (Operation &subOp : llvm::make_early_inc_range(llvm::reverse(deadBlock)))
+    b.eraseOp(&subOp);
   b.setInsertionPointToStart(&deadBlock);
   b.create<UnreachableOp>(op.getLoc());
   return success();
