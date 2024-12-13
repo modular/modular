@@ -3296,6 +3296,10 @@ fn mha_decoding_single_batch[
         "Number of warps doesn't match warp tile sizes.",
     ]()
 
+    # It's because in online-softmax we only use the top 8x4 sub-matrix
+    # in the 16x8 mma output for Nvidia GPU. It shouldn't matter for AMD
+    constrained[group <= 8, "Only support GQA with group <= 8 for Nvidia."]()
+
     var tid = ThreadIdx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
     var lane = lane_id()
@@ -3521,17 +3525,23 @@ fn mha_decoding_single_batch[
         # Increment mask to next BM x BN block.
         mask_warp_ptr += BN
 
-        alias reg_layout_by_mma_unit = Layout.row_major(
-            2 * num_m_mmas * num_n_mmas, 2
-        )
+        # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
+        # G <= 8 typically holds
+        var output_reg_vecs = output_reg_tile.tile[
+            num_m_mmas * num_n_mmas, p_frag_size // 2
+        ](0, 0).vectorize[1, p_frag_size // 2]()
+        var p_reg_vecs = p_reg_tile.tile[
+            num_m_mmas * num_n_mmas, p_frag_size // 2
+        ](0, 0).vectorize[1, p_frag_size // 2]()
+
         _online_softmax_iter_for_mma_output[
             accum_type,
-            Layout.row_major(2 * num_m_mmas, num_n_mmas),
+            Layout.row_major(num_m_mmas, num_n_mmas),
             Layout.row_major(num_warps_m, num_warps_n),
             Layout.row_major(8, 4),
         ](
-            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
+            output_reg_vecs,
+            p_reg_vecs,
             warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
             rowmax,
             rowsum,
