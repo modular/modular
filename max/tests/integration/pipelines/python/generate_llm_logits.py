@@ -290,7 +290,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=KVCacheStrategy.CONTINUOUS,
-            huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision",
+            huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision-Instruct",
             trust_remote_code=True,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -304,7 +304,7 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
-        hf_repo_id = "meta-llama/Llama-3.2-11B-Vision"
+        hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
         processor = transformers.AutoProcessor.from_pretrained(hf_repo_id)
         config = transformers.AutoConfig.from_pretrained(hf_repo_id)
         model = transformers.MllamaForConditionalGeneration.from_pretrained(
