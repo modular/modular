@@ -115,7 +115,7 @@ from nn.kv_cache import (
     kv_params_h32_d128_bshd,
 )
 from nn.kv_cache_ragged import (
-    generic_flash_attention_kv_cache_cont_batch_ragged,
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
     generic_fused_qk_rope_bshd_ragged,
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
@@ -8134,7 +8134,7 @@ fn generic_flash_attention_kv_cache_cont_batch_ragged_kernel_api[
         input_row_offsets.type, input_row_offsets.rank
     ]("input_row_offsets").shape
 
-    generic_flash_attention_kv_cache_cont_batch_ragged[target](
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[target](
         managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
         managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
             input_row_offsets
