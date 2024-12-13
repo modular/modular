@@ -187,11 +187,6 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
 
     // TODO: Remove this when result parameters are gone.
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
-
-    // Temporary Back-Compat
-    SignatureType getSignature() {
-      return getSignatureGenerator().asOldSignature();
-    }
   }];
 
   let builders = [
@@ -248,11 +243,6 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
     InlineLevel getInlineLevel() { return InlineLevel::Never; }
     Region *getCallableRegion() { return &getBody(); }
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
-
-    // Temporary Back-Compat
-    SignatureType getSignature() {
-      return getSignatureGenerator().asOldSignature();
-    }
   }];
 
   let assemblyFormat = [{
@@ -644,7 +634,7 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 
   let arguments = (ins
     KGEN_ParamDeclAttr:$paramDecl,
-    TypeAttrOf<KGEN_SignatureGeneratorType>:$type,
+    TypeAttrOf<KGEN_SignatureGeneratorType>:$signatureGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
     KGEN_InlineLevelAttr:$inlineLevel,
@@ -654,8 +644,9 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
-    custom<RegionDeclaration>($paramDecl, $inputParams, $functionType, $type,
-                              $inlineLevel, $bodyRegion) attr-dict
+    custom<RegionDeclaration>($paramDecl, $inputParams, $functionType,
+                              $signatureGenerator, $inlineLevel, $bodyRegion)
+    attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -667,18 +658,16 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
     bool isOptionalSymbol() { return true; }
 
     ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
-
-    // Temporary Back-Compat
-    SignatureType getSignature() { return getType().asOldSignature(); }
   }];
 
   let builders = [
-    OpBuilder<(ins "ParamDeclAttr":$paramDecl, "SignatureGeneratorType":$type,
+    OpBuilder<(ins "ParamDeclAttr":$paramDecl,
+                   "SignatureGeneratorType":$signatureGenerator,
                    "FunctionType":$functionType,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
                    CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel), [{
-      build($_builder, $_state, paramDecl, type, functionType, inputParams,
-            inlineLevel,
+      build($_builder, $_state, paramDecl, signatureGenerator, functionType,
+            inputParams, inlineLevel,
             /*llvmMetadata=*/DictionaryAttr::get(paramDecl.getContext()),
             /*isolated=*/false);
     }]>,

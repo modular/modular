@@ -133,6 +133,11 @@ def LIT_FuncOp : LITOp<"func", [
 
     /// Return true if this was defined as a 'def', not a 'fn'.
     bool isDef() { return getIsDef(); }
+
+    /// Temporary forward-compatibility helper (only used by FuncInterface).
+    SignatureGeneratorType getSignatureGenerator() {
+      return getSignature().asSignatureGenerator();
+    }
   }];
 
   let builders = [

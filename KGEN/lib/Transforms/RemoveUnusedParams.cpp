@@ -218,11 +218,12 @@ private:
       if (!unusedArgs[idx])
         newOperands.push_back(operand);
     }
-    auto symbol =
-        SymbolConstantAttr::get(flatSym,
-                                newFunc.getSignature().getSpecializedSignature(
-                                    newParams, oldCall.getLoc()),
-                                newParams);
+    auto symbol = SymbolConstantAttr::get(
+        flatSym,
+        newFunc.getSignatureGenerator()
+            .getSpecializedGenerator(newParams, oldCall.getLoc())
+            .asOldSignature(),
+        newParams);
 
     auto newCall =
         builder.create<CallOp>(oldCall.getLoc(), symbol, newOperands);

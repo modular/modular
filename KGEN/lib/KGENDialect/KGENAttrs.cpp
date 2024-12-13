@@ -570,9 +570,9 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
     }
   }
 
-  SignatureType declSignature;
+  SignatureGeneratorType declSignature;
   if (symbolOps.size() == 1) {
-    declSignature = func.getSignature().getSpecializedSignature(
+    declSignature = func.getSignatureGenerator().getSpecializedGenerator(
         getParamValues(), [&] { return emitError(loc); });
   } else {
     // Collect the contextual parameter values.
@@ -583,24 +583,30 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
 
     IndexRefRemapper remapper(paramDecls, /*resultParams=*/{},
                               paramDecls.size());
-    SignatureType baseSig = func.getSignature();
+    SignatureGeneratorType baseSigGen = func.getSignatureGenerator();
+    NewSignatureType baseSig = baseSigGen.getBody();
     SmallVector<Type> inputParamTypes;
     for (ParamDeclAttr param : paramDecls)
       inputParamTypes.push_back(remapper.replace(param.getType()));
-    for (Type type : baseSig.getInputParamTypes())
+    for (Type type : baseSigGen.getInputParamTypes())
       inputParamTypes.push_back(remapper.replace(type));
 
-    FnMetadataAttrInterface metadata = baseSig.getMetadata();
-    if (metadata) {
-      metadata = remapper.replace(
-          metadata.prependPosParamsFromOps(ArrayRef(symbolOps).drop_back()));
+    GeneratorMetadataAttrInterface genMetadata = baseSigGen.getMetadata();
+    if (genMetadata) {
+      genMetadata = remapper.replace(
+          genMetadata.prependPosParamsFromOps(ArrayRef(symbolOps).drop_back()));
     }
 
-    declSignature = SignatureType::getSpecializedSignature(
+    FnMetadataAttrInterface fnMetadata = baseSig.getMetadata();
+    if (fnMetadata) {
+      fnMetadata = remapper.replace(
+          fnMetadata.prependPosParamsFromOps(ArrayRef(symbolOps).drop_back()));
+    }
+
+    declSignature = SignatureGeneratorType::getSpecializedGenerator(
         getParamValues(), [&] { return emitError(loc); }, inputParamTypes,
-        remapper.replace(baseSig.getResultParamTypes()),
         remapper.replace(baseSig.getValues()), baseSig.getArgConventions(),
-        baseSig.getFnEffects(), metadata);
+        baseSig.getFnEffects(), fnMetadata, genMetadata);
   }
   if (!declSignature)
     return failure();

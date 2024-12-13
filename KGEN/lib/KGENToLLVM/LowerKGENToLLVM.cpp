@@ -121,7 +121,7 @@ struct AttributeIdentifiers {
 /// Convert LLVM metadata expressed in KGEN attributes to an LLVM dialect
 /// compatible representation. Unsupport metadata values are rejected.
 static LogicalResult
-convertLLVMMetadata(LLVM::LLVMFuncOp func, SignatureType sig,
+convertLLVMMetadata(LLVM::LLVMFuncOp func, NewSignatureType sig,
                     DictionaryAttr metadata, const AttributeIdentifiers &ids,
                     const TypeConverter *tc, TargetInfoAttr target) {
   NamedAttrList attrs = func->getAttrDictionary();
@@ -401,9 +401,9 @@ public:
         }
       }
     }
-    if (failed(convertLLVMMetadata(funcOp, func.getSignature(),
-                                   func.getLLVMMetadataAttr(), ids,
-                                   typeConverter, target)))
+    if (failed(convertLLVMMetadata(
+            funcOp, func.getSignatureGenerator().getBody(),
+            func.getLLVMMetadataAttr(), ids, typeConverter, target)))
       return failure();
 
     if (func.getCoroutineType()) {

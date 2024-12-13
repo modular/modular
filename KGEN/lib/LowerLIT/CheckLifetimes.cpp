@@ -2432,11 +2432,7 @@ private:
 }
 
 void DestructorInsertion::scanFunction(LIT::FuncOp func) {
-  auto fnInterface = dyn_cast<FuncInterface>(func.getOperation());
-  if (!fnInterface)
-    return; // Unknown function kind.
-
-  functionSignature = fnInterface.getSignature();
+  functionSignature = func.getSignature();
 
   consumedValues.resize(valueSet.getNumTotalBits());
   // Slot 0 indicates this block is reachable.  This will be cleared if an

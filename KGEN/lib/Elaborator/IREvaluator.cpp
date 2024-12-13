@@ -70,7 +70,7 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
     arguments.push_back(input);
 
   // True if InitSelf, false if ByRefResult.
-  bool isInitSelf = func.getSignature().hasInitSelfArg();
+  bool isInitSelf = func.getSignatureGenerator().getBody().hasInitSelfArg();
   auto resultArg =
       isInitSelf ? func.getArgument(0) : func.getArguments().back();
   auto ptr = dyn_cast<PointerType>(resultArg.getType());

@@ -321,7 +321,7 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
 
 /// Lower the input conventions for a KGEN::FuncOp if needed.
 static void lowerFuncOp(FuncOp funcOp) {
-  SignatureType oldSig = funcOp.getSignature();
+  SignatureType oldSig = funcOp.getSignatureGenerator().asOldSignature();
   LoweredSignature s = lowerSignature(oldSig);
   SignatureType newSig = s.newSig;
   if (!newSig)
