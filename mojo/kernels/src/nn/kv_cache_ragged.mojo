@@ -37,7 +37,7 @@ from nn.kv_cache import (
     kv_params_h32_d128_bshd,
 )
 from nn.mha import flash_attention as gpu_flash_attention
-from nn.mha_mask import CausalMask, MHAMask
+from nn.mha_mask import CausalMask, MHAMask, NullMask
 from nn.mha_score_mod import AlibiScoreMod, IdentityScoreMod
 from register import register_internal
 from runtime.asyncrt import MojoCallContextPtr
@@ -2152,6 +2152,73 @@ fn generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
             output,
             context,
         )
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[
+    type: DType, //, target: StringLiteral
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    @always_inline
+    @parameter
+    fn description_fn() -> String:
+        return String(";").join(
+            trace_arg("output", output),
+            trace_arg("q", q),
+            trace_arg("input_row_offsets", input_row_offsets),
+            "layer_idx=" + str(layer_idx),
+            "num_heads=" + str(kv_collection.kv_params.num_heads),
+            "head_size=" + str(kv_collection.kv_params.head_size),
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "flash_attention_kv_cache_h"
+        + str(kv_collection.kv_params.num_heads)
+        + "_d"
+        + str(kv_collection.kv_params.head_size)
+        + "_null_mask_cont_batch_ragged",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
+        return _flash_attention_kv_cache_ragged[
+            kv_collection.CacheType, target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            NullMask(),
+            scale,
+            output,
+            context,
+        )
+
+
+@register_internal(
+    "flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged"
+)
+fn flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged[
+    type: DType, //, target: StringLiteral
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h8_d128_bshd
+    ],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_null_mask_cont_batch_ragged[target=target](
+        q, input_row_offsets, kv_collection, layer_idx, scale, output, context
+    )
 
 
 @register_internal("flash_attention_kv_cache_h1_d16_cont_batch_ragged")
