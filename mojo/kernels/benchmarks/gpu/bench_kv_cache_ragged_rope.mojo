@@ -77,7 +77,6 @@ def execute_kv_cache_ragged_rope[
     var cache_len: UInt32 = 10
 
     var flop_count = 0
-    var seq_ids = List[Int]()
     for i in range(batch_size):
         var curr_seq_length: UInt32
         if use_random_seq_lengths:
@@ -91,7 +90,6 @@ def execute_kv_cache_ragged_rope[
 
         cache_lengths_host.tensor[i] = cache_len
         total_seq_len += curr_seq_length
-        seq_ids.append(-1)
 
     input_row_offsets_host.tensor[batch_size] = total_seq_len
     var input_row_offsets_device = input_row_offsets_host.copy_to_device(ctx)
@@ -141,7 +139,6 @@ def execute_kv_cache_ragged_rope[
         cache_lengths_device.tensor,
         lookup_table_device.tensor,
         is_context_encoding,
-        seq_ids,
     )
 
     var freqs_cis_table_device = DeviceNDBuffer[
