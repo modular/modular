@@ -784,9 +784,6 @@ trait KVCollectionT(CollectionElement):
     fn cache_length(self, bs_idx: Int) -> Int:
         ...
 
-    fn cache_length_nd(self) -> NDBuffer[DType.uint32, 1]:
-        ...
-
 
 struct ContiguousKVCacheCollection[
     type: DType,
@@ -922,9 +919,6 @@ struct ContiguousKVCacheCollection[
         )
         return int(self.cache_lengths[batch_idx])
 
-    fn cache_length_nd(self) -> NDBuffer[DType.uint32, 1]:
-        return self.cache_lengths
-
 
 struct ContinuousBatchingKVCacheCollection[
     type: DType,
@@ -1043,9 +1037,6 @@ struct ContinuousBatchingKVCacheCollection[
     fn cache_length(self, bs_idx: Int) -> Int:
         return int(self.cache_lengths[bs_idx])
 
-    fn cache_length_nd(self) -> NDBuffer[DType.uint32, 1]:
-        return self.cache_lengths
-
 
 struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
     KVCollectionT
@@ -1140,6 +1131,3 @@ struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
 
     fn cache_length(self, bs_idx: Int) -> Int:
         return int(self.cache_lengths[bs_idx])
-
-    fn cache_length_nd(self) -> NDBuffer[DType.uint32, 1]:
-        return self.cache_lengths
