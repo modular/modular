@@ -44,9 +44,6 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
 
     var max_seq_length = UInt32(2048)
     var max_cache_length = UInt32(2048)
-    var seq_ids = List[Int]()
-    for i in range(batch_size):
-        seq_ids.append(i)
 
     var collection = PagedKVCacheCollection[DType.float32, kv_params](
         blocks.tensor,
@@ -54,7 +51,6 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
         lookup_table.tensor,
         max_seq_length,
         max_cache_length,
-        seq_ids,
     )
 
     alias layout = Layout(
