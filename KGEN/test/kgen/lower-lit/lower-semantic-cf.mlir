@@ -1017,3 +1017,26 @@ lit.func @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   // CHECK-NEXT: }
   lit.end_func
 }
+
+// Derived from MOCO-1475
+lit.func @crashing_try_warning(%cond: i1) -> !kgen.none {
+  lit.loop cond {
+    lit.loop.condition %cond : i1
+  } body {
+    lit.loop.continue
+  } else {
+    lit.try { // expected-warning {{try body doesn't raise an exception}}
+      lit.try.yield
+    } except {
+      lit.try.yield
+    } else {
+      lit.try.yield
+    } finally {
+      lit.try.yield
+    }
+    lit.loop.yield
+  }
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_func
+}
