@@ -635,12 +635,23 @@ fn flash_attention[
 
                 alias accum_type = get_accum_type[q.type]()
                 alias num_pipeline_stages = 4
-                # smem for q + k (and shared by v)
-                var shared_mem_bytes = BM * depth * sizeof[
-                    q.type
-                ]() + num_pipeline_stages * BN * BK * sizeof[
-                    cache_t.get_type()
-                ]()
+                # smem for q
+                var shared_mem_bytes = BM * depth * sizeof[q.type]()
+
+                # seperate KV smem if we have enough smem
+                @parameter
+                if not is_shared_kv:
+                    shared_mem_bytes += (
+                        2 * BN * depth * sizeof[cache_t.get_type()]()
+                    )
+                else:
+                    shared_mem_bytes += (
+                        num_pipeline_stages
+                        * BN
+                        * BK
+                        * sizeof[cache_t.get_type()]()
+                    )
+
                 alias num_warps = ceildiv(num_threads, WARP_SIZE)
 
                 # smem for p and warp_scratch
@@ -692,6 +703,7 @@ fn flash_attention[
                         use_warp_shuffle_decoding=use_warp_shuffle_decoding,
                         ragged=ragged,
                         block_size_warp_shuffle=block_size_warp_shuffle,
+                        is_shared_kv=is_shared_kv,
                     ]
                 ](
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -1022,11 +1034,18 @@ fn flash_attention[
 
                 alias accum_type = get_accum_type[q.type]()
                 alias num_pipeline_stages = 4
-                # smem for q + k (and shared by v)
-                var shared_mem_bytes = BM * depth * sizeof[
-                    q.type
-                ]() + num_pipeline_stages * BN * BK * sizeof[k.type]()
+                # smem for q
+                var shared_mem_bytes = BM * depth * sizeof[q.type]()
                 alias num_warps = ceildiv(num_threads, WARP_SIZE)
+
+                # seperate KV smem if we have enough smem
+                @parameter
+                if not is_shared_kv:
+                    shared_mem_bytes += 2 * BN * depth * sizeof[v.type]()
+                else:
+                    shared_mem_bytes += (
+                        num_pipeline_stages * BN * BK * sizeof[v.type]()
+                    )
 
                 # smem for p and warp_scratch
                 shared_mem_bytes += (
@@ -1079,6 +1098,7 @@ fn flash_attention[
                         use_score_mod=use_score_mod,
                         use_warp_shuffle_decoding=use_warp_shuffle_decoding,
                         block_size_warp_shuffle=block_size_warp_shuffle,
+                        is_shared_kv=is_shared_kv,
                     ]
                 ](
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -2896,6 +2916,7 @@ fn mha_decoding[
     use_warp_shuffle_decoding: Bool = False,
     ragged: Bool = False,
     block_size_warp_shuffle: Int = 16,
+    is_shared_kv: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k: cache_t,
@@ -2956,36 +2977,70 @@ fn mha_decoding[
 
     @parameter
     if use_mask_tensor or (not use_warp_shuffle_decoding):
-        mha_decoding_single_batch[
-            mask_rank,
-            BM=BM,
-            BN=BN,
-            BK=BK,
-            WM=WM,
-            WN=WN,
-            depth=depth,
-            num_heads=num_heads,
-            num_threads=num_threads,
-            num_pipeline_stages=num_pipeline_stages,
-            group=group,
-            use_mask_tensor=use_mask_tensor,
-            use_score_mod=use_score_mod,
-        ](
-            q_ptr.offset(q_batch_offset),
-            k_operand,
-            v_operand,
-            mask_ptr.offset(mask_batch_offset),
-            output_ptr.offset(output_batch_offset),
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            scale,
-            num_keys,
-            num_partitions,
-            max_cache_valid_length,
-            mask,
-            score_mod,
-            batch_idx,
-        )
+
+        @parameter
+        if is_shared_kv:
+            mha_decoding_single_batch_pipelined[
+                mask_rank,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                num_heads=num_heads,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                group=group,
+                use_mask_tensor=use_mask_tensor,
+                use_score_mod=use_score_mod,
+            ](
+                q_ptr.offset(q_batch_offset),
+                k_operand,
+                v_operand,
+                mask_ptr.offset(mask_batch_offset),
+                output_ptr.offset(output_batch_offset),
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                scale,
+                num_keys,
+                num_partitions,
+                max_cache_valid_length,
+                mask,
+                score_mod,
+                batch_idx,
+            )
+        else:
+            mha_decoding_single_batch[
+                mask_rank,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                num_heads=num_heads,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                group=group,
+                use_mask_tensor=use_mask_tensor,
+                use_score_mod=use_score_mod,
+            ](
+                q_ptr.offset(q_batch_offset),
+                k_operand,
+                v_operand,
+                mask_ptr.offset(mask_batch_offset),
+                output_ptr.offset(output_batch_offset),
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                scale,
+                num_keys,
+                num_partitions,
+                max_cache_valid_length,
+                mask,
+                score_mod,
+                batch_idx,
+            )
     else:
         mha_decoding_single_batch_warp_shuffle[
             head_size=depth,
@@ -3036,6 +3091,7 @@ fn mha_decoding[
     use_score_mod: Bool = False,
     use_warp_shuffle_decoding: Bool = False,
     block_size_warp_shuffle: Int = 16,
+    is_shared_kv: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
     k_nd: NDBuffer[k_type, k_rank, k_shape],
@@ -3075,36 +3131,70 @@ fn mha_decoding[
 
     @parameter
     if use_mask_tensor or (not use_warp_shuffle_decoding):
-        mha_decoding_single_batch[
-            mask_rank,
-            BM=BM,
-            BN=BN,
-            BK=BK,
-            WM=WM,
-            WN=WN,
-            depth=depth,
-            num_heads=num_heads,
-            num_threads=num_threads,
-            num_pipeline_stages=num_pipeline_stages,
-            group=group,
-            use_mask_tensor=use_mask_tensor,
-            use_score_mod=use_score_mod,
-        ](
-            q_ptr.offset(q_batch_offset),
-            k_operand,
-            v_operand,
-            mask_ptr.offset(mask_batch_offset),
-            output_ptr.offset(output_batch_offset),
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            scale,
-            num_keys,
-            num_partitions,
-            num_keys,
-            mask,
-            score_mod,
-            batch_idx,
-        )
+
+        @parameter
+        if is_shared_kv:
+            mha_decoding_single_batch_pipelined[
+                mask_rank,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                num_heads=num_heads,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                group=group,
+                use_mask_tensor=use_mask_tensor,
+                use_score_mod=use_score_mod,
+            ](
+                q_ptr.offset(q_batch_offset),
+                k_operand,
+                v_operand,
+                mask_ptr.offset(mask_batch_offset),
+                output_ptr.offset(output_batch_offset),
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                scale,
+                num_keys,
+                num_partitions,
+                num_keys,
+                mask,
+                score_mod,
+                batch_idx,
+            )
+        else:
+            mha_decoding_single_batch[
+                mask_rank,
+                BM=BM,
+                BN=BN,
+                BK=BK,
+                WM=WM,
+                WN=WN,
+                depth=depth,
+                num_heads=num_heads,
+                num_threads=num_threads,
+                num_pipeline_stages=num_pipeline_stages,
+                group=group,
+                use_mask_tensor=use_mask_tensor,
+                use_score_mod=use_score_mod,
+            ](
+                q_ptr.offset(q_batch_offset),
+                k_operand,
+                v_operand,
+                mask_ptr.offset(mask_batch_offset),
+                output_ptr.offset(output_batch_offset),
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                scale,
+                num_keys,
+                num_partitions,
+                num_keys,
+                mask,
+                score_mod,
+                batch_idx,
+            )
     else:
         mha_decoding_single_batch_warp_shuffle[
             head_size=depth,
@@ -3299,6 +3389,484 @@ fn mha_decoding_single_batch[
     # It's because in online-softmax we only use the top 8x4 sub-matrix
     # in the 16x8 mma output for Nvidia GPU. It shouldn't matter for AMD
     constrained[group <= 8, "Only support GQA with group <= 8 for Nvidia."]()
+
+    var tid = ThreadIdx.x
+    var warp_id = warp_broadcast(tid // WARP_SIZE)
+    var lane = lane_id()
+
+    # Coordinates of the current warp.
+    warp_y, warp_x = divmod(warp_id, UInt(num_warps_n))
+
+    # The entire query block (BM x depth) is tiled in shared memory.
+    alias q_smem_size = BM * depth
+    var q_smem = external_memory[
+        Scalar[q_type],
+        address_space = AddressSpace.SHARED,
+        alignment = alignof[SIMD[q_type, simd_size]](),
+    ]()
+    var q_smem_iter = LayoutTensorIter[
+        q_type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+        alignment = q_smem.alignment,
+    ](
+        rebind[
+            __type_of(
+                LayoutTensorIter[
+                    q_type,
+                    Layout.row_major(BM, BK),
+                    address_space = AddressSpace.SHARED,
+                    alignment = q_smem.alignment,
+                ]().ptr
+            )
+        ](q_smem),
+        q_smem_size,
+    )
+
+    alias kv_smem_size = BN * depth
+    var k_smem = (q_smem + q_smem_size).bitcast[Scalar[k_type]]()
+    var k_smem_iter = LayoutTensorIter[
+        k_type,
+        Layout.row_major(BN, BK),
+        address_space = AddressSpace.SHARED,
+        circular=True,
+    ](k_smem, kv_smem_size)
+
+    var v_smem = (k_smem + kv_smem_size).bitcast[Scalar[v_type]]()
+    var v_smem_iter = LayoutTensorIter[
+        v_type,
+        Layout.row_major(BK, BN),
+        address_space = AddressSpace.SHARED,
+        circular=True,
+    ](v_smem, kv_smem_size)
+
+    var kv_head_idx = BlockIdx.y
+
+    alias mma_shape = get_mma_shape[q_type, get_accum_type[q_type]()]()
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
+    alias num_m_mmas = WM // MMA_M
+    alias num_n_mmas = WN // MMA_N
+
+    alias accum_type = get_accum_type[q_type]()
+    alias frag_size = get_fragment_size[mma_shape]()
+    alias p_frag_size = frag_size[2]
+    alias p_frag_simdwidth = p_frag_size // 2
+
+    var p_reg_tile = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation()
+
+    var output_reg_tile = LayoutTensor[
+        accum_type,
+        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
+        address_space = AddressSpace.LOCAL,
+    ].stack_allocation().fill(0.0)
+
+    # Rowwise max and sum for online softmax
+    var rowmax = stack_allocation[WM, accum_type]()
+    var rowsum = stack_allocation[WM, accum_type]()
+
+    @parameter
+    for i in range(Int(WM)):
+        rowmax[i] = min_or_neg_inf[accum_type]()
+        rowsum[i] = 0.0
+
+    # Shared memory for P = Q * K^t
+    # This overlaps key tile but are used at the same time i.e. no race condition.
+    var p_smem = (v_smem + kv_smem_size).bitcast[Scalar[v_type]]()
+    alias p_smem_size = BM * BN
+    var p_smem_iter = LayoutTensorIter[
+        v_type, Layout.row_major(BM, BK), address_space = AddressSpace.SHARED
+    ](p_smem, BM * BN)
+
+    # Scratch shared memory for reduction across warps.
+    var warp_scratch = LayoutTensor[
+        accum_type,
+        Layout.row_major(2 * num_warps_n, BM),
+        address_space = AddressSpace.SHARED,
+    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+
+    # Mask global memory iterator, seq_len = 1
+    # TODO: We currently need this to differentiate between two existing
+    # flash_attention kernels. Once we only have one we can just use
+    # max_cache_valid_length + 1.
+    var stride = num_keys if max_cache_valid_length == num_keys else max_cache_valid_length + 1
+    var kv_head_offset = Int(
+        kv_head_idx * group * stride
+    ) if mask_rank == 4 else 0
+    var warp_offset = warp_y * WM * num_keys + warp_x * WN
+
+    # Account for group query.
+    alias kv_num_heads = num_heads // group
+
+    var q_offset = depth * kv_head_idx * group
+
+    alias q_gmem_layout = Layout.row_major(BM, depth)
+    var q_gmem_block = LayoutTensor[q_type, q_gmem_layout, masked=True](
+        q_ptr + int(q_offset),
+        RuntimeLayout(
+            RuntimeTuple[q_gmem_layout.shape, unsigned=True](group, depth),
+            RuntimeTuple[q_gmem_layout.stride, unsigned=True](depth, 1),
+        ),
+    )
+    var q_gmem_iter = q_gmem_block.tiled_iterator[BM, BK, axis=1](0, 0)
+
+    # Loop over Key and Value tiles
+    var num_keys_per_partition = ceildiv(num_keys, num_partitions)
+    var start = num_keys_per_partition * BlockIdx.x
+    var end = min(num_keys, start + num_keys_per_partition)
+    var mask_warp_ptr = mask_ptr + Int(kv_head_offset) + Int(
+        warp_offset
+    ) + start
+
+    alias q_num_vecs = BM * BK // simd_size
+
+    alias async_copy_q_layout = Layout.row_major(
+        min(num_threads, q_num_vecs) * simd_size // BK, BK // simd_size
+    )
+
+    @always_inline
+    @parameter
+    fn _mask_tensor_row(
+        tensor: LayoutTensor, num_rows: Int
+    ) -> __type_of(tensor) as result:
+        return __type_of(tensor)(
+            tensor.ptr,
+            RuntimeLayout(
+                RuntimeTuple[tensor.layout.shape, unsigned=True](
+                    num_rows, tensor.dim(1)
+                ),
+                tensor.runtime_layout.stride,
+            ),
+        )
+
+    @parameter
+    for q_id in range(int(depth // BK)):
+        var q_smem_tile = q_smem_iter.next_unsafe(q_id)[]
+
+        copy_dram_to_sram_async[
+            thread_layout=async_copy_q_layout,
+            swizzle=True,
+            num_threads=num_threads,
+        ](
+            q_smem_tile.vectorize[1, simd_size](),
+            q_gmem_iter[].vectorize[1, simd_size](),
+        )
+
+        async_copy_commit_group()
+
+        q_gmem_iter._incr()
+
+    @always_inline
+    @parameter
+    fn loop_over_kvcache[
+        tile_size: Int, not_last_iter: Bool
+    ](kv_tile_start_row: Int, end: Int):
+        var k_ptr = k.block_paged_ptr[k_type, BN](
+            batch_idx, kv_tile_start_row, kv_head_idx, 0
+        )
+        var k_gmem_block = LayoutTensor[
+            k_type,
+            Layout(
+                IntTuple(Int(BN), Int(depth)),
+                IntTuple(Int(kv_num_heads * depth), 1),
+            ),
+            masked = not not_last_iter,
+        ](k_ptr)
+        var k_gmem_iter = k_gmem_block.tiled_iterator[BN, BK, axis=1](0, 0)
+
+        var kv_tile_num_rows = min(int(BN), end - kv_tile_start_row)
+
+        _ = p_reg_tile.fill(0)
+
+        alias kv_num_vecs = BN * BK // simd_size
+        alias async_copy_k_layout = Layout.row_major(
+            min(num_threads, kv_num_vecs)
+            * simd_size
+            // k_smem_iter.layout.stride[0].value(),
+            k_smem_iter.layout.stride[0].value() // simd_size,
+        )
+
+        # load K tile into smem
+        @parameter
+        for k_id in range(int(depth // BK)):
+            var k_smem_tile = k_smem_iter.next_unsafe(k_id)[]
+
+            @parameter
+            if not not_last_iter:
+                k_tensor = _mask_tensor_row(k_gmem_iter[], kv_tile_num_rows)
+            else:
+                k_tensor = k_gmem_iter[]
+
+            copy_dram_to_sram_async[
+                thread_layout=async_copy_k_layout,
+                swizzle=True,
+                num_threads=num_threads,
+            ](
+                k_smem_tile.vectorize[1, simd_size](),
+                k_tensor.vectorize[1, simd_size](),
+            )
+
+            async_copy_commit_group()
+
+            k_gmem_iter._incr()
+
+        async_copy_wait_all()
+        barrier()
+
+        attn_mma[
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            depth // BK,
+            True,  # transpose B
+            swizzle_a=True,
+        ](
+            p_reg_tile,
+            q_smem_iter,
+            q_smem_iter,
+            k_smem_iter,
+        )
+
+        scale_and_mask_helper[
+            num_n_mmas=num_n_mmas,
+            WN=WN,
+            MMA_N=MMA_N,
+            simd_width=p_frag_simdwidth,
+            use_mask_tensor=use_mask_tensor,
+            use_score_mod=use_score_mod,
+            group=group,
+            mask_rank=mask_rank,
+        ](
+            p_reg_tile,
+            mask_warp_ptr,
+            scale,
+            num_keys,
+            kv_tile_num_rows,
+            lane,
+            warp_id,
+            mask,
+            score_mod,
+            kv_tile_start_row,
+            stride,
+        )
+        # Increment mask to next BM x BN block.
+        mask_warp_ptr += BN
+
+        # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
+        # G <= 8 typically holds
+        var output_reg_vecs = output_reg_tile.tile[
+            num_m_mmas * num_n_mmas, p_frag_size // 2
+        ](0, 0).vectorize[1, p_frag_size // 2]()
+        var p_reg_vecs = p_reg_tile.tile[
+            num_m_mmas * num_n_mmas, p_frag_size // 2
+        ](0, 0).vectorize[1, p_frag_size // 2]()
+
+        _online_softmax_iter_for_mma_output[
+            accum_type,
+            Layout.row_major(num_m_mmas, num_n_mmas),
+            Layout.row_major(num_warps_m, num_warps_n),
+            Layout.row_major(8, 4),
+        ](
+            output_reg_vecs,
+            p_reg_vecs,
+            warp_scratch.tile[num_warps_n, WM](0, int(warp_y)),
+            rowmax,
+            rowsum,
+        )
+
+        var v_ptr = v.block_paged_ptr[v_type, BN](
+            batch_idx, kv_tile_start_row, kv_head_idx, 0
+        )
+        var v_gmem_block = LayoutTensor[
+            v_type,
+            Layout(
+                IntTuple(Int(BN), Int(depth)),
+                IntTuple(Int(kv_num_heads * depth), 1),
+            ),
+            masked = not not_last_iter,
+        ](v_ptr)
+        var v_gmem_iter = v_gmem_block.tiled_iterator[BK, BN, axis=0](0, 0)
+
+        alias async_copy_v_layout = Layout.row_major(
+            min(num_threads, kv_num_vecs)
+            * simd_size
+            // v_smem_iter.layout.stride[0].value(),
+            v_smem_iter.layout.stride[0].value() // simd_size,
+        )
+
+        # load V tile into smem
+        @parameter
+        for v_id in range(int(BN // BK)):
+            var v_smem_tile = v_smem_iter.next_unsafe(v_id)[]
+
+            @parameter
+            if not not_last_iter:
+                var num_rows_bound = max(
+                    0, end - (kv_tile_start_row + v_id * BK)
+                )
+                v_tensor = _mask_tensor_row(v_gmem_iter[], num_rows_bound)
+            else:
+                v_tensor = v_gmem_iter[]
+
+            copy_dram_to_sram_async[
+                thread_layout=async_copy_v_layout,
+                swizzle = v_smem_tile.dtype.is_half_float(),
+                num_threads=num_threads,
+            ](
+                v_smem_tile.vectorize[1, simd_size](),
+                v_tensor.vectorize[1, simd_size](),
+            )
+
+            async_copy_commit_group()
+
+            v_gmem_iter._incr()
+
+        # Copy score fragments to shared memory with swizzling to resolve bank
+        # conflicts for ldmatrix in the 2nd matmul.
+        _copy_frag_to_smem[BM, BN, BK, WM, WN, MMA_M, MMA_N, p_frag_simdwidth](
+            p_smem_iter, p_reg_tile, warp_x, warp_y
+        )
+        async_copy_wait_all()
+        barrier()
+
+        attn_mma[
+            BM,
+            BN,
+            BK,
+            WM,
+            WN,
+            BN // BK,
+            False,  # transpose B
+            swizzle_a=True,
+        ](
+            output_reg_tile,
+            p_smem_iter,
+            p_smem_iter,
+            v_smem_iter,
+        )
+
+    tile_and_unswitch[loop_over_kvcache, VariadicList[Int](BN)](start, end)
+
+    # Apply softmax denumerator.
+    @parameter
+    for m_mma in range(Int(num_m_mmas)):
+        var rowsum_inv0 = 1.0 / rowsum[2 * m_mma]
+
+        @parameter
+        for n_mma in range(Int(num_n_mmas)):
+            output_reg_tile[n_mma, 0] *= rowsum_inv0
+            output_reg_tile[n_mma, 1] *= rowsum_inv0
+
+    if num_partitions > 1:
+        if ThreadIdx.x % 4 == 0 and ThreadIdx.x < 4 * group:
+            var row_sum = rowsum[0]
+            var row_max = rowmax[0]
+            var q_head_idx = kv_head_idx * group + ThreadIdx.x // 4
+            exp_sum_ptr[q_head_idx] = row_sum
+            qk_max_ptr[q_head_idx] = row_max
+
+    # Pack resutls in shared memory for wider simd width.
+    var accum_smem_warp_tile = LayoutTensor[
+        output_type,
+        Layout.row_major(WM, WN),
+        address_space = AddressSpace.SHARED,
+    ](q_smem.bitcast[Scalar[output_type]]() + warp_id * WM * WN)
+
+    alias swizzle = make_swizzle[
+        num_rows = MMA_M // 2, row_size=WN, access_size=MMA_N
+    ]()
+    copy_local_to_sram[thread_layout = Layout.row_major(8, 4), swizzle=swizzle](
+        accum_smem_warp_tile.vectorize[1, 2](),
+        output_reg_tile.vectorize[1, 2]().transpose(),
+    )
+
+    # Guard writing to shared memory.
+    barrier()
+
+    alias output_gmem_layout = Layout.row_major(BM, depth)
+    var output_gmem_runtime_layout = RuntimeLayout(
+        RuntimeTuple[output_gmem_layout.shape, unsigned=True](group, depth),
+        RuntimeTuple[output_gmem_layout.stride, unsigned=True](depth, 1),
+    )
+    var output_gmem_tile = LayoutTensor[
+        output_type,
+        Layout.row_major(BM, depth),
+        masked=True,
+    ](output_ptr + q_offset, output_gmem_runtime_layout)
+    var output_gmem_warp_tile = output_gmem_tile.tile[WM, WN](
+        int(warp_y), int(warp_x)
+    )
+
+    copy_sram_to_dram[
+        thread_layout = Layout.row_major(
+            WARP_SIZE * simd_size // WN, WN // simd_size
+        ),
+        swizzle=swizzle,
+    ](
+        output_gmem_warp_tile.vectorize[1, simd_size](),
+        accum_smem_warp_tile.vectorize[1, simd_size](),
+    )
+
+
+fn mha_decoding_single_batch_pipelined[
+    mask_rank: Int,
+    q_type: DType,
+    k_t: MHAOperand,
+    v_t: MHAOperand,
+    mask_type: DType,
+    output_type: DType,
+    mask_t: MHAMask,
+    score_mod_t: ScoreModTrait,
+    *,
+    BM: UInt,  # number of queries per block
+    BN: UInt,  # number of keys per block
+    BK: UInt,  # tile size in depth dimension
+    WM: UInt,
+    WN: UInt,
+    depth: UInt,
+    num_heads: UInt,
+    num_threads: UInt,
+    num_pipeline_stages: UInt,
+    group: UInt = 1,
+    use_mask_tensor: Bool = True,
+    use_score_mod: Bool = False,
+](
+    q_ptr: UnsafePointer[Scalar[q_type]],
+    k: k_t,
+    v: v_t,
+    mask_ptr: UnsafePointer[Scalar[mask_type]],
+    output_ptr: UnsafePointer[Scalar[output_type]],
+    exp_sum_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    qk_max_ptr: UnsafePointer[Scalar[get_accum_type[q_type]()]],
+    scale: Float32,
+    num_keys: UInt,
+    num_partitions: UInt,
+    max_cache_valid_length: UInt,  # longest KV cache entry
+    mask: mask_t,
+    score_mod: score_mod_t,
+    batch_idx: Int,
+):
+    """Flash attention v2 algorithm."""
+    alias k_type = k_t.type
+    alias v_type = v_t.type
+    constrained[q_type == k_type and k_type == v_type]()
+
+    alias simd_size = simdwidthof[q_type]()
+
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
+
+    constrained[
+        num_warps_m * num_warps_n == (num_threads // WARP_SIZE),
+        "Number of warps doesn't match warp tile sizes.",
+    ]()
 
     var tid = ThreadIdx.x
     var warp_id = warp_broadcast(tid // WARP_SIZE)
