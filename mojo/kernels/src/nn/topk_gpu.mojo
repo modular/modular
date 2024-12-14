@@ -568,7 +568,7 @@ fn _topk_gpu[
     )
 
     var num_elem_reduced = ceildiv(
-        batch_size * num_blocks_per_input_ * K, WARP_SIZE
+        num_blocks_per_input_ * K, WARP_SIZE
     ) * WARP_SIZE
     var num_bytes_sample_cache = K * (
         sizeof[Scalar[type]]() + sizeof[DType.index]()
