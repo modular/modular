@@ -173,9 +173,6 @@ def execute_fused_qkv_matmul[
         v_block_device.tensor,
         valid_lengths,
         is_context_encoding,
-        List[Int](
-            -1,
-        ),  # seq_ids
         num_layers,
         batch_size,
     )
@@ -184,9 +181,6 @@ def execute_fused_qkv_matmul[
         v_block_host.tensor,
         valid_lengths_host,
         is_context_encoding,
-        List[Int](
-            -1,
-        ),  # seq_ids
         num_layers,
         batch_size,
     )

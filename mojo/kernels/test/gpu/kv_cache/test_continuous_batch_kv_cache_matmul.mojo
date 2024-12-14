@@ -55,9 +55,6 @@ def execute_fused_qkv_matmul[
     alias fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     alias num_blocks = 32
     alias CollectionType = ContinuousBatchingKVCacheCollection[type, kv_params]
-    seq_ids = List[Int]()
-    for i in range(batch_size):
-        seq_ids.append(-1)
 
     debug_assert(
         batch_size < num_blocks,
@@ -207,14 +204,12 @@ def execute_fused_qkv_matmul[
         cache_lengths_dev.tensor,
         lookup_table_device.tensor,
         is_context_encoding,
-        seq_ids,
     )
     var kv_collection_host = CollectionType(
         kv_block_host.tensor,
         cache_lengths_host.tensor,
         lookup_table_host.tensor,
         is_context_encoding,
-        seq_ids,
     )
     _fused_qkv_matmul_kv_cache_impl[
         kv_collection_device.CacheType,

@@ -164,7 +164,6 @@ def execute_flash_attention[
         value_cache=v_block_device.tensor,
         cache_lengths=valid_lengths,
         is_context_encoding=is_context_encoding,
-        seq_ids=List[Int](-1),
         num_layers=num_layers,
         batch_size=batch_size,
     )
@@ -174,7 +173,6 @@ def execute_flash_attention[
         value_cache=v_block_host.tensor,
         cache_lengths=valid_lengths,
         is_context_encoding=is_context_encoding,
-        seq_ids=List[Int](-1),
         num_layers=num_layers,
         batch_size=batch_size,
     )

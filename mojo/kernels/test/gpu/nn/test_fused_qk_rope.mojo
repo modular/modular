@@ -149,7 +149,6 @@ def test_fused_qk_rope[type: DType](ctx: DeviceContext) -> None:
         ),  # passing as a dummy val, this isn't used.
         cache_lengths=rebind[NDBuffer[DType.uint32, 1]](cache_lengths.tensor),
         is_context_encoding=False,
-        seq_ids=List[Int](-1),
         num_layers=num_layers,
         batch_size=batch_size,
     )
