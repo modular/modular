@@ -98,7 +98,6 @@ def test_fused_qk_rope[type: DType]() -> None:
             ),
         ),
         is_context_encoding=False,
-        seq_ids=List[Int](-1),
         num_layers=num_layers,
         batch_size=batch_size,
     )

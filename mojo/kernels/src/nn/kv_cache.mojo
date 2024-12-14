@@ -2398,7 +2398,6 @@ def print_kv_cache_cont_batch_generic_gpu[
         lookup_table_host_nd,
         kv_collection.max_seq_length,
         kv_collection.max_cache_length,
-        kv_collection.seq_ids,
     )
 
     var valid_lengths_host_ptr = UnsafePointer[UInt32].alloc(
@@ -2446,20 +2445,11 @@ fn _contiguous_kv_cache_collection[
 ):
     # Marshal NDBuffers into arguments expected by the
     # ContiguousKVCacheCollection constructor.
-
-    seq_ids_list = List[Int]()
-    for _ in range(int(batch_size[0])):
-        # seq_ids are only used in Mojo for this type,
-        # but this op is only used by Python.
-        # Just fill it with dummy values.
-        seq_ids_list.append(-1)
-
     return __type_of(result)(
         key_cache,
         value_cache,
         cache_lengths,
         is_cache_empty[0],
-        seq_ids_list,
         int(num_layers[0]),
         int(batch_size[0]),
     )
@@ -2476,21 +2466,12 @@ fn _continuous_batch_kv_cache_collection[
 ):
     # Marshal NDBuffers into arguments expected by the
     # ContiguousKVCacheCollection constructor.
-    batch_size = lookup_table.dim[0]()
-    seq_ids_list = List[Int]()
-    for _ in range(batch_size):
-        # seq_ids are only used in Mojo for this type,
-        # but this op is only used by Python.
-        # Just fill it with dummy values.
-        seq_ids_list.append(-1)
-
     return __type_of(result)(
         blocks=blocks,
         cache_lengths=cache_lengths,
         lookup_table=lookup_table,
         max_seq_length=max_lengths[Index(0, 0)],
         max_cache_length=max_lengths[Index(0, 1)],
-        seq_ids=seq_ids_list,
     )
 
 
@@ -2802,21 +2783,12 @@ fn generic_get_paged_cache[
     max_lengths: NDBuffer[DType.uint32, 2],
     out result: PagedKVCacheCollection[type, kv_params],
 ):
-    batch_size = lookup_table.dim[0]()
-    seq_ids_list = List[Int]()
-    for _ in range(batch_size):
-        # seq_ids are only used in Mojo for this type,
-        # but this op is only used by Python.
-        # Just fill it with dummy values.
-        seq_ids_list.append(-1)
-
     return __type_of(result)(
         blocks=blocks,
         cache_lengths=cache_lengths,
         lookup_table=lookup_table,
         max_seq_length=max_lengths[Index(0, 0)],
         max_cache_length=max_lengths[Index(0, 1)],
-        seq_ids=seq_ids_list,
     )
 
 
