@@ -52,7 +52,6 @@ struct ManagedTensorSlice[
 
     var _ptr: UnsafePointer[Scalar[type]]
     var _spec: RuntimeTensorSpec[type, rank]
-    var _start_offset: Int
     var _strides: IndexList[rank]
 
     fn __init__(
@@ -94,7 +93,7 @@ struct ManagedTensorSlice[
         for i in range(rank):
             strides[i] = step[i] * slicer_strides[i]
 
-        self = Self(ptr, slice_spec, start_offset, strides)
+        self = Self(ptr.offset(start_offset), slice_spec, strides)
 
     fn __init__(
         mut self,
@@ -104,7 +103,6 @@ struct ManagedTensorSlice[
         self._ptr = ptr
         self._spec = RuntimeTensorSpec[type, rank](shape)
         self._strides = _row_major_strides(self._spec)
-        self._start_offset = 0
 
     fn __init__(
         mut self,
@@ -115,7 +113,6 @@ struct ManagedTensorSlice[
         self = Self(
             ptr,
             RuntimeTensorSpec[type, rank](shape),
-            0,
             strides,
         )
 
@@ -146,7 +143,7 @@ struct ManagedTensorSlice[
         Returns:
           The value at the specified indices.
         """
-        var offset = self._start_offset + _dot_prod(indices, self._strides)
+        var offset = _dot_prod(indices, self._strides)
         return self._ptr[offset]
 
     @always_inline
@@ -187,7 +184,7 @@ struct ManagedTensorSlice[
           val: The value to store.
 
         """
-        var offset = self._start_offset + _dot_prod(indices, self._strides)
+        var offset = _dot_prod(indices, self._strides)
         self._ptr[offset] = val
 
     fn spec(self) -> TensorSpec:
