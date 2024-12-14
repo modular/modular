@@ -157,24 +157,6 @@ from nn.kv_cache import (
     fused_qkv_matmul_kv_cache_h2_d128_bshd_continuous_batch,
     fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch,
     fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch,
-    kv_cache_length_h1_d16_bshd_bf16,
-    kv_cache_length_h1_d16_bshd_bf16_continuous_batch,
-    kv_cache_length_h1_d16_bshd_f32,
-    kv_cache_length_h1_d16_bshd_f32_continuous_batch,
-    kv_cache_length_h6_d48_bshd_f32,
-    kv_cache_length_h8_d32_bshd_bf16,
-    kv_cache_length_h8_d32_bshd_bf16_continuous_batch,
-    kv_cache_length_h8_d32_bshd_f32,
-    kv_cache_length_h8_d32_bshd_f32_continuous_batch,
-    kv_cache_length_h8_d64_bshd_bf16,
-    kv_cache_length_h8_d64_bshd_bf16_continuous_batch,
-    kv_cache_length_h8_d64_bshd_f32,
-    kv_cache_length_h8_d64_bshd_f32_continuous_batch,
-    kv_cache_length_h8_d128_bshd_bf16,
-    kv_cache_length_h8_d128_bshd_bf16_continuous_batch,
-    kv_cache_length_h8_d128_bshd_f32,
-    kv_cache_length_h8_d128_bshd_f32_continuous_batch,
-    kv_cache_length_h32_d128_bshd_bf16_continuous_batch,
 )
 from nn.kv_cache_ragged import (
     flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged,
@@ -351,24 +333,6 @@ fn MOGGExport():
     alias _print_kv_cache_cont_batch_h8_d128 = print_kv_cache_cont_batch_h8_d128
     alias _print_kv_cache_cont_batch_h16_d128 = print_kv_cache_cont_batch_h16_d128
     alias _print_kv_cache_cont_batch_h32_d128 = print_kv_cache_cont_batch_h32_d128
-    alias _kv_cache_length_h8_d128_bshd_bf16 = kv_cache_length_h8_d128_bshd_bf16
-    alias _kv_cache_length_h6_d48_bshd_f32 = kv_cache_length_h6_d48_bshd_f32
-    alias _kv_cache_length_h8_d128_bshd_f32 = kv_cache_length_h8_d128_bshd_f32
-    alias _kv_cache_length_h1_d16_bshd_f32 = kv_cache_length_h1_d16_bshd_f32
-    alias _kv_cache_length_h1_d16_bshd_bf16 = kv_cache_length_h1_d16_bshd_bf16
-    alias _kv_cache_length_h8_d32_bshd_f32 = kv_cache_length_h8_d32_bshd_f32
-    alias _kv_cache_length_h8_d32_bshd_bf16 = kv_cache_length_h8_d32_bshd_bf16
-    alias _kv_cache_length_h8_d64_bshd_f32 = kv_cache_length_h8_d64_bshd_f32
-    alias _kv_cache_length_h8_d64_bshd_bf16 = kv_cache_length_h8_d64_bshd_bf16
-    alias _kv_cache_length_h8_d128_bshd_f32_continuous_batch = kv_cache_length_h8_d128_bshd_f32_continuous_batch
-    alias _kv_cache_length_h8_d128_bshd_bf16_continuous_batch = kv_cache_length_h8_d128_bshd_bf16_continuous_batch
-    alias _kv_cache_length_h32_d128_bshd_bf16_continuous_batch = kv_cache_length_h32_d128_bshd_bf16_continuous_batch
-    alias _kv_cache_length_h8_d32_bshd_f32_continuous_batch = kv_cache_length_h8_d32_bshd_f32_continuous_batch
-    alias _kv_cache_length_h8_d32_bshd_bf16_continuous_batch = kv_cache_length_h8_d32_bshd_bf16_continuous_batch
-    alias _kv_cache_length_h8_d64_bshd_f32_continuous_batch = kv_cache_length_h8_d64_bshd_f32_continuous_batch
-    alias _kv_cache_length_h8_d64_bshd_bf16_continuous_batch = kv_cache_length_h8_d64_bshd_bf16_continuous_batch
-    alias _kv_cache_length_h1_d16_bshd_f32_continuous_batch = kv_cache_length_h1_d16_bshd_f32_continuous_batch
-    alias _kv_cache_length_h1_d16_bshd_bf16_continuous_batch = kv_cache_length_h1_d16_bshd_bf16_continuous_batch
     alias _fused_qkv_matmul_kv_cache_h6_d48_bshd = fused_qkv_matmul_kv_cache_h6_d48_bshd
     alias _fused_qkv_matmul_kv_cache_h8_d128_bshd = fused_qkv_matmul_kv_cache_h8_d128_bshd
     alias _fused_qkv_matmul_kv_cache_h1_d16_bshd = fused_qkv_matmul_kv_cache_h1_d16_bshd
