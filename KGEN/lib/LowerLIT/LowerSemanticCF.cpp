@@ -295,31 +295,34 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   // Move the loop's body to the HLCF::LoopOp's body.
   newBody->getOperations().splice(newBody->end(), bodyBlock.getOperations());
 
-  // Move any 'else' code into the exit block.  If the 'else' code falls through
-  // then it will break out of the loop, for now we leave it ending with
-  // lit.loop.yield.
   Block *newExitBlock = builder.createBlock(&condOp.getElseRegion());
-  newExitBlock->getOperations().splice(newExitBlock->end(),
-                                       elseBlock.getOperations());
 
-  // Now that the code is set up right, we can recursively lower any semantic
-  // control flow ops.  Start by lowering the 'else' block since it is logically
-  // NOT inside the loop even though it is nested under it in the AST.  The
+  // Lower the body of the 'else' block before we move it over.  It is logically
+  // NOT inside the loop even though it is nested under it in the HLCF AST. The
   // 'currentLoop' loop is set to the parent loop so any break or continue from
   // the 'else' logic will go to the right place.
   bool blockRaises = false, blockBreaks = false, blockFallThroughs = false;
-  lowerBlock(*newExitBlock, blockRaises, blockBreaks, blockFallThroughs);
+  lowerBlock(elseBlock, blockRaises, blockBreaks, blockFallThroughs);
   enclosingBlockDoesRaise |= blockRaises;
   enclosingBlockDoesBreak |= blockBreaks;
 
-  // Remove the lit.loop.yield at the end of the block if present, replacing it
+  // Now that we know how the exit block works, we can look at its terminator.
+  // If it falled through, it will end with lit.loop.yield: we replace it
   // with a break from this loop.  Other exits like return/break/continue in the
   // else block will already be rewritten if they are present.
+  //
+  // Regardless we move the terminator over to the new exit block: we need the
+  // IR to be structured correctly when processing the whole loop, but cannot
+  // reprocess the general code that might have been in the exit region.  We'll
+  // move the rest of the code over later.
   if (blockFallThroughs) {
-    assert(isa<LIT::LoopYieldOp>(newExitBlock->getTerminator()));
-    newExitBlock->getTerminator()->erase();
+    assert(isa<LIT::LoopYieldOp>(elseBlock.getTerminator()));
+    elseBlock.getTerminator()->erase();
     builder.setInsertionPointToEnd(newExitBlock);
     builder.create<HLCF::BreakOp>(ValueRange{}, newLoop.getLabelAttr());
+  } else {
+    // Move the other general terminator over so things are structured right.
+    elseBlock.getTerminator()->moveBefore(newExitBlock, newExitBlock->end());
   }
 
   // Now that the else logic is set, lower the entire loop body to handle the
@@ -329,17 +332,21 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   lowerBlock(*newBody, blockRaises, blockBreaks, blockFallThroughs);
   enclosingBlockDoesRaise |= blockRaises;
 
+  // Now that the whole loop contents are lowered, we can move over the
+  // rest of the pre-lowered 'else' contents.
+  newExitBlock->getOperations().splice(
+      Block::iterator(newExitBlock->getTerminator()),
+      elseBlock.getOperations());
+
   // If the loop body never breaks, then the code after it is unreachable.
   if (!blockBreaks) {
     auto b = handleSemanticTerminatorOp(*newLoop, "infinite loop");
     b.create<UnreachableOp>(loopOp.getLoc());
-    loopOp.erase();
-    return true;
   }
 
-  // Erase the lit.loop.
+  // Erase the lit.loop, and return true if it was an infinite loop.
   loopOp.erase();
-  return false;
+  return !blockBreaks;
 }
 
 /// Emit the semantic control-flow IR corresponding to a raise statement.
