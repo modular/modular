@@ -248,12 +248,14 @@ def test_cross_attention(
             start:stop
         ]
 
-    attention_mask = torch.ones([1, 1, max(seq_lens), 4100], dtype=torch.bool)
+    attention_mask = torch.ones(
+        [1, 1, max(seq_lens), num_tiles * num_vision_tokens], dtype=torch.bool
+    )
     expected = (
         torch_cross_attn(
             hidden_states=hidden_states_padded,
             cross_attention_states=cross_attention_states.reshape(
-                [2, num_tiles * num_vision_tokens, config.hidden_size]
+                [batch_size, num_tiles * num_vision_tokens, config.hidden_size]
             ),
             attention_mask=attention_mask,
         )[0]
