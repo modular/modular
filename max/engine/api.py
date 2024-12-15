@@ -37,7 +37,9 @@ ExecResultType = Union[
 ]
 # Need to use tuple instead of Union to ensure that Python 3.9 support works.
 ScalarType = (int, float, bool, np.generic)
-InputType = Union[Tensor, MojoValue, int, float, bool, np.generic]
+InputType = Union[
+    DLPackCompatible, Tensor, MojoValue, int, float, bool, np.generic
+]
 
 
 def _map_execute_kwarg(
