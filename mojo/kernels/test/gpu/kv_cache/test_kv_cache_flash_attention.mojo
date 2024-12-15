@@ -168,15 +168,6 @@ def execute_flash_attention[
         batch_size=batch_size,
     )
 
-    kv_cache_host = ContiguousKVCacheCollection[type, kv_params](
-        key_cache=k_block_host.tensor,
-        value_cache=v_block_host.tensor,
-        cache_lengths=valid_lengths,
-        is_context_encoding=is_context_encoding,
-        num_layers=num_layers,
-        batch_size=batch_size,
-    )
-
     valid_lengths_host = HostNDBuffer[DType.uint32, 1](Index(batch_size))
     valid_lengths_device = DeviceNDBuffer[DType.uint32, 1](
         Index(batch_size),
