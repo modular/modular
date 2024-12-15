@@ -9,16 +9,16 @@ from pathlib import Path
 from max.pipelines.config import WeightsFormat, PipelineConfig
 
 
-def test_config_init__raises_with_none_weights_path():
+def test_config_init__raises_with_no_huggingface_repo_id():
     # We expect this to fail.
-    with pytest.raises(ValueError):
-        _ = PipelineConfig(architecture="test", weight_path=None)  # type: ignore
+    with pytest.raises(TypeError):
+        _ = PipelineConfig(weight_path="file.gguf")  # type: ignore
 
 
 def test_config_init__reformats_with_str_weights_path():
     # We expect this to convert the string.
     config = PipelineConfig(
-        architecture="test",
+        huggingface_repo_id="modularai/llama-3.1",
         weight_path="file.path",  # type: ignore
     )
 
@@ -28,7 +28,9 @@ def test_config_init__reformats_with_str_weights_path():
 
 
 def test_config_weights_format__raises_with_no_weights_path():
-    config = PipelineConfig(architecture="test", weight_path=[])
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1", weight_path=[]
+    )
 
     with pytest.raises(ValueError):
         config.weights_format
@@ -36,7 +38,7 @@ def test_config_weights_format__raises_with_no_weights_path():
 
 def test_config_weights_format__raises_with_bad_weights_path():
     config = PipelineConfig(
-        architecture="test",
+        huggingface_repo_id="modularai/llama-3.1",
         weight_path=[Path("this_is_a_random_weight_path_without_extension")],
     )
 
@@ -46,7 +48,7 @@ def test_config_weights_format__raises_with_bad_weights_path():
 
 def test_config_weights_format__raises_with_conflicting_weights_path():
     config = PipelineConfig(
-        architecture="test",
+        huggingface_repo_id="modularai/llama-3.1",
         weight_path=[
             Path("this_is_a_random_weight_path_without_extension"),
             Path("this_is_a_gguf_file.gguf"),
@@ -59,7 +61,7 @@ def test_config_weights_format__raises_with_conflicting_weights_path():
 
 def test_config_weights_format__correct_weights_format():
     config = PipelineConfig(
-        architecture="test",
+        huggingface_repo_id="modularai/llama-3.1",
         weight_path=[Path("model_a.gguf")],
     )
 
@@ -74,7 +76,6 @@ def test_config_weights_format__correct_weights_format():
 
 def test_validate_huggingface_repo_id__correct_repo_id_provided():
     config = PipelineConfig(
-        architecture="test",
         huggingface_repo_id="modularai/llama-3.1",
     )
 
@@ -84,14 +85,12 @@ def test_validate_huggingface_repo_id__correct_repo_id_provided():
 def test_validate_huggingface_repo_id__bad_repo_provided():
     with pytest.raises(Exception):
         _ = PipelineConfig(
-            architecture="test",
             huggingface_repo_id="bert-base-asdfasdf",
         )
 
 
 def test_hf_config_retrieval():
     config = PipelineConfig(
-        architecture="test",
         huggingface_repo_id="modularai/llama-3.1",
     )
 

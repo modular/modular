@@ -441,6 +441,7 @@ class MistralPipelineOracle(PipelineOracle):
         config = pipelines.PipelineConfig(
             architecture="MistralForCausalLM",
             device_specs=device_specs,
+            huggingface_repo_id="mistralai/Mistral-Nemo-Instruct-2407",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             weight_path=[
                 pipelines.HuggingFaceFile(

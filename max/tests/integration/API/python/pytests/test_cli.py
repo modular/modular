@@ -178,17 +178,19 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
+            "--huggingface-repo-id",
+            "modularai/replit-code-1.5",
             "--trust-remote-code",
         ],
         expected={
             "trust_remote_code": True,
         },
-        valid=False,
+        valid=True,
     ),
     TestCommand(
         args=[
-            "--architecture",
-            "LlamaForCausalLM",
+            "--huggingface-repo-id",
+            "modularai/replit-code-1.5",
             "--max-length",
             "10",
         ],
@@ -200,6 +202,8 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
+            "--huggingface-repo-id",
+            "modularai/replit-code-1.5",
             "--architecture",
             "LlamaForCausalLM",
             "--cache-strategy",
@@ -213,6 +217,8 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
+            "--huggingface-repo-id",
+            "modularai/replit-code-1.5",
             "--architecture",
             "LlamaForCausalLM",
             "--max-length",
@@ -227,6 +233,8 @@ VALID_COMMANDS = [
     ),
     TestCommand(
         args=[
+            "--huggingface-repo-id",
+            "modularai/replit-code-1.5",
             "--architecture",
             "LlamaForCausalLM",
             "--max-length",

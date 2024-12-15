@@ -181,6 +181,7 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine():
 
     config = PipelineConfig(
         architecture="not_registered",
+        huggingface_repo_id="modularai/llama-3.1",
         # This forces it to fail if we dont have it.
         engine=PipelineEngine.MAX,
     )
@@ -195,6 +196,7 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine():
 
     config = PipelineConfig(
         architecture="not_registered",
+        huggingface_repo_id="modularai/llama-3.1",
     )
 
     config = PIPELINE_REGISTRY.validate_pipeline_config(config)
@@ -207,6 +209,7 @@ def test_registry__test_retrieve_factory_with_known_architecture():
 
     config = PipelineConfig(
         architecture="LlamaForCausalLM",
+        huggingface_repo_id="modularai/llama-3.1",
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)

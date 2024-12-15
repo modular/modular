@@ -19,7 +19,6 @@ async def test_tokenizer__encode_and_decode():
     encoding = SupportedEncoding.q4_k
     tokenizer = TextTokenizer(
         PipelineConfig(
-            architecture="llama",
             version="3.1",
             quantization_encoding=encoding,
             huggingface_repo_id="modularai/llama-3.1",
