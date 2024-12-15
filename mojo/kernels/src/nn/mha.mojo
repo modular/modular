@@ -4883,9 +4883,6 @@ fn _naive_attention_with_transpose[
     var vt = NDBuffer[type, 4](
         vt_ptr, Index(batch_size, num_heads, num_keys, depth)
     )
-    var score = NDBuffer[type, 4](
-        score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
-    )
     var ot = NDBuffer[type, 4](
         ot_ptr, Index(batch_size, num_heads, seq_len, depth)
     )
