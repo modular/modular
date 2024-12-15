@@ -3,8 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# TODO: KERN-1335
-# REQUIRES: DISABLED
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from pathlib import Path
@@ -181,7 +179,7 @@ def test_threadid_compile():
     # CHECK-LABEL: @test_compile_gcn_load_store_
     # CHECK: llvm.amdgcn.workitem.id.x
     # CHECK: %[[VAR:.*]] = tail call ptr addrspace(4) @llvm.amdgcn.implicitarg.ptr()
-    # CHECK: getelementptr inbounds i8, ptr addrspace(4) %[[VAR]], i64 12
+    # CHECK: getelementptr inbounds nuw i8, ptr addrspace(4) %[[VAR]], i64 12
     print(
         _compile_code_asm[
             load_store, target=MI300X_TARGET, emission_kind="llvm-opt"
