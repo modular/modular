@@ -1812,8 +1812,8 @@ def _print_cache[
         var total_cache_length = int(
             valid_lengths[b_idx] + cache.cache_length(b_idx)
         )
-        for t_idx in range(min(num_to_print, total_cache_length)):
-            for h in range(kv_collection.kv_params.num_heads):
+        for h in range(kv_collection.kv_params.num_heads):
+            for t_idx in range(min(num_to_print, total_cache_length)):
                 for hd in range(
                     min(
                         num_to_print,
@@ -1928,6 +1928,9 @@ def print_kv_cache_cont_batch_generic_gpu[
     var v_cache = host_kv_collection.get_value_cache[
         host_kv_collection.CacheType
     ](int(layer_idx))
+
+    # Bring host buffers in sync with device buffers.
+    dev_ctx.synchronize()
 
     print("K:")
     _print_cache(k_cache, host_kv_collection, valid_lengths, is_print_compact)
