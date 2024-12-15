@@ -92,7 +92,7 @@ def mo_listio_model_path(modular_path: Path) -> Path:
 
 def test_execute_success(session: InferenceSession, mo_model_path: Path):
     model = session.load(mo_model_path)
-    output = model.execute(np.ones(5, dtype=np.float32))  # type: ignore
+    output = model.execute(np.ones(5, dtype=np.float32))
     assert len(output) == 1
     assert np.allclose(
         output[0].to_numpy(),  # type: ignore
@@ -313,15 +313,15 @@ def test_scalar_inputs(session: InferenceSession, scalar_input_path: Path):
     scalar = Tensor.scalar(3, dtype=DType.int32)
     vector = np.arange(1, 6, dtype=np.int32)
 
-    output = model.execute(scalar, vector)[0]  # type: ignore
+    output = model.execute(scalar, vector)[0]
     assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))  # type: ignore
 
     # We should also be able to execute with raw Python scalars.
-    output = model.execute(3, vector)[0]  # type: ignore
+    output = model.execute(3, vector)[0]
     assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))  # type: ignore
 
     # We should also be able to execute with numpy scalars.
-    output = model.execute(np.int32(3), vector)[0]  # type: ignore
+    output = model.execute(np.int32(3), vector)[0]
     assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))  # type: ignore
 
 
@@ -379,8 +379,8 @@ def test_execute_multi_framework(
     )
     np_input = np.ones((1, 3, 100, 100))
     np_input[:, 1, :, :] *= -1
-    onnx_output = onnx_model.execute(np_input)[0]  # type: ignore
-    trch_output = trch_model.execute(np_input)[0]  # type: ignore
+    onnx_output = onnx_model.execute(np_input)[0]
+    trch_output = trch_model.execute(np_input)[0]
     assert np.allclose(onnx_output.to_numpy(), trch_output.to_numpy())  # type: ignore
 
 
@@ -391,7 +391,7 @@ def test_custom_ops(
 ):
     model = session.load(mo_custom_ops_model_path)
     inputs = np.array([4.0], dtype=np.float32)
-    output = model.execute(inputs)  # type: ignore
+    output = model.execute(inputs)
     assert len(output) == 1
     assert np.allclose(
         output[0].to_numpy(),  # type: ignore
@@ -402,7 +402,7 @@ def test_custom_ops(
         mo_custom_ops_model_path, custom_ops_path=str(custom_ops_package_path)
     )
     inputs = np.array([4.0], dtype=np.float32)
-    output = model_with_custom_op.execute(inputs)  # type: ignore
+    output = model_with_custom_op.execute(inputs)
     assert len(output) == 1
     assert np.allclose(
         output[0].to_numpy(),  # type: ignore
@@ -533,7 +533,7 @@ def test_execute_external_weights_numpy(
     )
 
     input = np.random.randn(external_weights_size).astype(np.float32)
-    output = compiled.execute(input)  # type: ignore
+    output = compiled.execute(input)
     assert np.allclose(output[0].to_numpy(), input + weights)  # type: ignore
 
 

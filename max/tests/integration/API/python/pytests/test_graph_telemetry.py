@@ -24,7 +24,7 @@ def test_graph_telemetry():
         compiled = session.load(graph)
         a = np.ones((1, 1)).astype(np.float32)
         b = np.ones((1, 1)).astype(np.float32)
-        _ = compiled.execute(a, b)  # type: ignore
+        _ = compiled.execute(a, b)
 
     expected_line = "max.pipeline.name: add"
     with open(filepath, "r") as file:
