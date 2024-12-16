@@ -7,9 +7,8 @@
 
 from math import sqrt
 
-import pytest
 import numpy as np
-
+import pytest
 from conftest import (
     MAX_INT32,
     static_dims,

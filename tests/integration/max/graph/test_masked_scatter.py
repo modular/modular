@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
-import pytest
 import numpy as np
+import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, ops

@@ -9,8 +9,7 @@ import pytest
 from conftest import tensor_types
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import ops, DeviceRef, Graph, TensorType
-
+from max.graph import DeviceRef, Graph, TensorType, ops
 
 shared_types = st.shared(tensor_types())
 

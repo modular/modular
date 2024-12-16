@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-
 from max.mlir.dialects import rmo
 
 from ..graph import Graph

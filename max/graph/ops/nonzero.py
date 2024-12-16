@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for nonzero."""
 
-from max.mlir.dialects import rmo
 from max.dtype import DType
+from max.mlir.dialects import rmo
 
 from ..graph import Graph
 from ..type import DimLike, TensorType

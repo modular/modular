@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """ops.argmax tests."""
 
-from conftest import axes, tensor_types
-from hypothesis import assume, given, strategies as st
 import pytest
-
+from conftest import axes, tensor_types
+from hypothesis import assume, given
+from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
 

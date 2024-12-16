@@ -7,7 +7,7 @@
 
 import numpy as np
 import pytest
-from hypothesis import given, event
+from hypothesis import event, given
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import Graph, TensorType, dtype_promotion

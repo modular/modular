@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for gather."""
 
-from max.dtype import DType
 from max import mlir
+from max.dtype import DType
 from max.mlir.dialects import rmo
 
 from ..graph import Graph

@@ -5,11 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """ops.gather tests."""
 
+import pytest
 from conftest import axes, dims, shapes, static_dims, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
-import pytest
-
 from max.dtype import DType
 from max.graph import Graph, StaticDim, TensorType, ops
 

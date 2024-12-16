@@ -6,8 +6,9 @@
 """Test the Python weight loading interface."""
 
 import platform
-import pytest
+
 import numpy as np
+import pytest
 import torch
 from max.dtype import DType
 from max.graph import Graph, Weight

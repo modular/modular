@@ -20,8 +20,8 @@ from max.mlir.dialects import mo
 
 from .type import (
     BufferType,
-    DeviceRef,
     DeviceKind,
+    DeviceRef,
     Dim,
     SymbolicDim,
     TensorType,

@@ -10,7 +10,6 @@ from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.graph import Graph, TensorType
 
-
 shared_types = st.shared(tensor_types())
 
 

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import platform
+
 import pytest
 from max.dtype import DType
 from max.graph import Graph, TensorType

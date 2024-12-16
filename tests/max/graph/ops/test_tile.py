@@ -6,7 +6,7 @@
 """ops.outer tests."""
 
 import pytest
-from conftest import shapes, symbolic_dims, tensor_types, MAX_INT64
+from conftest import MAX_INT64, shapes, symbolic_dims, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.graph import Graph, StaticDim, SymbolicDim, TensorType, ops

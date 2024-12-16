@@ -10,7 +10,6 @@ from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
 
-
 shared_types = st.shared(tensor_types())
 
 

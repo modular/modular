@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """test the max.graph python bindings."""
 
-from conftest import broadcast_shapes, broadcastable_shapes, tensor_types
-from hypothesis import assume, given, reject, strategies as st
 import pytest
-
+from conftest import broadcast_shapes, broadcastable_shapes, tensor_types
+from hypothesis import assume, given, reject
+from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import Graph, Shape, TensorType
 from max.graph.ops import logical_xor

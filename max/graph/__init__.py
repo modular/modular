@@ -6,6 +6,8 @@
 """APIs to build inference graphs for MAX."""
 
 # Types must be imported first to avoid circular dependencies.
+from . import dtype_promotion, ops
+from .graph import Graph
 from .type import (
     AlgebraicDim,
     BufferType,
@@ -22,9 +24,6 @@ from .type import (
     _ChainType,
     _OpaqueType,
 )
-
-from . import dtype_promotion, ops
-from .graph import Graph
 from .value import (
     BufferValue,
     TensorValue,
