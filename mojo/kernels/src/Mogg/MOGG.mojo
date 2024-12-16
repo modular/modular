@@ -96,6 +96,7 @@ from nn.kv_cache import (
     continuous_batching_kv_cache_collection_h8_d64_bshd,
     continuous_batching_kv_cache_collection_h8_d128_bshd,
     continuous_batching_kv_cache_collection_h8_d512_bshd,
+    continuous_batching_kv_cache_collection_h4_d128_bshd,
     continuous_batching_kv_cache_collection_h2_d128_bshd,
     continuous_batching_kv_cache_collection_h16_d128_bshd,
     continuous_batching_kv_cache_collection_h32_d128_bshd,
@@ -142,6 +143,8 @@ from nn.kv_cache_ragged import (
     flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged,
     flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged,
     flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged,
+    flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged,
+    flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged,
     flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged,
     flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged,
     flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged,
@@ -157,6 +160,8 @@ from nn.kv_cache_ragged import (
     fused_qk_rope_h1_d16_bshd_continuous_batch_ragged,
     fused_qk_rope_h8_d32_bshd_continuous_batch_ragged,
     fused_qk_rope_h8_d64_bshd_continuous_batch_ragged,
+    fused_qk_rope_h2_d128_bshd_continuous_batch_ragged,
+    fused_qk_rope_h4_d128_bshd_continuous_batch_ragged,
     fused_qk_rope_h8_d128_bshd_continuous_batch_ragged,
     fused_qk_rope_h8_d512_bshd_continuous_batch_ragged,
     fused_qk_rope_h32_d128_bshd_continuous_batch_ragged,
@@ -169,6 +174,8 @@ from nn.kv_cache_ragged import (
     fused_qk_rope_h32_d128_bshd_paged_ragged,
     fused_qkv_matmul_kv_cache_h1_d16_cont_batch_ragged,
     fused_qkv_matmul_kv_cache_h8_d64_cont_batch_ragged,
+    fused_qkv_matmul_kv_cache_h2_d128_cont_batch_ragged,
+    fused_qkv_matmul_kv_cache_h4_d128_cont_batch_ragged,
     fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged,
     fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged,
     fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged,
@@ -357,6 +364,7 @@ fn MOGGExport():
     alias _continuous_batching_kv_cache_collection_h8_d128_bshd = continuous_batching_kv_cache_collection_h8_d128_bshd
     alias _continuous_batching_kv_cache_collection_h8_d512_bshd = continuous_batching_kv_cache_collection_h8_d512_bshd
     alias _continuous_batching_kv_cache_collection_h2_d128_bshd = continuous_batching_kv_cache_collection_h2_d128_bshd
+    alias _continuous_batching_kv_cache_collection_h4_d128_bshd = continuous_batching_kv_cache_collection_h4_d128_bshd
     alias _continuous_batching_kv_cache_collection_h16_d128_bshd = continuous_batching_kv_cache_collection_h16_d128_bshd
     alias _continuous_batching_kv_cache_collection_h32_d128_bshd = continuous_batching_kv_cache_collection_h32_d128_bshd
     alias _continuous_batching_kv_cache_collection_h1_d16_bshd = continuous_batching_kv_cache_collection_h1_d16_bshd
@@ -367,6 +375,8 @@ fn MOGGExport():
     alias _paged_kv_cache_collection_h8_d128_bshd = paged_kv_cache_collection_h8_d128_bshd
     alias _paged_kv_cache_collection_h8_d512_bshd = paged_kv_cache_collection_h8_d512_bshd
     alias _paged_kv_cache_collection_h32_d128_bshd = paged_kv_cache_collection_h32_d128_bshd
+    alias _fused_qkv_matmul_kv_cache_h2_d128_cont_batch_ragged = fused_qkv_matmul_kv_cache_h2_d128_cont_batch_ragged
+    alias _fused_qkv_matmul_kv_cache_h4_d128_cont_batch_ragged = fused_qkv_matmul_kv_cache_h4_d128_cont_batch_ragged
     alias _fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged = fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged
     alias _fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged = fused_qkv_matmul_kv_cache_h8_d512_cont_batch_ragged
     alias _fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged = fused_qkv_matmul_kv_cache_h32_d128_cont_batch_ragged
@@ -383,6 +393,8 @@ fn MOGGExport():
     alias _flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged = flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged
     alias _flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged = flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged
     alias _flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged = flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged
+    alias _flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged = flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged
+    alias _flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged = flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged
     alias _flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged = flash_attention_kv_cache_h8_d128_causal_mask_cont_batch_ragged
     alias _flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged = flash_attention_kv_cache_h8_d512_causal_mask_cont_batch_ragged
     alias _flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged = flash_attention_kv_cache_h32_d128_causal_mask_cont_batch_ragged
