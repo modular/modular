@@ -560,7 +560,7 @@ def test_stats_report(
     sr = session.stats_report
     assert isinstance(sr, dict)
     assert sr["fallbacks"] == {}
-    assert sr["total_op_count"] == 1
+    assert sr["total_op_count"] == 3
 
 
 def test_devices(session: InferenceSession) -> None:
