@@ -141,6 +141,10 @@ class DummyPipelineModel(PipelineModel):
 
 DUMMY_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
+    default_encoding=SupportedEncoding.float32,
+    supported_encodings={
+        SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS]
+    },
     versions=[
         SupportedVersion(
             name="1",
