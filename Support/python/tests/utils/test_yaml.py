@@ -9,9 +9,8 @@ from enum import Enum
 from pathlib import Path, PosixPath, WindowsPath
 from typing import Any
 
-from ruamel.yaml.compat import StringIO
-
 from modular.utils.yaml import YAML, represent_as_string
+from ruamel.yaml.compat import StringIO
 
 
 def _dump_str(data: Any, *, sort: bool = True) -> str:

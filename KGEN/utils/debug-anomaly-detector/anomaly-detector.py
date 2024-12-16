@@ -8,14 +8,13 @@ from itertools import chain
 from pathlib import Path
 
 import click
-from rich.console import Console
-
 from modular.utils.debuglib.debugger import get_debugger, run_target
 from modular.utils.debuglib.sources import (
     MojoBinary,
     MojoCompilationError,
     MojoSource,
 )
+from rich.console import Console
 
 CONSOLE = Console()
 

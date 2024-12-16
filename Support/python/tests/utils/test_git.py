@@ -7,13 +7,12 @@
 from pathlib import Path
 
 import pytest
-
 from modular.utils.git import (
     GitError,
     branch_exists,
+    get_changed_dirs,
     get_current_branch_name,
     get_uncommitted_changes,
-    get_changed_dirs,
     is_full_git_sha,
     shallow_clone,
 )

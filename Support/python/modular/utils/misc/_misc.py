@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 import numpy as np
-
 from modular.utils import logging
 
 

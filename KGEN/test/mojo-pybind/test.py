@@ -10,8 +10,8 @@
 # RUN: python3 -m mojo-pybind.main %T/module.mlir
 # RUN: python3 %s
 
-import sys
 import os
+import sys
 import unittest
 
 # Put the current directory (containing .so) on the Python module lookup path.

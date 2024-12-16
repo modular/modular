@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 import pytest
-
 from modular.utils.subprocess import (
     CalledProcessError,
     get_command_output,

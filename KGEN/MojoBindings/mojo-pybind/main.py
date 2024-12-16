@@ -7,7 +7,6 @@
 import os
 
 import click
-
 from src import generate_mojo_extension_module
 
 

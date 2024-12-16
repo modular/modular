@@ -10,9 +10,9 @@ from typing import Optional
 
 from modular.utils.pythonpath import (
     get_lib_path,
+    get_libpython,
     get_libtorch_python_path,
     get_libtorchvision_path,
-    get_libpython,
 )
 
 
