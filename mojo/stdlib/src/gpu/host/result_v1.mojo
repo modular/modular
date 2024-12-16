@@ -552,7 +552,7 @@ struct Result(Stringable, EqualityComparable, KeyElement, ExplicitlyCopyable):
         Args:
             other: The value to copy.
         """
-        self.__copyinit__(other)
+        self = other
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
