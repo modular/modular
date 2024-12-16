@@ -7,9 +7,10 @@
 # type: ignore
 
 import max.serve.grpc_serve.grpc_serve as max_grpc
-import ModelServing.proto.grpc_predict_v2_pb2 as pb2
 import pytest
 from max.serve.pipelines.performance_fake import get_performance_fake
+
+import ModelServing.proto.grpc_predict_v2_pb2 as pb2
 from ModelServing.proto.grpc_predict_v2_pb2_grpc import GRPCInferenceServiceStub
 
 

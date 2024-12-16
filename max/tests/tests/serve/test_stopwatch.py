@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 from unittest import mock
-from max.serve.telemetry.stopwatch import record_ms, StopWatch
+
+from max.serve.telemetry.stopwatch import StopWatch, record_ms
 
 
 def test_record():

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from max.driver import CPU, CUDA
-from max.graph import DeviceRef, DeviceKind
+from max.graph import DeviceKind, DeviceRef
 
 
 def test_cuda_device():

@@ -7,13 +7,13 @@
 import os
 from pathlib import Path
 from typing import Union
-from transformers import (
-    AutoTokenizer,
-    PreTrainedTokenizerFast,
-    PreTrainedTokenizer,
-)
 
 import pytest
+from transformers import (
+    AutoTokenizer,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+)
 
 
 @pytest.fixture(scope="session")

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-
 from max.profiler import Trace, traced
 
 

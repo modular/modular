@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import sys
 import os
+import sys
 import unittest
 
 import max._mojo.mojo_importer  # noqa
