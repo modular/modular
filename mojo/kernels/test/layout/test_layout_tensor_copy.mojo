@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug --debug-level full %s | FileCheck %s
 
+from collections import OptionalReg
 from math import ceildiv
 from pathlib import Path
 from sys import bitwidthof, simdwidthof
@@ -36,6 +37,7 @@ from layout.layout_tensor import (
     copy_local_to_sram,
     copy_sram_to_dram,
     copy_sram_to_local,
+    binary_op_type,
 )
 from memory import UnsafePointer
 from testing import assert_almost_equal
@@ -270,6 +272,7 @@ fn copy_sram_to_dram_kernel[
     layout: Layout,
     M: Int,
     N: Int,
+    binary_op: OptionalReg[binary_op_type] = None,
 ](input: LayoutTensor[type, layout]):
     alias simd_size = simdwidthof[type]()
     alias thread_layout = Layout.row_major(simd_size, N // simd_size)
@@ -281,7 +284,7 @@ fn copy_sram_to_dram_kernel[
     ].stack_allocation()
     arange(smem_tile)
 
-    copy_sram_to_dram[thread_layout=thread_layout](
+    copy_sram_to_dram[thread_layout=thread_layout, binary_op=binary_op](
         input.vectorize[1, simd_size](),
         smem_tile.vectorize[1, simd_size](),
     )
@@ -585,12 +588,20 @@ fn test_partial_copy_dram_to_sram_async[
     _ = input^
 
 
+@always_inline
+fn add_op[
+    type: DType, width: Int
+](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[type, width]:
+    return lhs + rhs
+
+
 fn test_copy_sram_to_dram[
     type: DType,
     layout: Layout,
     M: Int,
     N: Int,
     skew_M: Int = 0,
+    binary_op: OptionalReg[binary_op_type] = None,
 ](ctx: DeviceContext) raises:
     print("=== test_copy_sram_to_dram")
 
@@ -605,12 +616,15 @@ fn test_copy_sram_to_dram[
         gpu_free,
         gpu_managed_alloc_runtime,
     ](runtime_layout)
+    _ = input.tensor.fill(-1.0)
 
     alias tile_layout = Layout.row_major(M - skew_M, N)
 
     var tile_tensor = input.tensor.tile[M - skew_M, N](0, 0)
 
-    alias kernel_type = copy_sram_to_dram_kernel[type, tile_layout, M, N]
+    alias kernel_type = copy_sram_to_dram_kernel[
+        type, tile_layout, M, N, binary_op
+    ]
     var kernel = ctx.compile_function[kernel_type]()
 
     ctx.enqueue_function(
@@ -940,6 +954,23 @@ fn main() raises:
             M=8,
             N=8,
             skew_M=1,
+        ](ctx)
+
+        # CHECK: === test_copy_sram_to_dram
+        # CHECK: -1.0 0.0 1.0 2.0 3.0 4.0 5.0 6.0
+        # CHECK: 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0
+        # CHECK: 15.0 16.0 17.0 18.0 19.0 20.0 21.0 22.0
+        # CHECK: 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0
+        # CHECK: 31.0 32.0 33.0 34.0 35.0 36.0 37.0 38.0
+        # CHECK: 39.0 40.0 41.0 42.0 43.0 44.0 45.0 46.0
+        # CHECK: 47.0 48.0 49.0 50.0 51.0 52.0 53.0 54.0
+        test_copy_sram_to_dram[
+            DType.bfloat16,
+            Layout.row_major(UNKNOWN_VALUE, 8),
+            M=8,
+            N=8,
+            skew_M=1,
+            binary_op=add_op,
         ](ctx)
 
         # CHECK: === test_copy_local_to_local

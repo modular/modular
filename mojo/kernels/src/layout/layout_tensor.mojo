@@ -2508,11 +2508,17 @@ fn copy_dram_to_sram_async[
     ](dst, src)
 
 
+alias binary_op_type = fn[type: DType, width: Int] (
+    lhs: SIMD[type, width], rhs: SIMD[type, width]
+) -> SIMD[type, width]
+
+
 @always_inline
 fn copy_sram_to_dram[
     thread_layout: Layout,
     swizzle: OptionalReg[Swizzle] = None,
     num_threads: Int = thread_layout.size(),
+    binary_op: OptionalReg[binary_op_type] = None,
 ](dst: LayoutTensor, src: LayoutTensor):
     constrained[
         dst.address_space == _GPUAddressSpace.GENERIC,
@@ -2585,12 +2591,20 @@ fn copy_sram_to_dram[
                         swizzle_fn(src_frag_offset + src_idx_base)
                         + src_idx_diff
                     )
+
                 var src_vec = src.ptr.load[
                     width=simd_size, alignment=src_align
-                ](swizzled_idx)
-                dst_fragments.ptr.store[alignment=dst_align](
-                    dst_idx, src_vec.cast[dst.dtype]()
-                )
+                ](swizzled_idx).cast[dst.dtype]()
+
+                @parameter
+                if binary_op:
+                    alias binop = binary_op.value()
+                    var dst_vec = dst_fragments.ptr.load[alignment=dst_align](
+                        dst_idx
+                    )
+                    src_vec = binop(src_vec, dst_vec)
+
+                dst_fragments.ptr.store[alignment=dst_align](dst_idx, src_vec)
         else:
             alias static_stride = dst.layout.stride[0].value()
 
@@ -2639,9 +2653,18 @@ fn copy_sram_to_dram[
                 if dst_idx < dst_idx_bound:
                     var src_vec = (src.ptr).load[
                         width=simd_size, alignment=src_align
-                    ](swizzled_idx)
+                    ](swizzled_idx).cast[dst.dtype]()
+
+                    @parameter
+                    if binary_op:
+                        alias binop = binary_op.value()
+                        var dst_vec = dst_fragments.ptr.load[
+                            alignment=dst_align
+                        ](dst_idx)
+                        src_vec = binop(src_vec, dst_vec)
+
                     dst_fragments.ptr.store[alignment=dst_align](
-                        dst_idx, src_vec.cast[dst.dtype]()
+                        dst_idx, src_vec
                     )
 
 
