@@ -304,6 +304,17 @@ fn test_conv_gpu[
 def main():
     with DeviceContext() as ctx:
         test_conv_gpu[
+            DimList(1, 64, 64, 32),  # input  (NHWC)
+            DimList(
+                3, 3, 32, 64
+            ),  # filter (RSCF) (height, width, in_channels, out_channels)
+            DType.float32,
+            IndexList[2](1, 1),  # stride
+            IndexList[2](1, 1),  # dilation
+            IndexList[2](2, 2),  # pad
+        ](ctx)
+
+        test_conv_gpu[
             DimList(1, 5, 5, 2),  # input  (NHWC)
             DimList(
                 3, 3, 2, 2
