@@ -428,7 +428,7 @@ struct TensorType(CollectionElement):
         var dims = List[Dim](capacity=spec.rank())
         for i in range(spec.rank()):
             dims.append(Dim.static(spec[i]))
-        self.__init__(spec.dtype(), dims)
+        self = Self(spec.dtype(), dims)
 
     fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
         """Converts to an _mlir.Type instance.

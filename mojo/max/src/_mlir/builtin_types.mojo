@@ -18,7 +18,7 @@ struct FunctionType(DialectType):
 
     @implicit
     fn __init__(out self, ctx: Context):
-        self.__init__(ctx, List[Type](), List[Type]())
+        self = Self(ctx, List[Type](), List[Type]())
 
     fn __init__(out self, inputs: List[Type], results: List[Type]):
         debug_assert(
@@ -26,7 +26,7 @@ struct FunctionType(DialectType):
             "nullary functions must use the context constructor",
         )
         var ctx = (inputs if len(inputs) else results)[0].context()
-        self.__init__(ctx, inputs, results)
+        self = Self(ctx, inputs, results)
 
     fn to_mlir(self) -> Type:
         return _c.BuiltinTypes.mlirFunctionTypeGet(

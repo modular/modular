@@ -184,7 +184,7 @@ struct Graph(CollectionElement, Stringable, Writable):
                 [`TensorType`](/max/api/mojo/graph/type/TensorType) or
                 [`ListType`](/max/api/mojo/graph/type/ListType) value.
         """
-        self.__init__("graph", List[Type](in_type))
+        self = Self("graph", List[Type](in_type))
 
     fn __init__(
         mut self,
@@ -206,7 +206,7 @@ struct Graph(CollectionElement, Stringable, Writable):
                 [`ListType`](/max/api/mojo/graph/type/ListType) values.
                 Deprecated. This will be inferred by the `output` call.
         """
-        self.__init__("graph", in_types, out_types)
+        self = Self("graph", in_types, out_types)
 
     fn __init__(
         mut self,

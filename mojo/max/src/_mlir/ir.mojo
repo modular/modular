@@ -769,7 +769,7 @@ struct Block(CollectionElement, Stringable):
         for i in range(len(args)):
             var ctx = args[i].context()
             locations.append(Location.unknown(ctx))
-        self.__init__(args, locations)
+        self = Self(args, locations)
 
     fn __init__(
         mut self,

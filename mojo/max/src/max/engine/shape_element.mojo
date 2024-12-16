@@ -49,7 +49,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
         Args:
             static: The static size of the dimension.
         """
-        self.__init__(Int64(static))
+        self = Self(Int64(static))
 
     @implicit
     fn __init__(out self, static: Int64):
@@ -109,7 +109,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
                 only of alphanumeric characters and underscores, and must not
                 begin with a digit.
         """
-        self.__init__(String(name))
+        self = Self(String(name))
 
     @implicit
     fn __init__(out self, name: StringLiteral):
@@ -121,7 +121,7 @@ struct ShapeElement(CollectionElement, EqualityComparable):
                 only of alphanumeric characters and underscores, and must not
                 begin with a digit.
         """
-        self.__init__(String(name))
+        self = Self(String(name))
 
     fn __moveinit__(out self, owned other: Self):
         """Initialize from another owned ShapeElement.
