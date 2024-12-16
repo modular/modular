@@ -37,7 +37,7 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
     @always_inline
     @implicit
     fn __init__(out self, *inputs: DynamicRankBuffer):
-        self.__init__(inputs)
+        self = Self(inputs)
 
     @implicit
     fn __init__(out self, input_list: VariadicList[DynamicRankBuffer]):
@@ -48,7 +48,7 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
     @always_inline
     @implicit
     fn __init__(out self, *inputs: Self.BufferType):
-        self.__init__(inputs)
+        self = Self(inputs)
 
     @implicit
     fn __init__(out self, input_list: VariadicList[Self.BufferType]):
