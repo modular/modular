@@ -171,7 +171,7 @@ fn create_task(
     var ctx = handle._get_ctx[AsyncContext]()
     _init_asyncrt_chain(AsyncContext.get_chain(ctx))
     ctx[].callback = AsyncContext.complete
-    task.__init__(handle^)
+    task = Task(handle^)
     _async_execute[handle.type](task._handle._handle, desired_worker_id=-1)
 
 
