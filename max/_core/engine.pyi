@@ -67,7 +67,8 @@ class TensorSpec:
 class TorchInputSpec:
     shape: InputShape
     dtype: DType
-    def __init__(self, shape: InputShape, dtype: DType): ...
+    device: str
+    def __init__(self, shape: InputShape, dtype: DType, device: str = ...): ...
 
 class TensorData:
     def __init__(self, ptr: int, shape: List[int], dtype: DType): ...
