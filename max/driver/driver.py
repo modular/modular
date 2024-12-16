@@ -11,9 +11,9 @@ from json import loads
 from typing import Any, Literal, Mapping
 
 from max._driver import Device as _Device
+from max._driver import accelerator_count as _accelerator_count
 from max._driver import cpu_device as _cpu_device
 from max._driver import cuda_device as _cuda_device
-from max._driver import accelerator_count as _accelerator_count
 
 
 @dataclass

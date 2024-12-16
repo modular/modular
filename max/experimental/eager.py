@@ -8,14 +8,15 @@
 from __future__ import annotations
 
 import asyncio
+import weakref
 from dataclasses import dataclass
 from typing import Optional
-import weakref
 
 import numpy as np
-
-from max import driver as md, engine as me, graph as mg, mlir
-
+from max import driver as md
+from max import engine as me
+from max import graph as mg
+from max import mlir
 
 _CONTEXT = mg.graph._new_context()
 

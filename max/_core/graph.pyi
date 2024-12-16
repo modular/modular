@@ -6,8 +6,8 @@
 
 from array import array
 from pathlib import Path
-from typing import Union
 from traceback import FrameSummary
+from typing import Union
 
 import numpy as np
 from max import mlir
