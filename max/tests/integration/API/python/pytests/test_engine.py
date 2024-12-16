@@ -14,7 +14,7 @@ from typing import Tuple
 import numpy as np
 import pytest
 import torch
-from max.driver import Tensor
+from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model, TensorSpec, TorchInputSpec
 from max.graph import DeviceRef, Graph, TensorType, Value
@@ -561,6 +561,11 @@ def test_stats_report(
     assert isinstance(sr, dict)
     assert sr["fallbacks"] == {}
     assert sr["total_op_count"] == 1
+
+
+def test_devices(session: InferenceSession) -> None:
+    host = CPU()
+    assert str(host) == str(session.devices[0])
 
 
 @pytest.fixture

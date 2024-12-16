@@ -229,3 +229,8 @@ def test_aliasing_outputs(
     # TODO: enable this when we have GPU indexing.
     # tensor_output0[0] = 7
     # assert array_output1[0] == 7
+
+
+def test_devices(gpu_session: InferenceSession) -> None:
+    device = CUDA()
+    assert str(device) == str(gpu_session.devices[0])
