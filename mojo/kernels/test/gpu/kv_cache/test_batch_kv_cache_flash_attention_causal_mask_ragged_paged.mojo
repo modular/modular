@@ -336,19 +336,19 @@ def execute_flash_attention_suite(ctx: DeviceContext):
             tg_seq_lens = List[Int]()
             for _ in range(bs):
                 tg_seq_lens.append(1)
-                tg_cache_sizes.append(int(random_ui64(1, 100)))
-                ce_seq_lens.append(int(random_ui64(1, 100)))
+                tg_cache_sizes.append(int(random_ui64(512, 1024)))
+                ce_seq_lens.append(int(random_ui64(512, 1024)))
                 ce_cache_sizes.append(0)
 
             print("CE", bs, type)
             execute_ragged_flash_attention[
                 llama_num_q_heads, type, kv_params_llama3
-            ](ce_seq_lens, 110, ce_cache_sizes, 2, 1, ctx)
+            ](ce_seq_lens, 1500, ce_cache_sizes, 2, 1, ctx)
 
             print("TG", bs, type)
             execute_ragged_flash_attention[
                 llama_num_q_heads, type, kv_params_llama3
-            ](tg_seq_lens, 110, tg_cache_sizes, 2, 0, ctx)
+            ](tg_seq_lens, 1500, tg_cache_sizes, 2, 0, ctx)
 
     # edge cases
     var short_ce_seq_len = List[Int](2)
