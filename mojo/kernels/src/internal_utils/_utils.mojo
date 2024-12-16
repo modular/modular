@@ -91,7 +91,7 @@ struct HostNDBuffer[
         mut self,
         dynamic_shape: DimList,
     ):
-        self.__init__(_make_tuple[rank](dynamic_shape))
+        self = Self(_make_tuple[rank](dynamic_shape))
 
     @always_inline
     fn __del__(owned self):
@@ -158,7 +158,7 @@ struct DeviceNDBuffer[
         *,
         ctx: DeviceContext,
     ) raises:
-        self.__init__(_make_tuple[rank](dynamic_shape), ctx=ctx)
+        self = Self(_make_tuple[rank](dynamic_shape), ctx=ctx)
 
     @always_inline
     fn __init__(
@@ -184,7 +184,7 @@ struct DeviceNDBuffer[
         stride: IndexList[rank],
         ctx: DeviceContext,
     ) raises:
-        self.__init__(_make_tuple[rank](dynamic_shape), stride=stride, ctx=ctx)
+        self = Self(_make_tuple[rank](dynamic_shape), stride=stride, ctx=ctx)
 
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
