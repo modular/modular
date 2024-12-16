@@ -49,7 +49,6 @@ AsyncRTWrapper<T> wrap(T *ptr) {
 
 using AsyncRTRuntimeRef = AsyncRTWrapper<Runtime>;
 using AsyncRTMojoCallContextRef = AsyncRTWrapper<MojoCallContext>;
-using AsyncRTDeviceContextRef = AsyncRTWrapper<DeviceContext>;
 using AsyncRTAsyncChainRef = AsyncRTWrapper<AsyncValueRef<Chain>>;
 using AsyncRTSpinWaiterRef = AsyncRTWrapper<SpinWaiter<true>>;
 
@@ -231,13 +230,12 @@ KGEN_CompilerRT_AsyncRT_ParallelismLevel(AsyncRTRuntimeRef rt) {
 //===----------------------------------------------------------------------===//
 
 /// Get accelerator device context.
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT AsyncRTDeviceContextRef
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_AsyncRT_MojoCallContext_GetDeviceContext(
     AsyncRTMojoCallContextRef callContext) {
   // This is an RCRef, we extract and return it as a pointer for FFI.
   auto deviceContextRef = unwrap(callContext).deviceContext;
-  return wrap(
-      const_cast<AsyncRT::DeviceContext *>(deviceContextRef.getPointer()));
+  return const_cast<AsyncRT::DeviceContext *>(deviceContextRef.getPointer());
 }
 
 //===----------------------------------------------------------------------===//
