@@ -329,6 +329,7 @@ PIPELINES = {
     ),
     "llama3-vision-bfloat16": PipelineDef(
         compatible_with=[DeviceKind.GPU],
+        tags=["big"],
         run=lambda device_type: run_llm_verification(
             device_type=device_type,
             pipeline="llama3-vision",
