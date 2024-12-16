@@ -6,8 +6,8 @@
 
 import os
 import platform
-import pytest
 
+import pytest
 from modular.utils.subprocess import run_shell_command
 from modular.utils.time import RUsageResult
 

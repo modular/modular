@@ -7,7 +7,6 @@
 from pathlib import Path
 
 from _pytest.logging import LogCaptureFixture
-
 from modular.utils import logging
 
 

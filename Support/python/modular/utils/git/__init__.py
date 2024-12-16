@@ -20,13 +20,13 @@ from ._git import (
     branch_exists,
     check_gh_installed,
     fetch_checkout_commit,
+    get_changed_dirs,
+    get_changed_files,
     get_current_branch_name,
     get_gh_username,
     get_uncommitted_changes,
     is_full_git_sha,
     shallow_clone,
-    get_changed_files,
-    get_changed_dirs,
 )
 
 # Remove from the namespace so that it's not visible to users.

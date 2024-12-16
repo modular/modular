@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 import pytest
-
 from modular.utils.misc import (
     create_dir_symlink,
     get_ordinal,

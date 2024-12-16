@@ -8,14 +8,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 import importlib.util
-from importlib import machinery
-import sys
 import os
+import sys
+from importlib import machinery
+from itertools import product
 from pathlib import Path
 from sysconfig import get_config_var as var
-from itertools import product
-from find_libpython import find_libpython
 from typing import Optional
+
+from find_libpython import find_libpython
 
 
 def get_lib_path(base_path: Path, name: str) -> Optional[Path]:
