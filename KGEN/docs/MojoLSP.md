@@ -9,12 +9,12 @@ Protocol](https://en.wikipedia.org/wiki/Language_Server_Protocol). It provides
 such as code completion, diagnostics, quick fixes, hover dialogs, jump to
 definition, refactoring utilities, etc.
 
-## Getting Started with VSCode
+## Getting Started with VSCode or Cursor
 
-Just run the `vscode-init` command on your terminal, which will install and
-configure the **Mojo** extension on VSCode. The Language Server is part of this
-extension and will be automatically launched whenever a `.mojo` or `.🔥` file is
-opened.
+Just run the `vscode-init` or `cursor-init` command on your terminal, which will
+install and configure the **Mojo** extension on VSCode. The Language Server is
+part of this extension and will be automatically launched whenever a `.mojo` or
+`.🔥` file is opened.
 
 ## Development
 
