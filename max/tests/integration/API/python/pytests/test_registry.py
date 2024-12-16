@@ -30,8 +30,8 @@ from max.pipelines.kv_cache import (
     KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
-    load_kv_manager,
     estimate_kv_cache_size,
+    load_kv_manager,
 )
 
 

@@ -7,12 +7,12 @@
 import pytest
 from max.driver import CPU
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     load_kv_manager,
 )
-from max.engine import InferenceSession
 
 
 @pytest.mark.asyncio

@@ -14,7 +14,7 @@ from uuid import uuid4
 import pytest
 from evaluate_llama import SupportedTestModels
 from llama3.model import Llama3Model
-from max.pipelines import PipelineConfig, TextTokenizer, TextGenerationPipeline
+from max.pipelines import PipelineConfig, TextGenerationPipeline, TextTokenizer
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS, run_model

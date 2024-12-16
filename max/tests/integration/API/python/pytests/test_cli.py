@@ -4,22 +4,23 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import click
-from click.testing import CliRunner
 import enum
-import pytest
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, Optional
+
+import click
+import pytest
 from cli.config import (
-    get_field_type,
-    validate_field,
     get_default,
+    get_field_type,
     is_flag,
     is_multiple,
-    pipeline_config_options,
     is_optional,
+    pipeline_config_options,
+    validate_field,
 )
+from click.testing import CliRunner
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig, PipelineEngine
 from max.pipelines.kv_cache import KVCacheStrategy

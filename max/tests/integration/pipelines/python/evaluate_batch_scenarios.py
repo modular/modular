@@ -14,21 +14,20 @@ from typing import Any, List, Optional, TextIO
 
 import click
 from architectures import register_all_models
+from cli import DevicesOptionType, config_to_flag
 from max.driver import DeviceSpec
 from max.pipelines import (
-    TokenGeneratorRequest,
-    PipelineTokenizer,
     PIPELINE_REGISTRY,
     PipelineConfig,
+    PipelineTokenizer,
     SupportedEncoding,
     TokenGenerator,
+    TokenGeneratorRequest,
 )
 from max.serve.pipelines.echo_gen import (
-    EchoTokenGenerator,
     EchoPipelineTokenizer,
+    EchoTokenGenerator,
 )
-
-from cli import DevicesOptionType, config_to_flag
 
 logger = logging.getLogger(__name__)
 

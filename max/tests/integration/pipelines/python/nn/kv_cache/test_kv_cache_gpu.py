@@ -8,12 +8,12 @@ import asyncio
 
 from max.driver import CUDA
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
     load_kv_manager,
 )
-from max.engine import InferenceSession
 
 
 def test_kv_cache_gpu():

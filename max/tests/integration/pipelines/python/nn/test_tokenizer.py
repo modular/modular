@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
 import numpy as np
+import pytest
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,

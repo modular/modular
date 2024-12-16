@@ -8,9 +8,9 @@ golden values.
 """
 
 import pytest
-from max.engine import InferenceSession
 from evaluate_llama import SupportedTestModels
 from llama3 import Llama3Model
+from max.engine import InferenceSession
 from max.pipelines import TextTokenizer
 from test_common.evaluate import PROMPTS, compare_values, run_model
 from test_common.numpy_encoder import NumpyDecoder

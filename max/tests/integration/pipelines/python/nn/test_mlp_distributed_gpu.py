@@ -3,12 +3,13 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from typing import List
+
 import numpy as np
 import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List
 from max.driver import CPU, CUDA, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession

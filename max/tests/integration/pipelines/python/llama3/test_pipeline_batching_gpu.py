@@ -15,14 +15,14 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import pytest
-from evaluate_llama import SupportedTestModels
 from architectures import register_all_models
+from evaluate_llama import SupportedTestModels
 from max.pipelines import (
+    PIPELINE_REGISTRY,
     PipelineConfig,
     SupportedEncoding,
-    TextTokenizer,
     TextGenerationPipeline,
-    PIPELINE_REGISTRY,
+    TextTokenizer,
 )
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy

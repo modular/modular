@@ -16,8 +16,8 @@ from typing import Literal, Optional
 
 import click
 from huggingface_hub import hf_hub_download
-from llama3.config import get_llama_huggingface_file
 from llama3 import Llama3Model
+from llama3.config import get_llama_huggingface_file
 from max.driver import DeviceSpec
 from max.engine import InferenceSession
 from max.pipelines import PipelineConfig, SupportedEncoding, TextTokenizer

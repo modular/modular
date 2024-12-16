@@ -23,12 +23,12 @@ ENCODING=float32
 from pathlib import Path
 
 import click
-from test_common.numpy_encoder import NumpyDecoder
-from test_common.evaluate import compare_values
 from model.cli.commands._internal._verify_utils import construct_validator
 from model.utils.custom_args import CommaSeparatedList
 from model.utils.exceptions import AccuracyError
 from model.utils.logging import CONSOLE
+from test_common.evaluate import compare_values
+from test_common.numpy_encoder import NumpyDecoder
 
 
 @click.command()

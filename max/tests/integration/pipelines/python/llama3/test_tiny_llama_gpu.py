@@ -7,13 +7,14 @@
 golden values.
 """
 
-from dataclasses import dataclass
 import random
+from dataclasses import dataclass
 from uuid import uuid4
 
 import pytest
 from evaluate_llama import SupportedTestModels
 from llama3.model import Llama3Model
+from max.driver import DeviceSpec
 from max.pipelines import (
     PipelineConfig,
     TextContext,
@@ -21,7 +22,6 @@ from max.pipelines import (
     TextTokenizer,
 )
 from max.pipelines.interfaces import TokenGeneratorRequest
-from max.driver import DeviceSpec
 from max.pipelines.kv_cache import KVCacheStrategy
 from test_common.evaluate import PROMPTS
 

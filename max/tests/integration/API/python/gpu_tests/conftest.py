@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from os import getenv, environ
+from os import environ, getenv
 from pathlib import Path
 
 import pytest

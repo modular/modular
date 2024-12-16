@@ -14,8 +14,8 @@ from llama3.model import Llama3Model
 from max.pipelines import (
     PipelineConfig,
     SupportedEncoding,
-    TextTokenizer,
     TextGenerationPipeline,
+    TextTokenizer,
 )
 from max.pipelines.interfaces import TokenGeneratorRequest
 from max.pipelines.kv_cache import KVCacheStrategy

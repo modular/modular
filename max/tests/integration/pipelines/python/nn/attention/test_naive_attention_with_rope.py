@@ -10,9 +10,9 @@ import pytest
 import torch
 from max.dtype import DType
 from max.graph import BufferType, Graph, TensorType, ops
-from modular_graph_test import modular_graph_test
-from nn import NaiveAttentionWithRope, Linear, RotaryEmbedding
 from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
+from modular_graph_test import modular_graph_test
+from nn import Linear, NaiveAttentionWithRope, RotaryEmbedding
 from torch import nn
 from transformers import StaticCache
 from transformers.models.llama.configuration_llama import LlamaConfig

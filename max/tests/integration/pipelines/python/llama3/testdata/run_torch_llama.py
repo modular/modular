@@ -22,12 +22,11 @@ the checkpoint.
 
 import os
 from pathlib import Path
-from typing import Iterable, Optional, List, Union
+from typing import Iterable, List, Optional, Union
 
 import click
-import torch
-from PIL import Image
 import requests
+import torch
 from evaluate_llama import (
     ALL_SUPPORTED_ENCODINGS,
     ALL_SUPPORTED_MODELS,
@@ -35,16 +34,17 @@ from evaluate_llama import (
     NumpyEncoder,
     supported_model_encodings,
 )
+from PIL import Image
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
     AutoTokenizer,
     LogitsProcessorList,
+    MllamaProcessor,
+    PixtralProcessor,
     PreTrainedModel,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
-    MllamaProcessor,
-    PixtralProcessor,
 )
 
 

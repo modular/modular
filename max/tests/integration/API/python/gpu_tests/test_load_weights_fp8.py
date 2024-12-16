@@ -4,14 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from pathlib import Path
+
 import numpy as np
 import torch
-from pathlib import Path
 from max.driver import CPU
-from max.graph import Graph
-from max.graph.weights import SafetensorWeights
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph import Graph
+from max.graph.weights import SafetensorWeights
 
 
 def _test_data():

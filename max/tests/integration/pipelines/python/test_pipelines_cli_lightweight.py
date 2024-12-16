@@ -4,9 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
-
 import pipelines
+import pytest
 
 
 def test_pipelines_list(capsys):

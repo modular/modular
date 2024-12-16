@@ -6,10 +6,10 @@
 
 import numpy as np
 from max.dtype import DType
-from max.graph import TensorType, Graph, ops
-from nn.sequential import Sequential
-from nn.linear import Linear
+from max.graph import Graph, TensorType, ops
 from modular_graph_test import modular_graph_test
+from nn.linear import Linear
+from nn.sequential import Sequential
 
 
 def test_sequential__one_linear_layer(session):

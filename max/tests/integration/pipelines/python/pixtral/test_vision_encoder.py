@@ -13,10 +13,10 @@ from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
 from nn import Conv2D, Linear
 from nn.norm import RMSNorm
+from pixtral.vision_encoder.attention import Attention
 from pixtral.vision_encoder.attention_utils import (
     causal_attention_mask_2d_from_imgs,
 )
-from pixtral.vision_encoder.attention import Attention
 from pixtral.vision_encoder.rotary_embedding_2d import RotaryEmbedding2D
 from pixtral.vision_encoder.transformer import (
     MLP,

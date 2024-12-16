@@ -4,9 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
 from pathlib import Path
-from max.pipelines.config import WeightsFormat, PipelineConfig
+
+import pytest
+from max.pipelines.config import PipelineConfig, WeightsFormat
 
 
 def test_config_init__raises_with_no_huggingface_repo_id():
