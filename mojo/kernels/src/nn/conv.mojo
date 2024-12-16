@@ -3001,12 +3001,12 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var N = input.dim[0]()
     var H = input.dim[1]()
     var W = input.dim[2]()
-    var C = input.dim[3]()  # channel_in
+    var C_in = input.dim[3]()  # channel_in
     var R = filter.dim[0]()
     var S = filter.dim[1]()
     var H_out = output.dim[1]()
     var W_out = output.dim[2]()
-    var F = output.dim[3]()  # channel_out
+    var C_out = output.dim[3]()  # channel_out
     var pad_h = padding[0]
     var pad_w = padding[1]
     var stride_h = stride[0]
@@ -3014,31 +3014,30 @@ fn conv2d_gpu_naive_nhwc_rscf[
     var dil_h = dilation[0]
     var dil_w = dilation[1]
 
-    var n = BlockIdx.x  # batch index
-    var f = BlockIdx.y  # output channel (filter index)
-    var h = ThreadIdx.x  # output height index
-    var w = ThreadIdx.y  # output width index
+    var n = BlockIdx.z
+    var h = BlockIdx.y * BlockDim.y + ThreadIdx.y
+    var w = BlockIdx.x * BlockDim.x + ThreadIdx.x
 
     if h >= H_out or w >= W_out:
         return
 
-    var value = Scalar[output_type](0)
-    for c in range(C):
+    for co in range(C_out):
+        var value = Scalar[output_type](0)
         for r in range(R):
             for s in range(S):
                 var h_in = h * stride_h - pad_h + r * dil_h
                 var w_in = w * stride_w - pad_w + s * dil_w
-
                 if 0 <= h_in < H and 0 <= w_in < W:
-                    value += (
-                        input.load(IndexList[4](n, h_in, w_in, c)).cast[
-                            output_type
-                        ]()
-                        * filter.load(IndexList[4](r, s, c, f)).cast[
-                            output_type
-                        ]()
-                    )
-    output.store(IndexList[4](n, h, w, f), value)
+                    for ci in range(C_in):
+                        value += (
+                            input.load(IndexList[4](n, h_in, w_in, ci)).cast[
+                                output_type
+                            ]()
+                            * filter.load(IndexList[4](r, s, ci, co)).cast[
+                                output_type
+                            ]()
+                        )
+        output.store(IndexList[4](n, h, w, co), value)
 
 
 @always_inline
@@ -3180,11 +3179,7 @@ fn conv_gpu[
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
-    alias block_size = 32
-    if output_dim.get[1]() > block_size or output_dim.get[2]() > block_size:
-        raise Error(
-            "Cannot support output height/width greater than block_size"
-        )
+    alias block_size = 16
 
     var conv_gpu_n = ctx.compile_function[
         conv2d_gpu_naive_nhwc_rscf[
@@ -3198,6 +3193,10 @@ fn conv_gpu[
         ]
     ]()
 
+    var grid_dim_x = ceildiv(output_dim.get[2](), block_size)
+    var grid_dim_y = ceildiv(output_dim.get[1](), block_size)
+    var grid_dim_z = input_dim.get[0]()
+
     ctx.enqueue_function(
         conv_gpu_n,
         input,
@@ -3206,6 +3205,6 @@ fn conv_gpu[
         stride,
         dilation,
         pading,
-        grid_dim=(input_dim.get[0](), filter_dim.get[3]()),
+        grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_size, block_size),
     )
