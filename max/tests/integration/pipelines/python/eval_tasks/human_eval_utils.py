@@ -5,8 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Functions for processing and evaluating the HumanEval dataset."""
 
-from human_eval.execution import check_correctness as _check_correctness
 import json
+
+from human_eval.execution import check_correctness as _check_correctness
 
 
 def doc_to_text(doc):

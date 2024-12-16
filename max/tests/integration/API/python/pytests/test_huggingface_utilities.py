@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 from pathlib import Path
+
 from max.pipelines.config import (
     HuggingFaceRepo,
-    WeightsFormat,
     SupportedEncoding,
+    WeightsFormat,
 )
 
 
