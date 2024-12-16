@@ -137,6 +137,7 @@ struct TorchInputSpec(Movable):
             UnsafePointer[NoneType](),
             len(self.shape),
             EngineDType(self.dtype),
+            UnsafePointer[NoneType](),
             status.ptr,
         )
         if status:
@@ -174,6 +175,7 @@ struct TorchInputSpec(Movable):
             converted_dim_names.data,
             len(self.shape),
             EngineDType(self.dtype),
+            UnsafePointer[NoneType](),
             status.ptr,
         )
 
