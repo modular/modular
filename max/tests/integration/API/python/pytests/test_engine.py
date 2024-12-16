@@ -461,7 +461,7 @@ def test_repr_torch_input_spec():
 
     assert (
         repr(input_spec_with_shape)
-        == "TorchInputSpec(shape=[20, 30], dtype=DType.float32)"
+        == "TorchInputSpec(shape=[20, 30], dtype=DType.float32, device='')"
     )
     assert str(input_spec_with_shape) == "20x30xfloat32"
 
@@ -471,7 +471,7 @@ def test_repr_torch_input_spec():
 
     assert (
         repr(input_spec_without_shape)
-        == "TorchInputSpec(shape=None, dtype=DType.float64)"
+        == "TorchInputSpec(shape=None, dtype=DType.float64, device='')"
     )
     assert str(input_spec_without_shape) == "None x float64"
 
@@ -479,7 +479,7 @@ def test_repr_torch_input_spec():
     assert input_spec_with_dim_names.shape == ["BATCH", 30]
     assert (
         repr(input_spec_with_dim_names)
-        == "TorchInputSpec(shape=['BATCH', 30], dtype=DType.float32)"
+        == "TorchInputSpec(shape=['BATCH', 30], dtype=DType.float32, device='')"
     )
     assert str(input_spec_with_dim_names) == "-1x30xfloat32"
 
