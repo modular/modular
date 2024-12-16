@@ -872,6 +872,10 @@ class InferenceSession:
         """
         self._impl.reset_stats_report()
 
+    @property
+    def devices(self) -> List[Device]:
+        return [Device(device) for device in self._impl.devices]
+
 
 def remove_annotations(cls: Type) -> Type:
     del cls.__annotations__

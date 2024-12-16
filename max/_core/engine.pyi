@@ -55,6 +55,8 @@ class InferenceSession:
     def set_debug_print_options(
         self, style: PrintStyle, precision: int, directory: str
     ) -> None: ...
+    @property
+    def devices(self) -> List[Device]: ...
 
 class TensorSpec:
     shape: List[int]
