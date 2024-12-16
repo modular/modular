@@ -7,9 +7,10 @@
 import os
 import subprocess
 import sys
+from time import sleep
+
 import click
 import yaml
-from time import sleep
 
 
 def shell(arg_str: str, check: bool = False, verbose=True):

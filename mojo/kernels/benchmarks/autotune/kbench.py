@@ -24,14 +24,13 @@ import numpy as np
 import pandas as pd
 import rich
 from model.utils.exceptions import CLIException, pretty_exception_handler
+from modular.utils import logging, yaml
+from modular.utils.subprocess import list2cmdline, run_shell_command
+from modular.utils.yaml import YAML
 from rich import print, traceback
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.progress import MofNCompleteColumn, Progress
-
-from modular.utils import logging, yaml
-from modular.utils.subprocess import list2cmdline, run_shell_command
-from modular.utils.yaml import YAML
 
 CONSOLE = Console()
 

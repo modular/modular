@@ -4,10 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pickle
+
+import click
 import numpy as np
 import pandas as pd
-import pickle
-import click
 
 LINE = 80 * "-"
 
