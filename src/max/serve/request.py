@@ -9,9 +9,8 @@ import logging
 import uuid
 from typing import Callable
 
-from max.serve.telemetry.stopwatch import StopWatch
-
 from fastapi import FastAPI, HTTPException, Request, Response
+from max.serve.telemetry.stopwatch import StopWatch
 
 logger = logging.getLogger(__name__)
 

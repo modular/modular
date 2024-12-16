@@ -11,7 +11,6 @@ import uuid
 
 from opentelemetry.sdk.resources import Resource
 
-
 otelBaseUrl = "https://telemetry.modular.com:443"
 
 

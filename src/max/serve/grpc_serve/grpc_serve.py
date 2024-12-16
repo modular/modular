@@ -13,9 +13,6 @@ from dataclasses import dataclass
 from typing import Callable
 
 import grpc
-
-# mypy: disable-error-code="import-not-found"
-import ModelServing.proto.grpc_predict_v2_pb2 as pb2
 import psutil
 from cli import TextGenerationMetrics
 from grpc_reflection.v1alpha import reflection
@@ -27,6 +24,9 @@ from max.serve.pipelines.llm import (
 )
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.telemetry.stopwatch import StopWatch
+
+# mypy: disable-error-code="import-not-found"
+import ModelServing.proto.grpc_predict_v2_pb2 as pb2
 from ModelServing.proto.grpc_predict_v2_pb2_grpc import (
     GRPCInferenceServiceServicer,
     add_GRPCInferenceServiceServicer_to_server,

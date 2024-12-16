@@ -7,8 +7,7 @@
 
 from typing import Any
 
-from max.serve.telemetry.common import otelBaseUrl, metrics_resource
-
+from max.serve.telemetry.common import metrics_resource, otelBaseUrl
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
 )
