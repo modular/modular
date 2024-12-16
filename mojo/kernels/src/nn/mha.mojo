@@ -15,6 +15,7 @@ from sys import (
     simdwidthof,
     sizeof,
 )
+from sys.intrinsics import _type_is_eq
 from bit import bit_ceil
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
@@ -39,7 +40,7 @@ from gpu.memory import (
     async_copy_wait_all,
 )
 from gpu.shuffle import warp_broadcast
-from kv_cache.types import ContiguousKVCache, KVCacheStaticParams, KVCacheT
+from kv_cache.types import KVCacheStaticParams, KVCacheT, PagedKVCache
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -711,11 +712,23 @@ fn flash_attention[
                     ),
                 )
                 alias nullptr = UnsafePointer[Scalar[accum_type]]()
-                var num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
-                    num_heads, group
-                ](
-                    batch_size, max_cache_valid_length, ctx
-                )
+                alias kv_params = cache_t.get_kv_params()
+                alias is_paged = _type_is_eq[
+                    cache_t, PagedKVCache[type, kv_params]
+                ]()
+
+                var num_partitions_value: Int
+
+                @parameter
+                if is_paged:
+                    # TODO(KERN-1358) Support num_partitions > 1 for paged attn.
+                    num_partitions_value = 1
+                else:
+                    num_partitions_value = num_partitions.value() if num_partitions else get_mha_decoding_num_partitions[
+                        num_heads, group
+                    ](
+                        batch_size, max_cache_valid_length, ctx
+                    )
 
                 if num_partitions_value == 1:
                     ctx.enqueue_function(
