@@ -293,7 +293,7 @@ def execute_flash_attention[
     var test_out = test_output_host.tensor
     for bs in range(batch_size):
         for s in range(valid_length[bs]):
-            for h in range(kv_params.num_heads):
+            for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
                     # print(bs, s, h, hd, test_out[bs, s, h, hd])
                     var expect = ref_out[Index(bs, s, int(h), int(hd))]
