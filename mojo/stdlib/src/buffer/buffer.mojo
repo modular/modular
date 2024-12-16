@@ -627,7 +627,7 @@ struct NDBuffer[
             ptr: Pointer to the data.
             dynamic_shape: A static tuple of size 'rank' representing shapes.
         """
-        self.__init__(ptr, _make_tuple[rank](dynamic_shape))
+        self = Self(ptr, _make_tuple[rank](dynamic_shape))
 
     @always_inline
     fn __init__(
@@ -683,7 +683,7 @@ struct NDBuffer[
             dynamic_shape: A DimList of size 'rank' representing shapes.
             dynamic_stride: A static tuple of size 'rank' representing strides.
         """
-        self.__init__(
+        self = Self(
             ptr=ptr,
             dynamic_shape=_make_tuple[rank](dynamic_shape),
             dynamic_stride=dynamic_stride,
