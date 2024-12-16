@@ -480,27 +480,28 @@ class TorchInputSpec:
 
     _impl: _TorchInputSpec
 
-    def __init__(self, shape: InputShape, dtype: DType):
-        self._impl = _TorchInputSpec(shape, dtype._to())
+    def __init__(self, shape: InputShape, dtype: DType, device: str = ""):
+        self._impl = _TorchInputSpec(shape, dtype._to(), device)
 
     @classmethod
     def _init(cls, _core_torch_load_spec):
-        torch_load_spec = cls([], DType.bool)
+        torch_load_spec = cls([], DType.bool, "")
         torch_load_spec._impl = _core_torch_load_spec
         return torch_load_spec
 
     def __repr__(self) -> str:
-        return f"TorchInputSpec(shape={self.shape}, dtype={self.dtype})"
+        return f"TorchInputSpec(shape={self.shape}, dtype={self.dtype}, device={self.device!r})"
 
     def __str__(self) -> str:
+        device_str = "" if len(self.device) == 0 else f" {self.device}"
         if self.shape is not None:
             mlir_shape = [
                 str(dim) if isinstance(dim, int) else "-1" for dim in self.shape
             ]
             shape_str = "x".join(mlir_shape)
-            return f"{shape_str}x{self.dtype.name}"
+            return f"{shape_str}x{self.dtype.name}{device_str}"
         else:
-            return f"None x {self.dtype.name}"
+            return f"None x {self.dtype.name}{device_str}"
 
     @property
     def shape(self) -> InputShape:
@@ -514,6 +515,11 @@ class TorchInputSpec:
     def dtype(self) -> DType:
         """A torch input tensor data type."""
         return DType._from(self._impl.dtype)
+
+    @property
+    def device(self) -> str:
+        """A torch device."""
+        return self._impl.device
 
 
 def _unwrap_pybind_objects(value: Any) -> Any:
@@ -584,12 +590,18 @@ def _is_max_graph(obj: Any) -> bool:
 
 
 def _remove_static_info_from_torch_jit_graph(graph: Any):
-    """Removes any static tensor type information from a torch.jit graph."""
+    """Removes any static tensor type information from a torch.jit graph.
+    Preserve device annotations."""
     import torch  # type: ignore
 
     def _remove_static_info_from_value(value):
-        if value.type().isSubtypeOf(torch._C.TensorType.get()):
-            value.setType(torch._C.TensorType.get())
+        if (
+            value.type().isSubtypeOf(torch._C.TensorType.get())
+            and value.type().device()
+        ):
+            value.setType(
+                torch._C.TensorType.get().with_device(value.type().device())
+            )
 
     def _remove_static_info_from_node(node):
         for input in node.inputs():
