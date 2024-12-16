@@ -27,6 +27,8 @@ from nn.fused_qk_rope import fused_qk_rope_ragged
 from nn.kv_cache import (
     kv_params_h1_d16_bshd,
     kv_params_h6_d48_bshd,
+    kv_params_h2_d128_bshd,
+    kv_params_h4_d128_bshd,
     kv_params_h8_d128_bshd,
     kv_params_h8_d16_bshd,
     kv_params_h8_d512_bshd,
@@ -108,6 +110,88 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[
             output,
             ctx,
         )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h2_d128_cont_batch_ragged")
+fn fused_qkv_matmul_kv_cache_h2_d128_cont_batch_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h2_d128_bshd
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The object storing the KVCache for this layer.
+        layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+            Shape: (sum(seq_lens), num_heads * head_size).
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
+        hidden_state,
+        input_row_offsets,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
+
+
+@register_internal("fused_qkv_matmul_kv_cache_h4_d128_cont_batch_ragged")
+fn fused_qkv_matmul_kv_cache_h4_d128_cont_batch_ragged[
+    type: DType, //,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: NDBuffer[type, 2, _],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    weight: NDBuffer[type, 2, _],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h4_d128_bshd
+    ],
+    layer_idx: UInt32,
+    output: NDBuffer[type, 2, _],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Performs a fused QKV matmul. Q outputs are written to the output argument
+    while K and V outputs are written in-place into k_cache and v_cache.
+
+    Args:
+        hidden_state: Tensor with shape (sum(seq_lens), num_heads * head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,).
+            The value at each index is the start_idx of the corresponding batch in hidden_state.
+        weight: Tensor with shape (num_heads * head_size, num_kv_heads * head_size).
+        kv_collection: The object storing the KVCache for this layer.
+        layer_idx: The current layer, used to retrieve the KVCache object from kv_collection.
+        output: The pre-allocated output buffer for Q projections. K and V
+            projections are written in-place to k_cache and v_cache.
+            Shape: (sum(seq_lens), num_heads * head_size).
+        ctx: The call context pointer, passed by the graph compiler.
+    """
+    generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
+        hidden_state,
+        input_row_offsets,
+        weight,
+        kv_collection,
+        layer_idx,
+        output,
+        ctx,
+    )
 
 
 @register_internal("fused_qkv_matmul_kv_cache_h8_d128_cont_batch_ragged")
@@ -1042,6 +1126,86 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
         )
 
 
+@register_internal("fused_qk_rope_h2_d128_bshd_continuous_batch_ragged")
+fn fused_qk_rope_h2_d128_bshd_continuous_batch_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h2_d128_bshd
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only executed after QKV completes.
+    """
+    generic_fused_qk_rope_bshd_continous_batch_ragged[target=target](
+        q_proj,
+        input_row_offsets,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
+    )
+
+
+@register_internal("fused_qk_rope_h4_d128_bshd_continuous_batch_ragged")
+fn fused_qk_rope_h4_d128_bshd_continuous_batch_ragged[
+    type: DType, //,
+    *,
+    target: StringLiteral,
+](
+    q_proj: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h4_d128_bshd
+    ],
+    freqs_cis: NDBuffer[type, 2, *_],
+    layer_idx: UInt32,
+    interleaved: Scalar[DType.bool],
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    """Performs a fused RoPE projection for Q and K projections.
+
+    We have a manually fused QKV projection with mo.opaque types in our Llama model.
+    Due to a limitation in custom op definitions, we can't declare both a tensor
+    and opaque type as output from a custom kernel. This requires us to only note
+    Q_proj as an output from the QKV projection. If we immediately follow the
+    QKV proj kernel with a RoPE kernel applied to K, we'll get a race condition
+    because the graph compiler doesn't know about the dependency between these
+    kernels in the graph definition. Here we fuse the RoPE kernel applied to
+    Q_proj with K_proj, so K_proj RoPE is only executed after QKV completes.
+    """
+    generic_fused_qk_rope_bshd_continous_batch_ragged[target=target](
+        q_proj,
+        input_row_offsets,
+        kv_collection,
+        freqs_cis,
+        layer_idx,
+        interleaved,
+        output,
+        context,
+    )
+
+
 @register_internal("fused_qk_rope_h8_d128_bshd_continuous_batch_ragged")
 fn fused_qk_rope_h8_d128_bshd_continuous_batch_ragged[
     type: DType, //,
@@ -1971,6 +2135,50 @@ fn flash_attention_kv_cache_h8_d64_causal_mask_cont_batch_ragged[
     input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     kv_collection: ContinuousBatchingKVCacheCollection[
         type, kv_params_h8_d64_bshd
+    ],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
+
+
+@register_internal(
+    "flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged"
+)
+fn flash_attention_kv_cache_h2_d128_causal_mask_cont_batch_ragged[
+    type: DType, //,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h2_d128_bshd
+    ],
+    layer_idx: UInt32,
+    scale: Float32,
+    output: NDBuffer[type, 3, *_],
+    context: MojoCallContextPtr,
+) raises:
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[
+        target=target
+    ](q, input_row_offsets, kv_collection, layer_idx, scale, output, context)
+
+
+@register_internal(
+    "flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged"
+)
+fn flash_attention_kv_cache_h4_d128_causal_mask_cont_batch_ragged[
+    type: DType, //,
+    target: StringLiteral,
+](
+    q: NDBuffer[type, 3, *_],
+    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_collection: ContinuousBatchingKVCacheCollection[
+        type, kv_params_h4_d128_bshd
     ],
     layer_idx: UInt32,
     scale: Float32,
