@@ -10,7 +10,7 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from max.driver import CPU, CUDA, Tensor
+from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -55,7 +55,7 @@ def mlp_graph(types: List[TensorType]) -> Graph:
 def test_mlp(input_type: TensorType):
     # Get Graph
     host = CPU(0)
-    device0 = CUDA(0)
+    device0 = Accelerator(0)
     session = InferenceSession(devices=[device0])
 
     dim = input_type.shape[-1]

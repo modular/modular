@@ -8,7 +8,7 @@ from math import isclose
 from pathlib import Path
 
 import numpy as np
-from max.driver import CPU, CUDA, Tensor
+from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Value
@@ -151,7 +151,7 @@ def test_execute_external_weights_gpu(gpu_session: InferenceSession) -> None:
 
 def test_execute_external_weights_gpu_resident() -> None:
     """Executes a model with external weights already resident on device."""
-    cuda = CUDA()
+    cuda = Accelerator()
     gpu_session = InferenceSession(devices=[cuda])
 
     num_elems = 4096
@@ -164,7 +164,7 @@ def test_execute_external_weights_gpu_resident() -> None:
         input_types=(TensorType(DType.float32, (num_elems,)),),
     )
 
-    # Check that this graph has a CUDA constant external op.
+    # Check that this graph has a Accelerator constant external op.
     const_external_op = next(
         op
         for op in graph._mlir_op.regions[0].blocks[0].operations
@@ -232,5 +232,5 @@ def test_aliasing_outputs(
 
 
 def test_devices(gpu_session: InferenceSession) -> None:
-    device = CUDA()
+    device = Accelerator()
     assert str(device) == str(gpu_session.devices[0])

@@ -7,7 +7,7 @@
 
 import numpy as np
 import pytest
-from max.driver import CPU, CUDA, Device, Tensor
+from max.driver import CPU, Accelerator, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, ops
@@ -150,7 +150,7 @@ def test_attention_gpu(start_pos, seq_len):
     # This tests that the attention mask is calculating valid logits.
     # It does not test that these logits match a reference implementation.
     host = CPU(0)
-    device0 = CUDA(0)
+    device0 = Accelerator(0)
     devices = [device0]
     session = InferenceSession(devices=devices)
     # Get Graph
@@ -231,5 +231,5 @@ def test_aspect_ratio_mask() -> None:
     )
 
     # Compile and init the model.
-    session = InferenceSession(devices=[CUDA()])
+    session = InferenceSession(devices=[Accelerator()])
     session.load(graph)

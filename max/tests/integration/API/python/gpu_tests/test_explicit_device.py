@@ -7,7 +7,7 @@
 
 import numpy as np
 import pytest
-from max.driver import CPU, CUDA, Tensor
+from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -60,7 +60,7 @@ def create_test_graph_io_devices() -> Graph:
 def test_io_device_properties() -> None:
     graph = create_test_graph_io_devices()
     host = CPU()
-    cuda0 = CUDA(0)
+    cuda0 = Accelerator(0)
     session = InferenceSession(devices=[host, cuda0])
     compiled = session.load(graph)
     assert len(compiled.output_devices) == 1
@@ -78,7 +78,7 @@ def test_io_device_properties() -> None:
 def test_io_device_output_errors() -> None:
     graph = create_test_graph_io_devices()
     host = CPU()
-    cuda0 = CUDA(0)
+    cuda0 = Accelerator(0)
     session = InferenceSession(devices=[host])
     with pytest.raises(
         ValueError,
@@ -94,7 +94,7 @@ def test_io_device_output_errors() -> None:
 def test_io_device_input_errors() -> None:
     graph = create_test_graph_io_devices()
     host = CPU()
-    cuda0 = CUDA(0)
+    cuda0 = Accelerator(0)
     session = InferenceSession(devices=[host])
     with pytest.raises(
         ValueError,
@@ -109,7 +109,7 @@ def test_io_device_input_errors() -> None:
 
 def test_explicit_device_compilation() -> None:
     graph = create_test_graph_with_transfer()
-    device = CUDA(0)
+    device = Accelerator(0)
     session = InferenceSession(devices=[device])
     compiled = session.load(graph)
     assert str(device) == str(compiled.devices[0])
@@ -118,7 +118,7 @@ def test_explicit_device_compilation() -> None:
 def test_explicit_device_execution() -> None:
     graph = create_test_graph_with_transfer()
     host = CPU()
-    device = CUDA(0)
+    device = Accelerator(0)
     session = InferenceSession(devices=[device])
     compiled = session.load(graph)
     a_np = np.ones((1, 1)).astype(np.float32)

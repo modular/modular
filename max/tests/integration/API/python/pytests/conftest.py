@@ -110,4 +110,4 @@ def session() -> InferenceSession:
 
 @pytest.fixture(scope="module")
 def gpu_session() -> InferenceSession:
-    return InferenceSession(devices=[md.CUDA()])
+    return InferenceSession(devices=[md.Accelerator()])

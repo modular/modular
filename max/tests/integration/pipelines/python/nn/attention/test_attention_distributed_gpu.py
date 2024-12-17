@@ -9,7 +9,7 @@ from typing import List
 
 import numpy as np
 import pytest
-from max.driver import CPU, CUDA, Device, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -294,7 +294,7 @@ def test_attention(
     host = CPU(0)
     # Check we are parallelizing over legal amounts of devices and create contexts.
     assert n_devices <= accelerator_count()
-    devices = [CUDA(id) for id in range(n_devices)]
+    devices = [Accelerator(id) for id in range(n_devices)]
 
     # Initialize Model inputs
     hidden_states = Tensor.from_numpy(
@@ -340,7 +340,7 @@ def test_attention(
         np.testing.assert_allclose(results_np[i], results_np[i + 1])
 
     # Run on single device and ensure same result
-    devices = [CUDA(0)]
+    devices = [Accelerator(0)]
     devices_with_host = [host, *devices]
     (expected_res,) = execute_attn_for_devices(
         model_inputs,

@@ -7,7 +7,7 @@ import random
 
 import pytest
 import torch
-from max.driver import CUDA
+from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
@@ -278,7 +278,7 @@ def test_llava_mistral_decoder(pytorch_mistral_and_config):
         max_seq_len=pytorch_config.max_position_embeddings,  # verify this.
         num_layers=pytorch_config.num_hidden_layers,
         session=session,
-        devices=[CUDA()],
+        devices=[Accelerator()],
     )
 
     seq_ids = kv_manager.claim(n=batch_size)

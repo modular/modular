@@ -10,7 +10,7 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from max.driver import CPU, CUDA, Device, Tensor, accelerator_count
+from max.driver import CPU, Accelerator, Device, Tensor, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -108,7 +108,7 @@ def test_mlp(batch_size, intermediate_size, hidden_dim, n_devices):
     host = CPU(0)
     # Check we are parallelizing over legal amounts of devices and create contexts.
     assert n_devices <= accelerator_count()
-    devices = [CUDA(id) for id in range(n_devices)]
+    devices = [Accelerator(id) for id in range(n_devices)]
 
     # Initialize Torch inputs and expected
     x_np = np.ones((batch_size, hidden_dim)).astype(np.float32)

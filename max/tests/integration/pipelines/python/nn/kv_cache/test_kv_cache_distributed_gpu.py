@@ -6,7 +6,7 @@
 
 import asyncio
 
-from max.driver import CUDA, accelerator_count
+from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines.kv_cache import (
@@ -25,7 +25,7 @@ async def _test_kv_cache_gpu():
     num_devices = accelerator_count()
 
     if num_devices > 1:
-        list_of_devices = [CUDA(id=i) for i in range(num_devices)]
+        list_of_devices = [Accelerator(id=i) for i in range(num_devices)]
         inference_session = InferenceSession(devices=list_of_devices)
         kv_params = KVCacheParams(
             n_kv_heads=8,
