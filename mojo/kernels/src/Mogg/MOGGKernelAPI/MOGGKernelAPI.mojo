@@ -178,6 +178,7 @@ from utils import IndexList, StaticTuple
 from utils.index import Index
 from utils.numerics import isinf, isnan
 from utils.static_tuple import _set_array_elem
+from utils.loop import unroll
 
 # ===-----------------------------------------------------------------------===#
 # Nop functions to expose different types to the compiler.
@@ -291,7 +292,17 @@ fn create_known_dim[known_val: Int]() -> Dim:
     return Dim(known_val)
 
 
-# ===-----------------------------------------------------------------------===#
+@register_internal_override("reshape_contiguous_managed_tensor_slice", 1)
+@always_inline
+fn reshape_contiguous_buffer[
+    type: DType, old_rank: Int, new_rank: Int
+](
+    buffer: ManagedTensorSlice[type, old_rank], shape: IndexList[new_rank]
+) -> ManagedTensorSlice[type, new_rank]:
+    return ManagedTensorSlice[type, new_rank](buffer._ptr, shape)
+
+
+# ===----------------------------------------------------------------------===#
 # Additional expected primitives
 # ===-----------------------------------------------------------------------===#
 
@@ -559,6 +570,62 @@ fn reduce_shape[
     return output_shape
 
 
+# ===----------------------------------------------------------------------===#
+# Helpers for Affine Fusion
+# ===----------------------------------------------------------------------===#
+
+
+@register_internal_override("split_dim_indices", 1)
+@always_inline
+fn split_dim_indices[
+    rank: Int, axis: Int
+](indices: IndexList[rank], new_shape_dim: Int64) -> IndexList[rank + 1]:
+    var out = IndexList[rank + 1]()
+
+    # This op is transforming the INDICES of an access into a reshaped tensor.
+    # Consider the tensor is [40, 30, 2] and we reshape it to [5, 8, 30, 2].
+    # If we are accessing the index [21, 16, 1] in the original shape then to
+    # preserve the reshape we would need to transform the indices into [2, 5, 16, 1].
+    # Or [21 // 8, 21 % 8, ...old dims...].
+
+    @parameter
+    for i in range(rank + 1):
+
+        @parameter
+        if i == axis:
+            out[i] = indices[axis] // int(new_shape_dim)
+        elif i == axis + 1:
+            out[i] = indices[axis] % int(new_shape_dim)
+        elif i < axis:
+            out[i] = indices[i]
+        elif i > axis:
+            out[i] = indices[i - 1]
+
+    return out
+
+
+@register_internal_override("insert_index", 1)
+@always_inline
+fn insert_index[
+    rank: Int, axis: Int, value: Int
+](indices: IndexList[rank]) -> IndexList[rank + 1]:
+    var out = IndexList[rank + 1]()
+
+    @always_inline
+    @parameter
+    fn add_dim[i: Int]():
+        @parameter
+        if i < axis:
+            out[i] = indices[i]
+        elif i > axis:
+            out[i] = indices[i - 1]
+        else:
+            out[i] = value
+
+    unroll[add_dim, rank + 1]()
+    return out
+
+
 # TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
 @export
 fn export():
@@ -566,7 +633,7 @@ fn export():
     alias _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
 
 
-# ===----------------------------------------------------------------------===#
+# ===-----------------------------------------------------------------------===#
 # Elementwise Kernels
 # ===-----------------------------------------------------------------------===#
 
