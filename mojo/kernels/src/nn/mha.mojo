@@ -79,7 +79,6 @@ from utils.index import Index, IndexList
 from utils.numerics import min_or_neg_inf, neg_inf
 from utils.static_tuple import StaticTuple
 
-from .mha_warp_shuffle import mha_decoding_single_batch_warp_shuffle
 from gpu.shuffle import (
     lane_group_max,
     lane_group_sum,
@@ -369,7 +368,6 @@ fn flash_attention[
     q_shape: DimList, //,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
     output: NDBuffer[_, rank, *_],
@@ -386,7 +384,6 @@ fn flash_attention[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            "use_warp_shuffle_decoding=" + str(use_warp_shuffle_decoding),
             trace_arg("q", q),
             trace_arg("k", k),
             trace_arg("v", v),
@@ -404,7 +401,6 @@ fn flash_attention[
         return flash_attention[
             add_attn_mask=add_attn_mask,
             use_score_mod=use_score_mod,
-            use_warp_shuffle_decoding=use_warp_shuffle_decoding,
             config=config,
         ](
             output,
@@ -441,7 +437,6 @@ fn flash_attention[
     q_shape: DimList, //,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = False,
     config: MHAConfig = MHAConfig(
         type, q_shape.get[rank - 2](), q_shape.get[rank - 1]()
     ),
@@ -504,7 +499,6 @@ fn flash_attention[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            "use_warp_shuffle_decoding=" + str(use_warp_shuffle_decoding),
             trace_arg("q", q),
             trace_arg("output", output),
         )
@@ -664,24 +658,6 @@ fn flash_attention[
                 )
                 alias num_blocks_y = num_heads // group
 
-                alias block_size_warp_shuffle = 16
-
-                @parameter
-                if (not add_attn_mask) and use_warp_shuffle_decoding:
-                    shared_mem_bytes = (
-                        max(
-                            # shared memory to store number of logits
-                            # align up by block size because we don't check oob in copy_from when doing the second gevm
-                            align_up(
-                                int(max_cache_valid_length),
-                                block_size_warp_shuffle,
-                            ),
-                            # shared memory for scratch space when doing block reductions
-                            int(depth * num_warps // 2),
-                        )
-                        * sizeof[accum_type]()
-                        * group
-                    )
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask.rank,
@@ -703,9 +679,7 @@ fn flash_attention[
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_score_mod=use_score_mod,
-                        use_warp_shuffle_decoding=use_warp_shuffle_decoding,
                         ragged=ragged,
-                        block_size_warp_shuffle=block_size_warp_shuffle,
                         is_shared_kv=is_shared_kv,
                     ]
                 ](
@@ -901,7 +875,6 @@ fn flash_attention[
     q_shape: DimList, //,
     add_attn_mask: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = False,
     config: MHAConfig = MHAConfig(type, q_shape.get[2](), q_shape.get[3]()),
 ](
     output: NDBuffer[_, rank, *_],
@@ -945,7 +918,6 @@ fn flash_attention[
     @parameter
     fn description_fn() -> String:
         return String(";").join(
-            "use_warp_shuffle_decoding=" + str(use_warp_shuffle_decoding),
             trace_arg("q", q),
             trace_arg("k", k),
             trace_arg("v", v),
@@ -1070,21 +1042,6 @@ fn flash_attention[
 
                 alias num_blocks_y = num_heads // group
 
-                alias block_size_warp_shuffle = 16
-
-                @parameter
-                if (not add_attn_mask) and use_warp_shuffle_decoding:
-                    shared_mem_bytes = (
-                        max(
-                            # shared memory to store number of logits
-                            # align up by block size because we don't check oob in copy_from when doing the second gevm
-                            align_up(num_keys, block_size_warp_shuffle),
-                            # shared memory for scratch space when doing block reductions
-                            depth * num_warps // 2,
-                        )
-                        * sizeof[accum_type]()
-                        * group
-                    )
                 var func = ctx.compile_function[
                     mha_decoding[
                         mask.rank,
@@ -1111,8 +1068,6 @@ fn flash_attention[
                         group=group,
                         use_mask_tensor=add_attn_mask,
                         use_score_mod=use_score_mod,
-                        use_warp_shuffle_decoding=use_warp_shuffle_decoding,
-                        block_size_warp_shuffle=block_size_warp_shuffle,
                         is_shared_kv=is_shared_kv,
                     ]
                 ](
@@ -2946,9 +2901,7 @@ fn mha_decoding[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = False,
     ragged: Bool = False,
-    block_size_warp_shuffle: Int = 16,
     is_shared_kv: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
@@ -3009,87 +2962,64 @@ fn mha_decoding[
     var v_operand = KVCacheMHAOperand(v)
 
     @parameter
-    if use_mask_tensor or (not use_warp_shuffle_decoding):
-
-        @parameter
-        if is_shared_kv:
-            mha_decoding_single_batch_pipelined[
-                mask_rank,
-                BM=BM,
-                BN=BN,
-                BK=BK,
-                WM=WM,
-                WN=WN,
-                depth=depth,
-                num_heads=num_heads,
-                num_threads=num_threads,
-                num_pipeline_stages=num_pipeline_stages,
-                group=group,
-                use_mask_tensor=use_mask_tensor,
-                use_score_mod=use_score_mod,
-            ](
-                q_ptr.offset(q_batch_offset),
-                k_operand,
-                v_operand,
-                mask_ptr.offset(mask_batch_offset),
-                output_ptr.offset(output_batch_offset),
-                exp_sum_batch_ptr,
-                qk_max_batch_ptr,
-                scale,
-                num_keys,
-                num_partitions,
-                max_cache_valid_length,
-                mask,
-                score_mod,
-                batch_idx,
-            )
-        else:
-            mha_decoding_single_batch[
-                mask_rank,
-                BM=BM,
-                BN=BN,
-                BK=BK,
-                WM=WM,
-                WN=WN,
-                depth=depth,
-                num_heads=num_heads,
-                num_threads=num_threads,
-                num_pipeline_stages=num_pipeline_stages,
-                group=group,
-                use_mask_tensor=use_mask_tensor,
-                use_score_mod=use_score_mod,
-            ](
-                q_ptr.offset(q_batch_offset),
-                k_operand,
-                v_operand,
-                mask_ptr.offset(mask_batch_offset),
-                output_ptr.offset(output_batch_offset),
-                exp_sum_batch_ptr,
-                qk_max_batch_ptr,
-                scale,
-                num_keys,
-                num_partitions,
-                max_cache_valid_length,
-                mask,
-                score_mod,
-                batch_idx,
-            )
-    else:
-        mha_decoding_single_batch_warp_shuffle[
-            head_size=depth,
+    if is_shared_kv:
+        mha_decoding_single_batch_pipelined[
+            mask_rank,
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            depth=depth,
             num_heads=num_heads,
-            group=group,
             num_threads=num_threads,
-            # TODO: select block_size based on num_keys, 32 is better for large num_keys ~ 512
-            block_size=block_size_warp_shuffle,
+            num_pipeline_stages=num_pipeline_stages,
+            group=group,
+            use_mask_tensor=use_mask_tensor,
             use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
             k_operand,
             v_operand,
+            mask_ptr.offset(mask_batch_offset),
             output_ptr.offset(output_batch_offset),
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
             scale,
             num_keys,
+            num_partitions,
+            max_cache_valid_length,
+            mask,
+            score_mod,
+            batch_idx,
+        )
+    else:
+        mha_decoding_single_batch[
+            mask_rank,
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            depth=depth,
+            num_heads=num_heads,
+            num_threads=num_threads,
+            num_pipeline_stages=num_pipeline_stages,
+            group=group,
+            use_mask_tensor=use_mask_tensor,
+            use_score_mod=use_score_mod,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k_operand,
+            v_operand,
+            mask_ptr.offset(mask_batch_offset),
+            output_ptr.offset(output_batch_offset),
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            scale,
+            num_keys,
+            num_partitions,
+            max_cache_valid_length,
             mask,
             score_mod,
             batch_idx,
@@ -3122,8 +3052,6 @@ fn mha_decoding[
     group: UInt = 1,
     use_mask_tensor: Bool = True,
     use_score_mod: Bool = False,
-    use_warp_shuffle_decoding: Bool = False,
-    block_size_warp_shuffle: Int = 16,
     is_shared_kv: Bool = False,
 ](
     q_ptr: UnsafePointer[Scalar[q_type]],
@@ -3163,86 +3091,63 @@ fn mha_decoding[
         exp_sum_batch_ptr = exp_sum_ptr.offset(exp_sum_offset)
 
     @parameter
-    if use_mask_tensor or (not use_warp_shuffle_decoding):
-
-        @parameter
-        if is_shared_kv:
-            mha_decoding_single_batch_pipelined[
-                mask_rank,
-                BM=BM,
-                BN=BN,
-                BK=BK,
-                WM=WM,
-                WN=WN,
-                depth=depth,
-                num_heads=num_heads,
-                num_threads=num_threads,
-                num_pipeline_stages=num_pipeline_stages,
-                group=group,
-                use_mask_tensor=use_mask_tensor,
-                use_score_mod=use_score_mod,
-            ](
-                q_ptr.offset(q_batch_offset),
-                k_operand,
-                v_operand,
-                mask_ptr.offset(mask_batch_offset),
-                output_ptr.offset(output_batch_offset),
-                exp_sum_batch_ptr,
-                qk_max_batch_ptr,
-                scale,
-                num_keys,
-                num_partitions,
-                num_keys,
-                mask,
-                score_mod,
-                batch_idx,
-            )
-        else:
-            mha_decoding_single_batch[
-                mask_rank,
-                BM=BM,
-                BN=BN,
-                BK=BK,
-                WM=WM,
-                WN=WN,
-                depth=depth,
-                num_heads=num_heads,
-                num_threads=num_threads,
-                num_pipeline_stages=num_pipeline_stages,
-                group=group,
-                use_mask_tensor=use_mask_tensor,
-                use_score_mod=use_score_mod,
-            ](
-                q_ptr.offset(q_batch_offset),
-                k_operand,
-                v_operand,
-                mask_ptr.offset(mask_batch_offset),
-                output_ptr.offset(output_batch_offset),
-                exp_sum_batch_ptr,
-                qk_max_batch_ptr,
-                scale,
-                num_keys,
-                num_partitions,
-                num_keys,
-                mask,
-                score_mod,
-                batch_idx,
-            )
-    else:
-        mha_decoding_single_batch_warp_shuffle[
-            head_size=depth,
+    if is_shared_kv:
+        mha_decoding_single_batch_pipelined[
+            mask_rank,
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            depth=depth,
             num_heads=num_heads,
-            group=group,
             num_threads=num_threads,
-            # TODO: select block_size based on num_keys, 32 is better for large num_keys ~ 512
-            block_size=block_size_warp_shuffle,
+            num_pipeline_stages=num_pipeline_stages,
+            group=group,
+            use_mask_tensor=use_mask_tensor,
             use_score_mod=use_score_mod,
         ](
             q_ptr.offset(q_batch_offset),
             k_operand,
             v_operand,
+            mask_ptr.offset(mask_batch_offset),
             output_ptr.offset(output_batch_offset),
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
             scale,
+            num_keys,
+            num_partitions,
+            num_keys,
+            mask,
+            score_mod,
+            batch_idx,
+        )
+    else:
+        mha_decoding_single_batch[
+            mask_rank,
+            BM=BM,
+            BN=BN,
+            BK=BK,
+            WM=WM,
+            WN=WN,
+            depth=depth,
+            num_heads=num_heads,
+            num_threads=num_threads,
+            num_pipeline_stages=num_pipeline_stages,
+            group=group,
+            use_mask_tensor=use_mask_tensor,
+            use_score_mod=use_score_mod,
+        ](
+            q_ptr.offset(q_batch_offset),
+            k_operand,
+            v_operand,
+            mask_ptr.offset(mask_batch_offset),
+            output_ptr.offset(output_batch_offset),
+            exp_sum_batch_ptr,
+            qk_max_batch_ptr,
+            scale,
+            num_keys,
+            num_partitions,
             num_keys,
             mask,
             score_mod,
