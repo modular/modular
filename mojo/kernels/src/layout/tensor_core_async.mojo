@@ -21,26 +21,11 @@ from gpu.mma import (
 from utils import Index, IndexList
 
 
-# TODO(MSTDL-1065): Replace with str after fixing the issue
-fn _to_str(mma_shape: IndexList[3]) -> String:
-    return (
-        "["
-        + str(mma_shape[0])
-        + ", "
-        + str(mma_shape[1])
-        + ", "
-        + str(mma_shape[2])
-        + "]"
-    )
-
-
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
 fn _lhs_layout[mma_shape: IndexList[3]]() -> Layout:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA operation of shape '["
-        + _to_str(mma_shape)
-        + "]' is not supported",
+        "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
     return Layout(
         IntTuple(IntTuple(8, 8), IntTuple(4, 2)),
@@ -51,9 +36,7 @@ fn _lhs_layout[mma_shape: IndexList[3]]() -> Layout:
 fn _rhs_layout[mma_shape: IndexList[3]]() -> Layout:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA operation of shape '["
-        + _to_str(mma_shape)
-        + "]' is not supported",
+        "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
     return Layout(IntTuple(IntTuple(4, 2), 8), IntTuple(IntTuple(1, 32), 4))
 
@@ -65,9 +48,7 @@ fn _lhs_descriptor[
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA operation of shape '["
-        + _to_str(mma_shape)
-        + "]' is not supported",
+        "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
     return WGMMADescriptor.create[8, 64](tensor.ptr)
 
@@ -79,9 +60,7 @@ fn _rhs_descriptor[
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA operation of shape '["
-        + _to_str(mma_shape)
-        + "]' is not supported",
+        "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
     return WGMMADescriptor.create[1, 8](tensor.ptr)
 
@@ -92,9 +71,7 @@ fn _output_register_size[
 ](in_dtype: DType, out_dtype: DType) -> Int:
     constrained[
         mma_shape == Index(64, 8, 8),
-        "WGMMA operation of shape '["
-        + _to_str(mma_shape)
-        + "]' is not supported",
+        "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
     return 4
 
@@ -130,9 +107,9 @@ struct TensorCoreAsync[
     fn __init__(out self):
         constrained[
             mma_shape == Index(64, 8, 8),
-            "WGMMA operation of shape '["
-            + _to_str(mma_shape)
-            + "]' is not supported",
+            "WGMMA operation of shape '"
+            + str(mma_shape)
+            + "' is not supported",
         ]()
 
     @staticmethod
@@ -173,9 +150,9 @@ struct TensorCoreAsync[
     ):
         constrained[
             mma_shape == Index(64, 8, 8),
-            "WGMMA operation of shape '["
-            + _to_str(mma_shape)
-            + "]' is not supported",
+            "WGMMA operation of shape '"
+            + str(mma_shape)
+            + "' is not supported",
         ]()
         warp_id, lan_id = divmod(ThreadIdx.x, UInt(WARP_SIZE))
         alias warp_row_major_layout = Layout.row_major(8, 4)
