@@ -109,7 +109,7 @@ struct StateContext:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@no_inline
 fn byte_buffer_alloc[
     target: StringLiteral,
     alignment: Int,
@@ -132,7 +132,7 @@ fn byte_buffer_alloc[
 
 
 @register_internal("builtin.create_errror_async_values_and_destruct_error")
-@always_inline
+@no_inline
 fn create_errror_async_values_and_destruct_error(
     ctx: MojoCallContextPtr,
     async_ptr: UnsafePointer[UnsafePointer[NoneType]],
@@ -154,7 +154,7 @@ fn create_errror_async_values_and_destruct_error(
 
 
 @register_internal("builtin.create_index_async")
-@always_inline
+@no_inline
 fn create_index_async(
     value: Int,
     async_ptr: UnsafePointer[NoneType],
@@ -166,7 +166,7 @@ fn create_index_async(
 
 
 @register_internal("builtin.create_si64_async")
-@always_inline
+@no_inline
 @export
 fn create_si64_async(
     value: Scalar[DType.int64],
@@ -179,7 +179,7 @@ fn create_si64_async(
 
 
 @register_internal("builtin.create_chain_async")
-@always_inline
+@no_inline
 fn create_chain_async(
     async_ptr: UnsafePointer[NoneType],
     runtime: UnsafePointer[NoneType],
@@ -191,7 +191,7 @@ fn create_chain_async(
 
 @register_internal("builtin.create_bool_async")
 @register_internal("builtin.create_i1_async")
-@always_inline
+@no_inline
 fn create_i1_async(
     value: Bool,
     async_ptr: UnsafePointer[NoneType],
@@ -203,7 +203,7 @@ fn create_i1_async(
 
 
 @register_internal("builtin.create_buffer_ref_async")
-@always_inline
+@no_inline
 fn create_buffer_ref_async[
     target: StringLiteral
 ](
@@ -222,7 +222,7 @@ fn create_buffer_ref_async[
 
 
 @register_internal("builtin.create_non_tracked_buffer_ref_async")
-@always_inline
+@no_inline
 fn create_non_tracked_buffer_ref_async[
     target: StringLiteral
 ](
@@ -237,7 +237,7 @@ fn create_non_tracked_buffer_ref_async[
 
 
 @register_internal("builtin.create_buffer_ref_with_borrow_async")
-@always_inline
+@no_inline
 fn create_buffer_ref_with_borrow_async[
     borrowee_type: Int, target: StringLiteral
 ](
@@ -257,7 +257,7 @@ fn create_buffer_ref_with_borrow_async[
 
 
 @register_internal("builtin.create_tensor_spec_async")
-@always_inline
+@no_inline
 fn create_tensor_spec_async[
     spec_rank: Int
 ](
@@ -278,7 +278,7 @@ fn create_tensor_spec_async[
 
 
 @register_internal("builtin.create_tensor_with_borrow_async")
-@always_inline
+@no_inline
 fn create_tensor_async[
     tensor_rank: Int,
     buffer_rank: Int,
@@ -317,7 +317,7 @@ fn empty_destructor(ptr: UnsafePointer[UInt8]):
 
 
 @register_internal("builtin.create_mojo_value_async")
-@always_inline
+@no_inline
 fn create_mojo_value_async(
     val_ptr: UnsafePointer[UInt8],
     async_ptr: UnsafePointer[NoneType],
@@ -350,7 +350,7 @@ fn create_mojo_value_async(
 
 
 @register_internal("builtin.create_python_mojo_value_async")
-@always_inline
+@no_inline
 fn create_python_mojo_value_async(
     val_ptr: UnsafePointer[UInt8],
     async_ptr: UnsafePointer[NoneType],
@@ -374,7 +374,7 @@ fn create_python_mojo_value_async(
 
 
 @register_internal("builtin.unpack_async")
-@always_inline
+@no_inline
 fn unpack_async(
     async_ptr: UnsafePointer[NoneType],
 ) -> UnsafePointer[NoneType]:
@@ -385,7 +385,7 @@ fn unpack_async(
 
 
 @register_internal("builtin.unpack_buffer_ref")
-@always_inline
+@no_inline
 fn unpack_buffer_ref[
     target: StringLiteral
 ](async_ptr: UnsafePointer[NoneType],) -> NDBuffer[DType.uint8, 1]:
@@ -399,7 +399,7 @@ fn unpack_buffer_ref[
 
 
 @register_internal("builtin.unpack_tensor")
-@always_inline
+@no_inline
 fn unpack_tensor[
     buffer_rank: Int,
     tensor_rank: Int,
@@ -430,7 +430,7 @@ fn unpack_tensor[
 
 
 @register_internal("builtin.unpack_tensor_spec")
-@always_inline
+@no_inline
 fn unpack_tensor_spec[
     spec_rank: Int
 ](async_ptr: UnsafePointer[NoneType]) -> StaticTensorSpec[spec_rank]:
@@ -447,7 +447,7 @@ fn unpack_tensor_spec[
 
 
 @register_internal("builtin.unpack_context")
-@always_inline
+@no_inline
 fn unpack_context(
     async_ptr: UnsafePointer[NoneType],
 ) -> StateContext:
@@ -461,7 +461,7 @@ fn unpack_context(
 
 
 @register_internal("builtin.get_buffer_data")
-@always_inline
+@no_inline
 fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
     return buffer.data
 
@@ -472,7 +472,7 @@ fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
 
 
 @register_internal("mgp.assert")
-@always_inline
+@no_inline
 fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
     if not cond:
         raise Error(message)
@@ -485,7 +485,7 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises -> Int:
 
 
 @register_internal("mgp.tensor.create")
-@always_inline
+@no_inline
 fn mgp_tensor_create[
     spec_rank: Int,
     buffer_rank: Int,
@@ -513,7 +513,7 @@ fn mgp_tensor_create[
 
 
 @register_internal("mgp.tensor.extract.tensor_spec")
-@always_inline
+@no_inline
 fn mgp_tensor_extract_tensor_spec[
     tensor_rank: Int,
     buffer_rank: Int,
@@ -536,7 +536,7 @@ fn mgp_tensor_extract_tensor_spec[
 
 
 @register_internal("mgp.tensor.extract.buffer")
-@always_inline
+@no_inline
 fn mgp_tensor_extract_buffer[
     tensor_rank: Int,
     buffer_rank: Int,
@@ -554,7 +554,7 @@ fn mgp_tensor_extract_buffer[
 
 
 @register_internal("mgp.buffer.alloc")
-@always_inline
+@no_inline
 fn mgp_buffer_alloc[
     bRawAlign: UInt64,
     cDevice: StringLiteral,
@@ -610,7 +610,7 @@ fn mgp_buffer_constant_external[
     return NDBuffer[DType.int8, 1](weight_ptr.bitcast[Int8](), DimList(cSize))
 
 
-@always_inline
+@no_inline
 fn fill_buffer[
     type: DType
 ](buf: NDBuffer[DType.uint8, 1], vals: VariadicList[Int]):
@@ -622,7 +622,7 @@ fn fill_buffer[
 
 
 @register_internal("mgp.buffer.set_with_index")
-@always_inline
+@no_inline
 fn mgp_buffer_set_with_index[
     bDevice: StringLiteral
 ](buffer: NDBuffer[DType.uint8, 1], *vals: Int) raises -> Int:
@@ -647,7 +647,7 @@ fn mgp_buffer_set_with_index[
 
 
 @register_internal("mgp.buffer.to_bool")
-@always_inline
+@no_inline
 fn mgp_buffer_to_bool[
     bDevice: StringLiteral
 ](buffer: NDBuffer[DType.uint8, 1]) -> Bool:
@@ -661,7 +661,7 @@ fn mgp_buffer_to_bool[
 
 
 @register_internal("mgp.buffer.to_index")
-@always_inline
+@no_inline
 fn mgp_buffer_to_index(buffer: NDBuffer[DType.uint8, 1]) raises -> Int:
     var bufSize = buffer.num_elements()
     if bufSize == 4:
@@ -675,7 +675,7 @@ fn mgp_buffer_to_index(buffer: NDBuffer[DType.uint8, 1]) raises -> Int:
 
 
 @register_internal("mgp.buffer.slice")
-@always_inline
+@no_inline
 fn mgp_buffer_slice(
     buffer: NDBuffer[DType.uint8, 1], offset: Int, size: Int
 ) -> NDBuffer[DType.uint8, 1]:
@@ -683,7 +683,7 @@ fn mgp_buffer_slice(
 
 
 @register_internal("mgp.buffer.concat")
-@always_inline
+@no_inline
 fn mgp_buffer_concat[
     bDevice: StringLiteral
 ](
@@ -704,7 +704,7 @@ fn mgp_buffer_concat[
 
 
 @register_internal("mgp.buffer.device_to_host")
-@always_inline
+@no_inline
 fn mgp_buffer_device_to_host[
     cOtherDevice: StringLiteral,
     dHostDevice: StringLiteral,
@@ -731,7 +731,7 @@ fn mgp_buffer_device_to_host[
 
 
 @register_internal("mgp.buffer.device_to_device")
-@always_inline
+@no_inline
 fn mgp_buffer_device_to_device[
     cSrcDevice: StringLiteral,
     dDstDevice: StringLiteral,
@@ -769,7 +769,7 @@ fn mgp_buffer_device_to_device[
 
 
 @register_internal("mgp.buffer.host_to_device")
-@always_inline
+@no_inline
 fn mgp_buffer_host_to_device[
     cHostDevice: StringLiteral,
     dOtherDevice: StringLiteral,
@@ -796,7 +796,7 @@ fn mgp_buffer_host_to_device[
 
 
 @register_internal("mgp.buffer.get_cached")
-@always_inline
+@no_inline
 fn mgp_buffer_get_cached(
     ctx: StateContext,
     storage_ref_addr: UnsafePointer[UnsafePointer[NoneType]],
@@ -818,7 +818,7 @@ fn mgp_buffer_get_cached(
 
 
 @register_internal("mgp.buffer.remove_cached")
-@always_inline
+@no_inline
 fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64) -> Int:
     external_call["MGP_RT_RemoveCachedBuffer", NoneType](
         int(buffer_slot), ctx.ctx_ptr
@@ -827,13 +827,13 @@ fn mgp_buffer_remove_cached(ctx: StateContext, buffer_slot: UInt64) -> Int:
 
 
 @register_internal("mgp.buffer.get_size")
-@always_inline
+@no_inline
 fn mgp_buffer_get_size(buf: NDBuffer[DType.uint8, 1]) -> Int:
     return buf.num_elements()
 
 
 @register_internal("destruct_async_refs")
-@always_inline
+@no_inline
 fn destruct_async_refs[
     size: Int
 ](storage_ref_addr: StaticTuple[UnsafePointer[UnsafePointer[NoneType]], size]):
@@ -848,7 +848,7 @@ fn destruct_async_refs[
 
 
 @register_internal("mgp.tensor_spec.create")
-@always_inline
+@no_inline
 fn mgp_tensor_spec_create[
     bRawDType: UInt8,
     aRawDims: DimList,
@@ -869,7 +869,7 @@ fn mgp_tensor_spec_create[
 
 
 @register_internal("mgp.tensor_spec.equal.static")
-@always_inline
+@no_inline
 fn mgp_tensor_spec_equal_static[
     spec_rank: Int, *rawDims: Dim
 ](spec: StaticTensorSpec[spec_rank]) -> Bool:
@@ -887,7 +887,7 @@ fn mgp_tensor_spec_equal_static[
 
 
 @register_internal("mgp.tensor_spec.get_dim")
-@always_inline
+@no_inline
 fn mgp_tensor_spec_get_dim[
     spec_rank: Int, axis: UInt64
 ](spec: StaticTensorSpec[spec_rank]) -> Int:
@@ -910,7 +910,7 @@ fn mgp_device_context_destroy(dev_ctx: DeviceContextPtr):
 
 
 @register_internal("mgp.sync")
-@always_inline
+@no_inline
 fn mgp_sync[
     bDevice: StringLiteral,
 ](
@@ -923,7 +923,7 @@ fn mgp_sync[
 
 
 @register_internal("mgp.debug.print")
-@always_inline
+@no_inline
 fn mgp_debug_print[
     aDebugString: StringLiteral,
     bLabel: StringLiteral,
@@ -956,19 +956,19 @@ struct MyInt(Movable):
 
 
 @register_internal("testfuse.my_int.from_index")
-@always_inline
+@no_inline
 fn test_my_int_from_index(x: Int) -> MyInt:
     return MyInt(x)
 
 
 @register_internal("testfuse.my_int.square")
-@always_inline
+@no_inline
 fn test_my_int_square(x: MyInt) -> MyInt:
     return MyInt(x.val * x.val)
 
 
 @register_internal("testfuse.my_int.to_index")
-@always_inline
+@no_inline
 fn test_my_int_to_index(x: MyInt) -> Int:
     return x.val
 
@@ -984,7 +984,7 @@ struct MyIntReg:
 
 
 @register_internal("testfuse.my_int_reg.square")
-@always_inline
+@no_inline
 fn test_my_int_reg_square(x: MyIntReg) -> MyIntReg:
     return MyIntReg(x.val * x.val)
 
@@ -1003,18 +1003,18 @@ struct MyIntReg2:
 
 
 @register_internal("testfuse.my_int_reg2.from_index")
-@always_inline
+@no_inline
 fn test_my_int_reg2_from_index(x: Int) -> MyIntReg2:
     return MyIntReg2(x)
 
 
 @register_internal("testfuse.my_int_reg2.square")
-@always_inline
+@no_inline
 fn test_my_int_reg2_square(x: MyIntReg2) -> MyIntReg2:
     return MyIntReg2(x.val * x.val)
 
 
 @register_internal("testfuse.my_int_reg2.to_index")
-@always_inline
+@no_inline
 fn test_my_int_reg2_to_index(x: MyIntReg2) -> Int:
     return x.val
