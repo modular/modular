@@ -50,7 +50,7 @@ def pipeline_config(testdata_directory, request) -> PipelineConfig:
         max_new_tokens=params.max_new_tokens,
         cache_strategy=cache_strategy,
         max_cache_batch_size=16,
-        device_specs=[DeviceSpec.cuda()],
+        device_specs=[DeviceSpec.accelerator()],
     )
 
 

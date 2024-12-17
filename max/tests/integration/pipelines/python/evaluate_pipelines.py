@@ -240,7 +240,7 @@ def main(output_path: str, log_samples: bool):
     pipeline_name = "llama"
     version_name = "llama3_1"
     encoding_name = "bfloat16"
-    device_specs = [driver.DeviceSpec.cuda()]
+    device_specs = [driver.DeviceSpec.accelerator()]
 
     pipeline_oracle = PIPELINE_ORACLES[pipeline_name]
     max_pipeline_and_tokenizer = pipeline_oracle.create_max_pipeline(

@@ -644,7 +644,7 @@ def main(
     if device_type == "cpu":
         device_specs = [driver.DeviceSpec.cpu()]
     elif device_type == "gpu":
-        device_specs = [driver.DeviceSpec.cuda()]
+        device_specs = [driver.DeviceSpec.accelerator()]
     else:
         raise ValueError(f"Unknown device type {device_type!r}")
     for device_spec in device_specs:

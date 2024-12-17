@@ -292,7 +292,7 @@ VALID_COMMANDS = [
                 Path("model2.safetensors"),
                 Path("model3.safetensors"),
             ],
-            "device_specs": [DeviceSpec.cuda(id=0)],
+            "device_specs": [DeviceSpec.accelerator(id=0)],
         },
         valid=True,
     ),

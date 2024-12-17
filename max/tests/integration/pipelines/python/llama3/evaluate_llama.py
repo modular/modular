@@ -105,7 +105,9 @@ class SupportedTestModels:
 
         if "device_specs" not in kwargs:
             kwargs["device_specs"] = (
-                [DeviceSpec.cuda()] if self.use_gpu else [DeviceSpec.cpu()]
+                [DeviceSpec.accelerator()]
+                if self.use_gpu
+                else [DeviceSpec.cpu()]
             )
 
         if "cache_strategy" not in kwargs:

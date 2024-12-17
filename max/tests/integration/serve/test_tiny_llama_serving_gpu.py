@@ -41,7 +41,7 @@ MAX_READ_SIZE = 10 * 1024
             weight_path="tiny_llama_bf16.gguf",
             max_length=512,
             max_new_tokens=10,
-            device_spec=DeviceSpec.cuda(),
+            device_spec=DeviceSpec.accelerator(),
             encoding=SupportedEncoding.bfloat16,
         )
     ],
@@ -87,7 +87,7 @@ async def test_tinyllama_serve_gpu(app):
             weight_path="tiny_llama.gguf",
             max_length=512,
             max_new_tokens=10,
-            device_spec=DeviceSpec.cuda(),
+            device_spec=DeviceSpec.accelerator(),
             encoding=SupportedEncoding.bfloat16,
         )
     ],
@@ -116,7 +116,7 @@ async def test_tinyllama_serve_gpu_nonchat_completions(app, prompt):
             weight_path="tiny_llama_bf16.gguf",
             max_length=512,
             max_new_tokens=10,
-            device_spec=DeviceSpec.cuda(),
+            device_spec=DeviceSpec.accelerator(),
             encoding=SupportedEncoding.bfloat16,
         ),
     ],

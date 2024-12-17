@@ -438,7 +438,7 @@ def main(
         config_kwargs.update(
             {
                 "device_specs": [
-                    DeviceSpec.cuda(id=gpu_id) for gpu_id in use_gpu
+                    DeviceSpec.accelerator(id=gpu_id) for gpu_id in use_gpu
                 ],
                 "quantization_encoding": SupportedEncoding.bfloat16,
             }
