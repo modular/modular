@@ -58,8 +58,8 @@ class Dim:
         from max.graph import Dim
 
         some_dims = [
-            Dim.symbolic("batch"),
-            Dim.static(5),
+            SymbolicDim("batch"),
+            StaticDim(5),
         ]
 
     Constraining tensor dimensions is one important way to improve model
