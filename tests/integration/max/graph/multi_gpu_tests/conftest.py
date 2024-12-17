@@ -7,7 +7,7 @@ from os import getenv
 from pathlib import Path
 
 import pytest
-from max.driver import CUDA
+from max.driver import Accelerator
 from max.engine import InferenceSession
 
 
@@ -69,4 +69,4 @@ def aliasing_outputs_path(modular_path: Path) -> Path:
 
 @pytest.fixture(scope="module")
 def gpu_session() -> InferenceSession:
-    return InferenceSession(devices=[CUDA()])
+    return InferenceSession(devices=[Accelerator()])

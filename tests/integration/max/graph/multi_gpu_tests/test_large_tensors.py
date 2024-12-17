@@ -6,7 +6,7 @@
 """Test the max.engine supporting when graphs don't fit on a single-GPU."""
 
 import numpy as np
-from max.driver import CPU, CUDA, Tensor
+from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -40,8 +40,8 @@ def test_gpu_io_graph_execution() -> None:
     assert str(DeviceRef.GPU(0)) in str(graph)
     assert str(DeviceRef.GPU(1)) in str(graph)
     host = CPU()
-    device0 = CUDA(0)
-    device1 = CUDA(1)
+    device0 = Accelerator(0)
+    device1 = Accelerator(1)
     session = InferenceSession(devices=[device0, device1])
     compiled = session.load(graph)
     m_np = np.ones((1000, 1000000)).astype(np.float32)  # Large AF

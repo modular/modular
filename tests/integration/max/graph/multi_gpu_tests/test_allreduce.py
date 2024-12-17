@@ -9,7 +9,7 @@
 """Test the max.engine Python bindings with Max Graph when using explicit device."""
 
 import numpy as np
-from max.driver import CPU, CUDA, Tensor
+from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -57,10 +57,10 @@ def test_allreduce_execution() -> None:
     """Tests multi-device allreduce execution."""
     graph = allreduce_graph()
     host = CPU()
-    device0 = CUDA(0)
-    device1 = CUDA(1)
-    device2 = CUDA(2)
-    device3 = CUDA(3)
+    device0 = Accelerator(0)
+    device1 = Accelerator(1)
+    device2 = Accelerator(2)
+    device3 = Accelerator(3)
     session = InferenceSession(
         devices=[host, device0, device1, device2, device3]
     )
