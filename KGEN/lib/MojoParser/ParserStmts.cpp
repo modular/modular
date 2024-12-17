@@ -1968,19 +1968,20 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
   return success();
 }
 
-struct DeadCodeInfo {
-  /// The value of the constant condition.
-  bool conditionValue;
-
-  /// The location of the constant condition block.
-  Location location;
-
-  /// The index of the condition region within the ElifOp.
-  unsigned index;
-};
-
 ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
                                   size_t curIndent) {
+
+  struct DeadCodeInfo {
+    /// The value of the constant condition.
+    bool conditionValue;
+
+    /// The location of the constant condition block.
+    Location location;
+
+    /// The index of the condition region within the ElifOp.
+    unsigned index;
+  };
+
   // We will be moving the builder into sub-regions that are created, make sure
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
