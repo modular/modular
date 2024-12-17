@@ -44,9 +44,6 @@ from linalg.utils import GemmShape
 from memory import AddressSpace, UnsafePointer, memcpy, memset_zero
 from memory.unsafe import bitcast
 from MOGGIntList import IntList
-from MOGGKernelAPI import (
-    managed_tensor_slice_to_ndbuffer as managed_tensor_slice_to_ndbuffer_impl,
-)
 from nn._optional_param import OptionalParamInt
 from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
@@ -535,7 +532,9 @@ fn create_known_dim[known_val: Int]() -> Dim:
 fn managed_tensor_slice_to_ndbuffer[
     type: DType, rank: Int
 ](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank]:
-    return managed_tensor_slice_to_ndbuffer_impl(tensor)
+    return NDBuffer[type, rank](
+        tensor._ptr, tensor._spec.shape, tensor._strides
+    )
 
 
 @register_internal("to_buffer")
@@ -766,6 +765,79 @@ fn to_managed_tensor_slice[
 @always_inline
 fn get_static_shape(shape: IntList) -> IndexList[shape._safe_len]:
     return shape.stack_alloc_data
+
+
+# TODO(GEX-1534): Get rid of duplicate new API primitives.
+# Build the StaticTensorSpec parameter for the DPS kernels
+@register_internal("build_static_tensor_specs")
+fn build_static_tensor_specs[
+    type: DType,
+    rank: Int,
+](
+    shape: DimList,
+    strides: DimList,
+    alignment: Int,
+    address_space: AddressSpace,
+    exclusive: Bool,
+) -> StaticTensorSpec[type, rank]:
+    alias SpecType = StaticTensorSpec[type, rank]
+
+    return SpecType(
+        shape,
+        strides,
+        alignment,
+        address_space,
+        exclusive,
+        None,
+        None,
+    )
+
+
+# Rebuild the StaticTensorSpec parameter for the DPS kernels with different lambdas
+@register_internal("rebuild_static_tensor_specs_with_lambdas")
+fn rebuild_static_tensor_specs_with_lambdas[
+    type: DType,
+    rank: Int,
+](
+    spec: StaticTensorSpec[type, rank],
+    in_lambda: OptionalReg[StaticTensorSpec[type, rank].in_lambda_t],
+    out_lambda: OptionalReg[StaticTensorSpec[type, rank].out_lambda_t],
+) -> StaticTensorSpec[type, rank]:
+    alias SpecType = StaticTensorSpec[type, rank]
+
+    return SpecType(
+        spec.shape,
+        spec.strides,
+        spec.alignment,
+        spec.address_space,
+        spec.exclusive,
+        in_lambda,
+        out_lambda,
+    )
+
+
+# Rebuild the StaticTensorSpec parameter for the DPS kernels with different strides
+@register_internal("rebuild_static_tensor_specs_with_strides")
+fn rebuild_static_tensor_specs_with_strides[
+    type: DType,
+    rank: Int,
+](
+    spec: StaticTensorSpec[type, rank],
+    strides: DimList,
+) -> StaticTensorSpec[
+    type, rank
+]:
+    alias SpecType = StaticTensorSpec[type, rank]
+
+    return SpecType(
+        spec.shape,
+        strides,
+        spec.alignment,
+        spec.address_space,
+        spec.exclusive,
+        spec.in_lambda,
+        spec.out_lambda,
+    )
 
 
 # ===-----------------------------------------------------------------------===#

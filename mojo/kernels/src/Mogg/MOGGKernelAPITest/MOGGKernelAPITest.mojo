@@ -176,7 +176,7 @@ struct Foo:
 
     @staticmethod
     fn shape(x: ManagedTensorSlice, y: ManagedTensorSlice) -> IndexList[x.rank]:
-        return x.get_runtime_spec().shape
+        return x.shape()
 
 
 @always_inline
@@ -185,9 +185,7 @@ fn toNDBuffer[
 ](tensor: ManagedTensorSlice) -> NDBuffer[out_dtype, out_rank]:
     # TODO(GEX-734): forward other static params automatically
     return rebind[NDBuffer[out_dtype, out_rank]](
-        NDBuffer[tensor.type, tensor.rank](
-            tensor._ptr, tensor.get_runtime_spec().shape
-        )
+        NDBuffer[tensor.type, tensor.rank](tensor._ptr, tensor.shape())
     )
 
 
@@ -252,7 +250,7 @@ struct ImposterMHANoMask:
         v: ManagedTensorSlice,
         scale: ManagedTensorSlice,
     ) -> IndexList[q.rank]:
-        return q.get_runtime_spec().shape
+        return q.shape()
 
 
 # c = a @ b, should support CPU and GPU
@@ -297,8 +295,8 @@ struct ImposterMatmul:
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
     ) -> IndexList[2]:
-        var shape = a.get_runtime_spec().shape
-        shape[1] = b.get_runtime_spec().shape[1]
+        var shape = a.shape()
+        shape[1] = b.dim_size[1]()
         return rebind[IndexList[2]](shape)
 
 
@@ -332,7 +330,7 @@ struct PrintTensorSpecOp:
 
     @staticmethod
     fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
-        return x.get_runtime_spec().shape
+        return x.shape()
 
 
 @compiler.register("print_tensor_spec_view")
@@ -366,7 +364,7 @@ struct PrintTensorSpecViewOp:
 
     @staticmethod
     fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
-        return x.get_runtime_spec().shape
+        return x.shape()
 
 
 @compiler.register("print_tensor_spec_fused")
@@ -400,7 +398,7 @@ struct PrintTensorSpecFusedOp:
 
     @staticmethod
     fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
-        return x.get_runtime_spec().shape
+        return x.shape()
 
 
 @compiler.register("imposter_add_elementwise")
@@ -521,8 +519,8 @@ struct MatmulFuseOut:
         a: ManagedTensorSlice,
         b: ManagedTensorSlice,
     ) -> IndexList[2]:
-        var shape = a.get_runtime_spec().shape
-        shape[1] = b.get_runtime_spec().shape[1]
+        var shape = a.shape()
+        shape[1] = b.dim_size[1]()
         return rebind[IndexList[2]](shape)
 
 
@@ -709,4 +707,4 @@ struct ElementwisePrintShape:
 
     @staticmethod
     fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
-        return x.get_runtime_spec().shape
+        return x.shape()

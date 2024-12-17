@@ -313,7 +313,7 @@ fn get_address_space() -> AddressSpace:
 
 
 # Build the StaticTensorSpec parameter for the DPS kernels
-@register_internal("build_static_tensor_specs")
+@register_internal_override("build_static_tensor_specs", 1)
 fn build_static_tensor_specs[
     type: DType,
     rank: Int,
@@ -338,7 +338,7 @@ fn build_static_tensor_specs[
 
 
 # Rebuild the StaticTensorSpec parameter for the DPS kernels with different lambdas
-@register_internal("rebuild_static_tensor_specs_with_lambdas")
+@register_internal_override("rebuild_static_tensor_specs_with_lambdas", 1)
 fn rebuild_static_tensor_specs_with_lambdas[
     type: DType,
     rank: Int,
@@ -361,7 +361,7 @@ fn rebuild_static_tensor_specs_with_lambdas[
 
 
 # Rebuild the StaticTensorSpec parameter for the DPS kernels with different strides
-@register_internal("rebuild_static_tensor_specs_with_strides")
+@register_internal_override("rebuild_static_tensor_specs_with_strides", 1)
 fn rebuild_static_tensor_specs_with_strides[
     type: DType,
     rank: Int,
@@ -493,14 +493,16 @@ fn index_tensor_primitive[
 alias ScalarTensor = ManagedTensorSlice[rank=1]
 
 
-# Used by the graph compiler -- which right now does not support static shape
+# Used by the graph compiler -- which right now does not support static spec
 @register_internal_override("managed_tensor_slice_to_ndbuffer", 1)
 @always_inline
 fn managed_tensor_slice_to_ndbuffer_primitive[
     type: DType,
     rank: Int,
-](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank,]:
-    return managed_tensor_slice_to_ndbuffer(tensor)
+](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank]:
+    return NDBuffer[type, rank](
+        tensor._ptr, tensor._spec.shape, tensor._strides
+    )
 
 
 @always_inline
@@ -530,7 +532,7 @@ fn managed_tensor_slice_to_ndbuffer[
         alignment=alignment,
         address_space=address_space,
         exclusive=exclusive,
-    ](ptr, tensor.get_runtime_spec().shape, tensor._strides)
+    ](ptr, tensor.shape(), tensor._strides)
 
 
 @always_inline("nodebug")
@@ -565,7 +567,7 @@ fn reduce_shape[
         )
 
     # compute and return the output shape
-    var output_shape = input_buf.get_runtime_spec().shape
+    var output_shape = input_buf.shape()
     output_shape[axis] = 1
     return output_shape
 
@@ -1437,12 +1439,12 @@ struct SqueezeShape:
     ):
         # remove_indices may not be sorted so our strategy is to use -1 to
         # represent removed dimensions in a copied version of our input shape buffer
-        var num_input_dims = input_shape.dim_size(0)
-        var num_remove_indices = remove_indices.dim_size(0)
+        var num_input_dims = input_shape.dim_size[0]()
+        var num_remove_indices = remove_indices.dim_size[0]()
         var final_rank = num_input_dims - num_remove_indices
 
         debug_assert(
-            final_rank == output_shape.dim_size(0),
+            final_rank == output_shape.dim_size[0](),
             "Incorrect output shape.",
         )
 
@@ -1480,7 +1482,7 @@ struct SqueezeShape:
         input_shape: ManagedTensorSlice[type, 1],
         remove_indices: ManagedTensorSlice[indices_type, 1],
     ) raises -> IndexList[1]:
-        var out_dim = input_shape.dim_size(0) - remove_indices.dim_size(0)
+        var out_dim = input_shape.dim_size[0]() - remove_indices.dim_size[0]()
 
         if out_dim < 0:
             raise Error(
@@ -1507,11 +1509,11 @@ struct UnsqueezeShape:
     ):
         # represent uninitialized dimensions, add the padding dimensions, and copy
         # over the remaining dimensions later.
-        var num_input_dims = input_shape.dim_size(0)
-        var num_padding_indices = padding_indices.dim_size(0)
+        var num_input_dims = input_shape.dim_size[0]()
+        var num_padding_indices = padding_indices.dim_size[0]()
         var final_rank = num_input_dims + num_padding_indices
         debug_assert(
-            final_rank == output_shape.dim_size(0),
+            final_rank == output_shape.dim_size[0](),
             "Incorrect output shape.",
         )
         for output_index in range(final_rank):
@@ -1555,7 +1557,7 @@ struct UnsqueezeShape:
         input_shape: ManagedTensorSlice[type, 1],
         remove_indices: ManagedTensorSlice[indices_type, 1],
     ) -> IndexList[1]:
-        var out_dim = input_shape.dim_size(0) + remove_indices.dim_size(0)
+        var out_dim = input_shape.dim_size[0]() + remove_indices.dim_size[0]()
         return IndexList[1](out_dim)
 
 
@@ -2128,7 +2130,7 @@ struct BroadcastTo:
         input: ManagedTensorSlice[rank=input_rank],
         shape: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[output_rank]:
-        if output_rank != shape.dim_size(0):
+        if output_rank != shape.dim_size[0]():
             raise Error(
                 "[broadcast_to] requires (len(target_shape) == output_rank)"
             )
@@ -2226,8 +2228,8 @@ struct BroadcastShape:
     fn shape(
         lhs_buf: ManagedTensorSlice[rank=1], rhs_buf: ManagedTensorSlice[rank=1]
     ) raises -> IndexList[1]:
-        var lhs_dim = lhs_buf.dim_size(0)
-        var rhs_dim = rhs_buf.dim_size(0)
+        var lhs_dim = lhs_buf.dim_size[0]()
+        var rhs_dim = rhs_buf.dim_size[0]()
         return IndexList[1](max(lhs_dim, rhs_dim))
 
 
@@ -2254,6 +2256,7 @@ fn tuple_to_dimlist[size: Int](tuple: StaticTuple[Dim, size]) -> DimList:
 @compiler.register("mo.static.broadcast_to")
 @compiler.view_kernel
 struct StaticBroadcastTo:
+    @always_inline
     @staticmethod
     fn build_view[
         type: DType,
@@ -2268,12 +2271,15 @@ struct StaticBroadcastTo:
 
         @parameter
         for i in range(out_rank):
+
+            @parameter
             if i < delta:
                 new_strides[i] = 0
-            elif x.dim_size(i - delta) <= 1:
-                new_strides[i] = 0
             else:
-                new_strides[i] = x._strides[i - delta]
+                if x.dim_size[i - delta]() <= 1:
+                    new_strides[i] = 0
+                else:
+                    new_strides[i] = x._strides[i - delta]
 
         return ManagedTensorSlice[type, out_rank](
             x._ptr, output_shape, new_strides
@@ -2407,6 +2413,7 @@ struct Reshape:
 @compiler.register("mo.transpose")
 @compiler.view_kernel
 struct Transpose:
+    @always_inline
     @staticmethod
     fn transpose_in_place(
         input: ManagedTensorSlice,
@@ -2418,7 +2425,7 @@ struct Transpose:
         @parameter
         for i in range(input.rank):
             var dim = int(permutations[i])
-            new_shape[i] = input.spec().shape[dim]
+            new_shape[i] = input.dim_size(dim)
             new_stride[i] = input._strides[dim]
 
         return ManagedTensorSlice[type = input.type, rank = input.rank](
@@ -2474,7 +2481,7 @@ struct Transpose:
         input: ManagedTensorSlice,
         permutations: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
-        if permutations.spec().shape[0] != input.rank:
+        if permutations.dim_size[0]() != input.rank:
             raise Error("[transpose] permutation size must match input rank")
 
         @parameter
@@ -2491,7 +2498,7 @@ struct Transpose:
 
         @parameter
         for i in range(input.rank):
-            out[i] = view_tensor.spec().shape[i]
+            out[i] = view_tensor.dim_size[i]()
 
         return out
 
@@ -2817,7 +2824,7 @@ struct Mean:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val, output._spec.shape, ctx)
+        ](input.shape(), axis_val, output.shape(), ctx)
 
     @staticmethod
     fn shape[
@@ -2869,7 +2876,7 @@ struct ReduceAdd:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val, ctx)
+        ](input.shape(), axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -2921,7 +2928,7 @@ struct ReduceMul:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val, ctx)
+        ](input.shape(), axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -2973,7 +2980,7 @@ struct ReduceMax:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val, ctx)
+        ](input.shape(), axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -3025,7 +3032,7 @@ struct ReduceMin:
             output_fn,
             single_thread_blocking_override=synchronous,
             target=target,
-        ](input._spec.shape, axis_val, ctx)
+        ](input.shape(), axis_val, ctx)
 
     @staticmethod
     fn shape[
@@ -3137,7 +3144,7 @@ struct ReduceMinMax:
                 single_thread_blocking_override=synchronous,
                 target=target,
             ](
-                input.get_runtime_spec().shape,
+                input.shape(),
                 init=init,
                 reduce_dim=axis,
                 context=ctx,
@@ -3146,7 +3153,7 @@ struct ReduceMinMax:
 
     @staticmethod
     fn shape(input: ManagedTensorSlice, axis0: Scalar) -> IndexList[input.rank]:
-        var new_shape = input.get_runtime_spec().shape
+        var new_shape = input.shape()
         var axis = int(normalize_neg_index(axis0, input.rank))
         new_shape[axis] = 2
 
@@ -3530,9 +3537,9 @@ struct Gather:
             single_thread_blocking_override=synchronous,
         ](
             Axis(axis, input.rank),
-            input._spec.shape,
-            indices._spec.shape,
-            output._spec.shape,
+            input.shape(),
+            indices.shape(),
+            output.shape(),
             context=ctx,
         )
 
@@ -3620,8 +3627,8 @@ struct LayerNorm:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         layer_norm[type, rank, input_fn, gamma_fn, target=target,](
-            input._spec.shape,
-            gamma._spec.shape,
+            input.shape(),
+            gamma.shape(),
             beta_buf,
             epsilon,
             output_buf,
@@ -3638,7 +3645,7 @@ struct LayerNorm:
         beta: ManagedTensorSlice[type=type, rank=1],
         epsilon: Scalar[type=type],
     ) -> IndexList[rank]:
-        return input._spec.shape
+        return input.shape()
 
 
 # TODO(GEX-1216): This kernel slows down pipeline by 2x for some reason.
@@ -3671,7 +3678,7 @@ struct RMSNorm:
         var output_buf = managed_tensor_slice_to_ndbuffer(output)
 
         rms_norm[type, rank, input_fn, target=target](
-            input._spec.shape, gamma_buf, epsilon, output_buf, ctx
+            input.shape(), gamma_buf, epsilon, output_buf, ctx
         )
 
     @staticmethod
@@ -3683,7 +3690,7 @@ struct RMSNorm:
         gamma: ManagedTensorSlice[type=type, rank=1],
         epsilon: Scalar[type=type],
     ) -> IndexList[rank]:
-        return input._spec.shape
+        return input.shape()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4019,7 +4026,7 @@ struct LinalgBandPart:
             single_thread_blocking_override=synchronous,
             target=target,
         ](
-            input.get_runtime_spec().shape,
+            input.shape(),
             num_lower_buf,
             num_upper_buf,
             exclude_buf,
@@ -4149,10 +4156,10 @@ struct ROIAlign:
         # input shape is [N, H, W, C]
         # rois shape is [M, 5]
         # output shape is [M, output_height, output_width, C]
-        shape[0] = rois.spec().shape[0]
+        shape[0] = rois.dim_size[0]()
         shape[1] = int(output_height)
         shape[2] = int(output_width)
-        shape[3] = input.spec().shape[3]
+        shape[3] = input.dim_size[3]()
 
         return shape
 
@@ -4209,7 +4216,7 @@ struct RandomNormal:
         seed(int(seed_value))
         var num_elements = 1
         # TODO: Add __len__ support in ManagedTensorSlice.
-        for i in range(shape.spec().shape[0]):
+        for i in range(shape.dim_size[0]()):
             num_elements *= int(shape[i])
         randn(
             output._ptr,
@@ -4241,7 +4248,7 @@ struct StaticRandomNormal:
         seed_value: Scalar,
     ):
         seed(int(seed_value))
-        var num_elements = output.spec().shape.num_elements()
+        var num_elements = output.size()
         randn(
             output._ptr,
             num_elements,
@@ -4287,7 +4294,7 @@ struct Softmax:
             input_fn,
             target,
         ](
-            output.get_runtime_spec().shape,
+            output.shape(),
             output_ndbuffer,
             output.rank - 1,
             context=ctx,
@@ -4328,7 +4335,7 @@ struct LogSoftmax:
             output.rank,
             static_shape,
             input_fn,
-        ](output.get_runtime_spec().shape, output_ndbuffer, output.rank - 1)
+        ](output.shape(), output_ndbuffer, output.rank - 1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -4388,15 +4395,15 @@ fn concat_shape_impl[
     for i in range(len(inputs)):
         concat_axis_dim_sum += inputs[i].dim_size(axis)
         if not shape_equal_ignore_axis(
-            inputs[0].get_runtime_spec().shape,
-            inputs[i].get_runtime_spec().shape,
+            inputs[0].shape(),
+            inputs[i].shape(),
         ):
             raise Error(
                 "[concat] input shapes must match except at concat axis"
             )
 
     # compute and return the output shape
-    var output_shape = inputs[0].get_runtime_spec().shape
+    var output_shape = inputs[0].shape()
     output_shape[axis] = concat_axis_dim_sum
     return output_shape
 
@@ -4463,7 +4470,7 @@ struct Concat:
 
         @parameter
         for i in range(inputs.size):
-            input_shapes[i] = inputs[i]._spec.shape
+            input_shapes[i] = inputs[i].shape()
 
         alias inputs_lambdas = get_inputs_lambdas[
             type,
@@ -4584,15 +4591,15 @@ fn concat_from_list_shape_impl[
     for i in range(len(inputs)):
         concat_axis_dim_sum += inputs[i].dim_size(axis)
         if not shape_equal_ignore_axis(
-            inputs[0].get_runtime_spec().shape,
-            inputs[i].get_runtime_spec().shape,
+            inputs[0].shape(),
+            inputs[i].shape(),
         ):
             raise Error(
                 "[concat] input shapes must match except at concat axis"
             )
 
     # compute and return the output shape
-    var output_shape = inputs[0].get_runtime_spec().shape
+    var output_shape = inputs[0].shape()
     output_shape[axis] = concat_axis_dim_sum
     return output_shape
 
@@ -4715,7 +4722,7 @@ struct SplitOutputShapeHelper:
 
         var split_sizes_sum = 0
 
-        for i in range(split_sizes_buf.dim_size(0)):
+        for i in range(split_sizes_buf.dim_size[0]()):
             split_sizes_sum += int(split_sizes_buf[i])
         if split_sizes_sum != input_buf.dim_size(split_axis):
             raise Error(
@@ -4724,7 +4731,7 @@ struct SplitOutputShapeHelper:
             )
 
         # compute and return the output shape
-        var output_shape = input_buf.get_runtime_spec().shape
+        var output_shape = input_buf.shape()
         output_shape[split_axis] = output_split_size
         return output_shape
 
@@ -5291,8 +5298,8 @@ struct NoMaskFlashAttentionCPU:
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_fn,](
             managed_tensor_slice_to_ndbuffer(q),
-            k.get_runtime_spec().shape,
-            v.get_runtime_spec().shape,
+            k.shape(),
+            v.shape(),
             IndexList[0](),
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
             scale.cast[DType.float32](),
@@ -5371,18 +5378,18 @@ struct WithMaskFlashAttentionSplitKVCPU:
             managed_tensor_slice_to_ndbuffer[
                 static_shape = compiler.specsof[q.type, q.rank]("q").shape
             ](q),
-            k.get_runtime_spec().shape,
-            v.get_runtime_spec().shape,
-            k_cache.get_runtime_spec().shape,
-            v_cache.get_runtime_spec().shape,
-            mask.get_runtime_spec().shape,
+            k.shape(),
+            v.shape(),
+            k_cache.shape(),
+            v_cache.shape(),
+            mask.shape(),
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
             scale.cast[DType.float32](),
         )
 
     @staticmethod
     fn shape(q: ManagedTensorSlice) -> IndexList[q.rank]:
-        return q.get_runtime_spec().shape
+        return q.shape()
 
 
 @compiler.register("with_mask_flash_attention_cpu")
@@ -5429,9 +5436,9 @@ struct WithMaskFlashAttentionCPU:
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn,](
             managed_tensor_slice_to_ndbuffer(q),
-            k.get_runtime_spec().shape,
-            v.get_runtime_spec().shape,
-            mask.get_runtime_spec().shape,
+            k.shape(),
+            v.shape(),
+            mask.shape(),
             managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
             scale.cast[DType.float32](),
         )
@@ -5458,7 +5465,7 @@ struct GGMLQ40Dequantize:
             Q4sym[group_size=32].dequantize_and_write_to_tensor(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
-                output.get_runtime_spec().shape,
+                output.shape(),
             )
 
     @staticmethod
@@ -5467,9 +5474,9 @@ struct GGMLQ40Dequantize:
         alias block_nbytes = sizeof[Q4sym[group_size=32]]()
         alias quants_per_block = 32
         var num_block_per_batch = (
-            input.size() // input.dim_size(0)
+            input.size() // input.dim_size[0]()
         ) // block_nbytes
-        return (input.dim_size(0), quants_per_block * num_block_per_batch)
+        return (input.dim_size[0](), quants_per_block * num_block_per_batch)
 
 
 @compiler.register("vroom_q4_0_matmul")
@@ -5494,7 +5501,7 @@ struct VroomQ40Matmul:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return IndexList[2](a.dim_size(0), b.dim_size(0))
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
 @compiler.register("vroom_q4_0_repack_weights")
@@ -5517,7 +5524,7 @@ struct VroomQ40RepackWeights:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return b.get_runtime_spec().shape
+        return b.shape()
 
 
 ######
@@ -5546,10 +5553,13 @@ struct GGMLQ4KDequantize:
         alias elements_per_block = block_QK_K.quantized_k
 
         var num_block_per_batch = (
-            input.size() // input.dim_size(0)
+            input.size() // input.dim_size[0]()
         ) // block_nbytes
 
-        return (input.dim_size(0), elements_per_block * num_block_per_batch)
+        return (
+            input.dim_size[0](),
+            elements_per_block * num_block_per_batch,
+        )
 
 
 @compiler.register("vroom_q4_k_matmul")
@@ -5574,7 +5584,7 @@ struct VroomQ4KMatmul:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return IndexList[2](a.dim_size(0), b.dim_size(0))
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
 @compiler.register("vroom_q4_k_repack_weights")
@@ -5597,7 +5607,7 @@ struct VroomQ4KRepackWeights:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return b.get_runtime_spec().shape
+        return b.shape()
 
 
 ######
@@ -5617,7 +5627,7 @@ struct GGMLQ6KDequantize:
             q6_k_dequantize_impl(
                 managed_tensor_slice_to_ndbuffer(input),
                 managed_tensor_slice_to_ndbuffer(output),
-                output.get_runtime_spec().shape,
+                output.shape(),
             )
 
     @staticmethod
@@ -5627,10 +5637,13 @@ struct GGMLQ6KDequantize:
         alias elements_per_block = block_QK_K.quantized_k
 
         var num_block_per_batch = (
-            input.size() // input.dim_size(0)
+            input.size() // input.dim_size[0]()
         ) // block_nbytes
 
-        return (input.dim_size(0), elements_per_block * num_block_per_batch)
+        return (
+            input.dim_size[0](),
+            elements_per_block * num_block_per_batch,
+        )
 
 
 @compiler.register("vroom_q6_k_matmul")
@@ -5655,7 +5668,7 @@ struct VroomQ6KMatmul:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return IndexList[2](a.dim_size(0), b.dim_size(0))
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
 @compiler.register("vroom_q6_k_repack_weights")
@@ -5678,7 +5691,7 @@ struct VroomQ6KRepackWeights:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return b.get_runtime_spec().shape
+        return b.shape()
 
 
 ######
@@ -5717,7 +5730,7 @@ struct QMatmulGPU_b4_g32:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return IndexList[2](a.dim_size(0), b.dim_size(0))
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
 @compiler.register("qmatmul_b4_g128")
@@ -5751,7 +5764,7 @@ struct QMatmulGPU_b4_g128:
         a: ManagedTensorSlice[DType.float32, 2],
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return IndexList[2](a.dim_size(0), b.dim_size(0))
+        return IndexList[2](a.dim_size[0](), b.dim_size[0]())
 
 
 @compiler.register("GGUF_gpu_repack_q4_0")
@@ -5782,7 +5795,7 @@ struct QMatmulGPURepackGGUF:
     fn shape(
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return b.get_runtime_spec().shape
+        return b.shape()
 
 
 @compiler.register("GPTQ_gpu_repack_b4_g128")
@@ -5816,7 +5829,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
     fn shape(
         b: ManagedTensorSlice[DType.uint8, 2],
     ) -> IndexList[2]:
-        return IndexList[2](b.dim_size(1), b.dim_size(0))
+        return IndexList[2](b.dim_size[1](), b.dim_size[0]())
 
 
 @compiler.register("GPTQ_gpu_repack_b4_g128_desc_act")
@@ -7461,12 +7474,16 @@ struct Struct_continuous_batching_kv_cache_collection_h1_d16_bshd:
 # ===-----------------------------------------------------------------------===#
 
 
+# TODO(GEX-1492): use filter_rank+1 instead of packed_filter_rank
 fn layout_transform_conv_transpose_filter_common[
-    type: DType, filter_rank: Int
+    type: DType,
+    filter_rank: Int,
+    packed_filter_rank: Int,
 ](
-    packed_filter: ManagedTensorSlice[type, filter_rank + 1],
+    packed_filter: ManagedTensorSlice[type, packed_filter_rank],
     filter: ManagedTensorSlice[type, filter_rank],
 ):
+    constrained[filter_rank + 1 == packed_filter_rank]()
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_transpose_filter(
@@ -7481,9 +7498,9 @@ struct LayoutTransformRSFC2FRSCf:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, filter_rank: Int
+        type: DType, filter_rank: Int, packed_filter_rank: Int
     ](
-        packed_filter: ManagedTensorSlice[type, filter_rank + 1],
+        packed_filter: ManagedTensorSlice[type, packed_filter_rank],
         filter: ManagedTensorSlice[type, filter_rank],
     ):
         layout_transform_conv_transpose_filter_common(packed_filter, filter)
@@ -7494,9 +7511,9 @@ struct LayoutTransformQRSFC2FQRSCf:
     @always_inline
     @staticmethod
     fn execute[
-        type: DType, filter_rank: Int
+        type: DType, filter_rank: Int, packed_filter_rank: Int
     ](
-        packed_filter: ManagedTensorSlice[type, filter_rank + 1],
+        packed_filter: ManagedTensorSlice[type, packed_filter_rank],
         filter: ManagedTensorSlice[type, filter_rank],
     ):
         layout_transform_conv_transpose_filter_common(packed_filter, filter)
