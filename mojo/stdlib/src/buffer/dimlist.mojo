@@ -621,3 +621,43 @@ fn _make_tuple[
         ](result._int_type(values.at[idx]().get()), array)
 
     return __type_of(result)(array)
+
+
+@always_inline
+fn _make_partially_static_index_list[
+    size: Int, static_list: DimList, *, unsigned: Bool = False
+](dynamic_list: IndexList) -> IndexList[size, unsigned=unsigned] as result:
+    """Creates a tuple constant using the specified values.
+
+    Args:
+        dynamic_list: The dynamic list of values.
+
+    Returns:
+        A tuple with the values filled in.
+    """
+    var array = __mlir_op.`pop.array.repeat`[
+        _type = __mlir_type[
+            `!pop.array<`, size.value, `, `, result._int_type, `>`
+        ]
+    ](result._int_type(0))
+
+    @parameter
+    for idx in range(size):
+
+        @parameter
+        if static_list.at[idx]().is_dynamic():
+            array = __mlir_op.`pop.array.replace`[
+                _type = __mlir_type[
+                    `!pop.array<`, size.value, `, `, result._int_type, `>`
+                ],
+                index = idx.value,
+            ](result._int_type(dynamic_list[idx]), array)
+        else:
+            array = __mlir_op.`pop.array.replace`[
+                _type = __mlir_type[
+                    `!pop.array<`, size.value, `, `, result._int_type, `>`
+                ],
+                index = idx.value,
+            ](result._int_type(static_list.at[idx]().get()), array)
+
+    return __type_of(result)(array)
