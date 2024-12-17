@@ -59,6 +59,7 @@ from runtime.tracing import Trace, TraceLevel, trace_arg
 
 from utils.index import Index, IndexList
 from utils.loop import unroll
+from utils.numerics import get_accum_type
 
 from .conv_utils import (
     ConvInfoStatic,
@@ -3022,7 +3023,8 @@ fn conv2d_gpu_naive_nhwc_rscf[
         return
 
     for co in range(C_out):
-        var value = Scalar[output_type](0)
+        alias accum_type = get_accum_type[output_type]()
+        var value = Scalar[accum_type](0)
         for r in range(R):
             for s in range(S):
                 var h_in = h * stride_h - pad_h + r * dil_h
@@ -3031,13 +3033,13 @@ fn conv2d_gpu_naive_nhwc_rscf[
                     for ci in range(C_in):
                         value += (
                             input.load(IndexList[4](n, h_in, w_in, ci)).cast[
-                                output_type
+                                accum_type
                             ]()
                             * filter.load(IndexList[4](r, s, ci, co)).cast[
-                                output_type
+                                accum_type
                             ]()
                         )
-        output.store(IndexList[4](n, h, w, co), value)
+        output.store(IndexList[4](n, h, w, co), value.cast[output_type]())
 
 
 @always_inline
