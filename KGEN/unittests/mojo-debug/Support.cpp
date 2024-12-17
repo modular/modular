@@ -71,8 +71,10 @@ MojoBinary::MojoBinary(const std::shared_ptr<MojoSource> &source,
       {*mojoOr, "build", "-g", "-O0", source->getPath(), "-o", binPath},
       /*Env=*/std::nullopt, redirects);
   if (ec)
-    llvm::report_fatal_error(llvm::Twine("mojo build exit code = ") +
-                             std::to_string(ec));
+    llvm::report_fatal_error(
+        llvm::formatv("`mojo build -g -O0 '{0}'` failed with exit code {2}. "
+                      "This test won't run unless you fix this.",
+                      source->getPath(), std::to_string(ec)));
 }
 
 /// Acquire a singleton instance of a debugger.
