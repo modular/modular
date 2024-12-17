@@ -1130,12 +1130,12 @@ fn scatter_elements[
         "indices in scatter_elements must be int32 or int64",
     ]()
 
-    if input.get_runtime_spec().shape != output.get_runtime_spec().shape:
+    if input.shape() != output.shape():
         raise Error(
             "input and output shape in scatter_elements must be the same"
         )
 
-    if indices.get_runtime_spec().shape != updates.get_runtime_spec().shape:
+    if indices.shape() != updates.shape():
         raise Error(
             "inidices and updates shape in scatter_elements must be the same"
         )
@@ -1150,7 +1150,7 @@ fn scatter_elements[
     # Do serial or parallel memcpy depending on output size.
     parallel_memcpy(output.unsafe_ptr(), input.unsafe_ptr(), output.size())
 
-    var input_ax_dim = input.get_runtime_spec().shape[axis]
+    var input_ax_dim = input.dim_size(axis)
 
     @__copy_capture(axis, input_ax_dim)
     @parameter
@@ -1169,7 +1169,7 @@ fn scatter_elements[
         )
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[update_func, 1](indices.get_runtime_spec().shape)
+    elementwise[update_func, 1](indices.shape())
 
 
 @register_internal_shape_func("mo.scatter.max")
