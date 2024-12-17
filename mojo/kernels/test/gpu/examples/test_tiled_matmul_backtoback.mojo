@@ -17,6 +17,8 @@ from buffer.dimlist import Dim, DimList
 from builtin.io import _printf
 from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.memory import (
     AddressSpace,
     async_copy_commit_group,
@@ -712,4 +714,6 @@ fn test_b2b_matmul(ctx: DeviceContext) raises:
 
 fn main() raises:
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_b2b_matmul(ctx)
+        _ = _make_ctx_current(prev_ctx)

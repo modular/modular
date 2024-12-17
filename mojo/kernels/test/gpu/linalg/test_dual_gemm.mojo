@@ -15,6 +15,8 @@ import benchmark
 from algorithm.functional import elementwise
 from gpu.host import DeviceContext, FuncAttribute
 from gpu.host._compile import _get_gpu_target
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from layout import Layout
 from layout._utils import ManagedLayoutGPUTensor
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
@@ -366,6 +368,7 @@ fn main() raises:
         if args[i] == "--benchmark" or args[i] == "--benchmark=yes":
             do_benchmark = True
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_dual_matmul[transpose_b=False](ctx, do_benchmark=do_benchmark)
         test_dual_matmul[transpose_b=True](ctx, do_benchmark=do_benchmark)
         alias Ms = StaticTuple[Int, 3](128, 256, 1024)
@@ -383,3 +386,5 @@ fn main() raises:
             test_dual_matmul[transpose_b=True, N=N, K=K](
                 ctx, M=M, do_benchmark=do_benchmark
             )
+
+        _ = _make_ctx_current(prev_ctx)

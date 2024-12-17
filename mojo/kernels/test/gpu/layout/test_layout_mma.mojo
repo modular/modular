@@ -19,6 +19,8 @@ from gpu import (
     lane_id,
 )
 from gpu.host import DeviceContext, Dim
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.math import outer_product_acc
@@ -185,6 +187,7 @@ def main():
     alias shape_16816 = IndexList[3](16, 8, 16)
 
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_layout_mma[DType.float32, DType.float32, shape_1684, 16, 8, 4](
             ctx, rtol=1e-01
         )
@@ -197,3 +200,4 @@ def main():
         test_layout_mma[DType.float32, DType.float16, shape_1688, 16, 8, 8](
             ctx, rtol=1e-01
         )
+        _ = _make_ctx_current(prev_ctx)

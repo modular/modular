@@ -10,6 +10,8 @@ from gpu import barrier, lane_id
 from gpu.host import DeviceContext
 from gpu.id import ThreadIdx
 from gpu.memory import _GPUAddressSpace as AddressSpace
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from layout import Layout, LayoutTensor
 from layout._utils import (
     ManagedLayoutTensor,
@@ -605,6 +607,7 @@ def test_load_f32_f32_16x8x8_ldmatrix(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_load_and_mma_f32_f32_16x8x8(ctx)
         test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx)
         test_load_and_mma_f32_f32_16x8x4(ctx)
@@ -615,3 +618,4 @@ def main():
         # ldmatrix
         test_load_f32_bf16_16x8x16_ldmatrix(ctx)
         test_load_f32_f32_16x8x8_ldmatrix(ctx)
+        _ = _make_ctx_current(prev_ctx)

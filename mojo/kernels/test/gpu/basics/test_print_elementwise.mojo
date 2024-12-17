@@ -11,6 +11,8 @@ from sys import simdwidthof
 from algorithm.functional import elementwise
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import DeviceContext
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.host._compile import _get_gpu_target
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._utils import ManagedLayoutGPUTensor
@@ -69,4 +71,6 @@ fn test_dual_matmul[
 
 fn main() raises:
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_dual_matmul(ctx)
+        _ = _make_ctx_current(prev_ctx)
