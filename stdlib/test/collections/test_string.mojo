@@ -640,20 +640,6 @@ def test_find():
     assert_equal(-1, String("abc").find("abcd"))
 
 
-def test_count():
-    var str = String("Hello world")
-
-    assert_equal(12, str.count(""))
-    assert_equal(1, str.count("Hell"))
-    assert_equal(3, str.count("l"))
-    assert_equal(1, str.count("ll"))
-    assert_equal(1, str.count("ld"))
-    assert_equal(0, str.count("universe"))
-
-    assert_equal(String("aaaaa").count("a"), 5)
-    assert_equal(String("aaaaaa").count("aa"), 3)
-
-
 def test_replace():
     # Replace empty
     var s1 = String("abc")
@@ -1617,7 +1603,6 @@ def main():
     test_calc_initial_buffer_size_int64()
     test_contains()
     test_find()
-    test_count()
     test_replace()
     test_rfind()
     test_split()

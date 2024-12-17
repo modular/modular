@@ -1667,7 +1667,7 @@ struct String(
         self._buffer.capacity = 0
         return ptr
 
-    fn count(self, substr: String) -> Int:
+    fn count(self, substr: StringSlice) -> Int:
         """Return the number of non-overlapping occurrences of substring
         `substr` in the string.
 
@@ -1680,21 +1680,7 @@ struct String(
         Returns:
           The number of occurrences of `substr`.
         """
-        if not substr:
-            return len(self) + 1
-
-        var res = 0
-        var offset = 0
-
-        while True:
-            var pos = self.find(substr, offset)
-            if pos == -1:
-                break
-            res += 1
-
-            offset = pos + substr.byte_length()
-
-        return res
+        return self.as_string_slice().count(substr)
 
     fn __contains__(self, substr: String) -> Bool:
         """Returns True if the substring is contained within the current string.

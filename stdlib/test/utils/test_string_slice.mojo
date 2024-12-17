@@ -624,6 +624,20 @@ def test_endswith():
     assert_true(ab.endswith("ab"))
 
 
+def test_count():
+    var str = StringSlice("Hello world")
+
+    assert_equal(12, str.count(""))
+    assert_equal(1, str.count("Hell"))
+    assert_equal(3, str.count("l"))
+    assert_equal(1, str.count("ll"))
+    assert_equal(1, str.count("ld"))
+    assert_equal(0, str.count("universe"))
+
+    assert_equal(StringSlice("aaaaa").count("a"), 5)
+    assert_equal(StringSlice("aaaaaa").count("aa"), 3)
+
+
 def main():
     test_string_literal_byte_span()
     test_string_byte_span()
@@ -641,6 +655,7 @@ def main():
     test_combination_10_good_utf8_sequences()
     test_combination_10_good_10_bad_utf8_sequences()
     test_count_utf8_continuation_bytes()
+    test_count()
     test_splitlines()
     test_rstrip()
     test_lstrip()

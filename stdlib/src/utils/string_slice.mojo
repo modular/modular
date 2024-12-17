@@ -1105,6 +1105,35 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
 
         return output^
 
+    fn count(self, substr: StringSlice) -> Int:
+        """Return the number of non-overlapping occurrences of substring
+        `substr` in the string.
+
+        If sub is empty, returns the number of empty strings between characters
+        which is the length of the string plus one.
+
+        Args:
+            substr: The substring to count.
+
+        Returns:
+            The number of occurrences of `substr`.
+        """
+        if not substr:
+            return len(self) + 1
+
+        var res = 0
+        var offset = 0
+
+        while True:
+            var pos = self.find(substr, offset)
+            if pos == -1:
+                break
+            res += 1
+
+            offset = pos + substr.byte_length()
+
+        return res
+
 
 # ===-----------------------------------------------------------------------===#
 # Utils
