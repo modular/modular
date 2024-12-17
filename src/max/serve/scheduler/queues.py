@@ -16,6 +16,7 @@ from multiprocessing.context import SpawnProcess
 from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 
 import psutil
+import sentinel
 from faster_fifo import Queue as MPQueue  # type: ignore
 
 BatchReqId = TypeVar("BatchReqId")
@@ -27,8 +28,8 @@ ReqOutput = TypeVar("ReqOutput")
 
 BatchInputs = dict[BatchReqId, BatchReqInput]
 
-# TODO(SI-683): Choose a better serializable sentinel.
-STOP_STREAM = -1
+"""The sentinel used to indicate a queue is finished."""
+STOP_STREAM = sentinel.create("STOP_STREAM")
 
 
 class BatchingStrategy(Enum):
