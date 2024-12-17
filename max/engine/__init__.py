@@ -7,4 +7,11 @@
 
 from max._engine.core import __version__
 
-from .api import InferenceSession, Model, MojoValue, TensorSpec, TorchInputSpec
+from .api import (
+    InferenceSession,
+    Model,
+    MojoValue,
+    MultimodalModel,
+    TensorSpec,
+    TorchInputSpec,
+)
