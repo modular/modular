@@ -25,7 +25,7 @@ from runtime.asyncrt import MojoCallContextPtr
 from tensor_internal import RuntimeTensorSpec, TensorSpec
 
 from buffer import NDBuffer, DimList
-from buffer.dimlist import _make_tuple
+from buffer.dimlist import _make_partially_static_index_list
 from utils import IndexList
 from register import register_internal_override
 from .indexing import _dot_prod, _row_major_strides, _slice_to_tuple
@@ -272,15 +272,6 @@ struct ManagedTensorSlice[
         self = Self(ndbuffer.data, ndbuffer.get_shape())
 
     @always_inline
-    fn get_runtime_spec(self) -> RuntimeTensorSpec[type, rank]:
-        """Gets the static spec of the slice.
-
-        Returns:
-            Static tensor spec of slice.
-        """
-        return self._spec
-
-    @always_inline
     fn __getitem__(self, indices: IndexList[rank]) -> Scalar[type]:
         """Gets the value at the specified indices.
 
@@ -337,8 +328,26 @@ struct ManagedTensorSlice[
     fn spec(self) -> TensorSpec:
         return self._spec.get_tensor_spec()
 
+    @always_inline
+    fn shape(self) -> IndexList[rank]:
+        alias static_shape = specsof[type, rank]("self").shape
+        return _make_partially_static_index_list[rank, static_shape](
+            self._spec.shape
+        )
+
+    @always_inline
     fn dim_size(self, index: Int) -> Int:
-        return self._spec.shape[index]
+        return self.shape()[index]
+
+    @always_inline
+    fn dim_size[index: Int](self) -> Int:
+        alias static_shape = specsof[type, rank]("self").shape
+
+        @parameter
+        if static_shape.at[index]().is_dynamic():
+            return self._spec.shape[index]
+        else:
+            return static_shape.get[index]()
 
     @always_inline
     fn size(self) -> Int:
@@ -351,7 +360,7 @@ struct ManagedTensorSlice[
 
         @parameter
         for i in range(rank):
-            product *= self.dim_size(i)
+            product *= self.dim_size[i]()
 
         return product
 
@@ -570,19 +579,12 @@ fn foreach[
         var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
-    alias static_shape = specsof[tensor.type, tensor.rank]("tensor").shape
-    var shape = _make_tuple[tensor.rank](
-        static_shape
-    ).canonicalize() if static_shape.all_known[
-        tensor.rank
-    ]() else tensor.get_runtime_spec().shape
-
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
         use_blocking_impl=synchronous,
         target=target,
-    ](shape)
+    ](tensor.shape())
 
 
 @__mogg_intrinsic_attr("mogg.for_each")
@@ -608,19 +610,12 @@ fn foreach[
         var val = func[width](rebind[IndexList[tensor.rank]](index))
         tensor._fused_store(index, val)
 
-    alias static_shape = specsof[tensor.type, tensor.rank]("tensor").shape
-    var shape = _make_tuple[tensor.rank](
-        static_shape
-    ).canonicalize() if static_shape.all_known[
-        tensor.rank
-    ]() else tensor.get_runtime_spec().shape
-
     algorithm.functional.elementwise[
         elementwise_fn_wrapper,
         simd_width,
         use_blocking_impl=synchronous,
         target=target,
-    ](shape, ctx)
+    ](tensor.shape(), ctx)
 
 
 # This is a special version of `specsof(self)`
