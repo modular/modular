@@ -11,6 +11,7 @@ from sys import sizeof
 from sys.ffi import DLHandle, _get_dylib_function
 
 from builtin._location import __call_location, _SourceLocation
+from gpu.host.nvidia_cuda import CUcontext
 from gpu.host.result_v1 import Result
 from memory import UnsafePointer, stack_allocation
 from memory.unsafe import bitcast
@@ -103,6 +104,21 @@ fn _get_cuda_dylib_function[
         _destroy_dylib,
         result_type,
     ]()
+
+
+fn _make_ctx_current(ctx: CUcontext) raises -> CUcontext:
+    var prev_ctx = CUcontext()
+    _check_error(
+        _get_cuda_dylib_function[
+            "cuCtxGetCurrent", fn (UnsafePointer[CUcontext]) -> Result
+        ]()(UnsafePointer.address_of(prev_ctx))
+    )
+    _check_error(
+        _get_cuda_dylib_function["cuCtxSetCurrent", fn (CUcontext) -> Result]()(
+            ctx
+        )
+    )
+    return prev_ctx
 
 
 # ===-----------------------------------------------------------------------===#
