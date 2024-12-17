@@ -61,7 +61,7 @@ struct TensorSlice[
         Returns:
             Static tensor spec of slice.
         """
-        return self._unsafe_slice.get_runtime_spec()
+        return self._unsafe_slice._spec
 
     fn spec(self) -> TensorSpec:
         """Gets the spec of the slice.
