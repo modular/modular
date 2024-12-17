@@ -2,7 +2,10 @@ load("//bazel:api.bzl", "lit_tests")
 
 lit_tests(
     name = "mojo-lsp-server",
-    srcs = glob(["**/*.test"]),
+    srcs = glob([
+        "**/*.test",
+        "**/*.mojo",
+    ]),
     mojo_deps = [
         "//open-source/mojo/stdlib/stdlib",
     ],
@@ -12,5 +15,6 @@ lit_tests(
     }),
     tools = [
         "//KGEN/tools/mojo-lsp-server",
+        "//KGEN/tools/mojo-lsp-simple-client",
     ],
 )

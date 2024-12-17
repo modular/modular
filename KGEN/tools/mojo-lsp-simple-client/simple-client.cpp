@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "../LSPBatchClient.h"
+#include "../mojo-lsp-test-client/LSPBatchClient.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InitLLVM.h"
 
