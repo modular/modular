@@ -14,7 +14,7 @@ lit_tests(
         "@llvm-project//llvm:include/llvm/Option/OptParser.td",
     ],
     env = {
-        "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(location @crashpad//:modular-crashpad-handler)",
+        "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(rootpath @crashpad//:modular-crashpad-handler)",
     },
     tools = [
         "//AsyncRT/tools/crash-report-path-info",
