@@ -812,9 +812,6 @@ fn mgp_buffer_get_cached(
         storage_ref_addr,
     )
 
-    if not buffer_data:
-        raise Error("failed in mgp.buffer.get_cached")
-
     return NDBuffer[DType.uint8, 1](
         buffer_data.bitcast[UInt8](), Index(buffer_size)
     )
