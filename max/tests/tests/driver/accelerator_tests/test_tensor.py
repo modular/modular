@@ -9,27 +9,27 @@ import re
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, CUDA, Tensor
+from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 
 
 def test_from_numpy_cuda():
     # A user should be able to create a GPU tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
-    tensor = Tensor.from_numpy(arr).to(CUDA())
+    tensor = Tensor.from_numpy(arr).to(Accelerator())
     assert tensor.shape == (2, 3)
     assert tensor.dtype == DType.int32
 
 
 def test_is_host_cuda():
-    # CUDA tensors should be marked as not being on-host.
-    assert not Tensor((1, 1), DType.int32, device=CUDA()).is_host
+    # Accelerator tensors should be marked as not being on-host.
+    assert not Tensor((1, 1), DType.int32, device=Accelerator()).is_host
 
 
 def test_host_device_copy():
     # We should be able to freely copy tensors between host and device.
     host_tensor = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
-    device_tensor = host_tensor.copy(CUDA())
+    device_tensor = host_tensor.copy(Accelerator())
     tensor = device_tensor.copy(CPU())
 
     assert tensor.shape == host_tensor.shape
@@ -41,7 +41,7 @@ def test_host_device_copy():
 
 def test_device_device_copy():
     # We should be able to freely copy tensors between device and device.
-    cuda = CUDA()
+    cuda = Accelerator()
 
     device_tensor1 = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32)).to(
         cuda
@@ -59,10 +59,10 @@ def test_device_device_copy():
 def test_torch_tensor_conversion():
     # Our tensors should be convertible to and from Torch tensors. We have to a
     # bunch of juggling between host and device because we don't have a
-    # CUDA-compatible version of torch available yet.
+    # Accelerator-compatible version of torch available yet.
     torch_tensor = torch.reshape(torch.arange(1, 11, dtype=torch.int32), (2, 5))
     host_tensor = Tensor.from_dlpack(torch_tensor)
-    gpu_tensor = host_tensor.to(CUDA())
+    gpu_tensor = host_tensor.to(Accelerator())
     assert gpu_tensor.shape == (2, 5)
     assert gpu_tensor.dtype == DType.int32
     host_tensor = gpu_tensor.to(CPU())
@@ -72,7 +72,7 @@ def test_torch_tensor_conversion():
 
 def test_to_device():
     cpu = CPU()
-    cuda = CUDA()
+    cuda = Accelerator()
 
     host_tensor = Tensor((3, 3), dtype=DType.int32, device=cpu)
     gpu_tensor = host_tensor.to(cuda)
@@ -86,7 +86,7 @@ def test_to_device():
 
 def test_zeros():
     # We should be able to initialize an all-zero tensor.
-    tensor = Tensor.zeros((3, 3), DType.int32, device=CUDA())
+    tensor = Tensor.zeros((3, 3), DType.int32, device=Accelerator())
     host_tensor = tensor.to(CPU())
     assert np.array_equal(
         host_tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32)
@@ -114,7 +114,7 @@ def test_dlpack_gpu():
         tensor = Tensor((1, 4), dtype)
         for j in range(4):
             tensor[0, j] = j
-        gpu_tensor = tensor.to(CUDA())
+        gpu_tensor = tensor.to(Accelerator())
 
         torch_tensor = torch.from_dlpack(gpu_tensor)
         assert torch_tensor.dtype == torch_dtype
@@ -137,18 +137,20 @@ def test_from_dlpack():
 
 
 def test_dlpack_device():
-    tensor = Tensor((3, 3), DType.int32, device=CUDA())
+    tensor = Tensor((3, 3), DType.int32, device=Accelerator())
     device_tuple = tensor.__dlpack_device__()
     assert len(device_tuple) == 2
     assert isinstance(device_tuple[0], int)
-    assert device_tuple[0] == 2  # 2 is the value of DLDeviceType::kDLCUDA
+    assert (
+        device_tuple[0] == 2
+    )  # 2 is the value of DLDeviceType::kDLAccelerator
     assert isinstance(device_tuple[1], int)
     assert device_tuple[1] == 0  # should be the default device
 
 
 def test_scalar():
     # We should be able to create scalar values on GPUs.
-    cuda = CUDA()
+    cuda = Accelerator()
     scalar = Tensor.scalar(5, DType.int32, device=cuda)
     assert scalar.device == cuda
 
@@ -157,7 +159,7 @@ def test_scalar():
 
 
 def test_gpu_to_numpy():
-    cuda = CUDA()
+    cuda = Accelerator()
     tensor = Tensor.zeros((3, 3), DType.int32, device=cuda)
 
     with pytest.raises(

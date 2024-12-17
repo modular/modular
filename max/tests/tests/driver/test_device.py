@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from max.driver import CPU, CUDA
+from max.driver import CPU, Accelerator
 
 
 def test_cpu_device():
@@ -16,10 +16,10 @@ def test_cpu_device():
 
 
 @pytest.mark.skip(reason="MSDK-834")
-def test_cuda_device_creation_error():
-    # Creating a CUDA device on a machine without a GPU should raise an error.
+def test_accelerator_device_creation_error():
+    # Creating a Accelerator device on a machine without a GPU should raise an error.
     with pytest.raises(ValueError, match="failed to create device:"):
-        _ = CUDA()
+        _ = Accelerator()
 
 
 def test_equality():
