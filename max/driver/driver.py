@@ -18,7 +18,7 @@ from max._driver import cpu_device as _cpu_device
 
 @dataclass
 class Device:
-    """Device object. Limited to GPU and CPU devices for now."""
+    """Device object. Limited to accelerator and CPU devices for now."""
 
     # Note: External users should never initialize these fields themselves.
     _device: _Device
@@ -76,7 +76,7 @@ def Accelerator(id: int = -1) -> Device:
 
 
 def accelerator_count() -> int:
-    """Returns number of GPU devices available."""
+    """Returns number of accelerator devices available."""
     return _accelerator_count()
 
 
