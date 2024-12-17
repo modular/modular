@@ -285,10 +285,22 @@ class SymbolicDim(Dim):
 
 @dataclass(frozen=True)
 class AlgebraicDim(Dim):
-    """An algebraic tensor dimension.
+    """An algebraic tensor dimension to enable expressions over symbolic
+    dimensions.
 
-    `AlgebraicDim`s are built off mlir.Attributes. It is used internally for
-    construction and handling of tensor MLIR types.
+    That is, any expression over a symbolic dimension returns ``AlgebraicDim``.
+    Furthermore, algebraic dimensions automatically simplify into a canonical
+    form.
+
+    For example:
+
+        >>> from max.graph import AlgebraicDim, Dim
+        >>> isinstance(Dim("batch") * 5, AlgebraicDim)
+        True
+        >>> print(Dim("batch") * 5)
+        batch * 5
+        >>> -Dim("x") - 4 == -(Dim("x") + 4)
+        True
     """
 
     attr: mlir.Attribute
