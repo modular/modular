@@ -70,7 +70,7 @@ def CPU(id: int = -1) -> Device:
     return Device.cpu(id)
 
 
-def CUDA(id: int = -1) -> Device:
+def Accelerator(id: int = -1) -> Device:
     """Creates a CUDA device with the provided id."""
     return Device.cuda(id)
 
