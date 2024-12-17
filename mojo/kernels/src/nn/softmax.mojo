@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_up, ceildiv, exp, log
+from math import align_down, align_up, ceildiv, exp, exp2, log
 from os import abort
 from sys import alignof, simdwidthof
 
@@ -995,6 +995,7 @@ fn _online_softmax_iter_for_mma_output[
     score_layout_by_mma_unit: Layout,
     block_layout_by_warp: Layout,
     warp_layout: Layout,
+    use_exp2: Bool = False,
 ](
     output_reg_tile: LayoutTensor[type, *_, **_],
     score_reg_tile: LayoutTensor[type, *_, **_],
@@ -1125,20 +1126,36 @@ fn _online_softmax_iter_for_mma_output[
                 )
 
         # Corrention since previous max may be updated.
-        correction[col_tile] = exp(
-            rowmax[col_tile] - score_frag_rowmax[col_tile]
-        )
+        @parameter
+        if use_exp2:
+            correction[col_tile] = exp2(
+                rowmax[col_tile] - score_frag_rowmax[col_tile]
+            )
+        else:
+            correction[col_tile] = exp(
+                rowmax[col_tile] - score_frag_rowmax[col_tile]
+            )
 
         # Softmax numerator based on mma results.
         @parameter
         for row_tile in range(num_rowwise_tiles):
             alias tile_id = col_tile + num_colwise_tiles * row_tile
-            score_reg_tile[tile_id, 0] = exp(
-                score_reg_tile[tile_id, 0]
-                - rebind[frag_type](
-                    SIMD[type, frag_num_cols](score_frag_rowmax[col_tile])
+
+            @parameter
+            if use_exp2:
+                score_reg_tile[tile_id, 0] = exp2(
+                    score_reg_tile[tile_id, 0]
+                    - rebind[frag_type](
+                        SIMD[type, frag_num_cols](score_frag_rowmax[col_tile])
+                    )
                 )
-            )
+            else:
+                score_reg_tile[tile_id, 0] = exp(
+                    score_reg_tile[tile_id, 0]
+                    - rebind[frag_type](
+                        SIMD[type, frag_num_cols](score_frag_rowmax[col_tile])
+                    )
+                )
 
         # Sum softmax numerator from a thread's fragments.
         @parameter

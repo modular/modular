@@ -7,6 +7,7 @@
 
 from collections import OptionalReg
 from math import align_down, align_up, ceildiv, exp, iota, recip
+from math.constants import log2e
 from os import abort
 from sys import (
     alignof,
@@ -600,6 +601,7 @@ fn flash_attention[
                         smem_use
                     )
                 )
+
                 ctx.enqueue_function(
                     func,
                     q.data,
@@ -1955,13 +1957,12 @@ fn mha_single_batch[
                                 width=p_frag_simdwidth, alignment=mask_align
                             ]()
 
-                            p_reg_vec2[mma_id, i] = p_reg_vec2[
-                                mma_id, i
-                            ] * scale.cast[accum_type]() + rebind[
-                                p_reg_vec2.element_type
-                            ](
-                                mask_vec.cast[accum_type]()
-                            )
+                            p_reg_vec2[mma_id, i] = (
+                                p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
+                                + rebind[p_reg_vec2.element_type](
+                                    mask_vec.cast[accum_type]()
+                                )
+                            ) * log2e
                         else:
                             p_reg_vec2[mma_id, i] = rebind[
                                 p_reg_vec2.element_type
@@ -1975,6 +1976,10 @@ fn mha_single_batch[
 
             @parameter
             fn _apply_mask[masked: Bool]():
+                var scale_log2e: SIMD[accum_type, 1] = scale.cast[
+                    accum_type
+                ]() if use_score_mod else scale.cast[accum_type]() * log2e
+
                 @parameter
                 for m_mma in range(Int(num_m_mmas)):
 
@@ -2001,34 +2006,39 @@ fn mha_single_batch[
                             if masked:
                                 p_reg_vec2[mma_id, i] = mask.mask(
                                     IndexList[
-                                        4, element_bitwidth=32, unsigned=True
+                                        4,
+                                        element_bitwidth=32,
+                                        unsigned=True,
                                     ](
                                         int(BlockIdx.z),
                                         int(BlockIdx.y),
                                         int(score_row),
                                         int(score_col),
                                     ),
-                                    p_reg_vec2[mma_id, i]
-                                    * scale.cast[accum_type](),
+                                    p_reg_vec2[mma_id, i] * scale_log2e,
                                 )
                             else:
                                 p_reg_vec2[mma_id, i] = (
-                                    p_reg_vec2[mma_id, i]
-                                    * scale.cast[accum_type]()
+                                    p_reg_vec2[mma_id, i] * scale_log2e
                                 )
 
                             @parameter
                             if use_score_mod:
-                                p_reg_vec2[mma_id, i] = score_mod.score_mod(
-                                    IndexList[
-                                        4, element_bitwidth=32, unsigned=True
-                                    ](
-                                        int(BlockIdx.z),
-                                        int(BlockIdx.y),
-                                        int(score_row),
-                                        int(score_col),
-                                    ),
-                                    p_reg_vec2[mma_id, i],
+                                p_reg_vec2[mma_id, i] = (
+                                    score_mod.score_mod(
+                                        IndexList[
+                                            4,
+                                            element_bitwidth=32,
+                                            unsigned=True,
+                                        ](
+                                            int(BlockIdx.z),
+                                            int(BlockIdx.y),
+                                            int(score_row),
+                                            int(score_col),
+                                        ),
+                                        p_reg_vec2[mma_id, i],
+                                    )
+                                    * log2e
                                 )
 
                             if not not_last_iter:
@@ -2066,6 +2076,7 @@ fn mha_single_batch[
             # threads layout by warp
             Layout.row_major(num_warps_m, num_warps_n),
             Layout.row_major(8, 4),
+            use_exp2=True,
         ](
             output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
@@ -2614,13 +2625,12 @@ fn mha_single_batch_pipelined[
                                 width=p_frag_simdwidth, alignment=mask_align
                             ]()
 
-                            p_reg_vec2[mma_id, i] = p_reg_vec2[
-                                mma_id, i
-                            ] * scale.cast[accum_type]() + rebind[
-                                p_reg_vec2.element_type
-                            ](
-                                mask_vec.cast[accum_type]()
-                            )
+                            p_reg_vec2[mma_id, i] = (
+                                p_reg_vec2[mma_id, i] * scale.cast[accum_type]()
+                                + rebind[p_reg_vec2.element_type](
+                                    mask_vec.cast[accum_type]()
+                                )
+                            ) * log2e
                         else:
                             p_reg_vec2[mma_id, i] = rebind[
                                 p_reg_vec2.element_type
@@ -2634,6 +2644,10 @@ fn mha_single_batch_pipelined[
 
             @parameter
             fn _apply_mask[masked: Bool]():
+                var scale_log2e: SIMD[accum_type, 1] = scale.cast[
+                    accum_type
+                ]() if use_score_mod else scale.cast[accum_type]() * log2e
+
                 @parameter
                 for m_mma in range(Int(num_m_mmas)):
 
@@ -2660,34 +2674,39 @@ fn mha_single_batch_pipelined[
                             if masked:
                                 p_reg_vec2[mma_id, i] = mask.mask(
                                     IndexList[
-                                        4, element_bitwidth=32, unsigned=True
+                                        4,
+                                        element_bitwidth=32,
+                                        unsigned=True,
                                     ](
                                         int(BlockIdx.z),
                                         int(BlockIdx.y),
                                         int(score_row),
                                         int(score_col),
                                     ),
-                                    p_reg_vec2[mma_id, i]
-                                    * scale.cast[accum_type](),
+                                    p_reg_vec2[mma_id, i] * scale_log2e,
                                 )
                             else:
                                 p_reg_vec2[mma_id, i] = (
-                                    p_reg_vec2[mma_id, i]
-                                    * scale.cast[accum_type]()
+                                    p_reg_vec2[mma_id, i] * scale_log2e
                                 )
 
                             @parameter
                             if use_score_mod:
-                                p_reg_vec2[mma_id, i] = score_mod.score_mod(
-                                    IndexList[
-                                        4, element_bitwidth=32, unsigned=True
-                                    ](
-                                        int(BlockIdx.z),
-                                        int(BlockIdx.y),
-                                        int(score_row),
-                                        int(score_col),
-                                    ),
-                                    p_reg_vec2[mma_id, i],
+                                p_reg_vec2[mma_id, i] = (
+                                    score_mod.score_mod(
+                                        IndexList[
+                                            4,
+                                            element_bitwidth=32,
+                                            unsigned=True,
+                                        ](
+                                            int(BlockIdx.z),
+                                            int(BlockIdx.y),
+                                            int(score_row),
+                                            int(score_col),
+                                        ),
+                                        p_reg_vec2[mma_id, i],
+                                    )
+                                    * log2e
                                 )
 
                             if not not_last_iter:
@@ -2725,6 +2744,7 @@ fn mha_single_batch_pipelined[
             # threads layout by warp
             Layout.row_major(num_warps_m, num_warps_n),
             Layout.row_major(8, 4),
+            use_exp2=True,
         ](
             output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),

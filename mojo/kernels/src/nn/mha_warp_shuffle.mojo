@@ -3,7 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import align_up, ceildiv, exp
+from math import align_up, ceildiv, exp, exp2
+from math.constants import log2e
 from pathlib import Path
 from sys import alignof, simdwidthof, sizeof
 from bit import log2_floor
@@ -299,6 +300,7 @@ fn mha_decoding_single_batch_warp_shuffle[
     alias num_elems_per_thread = head_size // thread_group_size
     alias kv_num_heads = num_heads // group
 
+    var scale_log2e = scale if use_score_mod else scale * log2e
     var warp_idx = warp_broadcast(ThreadIdx.x // WARP_SIZE)
     var kv_head_idx = BlockIdx.y
 
@@ -391,7 +393,7 @@ fn mha_decoding_single_batch_warp_shuffle[
             # reduce in a thread_group
             qk = (
                 lane_group_sum[nthreads=thread_group_size](qk)
-                * scale.cast[qk.type]()
+                * scale_log2e.cast[qk.type]()
             )
 
             qk = mask.mask(
@@ -406,14 +408,17 @@ fn mha_decoding_single_batch_warp_shuffle[
 
             @parameter
             if use_score_mod:
-                qk = score_mod.score_mod(
-                    Index(
-                        int(BlockIdx.z),
-                        int(BlockIdx.y),
-                        num_keys - 1,
-                        int(key_idx),
-                    ),
-                    qk,
+                qk = (
+                    score_mod.score_mod(
+                        Index(
+                            int(BlockIdx.z),
+                            int(BlockIdx.y),
+                            num_keys - 1,
+                            int(key_idx),
+                        ),
+                        qk,
+                    )
+                    * log2e
                 )
 
             # 0th thread of the thread group writes to the shared memory and also
@@ -469,7 +474,7 @@ fn mha_decoding_single_batch_warp_shuffle[
 
         var exp_sum = Scalar[accum_type](0)
         for token in range(ThreadIdx.x, num_keys, num_threads):
-            var val = exp(logits[group_idx, token] - qk_max[group_idx])
+            var val = exp2(logits[group_idx, token] - qk_max[group_idx])
             exp_sum += rebind[__type_of(exp_sum)](val)
             logits[group_idx, token] = val
 
