@@ -3175,7 +3175,7 @@ fn conv_gpu[
     output: NDBuffer[output_type, input_rank, output_dim],
     stride: IndexList[2],
     dilation: IndexList[2],
-    pading: IndexList[2],
+    padding: IndexList[2],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
@@ -3193,9 +3193,9 @@ fn conv_gpu[
         ]
     ]()
 
-    var grid_dim_x = ceildiv(output_dim.get[2](), block_size)
-    var grid_dim_y = ceildiv(output_dim.get[1](), block_size)
-    var grid_dim_z = input_dim.get[0]()
+    var grid_dim_x = ceildiv(output.dim[2](), block_size)
+    var grid_dim_y = ceildiv(output.dim[1](), block_size)
+    var grid_dim_z = input.dim[0]()
 
     ctx.enqueue_function(
         conv_gpu_n,
@@ -3204,7 +3204,7 @@ fn conv_gpu[
         output,
         stride,
         dilation,
-        pading,
+        padding,
         grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
         block_dim=(block_size, block_size),
     )
