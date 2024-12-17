@@ -496,6 +496,19 @@ fn lane_group_sum[
 
 
 @always_inline
+fn lane_group_sum_and_broadcast[
+    val_type: DType,
+    simd_width: Int, //,
+    nthreads: Int,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    @parameter
+    fn _reduce_add(x: SIMD, y: __type_of(x)) -> __type_of(x):
+        return x + y
+
+    return lane_group_reduce[shuffle_xor, _reduce_add, nthreads=nthreads](val)
+
+
+@always_inline
 fn warp_sum[
     val_type: DType, simd_width: Int, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
@@ -564,6 +577,18 @@ fn lane_group_max[
         return max(x, y)
 
     return lane_group_reduce[shuffle_down, _reduce_max, nthreads=nthreads](val)
+
+
+fn lane_group_max_and_broadcast[
+    val_type: DType,
+    simd_width: Int, //,
+    nthreads: Int,
+](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
+    @parameter
+    fn _reduce_max(x: SIMD, y: __type_of(x)) -> __type_of(x):
+        return max(x, y)
+
+    return lane_group_reduce[shuffle_xor, _reduce_max, nthreads=nthreads](val)
 
 
 @always_inline
