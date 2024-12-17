@@ -11,14 +11,14 @@ from json import loads
 from typing import Any, Literal, Mapping
 
 from max._driver import Device as _Device
+from max._driver import accelerator as _accelerator
 from max._driver import accelerator_count as _accelerator_count
 from max._driver import cpu_device as _cpu_device
-from max._driver import cuda_device as _cuda_device
 
 
 @dataclass
 class Device:
-    """Device object. Limited to CUDA and CPU devices for now."""
+    """Device object. Limited to GPU and CPU devices for now."""
 
     # Note: External users should never initialize these fields themselves.
     _device: _Device
@@ -60,9 +60,9 @@ class Device:
         return cls(_cpu_device(id))
 
     @classmethod
-    def cuda(cls, id: int = -1) -> Device:
-        """Creates a CUDA device with the provided id."""
-        return cls(_cuda_device(id))
+    def accelerator(cls, id: int = -1) -> Device:
+        """Creates an accelerator (e.g. GPU) device with the provided id."""
+        return cls(_accelerator(id))
 
 
 def CPU(id: int = -1) -> Device:
@@ -71,8 +71,8 @@ def CPU(id: int = -1) -> Device:
 
 
 def Accelerator(id: int = -1) -> Device:
-    """Creates a CUDA device with the provided id."""
-    return Device.cuda(id)
+    """Creates an accelerator (e.g. GPU) device with the provided id."""
+    return Device.accelerator(id)
 
 
 def accelerator_count() -> int:
@@ -93,5 +93,5 @@ class DeviceSpec:
         return DeviceSpec(id, "cpu")
 
     @staticmethod
-    def cuda(id: int = -1):
+    def accelerator(id: int = -1):
         return DeviceSpec(id, "gpu")
