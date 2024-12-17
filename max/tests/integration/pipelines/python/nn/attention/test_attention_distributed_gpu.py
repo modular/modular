@@ -201,9 +201,9 @@ def _attention_layer(
         lookup_table_all = [
             kv_inputs[i * 4 + 2] for i in range(len(devices))
         ]  # id = 2, 6 (third elem of each tuple is lookup_table)
-        is_cache_empty_all = [
+        max_lengths_all = [
             kv_inputs[i * 4 + 3] for i in range(len(devices))
-        ]  # id = 3, 7 (fourth elem of each tuple is is_cache_empty)
+        ]  # id = 3, 7 (fourth elem of each tuple is max_lengths)
 
         x_devs = distribute_value(x, devices)
         valid_lengths_devs = distribute_value(valid_lengths, devices)
@@ -226,7 +226,7 @@ def _attention_layer(
                     blocks_all[dev_id],
                     cache_lengths_all[dev_id],
                     lookup_table_all[dev_id],
-                    is_cache_empty_all[dev_id],
+                    max_lengths_all[dev_id],
                 ),
             )
             for dev_id in range(len(devices))
