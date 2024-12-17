@@ -144,6 +144,11 @@ from register import register_internal_override, uses_opaque, register_internal
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv_transpose import pack_filter as _pack_conv_transpose_filter
 
+from tensor_utils_internal import (
+    simd_store_into_managed_tensor_slice,
+    simd_load_from_managed_tensor_slice,
+)
+
 from quantization import (
     Q4sym,
     block_Q4_K,
@@ -552,6 +557,13 @@ fn reduce_shape[
     var output_shape = input_buf.get_runtime_spec().shape
     output_shape[axis] = 1
     return output_shape
+
+
+# TODO(MOCO-1413): remove this need to keep imported exported funcs alive.
+@export
+fn export():
+    alias _simd_load_from_managed_tensor_slice = simd_load_from_managed_tensor_slice
+    alias _simd_store_into_managed_tensor_slice = simd_store_into_managed_tensor_slice
 
 
 # ===----------------------------------------------------------------------===#
