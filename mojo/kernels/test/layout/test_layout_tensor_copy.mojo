@@ -12,6 +12,8 @@ from sys import bitwidthof, simdwidthof
 
 from gpu import barrier
 from gpu.host import DeviceContext
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.id import BlockIdx, ThreadIdx
 from gpu.memory import (
     AddressSpace,
@@ -1019,6 +1021,8 @@ def run_copy_local_to_sram_tests(ctx: DeviceContext):
 
 fn main() raises:
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
+
         run_async_copy_tests(ctx)
         run_dynamic_async_copy_tests(ctx)
         run_swizzle_copy_tests(ctx)
@@ -1028,3 +1032,5 @@ fn main() raises:
         run_copy_sram_to_dram_tests(ctx)
         run_copy_local_to_local_tests(ctx)
         run_copy_local_to_sram_tests(ctx)
+
+        _ = _make_ctx_current(prev_ctx)

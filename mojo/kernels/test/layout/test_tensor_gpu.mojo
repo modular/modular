@@ -8,6 +8,8 @@
 from builtin.io import _printf
 from gpu import BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import DeviceContext
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.memory import (
     _GPUAddressSpace,
     async_copy_commit_group,
@@ -69,4 +71,6 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext):
 
 def main():
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_copy_dram_to_sram_async(ctx)
+        _ = _make_ctx_current(prev_ctx)

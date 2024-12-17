@@ -8,6 +8,8 @@
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceContext
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.memory import AddressSpace
 from gpu.mma import mma
@@ -500,6 +502,8 @@ fn test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
 
 fn main() raises:
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
+
         # CHECK: === test_naive_matmul_kernel
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
         # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0
@@ -551,3 +555,5 @@ fn main() raises:
         # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
         # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
         test_sram_blocked_matmul_dynamic_nd_buffer(ctx)
+
+        _ = _make_ctx_current(prev_ctx)
