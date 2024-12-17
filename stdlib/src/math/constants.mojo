@@ -28,3 +28,6 @@ alias e = 2.7182818284590452353602874713526624977572470936999595749669676277
 
 alias tau = 2 * pi
 """The mathematical constant τ = 6.283185.... Tau is a circumference of a circle (2π)."""
+
+alias log2e = 1.442695040888963407359924681001892137426646
+"""log2e = log2(e), where e is Euler's constant."""

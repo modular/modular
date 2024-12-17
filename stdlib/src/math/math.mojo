@@ -42,6 +42,7 @@ from utils.index import IndexList
 from utils.numerics import FPUtils, isnan, nan
 from utils.static_tuple import StaticTuple
 
+from .constants import log2e
 from .polynomial import polynomial_evaluate
 
 # ===----------------------------------------------------------------------=== #
@@ -572,14 +573,13 @@ fn exp[
     """
     constrained[type.is_floating_point(), "must be a floating point value"]()
     alias neg_ln2 = -0.69314718055966295651160180568695068359375
-    alias inv_lg2 = 1.442695040888963407359924681001892137426646
 
     @parameter
     if is_nvidia_gpu():
 
         @parameter
         if type in (DType.float16, DType.float32):
-            return exp2(x * inv_lg2)
+            return exp2(x * log2e)
 
     @parameter
     if type not in (DType.float32, DType.float64):
@@ -597,7 +597,7 @@ fn exp[
         max_val = 88.3762626647950
 
     var xc = x.clamp(min_val, max_val)
-    var k = floor(xc.fma(inv_lg2, 0.5))
+    var k = floor(xc.fma(log2e, 0.5))
     var r = k.fma(neg_ln2, xc)
     return max(_ldexp_impl(_exp_taylor(r), k), xc)
 
@@ -740,7 +740,6 @@ fn _log_base[
         alias ln2 = 0.69314718055994530942
         y = exp.fma(ln2, y)
     else:
-        alias log2e = 1.4426950408889634073599
         y = y.fma(log2e, exp)
     return (x == 0).select(Scalar[type].MIN, (x > 0).select(y, nan[type]()))
 
