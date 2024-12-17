@@ -7,19 +7,11 @@
 import dataclasses
 import json
 import logging
+import random
 import threading
 from os import environ
 from time import sleep, time
-from typing import (
-    Any,
-    Callable,
-    Iterable,
-    List,
-    Literal,
-    Optional,
-    Sequence,
-    Union,
-)
+from typing import Any, Iterable, List, Literal, Optional, Sequence, Union
 
 import numpy as np
 from max.pipelines.interfaces import TokenGenerator, TokenGeneratorRequest
@@ -123,7 +115,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         tg_rate_per_context_token: float,
         tg_padding: bool,
         busy_wait: bool,
-        failure_predicate: Optional[Callable[[], bool]] = None,
+        failure_percentage: Optional[int] = None,
     ) -> None:
         """Parameterize a performance fake
 
@@ -146,7 +138,15 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
         self.tg_rate_per_context_token = tg_rate_per_context_token
         self.tg_padding = tg_padding
         self.busy_wait = busy_wait
-        self.failure_predicate = failure_predicate
+        self.failure_predicate = None
+        if failure_percentage:
+
+            def sim_failure_lambda(sim_failure: int) -> bool:
+                return random.randint(0, 100) < min(sim_failure, 100)
+
+            self.failure_predicate = lambda: sim_failure_lambda(
+                failure_percentage
+            )
 
         self.batch_info_output_fname: Optional[str] = environ.get(
             "MAX_BATCH_INFO_FILENAME"
@@ -285,7 +285,7 @@ class PerformanceFakingTokenGenerator(TokenGenerator[PerformanceFakingContext]):
 
 def get_performance_fake(
     mode: Literal["no-op", "speed-of-light", "vllm"],
-    failure_predicate: Optional[Callable[[], bool]] = None,
+    failure_percentage: Optional[int] = None,
 ) -> PerformanceFakingTokenGenerator:
     """Construct a performance fake for the given performance mode."""
     if mode == "no-op":
@@ -298,7 +298,7 @@ def get_performance_fake(
             tg_rate_per_context_token=0,
             tg_padding=False,
             busy_wait=False,
-            failure_predicate=failure_predicate,
+            failure_percentage=failure_percentage,
         )
     elif mode == "speed-of-light":
         # current defaults are speed-of-light on A100-80GB
@@ -311,7 +311,7 @@ def get_performance_fake(
             tg_rate_per_context_token=(21.11 / 256 - 12.67 / 256) / 512,
             tg_padding=False,
             busy_wait=False,
-            failure_predicate=failure_predicate,
+            failure_percentage=failure_percentage,
         )
     elif mode == "vllm":
         # this is for A100-80GB
@@ -324,7 +324,7 @@ def get_performance_fake(
             tg_rate_per_context_token=(59.79 - 33.66) / 256 / 1024,
             tg_padding=False,
             busy_wait=False,
-            failure_predicate=failure_predicate,
+            failure_percentage=failure_percentage,
         )
     else:
         raise ValueError(f"Unexpected mode: {mode}")
