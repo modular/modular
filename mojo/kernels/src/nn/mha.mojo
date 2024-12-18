@@ -17,7 +17,7 @@ from sys import (
     sizeof,
 )
 from sys.intrinsics import _type_is_eq
-from bit import bit_ceil
+from bit import next_power_of_two
 from algorithm import elementwise
 from algorithm.functional import tile_and_unswitch, unswitch, vectorize
 from buffer import Buffer, NDBuffer
@@ -422,7 +422,10 @@ fn get_mha_decoding_num_partitions[
     var sm_count = ctx.device_info.sm_count
     # TODO: This is dumb, make it more granular as a follow up
     if num_keys >= 512:
-        return min(bit_ceil(sm_count // (batch_size * (num_heads // group))), 4)
+        return min(
+            next_power_of_two(sm_count // (batch_size * (num_heads // group))),
+            4,
+        )
     return 1
 
 
