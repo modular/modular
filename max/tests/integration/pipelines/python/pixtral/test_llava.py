@@ -274,6 +274,7 @@ def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):
         layer_norm=graph_ln_pre,
         patch_positional_embedding=graph_rope,
         transformer=graph_transformer,
+        dtype=DType.float32,
         patch_size=config.patch_size,
         max_image_size=config.image_size,
     )
