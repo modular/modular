@@ -123,7 +123,7 @@ fn mbarrier[
         _mbarrier_impl(address)
     else:
         constrained[
-            False, "The mbarrier function is not supported by AMD GPUs."
+            False, "The mbarrier function is not supported on AMD GPUs."
         ]()
 
 
@@ -150,7 +150,7 @@ fn mbarrier_init[
         )
     else:
         constrained[
-            False, "The mbarrier_init function is not supported by AMD GPUs."
+            False, "The mbarrier_init function is not supported on AMD GPUs."
         ]()
 
 
@@ -176,7 +176,7 @@ fn mbarrier_arrive[
         )
     else:
         constrained[
-            False, "The mbarrier_arrive function is not supported by AMD GPUs."
+            False, "The mbarrier_arrive function is not supported on AMD GPUs."
         ]()
         return abort[Int]("function not available")
 
@@ -208,7 +208,7 @@ fn mbarrier_test_wait[
     else:
         constrained[
             False,
-            "The mbarrier_test_wait function is not supported by AMD GPUs.",
+            "The mbarrier_test_wait function is not supported on AMD GPUs.",
         ]()
         return abort[Int]("function not available")
 
@@ -240,7 +240,7 @@ fn mbarrier_arrive_expect_tx_shared[
             False,
             (
                 "The mbarrier_arrive_expect_tx_shared function is not supported"
-                " by AMD GPUs."
+                " on AMD GPUs."
             ),
         ]()
 
@@ -272,6 +272,6 @@ fn mbarrier_try_wait_parity_shared[
             False,
             (
                 "The mbarrier_try_wait_arity_shared function is not supported"
-                " by AMD GPUs."
+                " on AMD GPUs."
             ),
         ]()
