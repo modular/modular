@@ -17,7 +17,7 @@ modular_py_binary(
     tags = ["no-mypy"],  # mypy_extensions conflicts with builtin from mypy
     deps = [
         requirement("click"),
-        requirement("mypy_extensions"),
+        requirement("mypy-extensions"),
         requirement("pathspec"),
         requirement("platformdirs"),
         requirement("tomli"),
