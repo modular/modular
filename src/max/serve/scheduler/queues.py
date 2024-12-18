@@ -71,6 +71,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
         self.request_q = MPQueue(max_size_bytes=1_000_000_000)
         self.response_q = MPQueue(max_size_bytes=100_000_000)
         self.cancel_q = MPQueue(max_size_bytes=10_000_000)
+        self.health_q = MPQueue(max_size_bytes=1_000)  # a small q is sufficient
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.pid: int = -1
         self.process: Optional[SpawnProcess] = None
@@ -89,6 +90,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                 "REQ": self.request_q,
                 "RESP": self.response_q,
                 "CANC": self.cancel_q,
+                "HEALTH": self.health_q,
             }.items():
                 logging.critical(
                     "FULL[%s]@ size: %d (bytes: %d) max: %d (bytes:%d)",

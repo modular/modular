@@ -12,6 +12,7 @@ import queue
 import time
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from multiprocessing import get_context as mp_get_context
 from multiprocessing.synchronize import Event as MPEvent
 from typing import AsyncGenerator, Mapping, Optional
@@ -28,15 +29,28 @@ from max.serve.telemetry.stopwatch import record_ms
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class ModelWorkerConfig:
+    worker_name: str = field(
+        default_factory=lambda: str("MODEL_" + str(uuid.uuid4()))
+    )
+    timeout_secs: float = 20 * 60.0
+    enable_health_check: bool = False
+    health_check_sleep_sec: float = 5.0
+
+
 def _model_worker_process_fn(
     model_factory: TokenGeneratorFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
+    worker_config: ModelWorkerConfig,
     queues: Mapping[str, MPQueue],
     events: Mapping[str, MPEvent],
 ):
     try:
         uvloop.run(
-            model_worker_run_v2(model_factory, pipeline_config, queues, events)
+            model_worker_run_v2(
+                model_factory, pipeline_config, worker_config, queues, events
+            )
         )
     except KeyboardInterrupt:
         pass
@@ -52,8 +66,7 @@ def _model_worker_process_fn(
 async def start_model_worker(
     model_factory: TokenGeneratorFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
-    name: str = "MODEL_" + str(uuid.uuid4()),
-    timeout_secs: float = 20 * 60.0,
+    config: ModelWorkerConfig = ModelWorkerConfig(),
 ) -> AsyncGenerator[EngineQueue, None]:
     """Starts a model worker and associated process.
 
@@ -74,24 +87,26 @@ async def start_model_worker(
         "REQUEST": engine_queue.request_q,
         "RESPONSE": engine_queue.response_q,
         "CANCEL": engine_queue.cancel_q,
+        "HEALTH": engine_queue.health_q,
     }
-    started_event = mp_context.Event()
-    stopped_event = mp_context.Event()
-    shutdown_event = mp_context.Event()
+    started_event = mp_context.Event()  # has the worker started
+    stopped_event = mp_context.Event()  # has the worker stopped
+    shutdown_event = mp_context.Event()  # should the worker be shutdown
     event_args = {
         "STARTED": started_event,
         "STOPPED": stopped_event,
         "SHUTDOWN": shutdown_event,
     }
 
-    logger.info("Starting worker: %s", name)
+    logger.info("Starting worker: %s", config.worker_name)
     worker = mp_context.Process(
-        name=name,
+        name=config.worker_name,
         target=_model_worker_process_fn,
         daemon=True,
         args=(
             model_factory,
             pipeline_config,
+            config,
             queue_args,
             event_args,
         ),
@@ -99,6 +114,36 @@ async def start_model_worker(
     worker.start()
     engine_queue.pid = worker.pid if worker.pid else -1
     engine_queue.process = worker
+
+    async def worker_health():
+        try:
+            last_health_check = time.time()
+            curr_time = last_health_check
+            while True:
+                await asyncio.sleep(config.health_check_sleep_sec)
+                msgs = engine_queue.health_q.get_many_nowait()
+                curr_time = time.time()
+                if msgs:
+                    logger.debug("HEALTH_MESSAGE :: %s", msgs)
+                    last_health_check = curr_time
+                if (
+                    curr_time
+                    > last_health_check + config.health_check_sleep_sec
+                ):
+                    raise TimeoutError(
+                        "Health check failed with timeout %s",
+                        config.health_check_sleep_sec,
+                    )
+                for m in msgs:
+                    if m != "OK":
+                        raise RuntimeError("Model worker corrupted")
+        except (TimeoutError, queue.Empty):
+            logger.exception("Model worker timeout or empty")
+        finally:
+            logger.info("Exiting health check task")
+            shutdown_event.set()
+            if worker.is_alive():
+                worker.kill()
 
     async def worker_started():
         while not started_event.is_set():
@@ -117,7 +162,7 @@ async def start_model_worker(
             loop.create_task(worker_started()),
             loop.create_task(worker_completed()),
         ],
-        timeout=timeout_secs,
+        timeout=config.timeout_secs,
         return_when=asyncio.FIRST_COMPLETED,
     )
 
@@ -126,7 +171,9 @@ async def start_model_worker(
         shutdown_event.set()
         for p in pending_tasks:
             p.cancel()
-        raise TimeoutError(f"Startup timed out for model worker {name}.")
+        raise TimeoutError(
+            f"Startup timed out for model worker {config.worker_name}."
+        )
 
     # Observe completed task result.
     # This will either be the startup or the completed event
@@ -134,8 +181,13 @@ async def start_model_worker(
         await t
 
     try:
+        if config.enable_health_check:
+            worker_task = loop.create_task(worker_health())
         yield engine_queue
     finally:
+        if config.enable_health_check:
+            worker_task.cancel()
+        shutdown_event.set()
         if worker.is_alive():
             worker.kill()
 
@@ -147,6 +199,7 @@ async def start_model_worker(
 async def model_worker_run_v2(
     model_factory: TokenGeneratorFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
+    worker_config: ModelWorkerConfig,
     queues: Mapping[str, MPQueue],
     events: Mapping[str, MPEvent],
 ):
@@ -163,6 +216,7 @@ async def model_worker_run_v2(
         request_queue = queues["REQUEST"]
         response_queue = queues["RESPONSE"]
         cancel_queue = queues["CANCEL"]
+        health_q = queues["HEALTH"]
 
         logger.info("Worker Queues: %s, Events: %s", queues, events)
 
@@ -197,6 +251,12 @@ async def model_worker_run_v2(
         i = 0
         while i % 100 or not shutdown.is_set():
             i += 1
+            # TODO arekay - configure frequency of health updates
+            if worker_config.enable_health_check and (i % 1_000_000 == 0):
+                try:
+                    health_q.put_nowait("OK")  # TODO make this better
+                except queue.Full as e:
+                    logger.exception("health check queue is full", e)
 
             if should_schedule_ce(
                 batch_continuous,
