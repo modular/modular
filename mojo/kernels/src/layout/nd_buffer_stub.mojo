@@ -511,11 +511,11 @@ fn _copy_nd_buffer_to_layout_tensor[
             @parameter
             if is_async:
                 alias element_size_bytes = vec_size * sizeof[dtype]()
-                var src_ptr = src.data.bitcast[
-                    address_space = _GPUAddressSpace.GLOBAL
+                var src_ptr = src.data.address_space_cast[
+                    _GPUAddressSpace.GLOBAL
                 ]()
-                var dst_ptr = dst.ptr.bitcast[
-                    address_space = _GPUAddressSpace.SHARED
+                var dst_ptr = dst.ptr.address_space_cast[
+                    _GPUAddressSpace.SHARED
                 ]()
                 async_copy[
                     element_size_bytes,
@@ -551,11 +551,11 @@ fn _copy_nd_buffer_to_layout_tensor[
                 @parameter
                 if is_async:
                     alias element_size_bytes = vec_width * sizeof[dtype]()
-                    var src_ptr = src.data.bitcast[
-                        address_space = _GPUAddressSpace.GLOBAL
+                    var src_ptr = src.data.address_space_cast[
+                        _GPUAddressSpace.GLOBAL
                     ]()
-                    var dst_ptr = dst.ptr.bitcast[
-                        address_space = _GPUAddressSpace.SHARED
+                    var dst_ptr = dst.ptr.address_space_cast[
+                        _GPUAddressSpace.SHARED
                     ]()
                     async_copy[
                         element_size_bytes,
@@ -582,11 +582,11 @@ fn _copy_nd_buffer_to_layout_tensor[
 
             @parameter
             if is_async:
-                var src_ptr = src.data.bitcast[
-                    address_space = _GPUAddressSpace.GLOBAL
+                var src_ptr = src.data.address_space_cast[
+                    _GPUAddressSpace.GLOBAL
                 ]()
-                var dst_ptr = dst.ptr.bitcast[
-                    address_space = _GPUAddressSpace.SHARED
+                var dst_ptr = dst.ptr.address_space_cast[
+                    _GPUAddressSpace.SHARED
                 ]()
                 async_copy[4, fill=fill, eviction_policy=eviction_policy](
                     src_ptr + src_idx, dst_ptr + dst_idx
@@ -665,11 +665,11 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
             @parameter
             if is_async:
                 alias element_size_bytes = vec_size * sizeof[dtype]()
-                var src_ptr = src.data.bitcast[
-                    address_space = _GPUAddressSpace.GLOBAL
+                var src_ptr = src.data.address_space_cast[
+                    _GPUAddressSpace.GLOBAL
                 ]()
-                var dst_ptr = dst.ptr.bitcast[
-                    address_space = _GPUAddressSpace.SHARED
+                var dst_ptr = dst.ptr.address_space_cast[
+                    _GPUAddressSpace.SHARED
                 ]()
                 async_copy[
                     element_size_bytes,
@@ -705,11 +705,11 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
                 @parameter
                 if is_async:
                     alias element_size_bytes = vec_width * sizeof[dtype]()
-                    var src_ptr = src.data.bitcast[
-                        address_space = _GPUAddressSpace.GLOBAL
+                    var src_ptr = src.data.address_space_cast[
+                        _GPUAddressSpace.GLOBAL
                     ]()
-                    var dst_ptr = dst.ptr.bitcast[
-                        address_space = _GPUAddressSpace.SHARED
+                    var dst_ptr = dst.ptr.address_space_cast[
+                        _GPUAddressSpace.SHARED
                     ]()
                     async_copy[
                         element_size_bytes,
@@ -745,11 +745,11 @@ fn _copy_nd_buffer_to_layout_tensor_masked[
 
             @parameter
             if is_async:
-                var src_ptr = src.data.bitcast[
-                    address_space = _GPUAddressSpace.GLOBAL
+                var src_ptr = src.data.address_space_cast[
+                    _GPUAddressSpace.GLOBAL
                 ]()
-                var dst_ptr = dst.ptr.bitcast[
-                    address_space = _GPUAddressSpace.SHARED
+                var dst_ptr = dst.ptr.address_space_cast[
+                    _GPUAddressSpace.SHARED
                 ]()
                 async_copy[4, fill=fill, eviction_policy=eviction_policy](
                     src_ptr + src_idx, dst_ptr + dst_idx

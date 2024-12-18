@@ -323,7 +323,9 @@ struct LayoutTensor[
             element_layout: The element layout of the returned LayoutTensor.
         """
         return __type_of(result)(
-            self.ptr.bitcast[Scalar[new_type], address_space=address_space](),
+            self.ptr.bitcast[Scalar[new_type]]().address_space_cast[
+                address_space
+            ](),
             rebind[RuntimeLayout[layout, bitwidth = result.layout_bitwidth]](
                 self.runtime_layout
             ),
@@ -2102,10 +2104,8 @@ struct LayoutTensor[
             src.layout.all_dims_known() and src.element_layout.all_dims_known()
         )
 
-        var dst_ptr = self.ptr.bitcast[
-            address_space = _GPUAddressSpace.SHARED
-        ]()
-        var src_ptr = src.ptr.bitcast[address_space = _GPUAddressSpace.GLOBAL]()
+        var dst_ptr = self.ptr.address_space_cast[_GPUAddressSpace.SHARED]()
+        var src_ptr = src.ptr.address_space_cast[_GPUAddressSpace.GLOBAL]()
 
         # Coalesce element layouts to simplify vectorization condition.
         alias coalesce_src_element_layout = coalesce(src.element_layout)
@@ -3248,9 +3248,8 @@ struct LayoutTensorIter[
         return __type_of(result)(
             self.ptr.bitcast[
                 Scalar[new_type],
-                address_space=address_space,
                 alignment=alignment,
-            ](),
+            ]().address_space_cast[address_space](),
             int(self.bound),
             self.runtime_layout,
             int(self.stride),

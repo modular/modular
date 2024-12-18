@@ -125,7 +125,7 @@ def create_tma_tile[
     return create_tma_descriptor[tensor.dtype, 2](
         DeviceBuffer(
             ctx,
-            tensor.ptr.bitcast[address_space = AddressSpace.GENERIC](),
+            tensor.ptr.address_space_cast[AddressSpace.GENERIC](),
             1,
             owning=False,
         ),
