@@ -518,7 +518,6 @@ td_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        ":Base",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
     ],
 )
