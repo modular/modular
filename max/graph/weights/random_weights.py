@@ -54,6 +54,10 @@ class RandomWeights(Weights):
             "Cannot get raw tensor from RandomWeights. Use `allocate` instead."
         )
 
+    def items(self):
+        """Iterate through all allocable weights that start with the prefix."""
+        raise NotImplementedError
+
     def exists(self) -> bool:
         return True
 

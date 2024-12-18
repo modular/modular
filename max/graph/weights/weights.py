@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional, Protocol, TypeVar
+from typing import Any, Iterator, Optional, Protocol, TypeVar
 
 import numpy.typing as npt
 from max.dtype import DType
@@ -45,6 +45,10 @@ class Weights(Protocol):
 
     def exists(self) -> bool:
         "Returns whether a weight with this exact name exists."
+        ...
+
+    def items(self: _Self) -> Iterator[tuple[str, _Self]]:
+        """Iterate through all allocable weights that start with the prefix."""
         ...
 
     def raw_tensor(self) -> npt.NDArray[Any]:

@@ -129,7 +129,7 @@ class GGUFWeights(Weights):
         return self._prefix
 
     def items(self):
-        """Iterate through allocable weights that start with the weight name."""
+        """Iterate through all allocable weights that start with the prefix."""
         for name in self._tensors:
             if name.startswith(self._prefix):
                 yield (
@@ -158,11 +158,6 @@ class GGUFWeights(Weights):
 
     def __getitem__(self, idx: int | str) -> GGUFWeights:
         return self.__getattr__(str(idx))
-
-    def raw_tensors(self):
-        for name, tensor in self._tensors.items():
-            if name.startswith(self._prefix):
-                yield tensor
 
     def raw_tensor(self) -> np.ndarray:
         """Returns the numpy tensor corresponding to this weights object.

@@ -94,7 +94,7 @@ class SafetensorWeights(Weights):
         return self._prefix
 
     def items(self):
-        """Iterate through allocable weights that start with the weight name."""
+        """Iterate through all allocable weights that start with the prefix."""
         for name in self._tensors:
             if name.startswith(self.name):
                 yield (

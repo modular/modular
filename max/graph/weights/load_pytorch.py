@@ -127,7 +127,7 @@ class PytorchWeights:
         return self._prefix
 
     def items(self):
-        """Iterate through allocable weights that start with the weight name."""
+        """Iterate through all allocable weights that start with the prefix."""
         for name in self._tensor_infos:
             if name.startswith(self._prefix):
                 yield (
@@ -157,12 +157,7 @@ class PytorchWeights:
     def __getitem__(self, idx: int | str) -> PytorchWeights:
         return self.__getattr__(str(idx))
 
-    def raw_tensors(self):
-        for name, tensor_info in self._tensor_infos.items():
-            if name.startswith(self._prefix):
-                yield tensor_info
-
-    def raw_tensor(self) -> Any:
+    def raw_tensor(self, dtype: DType | None = None) -> npt.NDArray[Any]:
         """Returns the tensor corresponding to this weights object.
 
         Raises:
@@ -192,7 +187,7 @@ class PytorchWeights:
                 " checkpoint:"
             )
 
-        tensor_info = self.raw_tensor()
+        tensor_info = self._tensor_infos[self._prefix]
         weight = Weight(
             self._prefix,
             _dtype_from_torch(tensor_info.dtype),
