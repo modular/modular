@@ -129,7 +129,9 @@ static SIMDAttr foldSIMDOpDType([[maybe_unused]] GetValueFn getValue,
 enum IndexFold {
   kNoIndex,     // no index folding allowed
   kIndexResult, // index operation creates an index
-  kOtherResult  // index operation does not create an index
+  kOtherResult, // index operation does not create an index
+  k64BitResult, // index operation does not create an index and produces64-bit
+                // result
 };
 
 /// Try to fold an operation with index dtype using one of the provided fold
@@ -155,14 +157,6 @@ static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, KGENDType dtype,
     constexpr bool isIndexResult = foldType == kIndexResult;
     auto indexOp = [&op](auto... args)
         -> std::optional<std::conditional_t<isIndexResult, int64_t, ResultT>> {
-      OpResultT result64 = op(args...);
-      if constexpr (isOptional)
-        if (!result64.has_value())
-          return {};
-      OpResultT result32 = op(args.trunc(32)...);
-      if constexpr (isOptional)
-        if (!result32.has_value())
-          return {};
       auto unwrap = [](OpResultT value) {
         if constexpr (isOptional)
           return *value;
@@ -170,6 +164,19 @@ static SIMDAttr foldSIMDOpIndex(ArrayRef<Attribute> operands, KGENDType dtype,
           return value;
       };
 
+      OpResultT result64 = op(args...);
+      if constexpr (isOptional)
+        if (!result64.has_value())
+          return {};
+      if constexpr (foldType == k64BitResult) {
+        // Return value that matches the result type
+        return unwrap(result64);
+      }
+
+      OpResultT result32 = op(args.trunc(32)...);
+      if constexpr (isOptional)
+        if (!result32.has_value())
+          return {};
       // Compare the results. Return the index value if the fold results match.
       // If the result type isn't an index represented as an APSInt, just
       // compare the results directly.
@@ -757,7 +764,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     const llvm::fltSemantics &sem = DTypeValue::getFloatSemantics(*dtype);
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
-        [&](const APSInt &in) {
+        [&](const APSInt &in) -> APFloat {
           APFloat fp(sem);
           fp.convertFromAPInt(in, in.isSigned(), APFloat::rmNearestTiesToEven);
           return fp;
@@ -775,7 +782,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     unsigned width = dtype->getIntegerWidthInBits();
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
-        [&](const APSInt &in) { return in.extOrTrunc(width); },
+        [&](const APSInt &in) -> APSInt { return in.extOrTrunc(width); },
         [&](const APFloat &in) -> std::optional<APSInt> {
           APSInt iv(width, dtype->isUInt());
           bool ignored;
@@ -790,7 +797,7 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
     // Cast to index like it's a 64-bit integer. Address is handled like index.
     return foldSIMDOpResult<::Detail::kOtherResult>(
         adaptor.getOperands(), *dtype,
-        [](const APSInt &in) { return in.getSExtValue(); },
+        [](const APSInt &in) -> int64_t { return in.getSExtValue(); },
         [](const APFloat &in) -> std::optional<int64_t> {
           APSInt iv(64, /*isUnsigned=*/false);
           bool ignored;
@@ -808,8 +815,8 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
   assert(dtype->isBool());
   return foldSIMDOpResult<::Detail::kOtherResult>(
       adaptor.getOperands(), *dtype,
-      [](const APSInt &in) { return !in.isZero(); },
-      [](const APFloat &in) { return !in.isZero(); });
+      [](const APSInt &in) -> bool { return !in.isZero(); },
+      [](const APFloat &in) -> bool { return !in.isZero(); });
 }
 
 /// Canonicalize integer type `cast(cast(x : T1 to T2) : T3) -> cast(T1 to T3)`,
@@ -874,6 +881,49 @@ LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
   b.replaceOpWithNewOp<CastOp>(op, op.getType(), cast.getInput());
   // Erase the intermediate cast -- its only use has been removed.
   b.eraseOp(cast);
+  return success();
+}
+
+ErrorTreeOrSuccess CastOp::interpret(ArrayRef<Attribute> operands,
+                                     InterpreterState &state) {
+  // First try to fold the cast. If that fails, fallback to special cases.
+  if (auto result = fold(operands)) {
+    state.mapResults(cast<Attribute>(result));
+    return success();
+  }
+
+  auto in = dyn_cast_if_present<SIMDAttr>(operands[0]);
+  std::optional<KGENDType> dtype = getType().getResolvedDType();
+  if (!in || !dtype)
+    return ErrorTree(getLoc(), "types must be known at this point");
+
+  if (!in.getType().getResolvedDType()->isIndex() ||
+      dtype->getIntegerWidthInBits() != 64)
+    return ErrorTree(getLoc(), "not implemented");
+
+  // A special case when the input is index type and output is 64-bit integer.
+  // Currently, it's only one known case when folder can fail that makes
+  // interpreter unhappy.
+  unsigned ptrWidth =
+      state.getTarget() ? state.getTarget().resolveIndexBitWidth() : 64;
+  unsigned width = 64;
+  auto res = foldSIMDOpResult<::Detail::k64BitResult>(
+      operands, *dtype,
+      [&](const APSInt &in) -> APSInt {
+        // First extend or truncate to pointer width and only after that to
+        // 64-bit integer
+        return in.extOrTrunc(ptrWidth).extOrTrunc(width);
+      },
+      [&](const APFloat &in) -> std::optional<APSInt> {
+        APSInt iv(width, dtype->isUInt());
+        bool ignored;
+        if (in.convertToInteger(iv, APFloat::rmTowardZero, &ignored) ==
+            APFloat::opInvalidOp)
+          return {};
+        return iv;
+      },
+      [&](bool in) { return APSInt(APInt(width, in), dtype->isUInt()); });
+  state.mapResults(res);
   return success();
 }
 
