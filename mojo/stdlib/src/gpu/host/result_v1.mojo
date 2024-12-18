@@ -547,12 +547,13 @@ struct Result(Stringable, EqualityComparable, KeyElement, ExplicitlyCopyable):
         self.code = code
 
     @always_inline("nodebug")
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicitly construct a deep copy of the provided value.
-        Args:
-            other: The value to copy.
+
+        Returns:
+            A copy of the value.
         """
-        self = other
+        return self
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
