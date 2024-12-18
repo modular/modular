@@ -291,13 +291,13 @@ struct LayoutTensor[
         self.runtime_layout = runtime_layout
         self.runtime_element_layout = element_runtime_layout
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicitly copy the other LayoutTensor.
 
-        Args:
-            other: The LayoutTensor to copy.
+        Returns:
+            A copy of the value.
         """
-        self = other
+        return self
 
     @always_inline
     fn bitcast[
