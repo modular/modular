@@ -29,6 +29,7 @@ from test_common.evaluate import PROMPTS
 @dataclass(frozen=True)
 class TestParams:
     max_length: int
+    cache_strategy: KVCacheStrategy
     max_new_tokens: int = -1
 
 
@@ -42,13 +43,12 @@ def pipeline_config(testdata_directory, request) -> PipelineConfig:
     https://docs.pytest.org/en/stable/how-to/fixtures.html#fixture-scopes
     """
     params: TestParams = request.param
-    cache_strategy = KVCacheStrategy.CONTINUOUS
 
     return SupportedTestModels.get("tinyllama", "bfloat16").build_config(
         testdata_directory,
         max_length=params.max_length,
         max_new_tokens=params.max_new_tokens,
-        cache_strategy=cache_strategy,
+        cache_strategy=params.cache_strategy,
         max_cache_batch_size=16,
         device_specs=[DeviceSpec.accelerator()],
     )
@@ -77,7 +77,12 @@ def max_new_tokens_fixture(request):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "pipeline_config", [TestParams(512, -1)], indirect=True
+    "pipeline_config",
+    [
+        TestParams(512, KVCacheStrategy.CONTINUOUS, -1),
+        TestParams(512, KVCacheStrategy.PAGED, -1),
+    ],
+    indirect=True,
 )
 async def test_tinyllama_multistep_execution_gpu(
     tinyllama_pipeline: TextGenerationPipeline,
@@ -134,7 +139,7 @@ async def test_tinyllama_multistep_execution_gpu(
 
         response = tinyllama_pipeline.next_token(single_step_context_dict)[0]
         for k, v in response.items():
-            single_step_tokens[k].append(v)
+            single_step_tokens[k].append(v.next_token)
 
     for _, v in single_step_contexts:
         tinyllama_pipeline.release(v)
@@ -152,7 +157,7 @@ async def test_tinyllama_multistep_execution_gpu(
 
         for i in range(len(multistep_response)):
             for k, v in multistep_response[i].items():
-                multistep_tokens[k].append(v)
+                multistep_tokens[k].append(v.next_token)
 
     for _, v in multistep_contexts:
         tinyllama_pipeline.release(v)
