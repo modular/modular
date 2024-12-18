@@ -344,6 +344,21 @@ PIPELINES = {
             relative_tolerance=2.0,
         ),
     ),
+    "pixtral-bfloat16": PipelineDef(
+        compatible_with=[DeviceKind.GPU],
+        tags=["big"],
+        run=lambda device_type: run_llm_verification(
+            device_type=device_type,
+            pipeline="pixtral",
+            version="pixtral12b",
+            encoding="bfloat16",
+            pregenerated_torch_goldens_rlocation="torch_pixtral_golden/torch_pixtral_bfloat16_golden.json",
+            kl_div_threshold=float("inf"),
+            cos_dist_threshold=1.5,
+            absolute_tolerance=100,
+            relative_tolerance=2.0,
+        ),
+    ),
 }
 
 
@@ -382,10 +397,12 @@ def main(
     verdicts: dict[str, VerificationVerdict] = {}
     if pipeline is None:
         for pipeline_name, pipeline_def in PIPELINES.items():
-            if os.getenv("MODULAR_ONLY_USE_NEW_EXTENSIBILITY_API") and (
-                pipeline_name == "llama3-vision-bfloat16"
+            if os.getenv(
+                "MODULAR_ONLY_USE_NEW_EXTENSIBILITY_API"
+            ) == "true" and (
+                pipeline_name in ["llama3-vision-bfloat16", "pixtral-bfloat16"]
             ):
-                # TODO(GEX-1541): Re-enable after fixing Llama vision segfault.
+                # TODO(GEX-1541): Re-enable after fixing Llama vision and Pixtral segfault.
                 continue
 
             if device_type not in pipeline_def.compatible_with:
