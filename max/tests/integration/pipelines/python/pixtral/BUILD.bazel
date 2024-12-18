@@ -46,7 +46,7 @@ modular_py_test(
         "//SDK/public/max-repo/pipelines/python/nn",
         "//SDK/public/max-repo/pipelines/python/pixtral",
         "//Support/python:support",
-        requirement("huggingface_hub"),
+        requirement("huggingface-hub"),
         requirement("hypothesis"),
         requirement("pytest-asyncio"),
         requirement("torch"),

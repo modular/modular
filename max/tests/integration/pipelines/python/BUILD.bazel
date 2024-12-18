@@ -1,4 +1,3 @@
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "requirement")
 
 modular_py_binary(
@@ -27,7 +26,7 @@ modular_py_binary(
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/pixtral",
         requirement("click"),
-        requirement("huggingface_hub"),
+        requirement("huggingface-hub"),
     ],
 )
 
@@ -116,34 +115,6 @@ modular_py_test(
     ],
 )
 
-bool_flag(
-    name = "use_gpu_torch",
-    build_setting_default = False,
-)
-
-config_setting(
-    name = "using_gpu_torch",
-    flag_values = {":use_gpu_torch": "true"},
-)
-
-alias(
-    name = "torch",
-    actual = select({
-        ":using_gpu_torch": "@vllm//:torch",
-        "//conditions:default": requirement("torch"),
-    }),
-    visibility = [":__subpackages__"],
-)
-
-alias(
-    name = "accelerate",
-    actual = select({
-        ":using_gpu_torch": "@vllm//:accelerate",
-        "//conditions:default": requirement("accelerate"),
-    }),
-    visibility = [":__subpackages__"],
-)
-
 modular_py_binary(
     name = "generate_llm_logits",
     srcs = [
@@ -166,7 +137,6 @@ modular_py_binary(
     use_legacy_binary = True,
     visibility = ["//visibility:public"],
     deps = [
-        ":torch",
         "//SDK/integration-test/pipelines/python/llama3/testdata:run_torch_llama",
         "//SDK/integration-test/pipelines/python/test_common",
         "//SDK/public/max-repo/pipelines/python/architectures",
@@ -178,6 +148,7 @@ modular_py_binary(
         requirement("pillow"),
         requirement("requests"),
         requirement("transformers"),
+        requirement("torch"),
     ],
 )
 

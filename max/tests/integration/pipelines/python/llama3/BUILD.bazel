@@ -38,7 +38,7 @@ modular_py_binary(
         "//SDK/public/max-repo/pipelines/python/llama3",
         "//SDK/public/max-repo/pipelines/python/llama_vision",
         requirement("click"),
-        requirement("huggingface_hub"),
+        requirement("huggingface-hub"),
         requirement("py-cpuinfo"),
     ],
 )
@@ -128,7 +128,7 @@ modular_py_binary(
             "//SDK/public/max-repo/pipelines/python/nn",
             "//Support/python:support",
             requirement("click"),
-            requirement("huggingface_hub"),
+            requirement("huggingface-hub"),
             requirement("hypothesis"),
             requirement("pytest-asyncio"),
             requirement("pytest-xdist"),

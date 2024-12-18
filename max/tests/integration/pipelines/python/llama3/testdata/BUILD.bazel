@@ -26,15 +26,15 @@ modular_py_binary(
     use_legacy_binary = True,
     visibility = ["//visibility:public"],
     deps = [
-        requirement("sentencepiece"),
-        requirement("numpy"),
-        requirement("click"),
-        requirement("pillow"),
-        requirement("tokenizers"),
-        requirement("transformers"),
-        "//SDK/integration-test/pipelines/python:accelerate",  # Required transformers integration.
-        "//SDK/integration-test/pipelines/python:torch",
         "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
+        requirement("accelerate"),
+        requirement("click"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("sentencepiece"),
+        requirement("tokenizers"),
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )
 
@@ -58,14 +58,14 @@ modular_py_binary(
     main = "run_torch_llama.py",
     visibility = ["//visibility:public"],
     deps = [
-        "@vllm//:accelerate",  # Required transformers integration.
-        requirement("sentencepiece"),
-        requirement("numpy"),
-        requirement("click"),
-        requirement("pillow"),
-        requirement("tokenizers"),
-        requirement("transformers"),
         "//SDK/integration-test/pipelines/python/llama3:evaluate_llama",
-        "@vllm//:torch",  # Torch with GPU.
+        requirement("accelerate"),
+        requirement("click"),
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("sentencepiece"),
+        requirement("tokenizers"),
+        requirement("torch"),
+        requirement("transformers"),
     ],
 )
