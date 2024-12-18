@@ -422,6 +422,13 @@ class MultimodalModel:
     The current implementation assumes that Model instances are instantiated
     correctly as specified in the Model class above and this is merely a wrapper
     around one or more models (modalities) to support multimodal models.
+
+
+    There are some caveats to the overall Multimodal interface:
+    1. This multimodal model does not support direct calls to execute(). The user
+    is expected to call execute() on each modality (Model instance) on their own.
+    2. Some of the overridden properties below defaults to the "last" model, which
+    is typically a text transformer.
     """
 
     modalities: tuple[Model, ...]
@@ -443,7 +450,7 @@ class MultimodalModel:
     @property
     def input_metadata(self) -> list[TensorSpec]:
         """
-        Metadata about the model's input tensors, as a list of
+        Metadata about the last model's input tensors, as a list of
         :obj:`TensorSpec` objects.
 
         For example, you can print the input tensor names, shapes, and dtypes:
@@ -458,7 +465,7 @@ class MultimodalModel:
     @property
     def output_metadata(self) -> list[TensorSpec]:
         """
-        Metadata about the model's output tensors, as a list of
+        Metadata about the last model's output tensors, as a list of
         :obj:`TensorSpec` objects.
 
         For example, you can print the output tensor names, shapes, and dtypes:
@@ -477,14 +484,14 @@ class MultimodalModel:
     @property
     def devices(self) -> list[Device]:
         """
-        Returns the device objects used in the Model.
+        Returns the device objects used in the last Model.
         """
         return self.modalities[-1].devices
 
     @property
     def input_devices(self) -> List[Device]:
         """
-        Device of the model's input tensors, as a list of
+        Device of the last model's input tensors, as a list of
         :obj:`Device` objects.
         """
         return self.modalities[-1].input_devices
@@ -492,7 +499,7 @@ class MultimodalModel:
     @property
     def output_devices(self) -> List[Device]:
         """
-        Device of the model's output tensors, as a list of
+        Device of the last model's output tensors, as a list of
         :obj:`Device` objects.
         """
         return self.modalities[-1].output_devices
