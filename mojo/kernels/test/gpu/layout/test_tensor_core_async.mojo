@@ -9,6 +9,8 @@
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
 from gpu.memory import AddressSpace
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.id import ThreadIdx
 from gpu.sync import barrier
 
@@ -163,4 +165,6 @@ def main():
         # CHECK: 110432.0 114364.0 118296.0 122228.0 126160.0 130092.0 134024.0 137956.0
         # CHECK: 112224.0 116220.0 120216.0 124212.0 128208.0 132204.0 136200.0 140196.0
         # CHECK: 114016.0 118076.0 122136.0 126196.0 130256.0 134316.0 138376.0 142436.0
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         test_tensor_core_async_tf32_tf32_64x8x8(ctx)
+        _ = _make_ctx_current(prev_ctx)
