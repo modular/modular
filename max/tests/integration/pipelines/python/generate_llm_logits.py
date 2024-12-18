@@ -9,9 +9,10 @@ from __future__ import annotations
 import os
 
 # Standard library
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Optional, Sequence, Union
+from typing import Any, Mapping, Optional, Sequence, Union
 
 # 3rd-party
 import click
@@ -58,7 +59,7 @@ class TorchModelAndDataProcessor:
     ]
 
 
-class PipelineOracle:
+class PipelineOracle(ABC):
     """Knows about a kind of pipeline.
 
     Can provide information about that pipeline, and create other objects
@@ -66,6 +67,7 @@ class PipelineOracle:
     """
 
     @property
+    @abstractmethod
     def supported_versions(self) -> Sequence[str]:
         """Versions of a model that are (ever) supported.
 
@@ -78,6 +80,7 @@ class PipelineOracle:
         raise NotImplementedError
 
     @property
+    @abstractmethod
     def supported_encodings(self) -> Sequence[str]:
         """Encodings of a model that are (ever) supported.
 
@@ -89,6 +92,7 @@ class PipelineOracle:
         """
         raise NotImplementedError
 
+    @abstractmethod
     def is_supported(
         self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
@@ -98,6 +102,7 @@ class PipelineOracle:
         """
         raise NotImplementedError
 
+    @abstractmethod
     def create_max_pipeline(
         self,
         *,
@@ -108,6 +113,7 @@ class PipelineOracle:
         """Instantiate a MAX pipeline for the given version/encoding/device."""
         raise NotImplementedError
 
+    @abstractmethod
     def create_torch_pipeline(
         self, *, version: str, encoding: str, device: torch.device
     ) -> TorchModelAndDataProcessor:
@@ -145,7 +151,7 @@ class MultiModalPipelineOracle(PipelineOracle):
 class LlamaPipelineOracle(PipelineOracle):
     @property
     def supported_versions(self) -> Sequence[str]:
-        return ["tinyllama", "llama3", "llama3_1"]
+        return ["llama3", "llama3_1"]
 
     @property
     def supported_encodings(self) -> Sequence[str]:
@@ -164,28 +170,16 @@ class LlamaPipelineOracle(PipelineOracle):
                 return False
         else:
             return False
-        if version == "tinyllama":
-            return encoding in ["float32", "bfloat16"]
         return True
 
     def _map_to_internal_version(self, version: str) -> str:
         assert version in self.supported_versions
-        if version == "tinyllama" or "3_1" in version:
+        if "3_1" in version:
             return "3.1"
         else:
             return "3"
 
     def _weight_path_for(self, version: str, encoding: str) -> Path:
-        if version == "tinyllama":
-            testdata_directory = Path(os.environ["PIPELINES_TESTDATA"])
-            if encoding == "float32":
-                return testdata_directory / "tiny_llama.gguf"
-            elif encoding == "bfloat16":
-                return testdata_directory / "tiny_llama_bf16.gguf"
-            else:
-                raise ValueError(
-                    f"Could not find tiny llama checkpoint for {encoding!r}"
-                )
         return Path(
             llama3.config.get_llama_huggingface_file(
                 self._map_to_internal_version(version),
@@ -225,16 +219,6 @@ class LlamaPipelineOracle(PipelineOracle):
         )
 
     def _config_path_for(self, version: str, encoding: str) -> Path:
-        if version == "tinyllama":
-            testdata_directory = Path(os.environ["PIPELINES_TESTDATA"])
-            if encoding == "float32":
-                return testdata_directory / "tiny_llama_config.json"
-            elif encoding == "bfloat16":
-                return testdata_directory / "tiny_llama_bf16_config.json"
-            else:
-                raise ValueError(
-                    f"Could not find config path for tinyllama {encoding!r}"
-                )
         hf_repo_id = f"modularai/llama-{self._map_to_internal_version(version)}"
         return Path(
             huggingface_hub.hf_hub_download(
@@ -548,12 +532,113 @@ class PixtralPipelineOracle(MultiModalPipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
+class GenericOracle(PipelineOracle):
+    def __init__(
+        self,
+        huggingface_repo_id: str,
+        architecture: str,
+        config_params: dict[str, Any] = {},
+        prompts: list[str] | None = None,
+        auto_model_cls: Any = transformers.AutoModelForCausalLM,
+        auto_processor_cls: Any = transformers.AutoTokenizer,
+    ) -> None:
+        self.huggingface_repo_id = huggingface_repo_id
+        self.architecture = architecture
+        self.config_params = config_params
+        self._prompts = prompts
+        self.auto_model_cls = auto_model_cls
+        self.auto_processor_cls = auto_processor_cls
+
+    @property
+    def supported_versions(self) -> Sequence[str]:
+        return list(
+            pipelines.PIPELINE_REGISTRY.architectures[
+                self.architecture
+            ].versions.keys()
+        )
+
+    @property
+    def supported_encodings(self) -> Sequence[str]:
+        return [
+            encoding.name
+            for encoding in pipelines.PIPELINE_REGISTRY.architectures[
+                self.architecture
+            ].supported_encodings
+        ]
+
+    def is_supported(
+        self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
+    ) -> bool:
+        assert version in self.supported_versions
+        assert encoding in self.supported_encodings
+        return device_spec.device_type in {"cpu", "gpu"}
+
+    def create_max_pipeline(
+        self,
+        *,
+        version: str,
+        encoding: str,
+        device_specs: list[driver.DeviceSpec],
+    ) -> MaxPipelineAndTokenizer:
+        for device_spec in device_specs:
+            assert self.is_supported(
+                version=version, encoding=encoding, device_spec=device_spec
+            )
+        config = pipelines.PipelineConfig(
+            architecture=self.architecture,
+            device_specs=device_specs,
+            quantization_encoding=pipelines.SupportedEncoding[encoding],
+            huggingface_repo_id=self.huggingface_repo_id,
+            **self.config_params,
+        )
+        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
+        assert isinstance(pipeline, pipelines.TextGenerationPipeline)
+        return MaxPipelineAndTokenizer(
+            model=pipeline._pipeline_model,
+            generator=pipeline,
+            tokenizer=tokenizer,
+        )
+
+    def create_torch_pipeline(
+        self, *, version: str, encoding: str, device: torch.device
+    ) -> TorchModelAndDataProcessor:
+        del version  # Unused.
+        processor = self.auto_processor_cls.from_pretrained(
+            self.huggingface_repo_id
+        )
+        torch_dtype: torch.dtype
+        if encoding == "float32":
+            torch_dtype = torch.float32
+        elif encoding == "bfloat16":
+            torch_dtype = torch.bfloat16
+        else:
+            raise ValueError(
+                f"Could not convert encoding {encoding} to a torch dtype."
+            )
+        model = self.auto_model_cls.from_pretrained(
+            self.huggingface_repo_id,
+            device_map=device,
+            torch_dtype=torch_dtype,
+        )
+        return TorchModelAndDataProcessor(model=model, data_processor=processor)
+
+    @property
+    def prompts(self) -> Sequence[str]:
+        return self._prompts or evaluate.PROMPTS
+
+
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "llama": LlamaPipelineOracle(),
     "replit": ReplitPipelineOracle(),
     "mistral": MistralPipelineOracle(),
     "llama3-vision": LlamaVisionPipelineOracle(),
     "pixtral": PixtralPipelineOracle(),
+    "smollm": GenericOracle(
+        "HuggingFaceTB/SmolLM2-135M",
+        "LlamaForCausalLM",
+        config_params={"max_length": 512},
+        prompts=[p[:502] for p in evaluate.PROMPTS],
+    ),
 }
 
 

@@ -160,9 +160,6 @@ modular_py_binary(
     ],
     env = {
         "MODULAR_CUDA_QUERY_PATH": "$(location //Kernels/tools/gpu-query)",
-        "PIPELINES_TESTDATA": (
-            "SDK/integration-test/pipelines/python/llama3/testdata"
-        ),
     },
     imports = ["."],
     main = "generate_llm_logits.py",
@@ -181,6 +178,37 @@ modular_py_binary(
         requirement("pillow"),
         requirement("requests"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_generate_llm_logits",
+    size = "medium",
+    srcs = ["test_generate_llm_logits.py"],
+    data = [
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "BAZEL": "true",
+        "HF_ESCAPES_SANDBOX": "1",
+    },
+    requires_gpu = False,
+    tags = [
+        "huggingface",
+        "no-remote-exec",
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":generate_llm_logits",
+        requirement("click"),
     ],
 )
 
