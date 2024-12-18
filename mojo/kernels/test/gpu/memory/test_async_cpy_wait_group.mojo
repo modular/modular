@@ -33,7 +33,7 @@ fn copy_via_shared(
     ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
     var src_global: UnsafePointer[
         Float32, address_space = AddressSpace.GLOBAL
-    ] = src.bitcast[address_space = AddressSpace.GLOBAL]()
+    ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     async_copy[4](
         src_global.offset(thread_id),
