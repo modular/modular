@@ -31,6 +31,7 @@ from testing import assert_almost_equal
 from utils import StaticTuple
 from utils.index import Index, IndexList
 from utils.numerics import FPUtils
+from memory import UnsafePointer
 
 
 fn binary_sub[
@@ -84,6 +85,7 @@ fn multistage_gemm_simple[
         c,
         a,
         b,
+        UnsafePointer[Scalar[DType.int32]](),
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
