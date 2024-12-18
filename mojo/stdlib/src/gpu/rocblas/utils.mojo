@@ -7,7 +7,7 @@
 from collections import List
 from os import abort
 from pathlib import Path
-from sys.ffi import DLHandle
+from sys.ffi import _OwnedDLHandle, _Global
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from .types import Status
 
@@ -17,21 +17,19 @@ from .types import Status
 
 alias ROCM_ROCBLAS_LIBRARY_PATH = "/opt/rocm/lib/librocblas.so"
 
+alias ROCM_ROCBLAS_LIBRARY = _Global[
+    "ROCM_ROCBLAS_LIBRARY", _OwnedDLHandle, _init_dylib
+]()
 
-fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+
+fn _init_dylib() -> _OwnedDLHandle:
     if not Path(ROCM_ROCBLAS_LIBRARY_PATH).exists():
-        return abort[UnsafePointer[NoneType]](
+        return abort[_OwnedDLHandle](
             "the ROCM rocBLAS library was not found at "
             + ROCM_ROCBLAS_LIBRARY_PATH
         )
-    var ptr = UnsafePointer[DLHandle].alloc(1)
-    ptr.init_pointee_move(DLHandle(ROCM_ROCBLAS_LIBRARY_PATH))
-    return ptr.bitcast[NoneType]()
-
-
-fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
-    ptr.bitcast[DLHandle]()[].close()
-    ptr.free()
+    var dylib = _OwnedDLHandle(ROCM_ROCBLAS_LIBRARY_PATH)
+    return dylib^
 
 
 @always_inline
@@ -39,10 +37,8 @@ fn _get_dylib_function[
     func_name: StringLiteral, result_type: AnyTrivialRegType
 ]() -> result_type:
     return _ffi_get_dylib_function[
-        "ROCM_ROCBLAS_LIBRARY",
+        ROCM_ROCBLAS_LIBRARY,
         func_name,
-        _init_dylib,
-        _destroy_dylib,
         result_type,
     ]()
 

@@ -12,7 +12,7 @@ from sys import (
     has_nvidia_gpu_accelerator,
     has_accelerator,
 )
-from sys.ffi import DLHandle
+from sys.ffi import _OwnedDLHandle, _Global
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from sys.ffi import c_char
 from sys.param_env import env_get_int
@@ -53,39 +53,34 @@ fn _setup_categories(
     _setup_category(name_category, _TraceType_MAX, "Max")
 
 
-fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+alias GPU_TRACING_LIBRARY = _Global[
+    "GPU_TRACING_LIBRARY", _OwnedDLHandle, _init_dylib
+]()
+
+
+fn _init_dylib() -> _OwnedDLHandle:
     @parameter
     if _is_disabled():
-        return UnsafePointer[NoneType]()
+        return abort[_OwnedDLHandle]("cannot load dylib when disabled")
 
     alias library_path = CUDA_NVTX_LIBRARY_PATH if has_nvidia_gpu_accelerator() else ROCTX_LIBRARY_PATH
 
     if not Path(library_path).exists():
-        return abort[UnsafePointer[NoneType]](
+        return abort[_OwnedDLHandle](
             "the GPU tracing library was not found at " + library_path
         )
 
-    var ptr = UnsafePointer[DLHandle].alloc(1)
-    ptr.init_pointee_move(DLHandle(library_path))
+    var dylib = _OwnedDLHandle(library_path)
 
     @parameter
     if has_nvidia_gpu_accelerator():
         _setup_categories(
-            ptr[].get_function[fn (UInt32, UnsafePointer[UInt8]) -> NoneType](
-                "nvtxNameCategoryA"
-            )
+            dylib._handle.get_function[
+                fn (UInt32, UnsafePointer[UInt8]) -> NoneType
+            ]("nvtxNameCategoryA")
         )
 
-    return ptr.bitcast[NoneType]()
-
-
-fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
-    @parameter
-    if _is_disabled():
-        return None
-
-    ptr.bitcast[DLHandle]()[].close()
-    ptr.free()
+    return dylib^
 
 
 @always_inline
@@ -93,10 +88,8 @@ fn _get_dylib_function[
     func_name: StringLiteral, result_type: AnyTrivialRegType
 ]() -> result_type:
     return _ffi_get_dylib_function[
-        "GPU_TRACING_LIBRARY",
+        GPU_TRACING_LIBRARY,
         func_name,
-        _init_dylib,
-        _destroy_dylib,
         result_type,
     ]()
 

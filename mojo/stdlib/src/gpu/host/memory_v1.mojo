@@ -8,7 +8,7 @@
 from os.path import isdir
 from pathlib import Path
 from sys import sizeof
-from sys.ffi import DLHandle, _get_dylib_function
+from sys.ffi import _OwnedDLHandle, _Global, _get_dylib_function
 
 from builtin._location import __call_location, _SourceLocation
 from gpu.host.nvidia_cuda import CUcontext
@@ -77,20 +77,19 @@ fn _get_cuda_driver_path() raises -> Path:
     raise "the CUDA library was not found"
 
 
-fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+alias CUDA_DRIVER_LIBRARY = _Global[
+    "CUDA_DRIVER_LIBRARY", _OwnedDLHandle, _init_dylib
+]()
+
+
+fn _init_dylib() -> _OwnedDLHandle:
     try:
         var driver_path = _get_cuda_driver_path()
-        var ptr = UnsafePointer[DLHandle].alloc(1)
-        ptr.init_pointee_move(DLHandle(str(driver_path)))
-        _ = ptr[].get_function[fn (UInt32) -> Result]("cuInit")(0)
-        return ptr.bitcast[NoneType]()
+        var dylib = _OwnedDLHandle(str(driver_path))
+        _ = dylib._handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
+        return dylib^
     except e:
-        return abort[UnsafePointer[NoneType]](e)
-
-
-fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
-    ptr.bitcast[DLHandle]()[].close()
-    ptr.free()
+        return abort[_OwnedDLHandle](e)
 
 
 @always_inline
@@ -98,10 +97,8 @@ fn _get_cuda_dylib_function[
     func_name: StringLiteral, result_type: AnyTrivialRegType
 ]() -> result_type:
     return _get_dylib_function[
-        "CUDA_DRIVER_LIBRARY",
+        CUDA_DRIVER_LIBRARY,
         func_name,
-        _init_dylib,
-        _destroy_dylib,
         result_type,
     ]()
 
