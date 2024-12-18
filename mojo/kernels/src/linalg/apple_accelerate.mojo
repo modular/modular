@@ -9,7 +9,7 @@ from math import fma
 from os import abort
 from pathlib import Path
 from sys import os_is_macos, simdwidthof
-from sys.ffi import DLHandle
+from sys.ffi import _OwnedDLHandle, _Global
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 from algorithm import elementwise, vectorize
@@ -59,19 +59,16 @@ alias LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
+alias APPLE_ACCELERATE = _Global[
+    "APPLE_ACCELERATE", _OwnedDLHandle, _init_dylib
+]
 
-fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
-    var handle = DLHandle(LIB_ACC_PATH)
-    if not handle:
+
+fn _init_dylib() -> _OwnedDLHandle:
+    var handle = _OwnedDLHandle(LIB_ACC_PATH)
+    if not handle._handle:
         abort("the accelerate library was not found at " + LIB_ACC_PATH)
-    var ptr = UnsafePointer[DLHandle].alloc(1)
-    ptr[] = handle
-    return ptr.bitcast[NoneType]()
-
-
-fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
-    ptr.bitcast[DLHandle]()[].close()
-    ptr.free()
+    return handle^
 
 
 @always_inline
@@ -80,10 +77,8 @@ fn _get_dylib_function[
 ]() -> result_type:
     constrained[os_is_macos(), "operating system must be macOS"]()
     return _ffi_get_dylib_function[
-        "APPLE_ACCELERATE",
+        APPLE_ACCELERATE(),
         func_name,
-        _init_dylib,
-        _destroy_dylib,
         result_type,
     ]()
 
