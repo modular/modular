@@ -66,6 +66,11 @@ what we publish.
         var ptr2 = list2.unsafe_ptr()
     ```
 
+- Added new `List.extend()` overloads taking `SIMD` and `Span`. These enable
+  growing a `List[Scalar[..]]` by copying the elements of a `SIMD` vector or
+  `Span[Scalar[..]]`, simplifying the writing of some optimized SIMD-aware
+  functionality.
+
 - The `ExplicitlyCopyable` trait has changed to require a
   `fn copy(self) -> Self` method. Previously, an initializer with the signature
   `fn __init__(out self, *, other: Self)` had been required by
