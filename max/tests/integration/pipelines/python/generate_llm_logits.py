@@ -269,12 +269,29 @@ class LlamaVisionPipelineOracle(MultiModalPipelineOracle):
             assert self.is_supported(
                 version=version, encoding=encoding, device_spec=device_spec
             )
+
+        hf_repo_id = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+
+        # Compute the max sequence length, which determines up-front memory
+        # allocated for the KV cache.
+        hf_config = transformers.AutoConfig.from_pretrained(
+            hf_repo_id, trust_remote_code=True
+        )
+        vision_cfg = hf_config.vision_config
+        img_size = vision_cfg.image_size
+        patch_size = vision_cfg.patch_size
+        max_num_tiles = vision_cfg.max_num_tiles
+        num_vision_embeddings = (
+            (img_size // patch_size) ** 2 + 1
+        ) * max_num_tiles
+
         config = pipelines.PipelineConfig(
             architecture="MllamaForConditionalGeneration",
             device_specs=device_specs,
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             cache_strategy=KVCacheStrategy.CONTINUOUS,
-            huggingface_repo_id="meta-llama/Llama-3.2-11B-Vision-Instruct",
+            huggingface_repo_id=hf_repo_id,
+            max_length=num_vision_embeddings,
             trust_remote_code=True,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)

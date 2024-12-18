@@ -11,7 +11,7 @@ import pytest
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import Graph, TensorType, TensorValue
+from max.graph import Dim, Graph, TensorType, TensorValue
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     FetchContinuousBatchingKVCacheCollection,
@@ -34,10 +34,12 @@ class RMSNormKeyCacheModel:
     layer_idx: int
     """Layer index of the KV cache collection."""
 
+    total_seq_len: int
+    """Total sequence length: sum(input_row_offsets)."""
+
     def __call__(
         self,
         gamma: TensorValue,
-        total_seq_len: TensorValue,
         input_row_offsets: TensorValue,
         *fetch_args: TensorValue,
     ) -> None:
@@ -52,7 +54,7 @@ class RMSNormKeyCacheModel:
             gamma=gamma,
             epsilon=1e-5,
             layer_idx=self.layer_idx,
-            total_seq_len=total_seq_len,
+            total_seq_len=Dim(self.total_seq_len),
             input_row_offsets=input_row_offsets,
         )
 
@@ -84,13 +86,13 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     gamma_type = TensorType(dtype, shape=[kv_params.head_dim])
     input_row_offsets_type = TensorType(DType.uint32, ["batch_size_plus_1"])
-    total_seq_len_type = TensorType(DType.uint32, shape=[])
     graph = Graph(
         "matmul_kv_cache_ragged",
-        forward=RMSNormKeyCacheModel(fetch_layer, kv_params, layer_idx=0),
+        forward=RMSNormKeyCacheModel(
+            fetch_layer, kv_params, layer_idx=0, total_seq_len=sum(seq_lens)
+        ),
         input_types=[
             gamma_type,
-            total_seq_len_type,
             input_row_offsets_type,
             *kv_manager.input_symbols()[0],
         ],
@@ -114,7 +116,7 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     gamma = np.random.randn(kv_params.head_dim).astype(dtype.to_numpy())
     input_row_offsets = np.array([0, *np.cumsum(seq_lens)], dtype=np.uint32)
     total_seq_len = np.array(sum(input_row_offsets), dtype=np.uint32)
-    model(gamma, total_seq_len, input_row_offsets, *fetch_args)
+    model(gamma, input_row_offsets, *fetch_args)
 
     # Check that the RMSNorm wrote output to the KV cache.
     assert (fetch_args[0].to_numpy() != all_ones).any()
