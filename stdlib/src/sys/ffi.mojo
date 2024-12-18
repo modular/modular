@@ -113,6 +113,40 @@ struct RTLD:
 alias DEFAULT_RTLD = RTLD.NOW | RTLD.GLOBAL
 
 
+struct _OwnedDLHandle:
+    """Represents an owned handle to a dynamically linked library that can be
+    loaded and unloaded.
+
+    This type is intended to replace `DLHandle`, by incrementally introducing
+    ownership semantics to `DLHandle`.
+    """
+
+    var _handle: DLHandle
+
+    # ===-------------------------------------------------------------------===#
+    # Life cycle methods
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    fn __init__(out self, path: String, flags: Int = DEFAULT_RTLD):
+        self._handle = DLHandle(path, flags)
+
+    fn __moveinit__(out self, owned other: Self):
+        self._handle = other._handle
+
+    fn __del__(owned self):
+        """Delete the DLHandle object unloading the associated dynamic library.
+        """
+        self._handle.close()
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    fn handle(self) -> DLHandle:
+        return self._handle
+
+
 @value
 @register_passable("trivial")
 struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
@@ -368,34 +402,21 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
 
 
 @always_inline
-fn _get_dylib[
-    name: StringLiteral,
-    init_fn: fn (OpaquePointer) -> OpaquePointer,
-    destroy_fn: fn (OpaquePointer) -> None,
-](payload: OpaquePointer = OpaquePointer()) -> DLHandle:
-    var ptr = _get_global[name, init_fn, destroy_fn](payload).bitcast[
-        DLHandle
-    ]()
-    return ptr[]
-
-
-@always_inline
 fn _get_dylib_function[
-    name: StringLiteral,
+    dylib_global: _Global[_, _OwnedDLHandle, _],
     func_name: StringLiteral,
-    init_fn: fn (OpaquePointer) -> OpaquePointer,
-    destroy_fn: fn (OpaquePointer) -> None,
     result_type: AnyTrivialRegType,
-](payload: OpaquePointer = OpaquePointer()) -> result_type:
-    alias func_cache_name = name + "/" + func_name
+]() -> result_type:
+    alias func_cache_name = dylib_global.name + "/" + func_name
     var func_ptr = _get_global_or_null[func_cache_name]()
     if func_ptr:
         var result = UnsafePointer.address_of(func_ptr).bitcast[result_type]()[]
         _ = func_ptr
         return result
 
-    var dylib = _get_dylib[name, init_fn, destroy_fn](payload)
+    var dylib = dylib_global.get_or_create_ptr()[].handle()
     var new_func = dylib._get_function[func_name, result_type]()
+
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringRef(func_cache_name),
         UnsafePointer.address_of(new_func).bitcast[OpaquePointer]()[],
@@ -414,6 +435,9 @@ struct _Global[
     storage_type: Movable,
     init_fn: fn () -> storage_type,
 ]:
+    fn __init__(out self):
+        pass
+
     @staticmethod
     fn _init_wrapper(payload: OpaquePointer) -> OpaquePointer:
         # Struct-based globals don't get to take arguments to their initializer.
