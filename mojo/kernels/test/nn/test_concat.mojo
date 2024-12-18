@@ -26,7 +26,7 @@ fn tuple_to_vector[
     var vector = InlinedFixedVector[type](len(elems))
     for i in range(len(elems)):
         vector.append(elems[i])
-    return InlinedFixedVector(vector)
+    return vector^
 
 
 fn test_concat() raises:

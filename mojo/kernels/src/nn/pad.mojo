@@ -56,7 +56,9 @@ struct _NestedLoopIter[n_loops: Int]:
             ),
         )
 
-        self.loop_bounds = InlinedFixedVector(loop_bounds)
+        # TODO: Should this function take an `owned loop_bounds` to avoid
+        #   a copy in places where the caller already has an owned value?
+        self.loop_bounds = loop_bounds.copy()
 
         self.cur = IndexList[n_loops]()
         self.early_stop = False
@@ -78,7 +80,7 @@ struct _NestedLoopIter[n_loops: Int]:
 
     fn __copyinit__(out self, other: Self):
         self.cur = other.cur
-        self.loop_bounds = InlinedFixedVector(other.loop_bounds)
+        self.loop_bounds = other.loop_bounds.copy()
         self.early_stop = other.early_stop
 
     fn __iter__(mut self) -> Self:
