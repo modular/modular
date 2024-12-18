@@ -1093,7 +1093,7 @@ struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
                 self.max_seq_length,
                 self.max_cache_length,
                 layer_idx,
-                Self.CacheType.KeyIdx,
+                Self.CacheType.ValueIdx,
             )
         )
 
