@@ -11,7 +11,10 @@ import pytest
 from max.pipelines.interfaces import TokenGenerator
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
-from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.pipelines.model_worker import (
+    ModelWorkerConfig,
+    start_model_worker,
+)
 
 
 @pytest.mark.asyncio
@@ -76,6 +79,6 @@ async def test_model_worker_start_timeout() -> None:
             TokenGeneratorPipelineConfig.continuous_heterogenous(
                 tg_batch_size=1, ce_batch_size=1, ce_batch_timeout=0.0
             ),
-            timeout_secs=0.1,
+            ModelWorkerConfig(timeout_secs=0.1),
         ):
             pass
