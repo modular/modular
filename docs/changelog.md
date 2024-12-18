@@ -73,7 +73,9 @@ what we publish.
 
   This improves the "greppability" and at-a-glance readability when a programmer
   is looking for places in their code that may be performing copies
-  unnecessarily.
+
+- `bit_ceil` has been renamed to `next_power_of_two`, and `bit_floor` to
+  `prev_power_of_two`. This is to improve readability and clarity in their use.
 
 ### Tooling changes
 
