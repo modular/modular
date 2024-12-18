@@ -5,7 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory import UnsafePointer
-from sys.ffi import RTLD, DLHandle, _get_dylib_function, external_call
+from sys.ffi import (
+    RTLD,
+    _OwnedDLHandle,
+    _Global,
+    _get_dylib_function,
+    external_call,
+)
 from os import abort
 from pathlib import Path
 from utils import StringRef, StringSlice
@@ -18,8 +24,10 @@ import _mlir
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
+alias MOF_LIB = _Global["MOF_LIB", _OwnedDLHandle, _init_dylib]
 
-fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+
+fn _init_dylib() -> _OwnedDLHandle:
     var mof_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
     ](StringRef(".graph_lib"))
@@ -34,20 +42,15 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     if not Path(mof_lib_path).exists():
         abort("cannot load graph library from " + mof_lib_path)
 
-    var ptr = UnsafePointer[DLHandle].alloc(1)
-    ptr[] = DLHandle(mof_lib_path, RTLD.NOW | RTLD.GLOBAL)
-    return ptr.bitcast[NoneType]()
-
-
-fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
-    ptr.bitcast[DLHandle]()[].close()
-    ptr.free()
+    return _OwnedDLHandle(mof_lib_path, RTLD.NOW | RTLD.GLOBAL)
 
 
 @always_inline
 fn cfunc[func_name: StringLiteral, T: AnyTrivialRegType]() -> T:
     var f = _get_dylib_function[
-        "MOF_LIB", func_name, _init_dylib, _destroy_dylib, T
+        MOF_LIB(),
+        func_name,
+        T,
     ]()
     var ptr = UnsafePointer.address_of(f).bitcast[UnsafePointer[NoneType]]()[]
     if not ptr:

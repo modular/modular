@@ -6,7 +6,13 @@
 
 from os import abort, getenv
 from pathlib import Path
-from sys.ffi import RTLD, DLHandle, _get_dylib_function, external_call
+from sys.ffi import (
+    RTLD,
+    _get_dylib_function,
+    external_call,
+    _OwnedDLHandle,
+    _Global,
+)
 from sys.param_env import env_get_string, is_defined
 
 from memory import UnsafePointer
@@ -15,7 +21,7 @@ from utils import StringRef
 
 
 # Init fns inspired by gpu.host._utils
-fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+fn _init_dylib() -> _OwnedDLHandle:
     alias mlirc_dylib = env_get_string["MLIRC_DYLIB", ".graph_lib"]()
     var mof_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", UnsafePointer[UInt8]
@@ -31,14 +37,10 @@ fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     if not Path(mof_lib_path).exists():
         abort("cannot load graph library from " + mof_lib_path)
 
-    var ptr = UnsafePointer[DLHandle].alloc(1)
-    ptr.init_pointee_move(DLHandle(mof_lib_path, RTLD.NOW | RTLD.GLOBAL))
-    return ptr.bitcast[NoneType]()
+    return _OwnedDLHandle(mof_lib_path, RTLD.NOW | RTLD.GLOBAL)
 
 
-fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
-    ptr.bitcast[DLHandle]()[].close()
-    ptr.free()
+alias MOF_LIB = _Global["MOF_LIB", _OwnedDLHandle, _init_dylib]
 
 
 @always_inline
@@ -50,10 +52,8 @@ fn MLIR_func[
     @parameter
     if not is_defined["MLIRCAPI_LINKED"]():
         var f = _get_dylib_function[
-            "MOF_LIB",
+            MOF_LIB(),
             name,
-            _init_dylib,
-            _destroy_dylib,
             fn (__type_of(loaded_args_pack)) -> T,
         ]()
         var ptr = UnsafePointer.address_of(f).bitcast[
