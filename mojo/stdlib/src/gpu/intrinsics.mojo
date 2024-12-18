@@ -382,7 +382,7 @@ fn load_acquire[
         + " $0, [$1];",
         Scalar[type],
         constraints=constraints,
-    ](ptr.bitcast[address_space = AddressSpace.GENERIC]())
+    ](ptr.address_space_cast[AddressSpace.GENERIC]())
 
 
 @always_inline
@@ -396,7 +396,7 @@ fn store_volatile[
         "st.volatile.global." + _get_type_suffix[type]() + " [$1], $0;",
         NoneType,
         constraints=constraints,
-    ](value, ptr.bitcast[address_space = AddressSpace.GENERIC]())
+    ](value, ptr.address_space_cast[AddressSpace.GENERIC]())
 
 
 @always_inline
@@ -410,4 +410,4 @@ fn load_volatile[
         "ld.volatile.global." + _get_type_suffix[type]() + " $0, [$1];",
         Scalar[type],
         constraints=constraints,
-    ](ptr.bitcast[address_space = AddressSpace.GENERIC]())
+    ](ptr.address_space_cast[AddressSpace.GENERIC]())

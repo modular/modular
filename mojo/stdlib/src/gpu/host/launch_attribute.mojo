@@ -295,9 +295,11 @@ struct AccessPolicyWindow:
         hit_prop: AccessProperty = AccessProperty.NORMAL,
         miss_prop: AccessProperty = AccessProperty.NORMAL,
     ):
-        self.base_ptr = base_ptr.bitcast[
-            NoneType, address_space = AddressSpace.GENERIC
-        ]().address
+        self.base_ptr = (
+            base_ptr.bitcast[NoneType]()
+            .address_space_cast[AddressSpace.GENERIC]()
+            .address
+        )
         self.num_bytes = count * sizeof[T]()
         self.hit_ratio = hit_ratio
         self.hit_prop = hit_prop

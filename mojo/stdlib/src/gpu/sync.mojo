@@ -101,7 +101,7 @@ fn _mbarrier_impl[
         or address_space == GPUAddressSpace.GENERIC
     ):
         llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
-            address.bitcast[address_space = GPUAddressSpace.GENERIC]().address
+            address.address_space_cast[GPUAddressSpace.GENERIC]().address
         )
     else:
         constrained[False, "invalid address space"]()
