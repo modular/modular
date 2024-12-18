@@ -528,7 +528,8 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_CastOp : POPOp<"cast", [Pure,
-    DeclareOpInterfaceMethods<CastOpInterface>]> {
+    DeclareOpInterfaceMethods<CastOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "element wise cast";
   let description = [{
     Perform an element-wise cast between SIMD vectors types or between scalar

@@ -650,6 +650,22 @@ kgen.func @cast_index_to_index() -> !pop.scalar<index> {
   kgen.return %1 : !pop.scalar<index>
 }
 
+// CHECK-LABEL: @cast_index_to_si64_large
+kgen.func @cast_index_to_si64_large() -> !pop.scalar<si64> {
+  // CHECK-NEXT: kgen.param.constant: scalar<index> = <-8664705627211539068>
+  %0 = kgen.param.constant: scalar<index> = <-8664705627211539068>
+  %1 = pop.cast %0 : !pop.scalar<index> to !pop.scalar<si64>
+  kgen.return %1 : !pop.scalar<si64>
+}
+
+// CHECK-LABEL: @cast_index_to_si32_large
+kgen.func @cast_index_to_si32_large() -> !pop.scalar<si32> {
+  // CHECK-NEXT: kgen.param.constant: scalar<si32> = <-1095082620>
+  %0 = kgen.param.constant: scalar<index> = <-8664705627211539068>
+  %1 = pop.cast %0 : !pop.scalar<index> to !pop.scalar<si32>
+  kgen.return %1 : !pop.scalar<si32>
+}
+
 // CHECK-LABEL: @cast_and_trancate
 kgen.func @cast_and_trancate(%v0 : !pop.simd<2, si64>) -> !pop.simd<2, si32> {
   // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, si64> to !pop.simd<2, si32>
