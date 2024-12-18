@@ -255,8 +255,8 @@ fn memcpy[
     """
     var n = count * sizeof[dest.type]()
     _memcpy_impl(
-        dest.bitcast[Byte, origin=MutableAnyOrigin](),
-        src.bitcast[Byte, origin=MutableAnyOrigin](),
+        dest.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
+        src.bitcast[Byte]().origin_cast[origin=MutableAnyOrigin](),
         n,
     )
 

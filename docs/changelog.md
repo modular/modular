@@ -22,6 +22,10 @@ what we publish.
 
 ### Standard library changes
 
+- `UnsafePointer`'s `bitcast` method has now been split into `bitcast`
+  for changing the type, `origin_cast` for changing mutability,
+  and `address_space_cast` for changing the address space.
+
 - `UnsafePointer` is now parameterized on mutability. Previously,
   `UnsafePointer` could only represent mutable pointers.
 
@@ -44,7 +48,7 @@ what we publish.
     ```mojo
     var local = 10
     # Cast the mutable pointer to be immutable.
-    var ptr = UnsafePointer.address_of(local).bitcast[mut=False]()
+    var ptr = UnsafePointer.address_of(local).mut_cast[mut=False]()
     ```
 
   - The `unsafe_ptr()` method on several standard library collection types have

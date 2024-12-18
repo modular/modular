@@ -974,11 +974,7 @@ struct UnsafePointer[
     fn bitcast[
         T: AnyType = Self.type,
         /,
-        address_space: AddressSpace = Self.address_space,
         alignment: Int = Self.alignment,
-        *,
-        mut: Bool = Self.mut,
-        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
     ](self) -> UnsafePointer[
         T,
         address_space=address_space,
@@ -990,10 +986,7 @@ struct UnsafePointer[
 
         Parameters:
             T: The target type.
-            address_space: The address space of the result.
             alignment: Alignment of the destination pointer.
-            mut: Whether the origin is mutable.
-            origin: Origin of the destination pointer.
 
         Returns:
             A new UnsafePointer object with the specified type and the same address,
@@ -1002,6 +995,58 @@ struct UnsafePointer[
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
                 T, address_space=address_space, alignment=alignment
+            ]._mlir_type,
+        ](self.address)
+
+    @always_inline("nodebug")
+    fn origin_cast[
+        mut: Bool = Self.mut,
+        origin: Origin[mut] = Origin[mut].cast_from[Self.origin].result,
+    ](self) -> UnsafePointer[
+        type,
+        address_space=address_space,
+        alignment=alignment,
+        mut=mut,
+        origin=origin,
+    ]:
+        """Changes the origin or mutability of a pointer.
+
+        Parameters:
+            mut: Whether the origin is mutable.
+            origin: Origin of the destination pointer.
+
+        Returns:
+            A new UnsafePointer object with the same type and the same address,
+            as the original UnsafePointer and the new specified mutability and origin.
+        """
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type = UnsafePointer[
+                type, address_space=address_space, alignment=alignment
+            ]._mlir_type,
+        ](self.address)
+
+    @always_inline("nodebug")
+    fn address_space_cast[
+        address_space: AddressSpace = Self.address_space,
+    ](self) -> UnsafePointer[
+        type,
+        address_space=address_space,
+        alignment=alignment,
+        mut=mut,
+        origin=origin,
+    ]:
+        """Casts an UnsafePointer to a different address space.
+
+        Parameters:
+            address_space: The address space of the result.
+
+        Returns:
+            A new UnsafePointer object with the same type and the same address,
+            as the original UnsafePointer and the new address space.
+        """
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type = UnsafePointer[
+                type, address_space=address_space, alignment=alignment
             ]._mlir_type,
         ](self.address)
 

@@ -498,7 +498,7 @@ struct StringLiteral(
         # TODO(MSTDL-555):
         #   Remove bitcast after changing pop.string.address
         #   return type.
-        return ptr.bitcast[Byte, mut=False, origin=StaticConstantOrigin]()
+        return ptr.bitcast[Byte]().origin_cast[False, StaticConstantOrigin]()
 
     @always_inline
     fn unsafe_cstr_ptr(
