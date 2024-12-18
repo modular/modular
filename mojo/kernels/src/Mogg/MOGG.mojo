@@ -686,7 +686,7 @@ fn to_buffer_list[
         var buffer = _to_buffer_index_list_shape[type, rank](data, dims)
         out_list.append(buffer)
 
-    return InlinedFixedVector(out_list)
+    return out_list^
 
 
 @register_internal("destruct_buffer_list")

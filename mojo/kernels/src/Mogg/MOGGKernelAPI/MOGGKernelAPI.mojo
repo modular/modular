@@ -4561,7 +4561,7 @@ fn to_managed_tensor_slice_list[
         )
         out_list.append(buffer)
 
-    return InlinedFixedVector(out_list)
+    return out_list^
 
 
 # NOTE: there are a lot of similarities between this and the shape func
