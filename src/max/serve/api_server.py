@@ -8,42 +8,17 @@
 
 from __future__ import annotations
 
+from max.serve.telemetry.logger import configureLogging
+
+configureLogging()
+
 import argparse
 import logging
-import os
-from dataclasses import dataclass
-from typing import Union
-
-import uvloop
-from max.serve.telemetry.logger import configureLogging
-from max.serve.telemetry.metrics import METRICS
-
-console_level: Union[int, str] = logging.INFO
-file_path: str = ""
-file_level: Union[int, str, None] = None
-otlp_level: Union[int, str, None] = None
-metrics_egress_enabled = True
-if "MAX_SERVE_LOGS_CONSOLE_LEVEL" in os.environ:
-    console_level = logging.getLevelName(
-        os.environ["MAX_SERVE_LOGS_CONSOLE_LEVEL"]
-    )
-if "MAX_SERVE_LOGS_OTLP_LEVEL" in os.environ:
-    otlp_level = logging.getLevelName(os.environ["MAX_SERVE_LOGS_OTLP_LEVEL"])
-if "MAX_SERVE_LOGS_FILE_PATH" in os.environ:
-    file_path = os.environ["MAX_SERVE_LOGS_FILE_PATH"]
-    file_level = logging.getLevelName(
-        os.environ.get("MAX_SERVE_LOGS_FILE_LEVEL", "DEBUG")
-    )
-if "MAX_SERVE_DISABLE_TELEMETRY" in os.environ:
-    otlp_level = None
-    metrics_egress_enabled = False
-configureLogging(console_level, file_path, file_level, otlp_level)
-METRICS.configure(metrics_egress_enabled)
-
-
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from functools import partial
 
+import uvloop
 from fastapi import FastAPI
 from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorFactory
 from max.serve.config import APIType, Settings, api_prefix
@@ -59,6 +34,7 @@ from max.serve.pipelines.llm import (
 from max.serve.pipelines.model_worker import start_model_worker
 from max.serve.request import register_request
 from max.serve.router import kserve_routes, openai_routes
+from max.serve.telemetry.metrics import METRICS, configure_metrics
 from prometheus_client import disable_created_metrics, make_asgi_app
 from pydantic_settings import CliSettingsSource
 from uvicorn import Config, Server
@@ -83,6 +59,8 @@ class ServingTokenGeneratorSettings:
 async def lifespan(
     app: FastAPI, serving_settings: ServingTokenGeneratorSettings
 ):
+    configure_metrics()
+    await METRICS.configure()
     try:
         async with start_model_worker(
             serving_settings.model_factory, serving_settings.pipeline_config
@@ -99,6 +77,7 @@ async def lifespan(
         logger.exception("Error occurred in model worker.", e)
     finally:
         logger.critical("start_model_worker has completed")
+        await METRICS.shutdown()
 
 
 def fastapi_app(

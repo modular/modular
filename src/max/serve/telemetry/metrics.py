@@ -5,9 +5,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from typing import Any
+import logging
+from typing import Any, Optional
 
-from max.serve.telemetry.common import metrics_resource, otelBaseUrl
+from max.serve.scheduler.async_queue import AsyncCallConsumer  # type: ignore
+from max.serve.telemetry.common import (
+    TelemetryConfig,
+    metrics_resource,
+    otelBaseUrl,
+)
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
 )
@@ -15,6 +21,8 @@ from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.metrics import get_meter_provider, set_meter_provider
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+logger = logging.getLogger(__name__)
 
 
 class _NoOpMetric:
@@ -25,6 +33,24 @@ class _NoOpMetric:
 
     def record(self, *args, **kwargs) -> None:
         pass
+
+
+def sync(f, *args, **kw):
+    return f(*args, **kw)
+
+
+def configure_metrics():
+    default_config = TelemetryConfig.from_env()
+    metrics_egress_enabled = default_config.metrics_egress_enabled
+
+    meterProviders = [PrometheusMetricReader("metrics")]  # type: ignore
+    if metrics_egress_enabled:
+        meterProviders.append(
+            PeriodicExportingMetricReader(  # type: ignore
+                OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
+            )
+        )
+    set_meter_provider(MeterProvider(meterProviders, metrics_resource))
 
 
 class _Metrics:
@@ -43,15 +69,20 @@ class _Metrics:
         self._model_load_time: Any = _NoOpMetric()
         self._itl: Any = _NoOpMetric()
 
-    def configure(self, egress_enabled: bool):
-        meterProviders = [PrometheusMetricReader("metrics")]  # type: ignore
-        if egress_enabled:
-            meterProviders.append(
-                PeriodicExportingMetricReader(  # type: ignore
-                    OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
-                )
-            )
-        set_meter_provider(MeterProvider(meterProviders, metrics_resource))
+        # by default, configure _Metrics to public sync
+        self.call_async = False
+        self.started = False
+        self._call = sync
+        self.aq: Optional[AsyncCallConsumer] = None
+
+    async def configure(self, async_metrics: Optional[bool] = None):
+        default_config = TelemetryConfig.from_env()
+        self.call_async = (
+            async_metrics
+            if async_metrics is not None
+            else default_config.async_metrics
+        )
+
         _meter = get_meter_provider().get_meter("modular")
         self._req_count = _meter.create_counter(
             "maxserve.request_count", description="Http request count"
@@ -92,38 +123,58 @@ class _Metrics:
             "maxserve.itl", unit="ms", description="inter token latency"
         )
 
+        if self.call_async and not self.started:
+            self.aq = AsyncCallConsumer()
+            self.started = False
+            try:
+                await self.aq.start()
+            except Exception as e:
+                logger.exception("failed to start consumer")
+            self.started = True
+            self._call = self.aq.call
+
+    async def shutdown(self):
+        if self.call_async and self.started:
+            assert self.aq is not None
+            self._call = sync
+            await self.aq.shutdown()
+            self.started = False
+            self.aq = None
+
     def request_count(self, responseCode: int, urlPath: str) -> None:
-        self._req_count.add(1, {"code": responseCode, "path": urlPath})
+        self._call(
+            self._req_count.add, 1, {"code": responseCode, "path": urlPath}
+        )
 
     def request_time(self, value: float, urlPath: str) -> None:
-        self._req_time.record(value, {"path": urlPath})
+        self._call(self._req_time.record, value, {"path": urlPath})
 
     def input_time(self, value: float) -> None:
-        self._input_time.record(value)
+        self._call(self._input_time.record, value)
 
     def output_time(self, value: float) -> None:
-        self._output_time.record(value)
+        self._call(self._output_time.record, value)
 
     def ttft(self, value: float) -> None:
-        self._ttft.record(value)
+        self._call(self._ttft.record, value)
 
     def input_tokens(self, value: int) -> None:
-        self._input_tokens.add(value)
+        self._call(self._input_tokens.add, value)
 
     def output_tokens(self, value: int) -> None:
-        self._output_tokens.add(value)
+        self._call(self._output_tokens.add, value)
 
     def reqs_queued(self, value: int) -> None:
-        self._reqs_queued.add(value)
+        self._call(self._reqs_queued.add, value)
 
     def reqs_running(self, value: int) -> None:
-        self._reqs_running.add(value)
+        self._call(self._reqs_running.add, value)
 
     def model_load_time(self, ms: float) -> None:
-        self._model_load_time.record(ms)
+        self._call(self._model_load_time.record, ms)
 
     def itl(self, ms: float) -> None:
-        self._itl.record(ms)
+        self._call(self._itl.record, ms)
 
 
 METRICS = _Metrics()

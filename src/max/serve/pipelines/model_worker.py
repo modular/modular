@@ -23,7 +23,7 @@ from max.pipelines.interfaces import TokenGeneratorFactory
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
 from max.serve.scheduler.queues import STOP_STREAM, BatchInputs, EngineQueue
-from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.metrics import METRICS, configure_metrics
 from max.serve.telemetry.stopwatch import record_ms
 
 logger = logging.getLogger(__name__)
@@ -203,6 +203,8 @@ async def model_worker_run_v2(
     queues: Mapping[str, MPQueue],
     events: Mapping[str, MPEvent],
 ):
+    configure_metrics()
+    await METRICS.configure()
     try:
         tracer = Tracer()  # provides MojoTrace (NVTX spans
         pid = os.getpid()
