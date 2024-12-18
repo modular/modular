@@ -525,7 +525,7 @@ fn managed_tensor_slice_to_ndbuffer[
     address_space=address_space,
     exclusive=exclusive,
 ]:
-    var ptr = tensor._ptr.bitcast[address_space=address_space]()
+    var ptr = tensor._ptr.address_space_cast[address_space]()
     return NDBuffer[
         type,
         rank,
