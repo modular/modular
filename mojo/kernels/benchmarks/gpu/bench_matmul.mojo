@@ -23,7 +23,7 @@ from gpu.cublas.cublas import (
     cublasCreate,
     cublasDestroy,
 )
-import linalg.gpu_blas
+import linalg.vendor_blas
 from gpu.host.info import DEFAULT_GPU_ARCH
 
 
@@ -35,13 +35,13 @@ fn _get_run_name[
     *,
     transpose_b: Bool,
     cache_busting: Bool,
-    use_cublas: Bool,
+    use_vendor_blas: Bool,
 ](
     shape_c_dim: IndexList[2],
     shape_a_dim: IndexList[2],
     shape_b_dim: IndexList[2],
 ) -> String:
-    var name = String("vendor_matmul" if use_cublas else "matmul") + "("
+    var name = String("vendor_matmul" if use_vendor_blas else "matmul") + "("
     name += str(type)
     name += ") : "
     # M
@@ -73,7 +73,7 @@ fn bench_matmul[
     shape_b: DimList,
     *,
     cache_busting: Bool,
-    use_cublas: Bool,
+    use_vendor_blas: Bool,
     transpose_b: Bool = False,
 ](
     ctx: DeviceContext,
@@ -102,7 +102,7 @@ fn bench_matmul[
     var buffer_b = ctx.enqueue_create_buffer[dtype](cache_b)
     var buffer_c = ctx.enqueue_create_buffer[dtype](cache_c)
 
-    var handle = gpu_blas.Handle()
+    var handle = vendor_blas.Handle()
 
     @parameter
     @__copy_capture(
@@ -133,8 +133,8 @@ fn bench_matmul[
             )
 
             @parameter
-            if use_cublas:
-                gpu_blas.matmul[use_tf32=True](
+            if use_vendor_blas:
+                vendor_blas.matmul[use_tf32=True](
                     ctx,
                     handle,
                     tensor_c,
@@ -161,7 +161,7 @@ fn bench_matmul[
                 shape_b,
                 transpose_b=transpose_b,
                 cache_busting=cache_busting,
-                use_cublas=use_cublas,
+                use_vendor_blas=use_vendor_blas,
             ](shape_c_dim, shape_a_dim, shape_b_dim)
         ),
         # TODO: Pick relevant benchmetric
@@ -185,7 +185,7 @@ fn create_matmul_bench[
     *,
     transpose_b: Bool,
     cache_busting: Bool,
-    use_cublas: Bool,
+    use_vendor_blas: Bool,
 ](
     ctx: DeviceContext, mut b: Bench, m: ValOrDim, n: ValOrDim, k: ValOrDim
 ) raises:
@@ -204,7 +204,7 @@ fn create_matmul_bench[
         static_b_shape,
         transpose_b=transpose_b,
         cache_busting=cache_busting,
-        use_cublas=use_cublas,
+        use_vendor_blas=use_vendor_blas,
     ](ctx, b, (m.value, n.value), (m.value, k.value), dynamic_b_shape)
 
 
@@ -217,7 +217,7 @@ fn main() raises:
 
     alias cache_busting = True
     alias transpose_b = True
-    alias use_cublas = False
+    alias use_vendor_blas = False
 
     var m = Bench()
     with DeviceContext() as ctx:
@@ -226,7 +226,7 @@ fn main() raises:
             dtype,
             transpose_b=transpose_b,
             cache_busting=cache_busting,
-            use_cublas=use_cublas,
+            use_vendor_blas=use_vendor_blas,
         ](
             ctx,
             m,
