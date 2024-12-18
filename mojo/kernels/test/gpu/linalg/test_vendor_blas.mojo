@@ -14,7 +14,7 @@ from buffer import DimList, NDBuffer
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.cublas.cublas import *
 from gpu.host import DeviceContext
-import linalg.gpu_blas
+import linalg.vendor_blas
 from linalg.matmul_gpu import matmul_kernel_naive
 from memory import UnsafePointer
 from testing import assert_almost_equal, assert_equal
@@ -56,8 +56,8 @@ fn test_cublas(ctx: DeviceContext) raises:
     var c = NDBuffer[type, 2, DimList(M, N)](c_device.ptr)
     var c_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref.ptr)
 
-    with gpu_blas.Handle() as handle:
-        gpu_blas.matmul(ctx, handle, c, a, b, c_row_major=True)
+    with vendor_blas.Handle() as handle:
+        vendor_blas.matmul(ctx, handle, c, a, b, c_row_major=True)
 
     ctx.enqueue_copy_from_device(c_host, c_device)
 

@@ -24,7 +24,7 @@ from internal_utils import (
 from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, RuntimeTuple
 from layout.layout import UNKNOWN_VALUE
 from linalg._multistage_gemm_gpu import multistage_gemm_kernel
-import linalg.gpu_blas
+import linalg.vendor_blas
 from linalg.utils_gpu import MatmulKernels
 from memory import UnsafePointer
 
@@ -180,8 +180,8 @@ fn test_split_k_multistage_gemm[
 
     print("copied from device")
 
-    with gpu_blas.Handle() as handle:
-        gpu_blas.matmul(
+    with vendor_blas.Handle() as handle:
+        vendor_blas.matmul(
             ctx,
             handle,
             c_dev_list[0].tensor,

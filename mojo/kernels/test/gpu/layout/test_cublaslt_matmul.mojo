@@ -16,7 +16,7 @@ from internal_utils import (
     DeviceNDBuffer,
     assert_almost_equal,
 )
-from linalg.gpu_blas import Handle, Backend, matmul
+from linalg.vendor_blas import Handle, Backend, matmul
 
 
 fn test_cublaslt_64x16x32[input_type: DType](ctx: DeviceContext) raises:

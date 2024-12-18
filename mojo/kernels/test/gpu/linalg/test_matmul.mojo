@@ -31,7 +31,7 @@ from internal_utils import (
 )
 from internal_utils._measure import cosine
 from internal_utils._utils import ValOrDim, dynamic, static
-import linalg.gpu_blas
+import linalg.vendor_blas
 from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
 from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulConfig, MatmulKernels
@@ -204,8 +204,8 @@ fn test[
 
     ctx.synchronize()
 
-    with gpu_blas.Handle() as handle:
-        gpu_blas.matmul(
+    with vendor_blas.Handle() as handle:
+        vendor_blas.matmul(
             ctx,
             handle,
             c_device_ref.tensor,
