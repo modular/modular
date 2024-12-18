@@ -10,10 +10,10 @@ modular_py_library(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        requirement("find_libpython"),
+        requirement("find-libpython"),
         requirement("numpy"),
         requirement("pyyaml"),
-        requirement("ruamel.yaml"),
+        requirement("ruamel-yaml"),
     ],
 )
 
@@ -27,7 +27,7 @@ modular_py_test(
     tags = ["requires-network"],
     deps = [
         ":support",
-        requirement("ruamel.yaml"),
+        requirement("ruamel-yaml"),
         requirement("torch"),
     ],
 )
