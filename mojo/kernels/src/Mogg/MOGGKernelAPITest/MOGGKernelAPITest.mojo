@@ -657,8 +657,8 @@ struct Transpose2DOp:
     ](x: ManagedTensorSlice[type, 2],) -> ManagedTensorSlice[type, 2]:
         var new_stride = IndexList[2]()
         var new_shape = IndexList[2]()
-        new_stride[0] = x._strides[1]
-        new_stride[1] = x._strides[0]
+        new_stride[0] = x._runtime_strides[1]
+        new_stride[1] = x._runtime_strides[0]
         new_shape[0] = x._spec.shape[1]
         new_shape[1] = x._spec.shape[0]
 

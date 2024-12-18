@@ -533,7 +533,7 @@ fn managed_tensor_slice_to_ndbuffer[
     type: DType, rank: Int
 ](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank]:
     return NDBuffer[type, rank](
-        tensor._ptr, tensor._spec.shape, tensor._strides
+        tensor._ptr, tensor._spec.shape, tensor._runtime_strides
     )
 
 

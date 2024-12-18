@@ -445,7 +445,9 @@ fn get_scalar_from_managed_tensor_slice[
     dtype: DType
 ](tensor: ManagedTensorSlice[dtype, 1]) -> Scalar[dtype]:
     # Assumes that tensor is on the host!
-    return tensor[0]
+    # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
+    # does not work with `register_internal` out of the box.
+    return tensor._ptr[0]
 
 
 @register_internal_override("get_int_from_shape", 1)
@@ -501,7 +503,7 @@ fn managed_tensor_slice_to_ndbuffer_primitive[
     rank: Int,
 ](tensor: ManagedTensorSlice[type, rank]) -> NDBuffer[type, rank]:
     return NDBuffer[type, rank](
-        tensor._ptr, tensor._spec.shape, tensor._strides
+        tensor._ptr, tensor._spec.shape, tensor._runtime_strides
     )
 
 
@@ -532,7 +534,7 @@ fn managed_tensor_slice_to_ndbuffer[
         alignment=alignment,
         address_space=address_space,
         exclusive=exclusive,
-    ](ptr, tensor.shape(), tensor._strides)
+    ](ptr, tensor.shape(), tensor._runtime_strides)
 
 
 @always_inline("nodebug")
@@ -2279,7 +2281,7 @@ struct StaticBroadcastTo:
                 if x.dim_size[i - delta]() <= 1:
                     new_strides[i] = 0
                 else:
-                    new_strides[i] = x._strides[i - delta]
+                    new_strides[i] = x.stride_length[i - delta]()
 
         return ManagedTensorSlice[type, out_rank](
             x._ptr, output_shape, new_strides
@@ -2426,7 +2428,7 @@ struct Transpose:
         for i in range(input.rank):
             var dim = int(permutations[i])
             new_shape[i] = input.dim_size(dim)
-            new_stride[i] = input._strides[dim]
+            new_stride[i] = input.stride_length(dim)
 
         return ManagedTensorSlice[type = input.type, rank = input.rank](
             input._ptr, new_shape, new_stride
