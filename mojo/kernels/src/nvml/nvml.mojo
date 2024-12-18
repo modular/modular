@@ -8,7 +8,7 @@
 from collections import List
 from os import abort
 from pathlib import Path
-from sys.ffi import DLHandle
+from sys.ffi import _OwnedDLHandle, _Global
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 from memory import UnsafePointer
@@ -40,20 +40,19 @@ fn _get_nvml_library_path() raises -> Path:
     raise "the CUDA NVML library was not found in " + str(CUDA_NVML_LIBRARY_DIR)
 
 
-fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
+alias CUDA_NVML_LIBRARY = _Global[
+    "CUDA_NVML_LIBRARY", _OwnedDLHandle, _init_dylib
+]
+
+
+fn _init_dylib() -> _OwnedDLHandle:
     try:
         var lib_path = _get_nvml_library_path()
-        var ptr = UnsafePointer[DLHandle].alloc(1)
-        ptr.init_pointee_move(DLHandle(str(lib_path)))
-        _ = ptr[].get_function[fn () -> Result]("nvmlInit_v2")()
-        return ptr.bitcast[NoneType]()
+        var dylib = _OwnedDLHandle(str(lib_path))
+        _ = dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
+        return dylib^
     except e:
-        return abort[UnsafePointer[NoneType]](e)
-
-
-fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
-    ptr.bitcast[DLHandle]()[].close()
-    ptr.free()
+        return abort[_OwnedDLHandle](e)
 
 
 @always_inline
@@ -61,7 +60,9 @@ fn _get_dylib_function[
     func_name: StringLiteral, result_type: AnyTrivialRegType
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
-        "CUDA_NVML_LIBRARY", func_name, _init_dylib, _destroy_dylib, result_type
+        CUDA_NVML_LIBRARY(),
+        func_name,
+        result_type,
     ]()
 
 
