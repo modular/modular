@@ -194,8 +194,8 @@ fn _assert_with_measure_impl[
         DType.float64
     ]()
     var m = measure(
-        x.bitcast[address_space = AddressSpace.GENERIC](),
-        y.bitcast[address_space = AddressSpace.GENERIC](),
+        x.address_space_cast[AddressSpace.GENERIC](),
+        y.address_space_cast[AddressSpace.GENERIC](),
         n,
     )
     var t = threshold.or_else(sqrt_eps)
