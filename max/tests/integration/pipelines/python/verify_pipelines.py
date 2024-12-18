@@ -382,6 +382,12 @@ def main(
     verdicts: dict[str, VerificationVerdict] = {}
     if pipeline is None:
         for pipeline_name, pipeline_def in PIPELINES.items():
+            if os.getenv("MODULAR_ONLY_USE_NEW_EXTENSIBILITY_API") and (
+                pipeline_name == "llama3-vision-bfloat16"
+            ):
+                # TODO(GEX-1541): Re-enable after fixing Llama vision segfault.
+                continue
+
             if device_type not in pipeline_def.compatible_with:
                 continue
             if not tag_filter.satisfied_by(pipeline_def.tags):
