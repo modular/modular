@@ -54,12 +54,13 @@ fn simd_store_into_managed_tensor_slice[
     indices: IndexList[rank],
     value: SIMD[type, simd_width],
 ):
-    var flat_index = tensor._compute_offset[address_space](indices)
+    var flat_index = tensor._compute_offset[address_space, static_strides](
+        indices
+    )
 
     # Store alignment cannot exceed the data type's alignment.
     alias max_alignment = gcd_pow2[alignment, alignof[type]()]()
 
-    var stride = tensor._strides[rank - 1]
     alias static_stride = static_strides.at[rank - 1]()
 
     # Stride = 1
@@ -89,6 +90,7 @@ fn simd_store_into_managed_tensor_slice[
 
     @parameter
     if static_stride.is_dynamic():
+        var stride = tensor._runtime_strides[rank - 1]
         # Dynamic stride
         if stride == 0:
             tensor._ptr.store[alignment=max_alignment](0, value)
@@ -96,7 +98,6 @@ fn simd_store_into_managed_tensor_slice[
             store_stride1()
         else:
             store_strided(stride)
-
     else:
         # static stride
         @parameter
@@ -120,8 +121,9 @@ fn simd_load_from_managed_tensor_slice[
 ](tensor: ManagedTensorSlice[type, rank], indices: IndexList[rank]) -> SIMD[
     type, simd_width
 ]:
-    var flat_index = tensor._compute_offset[address_space](indices)
-    var stride = tensor._strides[rank - 1]
+    var flat_index = tensor._compute_offset[address_space, static_strides](
+        indices
+    )
     alias static_stride = static_strides.at[rank - 1]()
 
     # Load alignment cannot exceed the data type's alignment.
@@ -160,6 +162,7 @@ fn simd_load_from_managed_tensor_slice[
 
     @parameter
     if static_stride.is_dynamic():
+        var stride = tensor._runtime_strides[rank - 1]
         # Dynamic stride
         if stride == 0:
             return tensor._ptr.load(flat_index)
@@ -167,7 +170,6 @@ fn simd_load_from_managed_tensor_slice[
             return load_stride1()
         else:
             return load_strided(stride)
-
     else:
         # Static stride
         @parameter
@@ -199,7 +201,7 @@ struct ManagedTensorSlice[
 
     var _ptr: UnsafePointer[Scalar[type]]
     var _spec: RuntimeTensorSpec[type, rank]
-    var _strides: IndexList[rank]
+    var _runtime_strides: IndexList[rank]
 
     fn __init__(
         mut self,
@@ -249,7 +251,7 @@ struct ManagedTensorSlice[
     ):
         self._ptr = ptr
         self._spec = RuntimeTensorSpec[type, rank](shape)
-        self._strides = _row_major_strides(self._spec)
+        self._runtime_strides = _row_major_strides(self._spec)
 
     fn __init__(
         mut self,
@@ -281,7 +283,7 @@ struct ManagedTensorSlice[
         Returns:
           The value at the specified indices.
         """
-        var offset = _dot_prod(indices, self._strides)
+        var offset = _dot_prod(indices, self.strides())
         return self._ptr[offset]
 
     @always_inline
@@ -322,7 +324,7 @@ struct ManagedTensorSlice[
           val: The value to store.
 
         """
-        var offset = _dot_prod(indices, self._strides)
+        var offset = _dot_prod(indices, self.strides())
         self._ptr[offset] = val
 
     fn spec(self) -> TensorSpec:
@@ -348,6 +350,27 @@ struct ManagedTensorSlice[
             return self._spec.shape[index]
         else:
             return static_shape.get[index]()
+
+    @always_inline
+    fn strides(self) -> IndexList[rank]:
+        alias static_shape = specsof[type, rank]("self").strides
+        return _make_partially_static_index_list[rank, static_shape](
+            self._runtime_strides
+        )
+
+    @always_inline
+    fn stride_length(self, index: Int) -> Int:
+        return self.strides()[index]
+
+    @always_inline
+    fn stride_length[index: Int](self) -> Int:
+        alias static_strides = specsof[type, rank]("self").strides
+
+        @parameter
+        if static_strides.at[index]().is_dynamic():
+            return self._runtime_strides[index]
+        else:
+            return static_strides.get[index]()
 
     @always_inline
     fn size(self) -> Int:
@@ -415,7 +438,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     fn _compute_offset[
-        address_space: AddressSpace
+        address_space: AddressSpace, static_strides: DimList
     ](self, index: IndexList[rank]) -> Int:
         @parameter
         if rank == 0:
@@ -433,15 +456,28 @@ struct ManagedTensorSlice[
 
             @parameter
             for i in range(rank):
-                offset = fma(Int32(index[i]), Int32(self._strides[i]), offset)
 
+                @parameter
+                if static_strides.at[i]().is_dynamic():
+                    offset = fma(
+                        Int32(index[i]), Int32(self._runtime_strides[i]), offset
+                    )
+                else:
+                    offset = fma(
+                        Int32(index[i]), Int32(static_strides.get[i]()), offset
+                    )
             return int(offset)
 
         var offset = 0
 
         @parameter
         for i in range(rank):
-            offset = fma(index[i], self._strides[i], offset)
+
+            @parameter
+            if static_strides.at[i]().is_dynamic():
+                offset = fma(index[i], self._runtime_strides[i], offset)
+            else:
+                offset = fma(index[i], static_strides.get[i](), offset)
 
         return offset
 
