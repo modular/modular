@@ -48,13 +48,13 @@ struct NoneType(
         self._value = value
 
     @always_inline
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicit copy constructor.
 
-        Args:
-            other: Another `NoneType` instance to copy.
+        Returns:
+            A copy of the value.
         """
-        self._value = None
+        return Self(None)
 
     @no_inline
     fn __str__(self) -> String:

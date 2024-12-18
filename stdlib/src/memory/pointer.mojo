@@ -355,15 +355,15 @@ struct Pointer[
         """
         return Pointer(_mlir_value=__get_mvalue_as_litref(value))
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Constructs a copy from another Pointer.
 
         Note that this does **not** copy the underlying data.
 
-        Args:
-            other: The `Pointer` to copy.
+        Returns:
+            A copy of the value.
         """
-        self._value = other._value
+        return Self(_mlir_value=self._value)
 
     # ===------------------------------------------------------------------===#
     # Operator dunders

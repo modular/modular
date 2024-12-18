@@ -139,20 +139,20 @@ struct Variant[*Ts: CollectionElement](
         self._get_discr() = idx
         self._get_ptr[T]().init_pointee_move(value^)
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self, out copy: Self):
         """Explicitly creates a deep copy of an existing variant.
 
-        Args:
-            other: The value to copy from.
+        Returns:
+            A copy of the value.
         """
-        self = Self(unsafe_uninitialized=())
-        self._get_discr() = other._get_discr()
+        copy = Self(unsafe_uninitialized=())
+        copy._get_discr() = self._get_discr()
 
         @parameter
         for i in range(len(VariadicList(Ts))):
             alias T = Ts[i]
-            if self._get_discr() == i:
-                self._get_ptr[T]().init_pointee_move(other._get_ptr[T]()[])
+            if copy._get_discr() == i:
+                copy._get_ptr[T]().init_pointee_move(self._get_ptr[T]()[])
                 return
 
     fn __copyinit__(out self, other: Self):
@@ -163,7 +163,7 @@ struct Variant[*Ts: CollectionElement](
         """
 
         # Delegate to explicit copy initializer.
-        self = Self(other=other)
+        self = other.copy()
 
     fn __moveinit__(out self, owned other: Self):
         """Move initializer for the variant.

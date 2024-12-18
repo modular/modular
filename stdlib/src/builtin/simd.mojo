@@ -238,6 +238,7 @@ struct SIMD[type: DType, size: Int](
     CollectionElement,
     # FIXME(MOCO-1291): Can't implement this due to ambiguity.
     # CollectionElementNew,
+    ExplicitlyCopyable,
     Floatable,
     Floorable,
     Writable,
@@ -305,6 +306,15 @@ struct SIMD[type: DType, size: Int](
     #        other: The value to copy.
     #    """
     #    self = other
+
+    @always_inline
+    fn copy(self) -> Self:
+        """Explicitly construct a deep copy of the provided value.
+
+        Returns:
+            A copy of the value.
+        """
+        return self
 
     @always_inline("nodebug")
     @implicit

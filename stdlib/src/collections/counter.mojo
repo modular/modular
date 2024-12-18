@@ -70,13 +70,13 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
             self._data[item] = self._data.get(item, 0) + 1
 
     @always_inline
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Create a new Counter by copying another Counter.
 
-        Args:
-            other: The Counter to copy.
+        Returns:
+            A copy of the value.
         """
-        self._data = Dict[V, Int](other=other._data)
+        return Self(self._data.copy())
 
     @staticmethod
     fn fromkeys(keys: List[V, *_], value: Int) -> Self:
@@ -295,7 +295,7 @@ struct Counter[V: KeyElement](Sized, CollectionElement, Boolable):
             A new Counter with the counts from the other Counter subtracted from
             this Counter.
         """
-        var result = Counter[V](other=self)
+        var result = self.copy()
 
         result.subtract(other)
 

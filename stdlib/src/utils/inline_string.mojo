@@ -91,13 +91,13 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
         """
         self._storage = Self.Layout(heap_string^)
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy the object.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
-        self = other
+        return self
 
     # ===------------------------------------------------------------------=== #
     # Operator dunders
@@ -333,13 +333,9 @@ struct _FixedString[CAP: Int](
         self.buffer = InlineArray[UInt8, CAP](unsafe_uninitialized=True)
         self.size = 0
 
-    fn __init__(out self, *, other: Self):
-        """Copy the object.
-
-        Args:
-            other: The value to copy.
-        """
-        self = other
+    fn copy(self) -> Self:
+        """Copy the object."""
+        return self
 
     fn __init__(out self, literal: StringLiteral) raises:
         """Constructs a FixedString value given a string literal.

@@ -65,17 +65,9 @@ struct _FormatCurlyEntry(CollectionElement, CollectionElementNew):
     alias _args_t = VariadicPack[element_trait=_CurlyEntryFormattable, *_]
     """Args types that are formattable by curly entry."""
 
-    fn __init__(out self, *, other: Self):
-        """Construct a format entry by copying another.
-
-        Args:
-            other: The other format entry.
-        """
-        self.first_curly = other.first_curly
-        self.last_curly = other.last_curly
-        self.conversion_flag = other.conversion_flag
-        self.field = Self._FieldVariantType(other=other.field)
-        self.format_spec = other.format_spec
+    fn copy(self) -> Self:
+        """Construct a format entry by copying another."""
+        return self
 
     fn __init__(
         mut self,

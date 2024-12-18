@@ -75,13 +75,13 @@ struct StringLiteral(
         self.value = value
 
     @always_inline("nodebug")
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy constructor.
 
-        Args:
-            other: The string literal to copy.
+        Returns:
+            A copy of the value.
         """
-        self = other
+        return self
 
     # TODO(MOCO-1460): This should be: fn __init__[*, value: String](out self):
     # but Mojo tries to bind the parameter in `StringLiteral["foo"]()` to the

@@ -77,14 +77,13 @@ struct StringRef(
         self = StringRef(UnsafePointer[UInt8](), 0)
 
     @always_inline
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy the object.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
-        self.data = other.data
-        self.length = other.length
+        return StringRef(self.data, self.length)
 
     @always_inline
     @implicit

@@ -531,7 +531,7 @@ def test_2d_dynamic_list():
 def test_list_explicit_copy():
     var list = List[CopyCounter]()
     list.append(CopyCounter())
-    var list_copy = List(other=list)
+    var list_copy = list.copy()
     assert_equal(0, list[0].copy_count)
     assert_equal(1, list_copy[0].copy_count)
 
@@ -539,7 +539,7 @@ def test_list_explicit_copy():
     for i in range(10):
         l2.append(i)
 
-    var l2_copy = List(other=l2)
+    var l2_copy = l2.copy()
     assert_equal(len(l2), len(l2_copy))
     for i in range(len(l2)):
         assert_equal(l2[i], l2_copy[i])
@@ -551,8 +551,8 @@ struct CopyCountedStruct(CollectionElement):
     var value: String
 
     fn __init__(out self, *, other: Self):
-        self.counter = CopyCounter(other=other.counter)
-        self.value = String(other=other.value)
+        self.counter = other.counter.copy()
+        self.value = other.value.copy()
 
     @implicit
     fn __init__(out self, value: String):

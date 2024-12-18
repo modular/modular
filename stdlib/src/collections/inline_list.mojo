@@ -120,7 +120,7 @@ struct InlineList[ElementType: CollectionElementNew, capacity: Int = 16](Sized):
         debug_assert(len(values) <= capacity, "List is full.")
         self = Self()
         for value in values:
-            self.append(ElementType(other=value[]))
+            self.append(value[].copy())
 
     @always_inline
     fn __del__(owned self):

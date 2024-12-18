@@ -142,13 +142,13 @@ struct UnsafePointer[
         )
 
     @always_inline
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy an existing pointer.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
-        self.address = other.address
+        return UnsafePointer(self.address)
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -1121,7 +1121,7 @@ struct UnsafePointer[
             value: The value to emplace.
         """
         constrained[mut, _must_be_mut_err]()
-        __get_address_as_uninit_lvalue(self.address) = T(other=value)
+        __get_address_as_uninit_lvalue(self.address) = value.copy()
 
     @always_inline
     fn move_pointee_into[

@@ -199,18 +199,20 @@ struct InlineArray[
             __get_mvalue_as_litref(storage)
         )
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicitly copy the provided value.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
 
-        self = Self(unsafe_uninitialized=True)
+        var copy = Self(unsafe_uninitialized=True)
 
         for idx in range(size):
-            var ptr = self.unsafe_ptr() + idx
-            ptr.init_pointee_copy(other[idx])
+            var ptr = copy.unsafe_ptr() + idx
+            ptr.init_pointee_copy(self[idx])
+
+        return copy^
 
     fn __copyinit__(out self, other: Self):
         """Copy construct the array.
@@ -219,7 +221,7 @@ struct InlineArray[
             other: The array to copy.
         """
 
-        self = Self(other=other)
+        self = other.copy()
 
     fn __del__(owned self):
         """Deallocate the array."""

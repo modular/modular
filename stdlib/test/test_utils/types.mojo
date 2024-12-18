@@ -59,9 +59,9 @@ struct ExplicitCopyOnly(ExplicitlyCopyable):
         self.value = value
         self.copy_count = 0
 
-    fn __init__(out self, *, other: Self):
-        self.value = other.value
-        self.copy_count = other.copy_count + 1
+    fn copy(self, out copy: Self):
+        copy = Self(self.value)
+        copy.copy_count = self.copy_count + 1
 
 
 # ===----------------------------------------------------------------------=== #
@@ -105,6 +105,9 @@ struct CopyCounter(CollectionElement, ExplicitlyCopyable):
     fn __copyinit__(out self, existing: Self):
         self.copy_count = existing.copy_count + 1
 
+    fn copy(self) -> Self:
+        return self
+
 
 # ===----------------------------------------------------------------------=== #
 # MoveCounter
@@ -135,7 +138,7 @@ struct MoveCounter[T: CollectionElementNew](
         Args:
             other: The value to copy.
         """
-        self.value = T(other=other.value)
+        self.value = other.value.copy()
         self.move_count = other.move_count
 
     fn __moveinit__(out self, owned existing: Self):
@@ -146,8 +149,11 @@ struct MoveCounter[T: CollectionElementNew](
     #       CollectionElement at the moment.
     fn __copyinit__(out self, existing: Self):
         # print("ERROR: _MoveCounter copy constructor called unexpectedly!")
-        self.value = T(other=existing.value)
+        self.value = existing.value.copy()
         self.move_count = existing.move_count
+
+    fn copy(self) -> Self:
+        return self
 
 
 # ===----------------------------------------------------------------------=== #
@@ -166,6 +172,9 @@ struct ValueDestructorRecorder(ExplicitlyCopyable):
 
     fn __del__(owned self):
         self.destructor_counter[].append(self.value)
+
+    fn copy(self) -> Self:
+        return self
 
 
 # ===----------------------------------------------------------------------=== #

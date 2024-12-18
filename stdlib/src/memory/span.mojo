@@ -127,14 +127,13 @@ struct Span[
         self._len = length
 
     @always_inline
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicitly construct a copy of the provided `Span`.
 
-        Args:
-            other: The `Span` to copy.
+        Returns:
+            A copy of the `Span`.
         """
-        self._data = other._data
-        self._len = other._len
+        return self
 
     @always_inline
     @implicit

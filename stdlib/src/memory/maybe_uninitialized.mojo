@@ -43,20 +43,22 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](CollectionElementNew):
 
     @doc_private
     @always_inline
-    fn __init__(out self, *, other: Self):
-        """It is not possible to call this method.
+    fn copy(self) -> Self:
+        """This method is not intended to be called.
 
         Trying to call this method will abort.
+
+        Returns:
+            Nothing, this method always aborts.
         """
-        abort(
-            "You should never call the explicit copy constructor of"
+        return abort[Self](
+            "You should never call the copy() method of"
             " UnsafeMaybeUninitialized because it's ambiguous to copy"
             " possibly uninitialized memory. Use"
             " `UnsafeMaybeUninitialized.copy_from()` instead if you want to"
             " trigger an explicit copy of the content of"
             " UnsafeMaybeUninitialized. It has very specific semantics."
         )
-        self = Self()
 
     @always_inline
     fn __init__[

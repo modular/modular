@@ -147,13 +147,13 @@ struct DType(
     on the system."""
 
     @always_inline
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy this DType.
 
-        Args:
-            other: The DType to copy.
+        Returns:
+            A copy of the value.
         """
-        self = other
+        return self
 
     @always_inline
     @implicit

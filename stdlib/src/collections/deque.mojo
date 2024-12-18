@@ -168,24 +168,25 @@ struct Deque[ElementType: CollectionElement](
 
         self._tail = args_length
 
-    @implicit
-    fn __init__(out self, other: Self):
+    fn copy(self) -> Self:
         """Creates a deepcopy of the given deque.
 
-        Args:
-            other: The deque to copy.
+        Returns:
+            A copy of the value.
         """
-        self = Self(
-            capacity=other._capacity,
-            min_capacity=other._min_capacity,
-            maxlen=other._maxlen,
-            shrink=other._shrink,
+        var copy = Self(
+            capacity=self._capacity,
+            min_capacity=self._min_capacity,
+            maxlen=self._maxlen,
+            shrink=self._shrink,
         )
-        for i in range(len(other)):
-            offset = other._physical_index(other._head + i)
-            (self._data + i).init_pointee_copy((other._data + offset)[])
+        for i in range(len(self)):
+            offset = self._physical_index(self._head + i)
+            (copy._data + i).init_pointee_copy((self._data + offset)[])
 
-        self._tail = len(other)
+        copy._tail = len(self)
+
+        return copy^
 
     fn __moveinit__(out self, owned existing: Self):
         """Moves data of an existing deque into a new one.
@@ -221,7 +222,7 @@ struct Deque[ElementType: CollectionElement](
         Returns:
             The newly created deque with the properties of `self`.
         """
-        new = Self(other=self)
+        new = self.copy()
         for element in other:
             new.append(element[])
         return new^
@@ -251,7 +252,7 @@ struct Deque[ElementType: CollectionElement](
                 maxlen=self._maxlen,
                 shrink=self._shrink,
             )
-        new = Self(other=self)
+        new = self.copy()
         for _ in range(n - 1):
             for element in self:
                 new.append(element[])
@@ -267,7 +268,7 @@ struct Deque[ElementType: CollectionElement](
             self.clear()
             return
 
-        orig = Self(other=self)
+        orig = self.copy()
         for _ in range(n - 1):
             for element in orig:
                 self.append(element[])

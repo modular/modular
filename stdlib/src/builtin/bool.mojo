@@ -121,13 +121,13 @@ struct Bool(
         self = False
 
     @always_inline("nodebug")
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicitly construct a deep copy of the provided value.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
-        self.value = other.value
+        return self
 
     @doc_private
     @always_inline("nodebug")

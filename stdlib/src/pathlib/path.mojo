@@ -92,13 +92,13 @@ struct Path(
         """
         self.path = path
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy the object.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
-        self.path = String(other=other.path)
+        return Self(self.path)
 
     fn __truediv__(self, suffix: Self) -> Self:
         """Joins two paths using the system-defined path separator.

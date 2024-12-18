@@ -334,13 +334,13 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         self._slice = Span[Byte, origin](ptr=ptr, length=length)
 
     @always_inline
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicitly construct a deep copy of the provided `StringSlice`.
 
-        Args:
-            other: The `StringSlice` to copy.
+        Returns:
+            A copy of the value.
         """
-        self._slice = other._slice
+        return Self(unsafe_from_utf8=self._slice)
 
     @implicit
     fn __init__[

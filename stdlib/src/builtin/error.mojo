@@ -111,13 +111,13 @@ struct Error(
         self.data = dest
         self.loaded_length = -length
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy the object.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
-        self = other
+        return self
 
     fn __del__(owned self):
         """Releases memory if allocated."""

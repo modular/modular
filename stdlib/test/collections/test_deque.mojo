@@ -690,7 +690,7 @@ fn test_init_variadic_list() raises:
 fn test_copy_trivial() raises:
     q = Deque(1, 2, 3)
 
-    p = Deque(q)
+    p = q.copy()
     assert_equal(p[0], q[0])
 
     p[0] = 3
@@ -709,7 +709,7 @@ fn test_copy_list() raises:
     lst1[0] = 7
     assert_equal(q[0], List(1, 2, 3))
 
-    p = Deque(q)
+    p = q.copy()
     assert_equal(p[0], q[0])
 
     p[0][0] = 7

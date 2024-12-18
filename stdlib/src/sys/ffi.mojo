@@ -145,13 +145,13 @@ struct DLHandle(CollectionElement, CollectionElementNew, Boolable):
         else:
             self.handle = OpaquePointer()
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy the object.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
-        self = other
+        return self
 
     fn check_symbol(self, name: String) -> Bool:
         """Check that the symbol exists in the dynamic library.
@@ -451,7 +451,10 @@ fn _get_global[
     destroy_fn: fn (OpaquePointer) -> None,
 ](payload: OpaquePointer = OpaquePointer()) -> OpaquePointer:
     return external_call["KGEN_CompilerRT_GetGlobalOrCreate", OpaquePointer](
-        StringRef(name), payload, init_fn, destroy_fn
+        StringRef(name),
+        payload,
+        init_fn,
+        destroy_fn,
     )
 
 

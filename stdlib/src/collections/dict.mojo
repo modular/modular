@@ -234,15 +234,13 @@ struct DictEntry[K: KeyElement, V: CollectionElement](
         self.key = key^
         self.value = value^
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy an existing entry.
 
-        Args:
-            other: The existing entry to copy.
+        Returns:
+            A copy of the value.
         """
-        self.hash = other.hash
-        self.key = other.key
-        self.value = other.value
+        return self
 
     fn reap_value(owned self) -> V as out:
         """Take the value from an owned entry.
@@ -517,16 +515,13 @@ struct Dict[K: KeyElement, V: CollectionElement](
         return len(self._entries)
 
     @always_inline
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy an existing dictiontary.
 
-        Args:
-            other: The existing dict.
+        Returns:
+            A copy of the value.
         """
-        self.size = other.size
-        self._n_entries = other._n_entries
-        self._index = other._index.copy(other._reserved())
-        self._entries = other._entries
+        return self
 
     @staticmethod
     fn fromkeys(keys: List[K, *_], value: V) -> Self:
@@ -648,7 +643,7 @@ struct Dict[K: KeyElement, V: CollectionElement](
         Returns:
             The result of the merge.
         """
-        var result = Dict(other=self)
+        var result = self.copy()
         result.update(other)
         return result^
 
@@ -1087,13 +1082,13 @@ struct OwnedKwargsDict[V: CollectionElement](
         """Initialize an empty keyword dictionary."""
         self._dict = Dict[Self.key_type, V]()
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy an existing keyword dictionary.
 
-        Args:
-            other: The existing keyword dictionary.
+        Returns:
+            A copy of the value.
         """
-        self._dict = other._dict
+        return self
 
     fn __copyinit__(out self, existing: Self):
         """Copy an existing keyword dictionary.

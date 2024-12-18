@@ -126,7 +126,7 @@ def test_optional_take_mutates():
 def test_optional_explicit_copy():
     var v1 = Optional[String](String("test"))
 
-    var v2 = Optional(other=v1)
+    var v2 = v1.copy()
 
     assert_equal(v1.value(), "test")
     assert_equal(v2.value(), "test")

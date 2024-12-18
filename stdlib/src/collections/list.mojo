@@ -114,15 +114,16 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         self.size = 0
         self.capacity = 0
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Creates a deep copy of the given list.
 
-        Args:
-            other: The list to copy.
+        Returns:
+            A copy of the value.
         """
-        self = Self(capacity=other.capacity)
-        for e in other:
-            self.append(e[])
+        var copy = Self(capacity=self.capacity)
+        for e in self:
+            copy.append(e[])
+        return copy^
 
     fn __init__(out self, *, capacity: Int):
         """Constructs a list with the given capacity.
@@ -316,7 +317,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         # avoid the copy since it would be cleared immediately anyways
         if x == 0:
             return Self()
-        var result = List(other=self)
+        var result = self.copy()
         result.__mul(x)
         return result^
 
@@ -337,7 +338,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         Returns:
             The newly created list.
         """
-        var result = List(other=self)
+        var result = self.copy()
         result.extend(other^)
         return result^
 
@@ -545,7 +546,7 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         if x == 0:
             self.clear()
             return
-        var orig = List(other=self)
+        var orig = self.copy()
         self.reserve(len(self) * x)
         for i in range(x - 1):
             self.extend(orig)

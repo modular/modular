@@ -307,6 +307,7 @@ struct Int(
     Roundable,
     IntLike,
     _HashableWithHasher,
+    ExplicitlyCopyable,
 ):
     """This type represents an integer value."""
 
@@ -329,13 +330,13 @@ struct Int(
         """Default constructor that produces zero."""
         self.value = __mlir_op.`index.constant`[value = __mlir_attr.`0:index`]()
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicitly copy the provided value.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
-        self = other
+        return self
 
     @doc_private
     @always_inline("nodebug")

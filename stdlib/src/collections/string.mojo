@@ -861,13 +861,13 @@ struct String(
         """
         self._buffer = Self._buffer_type(capacity=capacity)
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicitly copy the provided value.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
-        self = other  # Just use the implicit copyinit.
+        return self  # Just use the implicit copyinit.
 
     @implicit
     fn __init__(out self, str: StringRef):

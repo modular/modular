@@ -116,7 +116,7 @@ def test_explicit_copy():
     var v1 = TestVariant(TestCounter())
 
     # Perform explicit copy
-    var v2 = TestVariant(other=v1)
+    var v2 = v1.copy()
 
     # Test copy counts
     assert_equal(v1[TestCounter].copied, 0)

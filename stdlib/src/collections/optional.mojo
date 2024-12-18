@@ -42,6 +42,12 @@ struct _NoneType(CollectionElement, CollectionElementNew):
     fn __init__(out self, *, other: Self):
         pass
 
+    fn __copyinit__(out self, other: Self):
+        pass
+
+    fn copy(self) -> Self:
+        return _NoneType()
+
 
 # ===-----------------------------------------------------------------------===#
 # Optional
@@ -124,13 +130,13 @@ struct Optional[T: CollectionElement](
         """
         self = Self()
 
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Copy construct an Optional.
 
-        Args:
-            other: The Optional to copy.
+        Returns:
+            A copy of the value.
         """
-        self = other
+        return self
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders

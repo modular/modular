@@ -62,6 +62,15 @@ what we publish.
         var ptr2 = list2.unsafe_ptr()
     ```
 
+- The `ExplicitlyCopyable` trait has changed to require a
+  `fn copy(self) -> Self` method. Previously, an initializer with the signature
+  `fn __init__(out self, *, other: Self)` had been required by
+  `ExplicitlyCopyable`.
+
+  This improves the "greppability" and at-a-glance readability when a programmer
+  is looking for places in their code that may be performing copies
+  unnecessarily.
+
 ### Tooling changes
 
 - mblack (aka `mojo format`) no longer formats non-mojo files. This prevents

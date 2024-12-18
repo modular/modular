@@ -551,7 +551,7 @@ struct Person(ComparableCollectionElement):
     var age: Int
 
     fn __init__(out self, *, other: Self):
-        self.name = String(other=other.name)
+        self.name = other.name.copy()
         self.age = other.age
 
     fn __lt__(self, other: Self) -> Bool:

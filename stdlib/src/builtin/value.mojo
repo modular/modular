@@ -112,7 +112,7 @@ trait ExplicitlyCopyable:
     a `read-only` argument of `Self`.
 
     Example implementing the `ExplicitlyCopyable` trait on `Foo` which requires
-    the `__init__(.., Self)` method:
+    the `fn(self) -> Self` method:
 
     ```mojo
     struct Foo(ExplicitlyCopyable):
@@ -122,17 +122,16 @@ trait ExplicitlyCopyable:
         fn __init__(out self, s: String):
             self.s = s
 
-        @implicit
-        fn __init__(out self, copy: Self):
+        fn copy(self) -> Self:
             print("explicitly copying value")
-            self.s = copy.s
+            return Foo(self.s)
     ```
 
     You can now copy objects inside a generic function:
 
     ```mojo
     fn copy_return[T: ExplicitlyCopyable](foo: T) -> T:
-        var copy = T(foo)
+        var copy = foo.copy()
         return copy
 
     var foo = Foo("test")
@@ -144,15 +143,11 @@ trait ExplicitlyCopyable:
     ```
     """
 
-    # Note:
-    #   `other` is a required named argument for the time being to minimize
-    #   implicit conversion overload ambiguity errors, particularly
-    #   with SIMD and Int.
-    fn __init__(out self, *, other: Self):
+    fn copy(self) -> Self:
         """Explicitly construct a deep copy of the provided value.
 
-        Args:
-            other: The value to copy.
+        Returns:
+            A copy of the value.
         """
         ...
 

@@ -18,7 +18,7 @@ def test_copy_reference_explicitly():
     var a = List[Int](1, 2, 3)
 
     var b = Pointer.address_of(a)
-    var c = Pointer(other=b)
+    var c = b.copy()
 
     c[][0] = 4
     assert_equal(a[0], 4)

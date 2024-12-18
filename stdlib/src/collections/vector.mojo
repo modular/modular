@@ -132,23 +132,26 @@ struct InlinedFixedVector[
         self.capacity = capacity
 
     @always_inline
-    @implicit
-    fn __init__(out self, existing: Self):
+    fn copy(self) -> Self:
         """
         Copy constructor.
 
-        Args:
-            existing: The `InlinedFixedVector` to copy.
+        Returns:
+            A copy of the value.
         """
-        self.static_data = existing.static_data
-        self.dynamic_data = UnsafePointer[type]()
-        if existing.dynamic_data:
-            var ext_len = existing.capacity - size
-            self.dynamic_data = UnsafePointer[type].alloc(ext_len)
-            memcpy(self.dynamic_data, existing.dynamic_data, ext_len)
+        var copy = Self(capacity=self.capacity)
 
-        self.current_size = existing.current_size
-        self.capacity = existing.capacity
+        copy.static_data = self.static_data
+        copy.dynamic_data = UnsafePointer[type]()
+        if self.dynamic_data:
+            var ext_len = self.capacity - size
+            copy.dynamic_data = UnsafePointer[type].alloc(ext_len)
+            memcpy(copy.dynamic_data, self.dynamic_data, ext_len)
+
+        copy.current_size = self.current_size
+        copy.capacity = self.capacity
+
+        return copy^
 
     @always_inline
     fn __moveinit__(out self, owned existing: Self):
