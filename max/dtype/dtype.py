@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from enum import Enum
 
 import numpy as np
@@ -103,32 +105,32 @@ class DType(Enum):
         Raises:
             ValueError: If the input dtype is not supported.
         """
-        dtype_to_numpy = {
-            DType.bool: np.bool_,
-            DType.int8: np.int8,
-            DType.int16: np.int16,
-            DType.int32: np.int32,
-            DType.int64: np.int64,
-            DType.uint8: np.uint8,
-            DType.uint16: np.uint16,
-            DType.uint32: np.uint32,
-            DType.uint64: np.uint64,
-            DType.f8e4m3: np.uint8,
-            DType.f8e4m3fnuz: np.uint8,
-            DType.f8e5m2: np.uint8,
-            DType.f8e5m2fnuz: np.uint8,
-            DType.float16: np.float16,
-            DType.float32: np.float32,
-            DType.float64: np.float64,
+        dtype_to_numpy: dict[DType, np.dtype] = {
+            DType.bool: np.dtype(np.bool_),
+            DType.int8: np.dtype(np.int8),
+            DType.int16: np.dtype(np.int16),
+            DType.int32: np.dtype(np.int32),
+            DType.int64: np.dtype(np.int64),
+            DType.uint8: np.dtype(np.uint8),
+            DType.uint16: np.dtype(np.uint16),
+            DType.uint32: np.dtype(np.uint32),
+            DType.uint64: np.dtype(np.uint64),
+            DType.f8e4m3: np.dtype(np.uint8),
+            DType.f8e4m3fnuz: np.dtype(np.uint8),
+            DType.f8e5m2: np.dtype(np.uint8),
+            DType.f8e5m2fnuz: np.dtype(np.uint8),
+            DType.float16: np.dtype(np.float16),
+            DType.float32: np.dtype(np.float32),
+            DType.float64: np.dtype(np.float64),
         }
 
         if self in dtype_to_numpy:
-            return dtype_to_numpy[self]  # type: ignore
+            return dtype_to_numpy[self]
         else:
             raise ValueError(f"unsupported DType to convert to NumPy: {self}")
 
     @classmethod
-    def from_numpy(cls, dtype: np.dtype) -> "DType":
+    def from_numpy(cls, dtype: np.dtype) -> DType:
         """Converts a NumPy dtype to the corresponding DType.
 
         Args:
@@ -172,7 +174,7 @@ class DType(Enum):
 
         return np.dtype(self.to_numpy()).alignment
 
-    def is_float(self) -> bool:  # type: ignore
+    def is_float(self) -> __builtins__.bool:
         """Returns true if the dtype is floating point."""
         return self in [
             DType.f8e4m3,

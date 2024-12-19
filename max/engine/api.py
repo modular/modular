@@ -10,7 +10,17 @@ import json
 from dataclasses import dataclass
 from inspect import Parameter, Signature
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Type, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Type,
+    Union,
+    cast,
+)
 
 import numpy as np
 import numpy.typing as npt
@@ -341,7 +351,7 @@ class Model:
         # not increase reference count, so we need to ensure the garbage
         # collector does not free them. Since numpy arrays are not hashable, we
         # do this with a dictionary with pointer keys.
-        keep_referenced = dict()  # type: ignore
+        keep_referenced: dict[int, Any] = {}
         dtype_map = {spec.name: spec.dtype for spec in self.input_metadata}
         for input_name, input_value in kwargs.items():
             kwargs[input_name] = _map_execute_kwarg(
@@ -935,7 +945,9 @@ class InferenceSession:
                 output tensors.
         """
         if isinstance(style, str):
-            style = getattr(PrintStyle, style, None)  # type: ignore
+            style = cast(
+                Union[str, PrintStyle], getattr(PrintStyle, style, style)
+            )
         if not isinstance(style, PrintStyle):
             raise TypeError(
                 "Invalid debug print style. Please use one of 'COMPACT',"
