@@ -65,7 +65,7 @@ class DummyPipelineModel(PipelineModel):
         This function would batch the encoded tensors, claim a slot in the kv
         cache if the ID hasn't been seen before, and return the inputs and
         caches as a list of tensors."""
-        return (Tensor.zeros(0, 0),)  # type: ignore
+        return (Tensor.zeros((0, 0), DType.float32),)
 
     def prepare_next_token_inputs(
         self,
@@ -77,12 +77,13 @@ class DummyPipelineModel(PipelineModel):
         While `prepare_initial_token_inputs` is responsible for managing the initial inputs.
         This function is responsible for updating the inputs, for each step in a multi-step execution pattern.
         """
-        return (Tensor.zeros(0, 0),)  # type: ignore
+        return (Tensor.zeros((0, 0), DType.float32),)
 
     def _get_kv_params(self) -> KVCacheParams:
         cache_dtype = (
             DType.float32
-            if self.pipeline_config.quantization_encoding.quantization_encoding  # type: ignore
+            if self.pipeline_config.quantization_encoding is not None
+            and self.pipeline_config.quantization_encoding.quantization_encoding
             is not None
             else self.pipeline_config.dtype
         )
@@ -133,7 +134,7 @@ class DummyPipelineModel(PipelineModel):
                 *kv_inputs,
             ],
         ) as graph:
-            tokens, kv_inputs = graph.inputs  # type: ignore
+            tokens, kv_inputs_value = graph.inputs
             graph.output(tokens)
             return session.load(graph)
 

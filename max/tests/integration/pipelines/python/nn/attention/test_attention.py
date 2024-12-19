@@ -18,7 +18,7 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
-from modular_graph_test import modular_graph_test
+from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn import Linear
 from nn.attention import Attention
 from nn.kernels import MaskVariant, flash_attention_ragged
@@ -70,10 +70,11 @@ def _attention_layer(
         devices=[device],
         session=session,
     )
+    assert isinstance(kv_manager, ContinuousBatchingKVCacheManager)
 
     # Fetch
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
-    blocks_type, cache_lengths, lookup_table, is_cache_empty = (
+    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.input_symbols()[0]
     )
 
@@ -88,11 +89,12 @@ def _attention_layer(
             wo_type,  # 5
             valid_lengths_type,  # 6
             blocks_type,  # 7
-            cache_lengths,  # 8
-            lookup_table,  # 9
-            is_cache_empty,  # 10
+            cache_lengths_type,  # 8
+            lookup_table_type,  # 9
+            is_cache_empty_type,  # 10
         ],
     ) as graph:
+        assert are_all_tensor_values(graph.inputs)
         (
             x,
             attn_mask,
@@ -105,17 +107,14 @@ def _attention_layer(
             cache_lengths,
             lookup_table,
             is_cache_empty,
-        ) = graph.inputs  # type: ignore
+        ) = graph.inputs
 
         # Concat wq, wk, wv into wqkv
-        wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)  # type: ignore
+        wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)
 
         # Get KV Collection
         kv_collection = fetch_op(
-            blocks,
-            cache_lengths,
-            lookup_table,
-            is_cache_empty,  # type: ignore
+            blocks, cache_lengths, lookup_table, is_cache_empty
         )
 
         # Update this if provided
@@ -126,19 +125,19 @@ def _attention_layer(
             kv_params=kv_params,
             layer_idx=ops.constant(LAYER_IDX, DType.uint32),
             wqkv=wqkv,
-            wo=Linear(wo),  # type: ignore
+            wo=Linear(wo),
         )
 
         attn_out = attn_fn(
             x.tensor,
-            kv_collection,  # type: ignore
+            kv_collection,
             valid_lengths=valid_lengths,
             attention_mask=attn_mask,
         )
 
         graph.output(attn_out)
 
-        return graph, kv_params, kv_manager  # type: ignore
+        return graph, kv_params, kv_manager
 
 
 def test_attention__wrong_mask_dtype():
@@ -196,9 +195,9 @@ def test_attention__valid_logits(session, start_pos, seq_len):
         np.full((BATCH_SIZE), seq_len, dtype=np.uint32)
     )
 
-    cache_lengths = {s: seq_len for i, s in enumerate(seq_ids)}
+    cache_lengths_in = {s: seq_len for i, s in enumerate(seq_ids)}
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_lengths)[0]
+        kv_manager.fetch(cache_lengths_in)[0]
     )
 
     @modular_graph_test(
@@ -237,12 +236,7 @@ def test_kv_cache_ragged_attention(session):
     input_type = TensorType(
         DType.float32, ["total_seq_len", num_q_heads, kv_params.head_dim]
     )
-    input_row_offsets_type = TensorType(
-        DType.uint32,
-        [
-            "input_row_offsets_len",
-        ],
-    )
+    input_row_offsets_type = TensorType(DType.uint32, ["input_row_offsets_len"])
 
     kv_manager = ContinuousBatchingKVCacheManager(
         kv_params,
@@ -257,42 +251,47 @@ def test_kv_cache_ragged_attention(session):
         kv_manager.input_symbols()[0]
     )
 
-    with Graph(
-        "call_ragged_attention",
-        input_types=[
-            input_type,
-            input_row_offsets_type,
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            is_cache_empty_type,
-        ],
-    ) as g:
-        (
-            input,
-            input_row_offsets,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            is_cache_empty,
-        ) = g.inputs
-        layer_idx = ops.constant(
-            0,
-            DType.uint32,
-        )
+    def construct() -> Graph:
+        with Graph(
+            "call_ragged_attention",
+            input_types=[
+                input_type,
+                input_row_offsets_type,
+                blocks_type,
+                cache_lengths_type,
+                lookup_table_type,
+                is_cache_empty_type,
+            ],
+        ) as g:
+            assert are_all_tensor_values(g.inputs)
+            (
+                input,
+                input_row_offsets,
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+            ) = g.inputs
+            layer_idx = ops.constant(
+                0,
+                DType.uint32,
+            )
 
-        kv_collection = fetch_op(
-            blocks, cache_lengths, lookup_table, is_cache_empty
-        )
-        result = flash_attention_ragged(
-            kv_params,
-            input,
-            input_row_offsets,
-            kv_collection,
-            layer_idx,
-            mask_variant=MaskVariant.CAUSAL_MASK,
-        )
-        g.output(result)
+            kv_collection = fetch_op(
+                blocks, cache_lengths, lookup_table, is_cache_empty
+            )
+            result = flash_attention_ragged(
+                kv_params,
+                input,
+                input_row_offsets,
+                kv_collection,
+                layer_idx,
+                mask_variant=MaskVariant.CAUSAL_MASK,
+            )
+            g.output(result)
+        return g
+
+    g = construct()
 
     # Claim seq_ids in cache
     seq_ids = []
@@ -310,9 +309,9 @@ def test_kv_cache_ragged_attention(session):
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    cache_lengths = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
+    cache_lengths_in = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_lengths)[0]
+        kv_manager.fetch(cache_lengths_in)[0]
     )
 
     @modular_graph_test(

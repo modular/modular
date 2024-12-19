@@ -78,6 +78,6 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
         input_types=kv_manager.input_symbols()[0],
     )
 
-    outputs = session.load(graph).execute(*kv_tuple)  # type: ignore
+    outputs = session.load(graph).execute(*kv_tuple)
     kv_collection = outputs[0]
     assert kv_collection is not None

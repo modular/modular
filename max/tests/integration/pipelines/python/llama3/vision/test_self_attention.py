@@ -19,7 +19,7 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     load_kv_manager,
 )
-from modular_graph_test import modular_graph_test
+from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn import AttentionWithRopeQKV, Linear, OptimizedRotaryEmbedding
 from torch import nn
 from transformers import DynamicCache
@@ -121,12 +121,13 @@ def _attention_layer(
     )
 
     with graph:
+        assert are_all_tensor_values(graph.inputs)
         x, wq, wk, wv, wo, input_row_offsets, *graph_kv_cache_inputs = (
             graph.inputs
         )
 
         # Get KV Collection
-        kv_collection = fetch_op(*graph_kv_cache_inputs)  # type: ignore
+        kv_collection = fetch_op(*graph_kv_cache_inputs)
         rotary_embedding = OptimizedRotaryEmbedding(
             dim=config.hidden_size,
             n_heads=config.num_attention_heads,
@@ -144,16 +145,16 @@ def _attention_layer(
                 head_dim=head_dim,
             ),
             layer_idx=layer_idx,
-            wq=wq,  # type: ignore
-            wk=wk,  # type: ignore
-            wv=wv,  # type: ignore
-            wo=Linear(wo),  # type: ignore
+            wq=wq,
+            wk=wk,
+            wv=wv,
+            wo=Linear(wo),
             rope=rotary_embedding,
         )
 
         graph.output(
             attention(
-                x=x,  # type: ignore
+                x=x,
                 kv_collection=kv_collection,
                 input_row_offsets=input_row_offsets,
             )

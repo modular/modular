@@ -7,7 +7,7 @@
 import numpy as np
 from max.dtype import DType
 from max.graph import Graph, TensorType, ops
-from modular_graph_test import modular_graph_test
+from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn.linear import Linear
 from nn.sequential import Sequential
 
@@ -22,6 +22,7 @@ def test_sequential__one_linear_layer(session):
             TensorType(dtype, ["hidden_dim", "input_dim"]),
         ],
     ) as graph:
+        assert are_all_tensor_values(graph.inputs)
         x, w1 = graph.inputs
         one_layer = Sequential([Linear(w1)])
 
@@ -54,6 +55,7 @@ def test_sequential__two_linear_layers(session):
             TensorType(dtype, ["input_dim", "hidden_dim"]),
         ],
     ) as graph:
+        assert are_all_tensor_values(graph.inputs)
         x, w1, w2 = graph.inputs
         two_layers = Sequential([Linear(w1), Linear(w2)])
 
@@ -87,6 +89,7 @@ def test_sequential__two_linear_layers_with_activation(session):
             TensorType(dtype, ["input_dim", "hidden_dim"]),
         ],
     ) as graph:
+        assert are_all_tensor_values(graph.inputs)
         x, w1, w2 = graph.inputs
         two_layer = Sequential([Linear(w1), ops.relu, Linear(w2)])
         graph.output(two_layer(x))

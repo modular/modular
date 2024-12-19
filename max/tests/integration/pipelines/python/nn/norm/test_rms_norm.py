@@ -9,7 +9,7 @@ import pytest
 import torch
 from max.dtype import DType
 from max.graph import Graph, TensorType
-from modular_graph_test import modular_graph_test
+from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn import RMSNorm
 
 
@@ -32,6 +32,7 @@ def test_norm(session, input_type):
     dim = input_type.shape[-1]
     weight_type = TensorType(input_type.dtype, [dim])
     with Graph("norm", input_types=[input_type, weight_type]) as graph:
+        assert are_all_tensor_values(graph.inputs)
         x, weight = graph.inputs
         graph.output(RMSNorm(weight)(x))
 

@@ -3,14 +3,19 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from typing import Tuple
+from typing import Tuple, Type, TypeVar
 
 import numpy as np
 import pytest
 import torch
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight, ops
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+)
 from nn import MLP as nnMLP
 from nn import (
     AttentionWithRope,
@@ -281,12 +286,22 @@ def vision_encoder_given_pytorch_vision_encoder(pytorch_model, config):
     return graph_encoder, weights_registry
 
 
+T = TypeVar("T")
+
+
+def missing_value(t: Type[T]) -> T:
+    # TODO: Remove this function and replace the call site with a real value
+    raise NotImplementedError
+
+
 def mistral_given_pytorch_mistral(pytorch_model, config):
     # refer to:
     # https://github.com/huggingface/transformers/blob/main/src/transformers/models/mistral/modeling_mistral.py#L682
     # TODO: init these values for Mistral test
-    kv_params = None  # passed to AttentionWithRope
-    kv_collection_constructor = None  # passed to LLavaTransformer
+    kv_params = missing_value(KVCacheParams)  # passed to AttentionWithRope
+    kv_collection_constructor = missing_value(
+        FetchContinuousBatchingKVCacheCollection
+    )  # passed to LLavaTransformer
 
     #######################Init weights with pytorch weights ###################
     weights_registry: dict = {}
@@ -428,8 +443,8 @@ def mistral_given_pytorch_mistral(pytorch_model, config):
         norm_layer,
         output_linear,
         embedding_layer,
-        kv_params,  # type: ignore
-        kv_collection_constructor,  # type: ignore
+        kv_params,
+        kv_collection_constructor,
     )
     return model, weights_registry
 
@@ -490,7 +505,9 @@ def test_connector(
 
     compiled = session.load(graph, weights_registry=weights_registry)
 
-    output = compiled.execute(img_features)[0].to_numpy()  # type: ignore
+    output_tensor = compiled.execute(img_features)[0]
+    assert isinstance(output_tensor, Tensor)
+    output = output_tensor.to_numpy()
     pytorch_output = pytorch_connector(img_features).detach().numpy()
 
     np.testing.assert_allclose(

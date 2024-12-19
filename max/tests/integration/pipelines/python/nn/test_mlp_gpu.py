@@ -14,6 +14,7 @@ from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
+from modular_graph_test import are_all_tensor_values
 from nn import MLP, Linear
 
 
@@ -39,9 +40,10 @@ def mlp_graph(types: List[TensorType]) -> Graph:
     with Graph(
         "mlp", input_types=[input_type, w1_type, w2_type, w3_type]
     ) as graph:
+        assert are_all_tensor_values(graph.inputs)
         x, w1, w2, w3 = graph.inputs
-        mlp = MLP(Linear(w1), Linear(w2), Linear(w3))  # type: ignore
-        graph.output(mlp(x))  # type: ignore
+        mlp = MLP(Linear(w1), Linear(w2), Linear(w3))
+        graph.output(mlp(x))
         return graph
 
 
@@ -67,9 +69,7 @@ def test_mlp(input_type: TensorType):
     )
     w3_type: TensorType = w1_type
 
-    graph = mlp_graph(
-        (input_type, w1_type, w2_type, w3_type),  # type: ignore
-    )
+    graph = mlp_graph([input_type, w1_type, w2_type, w3_type])
     compiled = session.load(graph)
     if input_type.rank == 1:
         x_np = np.ones((128)).astype(np.float32)
@@ -95,8 +95,9 @@ def test_mlp(input_type: TensorType):
     ACCURACY_RTOL = 1e-1
     ACCURACY_ATOL = 1e-6
     for result in results:
+        assert isinstance(result, Tensor)
         np.testing.assert_allclose(
-            result.to(host).to_numpy(),  # type: ignore
+            result.to(host).to_numpy(),
             expected,
             atol=ACCURACY_ATOL,
             rtol=ACCURACY_RTOL,

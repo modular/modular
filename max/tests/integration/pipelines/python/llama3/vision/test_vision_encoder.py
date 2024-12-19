@@ -13,7 +13,7 @@ from llama_vision.mlp import MLP
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
-from modular_graph_test import modular_graph_test
+from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn import Linear, LPLayerNorm
 from test_common.distance_metrics import is_euclidean_distance_close
 from torch_vision_encoder import MllamaVisionEncoder, MllamaVisionEncoderLayer
@@ -66,6 +66,7 @@ def test_vision_encoder_layer(
             encoder_layernorm_w2_type,
         ],
     ) as graph:
+        assert are_all_tensor_values(graph.inputs)
         (
             hidden_state,
             attn_mask,
@@ -80,14 +81,14 @@ def test_vision_encoder_layer(
             self_attn=Attention(
                 n_heads=ATTENTION_HEADS,
                 head_dim=HIDDEN_SIZE // ATTENTION_HEADS,
-                wk=Linear(attn_weight),  # type: ignore
-                wv=Linear(attn_weight),  # type: ignore
-                wq=Linear(attn_weight),  # type: ignore
-                wo=Linear(attn_weight),  # type: ignore
+                wk=Linear(attn_weight),
+                wv=Linear(attn_weight),
+                wq=Linear(attn_weight),
+                wo=Linear(attn_weight),
             ),
-            mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),  # type: ignore
-            input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),  # type: ignore
-            post_attention_layernorm=LPLayerNorm(encoder_layernorm_w2, eps),  # type: ignore
+            mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),
+            input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),
+            post_attention_layernorm=LPLayerNorm(encoder_layernorm_w2, eps),
             is_gated=is_gated,
             gate_attn=gate_attn,
             gate_ffn=gate_ffn,
@@ -178,6 +179,7 @@ def test_vision_encoder(
             encoder_layernorm_w2_type,
         ],
     ) as graph:
+        assert are_all_tensor_values(graph.inputs)
         (
             hidden_states,
             attention_mask,
@@ -190,16 +192,16 @@ def test_vision_encoder(
         # attention_mask: shape=[1, 1, 4128, 4128], dtype=torch.bfloat16
         layers = [
             VisionEncoderLayer(
-                mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),  # type: ignore
-                input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),  # type: ignore
-                post_attention_layernorm=LPLayerNorm(encoder_layernorm_w2, eps),  # type: ignore
+                mlp=MLP(Linear(mlp_fc1), Linear(mlp_fc2)),
+                input_layernorm=LPLayerNorm(encoder_layernorm_w1, eps),
+                post_attention_layernorm=LPLayerNorm(encoder_layernorm_w2, eps),
                 self_attn=Attention(
                     n_heads=ATTENTION_HEADS,
                     head_dim=HIDDEN_SIZE // ATTENTION_HEADS,
-                    wk=Linear(attn_weight),  # type: ignore
-                    wv=Linear(attn_weight),  # type: ignore
-                    wq=Linear(attn_weight),  # type: ignore
-                    wo=Linear(attn_weight),  # type: ignore
+                    wk=Linear(attn_weight),
+                    wv=Linear(attn_weight),
+                    wq=Linear(attn_weight),
+                    wo=Linear(attn_weight),
                 ),
                 is_gated=is_gated,
                 gate_attn=gate_attn,

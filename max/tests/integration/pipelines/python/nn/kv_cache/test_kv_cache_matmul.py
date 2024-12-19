@@ -20,7 +20,7 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
 )
-from modular_graph_test import modular_graph_test
+from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn.kernels import fused_qkv_ragged_matmul, matmul_kv_cache_ragged
 
 
@@ -65,45 +65,47 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         kv_manager.input_symbols()[0]
     )
 
-    with Graph(
-        "call_ragged_qkv_matmul",
-        input_types=[
-            input_type,
-            input_row_offsets_type,
-            wqkv_type,
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            is_cache_empty_type,
-        ],
-    ) as g:
-        (
-            input,
-            input_row_offsets,
-            wqkv,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            is_cache_empty,
-        ) = g.inputs
-        layer_idx = ops.constant(
-            0,
-            DType.uint32,
-        )
+    def construct() -> Graph:
+        with Graph(
+            "call_ragged_qkv_matmul",
+            input_types=[
+                input_type,
+                input_row_offsets_type,
+                wqkv_type,
+                blocks_type,
+                cache_lengths_type,
+                lookup_table_type,
+                is_cache_empty_type,
+            ],
+        ) as g:
+            assert are_all_tensor_values(g.inputs)
+            (
+                input,
+                input_row_offsets,
+                wqkv,
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+            ) = g.inputs
+            layer_idx = ops.constant(0, DType.uint32)
 
-        kv_collection = fetch_op(
-            blocks, cache_lengths, lookup_table, is_cache_empty
-        )
-        result = fused_qkv_ragged_matmul(
-            kv_params,
-            input,
-            input_row_offsets,
-            wqkv,
-            kv_collection,
-            layer_idx,
-            num_q_heads,
-        )
-        g.output(result)
+            kv_collection = fetch_op(
+                blocks, cache_lengths, lookup_table, is_cache_empty
+            )
+            result = fused_qkv_ragged_matmul(
+                kv_params,
+                input,
+                input_row_offsets,
+                wqkv,
+                kv_collection,
+                layer_idx,
+                num_q_heads,
+            )
+            g.output(result)
+        return g
+
+    g = construct()
 
     # Claim seq_ids in cache
     seq_ids = []
@@ -121,9 +123,9 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
 
-    cache_lengths = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
+    cache_lengths_in = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_lengths)[0]
+        kv_manager.fetch(cache_lengths_in)[0]
     )
 
     @modular_graph_test(

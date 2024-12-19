@@ -22,6 +22,7 @@ from max.pipelines import (
     PipelineTokenizer,
     SupportedEncoding,
     TokenGenerator,
+    TokenGeneratorContext,
     TokenGeneratorRequest,
 )
 from max.serve.pipelines.echo_gen import (
@@ -225,7 +226,9 @@ async def run_batch_scenario(
                     encoded_count = 0
                     start_idx = 0
                     while context_encoding_queue:
-                        context_encoding_batch = {}  # type: ignore
+                        context_encoding_batch: Dict[  # type: ignore
+                            str, TokenGeneratorContext
+                        ] = {}
                         while (
                             context_encoding_queue
                             and (
@@ -342,6 +345,8 @@ async def run_batch_scenario(
                         "Completed: [%s]", ",".join(completed_batch_ids)
                     )
                     for batch_id in completed_batch_ids:
+                        # TODO: What ever were we referring to here?  "model"
+                        # is not a variable that actually exists.
                         await model.release(token_gen_batch[batch_id])  # type: ignore
                         del token_gen_batch[batch_id]
 

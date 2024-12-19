@@ -12,7 +12,7 @@ from llama_vision.mlp import MLP
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType
-from modular_graph_test import modular_graph_test
+from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn import Linear
 from test_common.distance_metrics import is_euclidean_distance_close
 from torch_utils import TorchVisionEncoderMLP
@@ -34,9 +34,10 @@ def test_mlp(session: InferenceSession, input_type: TensorType) -> None:
     w1_type = TensorType(input_type.dtype, ["hidden_dim", dim])
     w2_type = TensorType(input_type.dtype, [dim, "hidden_dim"])
     with Graph("mlp", input_types=[input_type, w1_type, w2_type]) as graph:
+        assert are_all_tensor_values(graph.inputs)
         x, w1, w2 = graph.inputs
-        mlp = MLP(Linear(w1), Linear(w2))  # type: ignore
-        graph.output(mlp(x))  # type: ignore
+        mlp = MLP(Linear(w1), Linear(w2))
+        graph.output(mlp(x))
 
         # This is set so it fits a float type with width of 32.
         @modular_graph_test(session, graph, max_magnitude=1 / 64)

@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from hypothesis import example
 from max.dtype import DType
 from max.graph import Graph, TensorType
-from modular_graph_test import modular_graph_test
+from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn import LPLayerNorm
 
 
@@ -32,8 +32,9 @@ def test_layer_norm(session, input_type):
     dim = input_type.shape[-1]
     weight_type = TensorType(input_type.dtype, [dim])
     with Graph("layer_norm", input_types=[input_type, weight_type]) as graph:
+        assert are_all_tensor_values(graph.inputs)
         x, weight = graph.inputs
-        graph.output(LPLayerNorm(weight)(x))  # type: ignore
+        graph.output(LPLayerNorm(weight)(x))
 
         @example(
             (

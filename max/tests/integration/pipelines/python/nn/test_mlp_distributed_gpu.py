@@ -143,8 +143,9 @@ def test_mlp(batch_size, intermediate_size, hidden_dim, n_devices):
     ACCURACY_RTOL = 1e-1
     ACCURACY_ATOL = 1e-6
     for result in results:
+        assert isinstance(result, Tensor)
         np.testing.assert_allclose(
-            result.to(host).to_numpy(),  # type: ignore
+            result.to(host).to_numpy(),
             expected,
             atol=ACCURACY_ATOL,
             rtol=ACCURACY_RTOL,

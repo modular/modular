@@ -5,14 +5,23 @@
 # ===----------------------------------------------------------------------=== #
 """Temporary Tests to ensure layers execute."""
 
+from typing import Type, TypeVar
+
 import max.engine as me
 import numpy as np
 import pytest
+from max.driver import Tensor
 from max.dtype import DType
 from max.graph import Graph, TensorType
-from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
+from max.pipelines.kv_cache import (
+    FetchContinuousBatchingKVCacheCollection,
+    KVCacheParams,
+    KVCacheStrategy,
+)
+from modular_graph_test import are_all_tensor_values
 from nn import (
     MLP,
+    AttentionImpl,
     Embedding,
     Linear,
     NaiveAttentionWithRope,
@@ -118,6 +127,24 @@ class Weights:
     )
 
 
+def fix_attention(attention: NaiveAttentionWithRope) -> AttentionImpl:
+    # TODO: Every use of this function indicates one location of a type
+    # mismatch.  When these tests are re-enabled, please make sure the types
+    # match, and remove this function.
+    raise NotImplementedError
+
+
+T = TypeVar("T")
+
+
+def needs_value_added_here(ty: Type[T]) -> T:
+    # TODO: Every use of this function indicates a parameter that was added
+    # during refactoring that has gone out of date.  When re-enabling these
+    # tests, this parameter will need to be filled in correctly, and this
+    # function should be removed.
+    raise NotImplementedError
+
+
 @pytest.mark.skip(
     reason=(
         "Not passing with updates to e2e model in run llama3.py. Follow up will"
@@ -164,28 +191,33 @@ def test_transformer_block(session):
         ],
     ) as graph:
         transformer_block = TransformerBlock(
-            attention=NaiveAttentionWithRope(
-                n_heads=n_heads,
-                kv_params=kv_params,
-                dim=dim,
-                wk=Linear(w.attn_wk),
-                wv=Linear(w.attn_wv),
-                wq=Linear(w.attn_wq),
-                wo=Linear(w.attn_wo),
-                rope=RotaryEmbedding(
-                    dim=dim,
+            attention=fix_attention(
+                NaiveAttentionWithRope(
                     n_heads=n_heads,
-                    theta=theta,
-                    max_seq_len=max_seq_len,
-                ),
+                    kv_params=kv_params,
+                    dim=dim,
+                    wk=Linear(w.attn_wk),
+                    wv=Linear(w.attn_wv),
+                    wq=Linear(w.attn_wq),
+                    wo=Linear(w.attn_wo),
+                    rope=RotaryEmbedding(
+                        dim=dim,
+                        n_heads=n_heads,
+                        theta=theta,
+                        max_seq_len=max_seq_len,
+                    ),
+                )
             ),
-            mlp=MLP(w.mlp_w1, w.mlp_w2, w.mlp_w3),
+            mlp=MLP(Linear(w.mlp_w1), Linear(w.mlp_w2), Linear(w.mlp_w3)),
             attention_norm=RMSNorm(np.array([-0.0766, 0.6322])),
             mlp_norm=RMSNorm(np.array([-1.0754, -1.1960])),
         )
 
-        outputs = transformer_block(*graph.inputs)
-        graph.output(*outputs)
+        assert are_all_tensor_values(graph.inputs)
+        # TODO: Transformer block expected inputs have changed and these types
+        # no longer match up.  Fix this up when re-enabling this test.
+        # outputs = transformer_block(*graph.inputs)
+        # graph.output(*outputs)
         compiled = session.load(graph)
 
         x = (
@@ -290,7 +322,6 @@ def test_transformer():
     head_dim = 2
     theta = 10000.0
     max_seq_len = 2048
-    rope_scaling = None
 
     w = Weights()
 
@@ -310,43 +341,54 @@ def test_transformer():
             ),
         ],
     ) as graph:
+        kv_params = KVCacheParams(
+            dtype=DType.float32,
+            n_kv_heads=n_kv_heads,
+            head_dim=head_dim,
+            cache_strategy=KVCacheStrategy.NAIVE,
+        )
         transformer = Transformer(
             dim=dim,
             n_heads=n_heads,
             layers=[
                 TransformerBlock(
-                    attention=NaiveAttentionWithRope(
-                        n_heads=n_heads,
-                        kv_params=KVCacheParams(
-                            dtype=DType.float32,
-                            n_kv_heads=n_kv_heads,
-                            head_dim=head_dim,
-                            cache_strategy=KVCacheStrategy.NAIVE,
-                        ),
-                        dim=dim,
-                        wk=Linear(w.attn_wk),
-                        wv=Linear(w.attn_wv),
-                        wq=Linear(w.attn_wq),
-                        wo=Linear(w.attn_wo),
-                        rope=RotaryEmbedding(
-                            dim=dim,
+                    attention=fix_attention(
+                        NaiveAttentionWithRope(
                             n_heads=n_heads,
-                            theta=theta,
-                            max_seq_len=max_seq_len,
-                        ),
+                            kv_params=kv_params,
+                            dim=dim,
+                            wk=Linear(w.attn_wk),
+                            wv=Linear(w.attn_wv),
+                            wq=Linear(w.attn_wq),
+                            wo=Linear(w.attn_wo),
+                            rope=RotaryEmbedding(
+                                dim=dim,
+                                n_heads=n_heads,
+                                theta=theta,
+                                max_seq_len=max_seq_len,
+                            ),
+                        )
                     ),
-                    mlp=MLP(w.mlp_w1, w.mlp_w2, w.mlp_w3),
+                    mlp=MLP(
+                        Linear(w.mlp_w1), Linear(w.mlp_w2), Linear(w.mlp_w3)
+                    ),
                     attention_norm=RMSNorm(np.array([-0.0766, 0.6322])),
                     mlp_norm=RMSNorm(np.array([-1.0754, -1.1960])),
                 )
             ],
             norm=RMSNorm(np.array([1.0476, -0.3264])),
             output=Linear(w.output_weight),
-            theta=theta,
             embedding=Embedding(w.token_embedding),
-            rope_scaling=rope_scaling,
+            kv_params=kv_params,
+            kv_collection_constructor=needs_value_added_here(
+                FetchContinuousBatchingKVCacheCollection
+            ),
         )
-        graph.output(*transformer(*graph.inputs))
+        assert are_all_tensor_values(graph.inputs)
+        tokens_val, k_cache_val, v_cache_val = graph.inputs
+        # TODO: transformer now takes a different set of parameters.
+        # Fix this when un-skipping this test.
+        # graph.output(*transformer(tokens_val, k_cache_val, v_cache_val))
         compiled = session.load(graph)
 
         tokens = np.array([2, 0, 1, 2]).astype(np.int64).reshape([2, 2])
@@ -419,12 +461,15 @@ def test_transformer():
             .astype(np.float32)
         )
 
+        assert isinstance(output[0], Tensor)
         np.testing.assert_almost_equal(
             output[0].to_numpy(), expected_tokens, decimal=4
         )
+        assert isinstance(output[1], Tensor)
         np.testing.assert_almost_equal(
             output[1].to_numpy(), expected_k_cache, decimal=4
         )
+        assert isinstance(output[2], Tensor)
         np.testing.assert_almost_equal(
             output[2].to_numpy(), expected_v_cache, decimal=4
         )

@@ -8,6 +8,7 @@
 import numpy as np
 import pytest
 import torch
+from max.driver import Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import Graph, TensorType, Weight
@@ -53,17 +54,19 @@ batch_size = 1
 
 
 @pytest.fixture
-def img_sizes():
+def img_sizes() -> list[tuple[int, int]]:
     return [(128, 64), (128, 256)]
 
 
 @pytest.fixture
-def img_dtype():
+def img_dtype() -> torch.dtype:
     return torch.float32
 
 
 @pytest.fixture
-def imgs(img_sizes, img_dtype):
+def imgs(
+    img_sizes: list[tuple[int, int]], img_dtype: torch.dtype
+) -> list[torch.Tensor]:
     # generate imgs of shape (num_channels, height, width)
     return [
         torch.rand(size=(num_channels, height, width)).to(img_dtype)
@@ -72,7 +75,7 @@ def imgs(img_sizes, img_dtype):
 
 
 @pytest.fixture
-def pytorch_pixtral_vision_encoder():
+def pytorch_pixtral_vision_encoder() -> PixtralVisionModel:
     # https://github.com/huggingface/transformers/blob/v4.45.2/src/transformers/models/pixtral/modeling_pixtral.py#L465
     config = PixtralVisionConfig()
     model = PixtralVisionModel(config)
@@ -80,7 +83,9 @@ def pytorch_pixtral_vision_encoder():
 
 
 @pytest.fixture
-def pytorch_attention_mask(imgs, pytorch_pixtral_vision_encoder):
+def pytorch_attention_mask(
+    imgs: list[torch.Tensor], pytorch_pixtral_vision_encoder: PixtralVisionModel
+):
     # refer to https://github.com/huggingface/transformers/blob/53fad641cfdb5105e2470bcf3ef17ea8e25cc300/src/transformers/models/pixtral/modeling_pixtral.py#L477
     model = pytorch_pixtral_vision_encoder
     patch_embeds_list = [
@@ -223,7 +228,7 @@ def vision_encoder(pytorch_pixtral_vision_encoder):
 
 # TODO(KERN-1066): Fix and enable test
 @pytest.mark.skip(reason="Test is flaky. Model works.")
-def test_patch_conv(imgs, img_sizes):
+def test_patch_conv(imgs, img_sizes) -> None:
     # TODO: Check the values of pixels are expected to be in [0, 255]
     patch_conv = nn.Conv2d(
         in_channels=num_channels,
@@ -259,10 +264,11 @@ def test_patch_conv(imgs, img_sizes):
 
     compiled = session.load(graph)
 
-    output = [
-        compiled.execute(np.ascontiguousarray(img))[0].to_numpy()  # type: ignore
-        for img in graph_api_imgs
-    ]
+    output: list[np.ndarray] = []
+    for img in graph_api_imgs:
+        output_tensor = compiled.execute(np.ascontiguousarray(img))[0]
+        assert isinstance(output_tensor, Tensor)
+        output.append(output_tensor.to_numpy())
 
     np.testing.assert_allclose(
         output[1],
@@ -302,7 +308,9 @@ def test_vision_encoder(
             graph.output(graph_encoder(graph_inputs))
         compiled = session.load(graph, weights_registry=weights_registry)
 
-        graph_api_encoder_output = compiled.execute(*imgs)[0].to_numpy()  # type: ignore
+        graph_api_encoder_output_tensor = compiled.execute(*imgs)[0]
+        assert isinstance(graph_api_encoder_output_tensor, Tensor)
+        graph_api_encoder_output = graph_api_encoder_output_tensor.to_numpy()
         np.testing.assert_allclose(
             graph_api_encoder_output,
             pytorch_encoder_output.detach().numpy(),

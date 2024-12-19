@@ -19,7 +19,7 @@ from max.pipelines.kv_cache import (
     KVCacheParams,
     KVCacheStrategy,
 )
-from modular_graph_test import modular_graph_test
+from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn import RotaryEmbedding
 from nn.kernels import fused_qk_ragged_rope
 
@@ -128,12 +128,13 @@ def test_rope(session, input_type: TensorType, start_pos: Dim):
     with Graph(
         "rope", input_types=[input_type, freqs_cis_type, cachelike]
     ) as graph:
+        assert are_all_tensor_values(graph.inputs)
         x, freqs_cis, cache = graph.inputs
-        freqs_cis = freqs_cis.reshape((MAX_SEQ_LEN, -1, 2))  # type: ignore # as complex
-        start_pos = TensorValue(cache.shape[0])  # type: ignore
-        seq_len = x.shape[1]  # type: ignore
-        rope = CannedRotaryEmbedding(freqs_cis)  # type: ignore
-        graph.output(rope(x, start_pos, seq_len))  # type: ignore
+        freqs_cis = freqs_cis.reshape((MAX_SEQ_LEN, -1, 2))  # as complex
+        start_pos_val = TensorValue(cache.shape[0])
+        seq_len = x.shape[1]
+        rope = CannedRotaryEmbedding(freqs_cis)
+        graph.output(rope(x, start_pos_val, seq_len))
 
         @modular_graph_test(session, graph, max_magnitude=1.0)
         def test_correctness(execute, inputs, torch_inputs):
@@ -194,47 +195,52 @@ def test_kv_cache_ragged_rope(session):
         kv_manager.input_symbols()[0]
     )
 
-    with Graph(
-        "call_ragged_qk_rope",
-        input_types=[
-            input_type,
-            input_row_offsets_type,
-            freqs_cis_type,
-            blocks_type,
-            cache_lengths_type,
-            lookup_table_type,
-            is_cache_empty_type,
-        ],
-    ) as g:
-        (
-            input,
-            input_row_offsets,
-            freqs_cis,
-            blocks,
-            cache_lengths,
-            lookup_table,
-            is_cache_empty,
-        ) = g.inputs
-        layer_idx = ops.constant(
-            0,
-            DType.uint32,
-        )
+    def construct() -> Graph:
+        with Graph(
+            "call_ragged_qk_rope",
+            input_types=[
+                input_type,
+                input_row_offsets_type,
+                freqs_cis_type,
+                blocks_type,
+                cache_lengths_type,
+                lookup_table_type,
+                is_cache_empty_type,
+            ],
+        ) as g:
+            assert are_all_tensor_values(g.inputs)
+            (
+                input,
+                input_row_offsets,
+                freqs_cis,
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+            ) = g.inputs
+            layer_idx = ops.constant(
+                0,
+                DType.uint32,
+            )
 
-        kv_collection = fetch_op(
-            blocks,
-            cache_lengths,
-            lookup_table,
-            is_cache_empty,
-        )
-        result = fused_qk_ragged_rope(
-            kv_params,
-            input,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-        )
-        g.output(result)
+            kv_collection = fetch_op(
+                blocks,
+                cache_lengths,
+                lookup_table,
+                is_cache_empty,
+            )
+            result = fused_qk_ragged_rope(
+                kv_params,
+                input,
+                input_row_offsets,
+                kv_collection,
+                freqs_cis,
+                layer_idx,
+            )
+            g.output(result)
+        return g
+
+    g = construct()
 
     # Claim seq_ids in cache
     seq_ids = []
@@ -252,9 +258,9 @@ def test_kv_cache_ragged_rope(session):
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    cache_lengths = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
+    cache_lengths_in = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_lengths)[0]
+        kv_manager.fetch(cache_lengths_in)[0]
     )
 
     @modular_graph_test(

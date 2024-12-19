@@ -90,19 +90,22 @@ def mo_listio_model_path(modular_path: Path) -> Path:
     )
 
 
-def test_execute_success(session: InferenceSession, mo_model_path: Path):
+def test_execute_success(
+    session: InferenceSession, mo_model_path: Path
+) -> None:
     model = session.load(mo_model_path)
     output = model.execute(np.ones(5, dtype=np.float32))
     assert len(output) == 1
+    assert isinstance(output[0], Tensor)
     assert np.allclose(
-        output[0].to_numpy(),  # type: ignore
+        output[0].to_numpy(),
         np.array([4.0, 2.0, -5.0, 3.0, 6.0], dtype=np.float32),
     )
 
 
 def test_devicetensor_wrong_num_inputs(
     session: InferenceSession, mo_model_path: Path
-):
+) -> None:
     # The engine should throw a ValueError when executing with the
     # wrong number of input tensors.
     model = session.load(mo_model_path)
@@ -124,7 +127,7 @@ def test_devicetensor_wrong_num_inputs(
 
 def test_devicetensor_wrong_shape(
     session: InferenceSession, mo_model_path: Path
-):
+) -> None:
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
@@ -144,7 +147,7 @@ def test_devicetensor_wrong_shape(
 
 def test_devicetensor_wrong_rank(
     session: InferenceSession, mo_model_path: Path
-):
+) -> None:
     # The engine should throw a ValueError when executing a tensor with
     # the wrong shape.
     model = session.load(mo_model_path)
@@ -165,7 +168,7 @@ def test_devicetensor_wrong_rank(
 
 def test_devicetensor_wrong_dtype(
     session: InferenceSession, mo_model_path: Path
-):
+) -> None:
     # The engine should throw a ValueError when executing a tensor with
     # the wrong dtype.
     model = session.load(mo_model_path)
@@ -182,7 +185,9 @@ def test_devicetensor_wrong_dtype(
         model.execute(tensor)
 
 
-def test_execute_device_tensor(session: InferenceSession, mo_model_path: Path):
+def test_execute_device_tensor(
+    session: InferenceSession, mo_model_path: Path
+) -> None:
     # The engine should be able to take in a simple 1-d tensor and execute a
     # model with this input.
     model = session.load(mo_model_path)
@@ -193,13 +198,14 @@ def test_execute_device_tensor(session: InferenceSession, mo_model_path: Path):
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
+    assert isinstance(output_tensor, Tensor)
     for idx in range(5):
-        assert isclose(output_tensor[idx].item(), expected[idx])  # type: ignore
+        assert isclose(output_tensor[idx].item(), expected[idx])
 
 
 def test_execute_noncontiguous_tensor(
     session: InferenceSession, mo_model_path: Path
-):
+) -> None:
     # The engine should reject any strided tensor inputs and request that they
     # be reallocated using `.contiguous`.
     model = session.load(mo_model_path)
@@ -219,13 +225,14 @@ def test_execute_noncontiguous_tensor(
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
+    assert isinstance(output_tensor, Tensor)
     for idx in range(5):
-        assert isclose(output_tensor[idx].item(), expected[idx])  # type: ignore
+        assert isclose(output_tensor[idx].item(), expected[idx])
 
 
 def test_execute_devicetensor_dynamic_shape(
     session: InferenceSession, dynamic_model_path: Path
-):
+) -> None:
     # Device tensors should be able to execute even when the model expects
     # dynamic shapes.
     model = session.load(dynamic_model_path)
@@ -239,13 +246,14 @@ def test_execute_devicetensor_dynamic_shape(
     outputs = model.execute(tensor_one, tensor_two)
     assert len(outputs) == 1
     output_tensor = outputs[0]
+    assert isinstance(output_tensor, Tensor)
     for x in range(5):
-        assert output_tensor[x].item() == 3 * x  # type: ignore
+        assert output_tensor[x].item() == 3 * x
 
 
 def test_execute_devicetensor_numpy_stays_alive(
     session: InferenceSession, mo_model_path: Path
-):
+) -> None:
     # Our engine takes ownership of inputs and readily destroys them
     # after execution is complete. We need to ensure that when we create
     # a tensor from a numpy array, the original numpy array stays alive
@@ -257,14 +265,17 @@ def test_execute_devicetensor_numpy_stays_alive(
     expected = [4.0, 2.0, -5.0, 3.0, 6.0]
     assert len(output) == 1
     output_tensor = output[0]
+    assert isinstance(output_tensor, Tensor)
     for idx in range(5):
-        assert isclose(output_tensor[idx].item(), expected[idx])  # type: ignore
+        assert isclose(output_tensor[idx].item(), expected[idx])
 
     for idx in range(5):
         assert isclose(arr[idx].item(), 1.0)
 
 
-def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
+def test_execute_subtensor(
+    session: InferenceSession, mo_model_path: Path
+) -> None:
     # Our engine should be able to execute tensors that are contiguous slices
     # of larger tensors. This will be important for things like our kv cache
     # implementation.
@@ -275,8 +286,9 @@ def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
     expected = [3.0, 2.0, -4.0, 5.0, 9.0]
     assert len(output) == 1
     output_tensor = output[0]
+    assert isinstance(output_tensor, Tensor)
     for idx in range(5):
-        assert isclose(output_tensor[idx].item(), expected[idx])  # type: ignore
+        assert isclose(output_tensor[idx].item(), expected[idx])
 
     # Let's ensure that execution doesn't delete the underlying numpy array.
     np.array_equal(arr, np.ones((2, 10), dtype=np.float32))
@@ -288,46 +300,55 @@ def test_execute_subtensor(session: InferenceSession, mo_model_path: Path):
     presliced_expected = [3.0, 3.0, -2.0, 8.0, 13.0]
     assert len(presliced_output) == 1
     presliced_output_tensor = presliced_output[0]
+    assert isinstance(presliced_output_tensor, Tensor)
     for idx in range(5):
         assert isclose(
-            presliced_output_tensor[idx].item(),  # type: ignore
+            presliced_output_tensor[idx].item(),
             presliced_expected[idx],
         )
 
 
-def test_no_devicetensor_inputs(session: InferenceSession, no_input_path: Path):
+def test_no_devicetensor_inputs(
+    session: InferenceSession, no_input_path: Path
+) -> None:
     # The device tensor execution path should support models that take in no
     # input tensors.
     model = session.load(no_input_path)
     outputs = model.execute()
     assert len(outputs) == 1
     tensor_output = outputs[0]
-    output = tensor_output.to_numpy()  # type: ignore
+    assert isinstance(tensor_output, Tensor)
+    output = tensor_output.to_numpy()
     expected = np.arange(1, 6, dtype=np.int32)
     assert np.array_equal(output, expected)
 
 
-def test_scalar_inputs(session: InferenceSession, scalar_input_path: Path):
+def test_scalar_inputs(
+    session: InferenceSession, scalar_input_path: Path
+) -> None:
     # We should be able to execute models with scalar inputs.
     model = session.load(scalar_input_path)
     scalar = Tensor.scalar(3, dtype=DType.int32)
     vector = np.arange(1, 6, dtype=np.int32)
 
     output = model.execute(scalar, vector)[0]
-    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))  # type: ignore
+    assert isinstance(output, Tensor)
+    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
 
     # We should also be able to execute with raw Python scalars.
     output = model.execute(3, vector)[0]
-    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))  # type: ignore
+    assert isinstance(output, Tensor)
+    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
 
     # We should also be able to execute with numpy scalars.
     output = model.execute(np.int32(3), vector)[0]
-    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))  # type: ignore
+    assert isinstance(output, Tensor)
+    assert np.array_equal(output.to_numpy(), np.arange(4, 9, dtype=np.int32))
 
 
 def test_aliasing_output(
     session: InferenceSession, aliasing_outputs_path: Path
-):
+) -> None:
     # The device tensor execution path should support models that return the
     # same tensor outputs more than once.
     model = session.load(aliasing_outputs_path)
@@ -337,16 +358,18 @@ def test_aliasing_output(
     assert len(outputs) == 2
 
     tensor_output0 = outputs[0]
-    array_output0 = tensor_output0.to_numpy()  # type: ignore
+    assert isinstance(tensor_output0, Tensor)
+    array_output0 = tensor_output0.to_numpy()
     expected = np.arange(0, 10, 2, dtype=np.int32)
     assert np.array_equal(array_output0, expected)
 
     tensor_output1 = outputs[1]
-    array_output1 = tensor_output1.to_numpy()  # type: ignore
+    assert isinstance(tensor_output1, Tensor)
+    array_output1 = tensor_output1.to_numpy()
     assert np.array_equal(array_output1, expected)
 
     # Check if the outputs really alias.
-    tensor_output0[0] = 7  # type: ignore
+    tensor_output0[0] = 7
     assert array_output1[0] == 7
 
 
@@ -369,7 +392,7 @@ def test_execute_multi_framework(
     session: InferenceSession,
     relu_onnx_model_path: Path,
     relu_torchscript_model_path: Path,
-):
+) -> None:
     trch_input_specs = [
         TorchInputSpec(shape=[1, 3, 100, 100], dtype=DType.float32)
     ]
@@ -381,22 +404,22 @@ def test_execute_multi_framework(
     np_input[:, 1, :, :] *= -1
     onnx_output = onnx_model.execute(np_input)[0]
     trch_output = trch_model.execute(np_input)[0]
-    assert np.allclose(onnx_output.to_numpy(), trch_output.to_numpy())  # type: ignore
+    assert isinstance(onnx_output, Tensor)
+    assert isinstance(trch_output, Tensor)
+    assert np.allclose(onnx_output.to_numpy(), trch_output.to_numpy())
 
 
 def test_custom_ops(
     session: InferenceSession,
     mo_custom_ops_model_path: Path,
     custom_ops_package_path: Path,
-):
+) -> None:
     model = session.load(mo_custom_ops_model_path)
     inputs = np.array([4.0], dtype=np.float32)
     output = model.execute(inputs)
     assert len(output) == 1
-    assert np.allclose(
-        output[0].to_numpy(),  # type: ignore
-        np.array([2.0], dtype=np.float32),
-    )
+    assert isinstance(output[0], Tensor)
+    assert np.allclose(output[0].to_numpy(), np.array([2.0], dtype=np.float32))
 
     model_with_custom_op = session.load(
         mo_custom_ops_model_path, custom_ops_path=str(custom_ops_package_path)
@@ -404,17 +427,15 @@ def test_custom_ops(
     inputs = np.array([4.0], dtype=np.float32)
     output = model_with_custom_op.execute(inputs)
     assert len(output) == 1
-    assert np.allclose(
-        output[0].to_numpy(),  # type: ignore
-        np.array([4.0], dtype=np.float32),
-    )
+    assert isinstance(output[0], Tensor)
+    assert np.allclose(output[0].to_numpy(), np.array([4.0], dtype=np.float32))
 
 
 def test_custom_op_failing_constraint(
     session: InferenceSession,
     mo_custom_op_failing_constraint_model_path: Path,
     custom_ops_package_path: Path,
-):
+) -> None:
     with pytest.raises(
         Exception,
         match=(
@@ -428,7 +449,7 @@ def test_custom_op_failing_constraint(
         )
 
 
-def test_list_io(session: InferenceSession, mo_listio_model_path: Path):
+def test_list_io(session: InferenceSession, mo_listio_model_path: Path) -> None:
     model_with_list_io = session.load(mo_listio_model_path)
     output = model_with_list_io.execute_legacy(
         input_list=[np.zeros(2)], input_tensor=np.ones(5)
@@ -441,7 +462,7 @@ def test_list_io(session: InferenceSession, mo_listio_model_path: Path):
     assert np.allclose(output_list[2], np.ones(5))
 
 
-def test_dynamic_rank_spec():
+def test_dynamic_rank_spec() -> None:
     input_spec = TensorSpec(None, DType.float64, "dynamic")
     assert input_spec.shape is None
     assert input_spec.dtype == DType.float64
@@ -454,7 +475,7 @@ def test_dynamic_rank_spec():
     assert str(input_spec) == "None x float64"
 
 
-def test_repr_torch_input_spec():
+def test_repr_torch_input_spec() -> None:
     input_spec_with_shape = TorchInputSpec([20, 30], DType.float32)
     assert input_spec_with_shape.shape == [20, 30]
     assert input_spec_with_shape.dtype == DType.float32
@@ -534,7 +555,8 @@ def test_execute_external_weights_numpy(
 
     input = np.random.randn(external_weights_size).astype(np.float32)
     output = compiled.execute(input)
-    assert np.allclose(output[0].to_numpy(), input + weights)  # type: ignore
+    assert isinstance(output[0], Tensor)
+    assert np.allclose(output[0].to_numpy(), input + weights)
 
 
 def test_execute_external_weights_torch(
@@ -554,7 +576,7 @@ def test_execute_external_weights_torch(
 
 def test_stats_report(
     session: InferenceSession, relu_torchscript_model_path: Path
-):
+) -> None:
     input_specs = [TorchInputSpec(shape=[1, 3, 100, 100], dtype=DType.float32)]
     session.load(relu_torchscript_model_path, input_specs=input_specs)
     sr = session.stats_report
@@ -593,47 +615,52 @@ def call_model(session: InferenceSession, named_inputs_path: Path) -> Model:
 
 def test_positional_call(
     call_inputs: Tuple, call_output: np.ndarray, call_model: Model
-):
+) -> None:
     # Calling a model with strictly positional inputs should work.
     a, b, c, d, e = call_inputs
     output = call_model(a, b, c, d, e)[0]
-    assert np.array_equal(call_output, output.to_numpy())  # type: ignore
+    assert isinstance(output, Tensor)
+    assert np.array_equal(call_output, output.to_numpy())
 
 
 def test_named_call(
     call_inputs: Tuple, call_output: np.ndarray, call_model: Model
-):
+) -> None:
     # Calling a model with strictly named inputs should work.
     a, b, c, d, e = call_inputs
     output = call_model(b=b, a=a, e=e, c=c, d=d)[0]
-    assert np.array_equal(call_output, output.to_numpy())  # type: ignore
+    assert isinstance(output, Tensor)
+    assert np.array_equal(call_output, output.to_numpy())
 
 
 def test_mixed_positional_named_call(
     call_inputs: Tuple, call_output: np.ndarray, call_model: Model
-):
+) -> None:
     # Calling a model with a mixture of named and positional inputs should also work (even if named
     # inputs are not ordered).
     a, b, c, d, e = call_inputs
     output = call_model(a, b, e=e, c=c, d=d)[0]
-    assert np.array_equal(call_output, output.to_numpy())  # type: ignore
+    assert isinstance(output, Tensor)
+    assert np.array_equal(call_output, output.to_numpy())
 
 
-def test_too_few_inputs_call(call_inputs: Tuple, call_model: Model):
+def test_too_few_inputs_call(call_inputs: Tuple, call_model: Model) -> None:
     # Calling a model with less inputs than expected should not work.
     a, b, c, _, e = call_inputs
     with pytest.raises(TypeError):
         call_model(a, b, e=e, c=c)
 
 
-def test_too_many_inputs_call(call_inputs: Tuple, call_model: Model):
+def test_too_many_inputs_call(call_inputs: Tuple, call_model: Model) -> None:
     # Calling a model with more inputs than expected should not work.
     a, b, c, d, e = call_inputs
     with pytest.raises(TypeError):
         call_model(a, b, c, d, e, a)
 
 
-def test_already_specified_input_call(call_inputs: Tuple, call_model: Model):
+def test_already_specified_input_call(
+    call_inputs: Tuple, call_model: Model
+) -> None:
     # Calling a model with inputs that correspond to indexes already occupied by
     # positional inputs should not work.
     a, b, c, d, _ = call_inputs
@@ -641,7 +668,7 @@ def test_already_specified_input_call(call_inputs: Tuple, call_model: Model):
         call_model(a, b, b=b, c=c, d=d)
 
 
-def test_unrecognized_name_call(call_inputs: Tuple, call_model: Model):
+def test_unrecognized_name_call(call_inputs: Tuple, call_model: Model) -> None:
     # Calling model with unrecognized names should not work.
     a, b, c, d, e = call_inputs
     with pytest.raises(TypeError):

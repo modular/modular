@@ -18,6 +18,7 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
+from modular_graph_test import are_all_tensor_values
 from nn import Linear
 from nn.attention import Attention
 
@@ -68,10 +69,11 @@ def _attention_layer(
         devices=[device],
         session=session,
     )
+    assert isinstance(kv_manager, ContinuousBatchingKVCacheManager)
 
     # Fetch
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
-    blocks_type, cache_lengths, lookup_table, is_cache_empty = (
+    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
         kv_manager.input_symbols()[0]
     )
 
@@ -86,11 +88,12 @@ def _attention_layer(
             wo_type,  # 5
             valid_lengths_type,  # 6
             blocks_type,  # 7
-            cache_lengths,  # 8
-            lookup_table,  # 9
-            is_cache_empty,  # 10
+            cache_lengths_type,  # 8
+            lookup_table_type,  # 9
+            is_cache_empty_type,  # 10
         ],
     ) as graph:
+        assert are_all_tensor_values(graph.inputs)
         (
             x,
             attn_mask,
@@ -103,17 +106,14 @@ def _attention_layer(
             cache_lengths,
             lookup_table,
             is_cache_empty,
-        ) = graph.inputs  # type: ignore
+        ) = graph.inputs
 
         # Concat wq, wk, wv into wqkv
-        wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)  # type: ignore
+        wqkv = ops.concat((wq, wk, wv), axis=1).transpose(0, 1)
 
         # Get KV Collection
         kv_collection = fetch_op(
-            blocks,  # type: ignore
-            cache_lengths,  # type: ignore
-            lookup_table,  # type: ignore
-            is_cache_empty,  # type: ignore
+            blocks, cache_lengths, lookup_table, is_cache_empty
         )
 
         # Update this if provided
@@ -124,7 +124,7 @@ def _attention_layer(
             kv_params=kv_params,
             layer_idx=ops.constant(LAYER_IDX, DType.uint32),
             wqkv=wqkv,
-            wo=Linear(wo),  # type: ignore
+            wo=Linear(wo),
         )
 
         attn_out = attn_fn(
@@ -136,7 +136,7 @@ def _attention_layer(
 
         graph.output(attn_out)
 
-        return graph, kv_params, kv_manager  # type: ignore
+        return graph, kv_params, kv_manager
 
 
 @pytest.mark.parametrize(

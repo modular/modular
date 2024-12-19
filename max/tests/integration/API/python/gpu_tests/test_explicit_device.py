@@ -10,7 +10,7 @@ import pytest
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 
 def create_test_graph_with_transfer() -> Graph:
@@ -23,7 +23,8 @@ def create_test_graph_with_transfer() -> Graph:
         "add", input_types=(input_type, input_type, input_type)
     ) as graph:
         sum = ops.add(graph.inputs[0], graph.inputs[1])
-        cuda_input = graph.inputs[2].to(DeviceRef.GPU(0))  # type: ignore
+        assert isinstance(graph.inputs[2], TensorValue)
+        cuda_input = graph.inputs[2].to(DeviceRef.GPU(0))
         sum2 = ops.add(sum, cuda_input)
         graph.output(sum2)
     return graph
@@ -49,8 +50,10 @@ def create_test_graph_io_devices() -> Graph:
             cuda_input_type,
         ),
     ) as graph:
-        cuda_input1 = graph.inputs[1].to(DeviceRef.GPU(0))  # type: ignore
-        cuda_input2 = graph.inputs[2].to(DeviceRef.GPU(0))  # type: ignore
+        assert isinstance(graph.inputs[1], TensorValue)
+        assert isinstance(graph.inputs[2], TensorValue)
+        cuda_input1 = graph.inputs[1].to(DeviceRef.GPU(0))
+        cuda_input2 = graph.inputs[2].to(DeviceRef.GPU(0))
         sum = ops.add(graph.inputs[0], cuda_input1)
         sum2 = ops.add(sum, cuda_input2)
         graph.output(sum2)
@@ -128,4 +131,5 @@ def test_explicit_device_execution() -> None:
     b = Tensor.from_numpy(b_np).to(device)
     c = Tensor.from_numpy(b_np)
     output = compiled.execute(a, b, c)
-    assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())  # type: ignore
+    assert isinstance(output[0], Tensor)
+    assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())

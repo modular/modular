@@ -233,7 +233,7 @@ def _attention_layer(
         ]
         graph.output(*ops.allreduce.sum(attn_out))
 
-        return graph, kv_params, kv_manager  # type: ignore
+        return graph, kv_params, kv_manager
 
 
 def execute_attn_for_devices(

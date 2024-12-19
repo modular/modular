@@ -9,7 +9,14 @@ import numpy as np
 import pytest
 import torch
 from max.dtype import DType
-from max.graph import BufferType, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    BufferValue,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.pipelines.kv_cache import KVCacheParams, KVCacheStrategy
 from modular_graph_test import modular_graph_test
 from nn import Linear, NaiveAttentionWithRope, RotaryEmbedding
@@ -124,23 +131,28 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
         cache_strategy=KVCacheStrategy.NAIVE,
     )
 
-    graph = Graph(
-        "attn",
-        input_types=attn_input_types + weight_types,  # type: ignore
-    )
+    graph = Graph("attn", input_types=attn_input_types + list(weight_types))
 
     layer_index = 0
     with graph:
         x, attn_mask, k_cache, v_cache, wq, wk, wv, wo = graph.inputs
+        assert isinstance(x, TensorValue)
+        assert isinstance(attn_mask, TensorValue)
+        assert isinstance(k_cache, BufferValue)
+        assert isinstance(v_cache, BufferValue)
+        assert isinstance(wq, TensorValue)
+        assert isinstance(wk, TensorValue)
+        assert isinstance(wv, TensorValue)
+        assert isinstance(wo, TensorValue)
         graph.output(
             NaiveAttentionWithRope(
                 n_heads,
                 kv_params=kv_params,
                 dim=dim,
-                wq=Linear(wq),  # type: ignore
-                wk=Linear(wk),  # type: ignore
-                wv=Linear(wv),  # type: ignore
-                wo=Linear(wo),  # type: ignore
+                wq=Linear(wq),
+                wk=Linear(wk),
+                wv=Linear(wv),
+                wo=Linear(wo),
                 rope=RotaryEmbedding(
                     dim=dim,
                     n_heads=n_heads,
@@ -149,10 +161,10 @@ def _attention_layer(config: LlamaConfig, start_pos: int):
                     rope_scaling=None,
                 ),
             )(
-                x,  # type: ignore
-                attn_mask,  # type: ignore
-                k_cache,  # type: ignore
-                v_cache,  # type: ignore
+                x,
+                attn_mask,
+                k_cache,
+                v_cache,
                 ops.constant(start_pos, DType.int64),
                 layer_index,
             )

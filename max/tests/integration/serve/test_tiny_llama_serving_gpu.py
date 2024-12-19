@@ -188,5 +188,5 @@ async def test_tinyllama_serve_gpu_stream(app, testdata_directory):
             tasks.append(
                 asyncio.create_task(main_stream(client, msg, expected))
             )
-        for t in tasks:  # type: ignore
-            resp.append(await t)  # type: ignore
+        for task in tasks:
+            resp.append(await task)
