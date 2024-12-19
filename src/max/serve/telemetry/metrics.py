@@ -20,7 +20,10 @@ from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.metrics import get_meter_provider, set_meter_provider
 from opentelemetry.sdk.metrics import MeterProvider
-from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.export import (
+    MetricReader,
+    PeriodicExportingMetricReader,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +46,10 @@ def configure_metrics():
     default_config = TelemetryConfig.from_env()
     metrics_egress_enabled = default_config.metrics_egress_enabled
 
-    meterProviders = [PrometheusMetricReader("metrics")]  # type: ignore
+    meterProviders: list[MetricReader] = [PrometheusMetricReader(True)]
     if metrics_egress_enabled:
         meterProviders.append(
-            PeriodicExportingMetricReader(  # type: ignore
+            PeriodicExportingMetricReader(
                 OTLPMetricExporter(endpoint=otelBaseUrl + "/v1/metrics")
             )
         )
