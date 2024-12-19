@@ -87,8 +87,7 @@ struct TMATensorTile[
             address_space = AddressSpace.SHARED,
         ],
         mem_barrier: TMABarrier,
-        coord_0: Int,
-        coord_1: Int,
+        coords: Tuple[UInt, UInt],
     ):
         alias size_in_bytes = layout.size() * sizeof[dtype]()
 
@@ -98,7 +97,7 @@ struct TMATensorTile[
             dst.ptr,
             UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
             mem_barrier.mbar,
-            Index(coord_0, coord_1),
+            Index(coords[0], coords[1]),
         )
 
 
