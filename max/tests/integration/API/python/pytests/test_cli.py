@@ -7,7 +7,7 @@
 import enum
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, get_type_hints
 
 import click
 import pytest
@@ -18,7 +18,7 @@ from cli.config import (
     is_multiple,
     is_optional,
     pipeline_config_options,
-    validate_field,
+    validate_field_type,
 )
 from click.testing import CliRunner
 from max.driver import DeviceSpec
@@ -99,9 +99,10 @@ VALID_RESULTS = {
 
 
 def test_pipeline_config_cli_parsing():
+    field_types = get_type_hints(PipelineConfig)
     for config_field in fields(PipelineConfig):
         if not config_field.name.startswith("_"):
-            validate_field(config_field)
+            validate_field_type(field_types[config_field.name])
 
 
 def test_cli__get_default():
@@ -113,9 +114,10 @@ def test_cli__get_default():
 
 
 def test_cli__get_field_type():
+    field_types = get_type_hints(TestConfig)
     for config_field in fields(TestConfig):
         if not config_field.name.startswith("_"):
-            field_type = get_field_type(config_field)
+            field_type = get_field_type(field_types[config_field.name])
 
             # If optional, ensure the underlying value has the correct type
             expected_type = VALID_RESULTS[config_field.name].field_type
@@ -126,25 +128,28 @@ def test_cli__get_field_type():
 
 
 def test_cli__option_is_flag():
+    field_types = get_type_hints(TestConfig)
     for config_field in fields(TestConfig):
         if not config_field.name.startswith("_"):
-            flag = is_flag(config_field)
+            flag = is_flag(field_types[config_field.name])
             assert (
                 flag == VALID_RESULTS[config_field.name].flag
             ), f"failed test_is_flag for {config_field.name}"
 
 
 def test_cli__option_is_multiple():
+    field_types = get_type_hints(TestConfig)
     for config_field in fields(TestConfig):
         if not config_field.name.startswith("_"):
-            multiple = is_multiple(config_field)
+            multiple = is_multiple(field_types[config_field.name])
             assert multiple == VALID_RESULTS[config_field.name].multiple
 
 
 def test_cli__option_is_optional():
+    field_types = get_type_hints(TestConfig)
     for config_field in fields(TestConfig):
         if not config_field.name.startswith("_"):
-            optional = is_optional(config_field.type)
+            optional = is_optional(field_types[config_field.name])
             assert optional == VALID_RESULTS[config_field.name].optional
 
 

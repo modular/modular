@@ -101,7 +101,7 @@ async def test_tinyllama_serve_gpu_nonchat_completions(app, prompt):
         # Completions endpoint instead of chat completions
         raw_response = await client.post(
             "/v1/completions",
-            json={"model": "modularai/llama-3.1", "prompt": prompt},
+            json={"model": "test/tinyllama", "prompt": prompt},
         )
         response = CreateCompletionResponse.model_validate(raw_response.json())
         assert len(response.choices) == 1
@@ -147,7 +147,7 @@ async def test_tinyllama_serve_gpu_stream(app, testdata_directory):
     def openai_completion_request(content):
         """Create the json request for /v1/completion (not chat)."""
         return {
-            "model": "gpt-3.5-turbo",
+            "model": "test/tinyllama",
             "prompt": content,
             "temperature": 0.7,
         }

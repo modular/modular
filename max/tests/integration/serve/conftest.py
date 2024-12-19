@@ -57,8 +57,7 @@ def app(pipeline_model_config):
         pipeline_config,
     )
 
-    assert pipeline_config.huggingface_repo_id is not None
-    pipeline_model_name = pipeline_config.huggingface_repo_id
+    pipeline_model_name = "test/tinyllama"
 
     pipeline_batch_config = (
         TokenGeneratorPipelineConfig.continuous_heterogenous(

@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import pickle
 from pathlib import Path
 
 import pytest
@@ -96,3 +97,38 @@ def test_hf_config_retrieval():
     )
 
     assert config.huggingface_config is not None
+
+
+class LimitedPickler(pickle.Unpickler):
+    """A custom Unpickler class that that checks for transformer modules."""
+
+    def find_class(self, module, name):
+        if module.startswith("transformers"):
+            raise AssertionError(
+                "Tried to unpickle class from transformers module, raising an "
+                "error because this may break in serving."
+            )
+        return super().find_class(module, name)
+
+
+def test_config_is_picklable(tmp_path):
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+    )
+    assert config.huggingface_config is not None
+
+    pickle_path = tmp_path / "config.pkl"
+    with open(pickle_path, "wb") as f:
+        pickle.dump(config, f)
+
+    with open(pickle_path, "rb") as f:
+        limited_pickler = LimitedPickler(f)
+        loaded_config = limited_pickler.load()
+
+    assert loaded_config._huggingface_config is None
+    assert loaded_config != config
+
+    # Now try loading the Hugging Face config
+    assert loaded_config.huggingface_config is not None
+    # The configs should now be equivalent.
+    assert loaded_config == config
