@@ -76,41 +76,30 @@ struct TMATensorTile[
     fn __copyinit__(mut self, other: Self):
         self.descriptor = other.descriptor
 
-    # Schedules an asynchronous load of tile at and returns the memory barrier for the operation.
+    # Schedules an asynchronous copy into the destination tile at the given coordinates.
+    #
     @always_inline
-    fn async_load(
+    fn async_copy(
         self,
-        coord_0: Int,
-        coord_1: Int,
-        out res: Tuple[
-            LayoutTensor[
-                dtype,
-                layout,
-                address_space = AddressSpace.SHARED,
-            ],
-            TMABarrier,
-        ],
-    ):
-        var sh_mem = LayoutTensor[
+        dst: LayoutTensor[
             dtype,
             layout,
             address_space = AddressSpace.SHARED,
-        ].stack_allocation()
-
-        var barrier = TMABarrier()
-
+        ],
+        mem_barrier: TMABarrier,
+        coord_0: Int,
+        coord_1: Int,
+    ):
         alias size_in_bytes = layout.size() * sizeof[dtype]()
 
-        mbarrier_arrive_expect_tx_shared(barrier.mbar, size_in_bytes)
+        mbarrier_arrive_expect_tx_shared(mem_barrier.mbar, size_in_bytes)
 
         cp_async_bulk_tensor_shared_cluster_global(
-            sh_mem.ptr,
+            dst.ptr,
             UnsafePointer.address_of(self.descriptor).bitcast[NoneType](),
-            barrier.mbar,
-            Index(coord_0 * sh_mem.shape[0](), coord_1 * sh_mem.shape[1]()),
+            mem_barrier.mbar,
+            Index(coord_0, coord_1),
         )
-
-        return sh_mem, barrier
 
 
 # Creates a TMATensorTile with specified tile sizes.
