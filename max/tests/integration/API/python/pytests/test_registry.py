@@ -140,6 +140,7 @@ class DummyPipelineModel(PipelineModel):
 
 DUMMY_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
+    example_repo_ids=["modularai/llama-3.1"],
     default_encoding=SupportedEncoding.float32,
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
@@ -153,6 +154,7 @@ DUMMY_ARCH = SupportedArchitecture(
 
 REPLIT_ARCH = SupportedArchitecture(
     name="MPTForCausalLM",
+    example_repo_ids=["modularai/replit-code-1.5"],
     default_encoding=SupportedEncoding.bfloat16,
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
