@@ -15,6 +15,7 @@ llama3-commons: &llama3-commons
   num_heads: 32
   group: 4
   $batch_size: [1]
+  $mode: flash_attention
 params:
 
 # LLama3 shapes for increasing sequence length

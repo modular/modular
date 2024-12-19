@@ -46,6 +46,7 @@ fn run_mha[
     num_keys: Int,
     batch_size: Int,
     num_partitions: Int,
+    mode: String,
     ctx: DeviceContext,
 ) raises:
     # Query, key, value dimensions.
@@ -161,7 +162,9 @@ fn run_mha[
             + "/num_keys="
             + str(num_keys)
             + "/batch_size="
-            + str(batch_size),
+            + str(batch_size)
+            + "/mode="
+            + mode,
         ),
         ThroughputMeasure(BenchMetric.flops, compute_flops()),
     )
@@ -258,6 +261,7 @@ fn main() raises:
     var num_keys = int(arg_parse("num_keys", 64))
     var batch_size = int(arg_parse("batch_size", 1))
     var num_partitions = int(arg_parse("num_partitions", 1))
+    var mode = str(arg_parse("mode", "none"))
 
     alias cfg = MHA_cfg(
         qkv_type=qkv_type,
@@ -275,5 +279,5 @@ fn main() raises:
             cfg.depth,
             cfg.num_heads,
             cfg.group,
-        ](m, seq_len, num_keys, batch_size, num_partitions, ctx)
+        ](m, seq_len, num_keys, batch_size, num_partitions, mode, ctx)
     m.dump_report()
