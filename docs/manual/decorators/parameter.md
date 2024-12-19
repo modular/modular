@@ -5,10 +5,11 @@ codeTitle: true
 
 ---
 
-You can add the `@parameter` decorator on an `if` statement or on a nested
-function to run that code at compile time.
+You can add the `@parameter` decorator on an `if` or `for` statement to run that
+code at compile time, or on a nested function to create a [parametric
+closure](#parametric-closure).
 
-## Parametric if statement
+## Parametric `if` statement
 
 You can add `@parameter` to any `if` condition that's based on a valid
 parameter expression (it's an expression that evaluates at compile time). This
@@ -27,7 +28,7 @@ else:
 this will be included in the binary
 ```
 
-## Parametric for statement
+## Parametric `for` statement
 
 You can add the `@parameter` decorator to a `for` loop to create a loop that's
 evaluated at compile time. The loop sequence and induction values must be
@@ -39,7 +40,7 @@ This has the effect of "unrolling" the loop.
 ```mojo
 fn parameter_for[max: Int]():
     @parameter
-    for i in range(max)
+    for i in range(max):
         @parameter
         if i == 10:
             print("found 10!")
@@ -61,8 +62,8 @@ differences when compared to the parametric `for` statement:
   (see below) and executes it a specified number of times.
 
 - The parametric `for` statement is more versatile, since you can do anything
-  you can do in a `for` statement: including using arbitrary sequences,
-  early-exiting from the loop, skipping iterations with `continue` and so on.
+  you can do in a `for` statement including: using arbitrary sequences,
+  early-exiting from the loop, skipping iterations with `continue`, and so on.
 
   By contrast, `unroll()` simply takes a function and a count, and executes
   the function the specified number of times.
