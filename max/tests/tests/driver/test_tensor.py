@@ -19,7 +19,7 @@ from max.driver import CPU, MemMapTensor, Tensor
 from max.dtype import DType
 
 
-def test_tensor():
+def test_tensor() -> None:
     # Validate that metadata shows up correctly
     tensor = Tensor((3, 4, 5), DType.float32)
     assert DType.float32 == tensor.dtype
@@ -34,7 +34,7 @@ def test_tensor():
     assert (2, 3) == tensor2.shape
 
 
-def test_get_and_set():
+def test_get_and_set() -> None:
     tensor = Tensor((3, 4, 5), DType.int32)
     tensor[0, 1, 3] = 68
     # Get should return zero-d tensor
@@ -73,7 +73,7 @@ def test_get_and_set():
         tensor.item()
 
 
-def test_slice():
+def test_slice() -> None:
     # Tensor slices should have the desired shape and should preserve
     # reference semantics.
     tensor = Tensor((3, 3, 3), DType.int32)
@@ -102,7 +102,7 @@ def test_slice():
         tensor[::0, ::0, ::0]
 
 
-def test_drop_dimensions():
+def test_drop_dimensions() -> None:
     tensor = Tensor((5, 5, 5), DType.int32)
     # When indexing into a tensor with a mixture of slices and integral
     # indices, the slice should drop any dimensions that correspond to
@@ -118,7 +118,7 @@ def test_drop_dimensions():
         assert tensor[i, 2, i].item() == i
 
 
-def test_negative_step():
+def test_negative_step() -> None:
     tensor = Tensor((3, 3), DType.int32)
     tensor[0, 0] = 1
     tensor[0, 1] = 2
@@ -142,7 +142,7 @@ def test_negative_step():
     assert revtensor[2, 2].item() == 1
 
 
-def test_out_of_bounds_slices():
+def test_out_of_bounds_slices() -> None:
     tensor = Tensor((3, 3, 3), DType.int32)
 
     # Out of bounds indexes are allowed in slices.
@@ -153,7 +153,7 @@ def test_out_of_bounds_slices():
         tensor[4:, :2, 4]
 
 
-def test_one_dimensional_tensor():
+def test_one_dimensional_tensor() -> None:
     tensor = Tensor((10,), DType.int32)
     for i in range(10):
         tensor[i] = i
@@ -162,7 +162,7 @@ def test_one_dimensional_tensor():
         assert tensor[i].item() == i
 
 
-def test_contiguous_tensor():
+def test_contiguous_tensor() -> None:
     # Initialized tensors should be contiguous, and tensor slices should not be.
     tensor = Tensor((3, 3), DType.int32)
     assert tensor.is_contiguous
@@ -189,7 +189,7 @@ def test_contiguous_tensor():
     assert cont_tensor[1, 1].item() == 5
 
 
-def test_modify_contiguous_tensor():
+def test_modify_contiguous_tensor() -> None:
     # Modifications made to the original tensor should not be reflected
     # on the contiguous copy, and vice-versa.
     tensor = Tensor((3, 3), DType.int32)
@@ -205,7 +205,7 @@ def test_modify_contiguous_tensor():
     assert cont_tensor[2, 2].item() == 1
 
 
-def test_contiguous_slice():
+def test_contiguous_slice() -> None:
     # A contiguous slice of a tensor should be considered contiguous. An
     # example of this is taking a single row from a 2-d array.
     singlerow = Tensor.from_numpy(
@@ -227,7 +227,7 @@ def test_contiguous_slice():
     assert subarray.is_contiguous
 
 
-def test_from_numpy():
+def test_from_numpy() -> None:
     # A user should be able to create a tensor from a numpy array.
     arr = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
     tensor = Tensor.from_numpy(arr)
@@ -241,12 +241,12 @@ def test_from_numpy():
     assert tensor[1, 2].item() == 6
 
 
-def test_is_host():
+def test_is_host() -> None:
     # CPU tensors should be marked as being on-host.
     assert Tensor((1, 1), DType.int32, device=CPU()).is_host
 
 
-def test_host_host_copy():
+def test_host_host_copy() -> None:
     # We should be able to freely copy tensors between host and host.
     host_tensor = Tensor.from_numpy(np.array([1, 2, 3], dtype=np.int32))
     tensor = host_tensor.copy(CPU())
@@ -280,7 +280,7 @@ DLPACK_DTYPES = [
 ]
 
 
-def test_from_dlpack():
+def test_from_dlpack() -> None:
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype in DLPACK_DTYPES:
         np_dtype = dtype.to_numpy()
@@ -294,11 +294,11 @@ def test_from_dlpack():
             tensor[0] = True
             assert array[0] == True
         else:
-            tensor[0] = np_dtype(7)  # type: ignore
-            assert array[0] == np_dtype(7)  # type: ignore
+            tensor[0] = np_dtype.type(7)
+            assert array[0] == np_dtype.type(7)
 
 
-def test_from_dlpack_short_circuit():
+def test_from_dlpack_short_circuit() -> None:
     tensor = Tensor((4,), DType.int8)
     for i in range(4):
         tensor[i] = i
@@ -312,7 +312,7 @@ def test_from_dlpack_short_circuit():
     assert tensor.shape == copy_tensor.shape
 
 
-def test_from_dlpack_copy():
+def test_from_dlpack_copy() -> None:
     tensor = Tensor((4,), DType.int8)
     for i in range(4):
         tensor[i] = i
@@ -326,7 +326,7 @@ def test_from_dlpack_copy():
         Tensor.from_dlpack(arr, copy=False)
 
 
-def test_dlpack_device():
+def test_dlpack_device() -> None:
     tensor = Tensor((3, 3), DType.int32)
     device_tuple = tensor.__dlpack_device__()
     assert len(device_tuple) == 2
@@ -336,7 +336,7 @@ def test_dlpack_device():
     assert device_tuple[1] == 0  # should be the default device
 
 
-def test_dlpack():
+def test_dlpack() -> None:
     # TODO(MSDK-897): improve test coverage with different shapes and strides.
     for dtype in DLPACK_DTYPES:
         tensor = Tensor((1, 4), dtype)
@@ -353,11 +353,11 @@ def test_dlpack():
         assert tensor.shape == array.shape
 
         # Numpy creates a read-only array, so we modify ours.
-        tensor[0, 0] = np_dtype(7)  # type: ignore
-        assert array[0, 0] == np_dtype(7)  # type: ignore
+        tensor[0, 0] = np_dtype.type(7)
+        assert array[0, 0] == np_dtype.type(7)
 
 
-def test_torch_tensor_conversion():
+def test_torch_tensor_conversion() -> None:
     # Our tensors should be convertible to and from Torch tensors.
     torch_tensor = torch.reshape(torch.arange(1, 11, dtype=torch.int32), (2, 5))
     driver_tensor = Tensor.from_dlpack(torch_tensor)
@@ -382,7 +382,7 @@ def test_torch_tensor_conversion():
 
 
 @given(st.floats())
-def test_setitem_bfloat16(value: float):
+def test_setitem_bfloat16(value: float) -> None:
     tensor = Tensor((1,), DType.bfloat16)
     tensor[0] = value
     expected = torch.tensor([value]).type(torch.bfloat16)
@@ -401,7 +401,7 @@ def test_setitem_bfloat16(value: float):
 
 
 @given(st.floats())
-def test_getitem_bfloat16(value: float):
+def test_getitem_bfloat16(value: float) -> None:
     torch_value = torch.tensor([value]).type(torch.bfloat16)
     tensor = Tensor.from_dlpack(torch_value)
     assert tensor.dtype == DType.bfloat16
@@ -409,14 +409,14 @@ def test_getitem_bfloat16(value: float):
     torch.testing.assert_close(torch_value.item(), result, equal_nan=True)
 
 
-def test_device():
+def test_device() -> None:
     # We should be able to set and query the device that a tensor is resident on.
     cpu = CPU()
     tensor = Tensor((3, 3), dtype=DType.int32, device=cpu)
     assert cpu == tensor.device
 
 
-def test_to_numpy():
+def test_to_numpy() -> None:
     # We should be able to convert a tensor to a numpy array.
     base_arr = np.arange(1, 6, dtype=np.int32)
     tensor = Tensor.from_numpy(base_arr)
@@ -424,13 +424,13 @@ def test_to_numpy():
     assert np.array_equal(base_arr, new_arr)
 
 
-def test_zeros():
+def test_zeros() -> None:
     # We should be able to initialize an all-zero tensor.
     tensor = Tensor.zeros((3, 3), DType.int32)
     assert np.array_equal(tensor.to_numpy(), np.zeros((3, 3), dtype=np.int32))
 
 
-def test_scalar():
+def test_scalar() -> None:
     # We should be able to create scalar values.
     scalar = Tensor.scalar(5, DType.int32)
     assert scalar.item() == 5
@@ -450,7 +450,7 @@ def memmap_example_file():
         yield Path(f.name)
 
 
-def test_memmap(memmap_example_file: Path):
+def test_memmap(memmap_example_file: Path) -> None:
     tensor = MemMapTensor(memmap_example_file, dtype=DType.int8, shape=(2, 4))
     assert tensor.shape == (2, 4)
     assert tensor.dtype == DType.int8
@@ -486,7 +486,7 @@ def test_memmap(memmap_example_file: Path):
     assert offset_tensor[0, 2].item() == 4
 
 
-def test_dlpack_memmap(memmap_example_file: Path):
+def test_dlpack_memmap(memmap_example_file: Path) -> None:
     tensor = MemMapTensor(memmap_example_file, dtype=DType.int8, shape=(2, 4))
     array = np.from_dlpack(tensor)
     assert array.dtype == np.int8
@@ -497,7 +497,7 @@ def test_dlpack_memmap(memmap_example_file: Path):
     assert array[0, 0] == np.int8(8)
 
 
-def test_from_dlpack_memmap(memmap_example_file: Path):
+def test_from_dlpack_memmap(memmap_example_file: Path) -> None:
     # We test that we can call from_dlpack on a read-only numpy memmap array.
     # TODO(MSDK-976): remove this test when we upgraded numpy to 2.1.
     array = np.memmap(memmap_example_file, dtype=np.int8, mode="r")
@@ -513,7 +513,7 @@ def test_from_dlpack_memmap(memmap_example_file: Path):
         tensor[0] = 0
 
 
-def test_num_elements():
+def test_num_elements() -> None:
     tensor1 = Tensor((2, 4, 3), DType.int8)
     assert tensor1.num_elements == 24
 
@@ -527,13 +527,13 @@ def test_num_elements():
     assert tensor4.num_elements == 1
 
 
-def test_element_size():
+def test_element_size() -> None:
     for dtype in DLPACK_DTYPES:
         tensor = Tensor((), dtype)
         assert tensor.element_size == np.dtype(dtype.to_numpy()).itemsize
 
 
-def test_view():
+def test_view() -> None:
     tensor8 = Tensor((2, 4), DType.int8)
     for i, j in product(range(2), range(4)):
         tensor8[i, j] = 1
