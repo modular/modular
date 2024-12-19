@@ -9,10 +9,14 @@
 from builtin.io import _printf
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
+from gpu.host.memory_v1 import _make_ctx_current
+from gpu.host.nvidia_cuda import CUDA
 from gpu.id import BlockIdx
 from layout import Layout, LayoutTensor
-from layout.tma_async import TMATensorTile, create_tma_tile
-from memory import UnsafePointer, stack_allocation
+from layout.tma_async import TMATensorTile, create_tma_tile, TMABarrier
+from layout._utils import ManagedLayoutGPUTensor
+from layout.fillers import arange
+from memory.pointer import _GPUAddressSpace
 
 from utils.static_tuple import StaticTuple
 
@@ -21,7 +25,12 @@ from utils.static_tuple import StaticTuple
 fn test_tma_async_load[
     dtype: DType, layout: Layout
 ](tma_tile: TMATensorTile[dtype, layout]):
-    tile, barrier = tma_tile.async_load(BlockIdx.x, BlockIdx.y)
+    # FIXME(KERN-1365): This test case fails if the barrier is created before the memory!
+    tile = LayoutTensor[
+        dtype, layout, address_space = _GPUAddressSpace.SHARED
+    ].stack_allocation()
+    barrier = TMABarrier()
+    tma_tile.async_copy(tile, barrier, BlockIdx.x * 4, BlockIdx.y * 4)
     barrier.wait()
 
     _printf[
@@ -50,16 +59,9 @@ fn test_tma_async_load[
 
 def test_tma_async_copy(ctx: DeviceContext):
     print("== test_tma_async_copy")
-    var gmem_host = UnsafePointer[Float32].alloc(8 * 8)
-    for i in range(64):
-        gmem_host[i] = i
-
-    var gmem_dev = ctx.create_buffer_sync[DType.float32](8 * 8)
-    tensor = LayoutTensor[DType.float32, Layout.row_major(8, 8)](gmem_dev.ptr)
-
-    ctx.enqueue_copy_to_device(gmem_dev, gmem_host)
-
-    var tma_tensor = create_tma_tile[4, 4](ctx, tensor)
+    var tensor = ManagedLayoutGPUTensor[DType.float32, Layout.row_major(8, 8)]()
+    arange(tensor.tensor)
+    var tma_tensor = create_tma_tile[4, 4](ctx, tensor.tensor)
     ctx.synchronize()
 
     var kernel_copy_async = ctx.compile_function[
@@ -74,14 +76,16 @@ def test_tma_async_copy(ctx: DeviceContext):
     )
     ctx.synchronize()
     _ = kernel_copy_async^
-    gmem_host.free()
+    _ = tensor^
 
 
 def main():
     with DeviceContext() as ctx:
+        var prev_ctx = _make_ctx_current(CUDA(ctx))
         # CHECK-LABLE: test_tma_async_copy
         # CHECK-DAG: (0, 0) : 0 1 2 3; 8 9 10 11; 16 17 18 19; 24 25 26 27
         # CHECK-DAG: (1, 0) : 4 5 6 7; 12 13 14 15; 20 21 22 23; 28 29 30 31
         # CHECK-DAG: (0, 1) : 32 33 34 35; 40 41 42 43; 48 49 50 51; 56 57 58 59
         # CHECK-DAG: (1, 1) : 36 37 38 39; 44 45 46 47; 52 53 54 55; 60 61 62 63
         test_tma_async_copy(ctx)
+        _ = _make_ctx_current(prev_ctx)
