@@ -127,7 +127,6 @@ class SupportedTestModels:
 
         config = PipelineConfig(
             architecture="LlamaForCausalLM",
-            version=self.version,
             quantization_encoding=self.encoding,
             **kwargs,
         )

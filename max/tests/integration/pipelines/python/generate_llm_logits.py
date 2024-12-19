@@ -201,7 +201,6 @@ class LlamaPipelineOracle(PipelineOracle):
         internal_version = self._map_to_internal_version(version)
         config = pipelines.PipelineConfig(
             architecture="LlamaForCausalLM",
-            version=self._map_to_internal_version(version),
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_new_tokens=10,
             huggingface_repo_id=f"modularai/llama-{internal_version}",
