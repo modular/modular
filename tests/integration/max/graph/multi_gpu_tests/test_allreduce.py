@@ -4,15 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# type: ignore
-
 """Test the max.engine Python bindings with Max Graph when using explicit device."""
 
 import numpy as np
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 
 def allreduce_graph() -> Graph:
@@ -39,11 +37,15 @@ def allreduce_graph() -> Graph:
             ),
         ],
     ) as graph:
+        assert isinstance(graph.inputs[0], TensorValue)
+        assert isinstance(graph.inputs[1], TensorValue)
+        assert isinstance(graph.inputs[2], TensorValue)
+        assert isinstance(graph.inputs[3], TensorValue)
         add0 = graph.inputs[0]
         add1 = graph.inputs[1] * 2
         add2 = graph.inputs[2] * 3
         add3 = graph.inputs[3] * 4
-        allreduce_outputs = ops.allreduce.sum([add0, add1, add2, add3])
+        allreduce_outputs = list(ops.allreduce.sum([add0, add1, add2, add3]))
         graph.output(
             allreduce_outputs[0],
             allreduce_outputs[1],
@@ -73,11 +75,15 @@ def test_allreduce_execution() -> None:
     d = Tensor.from_numpy(a_np).to(device3)
     output = compiled.execute(a, b, c, d)
     # Check Executed Graph
+    assert isinstance(output[0], Tensor)
     assert output[0].device == device0
     assert np.allclose(out_np, output[0].to(host).to_numpy())
+    assert isinstance(output[1], Tensor)
     assert output[1].device == device1
     assert np.allclose(out_np, output[1].to(host).to_numpy())
+    assert isinstance(output[2], Tensor)
     assert output[2].device == device2
     assert np.allclose(out_np, output[2].to(host).to_numpy())
+    assert isinstance(output[3], Tensor)
     assert output[3].device == device3
     assert np.allclose(out_np, output[3].to(host).to_numpy())

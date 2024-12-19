@@ -348,7 +348,7 @@ class TensorValue(Value):
     def T(self) -> TensorValue:
         return self.transpose(-1, -2)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: Any) -> TensorValue:
         return ops.slice_tensor(
             self,
             index if isinstance(index, Iterable) else (index,),  # type: ignore

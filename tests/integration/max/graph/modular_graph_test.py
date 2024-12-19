@@ -4,8 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 import functools
-from typing import Dict, Optional
+from typing import Iterable, Mapping, Optional
 
 import numpy as np
 import torch
@@ -13,7 +15,15 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as nps
 from max.driver import Tensor
-from max.graph import Dim, StaticDim, SymbolicDim, TensorType
+from max.graph import (
+    Dim,
+    StaticDim,
+    SymbolicDim,
+    TensorType,
+    TensorValue,
+    Value,
+)
+from typing_extensions import TypeGuard
 
 MAX_INPUT_MAGNITUDE = 1e5
 MIN_SHAPE_DIM = 1
@@ -21,6 +31,15 @@ MAX_SHAPE_DIM = 16
 
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-8
+
+
+def are_all_tensor_values(
+    it: Iterable[Value],
+) -> TypeGuard[Iterable[TensorValue]]:
+    for value in it:
+        if not isinstance(value, TensorValue):
+            return False
+    return True
 
 
 def elements(dtype, max_magnitude=MAX_INPUT_MAGNITUDE, **kwargs):
@@ -40,7 +59,9 @@ def elements(dtype, max_magnitude=MAX_INPUT_MAGNITUDE, **kwargs):
 
 @st.composite
 def shapes(
-    draw: st.DrawFn, tensor_type: TensorType, static_dims: Dict[str, int] = {}
+    draw: st.DrawFn,
+    tensor_type: TensorType,
+    static_dims: Mapping[str, int] = {},
 ):
     """Defines a strategy for generating a concrete shape from a TensorType.
 
@@ -84,8 +105,8 @@ def arrays(tensor_type: TensorType, static_dims={}, **kwargs):
 
 def given_input_types(
     input_types,
-    static_dims: Dict[str, int] = {},
-    provided_inputs: Dict[int, np.ndarray] = {},
+    static_dims: Mapping[str, int] = {},
+    provided_inputs: Mapping[int, np.ndarray | Tensor] = {},
     max_magnitude: Optional[float] = None,
     **kwargs,
 ):
@@ -126,8 +147,8 @@ def modular_graph_test(
     session,
     graph,
     *,
-    static_dims: Dict[str, int] = {},
-    provided_inputs: Dict[int, np.ndarray] = {},
+    static_dims: Mapping[str, int] = {},
+    provided_inputs: Mapping[int, np.ndarray | Tensor] = {},
     hypothesis_settings: Optional[settings] = None,
     max_magnitude: Optional[float] = None,
     **kwargs,

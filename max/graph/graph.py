@@ -13,7 +13,7 @@ import traceback
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from max import _graph, mlir
 from max.mlir.dialects import mo
@@ -179,7 +179,9 @@ class Graph:
         self.inputs = tuple(Value(arg) for arg in self._body.arguments)  # type: ignore
         self._weights = {}
 
-        self._current_chain = self._add_op(mo.chain_create, [])[0]  # type: ignore
+        initial_chain = self._add_op(mo.chain_create, [])[0]
+        assert isinstance(initial_chain, _ChainValue)
+        self._current_chain = initial_chain
 
         if forward is not None:
             # If the forward method was passed stage the graph directly in the
@@ -277,13 +279,18 @@ class Graph:
                 # MLIRError is raised from the MLIR Python bindings on MLIR
                 # errors, however so is ValueError when operation create faile.
                 # So catch both exception types here.
+                mapped_args: dict[str, Any]
                 try:
-                    args = inspect.signature(op).bind(*args, **kwargs).arguments  # type: ignore
+                    mapped_args = (
+                        inspect.signature(op).bind(*args, **kwargs).arguments
+                    )
                 except TypeError:
-                    args = {"args": list(args), **kwargs}  # type: ignore
+                    mapped_args = {"args": list(args), **kwargs}
                 raise ValueError(
                     f"Failed to create op '{op.__qualname__}':\nInputs:\n"
-                    + "".join(f"    {k} = {v!r}\n" for k, v in args.items())  # type: ignore
+                    + "".join(
+                        f"    {k} = {v!r}\n" for k, v in mapped_args.items()
+                    )
                     + f"\n{e}"
                     # Intentionally suppress extra stack traces from max._mlir.
                 ) from None
@@ -386,6 +393,11 @@ class Graph:
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):
                     self._module = self._module.parse(f.read(), self._context)
+                    # TODO: This quite clearly seems to be assigning an MLIR
+                    # block to self._mlir_op, but self._mlir_op is supposed to
+                    # be an operation, not a block.  Is this assigning the
+                    # right thing?  If so, is the declared type of
+                    # self._mlir_op wrong?
                     self._mlir_op = (
                         self._module.body.operations[0].regions[0].blocks[0]  # type: ignore
                     )

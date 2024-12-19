@@ -9,7 +9,7 @@ import numpy as np
 from max.driver import CPU, Accelerator, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 
 
 def create_multi_device_graph_with_cpu_io() -> Graph:
@@ -21,9 +21,12 @@ def create_multi_device_graph_with_cpu_io() -> Graph:
     with Graph(
         "add", input_types=(input_type, input_type, input_type)
     ) as graph:
-        gpu0_input0 = graph.inputs[0].to(DeviceRef.GPU(0))  # type: ignore
-        gpu1_input1 = graph.inputs[1].to(DeviceRef.GPU(1))  # type: ignore
-        gpu0_input2 = graph.inputs[2].to(DeviceRef.GPU(0))  # type: ignore
+        assert isinstance(graph.inputs[0], TensorValue)
+        assert isinstance(graph.inputs[1], TensorValue)
+        assert isinstance(graph.inputs[2], TensorValue)
+        gpu0_input0 = graph.inputs[0].to(DeviceRef.GPU(0))
+        gpu1_input1 = graph.inputs[1].to(DeviceRef.GPU(1))
+        gpu0_input2 = graph.inputs[2].to(DeviceRef.GPU(0))
         gpu0_input1 = gpu1_input1.to(DeviceRef.GPU(0))
         sum = ops.add(gpu0_input0, gpu0_input2)
         sum2 = ops.add(sum, gpu0_input1)
@@ -46,7 +49,8 @@ def create_multi_device_graph_with_gpu_io() -> Graph:
     with Graph(
         "add", input_types=(input_type0, input_type1, input_type0)
     ) as graph:
-        gpu0_input1 = graph.inputs[1].to(DeviceRef.GPU(0))  # type: ignore
+        assert isinstance(graph.inputs[1], TensorValue)
+        gpu0_input1 = graph.inputs[1].to(DeviceRef.GPU(0))
         sum = ops.add(graph.inputs[0], graph.inputs[2])
         sum2 = ops.add(sum, gpu0_input1)
         graph.output(sum2)
@@ -76,8 +80,9 @@ def test_cpu_io_graph_execution() -> None:
     b = Tensor.from_numpy(b_np)
     c = Tensor.from_numpy(b_np)
     output = compiled.execute(a, b, c)
+    assert isinstance(output[0], Tensor)
     # Check Executed Graph
-    assert np.allclose((a_np + b_np + c_np), output[0].to_numpy())  # type: ignore
+    assert np.allclose((a_np + b_np + c_np), output[0].to_numpy())
 
 
 def test_gpu_io_graph_execution() -> None:
@@ -102,5 +107,6 @@ def test_gpu_io_graph_execution() -> None:
     b = Tensor.from_numpy(b_np).to(device1)
     c = Tensor.from_numpy(b_np).to(device0)
     output = compiled.execute(a, b, c)
+    assert isinstance(output[0], Tensor)
     # Check Executed Graph
-    assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())  # type: ignore
+    assert np.allclose((a_np + b_np + c_np), output[0].to(host).to_numpy())
