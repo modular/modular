@@ -154,9 +154,9 @@ modular_py_binary(
 )
 
 modular_py_test(
-    name = "test_generate_llm_logits",
+    name = "test_generate_llm_logits_gpu",
     size = "medium",
-    srcs = ["test_generate_llm_logits.py"],
+    srcs = ["test_generate_llm_logits_gpu.py"],
     data = [
         "//GenericML:MGPRT",
         "//KGEN:CompilerRT",
@@ -166,8 +166,9 @@ modular_py_test(
         "BAZEL": "true",
         "HF_ESCAPES_SANDBOX": "1",
     },
-    requires_gpu = False,
+    requires_gpu = True,
     tags = [
+        "gpu",
         "huggingface",
         "no-remote-exec",
         "no-sandbox",

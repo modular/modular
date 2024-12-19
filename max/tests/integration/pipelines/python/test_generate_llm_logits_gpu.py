@@ -17,9 +17,9 @@ def test_generate_llm_logits_smollm(tmp_path):
         [
             "--framework=max",
             "--pipeline=smollm",
-            "--encoding=float32",
-            "--version=3.1",
-            "--device=cpu",
+            "--encoding=bfloat16",
+            "--version=general",
+            "--device=gpu",
             "--output",
             f"{output_file}",
         ],

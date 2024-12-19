@@ -18,6 +18,7 @@ def test_foo(capsys):
                 "--prompt",
                 'def hello():\n print("hello world")\n',
                 "--trust-remote-code",
+                "--quantization-encoding=float32",
             ]
         )
     captured = capsys.readouterr()

@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from functools import wraps
+from pathlib import Path
 from typing import Sequence
 
 import pytest
@@ -14,14 +15,12 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType
 from max.pipelines import (
     PIPELINE_REGISTRY,
-    HuggingFaceFile,
     ModelOutputs,
     PipelineConfig,
     PipelineEngine,
     PipelineModel,
     SupportedArchitecture,
     SupportedEncoding,
-    SupportedVersion,
     TextTokenizer,
     WeightsFormat,
 )
@@ -143,29 +142,26 @@ DUMMY_ARCH = SupportedArchitecture(
     name="LlamaForCausalLM",
     default_encoding=SupportedEncoding.float32,
     supported_encodings={
-        SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS]
+        SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
     },
-    versions=[
-        SupportedVersion(
-            name="1",
-            encodings={
-                SupportedEncoding.float32: (
-                    [
-                        HuggingFaceFile(
-                            "modularai/llama-3.1",
-                            "llama-3.1-8b-instruct-f32.gguf",
-                        )
-                    ],
-                    [KVCacheStrategy.CONTINUOUS],
-                )
-            },
-            default_encoding=SupportedEncoding.float32,
-        )
-    ],
-    default_version="1",
     pipeline_model=DummyPipelineModel,
     tokenizer=TextTokenizer,
     default_weights_format=WeightsFormat.gguf,
+    weight_converters={WeightsFormat.safetensors: None},  # type: ignore
+)
+
+REPLIT_ARCH = SupportedArchitecture(
+    name="MPTForCausalLM",
+    default_encoding=SupportedEncoding.bfloat16,
+    supported_encodings={
+        SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
+        SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
+    },
+    pipeline_model=DummyPipelineModel,
+    tokenizer=TextTokenizer,
+    default_weights_format=WeightsFormat.gguf,
+    weight_converters={WeightsFormat.pytorch: None},  # type: ignore
 )
 
 
@@ -245,3 +241,112 @@ def test_registry__test_load_factory_with_known_architecture_and_hf_repo_id():
     )
 
     _, _ = PIPELINE_REGISTRY.retrieve_factory(pipeline_config=config)
+
+
+@prepare_registry
+def test_registry__test_incompatible_quantization_encoding():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    # This should raise, as q4_k != bf16.
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+        quantization_encoding=SupportedEncoding.q4_k,
+        weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
+    )
+
+    with pytest.raises(ValueError):
+        PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    # This should not raise, as bfloat16 == bf16.
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+        quantization_encoding=SupportedEncoding.bfloat16,
+        weight_path=[Path("llama-3.1-8b-instruct-bf16.gguf")],
+    )
+
+    PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+
+@prepare_registry
+def test_registry__update_cache_strategy():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+        cache_strategy=KVCacheStrategy.NAIVE,
+    )
+
+    # Naive is not shown as supported in architecture, as
+    # such this should change to a support strategy automatically.
+    pipeline_config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+    assert pipeline_config.cache_strategy == KVCacheStrategy.CONTINUOUS
+
+
+@prepare_registry
+def test_registry__update_weight_paths():
+    PIPELINE_REGISTRY.register(DUMMY_ARCH)
+    PIPELINE_REGISTRY.register(REPLIT_ARCH)
+
+    # This first example, is requesting float32 from a gguf repository.
+    config = PipelineConfig(
+        huggingface_repo_id="modularai/llama-3.1",
+        quantization_encoding=SupportedEncoding.float32,
+    )
+
+    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    assert len(config.weight_path) == 1
+    assert config.weight_path == [Path("llama-3.1-8b-instruct-f32.gguf")]
+
+    # This second example, is requesitng float32 from a safetensors repository.
+    config = PipelineConfig(
+        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        quantization_encoding=SupportedEncoding.float32,
+    )
+
+    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    assert len(config.weight_path) == 1
+    assert config.weight_path == [Path("model.safetensors")]
+
+    # This example, should raise, as you are requesting bfloat16 from a fp32 safetensors repo.
+    config = PipelineConfig(
+        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        quantization_encoding=SupportedEncoding.bfloat16,
+    )
+
+    # This should raise, as this repository, does not have bfloat16 weights.
+    with pytest.raises(ValueError):
+        PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    # This example, should raise as we dont have q4_k listed as supported.
+    config = PipelineConfig(
+        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        quantization_encoding=SupportedEncoding.q4_k,
+        engine=PipelineEngine.MAX,
+    )
+
+    with pytest.raises(ValueError):
+        config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    # This example, should raise as we dont have q4_k listed as supported.
+    # If we don't pass MAX though, we should not fail and fall back to HuggingFace.
+    config = PipelineConfig(
+        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        quantization_encoding=SupportedEncoding.q4_k,
+    )
+
+    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+    assert config.engine == PipelineEngine.HUGGINGFACE
+
+    # This example, should raise as we dont have q4_k listed as supported.
+    # If we don't pass MAX though, we should not fail and fall back to HuggingFace.
+    config = PipelineConfig(
+        huggingface_repo_id="replit/replit-code-v1_5-3b",
+        quantization_encoding=SupportedEncoding.bfloat16,
+        trust_remote_code=True,
+    )
+
+    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+    assert config.engine == PipelineEngine.MAX
+    assert config.weight_path == [Path("pytorch_model.bin")]

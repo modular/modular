@@ -568,11 +568,7 @@ class GenericOracle(PipelineOracle):
 
     @property
     def supported_versions(self) -> Sequence[str]:
-        return list(
-            pipelines.PIPELINE_REGISTRY.architectures[
-                self.architecture
-            ].versions.keys()
-        )
+        return ["general"]
 
     @property
     def supported_encodings(self) -> Sequence[str]:
@@ -586,9 +582,7 @@ class GenericOracle(PipelineOracle):
     def is_supported(
         self, *, version: str, encoding: str, device_spec: driver.DeviceSpec
     ) -> bool:
-        assert version in self.supported_versions
-        assert encoding in self.supported_encodings
-        return device_spec.device_type in {"cpu", "gpu"}
+        return True
 
     def create_max_pipeline(
         self,

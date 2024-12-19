@@ -51,6 +51,14 @@ def test_huggingface_repo__encodings_supported():
     assert SupportedEncoding.q4_k not in hf_repo.supported_encodings
     assert SupportedEncoding.bfloat16 in hf_repo.supported_encodings
 
+    # Test a Pytorch repo.
+    # Pytorch repo, should only provide the torch.dtype in config.
+    hf_repo = HuggingFaceRepo(
+        repo_id="replit/replit-code-v1_5-3b", trust_remote_code=True
+    )
+    assert SupportedEncoding.bfloat16 in hf_repo.supported_encodings
+    assert SupportedEncoding.q4_k not in hf_repo.supported_encodings
+
 
 def test_huggingface_repo__file_exists():
     # Test a llama based gguf repo.
@@ -114,6 +122,15 @@ def test_huggingface_repo__get_files_for_encoding():
     hf_repo = HuggingFaceRepo(repo_id="Qwen/QwQ-32B-Preview")
     files = hf_repo.files_for_encoding(SupportedEncoding.float32)
     assert len(files) == 0
+
+    # Test a Pytorch repo, with the correct encoding requested.
+    hf_repo = HuggingFaceRepo(
+        repo_id="replit/replit-code-v1_5-3b", trust_remote_code=True
+    )
+    files = hf_repo.files_for_encoding(SupportedEncoding.bfloat16)
+    assert WeightsFormat.pytorch in files
+    assert len(files[WeightsFormat.pytorch]) == 1
+    assert files[WeightsFormat.pytorch][0] == Path("pytorch_model.bin"), files
 
 
 def test_huggingface_repo__encoding_for_file():
