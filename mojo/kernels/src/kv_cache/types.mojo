@@ -610,9 +610,9 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
 
     fn __init__(
         out self,
-        blocks: __type_of(self.blocks),
-        cache_lengths: __type_of(self.cache_lengths),
-        lookup_table: __type_of(self.lookup_table),
+        blocks: NDBuffer[type, 6],
+        cache_lengths: NDBuffer[DType.uint32, 1],
+        lookup_table: NDBuffer[DType.uint32, 2],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         layer_idx: Int,
@@ -1027,9 +1027,9 @@ struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
 
     fn __init__(
         out self,
-        blocks: __type_of(self.blocks),
-        cache_lengths: __type_of(self.cache_lengths),
-        lookup_table: __type_of(self.lookup_table),
+        blocks: NDBuffer[type, 6],
+        cache_lengths: NDBuffer[DType.uint32, 1],
+        lookup_table: NDBuffer[DType.uint32, 2],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
