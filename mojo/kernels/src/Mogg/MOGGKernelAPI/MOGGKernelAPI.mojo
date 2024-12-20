@@ -63,7 +63,7 @@ from nn.arange import arange, arange_shape
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
 from nn.concat import _concat_cpu, concat
-from nn.conv import ConvInfoStatic, conv_nhwc_direct, conv_shape
+from nn.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv import pack_filter as _pack_conv_filter
 from nn.conv import pack_filter_shape as pack_filter_shape_conv
 from nn.conv_transpose import conv_transpose_shape, conv_transposed
@@ -4754,6 +4754,7 @@ struct Conv:
         static_strides: DimList,
         static_dilations: DimList,
         static_padding: DimList,
+        target: StringLiteral = "cpu",
     ](
         output: ManagedTensorSlice,
         input: ManagedTensorSlice[rank = output.rank],
@@ -4762,6 +4763,7 @@ struct Conv:
         dilation: ManagedTensorSlice,
         paddings: ManagedTensorSlice,
         num_groups: Scalar,
+        ctx: MojoCallContextPtr,
     ) raises:
         @parameter
         @always_inline
@@ -4843,30 +4845,66 @@ struct Conv:
             static_shape=output_static_shape
         ](output)
 
-        conv_nhwc_direct[
-            input.rank,
-            filter.rank,
-            input_static_shape,  # input shape
-            filter_static_shape,  # filter shape
-            output_static_shape,  # output shape
-            input.type,
-            filter.type,
-            output.type,
-            filter_packed,
-            conv_attr,
-            lambdas_have_fusion,
-            output_fn,
-        ](
-            input_buf,
-            filter_buf,
-            output_buf,
-            stride_tuple,
-            dilation_tuple,
-            pad_d_tuple,
-            pad_h_tuple,
-            pad_w_tuple,
-            int(num_groups),
-        )
+        @parameter
+        if target == "cpu":
+            conv_nhwc_direct[
+                input.rank,
+                filter.rank,
+                input_static_shape,  # input shape
+                filter_static_shape,  # filter shape
+                output_static_shape,  # output shape
+                input.type,
+                filter.type,
+                output.type,
+                filter_packed,
+                conv_attr,
+                lambdas_have_fusion,
+                output_fn,
+            ](
+                input_buf,
+                filter_buf,
+                output_buf,
+                stride_tuple,
+                dilation_tuple,
+                pad_d_tuple,
+                pad_h_tuple,
+                pad_w_tuple,
+                int(num_groups),
+            )
+        else:
+            constrained[
+                input.rank == 4 and filter.rank == 4,
+                "only rank 4 tensor is supported on cuda gpu",
+            ]()
+            constrained[
+                filter_packed == False,
+                "only unpacked filter is supported on cuda gpu",
+            ]()
+
+            constrained[
+                lambdas_have_fusion == False, "lambda fusion isnt supported"
+            ]()
+
+            var cuda_ctx = ctx.get_device_context()
+            conv_gpu[
+                input.rank,
+                filter.rank,
+                input_static_shape,  # input shape
+                filter_static_shape,  # filter shape
+                output_static_shape,  # output shape
+                input.type,
+                filter.type,
+                output.type,
+            ](
+                input_buf,
+                filter_buf,
+                output_buf,
+                IndexList[2](stride_tuple[0], stride_tuple[1]),
+                IndexList[2](dilation_tuple[0], dilation_tuple[1]),
+                IndexList[2](pad_h_tuple[0], pad_w_tuple[0]),
+                int(num_groups),
+                cuda_ctx,
+            )
 
     @staticmethod
     fn shape[
