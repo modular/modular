@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import numpy as np
 import pytest
 from max.driver import CPU
 from max.dtype import DType
@@ -16,6 +17,8 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
+
+FAKE_TOKEN = 999
 
 
 @pytest.mark.asyncio
@@ -57,17 +60,17 @@ async def test_kv_collection_constructor(cache_strategy, fetch_cls) -> None:
     # Reserve a slot in the KV cache manager.
     seq_id = 0
     expected_cache_len = 42
-    seq_ids_and_lengths = {seq_id: expected_cache_len}
+    seq_ids_and_prompts = {seq_id: np.array([FAKE_TOKEN] * expected_cache_len)}
 
     kv_manager.external_claim(seq_ids=[seq_id])
-    kv_tuple_list = kv_manager.fetch(seq_ids_and_lengths=seq_ids_and_lengths)
+    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
 
     # Set the cache lengths first by "stepping".
-    kv_manager.step(seq_ids_and_lengths=seq_ids_and_lengths)
+    kv_manager.step(seq_ids_and_prompts)
 
     # Construct a KV cache collection with the given cache length.
-    cache_lengths = {seq_id: 1}
-    kv_tuple_list = kv_manager.fetch(cache_lengths)
+    seq_ids_and_prompts = {seq_id: np.array([FAKE_TOKEN])}
+    kv_tuple_list = kv_manager.fetch(seq_ids_and_prompts)
     assert len(kv_tuple_list) == 1
     assert len(kv_tuple_list[0]) == 4
     kv_tuple = kv_tuple_list[0]

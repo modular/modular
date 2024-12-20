@@ -33,6 +33,7 @@ MAX_SEQ_LEN = 512
 NUM_LAYERS = 10
 LAYER_IDX = 0
 BATCH_SIZE = 4
+FAKE_TOKEN = 999
 
 
 def _attention_layer(
@@ -195,7 +196,9 @@ def test_attention__valid_logits(session, start_pos, seq_len):
         np.full((BATCH_SIZE), seq_len, dtype=np.uint32)
     )
 
-    cache_lengths_in = {s: seq_len for i, s in enumerate(seq_ids)}
+    cache_lengths_in = {
+        s: np.array([FAKE_TOKEN] * seq_len) for i, s in enumerate(seq_ids)
+    }
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(cache_lengths_in)[0]
     )
@@ -309,7 +312,10 @@ def test_kv_cache_ragged_attention(session):
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    cache_lengths_in = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
+    cache_lengths_in = {
+        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+        for i, s in enumerate(seq_ids)
+    }
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(cache_lengths_in)[0]
     )

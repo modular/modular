@@ -6,6 +6,7 @@
 
 import asyncio
 
+import numpy as np
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -14,6 +15,8 @@ from max.pipelines.kv_cache import (
     KVCacheStrategy,
     load_kv_manager,
 )
+
+FAKE_TOKEN = 999
 
 
 def test_kv_cache_gpu():
@@ -37,8 +40,8 @@ async def _test_kv_cache_gpu():
         session=InferenceSession(devices=[device]),
     )
     seq_id = kv_manager.claim(n=1)[0]
-    cache_lengths = {seq_id: 1}
+    seq_ids_and_prompts = {seq_id: np.array([FAKE_TOKEN])}
     # suffixed [0] because we only have one device
-    kv_tuple = kv_manager.fetch(cache_lengths)[0]
+    kv_tuple = kv_manager.fetch(seq_ids_and_prompts)[0]
     assert isinstance(kv_tuple, tuple)
     assert len(kv_tuple) == 4

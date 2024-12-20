@@ -32,6 +32,8 @@ BATCH_SIZE = 1
 ACCURACY_RTOL = 1e-10
 ACCURACY_ATOL = 1e-10
 
+FAKE_TOKEN = 999
+
 
 class TorchAttention(nn.Module):
     def __init__(
@@ -104,8 +106,10 @@ def _attention_layer(
     )
 
     seq_ids = kv_manager.claim(n=BATCH_SIZE)
-    cache_lengths = {s: seq_len for i, s in enumerate(seq_ids)}
-    kv_cache_inputs = kv_manager.fetch(cache_lengths)[0]
+    seq_ids_and_prompts = {
+        s: np.array([FAKE_TOKEN] * seq_len) for i, s in enumerate(seq_ids)
+    }
+    kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
 
     fetch_op = FetchContinuousBatchingKVCacheCollection(kv_params)
     kv_cache_types = [

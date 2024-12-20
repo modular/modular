@@ -26,6 +26,8 @@ from transformers.models.mllama.modeling_mllama import (
     MllamaTextCrossSdpaAttention,
 )
 
+FAKE_TOKEN = 999
+
 
 class CrossAttentionModel:
     """Model containing fetch and cross attention layers."""
@@ -204,8 +206,10 @@ def test_cross_attention(
     # Phase 3: execution.
 
     seq_ids = kv_manager.claim(n=batch_size)
-    cache_lengths = {s: seq_lens[i] for i, s in enumerate(seq_ids)}
-    kv_cache_inputs = kv_manager.fetch(cache_lengths)[0]
+    seq_ids_and_prompts = {
+        s: np.array([FAKE_TOKEN] * seq_lens[i]) for i, s in enumerate(seq_ids)
+    }
+    kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
 
     # Initialize model inputs.
     total_seq_len = sum(seq_lens)

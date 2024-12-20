@@ -20,6 +20,8 @@ from max.pipelines.kv_cache import (
 )
 from nn.kernels import rms_norm_key_cache
 
+FAKE_TOKEN = 999
+
 
 @dataclass(frozen=True)
 class RMSNormKeyCacheModel:
@@ -104,8 +106,10 @@ def test_rms_norm_key_cache(session: InferenceSession, dtype: DType) -> None:
     # Claim seq_ids in cache.
     seq_ids = kv_manager.claim(n=batch_size)
 
-    cache_lengths = {s: seq_lens[i] for i, s in enumerate(seq_ids)}
-    fetch_args = kv_manager.fetch(cache_lengths)[0]
+    seq_ids_to_prompts = {
+        s: np.array([FAKE_TOKEN] * seq_lens[i]) for i, s in enumerate(seq_ids)
+    }
+    fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
     # First set KV blocks to all ones so that RMSNorm changes them.
     kv_blocks = fetch_args[0]
     all_ones = np.ones(kv_blocks.shape, dtype=kv_blocks.dtype.to_numpy())

@@ -13,10 +13,7 @@ import numpy as np
 import requests
 from max.driver import CPU
 from max.pipelines import PipelineModel
-from max.pipelines.interfaces import (
-    PipelineTokenizer,
-    TokenGeneratorRequest,
-)
+from max.pipelines.interfaces import PipelineTokenizer, TokenGeneratorRequest
 
 NUM_STEPS = 10
 PROMPTS = (
@@ -147,11 +144,15 @@ def next_token_with_logits(
             if not model.kv_manager.contains(context.cache_seq_id):
                 model.kv_manager.external_claim([context.cache_seq_id])
 
-        # Get cache seq ids for batch.
-        cache_seq_ids = {ctx.cache_seq_id: ctx.seq_len for ctx in context_batch}
+        # Get prompts for each seq_id in batch.
+        seq_ids_and_prompts = {}
+        for ctx in context_batch:
+            prompt = ctx.next_tokens
+            assert len(prompt) == ctx.seq_len
+            seq_ids_and_prompts[ctx.cache_seq_id] = prompt
 
         # Fetch kv inputs.
-        kv_inputs = model.kv_manager.fetch(cache_seq_ids)[0]
+        kv_inputs = model.kv_manager.fetch(seq_ids_and_prompts)[0]
 
         # Get Model inputs
         model_inputs = model.prepare_initial_token_inputs(context_batch)
@@ -159,7 +160,7 @@ def next_token_with_logits(
         model_outputs = model.execute(*model_inputs, *kv_inputs)
         logits = model_outputs.next_token_logits.to(CPU())
 
-        model.kv_manager.step(cache_seq_ids)
+        model.kv_manager.step(seq_ids_and_prompts)
 
     # Llama3's _execute method has a different signature and set of calling
     # expectations than Replit and Mistral do.  Use the Llama3 logic only if it
@@ -174,17 +175,19 @@ def next_token_with_logits(
             if not kv_manager.contains(context.cache_seq_id):
                 kv_manager.external_claim([context.cache_seq_id])
 
-        cache_seq_ids = {ctx.cache_seq_id: ctx.seq_len for ctx in context_batch}
+        # Get prompts for each seq_id in batch.
+        seq_ids_and_prompts = {}
+        for ctx in context_batch:
+            prompt = ctx.next_tokens
+            assert len(prompt) == ctx.seq_len
+            seq_ids_and_prompts[ctx.cache_seq_id] = prompt
+
         token_input = model._prepare_initial_token_inputs(context_batch)
-        kv_cache_inputs = kv_manager.fetch(cache_seq_ids)[0]
+        kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
 
         logits = model._execute(*token_input, *kv_cache_inputs).to(CPU())
 
-        kv_manager.step(
-            valid_lengths={
-                ctx.cache_seq_id: ctx.seq_len for ctx in context_batch
-            }
-        )
+        kv_manager.step(seq_ids_and_prompts)
     else:
         logits = model._execute(req_to_context_dict).to(CPU())
 

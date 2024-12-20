@@ -35,6 +35,8 @@ from transformers import MllamaForCausalLM
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.testing_utils import torch_device
 
+FAKE_TOKEN = 999
+
 
 def weight(
     name: str, weights_array: torch.Tensor, weights_registry: dict
@@ -470,8 +472,10 @@ def test_llama_language_model(
     compiled = session.load(graph, weights_registry=weights_registry)
 
     seq_ids = kv_manager.claim(n=batch_size)
-    cache_lengths = {s: seq_lens[i] for i, s in enumerate(seq_ids)}
-    kv_cache_inputs = kv_manager.fetch(cache_lengths)[0]
+    seq_ids_and_prompts = {
+        s: np.array([FAKE_TOKEN] * seq_lens[i]) for i, s in enumerate(seq_ids)
+    }
+    kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
 
     torch_dtype = torch.float32
     # Initialize model inputs.

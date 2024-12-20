@@ -32,6 +32,7 @@ MAX_SEQ_LEN = 512
 NUM_LAYERS = 10
 LAYER_IDX = 0
 BATCH_SIZE = 4
+FAKE_TOKEN = 999
 
 
 def _attention_layer(
@@ -169,9 +170,11 @@ def test_attention_gpu(start_pos, seq_len):
         seq_id = kv_manager.claim(1)
         seq_ids.append(seq_id[0])
 
-    cache_valid_lengths = {s: seq_len for i, s in enumerate(seq_ids)}
+    seq_ids_and_prompts = {
+        s: np.array([FAKE_TOKEN] * seq_len) for i, s in enumerate(seq_ids)
+    }
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.fetch(cache_valid_lengths)[0]
+        kv_manager.fetch(seq_ids_and_prompts)[0]
     )
 
     hidden_states = Tensor.from_numpy(

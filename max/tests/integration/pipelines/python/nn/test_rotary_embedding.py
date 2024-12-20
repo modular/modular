@@ -26,6 +26,7 @@ from nn.kernels import fused_qk_ragged_rope
 MAX_SEQ_LEN = 2**16
 ACCURACY_RTOL = 1e-2
 ACCURACY_ATOL = 1e-7
+FAKE_TOKEN = 999
 
 
 def torch_freqs_cis(dim: int, theta: float, scaling: float):
@@ -258,7 +259,10 @@ def test_kv_cache_ragged_rope(session):
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
 
-    cache_lengths_in = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
+    cache_lengths_in = {
+        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+        for i, s in enumerate(seq_ids)
+    }
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(cache_lengths_in)[0]
     )

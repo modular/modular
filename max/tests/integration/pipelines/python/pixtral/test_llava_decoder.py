@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 import random
 
+import numpy as np
 import pytest
 import torch
 from max.driver import Accelerator
@@ -32,6 +33,9 @@ from transformers import (
     MistralForCausalLM,
 )
 from transformers.testing_utils import torch_device
+
+FAKE_TOKEN = 999
+
 
 # TODO: Change these to only pass the test if correct.
 ACCURACY_ATOL = 1e-05
@@ -282,8 +286,10 @@ def test_llava_mistral_decoder(pytorch_mistral_and_config):
     )
 
     seq_ids = kv_manager.claim(n=batch_size)
-    cache_lengths = {s: seq_length for s in seq_ids}
-    kv_cache_inputs = kv_manager.fetch(cache_lengths)
+    seq_ids_and_prompts = {
+        s: np.array([FAKE_TOKEN] * seq_length) for s in seq_ids
+    }
+    kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)
 
     embeds_type = TensorType(
         DType.float32,

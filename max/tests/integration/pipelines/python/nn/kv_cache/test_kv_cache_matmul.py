@@ -23,6 +23,8 @@ from max.pipelines.kv_cache import (
 from modular_graph_test import are_all_tensor_values, modular_graph_test
 from nn.kernels import fused_qkv_ragged_matmul, matmul_kv_cache_ragged
 
+FAKE_TOKEN = 999
+
 
 def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
     num_q_heads = 32
@@ -123,7 +125,10 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
 
-    cache_lengths_in = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
+    cache_lengths_in = {
+        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+        for i, s in enumerate(seq_ids)
+    }
     blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
         kv_manager.fetch(cache_lengths_in)[0]
     )
@@ -264,8 +269,11 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
 
-    cache_lengths = {s: prompt_lens[i] for i, s in enumerate(seq_ids)}
-    fetch_args = kv_manager.fetch(cache_lengths)[0]
+    seq_ids_to_prompts = {
+        s: np.array([FAKE_TOKEN] * prompt_lens[i])
+        for i, s in enumerate(seq_ids)
+    }
+    fetch_args = kv_manager.fetch(seq_ids_to_prompts)[0]
     kv_blocks = fetch_args[0]
     # First check that the KV cache was zeroed out on initialization.
     assert not kv_blocks.to_numpy().any()
