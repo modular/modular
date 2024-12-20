@@ -20,6 +20,13 @@ what we publish.
 
 ### Language changes
 
+- Initializers are now treated as static methods that return an instance of
+  `Self`.  This means the `out` argument of an initializer is now treated the
+  same as a any other function result or `out` argument. This is generally
+  invisible, except that patterns like `instance.__init__()` and
+  `x.__copyinit__(y)` no longer work.  Simply replace them with `instance = T()`
+  and `x = y` respectively.
+
 ### Standard library changes
 
 - `UnsafePointer`'s `bitcast` method has now been split into `bitcast`
