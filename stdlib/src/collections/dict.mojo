@@ -799,7 +799,8 @@ struct Dict[K: KeyElement, V: CollectionElement](
         if found:
             var entry = Pointer.address_of(self._entries[index])
             debug_assert(entry[].__bool__(), "entry in index must be full")
-            return Pointer.address_of(entry[].value().value)
+            # SAFETY: We just checked that `entry` is present.
+            return Pointer.address_of(entry[].unsafe_value().value)
 
         return None
 
