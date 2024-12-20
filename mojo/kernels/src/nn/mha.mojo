@@ -819,18 +819,13 @@ fn flash_attention[
                     _ = qk_max_data^
                     _ = output_intermediate_data^
             else:
-                mha_gpu_naive[
-                    mask.rank,
-                    rank,
-                    use_mask_tensor=add_attn_mask,
-                    ragged=ragged,
-                ](
+                mha_gpu_naive[use_mask_tensor=add_attn_mask, ragged=ragged](
                     q,
                     k,
                     v,
-                    mask.data,
+                    mask,
                     mask_functor,
-                    output.data,
+                    output,
                     valid_length,
                     scale,
                     batch_size,
@@ -844,15 +839,13 @@ fn flash_attention[
 
         else:
             # Assumes BSHD.
-            mha_gpu_naive[
-                mask.rank, rank, use_mask_tensor=add_attn_mask, ragged=ragged
-            ](
+            mha_gpu_naive[use_mask_tensor=add_attn_mask, ragged=ragged](
                 q,
                 k,
                 v,
-                mask.data,
+                mask,
                 mask_functor,
-                output.data,
+                output,
                 valid_length,
                 scale,
                 batch_size,
@@ -1190,12 +1183,12 @@ fn flash_attention[
                     _ = qk_max_data^
                     _ = output_intermediate_data^
             else:
-                mha_gpu_naive[mask.rank](
-                    q.data,
-                    k.data,
-                    v.data,
-                    mask.data,
-                    output.data,
+                mha_gpu_naive(
+                    q,
+                    k,
+                    v,
+                    mask,
+                    output,
                     scale,
                     batch_size,
                     seq_len,
@@ -1211,12 +1204,12 @@ fn flash_attention[
             var depth = q.dim[3]()
             var group = q.dim[2]() // k.dim[2]()
 
-            mha_gpu_naive[mask.rank](
-                q.data,
-                k.data,
-                v.data,
-                mask.data,
-                output.data,
+            mha_gpu_naive(
+                q,
+                k,
+                v,
+                mask,
+                output,
                 scale,
                 batch_size,
                 seq_len,
@@ -4243,18 +4236,18 @@ fn mha_gpu_naive[
     mask_type: DType,
     output_type: DType,
     cache_t: KVCacheT,
-    mask_t: MHAMask, //,
+    mask_t: MHAMask,
     mask_rank: Int,
-    rank: Int,
+    rank: Int, //,
     use_mask_tensor: Bool = True,
     ragged: Bool = False,
 ](
     q: NDBuffer[_, rank, *_],
     k: cache_t,
     v: cache_t,
-    mask_ptr: UnsafePointer[Scalar[mask_type], **_],
+    mask: NDBuffer[mask_type, mask_rank, *_, **_],
     mask_functor: mask_t,
-    output_ptr: UnsafePointer[Scalar[output_type], **_],
+    output: NDBuffer[output_type, rank, *_],
     valid_length: NDBuffer[DType.uint32, 1, *_],
     scale: Float32,
     batch_size: Int,
@@ -4299,7 +4292,7 @@ fn mha_gpu_naive[
         p_ptr,
         q_ptr,
         k,
-        mask_ptr,
+        mask.data,
         valid_length,
         scale,
         batch_size,
@@ -4342,7 +4335,7 @@ fn mha_gpu_naive[
 
     ctx.enqueue_function(
         bmm1_func,
-        output_ptr,
+        output.data,
         p_ptr,
         v,
         valid_length,
@@ -4571,15 +4564,16 @@ fn mha_gpu_naive[
     q_type: DType,
     k_type: DType,
     v_type: DType,
+    output_type: DType,
+    rank: Int,
     mask_type: DType,
-    output_type: DType, //,
-    mask_rank: Int,
+    mask_rank: Int, //,
 ](
-    q_ptr: UnsafePointer[Scalar[q_type], **_],
-    k_ptr: UnsafePointer[Scalar[k_type], **_],
-    v_ptr: UnsafePointer[Scalar[v_type], **_],
-    mask_ptr: UnsafePointer[Scalar[mask_type], **_],
-    output_ptr: UnsafePointer[Scalar[output_type], **_],
+    q: NDBuffer[q_type, rank, *_],
+    k: NDBuffer[k_type, rank, *_],
+    v: NDBuffer[v_type, rank, *_],
+    mask: NDBuffer[mask_type, mask_rank, *_, **_],
+    output: NDBuffer[output_type, rank, *_],
     scale: Float32,
     batch_size: Int,
     seq_len: Int,
@@ -4605,9 +4599,9 @@ fn mha_gpu_naive[
     ctx.enqueue_function(
         bmm0_func,
         p_ptr,
-        q_ptr,
-        k_ptr,
-        mask_ptr,
+        q.data,
+        k.data,
+        mask.data,
         scale,
         batch_size,
         seq_len,
@@ -4641,9 +4635,9 @@ fn mha_gpu_naive[
 
     ctx.enqueue_function(
         bmm1_func,
-        output_ptr,
+        output.data,
         p_ptr,
-        v_ptr,
+        v.data,
         seq_len,
         num_keys,
         num_heads,
