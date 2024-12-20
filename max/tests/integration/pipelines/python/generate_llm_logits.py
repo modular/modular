@@ -17,6 +17,7 @@ from typing import Any, Mapping, Optional, Sequence, Union
 # 3rd-party
 import click
 import huggingface_hub
+import llama3
 
 # Tests
 import replit_compat
@@ -178,20 +179,13 @@ class LlamaPipelineOracle(PipelineOracle):
         else:
             return "3"
 
-    def _weight_path_for(self, version: str, encoding: str) -> list[Path]:
-        if version == "tinyllama":
-            testdata_directory = Path(os.environ["PIPELINES_TESTDATA"])
-            if encoding == "float32":
-                return [testdata_directory / "tiny_llama.gguf"]
-            elif encoding == "bfloat16":
-                return [testdata_directory / "tiny_llama_bf16.gguf"]
-            else:
-                raise ValueError(
-                    f"Could not find tiny llama checkpoint for {encoding!r}"
-                )
-
-        # If not tinyllama, just return an empty list and let the registry find this.
-        return []
+    def _weight_path_for(self, version: str, encoding: str) -> Path:
+        return Path(
+            llama3.config.get_llama_huggingface_file(
+                self._map_to_internal_version(version),
+                pipelines.SupportedEncoding[encoding],
+            ).download()
+        )
 
     def create_max_pipeline(
         self,
@@ -210,9 +204,9 @@ class LlamaPipelineOracle(PipelineOracle):
             quantization_encoding=pipelines.SupportedEncoding[encoding],
             max_new_tokens=10,
             huggingface_repo_id=f"modularai/llama-{internal_version}",
-            weight_path=self._weight_path_for(
-                version=version, encoding=encoding
-            ),
+            weight_path=[
+                self._weight_path_for(version=version, encoding=encoding)
+            ],
             device_specs=device_specs,
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -449,6 +443,18 @@ class MistralPipelineOracle(PipelineOracle):
             device_specs=device_specs,
             huggingface_repo_id="mistralai/Mistral-Nemo-Instruct-2407",
             quantization_encoding=pipelines.SupportedEncoding[encoding],
+            weight_path=[
+                pipelines.HuggingFaceFile(
+                    "mistralai/Mistral-Nemo-Instruct-2407", f
+                ).download()
+                for f in [
+                    "model-00001-of-00005.safetensors",
+                    "model-00002-of-00005.safetensors",
+                    "model-00003-of-00005.safetensors",
+                    "model-00004-of-00005.safetensors",
+                    "model-00005-of-00005.safetensors",
+                ]
+            ],
         )
         tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
 

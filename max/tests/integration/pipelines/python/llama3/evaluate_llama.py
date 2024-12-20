@@ -17,6 +17,7 @@ from typing import Literal, Optional
 import click
 from huggingface_hub import hf_hub_download
 from llama3 import Llama3Model
+from llama3.config import get_llama_huggingface_file
 from max.driver import DeviceSpec
 from max.engine import InferenceSession
 from max.pipelines import PipelineConfig, SupportedEncoding, TextTokenizer
@@ -96,10 +97,11 @@ class SupportedTestModels:
                     testdata_directory
                 )
             else:
-                # If we are not using bespoke weights, just let the registry manage this.
-                kwargs["huggingface_repo_id"] = (
-                    f"modularai/llama-{self.version}"
+                hf_file = get_llama_huggingface_file(
+                    self.version, self.encoding
                 )
+                kwargs["weight_path"] = [hf_file.download()]
+                kwargs["huggingface_repo_id"] = hf_file.repo_id
 
         if "device_specs" not in kwargs:
             kwargs["device_specs"] = (

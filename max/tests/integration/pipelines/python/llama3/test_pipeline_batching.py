@@ -9,10 +9,9 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import pytest
-from architectures import register_all_models
 from evaluate_llama import SupportedTestModels
+from llama3.model import Llama3Model
 from max.pipelines import (
-    PIPELINE_REGISTRY,
     PipelineConfig,
     SupportedEncoding,
     TextGenerationPipeline,
@@ -41,10 +40,6 @@ class PipelineModelParams:
 
 @pytest.fixture(scope="session")
 def pipeline_config(testdata_directory, request):
-    # This is only going to register the models once.
-    if not PIPELINE_REGISTRY.architectures:
-        register_all_models()
-
     model_params: PipelineModelParams = request.param
     print(f"\nPipelineModel: {model_params}")
     encoding = model_params.encoding
@@ -68,18 +63,18 @@ def pipeline_config(testdata_directory, request):
 
 @pytest.fixture(scope="session")
 def pipeline_tokenizer(pipeline_config) -> TextTokenizer:
-    tokenizer, _ = PIPELINE_REGISTRY.retrieve(pipeline_config)
-    assert isinstance(tokenizer, TextTokenizer)
-    return tokenizer
+    return TextTokenizer(pipeline_config)
 
 
 @pytest.fixture(scope="session")
 def pipeline(
     pipeline_config: PipelineConfig, pipeline_tokenizer: TextTokenizer
 ) -> TextGenerationPipeline:
-    _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config)
-    assert isinstance(pipeline, TextGenerationPipeline)
-    return pipeline
+    return TextGenerationPipeline(
+        pipeline_config=pipeline_config,
+        pipeline_model=Llama3Model,
+        eos_token_id=pipeline_tokenizer.eos,
+    )
 
 
 @pytest.mark.asyncio
