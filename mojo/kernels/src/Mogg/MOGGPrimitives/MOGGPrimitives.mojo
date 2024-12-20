@@ -339,7 +339,7 @@ fn create_mojo_value_async(
     var dst_ptr = external_call[
         "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[UInt8]
     ](size, align)
-    move_fn(dst_ptr, val_ptr)
+    move_fn(val_ptr, dst_ptr)
 
     external_call["KGEN_CompilerRT_CreateOwnedAsyncMojoValue", NoneType](
         dst_ptr,
@@ -363,7 +363,7 @@ fn create_python_mojo_value_async(
     var dst_ptr = external_call[
         "KGEN_CompilerRT_MojoValueAllocateBuffer", UnsafePointer[UInt8]
     ](size, align)
-    move_fn(dst_ptr, val_ptr)
+    move_fn(val_ptr, dst_ptr)
 
     external_call["KGEN_CompilerRT_CreateOwnedAsyncPythonMojoValue", NoneType](
         dst_ptr,
