@@ -15,7 +15,7 @@ from gpu.host import DeviceContext
 from internal_utils import DeviceNDBuffer, HostNDBuffer, random
 from kv_cache.types import ContinuousBatchingKVCache, KVCacheStaticParams
 from memory import UnsafePointer, memcpy
-from nn.mha import flash_attention, mha_gpu_naive
+from nn.mha import flash_attention
 from nn.mha_mask import CausalMask, NullMask
 from nn.mha_score_mod import IdentityScoreMod
 from testing import assert_almost_equal

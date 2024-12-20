@@ -243,13 +243,13 @@ def execute_flash_attention[
         batch_size,
     )
 
-    mha_gpu_naive[4, 4, use_mask_tensor=True](
+    mha_gpu_naive[use_mask_tensor=True](
         q_device.tensor,
         k_cache_device,
         v_cache_device,
-        mask_device.buffer.ptr,
+        mask_device.tensor,
         NullMask(),
-        ref_output_device.buffer.ptr,
+        ref_output_device.tensor,
         valid_length_device.tensor,
         scale_host.tensor.data[0],
         batch_size,

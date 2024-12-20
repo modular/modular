@@ -193,12 +193,21 @@ def execute_flash_attention[
         ctx,
     )
 
-    mha_gpu_naive[4](
-        q_device.buffer.ptr,
-        k_block_device.buffer.ptr,
-        v_block_device.buffer.ptr,
-        mask_device.buffer.ptr,
-        ref_output_device.buffer.ptr,
+    var kv_4d_shape = Index(
+        batch_size,
+        cache_size + prompt_len,
+        int(kv_params.num_heads),
+        int(kv_params.head_size),
+    )
+    var k_4dbuffer = NDBuffer[type, 4](k_block_device.buffer.ptr, kv_4d_shape)
+    var v_4dbuffer = NDBuffer[type, 4](v_block_device.buffer.ptr, kv_4d_shape)
+
+    mha_gpu_naive(
+        q_device.tensor,
+        k_4dbuffer,
+        v_4dbuffer,
+        mask_device.tensor,
+        ref_output_device.tensor,
         scale,
         batch_size,
         prompt_len,

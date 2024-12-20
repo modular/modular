@@ -15,7 +15,7 @@ from kv_cache.types import (
 )
 from math import isqrt, isclose, ceildiv
 from memory import UnsafePointer
-from nn.mha import mha_gpu_naive, flash_attention
+from nn.mha import flash_attention
 from nn.mha_mask import NullMask, CausalMask
 from nn.mha_score_mod import IdentityScoreMod
 from internal_utils import (
