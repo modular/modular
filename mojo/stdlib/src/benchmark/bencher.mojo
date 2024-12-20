@@ -6,7 +6,7 @@
 
 import time
 from collections import Optional
-from collections.string import _calc_initial_buffer_size_int32
+from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 from pathlib import Path
 from sys.arg import argv
