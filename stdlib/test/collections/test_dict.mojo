@@ -602,6 +602,23 @@ fn test_dict_setdefault() raises:
     assert_equal(0, other_dict["b"].copy_count)
 
 
+def test_compile_time_dict():
+    alias N = 10
+
+    fn _get_dict() -> Dict[String, Int32]:
+        var res = Dict[String, Int32]()
+        for i in range(N):
+            res[str(i)] = i
+        return res
+
+    alias my_dict = _get_dict()
+
+    @parameter
+    for i in range(N):
+        alias val = my_dict.get(str(i)).value()
+        assert_equal(val, i)
+
+
 def main():
     test_dict()
     test_dict_fromkeys()
@@ -615,3 +632,4 @@ def main():
     test_clear()
     test_init_initial_capacity()
     test_dict_setdefault()
+    test_compile_time_dict()
