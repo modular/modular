@@ -2964,8 +2964,10 @@ struct LayoutTensorIter[
 
     @always_inline
     fn __init__(
-        mut self,
-        ptr: __type_of(self.ptr),
+        out self,
+        ptr: UnsafePointer[
+            Scalar[type], address_space=address_space, alignment=alignment
+        ],
         bound: Self.uint_type,
         stride: Self.uint_type = layout.size(),
         offset: Self.uint_type = 0,
@@ -2985,8 +2987,10 @@ struct LayoutTensorIter[
 
     @always_inline
     fn __init__(
-        mut self,
-        ptr: __type_of(self.ptr),
+        out self,
+        ptr: UnsafePointer[
+            Scalar[type], address_space=address_space, alignment=alignment
+        ],
         bound: Self.uint_type,
         runtime_layout: RuntimeLayout[layout, **_],
         stride: Self.uint_type = layout.size() if layout.all_dims_known() else UNKNOWN_VALUE,
