@@ -2599,9 +2599,9 @@ fn copy_sram_to_dram[
                 @parameter
                 if binary_op:
                     alias binop = binary_op.value()
-                    var dst_vec = dst_fragments.ptr.load[
-                        width=simd_size, alignment=dst_align
-                    ](dst_idx)
+                    var dst_vec = dst_fragments.ptr.load[alignment=dst_align](
+                        dst_idx
+                    )
                     src_vec = binop(src_vec, dst_vec)
 
                 dst_fragments.ptr.store[alignment=dst_align](dst_idx, src_vec)
@@ -2659,7 +2659,7 @@ fn copy_sram_to_dram[
                     if binary_op:
                         alias binop = binary_op.value()
                         var dst_vec = dst_fragments.ptr.load[
-                            width=simd_size, alignment=dst_align
+                            alignment=dst_align
                         ](dst_idx)
                         src_vec = binop(src_vec, dst_vec)
 
