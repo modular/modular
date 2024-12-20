@@ -749,12 +749,11 @@ struct Dict[K: KeyElement, V: CollectionElement](
             An optional value containing a copy of the value if it was present,
             otherwise an empty Optional.
         """
-        try:  # TODO(MOCO-604): push usage through
-            return self._find_ref(key)
-        except:
-            return None
 
-    # TODO(MOCO-604): Return Optional[Pointer] instead of raising
+        # TODO(MOCO-604): push usage through
+        # TODO(MOCO-1522): Drop `[T=V]` after fixing param inference issue.
+        return self.get_ptr(key).copied[T=V]()
+
     fn _find_ref(
         ref self, key: K
     ) raises -> ref [self._entries[0].value().value] Self.V:
@@ -767,6 +766,24 @@ struct Dict[K: KeyElement, V: CollectionElement](
             An optional value containing a reference to the value if it is
             present, otherwise an empty Optional.
         """
+        if entry := self.get_ptr(key):
+            # SAFETY: We just checked that `entry` is populated.
+            return entry.unsafe_value()[]
+        else:
+            raise "KeyError"
+
+    fn get_ptr(
+        ref self, key: K
+    ) -> Optional[Pointer[V, __origin_of(self._entries[0].value().value)]]:
+        """Get a pointer to a value in the dictionary by key.
+
+        Args:
+            key: The key to search for in the dictionary.
+
+        Returns:
+            An optional value containing a pointer to the value if it is
+            present, otherwise an empty Optional.
+        """
         var hash = hash(key)
         var found: Bool
         var slot: UInt64
@@ -775,8 +792,9 @@ struct Dict[K: KeyElement, V: CollectionElement](
         if found:
             var entry = Pointer.address_of(self._entries[index])
             debug_assert(entry[].__bool__(), "entry in index must be full")
-            return entry[].value().value
-        raise "KeyError"
+            return Pointer.address_of(entry[].value().value)
+
+        return None
 
     fn get(self, key: K) -> Optional[V]:
         """Get a value from the dictionary by key.

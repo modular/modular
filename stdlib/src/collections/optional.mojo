@@ -388,6 +388,48 @@ struct Optional[T: CollectionElement](
             return self._value[T]
         return default
 
+    fn copied[
+        mut: Bool,
+        origin: Origin[mut], //,
+        T: CollectionElement,
+    ](self: Optional[Pointer[T, origin]]) -> Optional[T]:
+        """Converts an Optional containing a Pointer to an Optional of an owned
+        value by copying.
+
+        If `self` is an empty `Optional`, the returned `Optional` will be empty
+        as well.
+
+        Parameters:
+            mut: Mutability of the pointee origin.
+            origin: Origin of the contained `Pointer`.
+            T: Type of the owned result value.
+
+        Returns:
+            An Optional containing an owned copy of the pointee value.
+
+        # Examples
+
+        Copy the value of an `Optional[Pointer[_]]`
+
+        ```mojo
+        from collections import Optional
+
+        var data = String("foo")
+
+        var opt = Optional(Pointer.address_of(data))
+
+        # TODO(MOCO-1522): Drop `[T=String]` after fixing param inference issue.
+        var opt_owned: Optional[String] = opt.copied[T=String]()
+        ```
+        .
+        """
+        if self:
+            # SAFETY: We just checked that `self` is populated.
+            # Perform an implicit copy
+            return self.unsafe_value()[]
+        else:
+            return None
+
 
 # ===-----------------------------------------------------------------------===#
 # OptionalReg

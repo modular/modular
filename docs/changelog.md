@@ -66,6 +66,13 @@ what we publish.
         var ptr2 = list2.unsafe_ptr()
     ```
 
+- Added `Optional.copied()` for constructing an owned `Optional[T]` from an
+  `Optional[Pointer[T]]` by copying the pointee value.
+
+- Added `Dict.get_ptr()` which returns an `Optional[Pointer[V]]`. If the given
+  key is present in the dictionary, the optional will hold a pointer to the
+  value. Otherwise, an empty optional is returned.
+
 - Added new `List.extend()` overloads taking `SIMD` and `Span`. These enable
   growing a `List[Scalar[..]]` by copying the elements of a `SIMD` vector or
   `Span[Scalar[..]]`, simplifying the writing of some optimized SIMD-aware

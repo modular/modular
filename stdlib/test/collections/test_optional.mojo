@@ -157,6 +157,19 @@ def test_optional_equality():
     assert_true(n == None)
 
 
+def test_optional_copied():
+    var data = String("foo")
+
+    var opt_ref: Optional[Pointer[String, __origin_of(data)]] = Optional(
+        Pointer.address_of(data)
+    )
+
+    # Copy the optional Pointer value.
+    var opt_owned: Optional[String] = opt_ref.copied[T=String]()
+
+    assert_equal(opt_owned.value(), String("foo"))
+
+
 def main():
     test_basic()
     test_optional_reg_basic()
@@ -168,3 +181,4 @@ def main():
     test_optional_explicit_copy()
     test_optional_str_repr()
     test_optional_equality()
+    test_optional_copied()
