@@ -1256,8 +1256,8 @@ fn testConds2(cond: __mlir_type.i1, a: MemExample, b: MemExample) -> MemExample:
   useMemory(a if cond else b)
 
   # Handle a local temp correctly.
-  # TODO: The moveinit doesn't seem necessary, could direct construct into the
-  # dest and elide the temp.
+  # TODO(ternary memory optimization): The moveinit doesn't seem necessary,
+  # could direct construct into the dest and elide the temp.
 
   # CHECK-NEXT: [[IF:%.*]] = lit.var.decl "anonymous
   # CHECK-NEXT: hlcf.if %cond

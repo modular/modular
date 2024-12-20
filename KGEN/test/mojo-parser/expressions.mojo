@@ -1310,9 +1310,7 @@ fn variadic_attr_callee[key_type: CollectionElement](
 fn thing_taking_ref[
   type: AnyType,
   //,
-  # TODO: Add _.
-  is_mutable: Bool,
-  origin: Origin[is_mutable]._mlir_type,
+  origin: Origin[_]
 ](ref [origin] arg: type): pass
 
 fn thing_taking_ref2[type: AnyType](ref arg: type): pass
