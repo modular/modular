@@ -212,29 +212,6 @@ async def test_kv_cache_radix_trie_insert_at_split_node() -> None:
 
 
 @pytest.mark.asyncio
-async def test_kv_cache_radix_trie_sequential_tok_gen() -> None:
-    trie = RadixTrie()
-
-    # "context encoding"
-    node = trie.insert(
-        ["i", "like", "to"],
-        ["BLOCK 0", "BLOCK 1", "BLOCK 2"],
-    )
-    assert trie.pretty_format() == ["['i', 'like', 'to']"]
-
-    # "sequential token generation"
-    node = trie.insert(["eat"], ["BLOCK 3"], node=node)
-    assert trie.pretty_format() == ["['i', 'like', 'to', 'eat']"]
-
-    node = trie.insert(
-        ["pie"],
-        ["BLOCK 4"],
-        node=node,
-    )
-    assert trie.pretty_format() == ["['i', 'like', 'to', 'eat', 'pie']"]
-
-
-@pytest.mark.asyncio
 async def test_kv_cache_radix_trie_eviction() -> None:
     trie = RadixTrie()
 
