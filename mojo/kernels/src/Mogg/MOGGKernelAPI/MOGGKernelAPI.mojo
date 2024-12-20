@@ -3627,7 +3627,11 @@ struct LayerNorm:
             return gamma._fused_load[width=width](rebind[IndexList[1]](coords))
 
         var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        alias output_spec = compiler.specsof[output.type, output.rank]("output")
+        var output_buf = managed_tensor_slice_to_ndbuffer[
+            static_shape = output_spec.shape,
+            static_strides = output_spec.strides,
+        ](output)
 
         layer_norm[type, rank, input_fn, gamma_fn, target=target,](
             input.shape(),
@@ -5152,7 +5156,14 @@ struct MaskedFlashAttentionGPU:
             static_shape = compiler.specsof[v.type, v.rank]("v").shape,
             static_strides = compiler.specsof[v.type, v.rank]("v").strides,
         ](v)
-        var mask_buffer = managed_tensor_slice_to_ndbuffer(mask)
+        alias mask_spec = compiler.specsof[mask.type, mask.rank]("mask")
+        var mask_buffer = managed_tensor_slice_to_ndbuffer[
+            static_shape = mask_spec.shape,
+            static_strides = mask_spec.strides,
+            alignment = mask_spec.alignment,
+            address_space = mask_spec.address_space,
+            exclusive = mask_spec.exclusive,
+        ](mask)
 
         flash_attention[add_attn_mask=True](
             output_buffer,
@@ -5959,17 +5970,19 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
     alias weight_shape = compiler.specsof[weight.type, weight.rank](
         "weight"
     ).shape
-    alias input_row_shape = compiler.specsof[
+    alias input_row_spec = compiler.specsof[
         input_row_offsets.type, input_row_offsets.rank
-    ]("input_row_offsets").shape
+    ]("input_row_offsets")
+    alias input_row_shape = input_row_spec.shape
+    alias input_row_strides = input_row_spec.strides
 
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
         managed_tensor_slice_to_ndbuffer[static_shape=hidden_state_shape](
             hidden_state
         ),
-        managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
-            input_row_offsets
-        ),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape=input_row_shape, static_strides=input_row_strides
+        ](input_row_offsets),
         managed_tensor_slice_to_ndbuffer[static_shape=weight_shape](weight),
         kv_collection,
         layer_idx,
@@ -6402,24 +6415,28 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
-    alias output_shape = compiler.specsof[output.type, output.rank](
-        "output"
-    ).shape
-    alias q_proj_shape = compiler.specsof[q_proj.type, q_proj.rank](
-        "q_proj"
-    ).shape
-    alias freqs_cis_shape = compiler.specsof[freqs_cis.type, freqs_cis.rank](
+    alias output_spec = compiler.specsof[output.type, output.rank]("output")
+    alias q_proj_spec = compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
+    alias freqs_cis_spec = compiler.specsof[freqs_cis.type, freqs_cis.rank](
         "freqs_cis"
-    ).shape
+    )
+
     generic_fused_qk_rope_bshd_continuous_batch[target](
-        managed_tensor_slice_to_ndbuffer[static_shape=q_proj_shape](q_proj),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = q_proj_spec.shape,
+            static_strides = q_proj_spec.strides,
+        ](q_proj),
         kv_collection,
-        managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
-            freqs_cis
-        ),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = freqs_cis_spec.shape,
+            static_strides = freqs_cis_spec.strides,
+        ](freqs_cis),
         layer_idx,
         interleaved,
-        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = output_spec.shape,
+            static_strides = output_spec.strides,
+        ](output),
         ctx,
     )
 
@@ -6562,31 +6579,35 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     interleaved: Scalar[DType.bool],
     ctx: MojoCallContextPtr,
 ):
-    alias output_shape = compiler.specsof[output.type, output.rank](
-        "output"
-    ).shape
-    alias q_proj_shape = compiler.specsof[q_proj.type, q_proj.rank](
-        "q_proj"
-    ).shape
-    alias freqs_cis_shape = compiler.specsof[freqs_cis.type, freqs_cis.rank](
+    alias output_spec = compiler.specsof[output.type, output.rank]("output")
+    alias q_proj_spec = compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
+    alias freqs_cis_spec = compiler.specsof[freqs_cis.type, freqs_cis.rank](
         "freqs_cis"
-    ).shape
-    alias input_row_shape = compiler.specsof[
+    )
+    alias input_row_offsets_spec = compiler.specsof[
         input_row_offsets.type, input_row_offsets.rank
-    ]("input_row_offsets").shape
+    ]("input_row_offsets")
 
     generic_fused_qk_rope_bshd_continous_batch_ragged[target=target](
-        managed_tensor_slice_to_ndbuffer[static_shape=q_proj_shape](q_proj),
-        managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
-            input_row_offsets
-        ),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = q_proj_spec.shape,
+            static_strides = q_proj_spec.strides,
+        ](q_proj),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = input_row_offsets_spec.shape,
+            static_strides = input_row_offsets_spec.strides,
+        ](input_row_offsets),
         kv_collection,
-        managed_tensor_slice_to_ndbuffer[static_shape=freqs_cis_shape](
-            freqs_cis
-        ),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = freqs_cis_spec.shape,
+            static_strides = freqs_cis_spec.strides,
+        ](freqs_cis),
         layer_idx,
         interleaved,
-        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = output_spec.shape,
+            static_strides = output_spec.strides,
+        ](output),
         ctx,
     )
 
@@ -6847,20 +6868,25 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     scale: Scalar[DType.float32],
     context: MojoCallContextPtr,
 ) raises:
-    alias output_shape = compiler.specsof[output.type, output.rank](
-        "output"
-    ).shape
-    alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
-    alias mask_shape = compiler.specsof[mask.type, mask.rank]("mask").shape
+    alias output_spec = compiler.specsof[output.type, output.rank]("output")
+    alias q_spec = compiler.specsof[q.type, q.rank]("q")
+    alias mask_spec = compiler.specsof[mask.type, mask.rank]("mask")
 
     generic_flash_attention_kv_cache_continuous_batch[target](
-        managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = q_spec.shape, static_strides = q_spec.strides
+        ](q),
         kv_collection,
         layer_idx,
-        managed_tensor_slice_to_ndbuffer[static_shape=mask_shape](mask),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = mask_spec.shape, static_strides = mask_spec.strides
+        ](mask),
         managed_tensor_slice_to_ndbuffer(valid_lengths),
         scale,
-        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = output_spec.shape,
+            static_strides = output_spec.strides,
+        ](output),
         context,
     )
 
@@ -7074,17 +7100,21 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     scale: Scalar[DType.float32],
     context: MojoCallContextPtr,
 ) raises:
-    alias output_shape = compiler.specsof[output.type, output.rank](
-        "output"
-    ).shape
-    alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
+    alias output_spec = compiler.specsof[output.type, output.rank]("output")
+    alias q_spec = compiler.specsof[q.type, q.rank]("q")
+
     generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
-        managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = q_spec.shape, static_strides = q_spec.strides
+        ](q),
         kv_collection,
         layer_idx,
         managed_tensor_slice_to_ndbuffer(valid_lengths),
         scale,
-        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = output_spec.shape,
+            static_strides = output_spec.strides,
+        ](output),
         context,
     )
 
