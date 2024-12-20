@@ -973,8 +973,6 @@ struct UnsafePointer[
     @always_inline("nodebug")
     fn bitcast[
         T: AnyType = Self.type,
-        /,
-        alignment: Int = Self.alignment,
     ](self) -> UnsafePointer[
         T,
         address_space=address_space,
@@ -986,7 +984,6 @@ struct UnsafePointer[
 
         Parameters:
             T: The target type.
-            alignment: Alignment of the destination pointer.
 
         Returns:
             A new UnsafePointer object with the specified type and the same address,
@@ -995,6 +992,41 @@ struct UnsafePointer[
         return __mlir_op.`pop.pointer.bitcast`[
             _type = UnsafePointer[
                 T, address_space=address_space, alignment=alignment
+            ]._mlir_type,
+        ](self.address)
+
+    @always_inline("nodebug")
+    fn static_alignment_cast[
+        alignment: Int = Self.alignment
+    ](self) -> UnsafePointer[
+        type,
+        address_space=address_space,
+        alignment=alignment,
+        mut=mut,
+        origin=origin,
+    ]:
+        """Changes the `alignment` of an `UnsafePointer`.
+
+        The static alignment of an UnsafePointer must be greater
+        or equal to the actual alignment of the runtime pointer
+        value. Casting an UnsafePointer to a static alignment greater
+        than its runtime alignment may cause undefined behavior".
+
+        This only changes the compile-time alignment encoded in the type of
+        this pointer. This does not change the alignment of the pointer address
+        at runtime.
+
+
+        Parameters:
+            alignment: Alignment of the destination pointer.
+
+        Returns:
+            A new UnsafePointer object with the same type, address_space, and address,
+            as the original UnsafePointer, and the new specified alignment.
+        """
+        return __mlir_op.`pop.pointer.bitcast`[
+            _type = UnsafePointer[
+                type, address_space=address_space, alignment=alignment
             ]._mlir_type,
         ](self.address)
 
