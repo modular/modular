@@ -11,10 +11,9 @@ from functools import partial
 from pathlib import Path
 
 import pytest
+from architectures import register_all_models
 from evaluate_llama import SupportedTestModels
-from llama3 import Llama3Model
-from max.engine import InferenceSession
-from max.pipelines import TextContext, TextTokenizer
+from max.pipelines import PIPELINE_REGISTRY, TextContext, TextGenerationPipeline
 from max.pipelines.interfaces import TokenGeneratorRequest
 from test_common.distance_metrics import kl_divergence_verifier
 from test_common.evaluate import (
@@ -36,13 +35,16 @@ from test_common.path import find_runtime_path
 def test_llama(
     model_name: str, encoding: str, testdata_directory: Path
 ) -> None:
+    if not PIPELINE_REGISTRY.architectures:
+        register_all_models()
+
     test_model = SupportedTestModels.get(model_name, encoding)
     config = test_model.build_config(max_length=512)
-    tokenizer = TextTokenizer(config)
-    session = InferenceSession(devices=[config.device])
-    model = Llama3Model(pipeline_config=config, session=session)
+    tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
+    assert isinstance(pipeline, TextGenerationPipeline)
+
     actual = run_model(
-        model,
+        pipeline._pipeline_model,
         tokenizer,
         prompts=PROMPTS[:1],
     )
@@ -76,11 +78,13 @@ async def test_llama_ragged(model: str, encoding: str) -> None:
 
     stored_logits: dict[str, list[TextContext]] = {"A": [], "B": [], "C": []}
 
+    if not PIPELINE_REGISTRY.architectures:
+        register_all_models()
+
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config(max_cache_batch_size=4)
-    tokenizer = TextTokenizer(config)
-    session = InferenceSession(devices=[config.device])
-    llama = Llama3Model(pipeline_config=config, session=session)
+    tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
+    assert isinstance(pipeline, TextGenerationPipeline)
 
     def request(prompt: str, idx: int) -> TokenGeneratorRequest:
         return TokenGeneratorRequest(
@@ -91,10 +95,14 @@ async def test_llama_ragged(model: str, encoding: str) -> None:
     context_a = await tokenizer.new_context(request(prompt_a, idx=0))
     context_b = await tokenizer.new_context(request(prompt_b, idx=1))
     next_token_with_logits(
-        llama, {"A": context_a, "B": context_b}, stored_logits
+        pipeline._pipeline_model,
+        {"A": context_a, "B": context_b},
+        stored_logits,
     )
 
     # Send in both B and C for token generation.
     next_token_with_logits(
-        llama, {"A": context_a, "B": context_b}, stored_logits
+        pipeline._pipeline_model,
+        {"A": context_a, "B": context_b},
+        stored_logits,
     )

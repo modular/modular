@@ -8,10 +8,9 @@ golden values.
 """
 
 import pytest
+from architectures import register_all_models
 from evaluate_llama import SupportedTestModels
-from llama3 import Llama3Model
-from max.engine import InferenceSession
-from max.pipelines import TextTokenizer
+from max.pipelines import PIPELINE_REGISTRY, TextGenerationPipeline
 from test_common.evaluate import PROMPTS, compare_values, run_model
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
@@ -24,14 +23,17 @@ from test_common.path import find_runtime_path
     ],
 )
 def test_llama(model, encoding, testdata_directory):
+    if not PIPELINE_REGISTRY.architectures:
+        register_all_models()
+
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config()
 
-    tokenizer = TextTokenizer(config)
-    session = InferenceSession(devices=[config.device])
-    model = Llama3Model(pipeline_config=config, session=session)
+    tokenizer, pipeline = PIPELINE_REGISTRY.retrieve(config)
+    assert isinstance(pipeline, TextGenerationPipeline)
+
     actual = run_model(
-        model,
+        pipeline._pipeline_model,
         tokenizer,
         prompts=PROMPTS[:1],
     )
