@@ -40,29 +40,13 @@ trait KVCacheT(CollectionElement):
     constrained-guard unused constructors.
     """
 
+    alias type: DType
+    alias kv_params: KVCacheStaticParams
+
     @staticmethod
     fn id() -> String:
         """Returns a string id describing the type, this is used when defining
         mo.opaque symbols."""
-        ...
-
-    @staticmethod
-    fn get_kv_params() -> KVCacheStaticParams:
-        """Helper method to get the static parameters for the KVCache, like
-        num_heads and head_size.
-        """
-        ...
-
-    @staticmethod
-    fn get_type() -> DType:
-        """Helper method to retrieve the type of the underlying KVCache."""
-        ...
-
-    @staticmethod
-    fn get_block_static_shape() -> DimList:
-        """Helper method to get the static shape returned by the `block`
-        function.
-        """
         ...
 
     fn cache_length(self, batch_idx: Int) -> Int:
@@ -70,36 +54,22 @@ trait KVCacheT(CollectionElement):
         ...
 
     fn load[
-        type: DType, width: Int
+        width: Int
     ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
-        type, width
+        Self.type, width
     ]:
         """Loads an element from the given index."""
         ...
 
-    fn store[
-        type: DType, width: Int
-    ](
+    fn store(
         self,
         bs: Int,
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        val: SIMD[type, width],
+        val: SIMD[Self.type, *_],
     ):
         """Stores an element at the given index."""
-        ...
-
-    fn block[
-        type: DType, block_shape: DimList
-    ](
-        self,
-        batch_idx: Int,
-        new_seq_len: Int,
-    ) -> NDBuffer[
-        type, 3, block_shape
-    ]:
-        """Returns a contiguous buffer for a given batch entry."""
         ...
 
     fn empty_cache(self) -> Bool:
@@ -120,14 +90,14 @@ trait KVCacheT(CollectionElement):
     # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
     @always_inline
     fn block_paged_ptr[
-        type: DType, tile_size: Int
+        tile_size: Int
     ](
         self,
         batch_idx: Int,
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[type]]:
+    ) -> UnsafePointer[Scalar[Self.type]]:
         """Returns a LayoutTensor pointing to the KVCache block at the given index.
 
         Paged KVCache implementations must have a block_size which is a multiple of the
@@ -139,8 +109,8 @@ trait KVCacheT(CollectionElement):
 @value
 @register_passable("trivial")
 struct ContiguousKVCache[
-    type: DType,
-    kv_params: KVCacheStaticParams,
+    type_: DType,
+    kv_params_: KVCacheStaticParams,
 ](KVCacheT):
     """Wrapper for the ContiguousKVCache of a given layer in the transformer model.
 
@@ -150,15 +120,18 @@ struct ContiguousKVCache[
     THIS IS THE TYPE THAT IS PASSED TO KV PROJECTION AND FLASH ATTENTION KERNELS.
     """
 
+    alias type = type_
+    alias kv_params = kv_params_
+
     alias _internal_block_shape = DimList(
-        Dim(), Dim(), int(kv_params.num_heads), kv_params.head_size
+        Dim(), Dim(), int(Self.kv_params.num_heads), Self.kv_params.head_size
     )
     alias single_block_shape = DimList(
         Self._internal_block_shape.get[1](),
         Self._internal_block_shape.get[2](),
         Self._internal_block_shape.get[3](),
     )
-    alias BlockType = NDBuffer[type, 4, Self._internal_block_shape]
+    alias BlockType = NDBuffer[Self.type, 4, Self._internal_block_shape]
     var _block: Self.BlockType
     var is_cache_empty: Bool
     var cache_lengths: NDBuffer[DType.uint32, 1]
@@ -180,25 +153,12 @@ struct ContiguousKVCache[
     fn id() -> String:
         return (
             "ContiguousKVCache+"
-            + str(type)
+            + str(Self.type)
             + "+"
-            + str(kv_params.num_heads)
+            + str(Self.kv_params.num_heads)
             + "+"
-            + str(kv_params.head_size)
+            + str(Self.kv_params.head_size)
         )
-
-    @staticmethod
-    fn get_block_static_shape() -> DimList:
-        return Self.single_block_shape
-
-    @staticmethod
-    fn get_kv_params() -> KVCacheStaticParams:
-        return kv_params
-
-    @staticmethod
-    fn get_type() -> DType:
-        """Helper method to retrieve the type of the underlying KVCache."""
-        return type
 
     @always_inline
     fn _get_idx_tuple(
@@ -208,10 +168,10 @@ struct ContiguousKVCache[
             bs_idx < self.batch_size, "KVCache batch_size out of range"
         )
         debug_assert(
-            head_idx < kv_params.num_heads, "KVCache head_idx out of range"
+            head_idx < Self.kv_params.num_heads, "KVCache head_idx out of range"
         )
         debug_assert(
-            head_dim_idx < kv_params.head_size,
+            head_dim_idx < Self.kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
         debug_assert(
@@ -233,77 +193,24 @@ struct ContiguousKVCache[
 
     @always_inline
     fn load[
-        type_: DType, width: Int
+        width: Int
     ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
-        type_, width
+        Self.type, width
     ]:
-        constrained[
-            type_ == type,
-            "Invalid type passed to ContiguousKVCache::load",
-        ]()
         var idx = self._get_idx_tuple(bs, head_idx, tok_idx, head_dim_idx)
-        return rebind[SIMD[type_, width]](self._block.load[width=width](idx))
+        return self._block.load[width=width](idx)
 
     @always_inline
-    fn store[
-        type_: DType, width: Int
-    ](
+    fn store(
         self,
         bs: Int,
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        val: SIMD[type_, width],
+        val: SIMD[Self.type, *_],
     ):
-        constrained[
-            type_ == type,
-            "Invalid type passed to ContiguousKVCache::load",
-        ]()
         var idx = self._get_idx_tuple(bs, head_idx, tok_idx, head_dim_idx)
-        self._block.store[width=width](idx, rebind[SIMD[type, width]](val))
-
-    @always_inline
-    fn block[
-        type_: DType, block_shape: DimList
-    ](
-        self,
-        batch_idx: Int,
-        new_seq_len: Int,
-    ) -> NDBuffer[
-        type_, 3, block_shape
-    ]:
-        """Retrieve the NDBuffer containing the cache for a given batch index.
-
-        The caller is responsible for passing `new_seq_len` which is the
-        length of the newly encoded tokens. The internal cache_len is not updated
-        until we complete the forward pass, so the actual seq_length of the cache should
-        be `cache_len[batch_idx] + new_seq_len`.
-        """
-        constrained[
-            type_ == type, "Invalid type passed to ContiguousKVCache::block"
-        ]()
-        constrained[
-            block_shape == self.single_block_shape,
-            "Invalid block_shape passed to ContiguousKVCache::block",
-        ]()
-        var idx = self._get_idx_tuple(batch_idx, 0, 0, 0)
-        var offset_ptr = self._block._offset(idx)
-        var ret_strides = IndexList[3](
-            self._block.stride[1](),
-            self._block.stride[2](),
-            self._block.stride[3](),
-        )
-        var ret_shape = IndexList[3](
-            self.cache_length(batch_idx) + new_seq_len,
-            kv_params.num_heads,
-            kv_params.head_size,
-        )
-
-        return NDBuffer[type_, 3, block_shape](
-            rebind[UnsafePointer[Scalar[type_]]](offset_ptr),
-            ret_shape,
-            ret_strides,
-        )
+        self._block.store(idx, val)
 
     fn empty_cache(self) -> Bool:
         return self.is_cache_empty
@@ -318,26 +225,26 @@ struct ContiguousKVCache[
 
     @always_inline
     fn block_paged_ptr[
-        type: DType, tile_size: Int
+        tile_size: Int
     ](
         self,
         batch_idx: Int,
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[type]]:
+    ) -> UnsafePointer[Scalar[Self.type]]:
         debug_assert(tile_size < self._block.dim[1](), "tile_size out of range")
         var idx = self._get_idx_tuple(
             batch_idx, head_idx, start_tok_idx, head_dim_idx
         )
-        return rebind[UnsafePointer[Scalar[type]]](self._block._offset(idx))
+        return self._block._offset(idx)
 
 
 @value
 @register_passable("trivial")
 struct ContinuousBatchingKVCache[
-    type: DType,
-    kv_params: KVCacheStaticParams,
+    type_: DType,
+    kv_params_: KVCacheStaticParams,
 ](KVCacheT):
     """Wrapper for the ContinuousKVCache of a given layer in the transformer model.
 
@@ -350,14 +257,17 @@ struct ContinuousBatchingKVCache[
     alias KeyIdx = 0
     alias ValueIdx = 1
 
+    alias type = type_
+    alias kv_params = kv_params_
+
     alias single_block_shape = DimList(
-        Dim(), int(kv_params.num_heads), kv_params.head_size
+        Dim(), int(Self.kv_params.num_heads), Self.kv_params.head_size
     )
 
     # shape is
     # - BSHD: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
     # - BHSD: [num_blocks, 2, num_layers, num_heads, max_seq_len, head_size]
-    alias BlocksType = NDBuffer[type, 6]
+    alias BlocksType = NDBuffer[Self.type, 6]
     var blocks: Self.BlocksType
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 1]
@@ -372,10 +282,10 @@ struct ContinuousBatchingKVCache[
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> IndexList[6]:
         debug_assert(
-            head_idx < kv_params.num_heads, "KVCache head_idx out of range"
+            head_idx < Self.kv_params.num_heads, "KVCache head_idx out of range"
         )
         debug_assert(
-            head_dim_idx < kv_params.head_size,
+            head_dim_idx < Self.kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
         debug_assert(
@@ -401,8 +311,7 @@ struct ContinuousBatchingKVCache[
         layer_idx: Int,
         kv_idx: Int,
     ):
-        constrained[_type_is_eq[__type_of(blocks), self.BlocksType]()]()
-        self.blocks = rebind[Self.BlocksType](blocks)
+        self.blocks = blocks
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.batch_size = cache_lengths.dim[0]()
@@ -422,8 +331,7 @@ struct ContinuousBatchingKVCache[
     ):
         # Compatiblity wrapper for older test code to enable breaking up the
         # changes to remove `is_cache_empty`.
-        constrained[_type_is_eq[__type_of(blocks), self.BlocksType]()]()
-        self.blocks = rebind[Self.BlocksType](blocks)
+        self.blocks = blocks
         self.cache_lengths = cache_lengths
         self.lookup_table = lookup_table
         self.batch_size = cache_lengths.dim[0]()
@@ -436,22 +344,6 @@ struct ContinuousBatchingKVCache[
     fn id() -> String:
         return "KVCacheRegisterPassable"
 
-    @staticmethod
-    fn get_kv_params() -> KVCacheStaticParams:
-        return kv_params
-
-    @staticmethod
-    fn get_type() -> DType:
-        """Helper method to retrieve the type of the underlying KVCache."""
-        return type
-
-    @staticmethod
-    fn get_block_static_shape() -> DimList:
-        """Helper method to get the static shape returned by the `block`
-        function.
-        """
-        return Self.single_block_shape
-
     @always_inline
     fn cache_length(self, batch_idx: Int) -> Int:
         debug_assert(
@@ -461,14 +353,10 @@ struct ContinuousBatchingKVCache[
 
     @always_inline
     fn load[
-        type_: DType, width: Int
+        width: Int
     ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
-        type_, width
+        Self.type, width
     ]:
-        constrained[
-            type_ == type,
-            "Invalid type passed to ContinuousBatchingKVCache::load",
-        ]()
         debug_assert(
             bs < self.batch_size,
             "KVCache::load batch_size out of range",
@@ -478,23 +366,17 @@ struct ContinuousBatchingKVCache[
         var idx = self._get_idx_tuple(
             int(block_idx), head_idx, tok_idx, head_dim_idx
         )
-        return rebind[SIMD[type_, width]](self.blocks.load[width=width](idx))
+        return self.blocks.load[width=width](idx)
 
     @always_inline
-    fn store[
-        type_: DType, width: Int
-    ](
+    fn store(
         self,
         bs: Int,
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        val: SIMD[type_, width],
+        val: SIMD[Self.type, *_],
     ):
-        constrained[
-            type_ == type,
-            "Invalid type passed to ContinuousBatchingKVCache::store",
-        ]()
         debug_assert(
             bs < self.batch_size,
             "KVCache::store batch_size out of range",
@@ -503,49 +385,7 @@ struct ContinuousBatchingKVCache[
         var idx = self._get_idx_tuple(
             int(block_idx), head_idx, tok_idx, head_dim_idx
         )
-        self.blocks.store[width=width](idx, rebind[SIMD[type, width]](val))
-
-    @always_inline
-    fn block[
-        type_: DType, block_shape: DimList
-    ](
-        self,
-        batch_idx: Int,
-        new_seq_len: Int,
-    ) -> NDBuffer[
-        type_, 3, block_shape
-    ]:
-        """Retrieve the NDBuffer containing the cache for a given batch index.
-        The caller is responsible for passing `new_seq_len` which is the
-        length of the newly encoded tokens. The internal cache_len is not updated
-        until we complete the forward pass, so the actual seq_length of the cache should
-        be `cache_len[batch_idx] + new_seq_len`.
-        """
-        constrained[
-            type_ == type, "Invalid type passed to ContiguousKVCache::block"
-        ]()
-        constrained[
-            block_shape == self.single_block_shape,
-            "Invalid block_shape passed to ContiguousKVCache::block",
-        ]()
-        debug_assert(
-            batch_idx < self.batch_size,
-            "KVCache::store batch_size out of range",
-        )
-        var block_idx = int(self.lookup_table[batch_idx])
-        var full_block_idx = self._get_idx_tuple(block_idx, 0, 0, 0)
-        var block_pointer = self.blocks._offset(full_block_idx).bitcast[
-            Scalar[type_]
-        ]()
-        var block_dynamic_shape = IndexList[3](
-            self.blocks.dim[3](),
-            self.blocks.dim[4](),
-            self.blocks.dim[5](),
-        )
-
-        return NDBuffer[type_, 3, block_shape](
-            block_pointer, block_dynamic_shape
-        )
+        self.blocks.store(idx, val)
 
     fn incr_cache_length(mut self, batch_idx: Int, inc: Int):
         debug_assert(
@@ -570,28 +410,31 @@ struct ContinuousBatchingKVCache[
 
     @always_inline
     fn block_paged_ptr[
-        type: DType, tile_size: Int
+        tile_size: Int
     ](
         self,
         batch_idx: Int,
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[type]]:
+    ) -> UnsafePointer[Scalar[Self.type]]:
         var block_idx = int(self.lookup_table[batch_idx])
         var full_block_idx = self._get_idx_tuple(
             block_idx, head_idx, start_tok_idx, head_dim_idx
         )
         var offset_ptr = self.blocks._offset(full_block_idx)
-        return rebind[UnsafePointer[Scalar[type]]](offset_ptr)
+        return offset_ptr
 
 
 @value
 @register_passable("trivial")
-struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
+struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
     """The PagedKVCache is a wrapper around the KVCache blocks for a given layer.
     It is used to access the KVCache blocks for PagedAttention.
     """
+
+    alias type = type_
+    alias kv_params = kv_params_
 
     alias KeyIdx = 0
     alias ValueIdx = 1
@@ -599,7 +442,7 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
     """The entire region of memory for KVCache blocks with shape:
     [num_layers, 2, total_num_blocks, page_size, num_heads, head_size].
     """
-    var blocks: NDBuffer[type, 6]
+    var blocks: NDBuffer[Self.type, 6]
     var page_size: Int
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 2]
@@ -610,7 +453,7 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
 
     fn __init__(
         out self,
-        blocks: NDBuffer[type, 6],
+        blocks: NDBuffer[Self.type, 6],
         cache_lengths: NDBuffer[DType.uint32, 1],
         lookup_table: NDBuffer[DType.uint32, 2],
         max_seq_length: UInt32,
@@ -631,27 +474,7 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
     fn id() -> String:
         """Returns a string id describing the type, this is used when defining
         mo.opaque symbols."""
-        return "PagedKVCache+" + str(type)
-
-    @staticmethod
-    fn get_kv_params() -> KVCacheStaticParams:
-        """Helper method to get the static parameters for the KVCache, like
-        num_heads and head_size.
-        """
-        return kv_params
-
-    @staticmethod
-    fn get_type() -> DType:
-        """Helper method to retrieve the type of the underlying KVCache."""
-        return type
-
-    @staticmethod
-    fn get_block_static_shape() -> DimList:
-        """Helper method to get the static shape returned by the `block`
-        function.
-        """
-        # TODO placeholder, we'll remove this method entirely.
-        return DimList(Dim(), kv_params.num_heads, kv_params.head_size)
+        return "PagedKVCache+" + str(Self.type)
 
     fn cache_length(self, batch_idx: Int) -> Int:
         """Returns the length of the cache for a given batch index."""
@@ -662,13 +485,13 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
         self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
     ) -> IndexList[6]:
         debug_assert(
-            head_idx < kv_params.num_heads,
+            head_idx < Self.kv_params.num_heads,
             "KVCache head_idx out of range (",
             head_idx,
             ")",
         )
         debug_assert(
-            head_dim_idx < kv_params.head_size,
+            head_dim_idx < Self.kv_params.head_size,
             "KVCache head_dim_idx is out of range",
         )
 
@@ -692,39 +515,25 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
         )
 
     fn load[
-        type_: DType, width: Int
+        width: Int
     ](self, bs: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int) -> SIMD[
-        type_, width
+        Self.type, width
     ]:
         """Loads an element from the given index."""
         var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
-        return rebind[SIMD[type_, width]](self.blocks.load[width=width](idx))
+        return self.blocks.load[width=width](idx)
 
-    fn store[
-        type_: DType, width: Int
-    ](
+    fn store(
         self,
         bs: Int,
         head_idx: Int,
         tok_idx: Int,
         head_dim_idx: Int,
-        val: SIMD[type_, width],
+        val: SIMD[Self.type, *_],
     ):
         """Stores an element at the given index."""
         var idx = self._get_idx(bs, head_idx, tok_idx, head_dim_idx)
-        self.blocks.store[width=width](idx, rebind[SIMD[type, width]](val))
-
-    fn block[
-        type: DType, block_shape: DimList
-    ](
-        self,
-        batch_idx: Int,
-        new_seq_len: Int,
-        out result: NDBuffer[type, 3, block_shape],
-    ):
-        """Returns a contiguous buffer for a given batch entry."""
-        abort("paged block not used")
-        return __type_of(result)()
+        self.blocks.store(idx, val)
 
     fn empty_cache(self) -> Bool:
         """Returns true if the cache_lengths for all requests is 0,
@@ -743,14 +552,14 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
 
     @always_inline
     fn block_paged_ptr[
-        type: DType, tile_size: Int
+        tile_size: Int
     ](
         self,
         batch_idx: Int,
         start_tok_idx: Int,
         head_idx: Int,
         head_dim_idx: Int = 0,
-    ) -> UnsafePointer[Scalar[type]]:
+    ) -> UnsafePointer[Scalar[Self.type]]:
         debug_assert(
             tile_size <= self.page_size and self.page_size % tile_size == 0,
             (
@@ -764,7 +573,7 @@ struct PagedKVCache[type: DType, kv_params: KVCacheStaticParams](KVCacheT):
         )
 
         var ptr = self.blocks._offset(full_block_idx)
-        return rebind[UnsafePointer[Scalar[type]]](ptr)
+        return ptr
 
 
 trait KVCollectionT(CollectionElement):

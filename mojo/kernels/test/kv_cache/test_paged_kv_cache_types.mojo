@@ -59,7 +59,7 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
     )
 
     var cache = collection.get_key_cache[collection.CacheType](1)
-    var layout_tensor = cache.block_paged_ptr[DType.float32, layout_block_size](
+    var layout_tensor = cache.block_paged_ptr[layout_block_size](
         1, layout_block_size, 0
     )
     print(layout_tensor)
