@@ -489,7 +489,7 @@ fn flash_attention[
     ]()
     constrained[mask.rank in (3, 4), "only support rank 3 or 4 mask."]()
     constrained[
-        q.type == k.get_type() == v.get_type() == output.type,
+        q.type == cache_t.type == output.type,
         "Q, K, V, output should have same type.",
     ]()
     constrained[
@@ -546,9 +546,9 @@ fn flash_attention[
             max_prompt_len = q.dim[1]()
 
         # Whether head and depth are static. With BSHD, B and S are dynamic.
-        # H and D are always known.
+        # H and D are always known for opaque KVCache types, we only check Q.
         # fmt: off
-        alias head_depth_known = q.shape.all_known[rank-2, rank]() and k.get_block_static_shape().has_value[1]()
+        alias head_depth_known = q.shape.all_known[rank-2, rank]()
         # Current impl has only been verified for depth = 128.
         alias flash_attention_applicable = has_nvidia_gpu_accelerator() and head_depth_known and q.shape.get[rank-1]() == 128
         alias q_half_float = q.type in (DType.float16, DType.bfloat16)
@@ -556,7 +556,7 @@ fn flash_attention[
 
         alias num_heads = config.num_heads
         alias depth = config.depth
-        alias kv_num_heads = k.get_kv_params().num_heads
+        alias kv_num_heads = cache_t.kv_params.num_heads
         alias group = config.num_heads // kv_num_heads
 
         # K V smem is only seperate for A100
@@ -641,22 +641,17 @@ fn flash_attention[
                 # seperate KV smem if we have enough smem
                 @parameter
                 if not is_shared_kv:
-                    shared_mem_bytes += (
-                        2 * BN * depth * sizeof[cache_t.get_type()]()
-                    )
+                    shared_mem_bytes += 2 * BN * depth * sizeof[cache_t.type]()
                 else:
                     shared_mem_bytes += (
-                        num_pipeline_stages
-                        * BN
-                        * BK
-                        * sizeof[cache_t.get_type()]()
+                        num_pipeline_stages * BN * BK * sizeof[cache_t.type]()
                     )
 
                 alias num_warps = ceildiv(num_threads, WARP_SIZE)
 
                 # smem for p and warp_scratch
                 shared_mem_bytes += (
-                    BM * BN * sizeof[cache_t.get_type()]()
+                    BM * BN * sizeof[cache_t.type]()
                     + 2 * num_warps * BM * sizeof[accum_type]()
                 )
                 alias num_blocks_y = num_heads // group
@@ -691,7 +686,7 @@ fn flash_attention[
                     ),
                 )
                 alias nullptr = UnsafePointer[Scalar[accum_type]]()
-                alias kv_params = cache_t.get_kv_params()
+                alias kv_params = cache_t.kv_params
                 alias is_paged = _type_is_eq[
                     cache_t, PagedKVCache[type, kv_params]
                 ]()
@@ -1786,7 +1781,7 @@ fn mha_single_batch[
             kv_gmem_layout,
             masked = not not_last_iter,
         ](
-            k.block_paged_ptr[k_type, BN](
+            k.block_paged_ptr[BN](
                 batch_idx, kv_tile_start_row, int(head_idx // group), 0
             ),
             kv_runtime_layout,
@@ -1798,7 +1793,7 @@ fn mha_single_batch[
             kv_gmem_layout,
             masked = not not_last_iter,
         ](
-            v.block_paged_ptr[v_type, BN](
+            v.block_paged_ptr[BN](
                 batch_idx, kv_tile_start_row, int(head_idx // group), 0
             ),
             kv_runtime_layout,
@@ -2455,7 +2450,7 @@ fn mha_single_batch_pipelined[
             kv_gmem_layout,
             masked = not not_last_iter,
         ](
-            k.block_paged_ptr[k_type, BN](
+            k.block_paged_ptr[BN](
                 batch_idx, kv_tile_start_row, int(head_idx // group), 0
             ),
             kv_runtime_layout,
@@ -2467,7 +2462,7 @@ fn mha_single_batch_pipelined[
             kv_gmem_layout,
             masked = not not_last_iter,
         ](
-            v.block_paged_ptr[v_type, BN](
+            v.block_paged_ptr[BN](
                 batch_idx, kv_tile_start_row, int(head_idx // group), 0
             ),
             kv_runtime_layout,
@@ -3507,7 +3502,7 @@ fn mha_decoding_single_batch[
     fn loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int):
-        var k_ptr = k.block_paged_ptr[k_type, BN](
+        var k_ptr = k.block_paged_ptr[BN](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
         )
         var k_gmem_block = LayoutTensor[
@@ -3622,7 +3617,7 @@ fn mha_decoding_single_batch[
             rowsum,
         )
 
-        var v_ptr = v.block_paged_ptr[v_type, BN](
+        var v_ptr = v.block_paged_ptr[BN](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
         )
         var v_gmem_block = LayoutTensor[
@@ -3951,7 +3946,7 @@ fn mha_decoding_single_batch_pipelined[
     fn loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, seq_len: Int):
-        var k_ptr = k.block_paged_ptr[k_type, BN](
+        var k_ptr = k.block_paged_ptr[BN](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
         )
         var k_gmem_block = LayoutTensor[
@@ -4056,7 +4051,7 @@ fn mha_decoding_single_batch_pipelined[
             rowsum,
         )
 
-        var v_ptr = v.block_paged_ptr[v_type, BN](
+        var v_ptr = v.block_paged_ptr[BN](
             batch_idx, kv_tile_start_row, kv_head_idx, 0
         )
         var v_gmem_block = LayoutTensor[
@@ -4271,8 +4266,8 @@ fn mha_gpu_naive[
     ctx: DeviceContext,
 ) raises:
     alias q_type = q.type
-    alias k_type = k.get_type()
-    alias v_type = v.get_type()
+    alias k_type = cache_t.type
+    alias v_type = k_type
 
     var num_keys = max_prompt_len + max_cache_size
     alias p_type = get_accum_type[q_type]()
@@ -4398,8 +4393,8 @@ fn _bmm0_bs[
     # prompt_length
     var y = GlobalIdx.y
 
-    alias k_type = k_cache.get_type()
-    alias kv_num_heads = k_cache.get_kv_params().num_heads
+    alias k_type = cache_t.type
+    alias kv_num_heads = cache_t.kv_params.num_heads
 
     var batch_head = BlockIdx.z
     var batch: UInt
@@ -4446,7 +4441,7 @@ fn _bmm0_bs[
 
     if x < cur_query_len + k_cache.cache_length(batch) and y < cur_query_len:
         var accum_vec = SIMD[p_type, simdwidthof[p_type]()](0)
-        var k_ptr = k_cache.block_paged_ptr[k_type, 1](batch, x, kv_head, 0)
+        var k_ptr = k_cache.block_paged_ptr[1](batch, x, kv_head, 0)
 
         @parameter
         fn accum_fn[width: Int](offset: Int):
@@ -4518,8 +4513,8 @@ fn _bmm1_bs[
     depth: Int,
     group: Int,
 ):
-    alias v_type = v_cache.get_type()
-    alias kv_num_heads = v_cache.get_kv_params().num_heads
+    alias v_type = cache_t.type
+    alias kv_num_heads = cache_t.kv_params.num_heads
 
     # head_size
     var x = GlobalIdx.x
@@ -4559,7 +4554,7 @@ fn _bmm1_bs[
     var accum = SIMD[DType.float32, 1](0.0)
 
     for i in range(cur_query_len + v_cache.cache_length(batch)):
-        var v_ptr = v_cache.block_paged_ptr[v_type, 1](batch, i, kv_head, x)
+        var v_ptr = v_cache.block_paged_ptr[1](batch, i, kv_head, x)
         accum += (p[y * padded_num_keys + i].cast[v_type]() * v_ptr[0]).cast[
             DType.float32
         ]()

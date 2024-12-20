@@ -1147,12 +1147,12 @@ fn _flash_attention_kv_cache[
     scale: Float32,
     output: NDBuffer[type, 4, *_],
 ):
-    alias kv_params = cache_t.get_kv_params()
+    alias kv_params = cache_t.kv_params
 
     var max_seq_len = q.dim[1]()
     var num_batches = q.dim[0]()
     alias num_heads = q.shape.get[2]()
-    alias head_size = k.get_kv_params().head_size
+    alias head_size = cache_t.kv_params.head_size
     alias output_shape = DimList(Dim(), Dim(), num_heads, head_size)
 
     @always_inline
@@ -1203,22 +1203,36 @@ fn _flash_attention_kv_cache[
     max_seq_len: Int,
     scale: Float32,
 ):
-    alias num_kv_heads = k.get_kv_params().num_heads
-    alias depth_dim = k.get_kv_params().head_size
+    alias num_kv_heads = cache_t.kv_params.num_heads
+    alias depth_dim = cache_t.kv_params.head_size
+    alias cache_type = cache_t.type
+
+    constrained[
+        cache_type == type,
+        "Expected cache type ("
+        + str(cache_type)
+        + ") to match input type ("
+        + str(type)
+        + ")",
+    ]()
 
     @parameter
     fn input_k_fn[
         width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[type, width]:
         # Unwrap BSHD->BHSD indices.
-        return k.load[type, width=width](idx[0], idx[2], idx[1], idx[3])
+        return rebind[SIMD[type, width]](
+            k.load[width=width](idx[0], idx[2], idx[1], idx[3])
+        )
 
     @parameter
     fn input_v_fn[
         width: Int, rank: Int
     ](idx: IndexList[rank]) -> SIMD[type, width]:
         # Unwrap BSHD->BHSD indices.
-        return v.load[type, width=width](idx[0], idx[2], idx[1], idx[3])
+        return rebind[SIMD[type, width]](
+            v.load[width=width](idx[0], idx[2], idx[1], idx[3])
+        )
 
     @always_inline
     @parameter
@@ -1354,7 +1368,7 @@ fn flash_attention_kv_cache[
         max_seq_len = max(max_seq_len, q_length_fn(bs))
 
     alias num_heads = q.shape.get[q.rank - 2]()
-    alias head_size = k.get_kv_params().head_size
+    alias head_size = cache_t.kv_params.head_size
     alias output_shape = DimList(Dim(), Dim(), num_heads, head_size)
 
     _flash_attention_kv_cache[

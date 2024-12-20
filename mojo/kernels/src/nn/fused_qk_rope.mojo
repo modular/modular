@@ -93,27 +93,50 @@ fn rope_k_cache[
 ):
     h_re, h_im = get_safetensors_idx(d_idx, head_size)
     alias width_2 = width // 2
+    alias cache_type = cache_t.type
+
+    constrained[
+        cache_type == type,
+        "Expected cache type "
+        + str(cache_type)
+        + " to match input type "
+        + str(type),
+    ]()
 
     var val: SIMD[type, width]
     if interleaved:
-        val = k_cache.load[type, width=width](b_idx, h_idx, s_idx, d_idx)
+        val = rebind[SIMD[type, width]](
+            k_cache.load[width=width](b_idx, h_idx, s_idx, d_idx)
+        )
     else:
         val = rebind[SIMD[type, width]](
-            k_cache.load[type, width=width_2](
-                b_idx, h_idx, s_idx, h_re
-            ).interleave(
-                k_cache.load[type, width=width_2](b_idx, h_idx, s_idx, h_im)
+            k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_re).interleave(
+                k_cache.load[width=width_2](b_idx, h_idx, s_idx, h_im)
             )
         )
 
     var res = _rope(val, freq_val)
 
     if interleaved:
-        k_cache.store(b_idx, h_idx, s_idx, d_idx, res)
+        k_cache.store(
+            b_idx, h_idx, s_idx, d_idx, rebind[SIMD[cache_type, width]](res)
+        )
     else:
         output_re, output_im = res.deinterleave()
-        k_cache.store(b_idx, h_idx, s_idx, h_re, output_re)
-        k_cache.store(b_idx, h_idx, s_idx, h_im, output_im)
+        k_cache.store(
+            b_idx,
+            h_idx,
+            s_idx,
+            h_re,
+            rebind[SIMD[cache_type, width_2]](output_re),
+        )
+        k_cache.store(
+            b_idx,
+            h_idx,
+            s_idx,
+            h_im,
+            rebind[SIMD[cache_type, width_2]](output_im),
+        )
 
 
 @always_inline
@@ -132,7 +155,7 @@ fn fused_qk_rope[
     output: NDBuffer[type, 4, *_],
     context: Optional[DeviceContext],
 ):
-    alias kv_params = cache_t.get_kv_params()
+    alias kv_params = cache_t.kv_params
 
     var batch_size = q_proj.dim[0]()
     var new_seq_len = q_proj.dim[1]()
@@ -222,7 +245,7 @@ fn fused_qk_rope_ragged[
     output: NDBuffer[type, 3, *_],
     context: Optional[DeviceContext],
 ):
-    alias kv_params = cache_t.get_kv_params()
+    alias kv_params = cache_t.kv_params
     alias num_q_heads = q_proj.shape.get[1]()
     alias num_k_heads = kv_params.num_heads
     alias head_size = q_proj.shape.get[2]()

@@ -372,7 +372,17 @@ fn _fused_qkv_matmul_kv_cache_impl[
             projections are written in-place to k_cache and v_cache.
         context: The DeviceContext. This is unused if target == "cpu".
     """
-    alias kv_params = cache_t.get_kv_params()
+    alias cache_type = cache_t.type
+
+    constrained[
+        cache_type == type,
+        "Expected cache type "
+        + str(cache_type)
+        + " to match input type "
+        + str(type),
+    ]()
+
+    alias kv_params = cache_t.kv_params
     alias N = weight_shape.get[0]()
     alias K = weight_shape.get[1]()
 
@@ -419,7 +429,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
             h_idx,
             cache_t_idx,
             hd_idx,
-            rebind[SIMD[type, width]](output_val),
+            rebind[SIMD[cache_type, width]](output_val),
         )
 
     _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
@@ -1643,7 +1653,7 @@ def rms_norm_key_cache_h8_d128_cont_batch[
         )
         var token_idx = int(global_token_idx - input_row_offsets[batch_idx])
 
-        return k_cache.load[type, width](
+        return k_cache.load[width=width](
             bs=batch_idx,
             tok_idx=token_idx,
             head_idx=idx[1],
@@ -1824,7 +1834,7 @@ def _print_cache[
                     )
                 ):
                     print(
-                        cache.load[kv_collection.type, width=1](
+                        cache.load[width=1](
                             int(b_idx), int(h), int(t_idx), int(hd)
                         ),
                         end=", ",

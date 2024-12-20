@@ -842,8 +842,8 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
             Shape is (sum(seq_lens), num_heads * head_size)
         context: The DeviceContext. This is unused if target == "cpu".
     """
-    alias kv_type = cache_t.get_type()
-    alias kv_params = cache_t.get_kv_params()
+    alias kv_type = cache_t.type
+    alias kv_params = cache_t.kv_params
     alias N = weight.shape.get[0]()
     alias K = weight.shape.get[1]()
 
@@ -1083,14 +1083,9 @@ fn _matmul_kv_cache_ragged_impl[
             (batch_size, max_seq_len, num_kv_heads, head_size).
         ctx: Pointer containing the runtime context for the target device.
     """
-    alias kv_params = cache_t.get_kv_params()
-    alias kv_type = cache_t.get_type()
+    alias kv_params = cache_t.kv_params
     alias N: UInt = weight.shape.get[0]()
     alias K: UInt = weight.shape.get[1]()
-
-    constrained[
-        kv_type == type, "Mismatch in type between hidden state and KV tensors"
-    ]()
 
     batch_size = input_row_offsets.dim[0]() - 1
 
@@ -1109,6 +1104,13 @@ fn _matmul_kv_cache_ragged_impl[
         idx: IndexList[2],
         val: SIMD[type_, width],
     ):
+        alias kv_type = cache_t.type
+
+        constrained[
+            kv_type == type_,
+            "Mismatch in type between hidden state and KV tensors",
+        ]()
+
         # Token index in the "ragged" combined sequence dimension.
         global_token_idx = idx[0]
 
@@ -1133,7 +1135,7 @@ fn _matmul_kv_cache_ragged_impl[
             h_idx,
             cache_token_idx,
             hd_idx,
-            rebind[SIMD[type, width]](val),
+            rebind[SIMD[kv_type, width]](val),
         )
 
     # Cast to a register passable type so the function closure works on GPU.
