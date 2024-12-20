@@ -481,14 +481,12 @@ Implements the builtin package.
       .hover(doc, rangeString.start,
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeString);
-               EXPECT_EQ(hover.contents.value, R"(### module `string`
+               EXPECT_EQ(hover.contents.value, R"(### package `string`
 
 ---
 
 ###
-Implements basic object methods for working with strings.
-
-These are Mojo built-ins, so you don't need to import them.
+Implements the string package.
 
 )");
              })
