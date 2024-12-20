@@ -3250,10 +3250,9 @@ struct LayoutTensorIter[
             A new LayoutTensorIter with the same layout but different data type.
         """
         return __type_of(result)(
-            self.ptr.bitcast[
-                Scalar[new_type],
-                alignment=alignment,
-            ]().address_space_cast[address_space](),
+            self.ptr.bitcast[Scalar[new_type]]()
+            .address_space_cast[address_space]()
+            .static_alignment_cast[alignment](),
             int(self.bound),
             self.runtime_layout,
             int(self.stride),
