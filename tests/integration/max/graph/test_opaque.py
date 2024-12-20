@@ -137,7 +137,6 @@ class PythonCounter:
 def test_pyobject_opaque(
     session: InferenceSession, counter_ops_path: Path
 ) -> None:
-    return  # FIXME(clattner): workaround to get #52887 to land
     session = InferenceSession()
     python_type = _OpaqueType("PythonObject")
 
