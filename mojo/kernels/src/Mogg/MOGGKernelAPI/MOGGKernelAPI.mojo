@@ -94,6 +94,7 @@ from nn.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
     KVCollectionT,
+    generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch,
     generic_flash_attention_kv_cache_causal_mask_continuous_batch,
     generic_flash_attention_kv_cache_continuous_batch,
     generic_fused_qk_rope_bshd_continuous_batch,
@@ -7942,3 +7943,174 @@ struct PackMatmulBShapeFunc:
             transpose_in_0,
             synchronous,
         ](managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b_input))
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_api[
+    target: StringLiteral, type: DType
+](
+    q: ManagedTensorSlice[type, 4],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: Scalar[DType.uint32],
+    valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+    scale: Scalar[DType.float32],
+    output: ManagedTensorSlice[type, 4],
+    context: MojoCallContextPtr,
+) raises:
+    alias q_spec = compiler.specsof[q.type, q.rank]("q")
+    alias output_spec = compiler.specsof[output.type, output.rank]("output")
+
+    generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[target](
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = q_spec.shape, static_strides = q_spec.strides
+        ](q),
+        kv_collection,
+        layer_idx,
+        managed_tensor_slice_to_ndbuffer(valid_lengths),
+        scale,
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = output_spec.shape,
+            static_strides = output_spec.strides,
+        ](output),
+        context,
+    )
+
+
+@compiler.register(
+    "flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch"
+)
+struct Struct_flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 4],
+        q: ManagedTensorSlice[type, 4],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d128_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_api[
+            target
+        ](
+            q, kv_collection, layer_idx, valid_lengths, scale, output, context
+        )
+
+
+@compiler.register(
+    "flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch"
+)
+struct Struct_flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 4],
+        q: ManagedTensorSlice[type, 4],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h32_d128_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_api[
+            target
+        ](
+            q, kv_collection, layer_idx, valid_lengths, scale, output, context
+        )
+
+
+@compiler.register(
+    "flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch"
+)
+struct Struct_flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 4],
+        q: ManagedTensorSlice[type, 4],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d32_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_api[
+            target
+        ](
+            q, kv_collection, layer_idx, valid_lengths, scale, output, context
+        )
+
+
+@compiler.register(
+    "flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch"
+)
+struct Struct_flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 4],
+        q: ManagedTensorSlice[type, 4],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d64_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_api[
+            target
+        ](
+            q, kv_collection, layer_idx, valid_lengths, scale, output, context
+        )
+
+
+@compiler.register(
+    "flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch"
+)
+struct Struct_flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch:
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 4],
+        q: ManagedTensorSlice[type, 4],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h1_d16_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        valid_lengths: ManagedTensorSlice[DType.uint32, 1],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_api[
+            target
+        ](
+            q, kv_collection, layer_idx, valid_lengths, scale, output, context
+        )
