@@ -119,8 +119,15 @@ from nn.kv_cache import (
 )
 from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged,
+    generic_fused_qk_rope_bshd_paged_ragged,
     generic_fused_qk_rope_bshd_continous_batch_ragged,
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged,
+    generic_fused_qkv_matmul_kv_cache_paged_ragged,
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged,
+    generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged,
+    generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
+    generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
+    matmul_kv_cache_h8_d128_cont_batch_ragged,
 )
 from nn.mha import flash_attention, fused_attention
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -7279,6 +7286,40 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
 
 
 @compiler.register(
+    "flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged"
+)
+struct Struct_flash_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type,
+            kv_params_h8_d128_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
+            target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register(
     "flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged"
 )
 struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_cont_batch_ragged:
@@ -7987,6 +8028,7 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_ap
     "flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch"
 )
 struct Struct_flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batch:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8015,6 +8057,7 @@ struct Struct_flash_attention_kv_cache_h8_d128_causal_alibi_mask_continuous_batc
     "flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch"
 )
 struct Struct_flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_batch:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8043,6 +8086,7 @@ struct Struct_flash_attention_kv_cache_h32_d128_causal_alibi_mask_continuous_bat
     "flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch"
 )
 struct Struct_flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8071,6 +8115,7 @@ struct Struct_flash_attention_kv_cache_h8_d32_causal_alibi_mask_continuous_batch
     "flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch"
 )
 struct Struct_flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8099,6 +8144,7 @@ struct Struct_flash_attention_kv_cache_h8_d64_causal_alibi_mask_continuous_batch
     "flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch"
 )
 struct Struct_flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8125,6 +8171,7 @@ struct Struct_flash_attention_kv_cache_h1_d16_causal_alibi_mask_continuous_batch
 
 @compiler.register("rms_norm_key_cache_h8_d128_cont_batch", num_dps_outputs=0)
 struct Struct_rms_norm_key_cache_h8_d128_cont_batch:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8181,6 +8228,7 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
 
 @compiler.register("print_kv_cache_cont_batch_h8_d128")
 struct Struct_print_kv_cache_cont_batch_h8_d128:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8205,6 +8253,7 @@ struct Struct_print_kv_cache_cont_batch_h8_d128:
 
 @compiler.register("print_kv_cache_cont_batch_h2_d128")
 struct Struct_print_kv_cache_cont_batch_h2_d128:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8229,6 +8278,7 @@ struct Struct_print_kv_cache_cont_batch_h2_d128:
 
 @compiler.register("print_kv_cache_cont_batch_h16_d128")
 struct Struct_print_kv_cache_cont_batch_h16_d128:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8253,6 +8303,7 @@ struct Struct_print_kv_cache_cont_batch_h16_d128:
 
 @compiler.register("print_kv_cache_cont_batch_h32_d128")
 struct Struct_print_kv_cache_cont_batch_h32_d128:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8277,6 +8328,7 @@ struct Struct_print_kv_cache_cont_batch_h32_d128:
 
 @compiler.register("paged_kv_cache_collection_h1_d16_bshd", num_dps_outputs=0)
 struct Struct_paged_kv_cache_collection_h1_d16_bshd:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8298,6 +8350,7 @@ struct Struct_paged_kv_cache_collection_h1_d16_bshd:
 
 @compiler.register("paged_kv_cache_collection_h6_d48_bshd", num_dps_outputs=0)
 struct Struct_paged_kv_cache_collection_h6_d48_bshd:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8319,6 +8372,7 @@ struct Struct_paged_kv_cache_collection_h6_d48_bshd:
 
 @compiler.register("paged_kv_cache_collection_h8_d128_bshd", num_dps_outputs=0)
 struct Struct_paged_kv_cache_collection_h8_d128_bshd:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8340,6 +8394,7 @@ struct Struct_paged_kv_cache_collection_h8_d128_bshd:
 
 @compiler.register("paged_kv_cache_collection_h8_d16_bshd", num_dps_outputs=0)
 struct Struct_paged_kv_cache_collection_h8_d16_bshd:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8361,6 +8416,7 @@ struct Struct_paged_kv_cache_collection_h8_d16_bshd:
 
 @compiler.register("paged_kv_cache_collection_h8_d512_bshd", num_dps_outputs=0)
 struct Struct_paged_kv_cache_collection_h8_d512_bshd:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8382,6 +8438,7 @@ struct Struct_paged_kv_cache_collection_h8_d512_bshd:
 
 @compiler.register("paged_kv_cache_collection_h8_d32_bshd", num_dps_outputs=0)
 struct Struct_paged_kv_cache_collection_h8_d32_bshd:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8403,6 +8460,7 @@ struct Struct_paged_kv_cache_collection_h8_d32_bshd:
 
 @compiler.register("paged_kv_cache_collection_h8_d64_bshd", num_dps_outputs=0)
 struct Struct_paged_kv_cache_collection_h8_d64_bshd:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8424,6 +8482,7 @@ struct Struct_paged_kv_cache_collection_h8_d64_bshd:
 
 @compiler.register("paged_kv_cache_collection_h32_d128_bshd", num_dps_outputs=0)
 struct Struct_paged_kv_cache_collection_h32_d128_bshd:
+    @uses_opaque
     @always_inline
     @staticmethod
     fn execute[
@@ -8440,4 +8499,1046 @@ struct Struct_paged_kv_cache_collection_h32_d128_bshd:
             managed_tensor_slice_to_ndbuffer(cache_lengths),
             managed_tensor_slice_to_ndbuffer(lookup_table),
             managed_tensor_slice_to_ndbuffer(max_lengths),
+        )
+
+
+@always_inline
+fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    hidden_state: ManagedTensorSlice[type, 2],
+    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    weight: ManagedTensorSlice[type, 2],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        _,
+    ],
+    layer_idx: Scalar[DType.uint32],
+    output: ManagedTensorSlice[type, 2],
+    ctx: MojoCallContextPtr,
+) raises:
+    alias hidden_state_spec = compiler.specsof[
+        hidden_state.type, hidden_state.rank
+    ]("hidden_state")
+    alias input_row_offsets_spec = compiler.specsof[
+        input_row_offsets.type, input_row_offsets.rank
+    ]("input_row_offsets")
+    alias weight_spec = compiler.specsof[weight.type, weight.rank]("weight")
+    alias output_spec = compiler.specsof[output.type, output.rank]("output")
+
+    generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = hidden_state_spec.shape
+        ](hidden_state),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = input_row_offsets_spec.shape,
+            static_strides = input_row_offsets_spec.strides,
+        ](input_row_offsets),
+        managed_tensor_slice_to_ndbuffer[static_shape = weight_spec.shape](
+            weight
+        ),
+        kv_collection,
+        layer_idx,
+        managed_tensor_slice_to_ndbuffer[static_shape = output_spec.shape](
+            output
+        ),
+        ctx,
+    )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h1_d16_paged_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h1_d16_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h1_d16_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        output: ManagedTensorSlice[type, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h6_d48_paged_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h6_d48_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h6_d48_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        output: ManagedTensorSlice[type, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h8_d128_paged_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h8_d128_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d128_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        output: ManagedTensorSlice[type, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h8_d16_paged_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h8_d16_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d16_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        output: ManagedTensorSlice[type, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h8_d512_paged_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h8_d512_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d512_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        output: ManagedTensorSlice[type, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h8_d32_paged_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h8_d32_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d32_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        output: ManagedTensorSlice[type, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h8_d64_paged_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h8_d64_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d64_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        output: ManagedTensorSlice[type, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register("fused_qkv_matmul_kv_cache_h32_d128_paged_ragged")
+struct Struct_fused_qkv_matmul_kv_cache_h32_d128_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h32_d128_bshd,
+        ],
+        layer_idx: Scalar[DType.uint32],
+        output: ManagedTensorSlice[type, 2],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        return generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
+            target=target
+        ](
+            hidden_state,
+            input_row_offsets,
+            weight,
+            kv_collection,
+            layer_idx,
+            output,
+            ctx,
+        )
+
+
+@compiler.register(
+    "matmul_kv_cache_h8_d128_cont_batch_ragged", num_dps_outputs=0
+)
+struct Struct_matmul_kv_cache_h8_d128_cont_batch_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        hidden_state: ManagedTensorSlice[type, 2],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        weight: ManagedTensorSlice[type, 2],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type, kv_params_h8_d128_bshd
+        ],
+        layer_idx: Scalar[DType.uint32],
+        ctx: MojoCallContextPtr,
+    ) raises:
+        alias hidden_state_spec = compiler.specsof[
+            hidden_state.type, hidden_state.rank
+        ]("hidden_state")
+        alias input_row_offsets_spec = compiler.specsof[
+            input_row_offsets.type, input_row_offsets.rank
+        ]("input_row_offsets")
+        alias weight_spec = compiler.specsof[weight.type, weight.rank]("weight")
+
+        matmul_kv_cache_h8_d128_cont_batch_ragged[target=target](
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = hidden_state_spec.shape
+            ](hidden_state),
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = input_row_offsets_spec.shape,
+                static_strides = input_row_offsets_spec.strides,
+            ](input_row_offsets),
+            managed_tensor_slice_to_ndbuffer[static_shape = weight_spec.shape](
+                weight
+            ),
+            kv_collection,
+            layer_idx,
+            ctx,
+        )
+
+
+@always_inline
+fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
+    type: DType,
+    target: StringLiteral,
+](
+    q_proj: ManagedTensorSlice[type, 3],
+    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    kv_collection: PagedKVCacheCollection[
+        type,
+        _,
+    ],
+    freqs_cis: ManagedTensorSlice[type, 2],
+    layer_idx: Scalar[DType.uint32],
+    interleaved: Scalar[DType.bool],
+    output: ManagedTensorSlice[type, 3],
+    context: MojoCallContextPtr = MojoCallContextPtr(),
+):
+    alias q_proj_spec = compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
+    alias input_row_offsets_spec = compiler.specsof[
+        input_row_offsets.type, input_row_offsets.rank
+    ]("input_row_offsets")
+    alias freqs_cis_spec = compiler.specsof[freqs_cis.type, freqs_cis.rank](
+        "freqs_cis"
+    )
+    alias output_spec = compiler.specsof[output.type, output.rank]("output")
+
+    generic_fused_qk_rope_bshd_paged_ragged[target=target](
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = q_proj_spec.shape,
+            static_strides = q_proj_spec.strides,
+        ](q_proj),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = input_row_offsets_spec.shape,
+            static_strides = input_row_offsets_spec.strides,
+        ](input_row_offsets),
+        kv_collection,
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = freqs_cis_spec.shape,
+            static_strides = freqs_cis_spec.strides,
+        ](freqs_cis),
+        layer_idx,
+        interleaved,
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = output_spec.shape,
+            static_strides = output_spec.strides,
+        ](output),
+        context,
+    )
+
+
+@compiler.register("fused_qk_rope_h1_d16_bshd_paged_ragged")
+struct Struct_fused_qk_rope_h1_d16_bshd_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h1_d16_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
+        context: MojoCallContextPtr = MojoCallContextPtr(),
+    ):
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[target=target](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            context,
+        )
+
+
+@compiler.register("fused_qk_rope_h6_d48_bshd_paged_ragged")
+struct Struct_fused_qk_rope_h6_d48_bshd_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h6_d48_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
+        context: MojoCallContextPtr = MojoCallContextPtr(),
+    ):
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[target=target](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            context,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d128_bshd_paged_ragged")
+struct Struct_fused_qk_rope_h8_d128_bshd_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d128_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
+        context: MojoCallContextPtr = MojoCallContextPtr(),
+    ):
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[target=target](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            context,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d16_bshd_paged_ragged")
+struct Struct_fused_qk_rope_h8_d16_bshd_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d16_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
+        context: MojoCallContextPtr = MojoCallContextPtr(),
+    ):
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[target=target](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            context,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d512_bshd_paged_ragged")
+struct Struct_fused_qk_rope_h8_d512_bshd_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d512_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
+        context: MojoCallContextPtr = MojoCallContextPtr(),
+    ):
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[target=target](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            context,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d32_bshd_paged_ragged")
+struct Struct_fused_qk_rope_h8_d32_bshd_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d32_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
+        context: MojoCallContextPtr = MojoCallContextPtr(),
+    ):
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[target=target](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            context,
+        )
+
+
+@compiler.register("fused_qk_rope_h8_d64_bshd_paged_ragged")
+struct Struct_fused_qk_rope_h8_d64_bshd_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h8_d64_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
+        context: MojoCallContextPtr = MojoCallContextPtr(),
+    ):
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[target=target](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            context,
+        )
+
+
+@compiler.register("fused_qk_rope_h32_d128_bshd_paged_ragged")
+struct Struct_fused_qk_rope_h32_d128_bshd_paged_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q_proj: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[
+            type,
+            kv_params_h32_d128_bshd,
+        ],
+        freqs_cis: ManagedTensorSlice[type, 2],
+        layer_idx: Scalar[DType.uint32],
+        interleaved: Scalar[DType.bool],
+        context: MojoCallContextPtr = MojoCallContextPtr(),
+    ):
+        generic_fused_qk_rope_bshd_paged_ragged_kernel_api[target=target](
+            q_proj,
+            input_row_offsets,
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved,
+            output,
+            context,
+        )
+
+
+@always_inline
+fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
+    type: DType,
+    target: StringLiteral = "cpu",
+](
+    q: ManagedTensorSlice[type, 3],
+    input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    kv_collection: PagedKVCacheCollection[type, _],
+    layer_idx: Scalar[DType.uint32],
+    scale: Scalar[DType.float32],
+    output: ManagedTensorSlice[type, 3],
+    context: MojoCallContextPtr,
+) raises:
+    alias q_spec = compiler.specsof[q.type, q.rank]("q")
+    alias input_row_offsets_spec = compiler.specsof[
+        input_row_offsets.type, input_row_offsets.rank
+    ]("input_row_offsets")
+    alias output_spec = compiler.specsof[output.type, output.rank]("output")
+
+    generic_flash_attention_kv_cache_causal_mask_paged_ragged[target=target](
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = q_spec.shape, static_strides = q_spec.strides
+        ](q),
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = input_row_offsets_spec.shape,
+            static_strides = input_row_offsets_spec.strides,
+        ](input_row_offsets),
+        kv_collection,
+        layer_idx,
+        scale,
+        managed_tensor_slice_to_ndbuffer[
+            static_shape = output_spec.shape,
+            static_strides = output_spec.strides,
+        ](output),
+        context,
+    )
+
+
+@compiler.register("flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged")
+struct Struct_flash_attention_kv_cache_h1_d16_causal_mask_paged_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[type, kv_params_h1_d16_bshd],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
+            target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged")
+struct Struct_flash_attention_kv_cache_h6_d48_causal_mask_paged_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[type, kv_params_h6_d48_bshd],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
+            target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged")
+struct Struct_flash_attention_kv_cache_h8_d128_causal_mask_paged_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[type, kv_params_h8_d128_bshd],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
+            target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged")
+struct Struct_flash_attention_kv_cache_h8_d16_causal_mask_paged_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[type, kv_params_h8_d16_bshd],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
+            target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged")
+struct Struct_flash_attention_kv_cache_h8_d512_causal_mask_paged_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[type, kv_params_h8_d512_bshd],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
+            target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged")
+struct Struct_flash_attention_kv_cache_h8_d32_causal_mask_paged_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[type, kv_params_h8_d32_bshd],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
+            target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged")
+struct Struct_flash_attention_kv_cache_h8_d64_causal_mask_paged_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[type, kv_params_h8_d64_bshd],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
+            target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register("flash_attention_kv_cache_h32_d128_causal_mask_paged_ragged")
+struct Struct_flash_attention_kv_cache_h32_d128_causal_mask_paged_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral = "cpu",
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: PagedKVCacheCollection[type, kv_params_h32_d128_bshd],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
+            target=target
+        ](
+            q,
+            input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            output,
+            context,
+        )
+
+
+@compiler.register(
+    "flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged"
+)
+struct Struct_flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type, kv_params_h8_d32_bshd
+        ],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        alias q_spec = compiler.specsof[q.type, q.rank]("q")
+        alias input_row_offsets_spec = compiler.specsof[
+            input_row_offsets.type, input_row_offsets.rank
+        ]("input_row_offsets")
+        alias output_spec = compiler.specsof[output.type, output.rank]("output")
+
+        generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
+            target=target
+        ](
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = q_spec.shape, static_strides = q_spec.strides
+            ](q),
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = input_row_offsets_spec.shape,
+                static_strides = input_row_offsets_spec.strides,
+            ](input_row_offsets),
+            kv_collection,
+            layer_idx,
+            scale,
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = output_spec.shape,
+                static_strides = output_spec.strides,
+            ](output),
+            context,
+        )
+
+
+@compiler.register(
+    "flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged"
+)
+struct Struct_flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged:
+    @uses_opaque
+    @staticmethod
+    @always_inline
+    fn execute[
+        type: DType,
+        target: StringLiteral,
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type, kv_params_h8_d128_bshd
+        ],
+        layer_idx: Scalar[DType.uint32],
+        scale: Scalar[DType.float32],
+        context: MojoCallContextPtr,
+    ) raises:
+        alias q_spec = compiler.specsof[q.type, q.rank]("q")
+        alias input_row_offsets_spec = compiler.specsof[
+            input_row_offsets.type, input_row_offsets.rank
+        ]("input_row_offsets")
+        alias output_spec = compiler.specsof[output.type, output.rank]("output")
+
+        generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
+            target=target
+        ](
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = q_spec.shape, static_strides = q_spec.strides
+            ](q),
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = input_row_offsets_spec.shape,
+                static_strides = input_row_offsets_spec.strides,
+            ](input_row_offsets),
+            kv_collection,
+            layer_idx,
+            scale,
+            managed_tensor_slice_to_ndbuffer[
+                static_shape = output_spec.shape,
+                static_strides = output_spec.strides,
+            ](output),
+            context,
         )
