@@ -39,7 +39,7 @@ struct KVCacheMHAOperand[cache_t: KVCacheT](MHAOperand):
     alias type = cache_t.get_type()
     var cache: cache_t
 
-    fn __init__(out self, cache: __type_of(self.cache)):
+    fn __init__(out self, cache: cache_t):
         self.cache = cache
 
     @always_inline
@@ -63,7 +63,7 @@ struct NDBufferMHAOperand[type_: DType, rank: Int, shape: DimList](MHAOperand):
     alias type = type_
     var buffer: NDBuffer[Self.type, rank, shape]
 
-    fn __init__(out self, buffer: __type_of(self.buffer)):
+    fn __init__(out self, buffer: NDBuffer[Self.type, rank, shape]):
         self.buffer = buffer
 
     @always_inline
