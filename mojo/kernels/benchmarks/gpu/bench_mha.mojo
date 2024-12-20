@@ -173,14 +173,20 @@ fn run_mha[
     ctx.enqueue_copy_from_device(flash_output_ptr, output_device_ptr)
 
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
+    var output_ref_device = NDBuffer[
+        qkv_type, 4, DimList(Dim(), Dim(), num_heads, depth)
+    ](
+        output_ref_device_ptr.ptr,
+        Index(batch_size, seq_len, num_heads, depth),
+    )
     ctx.enqueue_copy_to_device(output_ref_device_ptr, output_ptr)
 
-    mha_gpu_naive[4](
-        q_device_ptr.ptr,
-        k_device_ptr.ptr,
-        v_device_ptr.ptr,
-        mask_device_ptr.ptr,
-        output_ref_device_ptr.ptr,
+    mha_gpu_naive(
+        q_device,
+        k_device,
+        v_device,
+        mask4d,
+        output_ref_device,
         scale,
         batch_size,
         seq_len,
