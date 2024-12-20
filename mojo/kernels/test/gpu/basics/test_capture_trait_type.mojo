@@ -25,7 +25,7 @@ struct ImplT(BaseT):
     alias rank = 1
     var values: NDBuffer[DType.float32, Self.rank]
 
-    def __init__(out self, buf: __type_of(self.values)):
+    def __init__(out self, buf: NDBuffer[DType.float32, Self.rank]):
         self.values = buf
 
     fn get_val(self, idx: Int) -> Float32:
