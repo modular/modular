@@ -163,7 +163,9 @@ def test_cross_attention(
     input_row_offsets_type = TensorType(DType.uint32, [batch_size + 1])
 
     kv_params = KVCacheParams(
-        dtype=dtype, n_kv_heads=config.num_key_value_heads, head_dim=head_dim
+        dtype=dtype,
+        n_kv_heads=config.num_key_value_heads,
+        head_dim=head_dim,
     )
     kv_manager = load_kv_manager(
         params=kv_params,
