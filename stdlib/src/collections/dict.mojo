@@ -453,10 +453,17 @@ struct Dict[K: KeyElement, V: CollectionElement](
     #     don't churn and compact on repeated insert/delete, and instead amortize
     #     compaction cost to O(1) amortized cost.
 
-    # Fields
+    # ===-------------------------------------------------------------------===#
+    # Aliases
+    # ===-------------------------------------------------------------------===#
+
     alias EMPTY = _EMPTY
     alias REMOVED = _REMOVED
     alias _initial_reservation = 8
+
+    # ===-------------------------------------------------------------------===#
+    # Fields
+    # ===-------------------------------------------------------------------===#
 
     var size: Int
     """The number of elements currently stored in the dict."""
