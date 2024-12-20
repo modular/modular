@@ -6,7 +6,7 @@
 
 import sys
 from collections import InlineArray
-from collections.string import _calc_initial_buffer_size_int32
+from collections.string.string import _calc_initial_buffer_size_int32
 from os import abort
 
 from buffer.dimlist import DimList
