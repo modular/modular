@@ -1282,7 +1282,6 @@ fn multistage_gemm[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
-    serial_reduction: Bool = False,
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
@@ -1297,127 +1296,62 @@ fn multistage_gemm[
     var tensor_a = from_ndbuffer_row_major(a)
     var tensor_b = from_ndbuffer_row_major(b)
 
+    # Split K dispatch
     if runtime_config.num_k_partitions > 1:
+        alias work_space_type = config.split_k_reduction_type
+        var work_space_data = ctx.enqueue_create_buffer[work_space_type](
+            runtime_config.num_k_partitions * M * N
+        )
+        var work_space = NDBuffer[work_space_type, 3](
+            work_space_data.ptr,
+            Index(int(runtime_config.num_k_partitions), M, N),
+        )
 
-        @parameter
-        if serial_reduction:
-            constrained[
-                c_type == DType.bfloat16,
-                "serial reduction is unsupported for this config",
-            ]()
-            alias work_space_type = config.split_k_reduction_type
+        alias gemm_kernel_type = multistage_gemm_split_k_kernel[
+            c_type,
+            tensor_c.layout,
+            a_type,
+            tensor_a.layout,
+            b_type,
+            tensor_b.layout,
+            work_space_type,
+            transpose_b,
+            config,
+            elementwise_lambda_fn,
+        ]
 
-            # For the serial reduction we dont use workspace
-            var work_space = NDBuffer[work_space_type, 3](
-                UnsafePointer[Scalar[work_space_type]](),
-                Index(0, 0, 0),
-            )
+        var gemm_kernel = ctx.compile_function[
+            gemm_kernel_type,
+            # dump_asm = Path("./pipeline-gemm.ptx"),
+        ](
+            threads_per_block=int(config.num_threads()),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                config.shared_mem_usage()
+            ),
+        )
 
-            alias BM = config.block_tile_shape[0]
-            alias BN = config.block_tile_shape[1]
+        ctx.enqueue_function(
+            gemm_kernel,
+            tensor_c,
+            tensor_a,
+            tensor_b,
+            work_space,
+            runtime_config.num_k_partitions,
+            grid_dim=runtime_config.grid_dim(M, N),
+            block_dim=runtime_config.block_dim(),
+            shared_mem_bytes=runtime_config.shared_mem_usage(),
+        )
 
-            var locks_data = ctx.enqueue_create_buffer[DType.int32](
-                ceildiv(M, BM) * ceildiv(N, BN)
-            )
-            ctx.enqueue_memset(locks_data, 0)
+        split_k_reduce[
+            c_type,
+            work_space_type,
+            c_shape,
+            work_space.shape,
+            elementwise_lambda_fn,
+        ](c, work_space, ctx)
 
-            alias gemm_kernel_type = multistage_gemm_split_k_kernel[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                work_space_type,
-                transpose_b,
-                config,
-                elementwise_lambda_fn,
-                serial_reduction,
-            ]
-
-            var gemm_kernel = ctx.compile_function[
-                gemm_kernel_type,
-                # dump_asm = Path("./pipeline-gemm.ptx"),
-            ](
-                threads_per_block=int(config.num_threads()),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    config.shared_mem_usage()
-                ),
-            )
-
-            ctx.enqueue_function(
-                gemm_kernel,
-                tensor_c,
-                tensor_a,
-                tensor_b,
-                work_space,
-                runtime_config.num_k_partitions,
-                locks_data.ptr,
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
-            )
-
-            _ = locks_data^
-            return
-
-        else:
-            alias work_space_type = config.split_k_reduction_type
-            var work_space_data = ctx.enqueue_create_buffer[work_space_type](
-                runtime_config.num_k_partitions * M * N
-            )
-            var work_space = NDBuffer[work_space_type, 3](
-                work_space_data.ptr,
-                Index(int(runtime_config.num_k_partitions), M, N),
-            )
-
-            alias gemm_kernel_type = multistage_gemm_split_k_kernel[
-                c_type,
-                tensor_c.layout,
-                a_type,
-                tensor_a.layout,
-                b_type,
-                tensor_b.layout,
-                work_space_type,
-                transpose_b,
-                config,
-                elementwise_lambda_fn,
-                False,
-            ]
-
-            var gemm_kernel = ctx.compile_function[
-                gemm_kernel_type,
-                # dump_asm = Path("./pipeline-gemm.ptx"),
-            ](
-                threads_per_block=int(config.num_threads()),
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    config.shared_mem_usage()
-                ),
-            )
-
-            ctx.enqueue_function(
-                gemm_kernel,
-                tensor_c,
-                tensor_a,
-                tensor_b,
-                work_space,
-                runtime_config.num_k_partitions,
-                UnsafePointer[Scalar[DType.int32]](),
-                grid_dim=runtime_config.grid_dim(M, N),
-                block_dim=runtime_config.block_dim(),
-                shared_mem_bytes=runtime_config.shared_mem_usage(),
-            )
-
-            split_k_reduce[
-                c_type,
-                work_space_type,
-                c_shape,
-                work_space.shape,
-                elementwise_lambda_fn,
-            ](c, work_space, ctx)
-
-            _ = work_space_data^
-            return
+        _ = work_space_data^
+        return
 
     # Dispatch w/o split K
     alias gemm_kernel_type = multistage_gemm_kernel[
@@ -1438,13 +1372,11 @@ fn multistage_gemm[
             config.shared_mem_usage()
         ),
     )
-
     ctx.enqueue_function(
         gemm_kernel,
         tensor_c,
         tensor_a,
         tensor_b,
-        UnsafePointer[Scalar[DType.int32]](),
         grid_dim=runtime_config.grid_dim(M, N),
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=runtime_config.shared_mem_usage(),
