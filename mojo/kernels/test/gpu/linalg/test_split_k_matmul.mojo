@@ -152,6 +152,7 @@ fn test_split_k_multistage_gemm[
         b_layout,
         transpose_b,
         config,
+        None,
     ]
 
     ctx.enqueue_copy_to_device(a_device, a_host.tensor.data)
@@ -170,7 +171,6 @@ fn test_split_k_multistage_gemm[
         c_tensor,
         a_tensor,
         b_tensor,
-        UnsafePointer[Scalar[DType.int32]](),
         grid_dim=config.grid_dim(M, N),
         block_dim=config.block_dim(),
         shared_mem_bytes=config.shared_mem_usage(),
