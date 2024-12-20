@@ -7,14 +7,14 @@ from max.driver import CPU, Accelerator
 from max.graph import DeviceKind, DeviceRef
 
 
-def test_cuda_device():
+def test_accelerator_device():
     # We should be able to create a Accelerator device.
     cuda = Accelerator()
     assert "cuda" in str(cuda)
     assert not cuda.is_host
 
 
-def test_cuda_device_label_id():
+def test_accelerator_device_label_id():
     # Test the label property and attempt to map to graph.DeviceRef.
     dev_id = 0
     default_device = Accelerator()
@@ -32,10 +32,10 @@ def scoped_device():
     _ = Accelerator(0)  # NOTE: device ID is intentionally explicit.
 
 
-def test_stress_cuda_device():
+def test_stress_accelerator_device():
     # We should be able to call Accelerator() many times, and get cached outputs.
     devices = [Accelerator() for _ in range(64)]
-    assert len({id(cuda._device) for cuda in devices}) == 1
+    assert len({id(dev._device) for dev in devices}) == 1
 
     # TODO(MSDK-1220): move this before the above assert when the context no
     # longer leaks. Until then, this should still test that the default device
@@ -47,15 +47,15 @@ def test_stress_cuda_device():
 def test_equality():
     # We should be able to test the equality of devices.
     cpu = CPU()
-    cuda = Accelerator()
+    accel = Accelerator()
 
-    assert cpu != cuda
+    assert cpu != accel
 
 
 def test_stats():
     # We should be able to query utilization stats for the device.
-    cuda = Accelerator()
-    stats = cuda.stats
+    accel = Accelerator()
+    stats = accel.stats
     assert "timestamp" in stats
     assert "free_memory" in stats
     assert "total_memory" in stats
