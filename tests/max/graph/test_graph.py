@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from unittest import mock
 
 import pytest
@@ -211,3 +213,20 @@ def test_invalid_operand() -> None:
         with pytest.raises(AssertionError):
             Graph.current._add_op(rmo.add, [2, 5], input_tensor)
         graph.output(input_tensor)
+
+
+def test_load_from_file() -> None:
+    """Tests printing to and loading from a file."""
+    graph = Graph(
+        "identity",
+        forward=lambda x: x,
+        input_types=[TensorType(DType.int64, [1])],
+    )
+    with NamedTemporaryFile("w") as mlir_text_file:
+        # Flush so that the subsequent read works.
+        print(graph, file=mlir_text_file, flush=True)
+        loaded_graph = Graph("loaded", path=Path(mlir_text_file.name))
+
+    assert isinstance(
+        loaded_graph._mlir_op, (mlir.Operation, mlir.OpView)
+    ) and (str(loaded_graph) == str(graph))

@@ -116,7 +116,7 @@ class Graph:
     # Note that insertion order in built-in dict has been guaranteed since
     # Python 3.7.
     _params: dict[str, None]
-    _mlir_op: mlir.Operation
+    _mlir_op: mlir.Operation | mlir.OpView
     _context: mlir.Context
     _module: mlir.Module
     _unique_symbolic_dim_counter: int
@@ -393,14 +393,9 @@ class Graph:
                 self._module = mlir.Module.create()
                 with mlir.InsertionPoint(self._module.body):
                     self._module = self._module.parse(f.read(), self._context)
-                    # TODO: This quite clearly seems to be assigning an MLIR
-                    # block to self._mlir_op, but self._mlir_op is supposed to
-                    # be an operation, not a block.  Is this assigning the
-                    # right thing?  If so, is the declared type of
-                    # self._mlir_op wrong?
-                    self._mlir_op = (
-                        self._module.body.operations[0].regions[0].blocks[0]  # type: ignore
-                    )
+                    # Set the mo.graph op, which is the first operation in the
+                    # module body block.
+                    self._mlir_op = self._module.body.operations[0]
 
     def add_weight(self, weight: Weight) -> TensorValue:
         """Adds a weight to the graph.
