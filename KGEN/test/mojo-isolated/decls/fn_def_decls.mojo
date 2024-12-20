@@ -127,10 +127,10 @@ def defTests(
     # CHECK-NEXT: lit.var.decl "defTests"
 
     # CHECK-NEXT: %reg_0 = lit.var.decl "reg" arg(3)
-    # CHECK-NEXT: lit.call {{.*}}NonTrivialReg::@"__copyinit__{{.*}}(%reg_0, %reg)
+    # CHECK-NEXT: lit.call {{.*}}NonTrivialReg::@"__copyinit__{{.*}}(%reg, %reg_0)
 
     # CHECK-NEXT: %mem_1 = lit.var.decl "mem" arg(2)
-    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__copyinit__{{.*}}(%mem_1, %mem)
+    # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__copyinit__{{.*}}(%mem, %mem_1)
 
     # CHECK-NEXT: %a_2 = lit.var.decl "a" arg
     # CHECK-NEXT: lit.ref.store %a, %a_2

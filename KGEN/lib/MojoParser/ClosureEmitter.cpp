@@ -147,7 +147,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
 }
 
 /// ```mojo
-/// fn __init__(out self, f: fn_ptr_type):
+/// fn __init__(f: fn_ptr_type, out self):
 ///     self.field0 = f
 ///     self.dtor = __closure_wrapper_noop_dtor
 ///     self.copy = __closure_wrapper_noop_copy
@@ -167,21 +167,22 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   auto b = ImplicitLocOpBuilder::atBlockEnd(
       translateLocation(decl.getLoc()),
       &cast<StructDeclOp>(decl).getFields().front());
-  auto argListAttrs = PogListAttr::get(
-      ctx, {selfName, otherName}, {PassingKind::PosOrKw, PassingKind::PosOrKw});
+  auto argListAttrs =
+      PogListAttr::get(ctx, {otherName, selfName},
+                       {PassingKind::PosOrKw, PassingKind::Implicit});
   auto [func, _] = synthesizeFunction(
       decl, "__init__", /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(ctx),
-      {selfType.getRefForArgument("self", /*isMut=*/true), fnPtrType},
-      {ArgConvention::InitSelf, ArgConvention::ReadReg}, argListAttrs, noneType,
-      SpecialFunctionKind::kInit, decl.getLoc(), b);
+      {fnPtrType, selfType.getRefForArgument("self", /*isMut=*/true)},
+      {ArgConvention::ReadReg, ArgConvention::ByRefResult}, argListAttrs,
+      noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
   func.setInlineLevel(InlineLevel::Always);
 
-  Value self = func.getArgument(0);
+  Value self = func.getArgument(1);
   b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
 
   // Store the function pointer into the pointer field.
   Value opaqueFnPtr =
-      b.create<POP::PointerBitcastOp>(opaquePtrType, func.getArgument(1));
+      b.create<POP::PointerBitcastOp>(opaquePtrType, func.getArgument(0));
   storeField(b, self, opaqueFnPtr, b.getStringAttr("field0"));
 
   // Use the no-op destructor and copy constructor.
@@ -239,12 +240,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     SMLoc nestedFunctionOrTypeLocation) {
   SmallVector<Type> fieldTypes{opaquePtrType};
 
-  if (!dependentSignatureType.getResultParamTypes().empty()) {
-    shared.emitError(
-        nestedFunctionOrTypeLocation,
-        "result parameters in escaping closures are not supported yet");
-    return {};
-  }
+  assert(dependentSignatureType.getResultParamTypes().empty() &&
+         "mojo doesn't have result parameters");
   SmallVector<ParamDeclAttr> wrapperDecls;
   ParserParamEvaluator evaluator(getDeclResolver());
   SmallVector<TypedAttr> paramValues;
@@ -354,8 +351,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     assert(std::distance(returnOps.begin(), returnOps.end()) == 1 &&
            "copy should have exactly one return op.");
     b.setInsertionPoint(*returnOps.begin());
-    Value copySelf = copyCtr.getBody()->getArgument(0);
-    Value copyExisting = copyCtr.getBody()->getArgument(1);
+    Value copySelf = copyCtr.getBody()->getArgument(1);
+    Value copyExisting = copyCtr.getBody()->getArgument(0);
     Value existingImpl = loadField(b, copyExisting, impl);
     Value funcPtr = loadField(b, copySelf, copy);
     auto call = b.create<CallIndirectOp>(
@@ -376,7 +373,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
         shared.translateLocation(moveCtrDecl->getLoc());
     ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
         translatedLocation, moveCtr.getBody());
-    Value moveExisting = moveCtr.getBody()->getArgument(1);
+    Value moveExisting = moveCtr.getBody()->getArgument(0);
     auto opaquePointerTypeAttr = M::PointerAttr::get(ctx, 0, opaquePtrType);
     Value nullPtr =
         b.create<ParamConstantOp>(opaquePtrType, opaquePointerTypeAttr);
@@ -497,7 +494,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   callInputTypes.push_back(
       ASTType(structSelfType).getRefForArgument("self", /*isMut=*/false));
   callConventions.push_back(ArgConvention::ReadMem);
-  callPogs.emplace_back(
+  callPogs.push_back(
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
 
   llvm::append_range(callInputTypes, nestedFn.getFunctionType().getInputs());
@@ -525,13 +522,12 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // function argument information.
 
   // All arguments as positional-only.
-  SmallVector<PassingKind> initSigPassingKinds(1 + captures.size(),
+  SmallVector<PassingKind> initSigPassingKinds(captures.size(),
                                                PassingKind::PosOnly);
   // Fill the types and conventions based on the register-passabilities.
-  SmallVector<StringAttr> initSigNames{selfName};
-  SmallVector<Type> initSigTypes{
-      ASTType(structSelfType).getRefForArgument("self", /*isMut=*/true)};
-  SmallVector<ArgConvention> initSigConventions{ArgConvention::InitSelf};
+  SmallVector<StringAttr> initSigNames;
+  SmallVector<Type> initSigTypes;
+  SmallVector<ArgConvention> initSigConventions;
   unsigned fieldNameIdx = 0;
   for (const Capture &capture : captures) {
     // If this is a reference capture, then we are capturing the address of the
@@ -553,6 +549,13 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
           initSigNames.back().str(), /*isMut=*/!isRef));
     }
   }
+
+  // Add "out self" at the end.
+  initSigNames.push_back(selfName);
+  initSigTypes.push_back(
+      ASTType(structSelfType).getRefForArgument("self", /*isMut=*/true));
+  initSigConventions.push_back(ArgConvention::ByRefResult);
+  initSigPassingKinds.push_back(PassingKind::Implicit);
 
   std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
       structDecl, /*generateFieldwiseInit=*/false,
@@ -586,7 +589,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
     // Emit IR to generate the capture list and store it into self. Bind the
     // call function reference to itself.
-    auto selfArg = initFunc.getArgument(0);
+    auto selfArg = initFunc.getArgument(initFunc.getNumArguments() - 1);
     Value target = builder.create<RefStructGEROp>(selfArg, paramField);
     ValueDest dest(MLValue(target), EC_Assignment);
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -798,25 +801,25 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   if (auto init = findInitInStruct(closureWrapper, closureImplRefType))
     return init;
   ASTType wrapperType = makeClosureImplSelfType(closureWrapper, wrapperParams);
-  SmallVector<Type> argTypes{
-      wrapperType.getRefForArgument("self", /*isMut=*/true),
-      closureImplRefType};
+  SmallVector<Type> argTypes{closureImplRefType, wrapperType.getRefForArgument(
+                                                     "self", /*isMut=*/true)};
 
   // Then build all other information needed for the __init__ signature.
-  SmallVector<ArgConvention> argConventions{ArgConvention::InitSelf,
-                                            ArgConvention::OwnedMem};
-  SmallVector<StringAttr> argNames{selfName, StringAttr::get(ctx, "impl")};
-  SmallVector<PassingKind> argPassingKinds(2, PassingKind::PosOnly);
+  ArgConvention argConventions[] = {ArgConvention::OwnedMem,
+                                    ArgConvention::ByRefResult};
+  StringAttr argNames[] = {StringAttr::get(ctx, "impl"), selfName};
+  PassingKind argPassingKinds[] = {PassingKind::PosOnly, PassingKind::Implicit};
   SmallVector<PassingKind> paramPassingKindsOfInit(initParams.size(),
                                                    PassingKind::Implicit);
   auto paramListAttrsOfInit = PogListAttr::get(
       ctx, getDemangledNames(initParams), paramPassingKindsOfInit);
   auto argListAttrsOfInit = PogListAttr::get(ctx, argNames, argPassingKinds);
-  FuncOp init = addVoidMethod(
+  ASTDecl &closureDecl =
       *ASTType(ASTDecl::computeSelfTypeForStruct(closureWrapper))
-           .getDecl(shared),
-      "__init__", argTypes, argConventions, argListAttrsOfInit,
-      SpecialFunctionKind::kInit, initParams, paramListAttrsOfInit);
+           .getDecl(shared);
+  FuncOp init = addVoidMethod(closureDecl, "__init__", argTypes, argConventions,
+                              argListAttrsOfInit, SpecialFunctionKind::kInit,
+                              initParams, paramListAttrsOfInit);
   init.setInlineLevel(InlineLevel::Always);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -828,7 +831,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
 
   // Allocate memory on heap and copy argument into allocated memory.
   Value target = allocateHeapMemory(PointerType::get(closureImplType), builder);
-  Value source = init.getBody()->getArgument(1);
+  Value source = init.getBody()->getArgument(0);
 
   // TODO(references): Move closures off pointers to correct origins.
   auto immortal = builder.getAttr<AnyOriginAttr>(/*isMut=*/true);
@@ -842,7 +845,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                             EC_Assignment);
 
   StructFieldOp implField = *closureWrapper.getFieldDecls().begin();
-  Value self = init.getBody()->getArgument(0);
+  Value self = init.getBody()->getArgument(1);
   Value erasedType =
       builder.create<POP::PointerBitcastOp>(opaquePtrType, target);
   storeField(builder, self, erasedType, implField);
@@ -860,7 +863,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
       funcSymbol = ParamOperatorAttr::get(POC::Rebind, funcSymbol, fieldType);
     auto createClosure =
         builder.create<CreateClosureOp>(funcSymbol, ValueRange());
-    storeField(builder, init.getArgument(0), createClosure, fieldName);
+    storeField(builder, init.getArgument(1), createClosure, fieldName);
   };
 
   // Create the top level copy constructor.

@@ -720,18 +720,16 @@ InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
   return results;
 }
 
-/// Execute a region that has a ByRefResult or InitSelf argument.
+/// Execute a region that has a ByRefResult argument.
 ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
-    Region &region, ArrayRef<Attribute> arguments, bool isInitSelf,
+    Region &region, ArrayRef<Attribute> arguments,
     SmartVariant<Type, TypedAttr> resultValue) {
   Location loc = region.getLoc();
   if (region.getArguments().empty())
     return ErrorTree(loc, "internal error: region has no arguments");
 
   // Allocate the result slot.
-  Type resultPtrType =
-      (isInitSelf ? region.getArgument(0) : region.getArguments().back())
-          .getType();
+  Type resultPtrType = region.getArguments().back().getType();
   TypedAttr resultSlotAttr;
 
   if (!getTarget()) {
@@ -747,11 +745,8 @@ ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
   }
 
   SmallVector<Attribute> allArgs;
-  if (isInitSelf)
-    allArgs.push_back(resultSlotAttr);
   llvm::append_range(allArgs, arguments);
-  if (!isInitSelf)
-    allArgs.push_back(resultSlotAttr);
+  allArgs.push_back(resultSlotAttr);
 
   // Internalize memory inside function arguments.
   if (ErrorOrSuccess err = internalizeMemory(allArgs); err.isError())

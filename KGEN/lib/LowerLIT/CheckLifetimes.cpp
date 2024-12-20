@@ -416,7 +416,7 @@ struct ValueInfo {
   /// True if this value lives in memory, not a @register_passable SSA value.
   const bool isIndirect;
 
-  /// True if this is a InitSelf argument: the self parameter in an
+  /// True if this is a byref_result argument for a self argument in an
   /// __init__/__copyinit__ method.  These have magic behavior so they become
   /// fully initialized when all their fields are initialized.
   const bool isFullObjectLiveOnEntry;
@@ -2016,13 +2016,13 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
 /// eliminate the copy in favor of more uses of the now-dead input.
 ///
 ///   %tmp = lit.var.decl "anonymous"
-///   kgen.call __copyinit__(%tmp, %src)
+///   kgen.call __copyinit__(%src, %tmp)
 ///   kgen.call __del__(%src)   <<= Thinking about inserting this.
 ///   kgen.call user(%tmp)      <<= Consuming call.
 ///
 /// If this happens, we want to generate:
 ///    REMOVED: %tmp = lit.var.decl "anonymous"
-///    REMOVED: kgen.call __copyinit__(%tmp, %src)
+///    REMOVED: kgen.call __copyinit__(%src, %tmp)
 ///    NOTADDED: kgen.call __del__(%src)
 ///    kgen.call user(%src)      <<= Use %src instead.
 ///
@@ -2042,7 +2042,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // Check to see if the copy is immediately destroyed.  If so, we can elide
   // both the copy and the destroy.  This could also be the last use of %src as
   // well, but it will just get a destructor call like normal if so.
-  Value copyDest = copyInitCall.getOperand(0);
+  Value copyDest = copyInitCall.getOperand(1);
   for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
     if (elt.value == copyDest && elt.valueRef.isIndirect &&
         elt.fieldsToDestroy.empty()) {
@@ -2057,7 +2057,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   }
 
   // Get the 'existing' value.
-  Value copyInitSrc = RefImmutOp::strip(copyInitCall.getOperand(1));
+  Value copyInitSrc = RefImmutOp::strip(copyInitCall.getOperand(0));
 
   // Check to see if we have this value to destroy.
   for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
@@ -2108,7 +2108,7 @@ static bool mightPointTo(Value p1, Value p2) {
 // "tmp" and where "src" gets mutated before the use of "tmp", e.g.:
 //
 //    %tmp = lit.var.decl "anonymous"
-//    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
+//    kgen.call __copyinit__(%src, %tmp)  <<== Last use of %src
 // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
 //    kgen.call __init__(%src)  <<== Could reinitialize %src before use of %tmp!
 //    use(%tmp)
@@ -2120,7 +2120,7 @@ static bool mightPointTo(Value p1, Value p2) {
 // "guaranteed" optimization.
 static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
                                             VarDeclOp tmpDecl) {
-  assert(copyInitCall.getOperand(0) == tmpDecl &&
+  assert(copyInitCall.getOperand(1) == tmpDecl &&
          "the vardecl is known to be directly assigned");
   // Right now we require them to be in the same block, this is overly
   // conservative.
@@ -2174,7 +2174,7 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       // enable this pattern:
 
       //    %tmp = lit.var.decl "anonymous"
-      //    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
+      //    kgen.call __copyinit__(%src, %tmp)  <<== Last use of %src
       // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
       //    use(%tmp)       <= use the temp
       //    consume(%tmp)   <= eventually consume it.
@@ -2192,7 +2192,7 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
   // Okay, we only see users of the 'tmp' decl that we can understand.  Do a
   // lexical scan to make sure there is nothing between the initialization of
   // the tmp and the use of the tmp that might re-use the source.
-  Value srcPointer = copyInitCall.getOperand(1);
+  Value srcPointer = copyInitCall.getOperand(0);
   for (auto it = ++Block::iterator(copyInitCall), e = tmpBlock->end();; ++it) {
     // If we ran off the end of the block but we didn't see the users, then the
     // copyinit doesn't dominate this use, something weird is going on, bail
@@ -2236,7 +2236,7 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   // the impact on debug information, but generally one wouldn't want debug
   // information to block optimizations.
   if (VarDeclOp tmpDecl =
-          copyInitCall.getOperand(0).getDefiningOp<VarDeclOp>()) {
+          copyInitCall.getOperand(1).getDefiningOp<VarDeclOp>()) {
     if (canEntirelyElideMemoryTemporary(copyInitCall, tmpDecl)) {
       // Insert a declaration of the origin for the tmp we're eliding, we know
       // that VarDeclOp's always declare a unique origin.
@@ -2288,16 +2288,16 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
 #ifndef NDEBUG
   auto moveSig = cast<SignatureType>(moveCtor.getType());
   assert(moveSig.getNumArguments() == 2);
-  assert(moveSig.getArgConvention(0) == ArgConvention::InitSelf);
-  assert(moveSig.getArgConvention(1) == ArgConvention::OwnedMem);
+  assert(moveSig.getArgConvention(0) == ArgConvention::OwnedMem);
+  assert(moveSig.getArgConvention(1) == ArgConvention::ByRefResult);
   auto moveArgs = moveSig.getArguments();
-  auto moveValue1Ref = cast<RefType>(moveArgs[1]);
+  auto moveValue1Ref = cast<RefType>(moveArgs[0]);
   // srcRefType is immutable here because it was passed to a copy.
-  assert(cast<RefType>(moveArgs[0]).getElementType() == destroyedType &&
+  assert(cast<RefType>(moveArgs[1]).getElementType() == destroyedType &&
          moveValue1Ref.getElementType() == destroyedType &&
          moveValue1Ref.isMutableKnown(true));
 
-  auto destType = cast<RefType>(copyInitCall.getOperand(0).getType());
+  auto destType = cast<RefType>(copyInitCall.getOperand(1).getType());
   assert(destType.getElementType() == srcRefType.getElementType());
 #endif
 
@@ -2307,9 +2307,9 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
   srcRefType = cast<RefType>(copyInitSrc.getType());
 
   // Switch the source operand, and update the origin associated with it.
-  copyInitCall.setOperand(1, copyInitSrc);
+  copyInitCall.setOperand(0, copyInitSrc);
   copyInitCall.setImplicitOrigins(
-      {copyInitCall.getImplicitOrigins()[0], srcRefType.getOrigin()});
+      {srcRefType.getOrigin(), copyInitCall.getImplicitOrigins()[1]});
 
   // Transform the copy into a move.
   copyInitCall.setCalleeAttr(moveCtor);
@@ -2454,7 +2454,7 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
   for (auto [argValue, conv] : llvm::zip(
            func.getArguments(), func.getSignature().getArgConventions())) {
     // Ignore undef-on-input values.
-    if (SignatureType::isResultSlot(conv) || conv == ArgConvention::InitSelf)
+    if (SignatureType::isResultSlot(conv))
       continue;
 
     bool isIndirect = SignatureType::hasAddress(conv);

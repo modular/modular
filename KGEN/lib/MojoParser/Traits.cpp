@@ -117,10 +117,10 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl,
     existingType =
         structDecl.getTypeDeclSelf().getRefForArgument("existing", isMut);
     auto [ctor, _] = gen.synthesizeMethodInStruct(
-        name, {selfRefType, existingType},
-        {ArgConvention::InitSelf, existingConv},
+        name, {existingType, selfRefType},
+        {existingConv, ArgConvention::ByRefResult},
         PogListAttr::get(ctx, {empty, empty},
-                         {PassingKind::PosOnly, PassingKind::PosOnly}),
+                         {PassingKind::PosOnly, PassingKind::Implicit}),
         shared.getNoneType(), structDecl, structDecl.getLoc(), kind,
         FnEffects(), "_thunk");
     if (!ctor)
@@ -130,10 +130,10 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl,
     auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
     Value value;
     if (kind == SpecialFunctionKind::kMoveInit)
-      value = b.create<LIT::LoadConsumeOp>(func.getArgument(1));
+      value = b.create<LIT::LoadConsumeOp>(func.getArgument(0));
     else
-      value = b.create<RefLoadOp>(func.getArgument(1));
-    b.create<RefStoreOp>(value, func.getArgument(0));
+      value = b.create<RefLoadOp>(func.getArgument(0));
+    b.create<RefStoreOp>(value, func.getArgument(1));
   }
   func.setInlineLevel(InlineLevel::AlwaysNoDebug);
   auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());

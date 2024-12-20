@@ -69,15 +69,12 @@ IREvaluator::evaluateFunctionWithResultSlot(FuncOp func,
   for (TypedAttr input : inputs)
     arguments.push_back(input);
 
-  // True if InitSelf, false if ByRefResult.
-  bool isInitSelf = func.getSignatureGenerator().getBody().hasInitSelfArg();
-  auto resultArg =
-      isInitSelf ? func.getArgument(0) : func.getArguments().back();
+  auto resultArg = func.getArguments().back();
   auto ptr = dyn_cast<PointerType>(resultArg.getType());
   if (!ptr)
     return ErrorTree(func.getLoc(), "result argument is not a pointer");
   ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
-      func.getBodyRegion(), arguments, isInitSelf, ptr.getElementType());
+      func.getBodyRegion(), arguments, ptr.getElementType());
 
   // Report an error if evaluation fails.
   if (result.isError()) {

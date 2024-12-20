@@ -68,7 +68,7 @@ struct OriginTrackable {
     /// argument).
     EndsInit,
     /// Value is initialized upon a normal function exit (e.g. as with a
-    /// byref_result or init_self argument).
+    /// byref_result argument).
     InitOnNormal,
     /// Value is initialized upon an error function exit (e.g. as with a
     /// byref_error argument).
@@ -78,9 +78,9 @@ struct OriginTrackable {
   /// The expected initialization state of the value upon exit from a function.
   ExitInitState endInitState = ExitInitState::EndsUninit;
 
-  /// True if this is a InitSelf argument: the self parameter in an
-  /// __init__/__copyinit__ method.  These have magic behavior so they become
-  /// fully initialized when all their fields are initialized.
+  /// True if this is a byref_result argument on an initializer: the self
+  /// argument of an __init__/__copyinit__ method.  These have magic behavior so
+  /// they become fully initialized when all their fields are initialized.
   bool isFullObjectLiveOnEntry = false;
 };
 
@@ -127,8 +127,8 @@ enum class OperandEffect {
   memLoad,
 
   /// This is store to the pointer that overwrites whatever is in it with a new
-  /// owned value.  For example, RefStoreOp, InitSelf and ByRefResult call
-  /// operands all do this.
+  /// owned value.  For example, RefStoreOp and ByRefResult call operands all do
+  /// this.
   memStoreOwned,
 
   /// mut arg to a function call.  Value must be initialized before the

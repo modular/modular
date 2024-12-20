@@ -88,13 +88,10 @@ ParameterSimplifier::evaluateExpression(ParamOperatorAttr op) {
     }
     value = cast<TypedAttr>(result->front());
   } else {
-    auto func = cast<FuncInterface>(body.getParentOp());
-    bool isInitSelf = func.getSignatureGenerator().getBody().hasInitSelfArg();
-    Value resultArg =
-        isInitSelf ? body.getArgument(0) : body.getArguments().back();
+    Value resultArg = body.getArguments().back();
     Type resultType = cast<PointerType>(resultArg.getType()).getElementType();
     ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
-        body, arguments, isInitSelf, createUninitializedValueOf(resultType));
+        body, arguments, createUninitializedValueOf(resultType));
     if (result.isError()) {
       DEBUG_WITH_TYPE(
           "simple-interpreter",

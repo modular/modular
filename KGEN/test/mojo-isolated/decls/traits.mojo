@@ -229,8 +229,8 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %value: !lit.ref<:!Copyable T, imm {{.*}}> read_mem, ?,
 # CHECK-SAME: %__result__: !lit.ref<:!Copyable T, mut {{.*}}> byref_result
 fn copy_me[T: Copyable](value: T) -> T:
-    # CHECK-NEXT: call[!lit.signature<[2]("self": {{.*}}T, {{.*}}> init_self, "existing": {{.*}}T, {{.*}}> read_mem, |) -> !kgen.none>:
-    # CHECK-SAME: get_vtable_entry({{.*}} T, "__copyinit__")]{{.*}}(%__result__, %value)
+    # CHECK-NEXT: call[!lit.signature<[2]("existing": {{.*}}T, {{.*}}> read_mem, |, ?, "self": {{.*}}T, {{.*}}> byref_result) -> !kgen.none>:
+    # CHECK-SAME: get_vtable_entry({{.*}} T, "__copyinit__")]{{.*}}(%value, %__result__)
     return value
 
 
@@ -240,7 +240,7 @@ fn copy_me[T: Copyable](value: T) -> T:
 # CHECK-SAME: :!Movable T, {{.*}}> byref_result
 fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: lit.ownership.use %value
-    # CHECK-NEXT: call[{{.*}}get_vtable_entry({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value)
+    # CHECK-NEXT: call[{{.*}}get_vtable_entry({{.*}} T, "__moveinit__")]{{.*}}(%value, %__result__)
     return value^
 
 
@@ -270,7 +270,7 @@ trait TraitForReg:
 @register_passable
 struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.func @"__init__
-    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, %x: index)
+    # CHECK-SAME: %x: index, ?, %self: !lit.ref<!RegTraitType, mut {{.*}}> byref_result)
     @implicit
     fn __init__(out self, x: int):
         pass

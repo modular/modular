@@ -46,12 +46,11 @@ struct FunctionTrait {
   struct RegForward {};
 
   /// This trait represents a function that trivially forwards a single
-  /// register-passable argument through a result slot, either `init_self` or
-  /// `byref_result`.
+  /// register-passable argument through a byref_result result slot.
   ///
   /// ```mlir
-  /// kgen.generator @anything(%result: !kgen.pointer<!SomeType> init_self,
-  ///                          %value: !SomeType) -> !kgen.none {
+  /// kgen.generator @anything(%value: !SomeType,
+  ///         %result: !kgen.pointer<!SomeType> byref_result) -> !kgen.none {
   ///   pop.store %value, %result
   ///   kgen.return %none
   /// }
@@ -133,9 +132,7 @@ std::optional<FunctionTrait> FunctionTrait::identify(GeneratorOp func) {
       (getNextNonDebugNode(store) == ret ||
        getNextNonDebugNode(ret.getOperand(0).getDefiningOp()) == ret)) {
     int valueIdx = -1;
-    if (sig.getArgConvention(0) == ArgConvention::InitSelf)
-      valueIdx = 1;
-    else if (sig.getArgConvention(1) == ArgConvention::ByRefResult)
+    if (sig.getArgConvention(1) == ArgConvention::ByRefResult)
       valueIdx = 0;
     // Check that one of the arguments is a result slot, the result slot
     // argument is the dest of the store, and the other argument is the value.

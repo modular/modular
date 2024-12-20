@@ -28,7 +28,7 @@ struct ConvertibleFromInt:
 # CHECK-LABEL: lit.globalvar.decl @conv_from_int : !ConvertibleFromInt
 # CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int : <!ConvertibleFromInt
 # CHECK-DAG: %[[VAL:.*]] = kgen.param.constant = <2>
-# CHECK-NEXT: lit.call {{.*}}@ConvertibleFromInt::@"__init__{{.*}}(%[[REF]], %[[VAL]])
+# CHECK-NEXT: lit.call {{.*}}@ConvertibleFromInt::@"__init__{{.*}}(%[[VAL]], %[[REF]])
 # CHECK: }, {
 # CHECK-NEXT: %[[REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int
 # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%[[REF]])
@@ -37,7 +37,7 @@ var conv_from_int: ConvertibleFromInt = `2`
 # CHECK-LABEL: lit.globalvar.decl @conv_from_int_implicit : !ConvertibleFromInt
 # CHECK-DAG: %[[REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int_implicit : <!ConvertibleFromInt
 # CHECK-DAG: %[[VAL:.*]] = kgen.param.constant = <3>
-# CHECK-NEXT: lit.call {{.*}}@ConvertibleFromInt::@"__init__{{.*}}(%[[REF]], %[[VAL]])
+# CHECK-NEXT: lit.call {{.*}}@ConvertibleFromInt::@"__init__{{.*}}(%[[VAL]], %[[REF]])
 var conv_from_int_implicit = ConvertibleFromInt(`3`)
 
 
@@ -98,6 +98,6 @@ fn refGlobals():
     # CHECK: %[[MEM_REF:.*]] = lit.globalvar.ref {{.*}}@conv_from_int
     # CHECK-NEXT: %anonymous2A = lit.var.decl {{.*}} : !lit.ref<!ConvertibleFromInt
     # CHECK-NEXT: %[[MEM_REF_IMM:.*]] = lit.ref.immut %[[MEM_REF]]
-    # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%anonymous2A, %[[MEM_REF_IMM]])
+    # CHECK-NEXT: call {{.*}}__copyinit__{{.*}}(%[[MEM_REF_IMM]], %anonymous2A)
     # CHECK-NEXT: call {{.*}}copyGlobalMem{{.*}}(%anonymous2A)
     copyGlobalMem(conv_from_int)

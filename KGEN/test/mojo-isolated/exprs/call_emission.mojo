@@ -227,7 +227,7 @@ fn test_variadic_and_kw_only_params_indirect[x: int,
 
 ## Complex address space support
 
-# Passing non-default address space through initself.
+# Passing non-default address space through Self in an initializer.
 
 
 # CHECK-LABEL: lit.func @"initialize_in_addrspace
@@ -364,17 +364,17 @@ fn test_byref_slot_with_references():
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}pack_it{{.*}}({{.*}},  [[RESULTTMP]])
     f = pack_it(f)
-    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
+    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}([[RESULTTMP]], %f)
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
     f = also_broken(Pointer.address_of(f))
-    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
+    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}([[RESULTTMP]], %f)
 
     # CHECK: [[RESULTTMP:%.*]] = lit.var.decl "__call_result_tmp__"
     # CHECK-NEXT: lit.call {{.*}}also_broken{{.*}}({{.*}},  [[RESULTTMP]])
     f = also_broken(Pointer.address_of(f))
-    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}(%f, [[RESULTTMP]])
+    # CHECK-NEXT: lit.call {{.*}}String::@"__moveinit__{{.*}}([[RESULTTMP]], %f)
 
 
 # CHECK-LABEL: lit.func @"test_byref_slot_closure_capture
@@ -387,7 +387,7 @@ fn test_byref_slot_closure_capture(owned x: String):
     # CHECK: %__call_result_tmp__
     # CHECK-NEXT: lit.call[{{.*}}: *"capture{{.*}}(%__call_result_tmp__)
     x = capture()
-    # CHECK-NEXT: lit.call {{.*}}@String::@"__moveinit__{{.*}}(%x, %__call_result_tmp__)
+    # CHECK-NEXT: lit.call {{.*}}@String::@"__moveinit__{{.*}}(%__call_result_tmp__, %x)
 
 
 fn test_int_ref(ref x: Int) -> ref [x] Int:
@@ -449,7 +449,7 @@ fn takeOwnedValue(owned view: ViewOfHeavy): pass
 # CHECK-LABEL: lit.func @"testUnneededCopy
 fn testUnneededCopy(heavy: Heavy):
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl 
-  # CHECK-NEXT: lit.call {{.*}}ViewOfHeavy::@"__init__{{.*}}([[TMP]], %heavy)
+  # CHECK-NEXT: lit.call {{.*}}ViewOfHeavy::@"__init__{{.*}}(%heavy, [[TMP]])
   # CHECK-NEXT: lit.call {{.*}}takeOwnedValue
   takeOwnedValue(heavy)
   # CHECK-NEXT: kgen.param.constant: none

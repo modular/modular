@@ -9,11 +9,11 @@
 
 # CHECK-LABEL:    lit.func @"makes_escaping_closure
 # CHECK-NEXT:    %anonymous2A = lit.var.decl "anonymous*" synth : !lit.ref<!escaping
-# CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m)
+# CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, %anonymous2A)
 # CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : !lit.ref<!index
-# CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%myclosure, %anonymous2A)
+# CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A, %myclosure)
 # CHECK-NEXT:    lit.ownership.use %myclosure
-# CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%__result__, %myclosure){{.*}} loc(#[[LOC26:.*]])
+# CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%myclosure, %__result__){{.*}} loc(#[[LOC26:.*]])
 
 # CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<(fn)"makes_escaping_closure"(<"index">, <"index">) from <(module)"debuginfo">>
 # CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<{{.*}}, sourceName = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", {{.*}}, line = [[#LN42:]],
@@ -36,9 +36,9 @@ fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
 # CHECK-LABEL: lit.func @"closure_in_block
 # CHECK:       hlcf.elif
 # CHECK:         %anonymous2A = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0:.*]])
-# CHECK-NEXT:     = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m) : {{.*}} loc(#[[LOC0]])
+# CHECK-NEXT:     = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%m, %anonymous2A) : {{.*}} loc(#[[LOC0]])
 # CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : {{.*}} loc(#[[LOC0]])
-# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%myclosure, %anonymous2A) : {{.*}} loc(#[[LOC0]])
+# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A, %myclosure) : {{.*}} loc(#[[LOC0]])
 # CHECK-NEXT:     = lit.ref.immut %myclosure : {{.*}} loc(#[[LOC1:.*]])
 # CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__call__({{.*}}) : {{.*}} loc(#[[LOC1]])
 

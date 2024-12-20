@@ -475,7 +475,7 @@ lit.package @main {
 
 !Mem = !lit.struct<@Mem>
 lit.struct.decl @Mem   {
-  lit.func @__init__[mut a](%self: !lit.ref<!Mem, mut a> init_self, |) -> !kgen.none {
+  lit.func @__init__[mut a](%self: !lit.ref<!Mem, mut a> byref_result, |) -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }
@@ -487,7 +487,7 @@ lit.func @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !k
   // CHECK-NEXT: kgen.param.declare.region localTest = (%arg1: !kgen.pointer<struct<() memoryOnly>> byref_result) capturing
   lit.func localTest[mut lt](%__result__[__result__]: !lit.ref<!Mem, mut lt> byref_result, |) capturing -> !kgen.none {
     // CHECK-NEXT: call @"Mem::__init__"(%arg1)
-    %1 = lit.call @Mem::@__init__[mut lt](%__result__) : !lit.signature<[1]("self": !lit.ref<!Mem, mut *[0,0]> init_self, |) -> !kgen.none>
+    %1 = lit.call @Mem::@__init__[mut lt](%__result__) : !lit.signature<[1]("self": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }

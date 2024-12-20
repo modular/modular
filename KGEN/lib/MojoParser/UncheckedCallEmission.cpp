@@ -234,7 +234,6 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
-  case ArgConvention::InitSelf:
     // By-ref arguments, must be lvalues.
     assert(operand.ir.getIfLValue() && "Call should already be type checked");
     return operand.ir;
@@ -379,7 +378,6 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   SmallVector<Value> args;
   for (auto &operand : remainingOperands) {
     assert(convention != ArgConvention::ByRefResult &&
-           convention != ArgConvention::InitSelf &&
            "cannot have variadics of this convention, so can pass in empty "
            "callArgsSoFar");
     Value argVal = emitPreemittedArgumentAsDynamicValue(
@@ -472,17 +470,6 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   return success();
 }
 
-/// Return true if this operand is a placeholder for a byrefresult or initself.
-/// Return false it if it something explicitly specified, e.g. when a
-/// constructor is invoked with `x.__init__()` or 'x = function()'
-static bool isInitSelfOrByRefResultPlaceholder(const AnyValue &value) {
-  if (!value)
-    return true;
-  if (auto pv = value.getIfPValue())
-    return isa<UnknownAttr>(pv.get());
-  return false;
-}
-
 FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
 CallEmitter::emitArgValues(const CallOperands &operands) {
   // This is the index into the operands list for the next operand value to look
@@ -514,15 +501,6 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       assert(calleeSig.hasMemoryOnlyResult() ||
              (calleeSig.isThrows() &&
               pogAttr.getPassingKind() == PassingKind::Implicit));
-      argumentValues.push_back({AnyValue(), callExpr});
-      continue;
-    }
-
-    // If this is an `init_self` slot that has not been explicitly provided by
-    // the user, we will have to find a slot later.
-    if (convention == ArgConvention::InitSelf &&
-        isInitSelfOrByRefResultPlaceholder(operands.values.front().ir)) {
-      ++posOperandIdx;
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
     }
@@ -712,7 +690,8 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     // We can't allow assigning into a field because we cannot partially destroy
     // the value, but we can overwrite the whole thing.
     if (underlyingDest != destBuffer) {
-      // initself arguments can be piecewise destroyed on a thrown error.
+      // byref_result arguments of initializers can be piecewise destroyed on a
+      // thrown error.
       if (!trackable.isFullObjectLiveOnEntry ||
           trackable.endInitState !=
               OriginTrackable::ExitInitState::InitOnNormal)
@@ -730,8 +709,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   SmallVector<Type> argTypes;
   for (auto [value, convention] :
        llvm::zip(argValues, calleeSig.getArgConventions())) {
-    if (SignatureType::isResultSlot(convention) ||
-        convention == ArgConvention::InitSelf)
+    if (SignatureType::isResultSlot(convention))
       continue;
 
     argTypes.push_back(value.getType());
@@ -746,8 +724,14 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
                    [&](TypedAttr origin) {
                      while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
                        origin = fieldAttr.getBase();
-                     destOrigins.insert(origin);
+                     // AnyOrigin is assumed to be ok since it is used for
+                     // UnsafePointer etc.
+                     if (!isa<AnyOriginAttr>(origin))
+                       destOrigins.insert(origin);
                    });
+
+  if (destOrigins.empty())
+    return true;
 
   // Check to see if any of the the origins they may be accessing are the
   // origin in question.  If any of them is a possible reference to the
@@ -878,12 +862,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   }
 
   case ArgConvention::ByRefResult:
-  case ArgConvention::Mut:
-  case ArgConvention::InitSelf: {
-    // initself and byref_result can have a placeholder when there is no
-    // specified destination, but can also have a destination specified
-    // directly.
-    if (isInitSelfOrByRefResultPlaceholder(argValAndExpr.ir)) {
+  case ArgConvention::Mut: {
+    // byref_result can have a placeholder when there is no specified
+    // destination, but can also have a destination specified directly.
+    if (!argValAndExpr.ir) {
       auto resultRValueType = cast<RefType>(declaredArgType).getElementType();
 
       // Often the result of the call will be directly assigned into a
@@ -954,14 +936,13 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   llvm_unreachable("unexpected argument convention");
 }
 
-/// This function drops `init_self` or `byref_result` result slots from an
-/// argument list, leaving only the formal arguments. This logic is valid for
-/// parameter calls only.
+/// This function drops `byref_result` result slots from an argument list,
+/// leaving only the formal arguments. This logic is valid for parameter calls
+/// only.
 template <typename T>
 static ArrayRef<T> dropResultSlots(ArrayRef<T> argumentValues,
                                    SignatureType sig) {
-  if (sig.hasInitSelfArg() && sig.getNumArguments() == argumentValues.size())
-    return argumentValues.drop_front();
+  // TODO: What about throwing functions?
   if (sig.hasMemoryOnlyResult() &&
       sig.getNumArguments() == argumentValues.size())
     return argumentValues.drop_back();
@@ -979,10 +960,10 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
   if (!calleeSymbolCst)
     return failure();
 
-  // When emitting a call in a dynamic context to function with an `init_self`
-  // or `byref_result` argument, the caller sets up an MLValue destination or
-  // may pass in a placeholder value. Make sure to drop them before calling into
-  // the interpreter.
+  // When emitting a call in a dynamic context to function with a `byref_result`
+  // argument, the caller sets up an MLValue destination or may pass in a
+  // placeholder value. Make sure to drop them before calling into the
+  // interpreter.
   argumentValues = dropResultSlots(argumentValues, calleeSig);
   ArrayRef<ArgConvention> conventions =
       dropResultSlots(calleeSig.getArgConventions(), calleeSig);
@@ -1056,9 +1037,9 @@ static TypedAttr tryOriginInitFold(SymbolRefAttr symbolRef,
     return {};
 
   // Okay, we know we want to fold this.
-  assert(sigType.getArgConvention(0) == ArgConvention::InitSelf);
+  assert(sigType.getArgConvention(1) == ArgConvention::ByRefResult);
   auto originStructType = cast<LIT::StructType>(
-      ASTType(sigType.getArguments()[0]).getReferenceElementType());
+      ASTType(sigType.getArguments()[1]).getReferenceElementType());
 
   // Figure out what the struct field is so we can form a StructAttr.  We know
   // the "self" type has been bound to any parameters, so it will be the actual
@@ -1117,13 +1098,10 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   auto argTypes = boundSigType.getArguments();
   auto argConventions = boundSigType.getArgConventions();
+  // TODO: What about throwing functions?
   if (boundSigType.hasMemoryOnlyResult()) {
     argTypes = argTypes.drop_back();
     argConventions = argConventions.drop_back();
-  }
-  if (boundSigType.hasInitSelfArg()) {
-    argTypes = argTypes.drop_front();
-    argConventions = argConventions.drop_front();
   }
 
   for (auto [argValAndExpr, calleeArgType, convention] :
@@ -1158,20 +1136,13 @@ TypedAttr CallEmitter::emitCallInParamContext(
     }
 
   TypedAttr result;
-  if (!boundSigType.hasMemoryOnlyResult() && !boundSigType.hasInitSelfArg()) {
+  if (!boundSigType.hasMemoryOnlyResult()) {
     Type resultType = boundSigType.getResults().front();
     result = ParamOperatorAttr::get(POC::Apply, operands, resultType);
   } else {
-    Type resultType;
-    if (boundSigType.hasMemoryOnlyResult())
-      resultType =
-          ASTType(boundSigType.getArguments().back()).getReferenceElementType();
-    else {
-      assert(boundSigType.hasInitSelfArg());
-      resultType = ASTType(boundSigType.getArguments().front())
-                       .getReferenceElementType();
-    }
-    // ByRefResult and InitSelf use ApplyResultSlot.
+    Type resultType =
+        ASTType(boundSigType.getArguments().back()).getReferenceElementType();
+    // ByRefResult uses ApplyResultSlot.
     result = ParamOperatorAttr::get(POC::ApplyResultSlot, operands, resultType);
   }
 
@@ -1403,8 +1374,7 @@ void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
   // destination that we're storing into, not any nested references that may
   // be in the result. This returned value is derived from the other arguments
   // passed to the function, it doesn't conflict with them.
-  if (convention == ArgConvention::InitSelf ||
-      convention == ArgConvention::ByRefResult ||
+  if (convention == ArgConvention::ByRefResult ||
       convention == ArgConvention::ByRefError) {
     checkOriginAccess(val, convention, argIdx,
                       cast<RefType>(val.getType()).getOrigin());
@@ -1616,19 +1586,10 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   SmallVector<TypedAttr> implicitOrigins;
   ArrayRef<ArgConvention> conventions = calleeSig.getArgConventions();
 
-  // This is true if the call has an init_self slot with an explicitly provided
-  // value, e.g. `SomeType.__init__(out)`.
-  bool hadExplicitDestForInitSelf = false;
-
   for (auto [argIdx, argValAndExpr, conventionX, declaredArgTypeX] :
        llvm::enumerate(argumentValues, conventions, calleeSig.getArguments())) {
     ArgConvention convention = conventionX;
     Type declaredArgType = declaredArgTypeX;
-
-    // Notice if we have an explicit destination for initself.
-    if (convention == ArgConvention::InitSelf &&
-        !isInitSelfOrByRefResultPlaceholder(argValAndExpr.ir))
-      hadExplicitDestForInitSelf = true;
 
     // If this is a variadic operation, the N operands have already been emitted
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
@@ -1671,8 +1632,10 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
         argValAndExpr, convention, declaredArgType, callArgs);
-    if (!arg)
+    if (!arg) {
+      dest.resetForError();
       return {};
+    }
 
     // VariadicPack also includes the implicit origin for the elements, which
     // is different than the origin for the pack itself (when passed through
@@ -1788,17 +1751,6 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult() && !calleeSig.isAsync()) {
     callResult = MRValue(callArgs.back());
-  } else if (calleeSig.hasInitSelfArg()) {
-    // If this is a constructor call with an implicit `init_self` argument, we
-    // need to pass it on to the destination.
-    if (!hadExplicitDestForInitSelf)
-      callResult = MRValue(callArgs.front());
-    else {
-      // Otherwise, always return `None` when directly invoking a constructor
-      // like "SomeType.__init__(out)".
-      // FIXME: Why are we doing this?  This can just return 'out' as an RValue.
-      callResult = PValue(shared.getNoneAttr());
-    }
   }
 
   // If returning a reference, we need to convert to an MValue from

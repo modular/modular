@@ -60,9 +60,9 @@ public:
     /// This method must return Self.
     kSelfResult = 1 << 5,
 
-    /// This method is a struct initializer, it takes 'out self'
-    /// and returns None.
-    kInitializer = (1 << 6) | kInstMethod | kNoneResult,
+    /// This method is a struct initializer, it is a static method that returns
+    /// 'Self', which is typically spelled with an "out self" first argument.
+    kInitializer = (1 << 6) | kImplicitlyStaticMethod | kSelfResult,
 
     /// This method cannot be declared to raise an error.
     kCannotRaise = 1 << 7,
@@ -70,6 +70,11 @@ public:
 
   /// Return true if this is any kind of instance method.
   bool isInstMethod() const { return (flags & kInstMethod) != 0; }
+
+  /// Return true if this special function is implicitly static, like __init__.
+  bool isImplicitlyStatic() const {
+    return (flags & kImplicitlyStaticMethod) != 0;
+  }
 
   bool requiresOwnedSelfInstMethod() const {
     return (flags & kRequiresOwnedSelfInstMethod) ==
@@ -84,6 +89,9 @@ public:
 
   /// Return true if this special function is an initializer.
   bool isInitializer() const { return (flags & kInitializer) == kInitializer; }
+
+  /// Return true if this special function returns Self
+  bool hasSelfResult() const { return (flags & kSelfResult) != 0; }
 
   /// Return a record that describes special functions like __init__.  The
   /// kind field identifies it.

@@ -48,12 +48,12 @@ struct MemoryOnlyPair:
   var x: MemoryOnlyInt
   var y: Int
 
-  # CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> init_self,
-  # CHECK-SAME: %other: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem)
+  # CHECK: lit.func @"__copyinit__{{.*}}(%other: !lit.ref<!MemoryOnlyPair, imm {{.*}}> read_mem,
+  # CHECK-SAME: %self: !lit.ref<!MemoryOnlyPair, mut {{.*}}> byref_result)
   fn __copyinit__(out self, other: MemoryOnlyPair):
     # CHECK-NEXT: %0 = lit.ref.struct.ger %other[x]
     # CHECK-NEXT: %1 = lit.ref.struct.ger %self[x]
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%1, %0)
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%0, %1)
     # CHECK-NEXT: %3 = lit.ref.struct.ger %other[y]
     # CHECK-NEXT: %4 = lit.ref.struct.ger %self[y]
     # CHECK-NEXT: %5 = lit.ref.load %3
@@ -79,17 +79,17 @@ fn inferred_function_with_memory_result[
 fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %v1 = lit.var.decl {{.*}} var : !lit.ref<!MemoryOnlyPair,
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[IMMREF]])
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %v1)
   var v1 = a
 
   # CHECK-NEXT: %v2 = lit.var.decl "v2"
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%v2, [[IMMREF]])
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %v2)
   var v2 : MemoryOnlyPair = a
 
   # CHECK-NEXT: %anonymous2A = lit.var.decl {{.*}} synth
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[IMMREF]])
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %anonymous2A)
   _ = a
 
   a  # expected-warning {{'MemoryOnlyPair' value is unused}}
@@ -97,22 +97,22 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %regX = lit.var.decl {{.*}}
   # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[AX]]
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%regX, [[IMMREF]])
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %regX)
   var regX = a.x
 
   # CHECK-NEXT: [[AX:%.*]] = lit.ref.struct.ger %a[x]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %regX
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[AX]], [[IMMREF]])
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], [[AX]])
   a.x = regX
 
   # Pass memory only things by value as arguments.
 
   # CHECK-NEXT: [[TMPPAIR:%.*]] = lit.var.decl {{.*}}!MemoryOnlyPair
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %a
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[TMPPAIR]], [[IMMREF]])
+  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[IMMREF]], [[TMPPAIR]])
   # CHECK-NEXT: [[TMPINT:%.*]] = lit.var.decl {{.*}}!MemoryOnlyInt
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %regX
-  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[TMPINT]], [[IMMREF]])
+  # CHECK-NEXT: lit.call @{{.*}}@"__copyinit__{{.*}}([[IMMREF]], [[TMPINT]])
   # CHECK-NEXT: lit.call @{{.*}}@"method{{.*}}([[TMPPAIR]], [[TMPINT]])
   a.method(regX)
 
@@ -128,7 +128,7 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: %mpFloat = lit.var.decl
   # CHECK-NEXT: [[V2X:%.*]] = lit.ref.struct.ger %v2[x]
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[V2X]]
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mpFloat, [[IMMREF]])
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[IMMREF]], %mpFloat)
   var mpFloat : MemoryOnlyFloat64 = v2.x
 
   # CHECK: [[SIMDTMP:%.*]] = lit.var.decl "anonymous*"
@@ -140,9 +140,9 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
 
   # Memory-only default argument with memory-only result.
-  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{42}>
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[TMP]], %[[C42]])
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%[[C42]], [[TMP]])
   _ = MemoryOnlyInt()
 
   # CHECK-NEXT: [[IMMREF1:%.*]] = lit.ref.immut %regX
@@ -152,7 +152,7 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   MemoryOnlyInt.variadic(regX, regX)
 
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %v2
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%__result__, [[IMMREF]])
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], %__result__)
   # CHECK-NEXT: [[NONEVAL:%.*]] = kgen.param.constant: none = <#kgen.none>
   # CHECK-NEXT: lit.return [[NONEVAL]]
   return v2
@@ -163,8 +163,9 @@ struct DirectInit:
 
 fn direct_call_init():
   var value: DirectInit
-  # COM: Make sure this doesn't warn about an unused result.
-  value.__init__()
+  # This is a call of a static method on an instance, so 'value' is unused.
+  # expected-warning @+1 {{'DirectInit' value is unused}}
+  value.__init__() 
 
 struct DummyFunc:
     @implicit
@@ -180,10 +181,10 @@ fn implicit_func_conversion():
 
     # CHECK: %f = lit.var.decl "f"
     # CHECK: [[CLOSURE:%.*]] = kgen.create_closure
-    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%f, [[CLOSURE]])
+    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}([[CLOSURE]], %f)
     var f: DummyFunc = take_int
     # CHECK: [[CLOSURE:%.*]] = kgen.create_closure
-    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}(%anonymous2A, [[CLOSURE]])
+    # CHECK: call {{.*}}DummyFunc::@"__init__{{.*}}([[CLOSURE]], %anonymous2A)
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
     # CHECK: call {{.*}}func_arg_conversion{{.*}}([[IMMREF]])
     func_arg_conversion(take_int)
@@ -347,12 +348,12 @@ fn reverse_operators(a: Int):
 
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: RegPassable) -> RegPassable:
-  # CHECK-NEXT: [[THREETMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
-  # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREETMP]], [[THREE]])
-  # CHECK-NEXT:  [[TWOTMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: [[THREETMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREE]], [[THREETMP]])
   # CHECK-NEXT:  [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
-  # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[TWOTMP]], [[TWO]])
+  # CHECK-NEXT:  [[TWOTMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[TWO]], [[TWOTMP]])
   # CHECK-NEXT:  [[TWOTMP_IMM:%.*]] = lit.ref.immut [[TWOTMP]]
   # CHECK-NEXT:  [[NEG:%.*]] = lit.call {{.*}}@RegPassable::@"__neg__{{.*}}([[TWOTMP_IMM]])
   # CHECK-NEXT:  [[NEGTMP:%.*]] = lit.var.decl "anonymous*"
@@ -432,11 +433,11 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%a)
   # CHECK: [[I1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BOOL]])
   # CHECK: hlcf.if [[I1]] -> !Boolish {
-  # CHECK:   = lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %b)
+  # CHECK:   = lit.call {{.*}}__copyinit__{{.*}}(%b, {{.*}})
   # CHECK:   hlcf.yield
   # CHECK: } else {
   # CHECK:   [[ANON:%.*]] = lit.var.decl
-  # CHECK:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[ANON]], %a)
+  # CHECK:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a, [[ANON]])
   # CHECK:   [[A:%.*]] = lit.load.consume [[ANON]]
   # CHECK:   hlcf.yield [[A]]
   # CHECK: }
@@ -448,10 +449,10 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK: [[ABOOL:%.*]] = lit.call {{.*}}Boolish::@"__bool__{{.*}}(
   # CHECK-NEXT: [[I1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__{{.*}}([[ABOOL]])
   # CHECK-NEXT:  = hlcf.if [[I1]] -> !Boolish {
-  # CHECK:        = lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %a)
+  # CHECK:        = lit.call {{.*}}__copyinit__{{.*}}(%a, {{.*}})
   # CHECK:        hlcf.yield
   # CHECK-NEXT: } else {
-  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %b)
+  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}(%b, {{.*}})
   # CHECK:        hlcf.yield
   # CHECK-NEXT: }
   _ = a or b
@@ -464,7 +465,7 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT:   hlcf.yield %c
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[ANON]], [[I1]])
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[I1]], [[ANON]])
   # CHECK-NEXT:   [[TMP:%.*]] = lit.load.consume [[ANON]]
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: }
@@ -476,7 +477,7 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT: [[BI1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BBOOL]])
   # CHECK-NEXT: = hlcf.if [[BI1]] -> !Bool {
   # CHECK-NEXT:   [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[ANON]], [[BI1]])
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[BI1]], [[ANON]])
   # CHECK-NEXT:   [[TMP:%.*]] = lit.load.consume [[ANON]]
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK: } else {
@@ -491,13 +492,13 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT: [[DI1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[DBOOL]])
   # CHECK-NEXT: [[IFRESULT:%.*]] = lit.var.decl {{.*}} : !lit.ref<!MemBoolish
   # CHECK-NEXT: hlcf.if [[DI1]] {
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[ANON:%.*]], %d)
+  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}(%d, [[ANON:%.*]])
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   [[TMPMEM:%.*]] = lit.var.decl
-  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[TMPMEM]], %b)
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}(%b, [[TMPMEM]])
   # CHECK-NEXT:   [[IMMREF:%.*]] = lit.ref.immut [[TMPMEM]]
-  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[IMMREF]])
+  # CHECK-NEXT:   lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], [[ANON]])
   # CHECK-NEXT:   hlcf.yield
   # CHECK-NEXT: }
   _ = d or b
@@ -551,7 +552,7 @@ fn listValues():
   a = [1, 2, 2+1,]
   # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
   a = [1, 2, 2+1]
-  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%b
+  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}({{.*}}, %b)
   var b = []
 
 # CHECK-LABEL: lit.func @"initializers
@@ -898,7 +899,7 @@ fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, owned moi: Memory
 
   # Initialize in memory through a temp + setitem.
   # CHECK: [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK: lit.call @{{.*}}__init__{{.*}}([[ANON]],
+  # CHECK: lit.call @{{.*}}__init__{{.*}}({{.*}}, [[ANON]])
   # CHECK: lit.call {{.*}}"__setitem__{{.*}}(%arr, %x, [[ANON]])
   arr[x] = MemoryOnlyInt(42)
 
@@ -910,14 +911,15 @@ fn testMemoryOnlyIntArray(mut arr: MemoryOnlyIntArray, x: Int, owned moi: Memory
   # CHECK: lit.call {{.*}}__setitem__{{.*}}(%arr, %x, [[STORETMP]])
   arr[x].x += 1
 
+# CHECK-LABEL: lit.struct.decl @MyInlineIntInit
 struct MyInlineIntInit:
     var value: MemoryOnlyInt
-    # CHECK-LABEL: lit.func @"__init__(expressions::MyInlineIntInit=&,expressions::MemoryOnlyInt)"
-    # CHECK-SAME: (%self: !lit.ref<!MyInlineIntInit, mut {{.*}}> init_self, %value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> read_mem) -> !kgen.none
+    # CHECK-LABEL: lit.func @"__init__(expressions::MemoryOnlyInt)"
+    # CHECK-SAME: (%value: !lit.ref<!MemoryOnlyInt, imm {{.*}}> read_mem, ?, %self: !lit.ref<!MyInlineIntInit, mut {{.*}}> byref_result) -> !kgen.none
     @implicit
     fn __init__(out self, value: MemoryOnlyInt):
         # CHECK: %0 = lit.ref.struct.ger %self[value]
-        # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%0, %value)
+        # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%value, %0)
         self.value = value
 
 @register_passable
@@ -1088,9 +1090,9 @@ fn ref_utilities(a: MemoryOnlyInt, mut b: MemoryOnlyInt,
   # CHECK-NEXT: lit.ref.store [[COMMON]], %ref5
   var ref5 = (ref1 if cond else ref2) if cond else __get_mvalue_as_litref(c)
 
-  # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %ref2
   # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !Int = <{42}>
-  # CHECK-NEXT: lit.call {{.*}}MemoryOnlyInt::@"__init__{{.*}}([[TMP2]], [[TMP]])
+  # CHECK-NEXT: [[TMP2:%.*]] = lit.ref.load %ref2
+  # CHECK-NEXT: lit.call {{.*}}MemoryOnlyInt::@"__init__{{.*}}([[TMP]], [[TMP2]])
   __get_litref_as_mvalue(ref2) = MemoryOnlyInt()
 
 struct CallableStruct:
@@ -1184,7 +1186,7 @@ struct TwoParamsStruct[a: Int, b: Int]:
 # CHECK-LABEL: lit.func @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> var>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: %b_0 = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b_0, %b)
+    # CHECK-NEXT: lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b, %b_0)
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
     alias v0 = a[2]
 
@@ -1206,12 +1208,12 @@ fn variadic_memory_subscript[*a: Int](*b: TwoParamsStruct[a[0], a[1]]):
     # CHECK: %v0 = lit.var.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
     # CHECK: [[B1REF:%.*]] = {{.*}}__getitem__{{.*}}([[IMMREF]],
-    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v0, [[B1REF]])
+    # CHECK: lit.call {{.*}}__copyinit__{{.*}}([[B1REF]], %v0)
     var v0 = b[1]
     # CHECK: %v1 = lit.var.decl
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %b_0 :
     # CHECK: [[B2REF:%.*]] = {{.*}}__getitem__{{.*}}([[IMMREF]],
-    # CHECK: lit.call {{.*}}__copyinit__{{.*}}(%v1, [[B2REF]])
+    # CHECK: lit.call {{.*}}__copyinit__{{.*}}([[B2REF]], %v1)
     var v1 = b[2]
 
 fn testTransferWarning():

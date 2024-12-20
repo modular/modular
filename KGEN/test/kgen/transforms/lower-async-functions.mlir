@@ -1679,7 +1679,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       hlcf.loop "_loop_0" {
         %0 = pop.stack_allocation 1 x struct<(pointer<none>, pointer<none>) memoryOnly> marked
         %1 = pop.load %arg0 : !kgen.pointer<pointer<none>>
-        kgen.call @"CBatch::__init__"(%0, %1) : (!kgen.pointer<struct<(pointer<none>, pointer<none>) memoryOnly>> init_self, !kgen.pointer<none>) -> ()
+        kgen.call @"CBatch::__init__"(%1, %0) : (!kgen.pointer<none>, !kgen.pointer<struct<(pointer<none>, pointer<none>) memoryOnly>> byref_result) -> ()
         co.suspend (%hdl) {
           co.suspend.end
         }

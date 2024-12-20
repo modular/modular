@@ -211,6 +211,10 @@ public:
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
 
+  /// For methods, this is the default type of Self.  For global functions this
+  /// is null.
+  ASTType selfType;
+
   // This is the type checked declared argument type, e.g. "String" or "Int".
   SmallVector<Type> argTypes;
   /// Default values for positional and positionalOrKeyword args.

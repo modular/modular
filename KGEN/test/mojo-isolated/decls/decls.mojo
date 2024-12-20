@@ -444,7 +444,7 @@ struct SomeResultType:
 # CHECK-SAME: namedResult = "out"
 fn named_result() -> SomeResultType as out:
     # CHECK-NEXT: call {{.*}}SomeResultType::@"__init__{{.*}}(%out)
-    SomeResultType.__init__(out)
+    out = SomeResultType()
     # CHECK: lit.return %none
     return
     # CHECK-NEXT: lit.end_func
@@ -732,8 +732,8 @@ struct StructWithInit:
     var x: Int
     var y: Int
 
-    # CHECK: lit.func @"__init__(decls::StructWithInit=&,{{.*}}Int)"
-    # CHECK-SAME: (%self: !lit.ref<!StructWithInit, mut {{.*}}> init_self,
+    # CHECK: lit.func @"__init__({{.*}}Int)"
+    # CHECK-SAME: %self: !lit.ref<!StructWithInit, mut {{.*}}> byref_result)
     @implicit
     fn __init__(out self, a: Int):
         # CHECK: %0 = lit.ref.struct.ger %self[x]
@@ -750,11 +750,11 @@ struct StructWithInit:
 
     # Not very useful, but this form also works, so test it.
     # CHECK: lit.func @"__init__
-    # CHECK-SAME: (%self: !lit.ref<!StructWithInit, mut {{.*}}> init_self,
+    # CHECK-SAME: %self: !lit.ref<!StructWithInit, mut {{.*}}> byref_result)
     fn __init__(out self, a: Int, b: Int):
         # CHECK: hlcf.elif
         if a == b:
-            # CHECK:  lit.call {{.*}}__init__{{.*}}(%self, %a)
+            # CHECK:  lit.call {{.*}}__init__{{.*}}(%a, %self)
             self = StructWithInit(a)
         else:
             # CHECK: [[XP:%.*]] = lit.ref.struct.ger %self[x]
@@ -826,11 +826,11 @@ fn callMaybeStatic(a: Int, b: EmptyStruct):
 struct DelegatingInitMem:
     var value: Int
 
-    # CHECK: lit.func @"__init__{{.*}}(%self
+    # CHECK: lit.func @"__init__{{.*}}({{.*}}%self
     @implicit
     fn __init__(out self, value: Bool):
-        # CHECK: lit.call @{{.*}}__init__{{.*}}(%self, %0)
-        self.__init__(42)
+        # CHECK: lit.call @{{.*}}__init__{{.*}}(%0, %self)
+        self = Self(42)
 
     @implicit
     fn __init__(out self, value: Int):
@@ -859,7 +859,7 @@ struct LegacyInOutInit:
 
 
 # CHECK-LABEL: lit.struct.decl @ValueMem(!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable)
-# CHECK: move :!lit.signature<[2]({{.*}} init_self, {{.*}} owned_in_mem, |) {{.*}}ValueMem::@"__moveinit__
+# CHECK: move :!lit.signature<[2]({{.*}} owned_in_mem, |, ?, {{.*}} byref_result) {{.*}}ValueMem::@"__moveinit__
 @value
 struct ValueMem:
     var a: Int  # Trivial
@@ -867,8 +867,8 @@ struct ValueMem:
 
 
 # CHECK: lit.func @"__moveinit__(
-# CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
-# CHECK-SAME:  %other: !lit.ref<!ValueMem, mut {{.*}}> owned_in_mem, |)
+# CHECK-SAME:  %other: !lit.ref<!ValueMem, mut {{.*}}> owned_in_mem,
+# CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result)
 # CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
@@ -880,8 +880,8 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store %5, %3
 
 # CHECK: lit.func @"__copyinit__(
-# CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
-# CHECK-SAME:  %other: !lit.ref<!ValueMem, imm {{.*}}> read_mem, |)
+# CHECK-SAME:  %other: !lit.ref<!ValueMem, imm {{.*}}> read_mem, 
+# CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result)
 # CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
@@ -889,16 +889,16 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store %2, %0
 # CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: %4 = lit.ref.struct.ger %other[b]
-# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%3, %4)
+# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%4, %3)
 
 # CHECK: lit.func @"__init__(
-# CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<!ValueMem, mut {{.*}}> init_self,
 # CHECK-SAME:  %a: !Int,
-# CHECK-SAME:  %b: !lit.ref<!StructExample, mut *"b`"> owned_in_mem
-# CHECK-SAME: ) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
-# CHECK-NEXT: %[[PA:.*]] = lit.ref.struct.ger %[[SELF]][a]
+# CHECK-SAME:  %b: !lit.ref<!StructExample, mut *"b`"> owned_in_mem,
+# CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> byref_result
+# CHECK-SAME: ) -> !kgen.none always_inline_no_debug attributes {isStatic, isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
+# CHECK-NEXT: %[[PA:.*]] = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: lit.ref.store %a, %[[PA]]
-# CHECK-NEXT: %[[PB:.*]] = lit.ref.struct.ger %[[SELF]][b]
+# CHECK-NEXT: %[[PB:.*]] = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %b
 # CHECK-NEXT: lit.ref.store [[TMP]], %[[PB]]
 
@@ -928,15 +928,17 @@ struct ValueMemHasMove:
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
 # CHECK-SAME: (!UnknownDestructibility, !Copyable, !AnyType[!Copyable], !Movable) register_passable_trivial
 
-# CHECK: lit.func @"__copyinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem, |) -> !kgen.none always_inline_no_debug
-# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %1 : <!ValueRegTrivial
-# CHECK-NEXT: lit.ref.store [[V0]], %0
+# CHECK: lit.func @"__copyinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> read_mem,
+# CHECK-SAME: %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result) -> !kgen.none always_inline_no_debug
+# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %0 : <!ValueRegTrivial
+# CHECK-NEXT: lit.ref.store [[V0]], %1
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: kgen.return %none : !kgen.none
 
-# CHECK: lit.func @"__moveinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem, |) -> !kgen.none
-# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %1
-# CHECK-NEXT: lit.ref.store [[V0]], %0
+# CHECK: lit.func @"__moveinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem,
+# CHECK-SAME: %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> byref_result)
+# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %0
+# CHECK-NEXT: lit.ref.store [[V0]], %1
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: kgen.return %none : !kgen.none
 
@@ -956,7 +958,8 @@ struct ValueReg:
 
 
 # CHECK: lit.func @"__copyinit__
-# CHECK-SAME: (%self: !lit.ref<!ValueReg, mut *"self`"> init_self, %other: !lit.ref<!ValueReg, imm *"existing`"> read_mem, |
+# CHECK-SAME: (%other: !lit.ref<!ValueReg, imm *"existing`"> read_mem,
+# CHECK-SAME : %self: !lit.ref<!ValueReg, mut *"self`"> byref_result)
 # CHECK-SAME: attributes {{.*}}specialFnKind = 3 : i8
 # CHECK-NEXT: [[SELFA:%.*]] = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: [[OTHERA:%.*]] = lit.ref.struct.ger %other[a]
@@ -964,18 +967,19 @@ struct ValueReg:
 # CHECK-NEXT: lit.ref.store [[TMP]], [[SELFA]]
 # CHECK-NEXT: [[SELFB:%.*]] = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: [[OTHERB:%.*]] = lit.ref.struct.ger %other[b]
-# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[SELFB]], [[OTHERB]])
+# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[OTHERB]], [[SELFB]])
 
 # CHECK: lit.func @"__init__(
-# CHECK-SAME:  (%0[*""]: !lit.ref<!ValueReg, mut *"self`"> init_self,
+# CHECK-SAME:  (
 # CHECK-SAME:  %a: !Int,
 # CHECK-SAME:  %b: !lit.ref<!StructExample, mut *"b`"> owned_in_mem
+# CHECK-SAME:  %self: !lit.ref<!ValueReg, mut *"self`"> byref_result
 # CHECK-SAME: )
-# CHECK-NEXT: %1 = lit.ref.struct.ger %0[a]
-# CHECK-NEXT: lit.ref.store %a, %1
-# CHECK-NEXT: %2 = lit.ref.struct.ger %0[b]
-# CHECK-NEXT: %3 =  lit.load.consume %b
-# CHECK-NEXT: lit.ref.store %3, %2
+# CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
+# CHECK-NEXT: lit.ref.store %a, %0
+# CHECK-NEXT: %1 = lit.ref.struct.ger %self[b]
+# CHECK-NEXT: %2 =  lit.load.consume %b
+# CHECK-NEXT: lit.ref.store %2, %1
 
 
 # COM: Ensure that "self" is a valid field name.
@@ -986,7 +990,7 @@ struct Foo:
     var self: Int
 
 
-# CHECK: lit.func @"__init__{{.*}}(%[[SELFARG:.*]][*""]: !lit.ref<!Foo, mut {{.*}}> init_self, |, %a: !Int, %self: !Int)
+# CHECK: lit.func @"__init__{{.*}}(%a: !Int, %self: !Int, ?, %self_0[self]: !lit.ref<!Foo, mut {{.*}}> byref_result)
 
 
 # CHECK-LABEL: lit.struct.decl @ParamVarArg<I: variadic<!Int> var>
@@ -1024,13 +1028,13 @@ struct NotSynthetic:
 struct VarArgInit:
     var a: Int
 
-    # CHECK: lit.func @"__init__(decls::VarArgInit=&,decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, read_mem> var)
+    # CHECK: lit.func @"__init__(decls::ValueMem*)"{{.*}}(%values: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, read_mem> var
     # The argument is intentionally memory-only.
     @implicit
     fn __init__(out self, *values: ValueMem):
         self.a = 42
 
-    # CHECK: lit.func @"__init__({{.*}}Int)"{{.*}}({{.*}}, %a: !Int)
+    # CHECK: lit.func @"__init__(::Int)"{{.*}}(%a: !Int, 
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the
@@ -1089,8 +1093,8 @@ async fn load(server_ptr: Container[__mlir_type.index]):
 # CHECK-LABEL: lit.func @"awaitSomething()"
 async fn awaitSomething():
     var ptr = Container[__mlir_type.index]()
-    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>([[CORO:%.*]], %{{.*}}) :
-    # CHECK-SAME: !lit.signature<[1]({{.*}}@Coroutine<:!AnyType [{{.*}}], :origin.set {}>{{.*}}: !co.routine)
+    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>(%{{.*}}, [[CORO:%.*]]) :
+    # CHECK-SAME: !lit.signature<[1]("handle": !co.routine, {{.*}}@Coroutine<:!AnyType [{{.*}}], :origin.set {}>
     await load(ptr)
 
 
@@ -1107,7 +1111,7 @@ struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}({{.*}}) async
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
-        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :origin.set {}>({{.*}}, %[[CORO]])
+        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :origin.set {}>(%[[CORO]], {{.*}})
         _ = coroutine()
 
 
@@ -1142,7 +1146,7 @@ async fn inline_async() -> Int:
 # CHECK-LABEL: lit.func @"use_inline_async()"
 async fn use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
-    # CHECK: lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[CORO:%.*]], [[ASYNC_RESULT]])
+    # CHECK: lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[ASYNC_RESULT]], [[CORO:%.*]]) :
     # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %__result__)
     return await inline_async()
 
@@ -1170,7 +1174,7 @@ fn coroutine_origins():
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
     # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> read_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
-    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>(%coro, [[CORO]])
+    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO]], %coro)
     var coro = capture_byref(x, y)
 
     # CHECK: lit.async.call[!lit.signature<[2]("x": !lit.ref<@decls::@LifetimeAccess<:origin<1> [[Y_LT]]>,
@@ -1182,14 +1186,14 @@ fn coroutine_origins():
 # CHECK-LABEL: lit.func @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
 async fn mem_result() -> Awaitable:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_result()"][imm {}]()
-    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}({{.*}}, [[CORO]])
+    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}([[CORO]], {{.*}})
     var coro = mem_result()
 
 
 # CHECK-LABEL: lit.func @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> i1
 async fn mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][imm {}, imm {}]()
-    # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}(%coro, [[CORO]])
+    # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}([[CORO]], %coro)
     var coro = mem_raises()
 
 
@@ -1584,12 +1588,12 @@ struct RegPassableInitSelfInit:
     var a: Int
 
     # CHECK: lit.func @"__init__
-    # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self)
+    # CHECK-SAME: (?, %self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> byref_result)
     fn __init__(out self):
         self.a = 42
 
     # CHECK: lit.func @"__copyinit__
-    # CHECK-SAME: (%self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> init_self,
+    # CHECK-SAME: %self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> byref_result)
     fn __copyinit__(out self, existing: Self):
         self.a = existing.a
 
@@ -1601,7 +1605,7 @@ fn testRegPassableInitSelf():
     var x = RegPassableInitSelfInit()
     # CHECK-NEXT: %x2 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %x
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x2, [[TMP]])
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[TMP]], %x2)
     var x2 = x
 
     # CHECK-NEXT: [[AP:%.*]] = lit.ref.struct.ger %x[a]

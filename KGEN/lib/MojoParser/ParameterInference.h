@@ -105,9 +105,13 @@ public:
   /// the specified signature, try to infer the value of the next 'decl'
   /// parameter. This should always return failure /without/ an error if it
   /// cannot be inferred, and return success if a value was determined.
+  ///
+  /// returnsSelf is True if this is performing inference on a function like
+  /// __init__ that returns Self, which might be specialized.
   LogicalResult infer(LITSignatureType signature,
                       const CallOperands &callOperands,
-                      const OperandValueList &variadicKwOperands);
+                      const OperandValueList &variadicKwOperands,
+                      bool returnsSelf);
 
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
@@ -124,7 +128,7 @@ private:
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
   LogicalResult matchSingleEltStruct(TypedAttr actualAddrSpace,
                                      TypedAttr expectedAddrSpace);
-  LogicalResult inferInitSelfTypes(Type actualType, Type expectedType);
+  LogicalResult inferSelfFromInitResult(Type returnedType);
 
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not
@@ -160,15 +164,15 @@ private:
   ParameterInferenceDiagnostics &diags;
 
   /// True if implicit conversions in argument lists are permitted.
-  bool allowImplicitConversions;
+  const bool allowImplicitConversions;
 
   /// The expression of the current argument being used for parameter inference.
   const ExprNode *curArgExpr = nullptr;
 
   /// These are parameters that were inferred from a more specific Self type
-  /// argument in an initializer call. These parameters can forward reference
+  /// result in an initializer call. These parameters can forward reference
   /// non-Self parameters. We need to refine them again at the end of inference.
-  SmallVector<unsigned> initSelfParams;
+  SmallVector<unsigned> selfResultParams;
 
   /// Cached finder to identify types that contains unbound ParamIndexRefAttrs.
   ParamIndexRefAttrFinder paramFinder;

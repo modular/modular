@@ -36,7 +36,7 @@ struct RegExample:
         return
 
     # Test a raising constructor.
-    # CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!RegExample, {{.*}}> init_self, %a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error) throws -> i1
+    # CHECK-LABEL: lit.func @"__init__{{.*}}(%a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %self: !lit.ref<!RegExample, {{.*}}> byref_result) throws -> i1
     fn __init__(out self, a: MemExample, b: MemExample) raises:
         # CHECK-NOT: __del__
         # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
@@ -313,7 +313,7 @@ struct DestructSome:
         somethingThatRaises()
 
         # CHECK: [[FIELD:%.*]] = lit.ref.struct.ger %self[a]
-        # CHECK-NEXT: __copyinit__{{.*}}([[FIELD]], %a)
+        # CHECK-NEXT: __copyinit__{{.*}}(%a, [[FIELD]])
         self.a = a
 
         # CHECK:      lifetime.start %anonymous
@@ -328,7 +328,7 @@ struct DestructSome:
         somethingThatRaises()
 
         # CHECK: [[FIELD:%.*]] = lit.ref.struct.ger %self[b]
-        # CHECK-NEXT: __copyinit__{{.*}}([[FIELD]], %b)
+        # CHECK-NEXT: __copyinit__{{.*}}(%b, [[FIELD]])
         self.b = b
 
         # At this point 'self' is fully initialized, so any exit out should
@@ -388,7 +388,7 @@ struct ThrowingSelfInit:
 
     # CHECK-LABEL: lit.func @"__init__
     fn __init__(out self, x: Int) raises:
-        # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%self, %__error__)
+        # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%__error__, %self)
         # CHECK-NEXT: if [[IS_ERR]]
         # CHECK-NEXT:   mark_consumed %self
         # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant
@@ -400,13 +400,13 @@ struct ThrowingSelfInit:
 
     # CHECK-LABEL: lit.func @"__init__
     fn __init__(out self, x: Int, y: Int) raises:
-        # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%self, %__error__)
+        # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%__error__, %self)
         # CHECK:      else
         # CHECK-NEXT:   call {{.*}}__del__{{.*}}(%self)
         # CHECK-NEXT:   mark_consumed %__error__
         # CHECK-NEXT:   yield
         self = ThrowingSelfInit()
-        # CHECK:      lit.call {{.*}}__init__{{.*}}(%self, %__error__)
+        # CHECK:      lit.call {{.*}}__init__{{.*}}(%__error__, %self)
         self = ThrowingSelfInit()
 
 
@@ -424,7 +424,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
     fn __init__(out self):
         self.x = MemExample()
 
-    # CHECK-LABEL: lit.func @"__init__({{.*}}::InitFieldsDestroyedInThrowingConstructor=&,__mlir_type.i1)"
+    # CHECK-LABEL: lit.func @"__init__(__mlir_type.i1)"
     fn __init__(out self, cond: __mlir_type.`i1`) raises:
         self = InitFieldsDestroyedInThrowingConstructor()
         # CHECK:      hlcf.elif {

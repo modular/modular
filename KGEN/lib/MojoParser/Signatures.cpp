@@ -1092,8 +1092,8 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
 /// their type+default value expressions as PValues, so we need to ensure that
 /// they are emitted and have declarations registered in the scope so that later
 /// lookups can find them.
-static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
-                                 bool isStaticMethod, ASTDecl *fnDecl,
+static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
+                                 ASTDecl *fnDecl,
                                  TypeCheckedFnSignature &tcSignature) {
   ParsedArgument &arg = tcSignature.argList.parsedArgs[idx];
 
@@ -1126,12 +1126,12 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       arg.vararg = VarArgKind::None; // Don't break invariants on errors.
     }
     type = addImplicitTypeParams(type, tcSignature.paramList, /*append=*/true);
-  } else if (idx == 0 && selfType &&
+  } else if (idx == 0 && tcSignature.selfType &&
              // FIXME: This is incorrect, the @static_method decorators haven't
              // been applied yet.
              !isStaticMethod) {
     // If this is the 'self' argument in a struct, default the type to Self.
-    type = selfType;
+    type = tcSignature.selfType;
   } else if (isDef) {
     // In 'def', arguments with no types default to 'object'.
     type = shared.lookupObjectType(declScope, arg.loc);
@@ -1244,16 +1244,9 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ParsedArgument::kConventionMut:
     arg.kgenConvention = ArgConvention::Mut;
     break;
+
   case ParsedArgument::kConventionOut:
-    arg.kgenConvention = ArgConvention::InitSelf;
-    // Check that 'out' argument is only used how we support it.
-    if (idx) {
-      shared.emitError(arg.loc,
-                       "'out' convention only supported on the first argument");
-      arg.isErroneous = true;
-      arg.kgenConvention = ArgConvention::Mut;
-      break;
-    }
+    llvm_unreachable("Should remove this");
     break;
   }
 
@@ -1401,23 +1394,14 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = tcSignature.paramList.shared;
 
+  // Determine the result type based on what was explicitly written or what
+  // the right implicit result type is.
   ASTType resultType;
-  if (!resultArg.typeExpr) {
-    // If the result type wasn't specified, we default to either "None" or
-    // "object" depending on whether this is a def.
-    resultType = shared.getNoneType();
-
-    // If this is a 'def', then we want to default to 'object' unless this is a
-    // known function that doesn't support that.
-    if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
-      resultType = shared.lookupObjectType(declScope, resultArg.loc);
-      if (!resultType)
-        resultType = shared.getTypeCheckErrorType();
-    }
-  } else if (resultArg.typeExpr->kind == ExprNode::kNoneLiteral) {
+  if (resultArg.typeExpr &&
+      resultArg.typeExpr->kind == ExprNode::kNoneLiteral) {
     // If the result type is a `None` literal, then convert it to NoneType.
     resultType = shared.getNoneType();
-  } else {
+  } else if (resultArg.typeExpr) {
     ExprEmitter typeEmitter(declScope, EC_Type);
     resultType = typeEmitter.emitExprType(resultArg.typeExpr);
 
@@ -1426,6 +1410,19 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     // calls to this function though.
     if (!resultType)
       resultType = shared.getTypeCheckErrorType();
+  } else if (fnInfo.isInitializer() &&
+             resultArg.convention == ParsedArgument::kConventionOut) {
+    // If this is an initializer with an 'out self' argument, infer Self.
+    resultType = tcSignature.selfType;
+  } else if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
+    // If this is a 'def', then we want to default to 'object' unless this is a
+    // known function that doesn't support that.
+    resultType = shared.lookupObjectType(declScope, resultArg.loc);
+    if (!resultType)
+      resultType = shared.getTypeCheckErrorType();
+  } else {
+    // If the result type wasn't specified, we default to either "None".
+    resultType = shared.getNoneType();
   }
 
   // If a result origin is specified with `ref [life] Ty`, then form a ref
@@ -1553,10 +1550,8 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
 
     // The ABI result type is an i1 indicating the error state.
     fullResultType = Builder(shared.getContext()).getI1Type();
-    // The result value is always returned through memory. Initializers don't
-    // have formal results.
-    if (!fnInfo.isInitializer())
-      rp = TypeConvention::MemoryOnly;
+    // The result value is always returned through memory.
+    rp = TypeConvention::MemoryOnly;
   }
 
   // Async functions always use in-memory results.
@@ -1564,6 +1559,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     rp = TypeConvention::MemoryOnly;
 
   // If the result has a name binding, then always return it in-memory.
+  // FIXME: Return stuff by register.  This causes problems with traits
   if (resultArg.name)
     rp = TypeConvention::MemoryOnly;
 
@@ -1616,7 +1612,6 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   ExprEmitter typeEmitter(paramList.declScope, EC_Type);
 
   // If this definition is a struct/class member, compute the self type.
-  ASTType selfType;
   if (fnDecl) {
     if (ASTDecl *parent = fnDecl->tryGetMethodParentDecl()) {
       // The parent decl must be fully resolved in order to resolve any of its
@@ -1631,36 +1626,25 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // This logic happens before type checking, so we need to be very careful
   // to only process it if defined correctly.  We let downstream checks diagnose
   // the errors.
-  if (fnInfo.isInitializer()) {
+  auto checkInitializer = [&]() -> LogicalResult {
     if (!selfType) {
       fnDecl->setErroneous();
       shared.emitError(fnDecl->getLoc(), "'")
           << fnInfo.name << "' must be a method";
-      fnInfo = SpecialFunctionInfo();
+      return failure();
     }
 
-    // Initializers allow an 'out' specifier which gets parsed as a result. For
-    // now we tack it onto the beginning of the argument list.
-    if (argList.resultArg.convention == ParsedArgument::kConventionOut &&
-        argList.resultArg.name) {
-      // Move the 'out' argument back to the beginning.
-      argList.parsedArgs.insert(argList.parsedArgs.begin(), argList.resultArg);
-      argList.resultArg = ParsedArgument();
-      // TODO: This is yuck, drop it when 'out self' isn't an argument.
-      if (argList.parsedArgs.size() > 1 &&
-          argList.parsedArgs[1].kwArgHandling == KWArgHandling::kPositionalOnly)
-        argList.parsedArgs[0].kwArgHandling =
-            argList.parsedArgs[1].kwArgHandling;
-    } else if (!argList.resultArg.name) {
+    // Initializers without an out argument or a -> Self result may be legacy
+    // form.
+    if (!argList.resultArg.name && !argList.parsedArgs.empty() &&
+        argList.parsedArgs[0].convention == ParsedArgument::kConventionMut &&
+        (!argList.resultArg.typeExpr || // Allow "no ->" and "-> None"
+         argList.resultArg.typeExpr->kind == ExprNode::kNoneLiteral)) {
       // TODO: Remove this legacy hack, to allow people to write inout/mut for
       // self on init.
-      if (!argList.parsedArgs.empty() &&
-          argList.parsedArgs[0].convention == ParsedArgument::kConventionMut &&
-          (!argList.resultArg.typeExpr || // Allow "no ->" and "-> None"
-           argList.resultArg.typeExpr->kind == ExprNode::kNoneLiteral)) {
-        auto &selfArg = argList.parsedArgs[0];
-        selfArg.convention = ParsedArgument::kConventionOut;
-      }
+      argList.resultArg = argList.parsedArgs[0];
+      argList.parsedArgs.erase(argList.parsedArgs.begin());
+      argList.resultArg.convention = ParsedArgument::kConventionOut;
     }
 
     // TODO(MOCO-789): Async initializers require a `byref_result` thunk to be
@@ -1669,31 +1653,40 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       shared.emitError(fnDecl->getLoc())
           << "TODO: async constructors are not yet supported";
       argList.effects.setAsync(false);
+      return failure();
     }
 
     // @register_passable values are movable by passing the register around, so
     // they can't define a moveinit.
     if (fnInfo.kind == SpecialFunctionKind::kMoveInit &&
         selfType.isRegisterPassable(fnDecl->getLoc(), shared)) {
-      fnDecl->setErroneous();
       shared.emitError(fnDecl->getLoc(),
                        "'@register_passable' types may not have a '")
           << fnInfo.name
           << "' method, they are always movable by copying a register";
-      fnInfo = SpecialFunctionInfo();
+      return failure();
     }
 
     // Trivial types are copyable with memcpy so they can't define copyinit.
     if (fnInfo.kind == SpecialFunctionKind::kCopyInit &&
         selfType.isTrivial(fnDecl->getLoc(), shared)) {
-      fnDecl->setErroneous();
       shared.emitError(fnDecl->getLoc(), "trivial types may not have a '")
           << fnInfo.name << "' method, they are always trivially copyable";
+      return failure();
+    }
+
+    return success();
+  };
+
+  // Check initializers for validity.
+  if (fnInfo.isInitializer()) {
+    if (failed(checkInitializer())) {
+      fnDecl->setErroneous();
       fnInfo = SpecialFunctionInfo();
     }
   }
 
-  // __new__ is implicitly static.
+  // __new__ and __init__ are implicitly static.
   if (fnInfo.flags & SpecialFunctionInfo::kImplicitlyStaticMethod)
     cast<LIT::FuncOp>(fnDecl).setIsStatic(true);
 
@@ -1709,12 +1702,16 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
   // True if this is a static method.
   // FIXME: This is completely wrong, @static_method decorator hasn't been
   // applied yet.
+  //
+  // It isn't clear if this is actually that bad, maybe we should just say that
+  // first arguments in methods default to Self it they don't have type.  This
+  // could be true for static methods as well.
   bool isStaticMethod = selfType && cast<LIT::FuncOp>(fnDecl).getIsStatic();
 
   // Resolve all argument types, generating type check error types for any types
   // that could not be correctly resolved.
   for (size_t i = 0, e = argList.parsedArgs.size(); i != e; ++i)
-    typeCheckOneArgument(i, selfType, isDef, isStaticMethod, fnDecl, *this);
+    typeCheckOneArgument(i, isDef, isStaticMethod, fnDecl, *this);
 
   // Compute the result type.
   typeCheckResult(argList.resultArg, isDef, fnInfo, fnDecl, *this);
@@ -1784,13 +1781,11 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
 
   // Check any special function information.
 
-  // Check that the 'self' argument of a method was specified correctly.
-  if (selfType && !funcOp.getIsStatic()) {
+  // Check that the 'self' argument/result of a method was specified correctly.
+  if (selfType && (!funcOp.getIsStatic() ||
+                   (fnInfo.flags & SpecialFunctionInfo::kSelfResult))) {
     // Implement this as a lambda so we can early exit with 'return'.
-    auto checkSelf = [&]() {
-      ASTType selfArgType = argTypes[kSelfArgNo];
-      const ParsedArgument &selfArg = parsedArgs[kSelfArgNo];
-
+    auto checkSelf = [&](ASTType selfArgType, const ParsedArgument &selfArg) {
       // Don't check broken args, because we don't want redundant diagnostics.
       if (selfArg.isErroneous)
         return;
@@ -1818,19 +1813,24 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
         diag << "'Self' in trait method declaration";
       else
         diag << selfType;
-      diag << ", but actually has type " << ASTType(argTypes[kSelfArgNo]);
+      diag << ", but actually has type " << selfArgType;
       selfArg.isErroneous = true;
       if (selfArg.typeExpr)
         diag << selfArg.typeExpr->getRange();
     };
 
-    if (argTypes.empty()) {
+    if (fnInfo.flags & SpecialFunctionInfo::kSelfResult) {
+      // __new__ and __init__ require a Self result type, or a specialization
+      // thereof.
+      checkSelf(resultType, argList.resultArg);
+    } else if (argTypes.empty()) {
       // TODO('def' allows unused arguments): We can/should relax this for
       // 'def' declarations in the future, they should be able to implicit
       // ignore arguments like Python does.
       emitError("self argument must be present in instance method");
     } else {
-      checkSelf();
+      // Normal methods require a self argument.
+      checkSelf(argTypes[kSelfArgNo], parsedArgs[kSelfArgNo]);
     }
   }
 
@@ -1869,11 +1869,6 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
   // Get the user-declared result type, which might be a memory-only type.
   ASTType declaredResultType = resultType;
 
-  // Some functions like __new__ require a Self result type.
-  if (fnInfo.flags & SpecialFunctionInfo::kSelfResult &&
-      !declaredResultType.isEqualCanon(selfType))
-    emitError() << name << " result type must be " << selfType;
-
   // If the function is required to return None, verify that.
   if (fnInfo.hasNoneResult() && !declaredResultType.isNoneType())
     emitError() << name << " result type must be elided (or None)";
@@ -1903,34 +1898,19 @@ void TypeCheckedFnSignature::verifyFunctionNameBinding(
     if (!declaredResultType.mlirType.isSignlessInteger(1))
       emitError() << name << " result type must be __mlir_type.i1";
     break;
-  case SpecialFunctionKind::kInit:
   case SpecialFunctionKind::kCopyInit:
-  case SpecialFunctionKind::kMoveInit: {
-    // The first/self argument is syntactically declared as a by-ref argument,
-    // but we need to change it to InitSelf since it is not initialized coming
-    // in.
-    assert(!parsedArgs.empty() && "arg count already checked above");
-    SMLoc selfArgLoc = parsedArgs[0].loc;
-
-    // __init__ methods must take their self argument 'out' syntactically.
-    if (parsedArgs[0].convention != ParsedArgument::kConventionOut) {
-      auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")
-                  << name << " must be passed 'out'";
-      if (parsedArgs[0].convention == ParsedArgument::kConventionUnspec)
-        diag << FixIt::insertBeforeToken(selfArgLoc, "out ");
-    }
-
+  case SpecialFunctionKind::kMoveInit:
+    assert(parsedArgs.size() == 1 && "arg count already checked above");
     if (fnInfo.kind == SpecialFunctionKind::kCopyInit) {
-      if (parsedArgs[1].convention != ParsedArgument::kConventionRead)
-        emitErrorLoc(parsedArgs[1].loc,
+      if (parsedArgs[0].convention != ParsedArgument::kConventionRead)
+        emitErrorLoc(parsedArgs[0].loc,
                      "existing value argument must be passed as 'read'");
     } else if (fnInfo.kind == SpecialFunctionKind::kMoveInit) {
-      if (parsedArgs[1].convention != ParsedArgument::kConventionOwned)
-        emitErrorLoc(parsedArgs[1].loc,
-                     "existing value argument must be passed as owned");
+      if (parsedArgs[0].convention != ParsedArgument::kConventionOwned)
+        emitErrorLoc(parsedArgs[0].loc,
+                     "existing value argument must be passed as 'owned'");
     }
     break;
-  }
   }
 
   // If we have a special function kind and didn't have any errors with it,

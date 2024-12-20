@@ -281,7 +281,7 @@ fn badPackCalls(value: Int):
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType]:
-    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'VariadicPack[args, AnyType, Ts]'}}
+    # expected-error @below {{'self' argument must have type 'TestPackErrorMessage[Ts]', but actually has type 'None'}}
     fn __init__(*args: *Ts):
          pass
 
@@ -437,11 +437,11 @@ fn test_param_deduction_failure[
     func[_](u, v)
 
 struct InitOverloaded:
-  # expected-note @below {{argument #1 cannot be converted from 'StringLiteral' to 'Int'}}
-  # expected-note @below {{argument #1 cannot be converted from 'Parametric[1]' to 'Int'}}
+  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral' to 'Int'}}
+  # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to 'Int'}}
   fn __init__(out self, a: Int): pass
-  # expected-note @below {{argument #1 cannot be converted from 'StringLiteral' to 'index'}}
-  # expected-note @below {{argument #1 cannot be converted from 'Parametric[1]' to 'index'}}
+  # expected-note @below {{argument #0 cannot be converted from 'StringLiteral' to 'index'}}
+  # expected-note @below {{argument #0 cannot be converted from 'Parametric[1]' to 'index'}}
   fn __init__(out self, a: int): pass
 
 fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
@@ -584,7 +584,7 @@ struct SpecialFunctions:
 
 @register_passable
 struct WrongType:
-  # expected-error @+1 {{'self' in struct '__init__' must be passed 'out'}}
+  # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'None'}}
   def __init__(self): pass
 
   # expected-error @+1 {{'self' argument must have type 'WrongType', but actually has type 'Int'}}
@@ -606,7 +606,7 @@ struct WrongSelfType[a: Int]:
   fn goodMethod(mut self: WrongSelfType[a]): pass
 
   # Issue #13358
-  # expected-error @+1 {{'__copyinit__' requires 2 operands}}
+  # expected-error @+1 {{'__copyinit__' requires 1 operand}}
   fn __copyinit__(out self, other: Self, moar: Int): pass
 
   # expected-error @+1 {{'__add__' requires 2 operands}}
@@ -779,13 +779,13 @@ struct CheckImplicit:
   @implicit # expected-error {{'@implicit' may only be applied to '__init__' methods}}
   fn foo(mut self): pass
   @implicit # expected-error {{'@implicit' requires an argument to convert from}}
-  fn __init__(mut self): pass
+  fn __init__(out self): pass
   @implicit
-  fn __init__(mut self, x: Int): pass
+  fn __init__(out self, x: Int): pass
   @implicit # expected-error {{'@implicit' initializers must accept a single argument value}}
-  fn __init__(mut self, x: Int, y: Int): pass
+  fn __init__(out self, x: Int, y: Int): pass
   @implicit # expected-error {{'@implicit' may only be applied to '__init__' methods}}
-  fn __copyinit__(mut self, other: Self): pass
+  fn __copyinit__(out self, other: Self): pass
 
 
 

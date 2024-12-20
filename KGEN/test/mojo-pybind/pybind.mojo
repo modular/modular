@@ -12,7 +12,7 @@
 # CHECK-SAME: (?, %error: !lit.ref<!Error, {{.*}}, %result: !lit.ref<!PythonObject, {{.*}}) throws -> i1
 # CHECK-NEXT: [[MODULE:%.*]] = lit.var.decl {{.*}}TypedPythonObject{{.*}}Module
 # CHECK-NEXT: call {{.*}}create_pybind_module{{.*}}"pybind"{{.*}}(%error, [[MODULE]])
-# CHECK-NEXT: call {{.*}}PythonObject::@"__init__{{.*}}(%result, [[MODULE]])
+# CHECK-NEXT: call {{.*}}PythonObject::@"__init__{{.*}}([[MODULE]], %result)
 # CHECK-NEXT: [[NONE_DEST:%.*]] = lit.var.decl
 # CHECK-NEXT: call {{.*}}gen_pytype_wrapper{{.*}}<:!Pythonable #Int{{[0-9]}}, :!StringLiteral {:string "Int"}>(%result, %error, [[NONE_DEST]])
 # CHECK-NEXT: [[NONE_DEST2:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<none, mut *"anonymous*`2">

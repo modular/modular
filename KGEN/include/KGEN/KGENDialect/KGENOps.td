@@ -1214,10 +1214,10 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
     For example:
     ```mlir
     kgen.create_reg_stub [
-      (!kgen.pointer<index> init_self, !kgen.pointer<index> owned_in_mem)
+      (!kgen.pointer<index> owned_in_mem, !kgen.pointer<index> byref_result)
       -> !kgen.none: @regtype__moveinit__] :
-      <(!kgen.pointer<struct<(index) memoryOnly>> init_self,
-      !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+      <(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem,
+        !kgen.pointer<struct<(index) memoryOnly>> byref_result) -> !kgen.none>
     ```
 
     The type is wrapped aound a memory struct to preverse the signature,
@@ -1226,8 +1226,8 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
     After LowerCallConvention, only `callee`'s signature change:
     ```mlir
     kgen.create_reg_stub [(index) -> index: @regtype__moveinit__] :
-      <(!kgen.pointer<struct<(index) memoryOnly>> init_self,
-      !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
+      <(!kgen.pointer<struct<(index) memoryOnly>> owned_in_mem,
+        !kgen.pointer<struct<(index) memoryOnly>> byref_result) -> !kgen.none>
     ```
 
     Callee can also take any other kind of arguments (eg memory mojo objects,

@@ -381,10 +381,3 @@ lit.func @ref_immut<life: origin<0>>(%ref1: !lit.ref<index, imm life>) ->  !lit.
   %ref2 = lit.ref.immut %ref1: !lit.ref<index, imm life>
   kgen.return %ref2: !lit.ref<index, imm life>
 }
-
-// -----
-
-// expected-error @below {{'init_self' argument must be the first argument}}
-lit.func @broken_init[mut a](%arg0: index, %arg1: !lit.ref<index, mut a> init_self) -> !kgen.none {
-  kgen.unreachable
-}

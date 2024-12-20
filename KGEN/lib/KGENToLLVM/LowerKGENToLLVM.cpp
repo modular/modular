@@ -247,7 +247,6 @@ convertLLVMMetadata(LLVM::LLVMFuncOp func, NewSignatureType sig,
     case ArgConvention::Mut:
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
-    case ArgConvention::InitSelf:
     case ArgConvention::MutRef:
       // The compiler enforces that each function can only have one mutable
       // reference to an object at a time. Thus, we know the pointers that back

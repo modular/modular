@@ -990,8 +990,7 @@ LogicalResult CreateRegStubOp::verify() {
       return emitOpError("result signature with output types not suported");
 
   bool expectPromotedMemOutputs =
-      (resSig.hasMemoryOnlyResult() || resSig.hasInitSelfArg()) &&
-      (!calleeSig.hasMemoryOnlyResult() && !calleeSig.hasInitSelfArg());
+      resSig.hasMemoryOnlyResult() && !calleeSig.hasMemoryOnlyResult();
   unsigned expectedArgsCount =
       calleeSig.getNumArguments() + unsigned(expectPromotedMemOutputs);
   if (resSig.getNumArguments() != expectedArgsCount) {
@@ -1096,22 +1095,16 @@ Type CreateRegStubOp::getCalleeArgType(unsigned index) {
   SignatureType calleeSig = getCalleeSignature();
   SignatureType resSig = getType();
   bool promotedOutputs =
-      (resSig.hasMemoryOnlyResult() || resSig.hasInitSelfArg()) &&
-      (!calleeSig.hasMemoryOnlyResult() && !calleeSig.hasInitSelfArg());
+      resSig.hasMemoryOnlyResult() && !calleeSig.hasMemoryOnlyResult();
   if (!promotedOutputs)
     return calleeSig.getValues().getInput(index);
 
   ArgConvention conv = resSig.getArgConvention(index);
-  // If `conv` is InitSelf / ByRefResult, the promoted output has to be this
-  // argument.
-  if (conv == ArgConvention::InitSelf || conv == ArgConvention::ByRefResult)
+  // If `conv` is ByRefResult, the promoted output has to be this argument.
+  if (conv == ArgConvention::ByRefResult)
     return calleeSig.getValues().getResult(0);
 
   // A different argument is promoted.
-  // InitSelf is always first (and ByRefResult always last).
-  // So we need to skip the first argument for InitSelf.
-  if (resSig.hasInitSelfArg())
-    --index;
   return calleeSig.getValues().getInput(index);
 }
 

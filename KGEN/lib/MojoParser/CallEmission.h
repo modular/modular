@@ -78,6 +78,10 @@ public:
   const ExprNode *expr;
   CallSyntax syntax;
 
+  /// If this is a constructor call like T[1](x), this contains the type being
+  /// constructed, which may include parameter values like "1".
+  ASTType selfResultType;
+
   /// When doing resolution, we should only raise new errors if previous errors
   /// haven't already been raised about functions in the overload set.  The most
   /// common issue is when one of the included declarations is erroneous.

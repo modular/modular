@@ -663,7 +663,8 @@ private:
       if (!sections[DocString::kSectionArgs] && !seenArguments.empty())
         emitDiag(funcOp.getLoc(),
                  "function takes arguments, but no 'Args' in doc string");
-      if (!sections[DocString::kSectionReturns] && hasResults)
+      if (!sections[DocString::kSectionReturns] && hasResults &&
+          !funcOp.getSpecialFunctionInfo().hasSelfResult())
         emitDiag(funcOp.getLoc(),
                  "function has results, but no 'Returns' in doc string");
     }

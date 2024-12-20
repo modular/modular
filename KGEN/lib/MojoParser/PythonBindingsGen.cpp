@@ -644,10 +644,10 @@ BindingGenerator::createFunction(const Twine &name, ASTDecl &parent,
     Type type = rvType;
     argNames.push_back(b.getStringAttr("arg" + Twine(idx)));
     if (SignatureType::hasImplicitOrigin(conv)) {
-      bool isMut =
-          llvm::is_contained({ArgConvention::OwnedMem, ArgConvention::Mut,
-                              ArgConvention::MutRef, ArgConvention::InitSelf},
-                             conv);
+      bool isMut = llvm::is_contained(
+          {ArgConvention::OwnedMem, ArgConvention::Mut, ArgConvention::MutRef,
+           ArgConvention::ByRefResult},
+          conv);
       type = makeRefType(type, "arg`" + Twine(idx), isMut);
     }
     argTypes.push_back(type);

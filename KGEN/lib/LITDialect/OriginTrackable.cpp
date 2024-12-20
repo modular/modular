@@ -170,17 +170,13 @@ OriginTrackable::OriginTrackable(Value v) {
     endInitState = EndsUninit;
     break;
   case ArgConvention::ByRefResult:
-  case ArgConvention::InitSelf:
     isIndirect = true;
     startsUninit = true;
     endInitState = InitOnNormal;
 
-    // Initializers allow memberwise initialization of 'self' to construct a
+    // Initializers allow member-wise initialization of 'self' to construct a
     // full value.
-    if (llvm::is_contained({SpecialFunctionKind::kInit,
-                            SpecialFunctionKind::kMoveInit,
-                            SpecialFunctionKind::kCopyInit},
-                           func.getSpecialFunctionKind()))
+    if (func.getSpecialFunctionInfo().isInitializer())
       isFullObjectLiveOnEntry = true;
     break;
   case ArgConvention::ByRefError:
@@ -274,17 +270,17 @@ static Value findRefPackCreate(Value val) {
     auto call = dyn_cast<LIT::CallOp>(user);
     if (!call ||
         // Ignore calls to __del__.
-        call.getNumOperands() == 1 ||
+        call.getNumOperands() != 3 ||
         // Ignore calls that pass the pack to a function by reference, but don't
         // initialize it.
-        call.getOperand(0) != varDecl.getResult() ||
-        call.getCalleeType().getArgConvention(0) != ArgConvention::InitSelf)
+        call.getOperand(2) != varDecl.getResult() ||
+        call.getCalleeType().getArgConvention(2) != ArgConvention::ByRefResult)
       continue;
 
     // Make sure any change to the API forces this code to get updated.
     assert(call.getNumOperands() == 3 &&
            "VariadicPack::init currently takes 3 arguments");
-    return call.getOperand(1);
+    return call.getOperand(0);
   }
 
   return {};
@@ -347,7 +343,6 @@ static void getCallOpEffects(
     }
     case ArgConvention::ByRefError:
     case ArgConvention::ByRefResult:
-    case ArgConvention::InitSelf:
       return OperandEffect::memStoreOwned;
     }
     llvm_unreachable("invalid input convention");

@@ -532,7 +532,7 @@ fn test_int_to_int_error(a: Int, b: NoSelfCtor):
   # expected-error @+1 {{cannot construct 'NoSelfCtor' with itself, you can remove the constructor call}}
   _ = NoSelfCtor(NoSelfCtor(a))
 
-  # expected-error @+1 {{invalid initialization: expected at most 1 positional argument, got 2}}
+  # expected-error @+1 {{invalid initialization: expected at most 0 positional arguments, got 1}}
   _ = GetAttrNotString(a)
 
 
@@ -744,7 +744,7 @@ fn test_dependent[a: Int](arg: HasDependent[a], arg2: HasDependent[a, 4]):
   test_dependent(arg, arg)
 
 struct HasIntParam[p: Int]:
-  fn __init__(out self):
+  fn __init__(out self): # expected-note {{function declared here}}
      pass
 
 # MOCO-846: Poor error message when type conversion fails due to IntLiteral materialization
@@ -756,15 +756,17 @@ fn take_dep_args[width: Int, x: IntLiteral](a: HasIntParam[width], b: HasIntPara
   take_dep_args[x, x](HasIntParam[x](), HasIntParam[x*4]())
 
 fn test_signature():
-  # expected-error @+1 {{cannot implicitly convert 'fn(out self: HasIntParam[1]) -> None' value to 'fn(x: HasIntParam[1]) -> None'}}
+  # expected-error @+1 {{cannot implicitly convert 'fn() -> HasIntParam[1]' value to 'fn(x: HasIntParam[1]) -> None' in 'var' initializer}}
   var x : fn(x: HasIntParam[1])->None = HasIntParam[1].__init__
 
   # expected-error @+1 {{use of unknown declaration 'UndefinedStruct'}}
   var y : fn(x: UndefinedStruct)->None = HasIntParam[1].__init__
 
-  # FIXME: should be Ok!
-  # expected-error @+1 {{'fn(out self: HasIntParam[1]) -> None' value to 'fn() -> HasIntParam[1]' in 'var' initializer}}
   var z : fn(out x: HasIntParam[1]) = HasIntParam[1].__init__
+
+  var str : HasIntParam[1]
+  # expected-error @+1 {{invalid call to '__init__': expected at most 0 positional arguments, got 1}}
+  HasIntParam[1].__init__(str)
 
 fn bad_union[ao: Origin[True]](ref [ao] a: String, mut b: String) -> ref [a, b] String:
     var c: String

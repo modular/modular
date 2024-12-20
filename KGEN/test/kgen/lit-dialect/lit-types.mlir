@@ -181,7 +181,5 @@ kgen.func @new_signature_types() {
   kgen.param.declare type2: type = <!kgen.new_signature<!lit.new_signature<(index, i8) -> ()>>>
   // CHECK-NEXT: type = <!lit.new_signature<("a": index, "b": i8 = 2) -> none>>
   kgen.param.declare type3: type = <!lit.new_signature<("a": index, "b": i8 = 2) -> none>>
-  // CHECK-NEXT: type = <!lit.new_signature<[1]("self": !lit.ref<index, mut *[0,0]> init_self, |, "b": i8 = 2, *, "c": f32) capturing -> none>>
-  kgen.param.declare type4: type = <!lit.new_signature<[1]("self": !lit.ref<index, mut *[0,0]> init_self, |, "b": i8 = 2, *, "c": f32) capturing -> none>>
   kgen.return
 }

@@ -217,7 +217,7 @@ fn opt_push_pop[
     if op.num_results() == 0:
         var new_op = Op[T.__moveinit__](
             op.location(),
-            operands=List[Value](op.operand(1), prev.operand(1)),
+            operands=List[Value](prev.operand(1), op.operand(1)),
             results=List[Type](),
         )
         b.set_insertion_point_before(prev)

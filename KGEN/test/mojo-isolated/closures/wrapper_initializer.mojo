@@ -11,7 +11,7 @@
 # CHECK-NEXT: move :!lit.signature
 # CHECK-NEXT: copy :!lit.signature
 
-# CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!MemType1, mut *"self`"> init_self, %impl: {{.*}} owned_in_mem, |)
+# CHECK-LABEL: lit.func @"__init__{{.*}}(%impl: {{.*}} owned_in_mem, |, ?, %self: !lit.ref<!MemType1, mut *"self`"> byref_result)
 # CHECK-NEXT: %[[ptrToCall:.*]] = kgen.create_closure[!lit.signature<[2](!kgen.pointer<none>, |, "n": !lit.ref<!MemType, {{.*}}> read_mem, ?, "__result__": !lit.ref<!MemType, {{.*}}> byref_result) -> !kgen.none
 # CHECK-NEXT: %[[callPtr:.*]] = lit.ref.struct.ger %self[call]
 # CHECK-NEXT: lit.ref.store %[[ptrToCall]], %[[callPtr]]
@@ -31,7 +31,7 @@
 
 # Copy source (stack) into target (heap)
 # CHECK-NEXT:  %[[V0REF:.*]] = lit.ref.from_pointer %[[V0]]
-# CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__moveinit__{{.*}}(%[[V0REF]], %impl)
+# CHECK-NEXT:  %[[V1:.*]] = lit.call {{.*}}__moveinit__{{.*}}(%impl, %[[V0REF]])
 
 # Store heap pointer in ClosureWrapper field
 # CHECK-NEXT:  %[[V3:.*]] = pop.pointer.bitcast %[[V0]] : !kgen.pointer<{{.*}}> to !kgen.pointer<none>

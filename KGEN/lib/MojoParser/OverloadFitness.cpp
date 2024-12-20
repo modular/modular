@@ -19,6 +19,7 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/LITDialect/SpecialFunctions.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
@@ -472,24 +473,6 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
-  case ArgConvention::InitSelf:
-    // If this is an UnknownAttr, then it is a placeholder for 'self' which will
-    // ultimately be an lvalue of the indicated type.
-    if (auto pValue = operand.ir.getIfPValue())
-      if (isa<UnknownAttr>(pValue.get())) {
-        // FIXME: This should be modeled as an LValue to merge into the normal
-        // logic.  We don't have LValue's that are PValue's though.
-        ASTType expElementType = expectedType.getReferenceElementType();
-        ASTType argElementType =
-            pValue.getRValueType().getReferenceElementType();
-
-        // This is valid if the types obviously match or if the arg type has
-        // unbound parameters that are inferred.
-        if (argElementType.isEqualAllowingUnknownAttr(expElementType, shared))
-          return {kValidType, expectedType};
-        return {kWrongType, argElementType};
-      }
-    [[fallthrough]];
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError: {
@@ -952,8 +935,17 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                       bindingsSoFar, evaluator, inferenceDiags,
                                       allowImplicitConversions);
 
+    // Determine if this is an initializer that returns Self, which can be used
+    // for inferring parameters on Self.
+    bool returnsSelf = false;
+    if (funcIfDirect)
+      returnsSelf = cast<LIT::FuncOp>(*funcIfDirect)
+                        .getSpecialFunctionInfo()
+                        .hasSelfResult();
+
     // Infer information from this signature holistically.
-    if (failed(inference.infer(signature, operands, variadicKwOperands)))
+    if (failed(inference.infer(signature, operands, variadicKwOperands,
+                               returnsSelf)))
       return PValue();
 
     // See if we inferred information about the next value.
@@ -1209,11 +1201,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Fail if this is an implicit conversion but the ctor is not marked @implicit
   if (funcIfDirect && callable.syntax == CallSyntax::kImplicitConvert &&
       !cast<LIT::FuncOp>(funcIfDirect).getIsImplicitConversion()) {
-    ASTType fromType = operands[1].ir.getRValueTypeIfResolvable();
-    ASTType toType = operands[0].ir.getRValueTypeIfResolvable();
-    if (toType) // Strip the reference off InitSelf argument.
-      toType = toType.getReferenceElementType();
-    return emitDiagFor.badImplicitConversion(fromType, toType);
+    ASTType fromType = operands[0].ir.getRValueTypeIfResolvable();
+    return emitDiagFor.badImplicitConversion(fromType,
+                                             signature.getUserResultType());
   }
 
   // Otherwise we succeeded!

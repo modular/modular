@@ -10,8 +10,8 @@ alias ptr = __mlir_type.`!kgen.pointer<none>`
 
 # CHECK: lit.struct.field field0 : !kgen.pointer<none>
 
-# CHECK: lit.func @"__init__({{.*}}_CI_{{.*}} init_self,
-# CHECK-SAME: %fld0: !kgen.pointer<none>
+# CHECK: lit.func @"__init__({{.*}}%fld0: !kgen.pointer<none>,
+# CHECK-SAME: byref_result)
 
 
 fn bare_ptr(x: ptr):

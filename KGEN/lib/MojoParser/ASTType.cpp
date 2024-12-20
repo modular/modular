@@ -485,12 +485,8 @@ static bool isKnownNonStaticMethod(SharedState *diagShared,
   if (!decl || !decl->tryGetMethodParentDecl())
     return false;
 
-  // Return false for static methods and initializers.
-  auto func = cast<LIT::FuncOp>(*decl);
-  if (func.getIsStatic() ||
-      func.getSignature().getArgConvention(0) == ArgConvention::InitSelf)
-    return false;
-  return true;
+  // Return false for static methods.
+  return !cast<LIT::FuncOp>(*decl).getIsStatic();
 }
 
 /// Pretty print a parameter value.
@@ -807,7 +803,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       os << "owned ";
     else if (conv == ArgConvention::Mut)
       os << "mut ";
-    else if (conv == ArgConvention::InitSelf)
+    else if (conv == ArgConvention::ByRefResult)
       os << "out ";
   };
 

@@ -236,20 +236,6 @@ kgen.func @call_it_self_result_and_arg(%arg0: !kgen.pointer<struct<()>> read_mem
   kgen.return %none : !kgen.none
 }
 
-// CHECK-LABEL: kgen.func @reg__init__() -> !kgen.struct<()>
-kgen.func @reg__init__(%arg0: !kgen.pointer<struct<()>> init_self) -> !kgen.none {
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}
-
-// CHECK-LABEL: @init_a_reg_type
-kgen.func @init_a_reg_type() {
-  %0 = pop.stack_allocation 1 x struct<()>
-  // CHECK: call @reg__init__() : () -> !kgen.struct<()>
-  kgen.call @reg__init__(%0) : (!kgen.pointer<struct<()>> init_self) -> !kgen.none
-  kgen.return
-}
-
 // CHECK-LABEL: kgen.func @unreachable_byref_result() -> index
 kgen.func @unreachable_byref_result(%arg0: !kgen.pointer<index> byref_result) -> !kgen.none {
   // CHECK: loop
@@ -293,35 +279,6 @@ kgen.func @byref_error(
   kgen.return %2 : i1
 }
 
-// CHECK-LABEL: kgen.func @initself_value
-// CHECK-SAME: (%arg0: !kgen.signature<(index, !kgen.pointer<struct<(f16) memoryOnly>> byref_error) throws -> (i1, i16)>
-// CHECK-SAME:  %arg1: !kgen.pointer<struct<(f16) memoryOnly>> byref_error) throws -> (i1, i16)
-kgen.func @initself_value(
-    %self: !kgen.pointer<i16> init_self,
-    %f: !kgen.signature<(!kgen.pointer<i16> init_self, index, !kgen.pointer<struct<(f16) memoryOnly>> byref_error) throws -> i1>,
-    %err: !kgen.pointer<struct<(f16) memoryOnly>> byref_error) throws -> i1 {
-  // CHECK-NEXT: [[F_RESULT:%.*]] = pop.stack_allocation 1 x i16
-  // CHECK-NEXT: %idx0
-  %idx0 = index.constant 0
-
-  // CHECK-NEXT: [[ERR:%.*]] = pop.stack_allocation 1 x struct<(f16) memoryOnly>
-  // CHECK-NEXT: [[VAL:%.*]] = pop.stack_allocation 1 x i16
-  %0 = pop.stack_allocation 1 x struct<(f16) memoryOnly>
-  %1 = pop.stack_allocation 1 x i16
-  // CHECK-NEXT: [[R:%.*]]:2 = kgen.call_indirect %arg0(%idx0, [[ERR]])
-  %2 = kgen.call_indirect %f(%1, %idx0, %0) : (!kgen.pointer<i16> init_self, index, !kgen.pointer<struct<(f16) memoryOnly>> byref_error) throws -> i1
-  // CHECK-NEXT: hlcf.if [[R]]#0 {
-  // CHECK-NEXT:   hlcf.yield
-  // CHECK-NEXT: } else {
-  // CHECK-NEXT:   pop.store [[R]]#1, [[VAL]]
-  // CHECK-NEXT:   hlcf.yield
-  // CHECK-NEXT: }
-
-  // CHECK-NEXT: [[VAL_RES:%.*]] = pop.load [[F_RESULT]]
-  // CHECK-NEXT: return [[R]]#0, [[VAL_RES]]
-  kgen.return %2 : i1
-}
-
 // CHECK-LABEL: @dont_alter_async_results(%arg0: index, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async
 kgen.func @dont_alter_async_results(%arg0: !kgen.pointer<index> read_mem, %arg1: !kgen.pointer<index> byref_error, %arg2: !kgen.pointer<index> byref_result) throws|async {
   kgen.return
@@ -336,30 +293,4 @@ kgen.func @two_call_indirect(%arg0: !kgen.signature<(!kgen.pointer<index> byref_
   // CHECK: kgen.call_indirect %arg0() : () -> index
   kgen.call_indirect %arg0(%1) : (!kgen.pointer<index> byref_result) -> !kgen.none
   kgen.return
-}
-
-// COM: Function signature remains the same.
-// CHECK-LABEL: @memtype__moveinit__(%arg0: !kgen.pointer<struct<(index) memoryOnly>> init_self, %arg1: !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem)
-kgen.func @memtype__moveinit__(%arg0: !kgen.pointer<struct<(index) memoryOnly>> init_self, %arg1: !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none {
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}
-kgen.func @memtype_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none> {
-  // COM: Both callee and stub signature remain the same.
-  // CHECK: kgen.create_reg_stub [(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none: @memtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
-  %0 = kgen.create_reg_stub [(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none: @memtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
-  kgen.return %0 : !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
-}
-
-// COM: Function signature converted to register types
-// CHECK-LABEL: kgen.func @regtype__moveinit__(%arg0: index owned) -> index {
-kgen.func @regtype__moveinit__(%arg0: !kgen.pointer<index> init_self, %arg1: !kgen.pointer<index> owned_in_mem) -> !kgen.none {
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}
-kgen.func @regtype_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none> {
-  // COM: callee signature converted to register types but stub signature remains the same.
-  // CHECK: kgen.create_reg_stub [(index owned) -> index: @regtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
-  %0 = kgen.create_reg_stub [(!kgen.pointer<index> init_self, !kgen.pointer<index> owned_in_mem) -> !kgen.none: @regtype__moveinit__] : <(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
-  kgen.return %0: !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> init_self, !kgen.pointer<struct<(index) memoryOnly>> owned_in_mem) -> !kgen.none>
 }
