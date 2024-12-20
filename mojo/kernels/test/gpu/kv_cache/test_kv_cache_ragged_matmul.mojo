@@ -288,7 +288,7 @@ def execute_matmul_kv_cache_ragged[
                 head_dim_idx = k_dim % kv_params.head_size
                 assert_almost_equal(
                     ref_out[bs * max_seq_length_batch + s, k_dim],
-                    k_cache_host.load[type, width=1](
+                    k_cache_host.load[width=1](
                         bs,
                         head_idx,
                         cache_sizes[bs] + s,
@@ -304,7 +304,7 @@ def execute_matmul_kv_cache_ragged[
                     ref_out[
                         bs * max_seq_length_batch + s, kv_hidden_size + v_dim
                     ],
-                    v_cache_host.load[type, width=1](
+                    v_cache_host.load[width=1](
                         bs,
                         head_idx,
                         cache_sizes[bs] + s,
@@ -340,7 +340,8 @@ def generic_assert_output_equals[
     max_seq_length_batch: Int,
     ctx: DeviceContext,
 ):
-    alias kv_params = cache_t.get_kv_params()
+    constrained[cache_t.type == type, "type mismatch"]()
+    alias kv_params = cache_t.kv_params
     alias hidden_size = num_q_heads * kv_params.head_size
     alias kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
@@ -392,12 +393,12 @@ def generic_assert_output_equals[
                             bs * max_seq_length_batch + s,
                             hidden_size + k_dim,
                         ],
-                        k_cache.load[type, width=1](
+                        k_cache.load[width=1](
                             bs,
                             head_idx,
                             k_cache.cache_length(bs) + s,
                             head_dim_idx,
-                        ),
+                        ).cast[type](),
                         rtol=rtol.cast[type](),
                     )
                 except e:
@@ -413,12 +414,12 @@ def generic_assert_output_equals[
                             bs * max_seq_length_batch + s,
                             hidden_size + kv_hidden_size + v_dim,
                         ],
-                        v_cache.load[type, width=1](
+                        v_cache.load[width=1](
                             bs,
                             head_idx,
                             v_cache.cache_length(bs) + s,
                             head_dim_idx,
-                        ),
+                        ).cast[type](),
                         rtol=rtol.cast[type](),
                     )
                 except e:

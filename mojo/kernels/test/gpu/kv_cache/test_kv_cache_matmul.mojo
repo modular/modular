@@ -245,7 +245,7 @@ def execute_fused_qkv_matmul[
                         bs * prompt_len + s,
                         hidden_size + k_dim,
                     ],
-                    k_cache_host.load[type, width=1](
+                    k_cache_host.load[width=1](
                         bs,
                         head_idx,
                         cache_size + s,
@@ -261,7 +261,7 @@ def execute_fused_qkv_matmul[
                         bs * prompt_len + s,
                         hidden_size + kv_hidden_size + v_dim,
                     ],
-                    v_cache_host.load[type, width=1](
+                    v_cache_host.load[width=1](
                         bs,
                         head_idx,
                         cache_size + s,
