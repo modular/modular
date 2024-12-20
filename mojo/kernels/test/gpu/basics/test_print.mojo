@@ -10,7 +10,7 @@ from builtin.io import _printf
 from gpu.host import DeviceContext
 from layout import Layout
 
-from utils.inline_string import _FixedString
+from collections.string.inline_string import _FixedString
 
 
 # CHECK-LABEL: == test_gpu_printf
