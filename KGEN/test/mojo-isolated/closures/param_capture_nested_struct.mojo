@@ -12,8 +12,8 @@
 # CHECK-SAME: <[[SELFO:.*]]: origin<0>, [[A:.*]]: !Int, |>
 
 # COM: Check that the closure impl parameter is bound to the struct parameter:
-# CHECK: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:origin<0> [[SELFO]], :!Int [[ALoc:.*]]>(%anonymous2A, %self)
-# CHECK-SAME: !lit.signature<[2]("self": !lit.ref<@{{.*}}::@"`_CI_{{.*}}<:!Int [[ALoc]]>
+# CHECK: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:origin<0> [[SELFO]], :!Int [[ALoc:.*]]>(%self, %anonymous2A)
+# CHECK-SAME: !lit.signature<[2]({{.*}}"self": !lit.ref<@{{.*}}::@"`_CI_{{.*}}<:origin<0> *"self`2x", :!Int [[ALoc]]>
 
 
 @value

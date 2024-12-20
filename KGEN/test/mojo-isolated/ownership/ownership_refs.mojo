@@ -135,7 +135,7 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__getitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
-  # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}([[MREF]], %shouldBeMovedFrom)
+  # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}(%shouldBeMovedFrom, [[MREF]])
   # CHECK-NEXT: lifetime.end %shouldBeMovedFrom
 
   # The mutation above could either of A or B, so we needed to extend both of
@@ -309,7 +309,7 @@ fn test_immortal_to_mortal(arg: Pointer[Int, _])
 fn ref_copyability[*element_types: Copyable](*args: *element_types):
   # CHECK: %x = lit.var.decl
   # CHECK: [[ITEM:%.*]] = lit.call @stdlib::@builtin::@stubs::@VariadicPack::@"__getitem__
-  # CHECK: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__copyinit__{{.*}}(%x, [[ITEM]])
+  # CHECK: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__copyinit__{{.*}}([[ITEM]], %x)
   var x = args[4]
 
   # CHECK-NEXT: lit.call[{{.*}}get_vtable_entry(:!Copyable{{.*}}__del__{{.*}}(%x)
@@ -375,7 +375,7 @@ fn variadic_inout_mems_iter(mut *mems: MemExample):
   # CHECK-NEXT: [[ELTDEREF:%.*]] = lit.call {{.*}}__getitem__{{.*}}([[ELTREF]])
   # CHECK-NEXT: [[ELTDEREFIMM:%.*]] = lit.ref.immut [[ELTDEREF]]
   # CHECK-NEXT: lifetime.start %x
-  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x, [[ELTDEREFIMM]])
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ELTDEREFIMM]], %x)
   var x : MemExample = iter.__next__()[]
 
   # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x)
@@ -443,17 +443,17 @@ fn test_inout_raising_init(mut a: HasRaisingInit, mut b: RaisingInitWrapper) rai
   # These init calls need a temporary instead of direct assignment into the dest
   # to avoid invalidating a value on the error path.
   # CHECK-NEXT: [[TEMP:%.*]] = lit.var.decl
-  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}([[TEMP]]
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}({{.*}}, [[TEMP]])
   a = HasRaisingInit()
   # EH logic.
-  # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}(%a, [[TEMP]])
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}([[TEMP]], %a)
 
   # CHECK: [[FIELDREF:%.*]] = lit.ref.struct.ger %b[field]
   # CHECK: [[TEMP:%.*]] = lit.var.decl
-  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}([[TEMP]]
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__init__{{.*}}({{.*}}, [[TEMP]])
   b.field = HasRaisingInit()
   # EH logic.
-  # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}([[FIELDREF:%.*]], [[TEMP]])
+  # CHECK: lit.call {{.*}}HasRaisingInit::@"__moveinit__{{.*}}([[TEMP]], [[FIELDREF:%.*]]) :
 
 # CHECK-LABEL: lit.func @"test_parameter_closure_captures
 fn test_parameter_closure_captures(owned x: MemExample, owned y: MemExample):

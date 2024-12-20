@@ -149,8 +149,7 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
   SmallVector<Value> insValues;
   SmallVector<Value> outsPointers;
   bool promotedOutputs =
-      (resSig.hasMemoryOnlyResult() || resSig.hasInitSelfArg()) &&
-      (!calleeSig.hasMemoryOnlyResult() && !calleeSig.hasInitSelfArg());
+      resSig.hasMemoryOnlyResult() && !calleeSig.hasMemoryOnlyResult();
   for (auto [i, rawArgTy] : llvm::enumerate(resSig.getValues().getInputs())) {
     ArgConvention conv = resSig.getArgConvention(i);
     Value arg = body->addArgument(rawArgTy, loc);
@@ -159,8 +158,7 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
     if (rawArgTy != argTy)
       arg = b.create<POP::PointerBitcastOp>(loc, argTy, arg);
 
-    if (promotedOutputs && (conv == ArgConvention::InitSelf ||
-                            conv == ArgConvention::ByRefResult)) {
+    if (promotedOutputs && conv == ArgConvention::ByRefResult) {
       // Output was a memory argument but got promoted to a register output.
       // Store will be inserted after the function.
       outsPointers.push_back(arg);

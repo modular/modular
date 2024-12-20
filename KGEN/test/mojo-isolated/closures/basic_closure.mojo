@@ -33,12 +33,12 @@ fn use(y: MemType, z: Int, u: int):
 # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.func @"__copyinit__(
-# CHECK-SAME:   %self: !lit.ref<{{.*}}> init_self,
-# CHECK-SAME:   %other: !lit.ref<{{.*}}> read_mem
+# CHECK-SAME:   %other: !lit.ref<{{.*}}> read_mem,
+# CHECK-SAME:   %self: !lit.ref<{{.*}}> byref_result
 # CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 3 : i8
 # CHECK-NEXT:   [[V0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[V1:%.*]] = lit.ref.struct.ger %other[field0]
-# CHECK-NEXT:   [[V2:%.*]] = lit.call @{{.*}}__copyinit__{{.*}}([[V0]], [[V1]])
+# CHECK-NEXT:   [[V2:%.*]] = lit.call @{{.*}}__copyinit__{{.*}}([[V1]], [[V0]])
 # CHECK-NEXT:   [[V3:%.*]] = lit.ref.struct.ger %self[field1]
 # CHECK-NEXT:   [[V4:%.*]] = lit.ref.struct.ger %other[field1]
 # CHECK-NEXT:   [[V5:%.*]] = lit.ref.load [[V4]]
@@ -53,12 +53,12 @@ fn use(y: MemType, z: Int, u: int):
 # CHECK-NEXT: }
 
 # CHECK-LABEL: lit.func @"__moveinit__(
-# CHECK-SAME:   %self: !lit.ref<{{.*}}> init_self,
-# CHECK-SAME:   %other: !lit.ref<{{.*}}> owned_in_mem
+# CHECK-SAME:   %other: !lit.ref<{{.*}}> owned_in_mem,
+# CHECK-SAME:   %self: !lit.ref<{{.*}}> byref_result
 # CHECK-SAME: ) -> !kgen.none {{.*}}specialFnKind = 4 : i8
 # CHECK-NEXT:   [[W0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[W1:%.*]] = lit.ref.struct.ger %other[field0]
-# CHECK-NEXT:   [[W2:%.*]] = lit.call @{{.*}}__moveinit__{{.*}}([[W0]], [[W1]])
+# CHECK-NEXT:   [[W2:%.*]] = lit.call @{{.*}}__moveinit__{{.*}}([[W1]], [[W0]])
 # CHECK-NEXT:   [[W3:%.*]] = lit.ref.struct.ger %self[field1]
 # CHECK-NEXT:   [[W4:%.*]] = lit.ref.struct.ger %other[field1]
 # CHECK-NEXT:   [[W5:%.*]] = lit.load.consume [[W4]]
@@ -75,7 +75,7 @@ fn use(y: MemType, z: Int, u: int):
 
 # CHECK-LABEL: lit.func @"__init__
 # CHECK-NEXT:   [[Q0:%.*]] = lit.ref.struct.ger %self[field0]
-# CHECK-NEXT:   [[Q1:%.*]] = lit.call @{{.*}}::@"__copyinit__{{.*}}([[Q0]], %fld0)
+# CHECK-NEXT:   [[Q1:%.*]] = lit.call @{{.*}}::@"__copyinit__{{.*}}(%fld0, [[Q0]])
 # CHECK-NEXT:   [[Q2:%.*]] = lit.ref.struct.ger %self[field1]
 # CHECK-NEXT:   lit.ref.store %fld1, [[Q2]]
 # CHECK-NEXT:   [[Q3:%.*]] = lit.ref.struct.ger %self[field2]

@@ -15,13 +15,13 @@
 # Check that the closure impl parameter is bound to the struct parameter:
 # CHECK-LABEL: lit.func @"get_test
 # CHECK-NEXT: %anonymous2A = lit.var.decl
-# CHECK-NEXT: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]], :!Int [[ALoc:.*]], :origin<0> [[SELFO]]>(%anonymous2A, %self)
-# CHECK-SAME: !lit.signature<[2]("self": !lit.ref<@{{.*}}::@"`_CI_{{.*}}"<:!Int [[BLoc]], :!Int [[ALoc]], :origin<0> [[SELFO]]>
+# CHECK-NEXT: lit.call {{.*}}@"`_CI_{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]], :!Int [[ALoc:.*]], :origin<0> [[SELFO]]>(%self, %anonymous2A)
+# CHECK-SAME: !lit.signature<[2]({{.*}}"self": !lit.ref<@{{.*}}::@"`_CI_{{.*}}"<:!Int [[BLoc]], :!Int [[ALoc]], :origin<0> [[SELFO]]>
 
 # COM: Check that the closure wrapper parameter is bound to the struct parameter:
 # CHECK-NEXT: %bar = lit.var.decl
-# CHECK-NEXT: lit.call @{{.*}}::@"fn{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]], :!Int [[ALoc:.*]]>(%bar, %anonymous2A)
-# CHECK-SAME: !lit.signature<[2]("self": !lit.ref<@{{.*}}::@"fn{{.*}}"<:!Int [[BLoc]], :!Int [[ALoc]]>
+# CHECK-NEXT: lit.call @{{.*}}::@"fn{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]], :!Int [[ALoc:.*]], :origin<0> [[SELFO]]>(%anonymous2A, %bar)
+# CHECK-SAME: !lit.signature<[2]({{.*}}"self": !lit.ref<@{{.*}}::@"fn{{.*}}"<:!Int [[BLoc]], :!Int [[ALoc]]>
 
 
 @value

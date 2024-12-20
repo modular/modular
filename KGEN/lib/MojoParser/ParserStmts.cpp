@@ -831,10 +831,6 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   if (!resultValue)
     return {};
 
-  // The normal return type in a raising initializer is an i1.
-  if (declSig.hasInitSelfArg() && declSig.isThrows())
-    resultValue = PValue(BoolAttr::get(getContext(), false));
-
   auto resultVal = emitter.emitSRValue(
       {resultValue, operandExpr}, EC_ReturnValue, func.getMLIRResultType());
   if (!resultVal)

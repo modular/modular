@@ -988,12 +988,8 @@ verifyApplyLike(ArrayRef<TypedAttr> operands, bool isApplyResult,
   // Drop the callee and the result slot type for apply_result.
   operands = operands.drop_front();
   ArrayRef<Type> inputTypes = sig.getArguments();
-  if (isApplyResult) {
-    if (sig.hasInitSelfArg())
-      inputTypes = inputTypes.drop_front();
-    else
-      inputTypes = inputTypes.drop_back();
-  }
+  if (isApplyResult)
+    inputTypes = inputTypes.drop_back();
 
   if (operands.size() != inputTypes.size()) {
     return emitError() << "'apply' function expected " << inputTypes.size()
@@ -1036,8 +1032,7 @@ verifyApplyResultSlot(ArrayRef<TypedAttr> operands, Type type,
 
   auto sig = cast<SignatureType>(operands.front().getType());
   // TODO: Cannot check !lit.ref reference types in KGEN.
-  auto resultArgType = sig.hasInitSelfArg() ? sig.getArguments().front()
-                                            : sig.getArguments().back();
+  auto resultArgType = sig.getArguments().back();
   if (auto resultPtr = dyn_cast<PointerType>(resultArgType)) {
     auto expectedResult = resultPtr.getElementType();
     if (expectedResult != type)

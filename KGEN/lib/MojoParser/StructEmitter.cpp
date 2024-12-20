@@ -109,6 +109,9 @@ LIT::FuncOp StructEmitter::createFunction(
                                             specialFnID);
   funcOp.setIsSynthetic(true);
 
+  if (funcOp.getSpecialFunctionInfo().isImplicitlyStatic())
+    funcOp.setIsStatic(true);
+
   // Set the attributes on the FuncOp in bulk.
   NamedAttrList attrs = funcOp->getAttrDictionary();
 
@@ -259,8 +262,9 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
     }
   };
 
-  // Initializers and functions with named results get a default return.
-  if (sig.hasInitSelfArg() || func.getNamedResultAttr())
+  // Functions with named results get a default return.
+  // FIXME: This should use register results when possible.
+  if (func.getNamedResultAttr())
     return makeNoneReturn();
 
   ASTType resultType = func.getUserResultType();
@@ -300,6 +304,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   auto [funcOp, _] = synthesizeMethodInStruct(
       "__init__", argTypes, argConventions, argListAttrs, shared.getNoneType(),
       structDecl, structDecl.getLoc(), SpecialFunctionKind::kInit);
+  assert(funcOp && "couldn't synthesize method or had a conflict?");
   funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   // Set up the body.
@@ -316,15 +321,15 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
-  // Emit a bunch of stores to fields indexing our 'out self'.
-  BlockArgument selfArg = body->getArgument(0);
+  // Emit a bunch of stores to fields indexing our 'out self' result.
+  BlockArgument selfArg = body->getArgument(body->getNumArguments() - 1);
   assert(isa<RefType>(selfArg.getType()));
   for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
     // Add the block argument, get it as an RValue since it is owned. Skip the
     // self argument.
-    BlockArgument arg = body->getArgument(idx + 1);
+    BlockArgument arg = body->getArgument(idx);
     CValue argVal;
-    switch (argConventions[idx + 1]) {
+    switch (argConventions[idx]) {
     default:
       llvm_unreachable("unknown convention");
     case ArgConvention::ReadReg:
@@ -352,11 +357,11 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
 }
 
 /// Given a function of the form
-/// "lit.func __copyinit__(%target: !lit.ref<@MyStruct, mut ...>, %existing:
-/// !lit.ref<@MyStruct, ...>), populate the method with the following:
-/// %targetField0Ptr = lit.ref.struct.ger %self[field0]
-/// %sourceField0Ptr = lit.ref.struct.ger %existing[field0]
-/// copyinit_of_type_of_field0(%targetField0, %field
+///    fn __copyinit__(existing: MyStruct, out self: MyStruct)
+/// populate the method with the following:
+///   %targetField0Ptr = lit.ref.struct.ger %self[field0]
+///   %sourceField0Ptr = lit.ref.struct.ger %existing[field0]
+///   copyinit_of_type_of_field0(%targetField0, %field)
 LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
                                               bool isMove) {
   auto func = cast<LIT::FuncOp>(functionDecl);
@@ -373,9 +378,9 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
   ExprEmitter emitter(*declScope, b);
 
   assert(func.getNumArguments() == 2 &&
-         "copy functions should have two arguments");
-  Value selfArg = func.getBody()->getArgument(0);
-  Value existingArg = func.getBody()->getArgument(1);
+         "copy and move functions should have two arguments");
+  Value existingArg = func.getBody()->getArgument(0);
+  Value selfArg = func.getBody()->getArgument(1);
 
   // copyinit/moveinit of a register passable value will pass the value as a
   // register, not a reference.
@@ -403,8 +408,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 /// }, this function produces:
 ///
 /// ```
-/// lit.func @prefixParam1Param2(%self: !kgen.pointer<@MyStruct>
-///     init_self, %x: ParamType1 read_mem, %b : ParamType2 read_mem
+/// lit.func @prefixParam1Param2(%x: ParamType1 read_mem,
+///    %b : ParamType2 read_mem, %self: !kgen.pointer<@MyStruct> byref_result
 /// ) -> !kgen.none  {
 ///   %0 = kgen.param.constant: none = <#kgen.none>
 ///   lit.return %0 : !kgen.none
@@ -496,11 +501,11 @@ static LIT::FuncOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
 
   Type selfArgType = selfType.getRefForArgument("self", /*isMut=*/true);
   auto argListAttrs =
-      PogListAttr::get(ctx, {b.getStringAttr("self"), existingName},
-                       {PassingKind::PosOnly, PassingKind::PosOnly});
+      PogListAttr::get(ctx, {existingName, b.getStringAttr("self")},
+                       {PassingKind::PosOnly, PassingKind::Implicit});
   return emitter.addVoidMethod(
-      structDecl, name, {selfArgType, existingArgType},
-      {ArgConvention::InitSelf, existingConv}, argListAttrs,
+      structDecl, name, {existingArgType, selfArgType},
+      {existingConv, ArgConvention::ByRefResult}, argListAttrs,
       isMove ? SpecialFunctionKind::kMoveInit : SpecialFunctionKind::kCopyInit);
 }
 
@@ -561,12 +566,8 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
     auto signature = func.getSignature();
     ArrayRef<Type> inputTypes = signature.getArguments();
     ArrayRef<ArgConvention> convs = signature.getArgConventions();
-    // Drop the 'out self' argument.
-    if (!convs.empty() && convs.front() == ArgConvention::InitSelf) {
-      inputTypes = inputTypes.drop_front();
-      convs = convs.drop_front();
-    }
-    if (!convs.empty() && convs.back() == ArgConvention::ByRefError) {
+    // Ignore the result slot and error result.
+    while (!convs.empty() && SignatureType::isResultSlot(convs.back())) {
       inputTypes = inputTypes.drop_back();
       convs = convs.drop_back();
     }
@@ -618,12 +619,6 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     SmallVector<StringAttr> argNames;
     SmallVector<PassingKind> argPassingKinds;
 
-    // Add the 'out self' argument.
-    argTypes.push_back(refToSelf);
-    argConventions.push_back(ArgConvention::InitSelf);
-    argNames.push_back(StringAttr::get(shared.getContext()));
-    argPassingKinds.push_back(PassingKind::PosOnly);
-
     // We declare all of the operands to the init constructor as owned.  This
     // enables it to work with move-only fields, and, for copyable types, forces
     // the copy into the caller, which can then be elided with a consume or
@@ -648,6 +643,13 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
       argNames.push_back(fieldOp.getNameAttr());
       argPassingKinds.push_back(PassingKind::PosOrKw);
     }
+
+    // Add the 'out self' argument.
+    argTypes.push_back(refToSelf);
+    argConventions.push_back(ArgConvention::ByRefResult);
+    argNames.push_back(StringAttr::get(shared.getContext(), "self"));
+    argPassingKinds.push_back(PassingKind::Implicit);
+
     init = synthesizeMemberwiseInit(
         structDecl, argTypes, argConventions,
         PogListAttr::get(getContext(), argNames, argPassingKinds));

@@ -69,7 +69,7 @@ struct MemoryUniqueMovable:
         # CHECK-NEXT: %0 = lit.ref.struct.ger %other[state]
         # CHECK-NEXT: lit.ownership.use %0
         # CHECK-NEXT: %1 = lit.ref.struct.ger %self[state]
-        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %0)
+        # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%0, %1)
         self.state = other.state^
 
         # CHECK-NEXT: kgen.param.constant: none
@@ -99,7 +99,7 @@ struct MemoryMovableCopyable:
 # CHECK-LABEL: lit.func @"result_mem1
 fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
     # CHECK-NEXT: lit.ownership.use %a
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a)
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %__result__)
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
     return a^
@@ -108,10 +108,18 @@ fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
 # CHECK-LABEL: lit.func @"result_mem3
 fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: lit.ownership.use %a
-    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a){{.*}}init_self{{.*}} owned_in_mem
+    # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%a, %__result__){{.*}} owned_in_mem{{.*}}byref_result
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
     return a^
+
+# CHECK-LABEL: lit.func @"self_copy
+fn self_copy(mut x: MemoryMovableCopyable):
+    # Mojo introduces a temporary to avoid exclusivity error.
+    # CHECK: %__call_result_tmp__ = lit.var.decl
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%x, %__call_result_tmp__)
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%__call_result_tmp__, %x)
+    x = x
 
 
 @register_passable
@@ -226,7 +234,7 @@ fn optimizeCopyElision():
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl
     # CHECK-NEXT: [[A:%.*]] = lit.ref.immut %a
     # CHECK-NEXT: lifetime.start [[ANON]]
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[A]])
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[A]], [[ANON]])
 
     # CHECK-NEXT: [[AIMM:%.*]] = lit.ref.immut %a
     # CHECK-NEXT: kgen.param.declare *"anonymous
@@ -247,7 +255,7 @@ fn optimizeCopyElision():
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
     # CHECK-NEXT: lifetime.start [[ANON]]
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[IMMREF]])
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[IMMREF]], [[ANON]])
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
     # CHECK-NEXT: kgen.param.declare
     # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind %x
@@ -348,7 +356,7 @@ fn optimize_copies() -> MemExample:
     # CHECK: kgen.param.declare *"z`3":
     # CHECK-NOT: lit.var.decl
     var z = y
-    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%__result__,
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}({{.*}}, %__result__)
     return z
 
 
@@ -362,9 +370,9 @@ fn optimize_transfers() -> MemExample:
     # CHECK: lit.call {{.*}}__init__{{.*}}(%x
     var x = MemExample()
 
-    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%y, %x)
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%x, %y)
     var y = x^
-    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%z, %y)
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%y, %z)
     var z = y^
-    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %z)
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%z, %__result__)
     return z^

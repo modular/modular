@@ -225,7 +225,6 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   // thus cannot observe any callee state.
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
-  case ArgConvention::InitSelf:
     return {false, true};
   }
 }

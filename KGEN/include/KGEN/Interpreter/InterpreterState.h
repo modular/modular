@@ -236,7 +236,6 @@ public:
   /// the result slot.
   ErrorTreeOr<TypedAttr>
   executeRegionWithResultSlot(Region &region, ArrayRef<Attribute> arguments,
-                              bool isInitSelf,
                               SmartVariant<Type, TypedAttr> result);
 
   /// Transfer control flow to the given operation. If the operation is null,

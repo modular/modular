@@ -177,20 +177,6 @@ kgen.func @byref_error(%arg0: !kgen.pointer<index> byref_error) throws {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @init_self() -> index {
-kgen.func @init_self(%arg0: !kgen.pointer<index> init_self) {
-  // CHECK-NEXT: %0 = pop.stack_allocation 1 x index
-
-  // CHECK-NEXT: %idx0
-  %idx0 = index.constant 0
-  // CHECK-NEXT: store %idx0, %0
-  pop.store %idx0, %arg0 : !kgen.pointer<index>
-
-  // CHECK-NEXT: %1 = pop.load %0
-  // CHECK-NEXT: return %1
-  kgen.return
-}
-
 // CHECK-LABEL: kgen.func @all_of_them
 // CHECK-SAME: (%arg0: i1, %arg1: i2 owned, %arg2: i3, %arg3: i4) throws -> (i3, i4, i5, i6)
 kgen.func @all_of_them(

@@ -544,8 +544,6 @@ LogicalResult FnMetadataAttr::verifyNewSignature(
        llvm::enumerate(values.getInputs(), argConventions)) {
     if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
       return emitError() << "'byref_result' argument must be the last argument";
-    if (conv == ArgConvention::InitSelf && i != 0)
-      return emitError() << "'init_self' argument must be the first argument";
 
     Type type = argType;
 

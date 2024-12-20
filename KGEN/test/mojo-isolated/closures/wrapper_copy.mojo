@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK: lit.func @"__copyinit__{{.*}}(%self: !lit.ref<!MemType1, mut {{.*}}> init_self,
-# CHECK-SAME: %other: {{.*}}!MemType1{{.*}}read_mem, |)
+# CHECK: lit.func @"__copyinit__{{.*}}(%other: {{.*}}!MemType1{{.*}}read_mem
+# CHECK-SAME: %self: !lit.ref<!MemType1, mut {{.*}}> byref_result) 
 # CHECK-NEXT:   [[M0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:   [[existing_impl:%.*]] = lit.ref.struct.ger %other[field0]
 # CHECK-NEXT:   [[loaded_existing_impl:%.*]] = lit.ref.load [[existing_impl]]
@@ -48,7 +48,7 @@
 # CHECK-NEXT:  %[[REF0:.*]] = lit.ref.from_pointer %[[V0]]
 # CHECK-NEXT:  %[[REF1:.*]] = lit.ref.from_pointer %[[V1]]
 # CHECK-NEXT:  %[[REF2:.*]] = lit.ref.immut %[[REF1]]
-# CHECK-NEXT:  lit.call {{.*}}__copyinit__{{.*}}(%[[REF0]], %[[REF2]])
+# CHECK-NEXT:  lit.call {{.*}}__copyinit__{{.*}}(%[[REF2]], %[[REF0]])
 
 # Store the address of the heap allocated memory into the self.
 # CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast %[[V0]]

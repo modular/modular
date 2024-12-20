@@ -120,18 +120,16 @@ ParserParamEvaluator::evaluateFunctionCallImpl(SymbolRefAttr symbol,
   LITSignatureType sig = cast<LIT::FuncOp>(body.getParentOp()).getSignature();
 
   TypedAttr value;
-  if (sig.hasMemoryOnlyResult() || sig.hasInitSelfArg()) {
-    bool isInitSelf = sig.hasInitSelfArg();
-    Value resultArg =
-        isInitSelf ? body.getArgument(0) : body.getArguments().back();
+  if (sig.hasMemoryOnlyResult()) {
+    Value resultArg = body.getArguments().back();
     Type resultType = cast<RefType>(resultArg.getType()).getElementType();
     ErrorOr<TypedAttr> init =
         createUninitializedValueOf(resultType, interpreter);
     if (init.isError())
       return failure();
 
-    ErrorTreeOr<TypedAttr> result = interpreter.executeRegionWithResultSlot(
-        body, arguments, isInitSelf, *init);
+    ErrorTreeOr<TypedAttr> result =
+        interpreter.executeRegionWithResultSlot(body, arguments, *init);
     if (result.isError()) {
       // Swallow the error.
       DEBUG_WITH_TYPE("lit-parameter-evaluator",

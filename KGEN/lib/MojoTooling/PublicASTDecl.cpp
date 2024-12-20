@@ -887,9 +887,6 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     case ArgConvention::Mut:
       declConvention = PublicArgumentDecl::Convention::kInOut;
       break;
-    case ArgConvention::InitSelf:
-      declConvention = PublicArgumentDecl::Convention::kOut;
-      break;
     case ArgConvention::Ref:
     case ArgConvention::MutRef:
       declConvention = PublicArgumentDecl::Convention::kRef;

@@ -359,24 +359,31 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       return {};
     }
 
-    // If we have one operand, get it to help tailor type conversion errors.
-    ASTType selfOperandType, singleOperandType;
-    if (operands.size() == 2 && !operands[0].keyword && !operands[1].keyword) {
+    // If we have one operand being passed to an __init__, get it to help tailor
+    // type conversion errors.
+    ASTType initResType, singleOperandType;
+    if (baseName == "__init__" && !fnDecls.empty() && operands.size() == 1 &&
+        !operands[0].keyword &&
+        (syntax == CallSyntax::kTypeCall ||
+         syntax == CallSyntax::kImplicitConvert)) {
+      // Get the Self type returned by the first __init__.
+      initResType = selfResultType;
+      assert(selfResultType &&
+             "Constructor syntax used without a self result type?");
+
+      // FIXME: Why is this duplicating this logic from the normal overload
+      // candidate resolution?
       if (auto cValue = operands[0].ir.getIfCValue())
-        if (auto selfRef = dyn_cast<RefType>(cValue.getRValueType()))
-          selfOperandType = selfRef.getElementType();
-      if (auto cValue = operands[1].ir.getIfCValue())
         singleOperandType = cValue.getRValueType();
     }
 
     // Reject Int(x) where x is already an Int with an error + fixit.
-    if (syntax == CallSyntax::kTypeCall && singleOperandType &&
-        selfOperandType && singleOperandType.isEqualCanon(selfOperandType) &&
-        isa<CallNode>(expr)) {
+    if (syntax == CallSyntax::kTypeCall && singleOperandType && initResType &&
+        singleOperandType.isEqualCanon(initResType) && isa<CallNode>(expr)) {
       const CallNode &callNode = *cast<CallNode>(expr);
       // This removes the constructor call, but does not remove the parens
       // because we don't want to introduce precedence problems.
-      diag << "cannot construct " << selfOperandType
+      diag << "cannot construct " << initResType
            << " with itself, you can remove the constructor call"
            << operands[0].expr->getRange()
            << FixIt::remove(callNode.callee->getRange());
@@ -384,22 +391,21 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
     }
 
     // Diagnose implicit conversions with a custom message.
-    if (syntax == CallSyntax::kImplicitConvert && selfOperandType &&
+    if (syntax == CallSyntax::kImplicitConvert && initResType &&
         singleOperandType) {
       // This is true if passing Int type to Int instead of Int() to Int.
       bool isConvertingTypeValue =
-          selfOperandType.getMetaType() == singleOperandType;
+          initResType.getMetaType() == singleOperandType;
       diag << "cannot implicitly convert ";
       if (isConvertingTypeValue)
-        diag << selfOperandType << " type as a";
+        diag << initResType << " type as a";
       else
         diag << singleOperandType;
       diag << " value to ";
-      diag << (isConvertingTypeValue ? "an instance of " : "")
-           << selfOperandType;
+      diag << (isConvertingTypeValue ? "an instance of " : "") << initResType;
 
       if (isConvertingTypeValue)
-        diag << "; did you mean to instantiate " << selfOperandType << "?";
+        diag << "; did you mean to instantiate " << initResType << "?";
       diag << expr->getRange();
       return {};
     }
@@ -450,6 +456,7 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
             << ASTType(func.getFullSignature());
       }
     }
+
     return {};
   }
 
@@ -734,19 +741,25 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, ASTType type,
   // "Int" as a nonmaterializable target), then it is implicitly convertible to
   // that type.  Check to see if that type has the method: if so we can add them
   // into the overload set.
+  //
+  // We don't do this for initializers; if you use T() syntax, we only will give
+  // you a T instance, even if it is non-materializable.
   if (ASTType nmTarget = type.getNonmaterializableTarget(shared)) {
-    lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, nmTarget,
-                                               /*searchParentScopes=*/false);
-    if (lookupResult.isSuccess()) {
-      ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
-      assert(!resultDecls.empty() && "We know this succeeded");
+    if (syntax != CallSyntax::kTypeCall &&
+        syntax != CallSyntax::kImplicitConvert) {
+      lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, nmTarget,
+                                                 /*searchParentScopes=*/false);
+      if (lookupResult.isSuccess()) {
+        ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
+        assert(!resultDecls.empty() && "We know this succeeded");
 
-      // If we find a vardecl or any other thing, then fail to find anything
-      // because it cannot be called.
-      if (!isa<LIT::FuncOp>(*resultDecls[0]))
-        // FIXME: This seems wrong. why aren't we emitting an error??
-        return result;
-      result.fnDecls.append(resultDecls.begin(), resultDecls.end());
+        // If we find a vardecl or any other thing, then fail to find anything
+        // because it cannot be called.
+        if (!isa<LIT::FuncOp>(*resultDecls[0]))
+          // FIXME: This seems wrong. why aren't we emitting an error??
+          return result;
+        result.fnDecls.append(resultDecls.begin(), resultDecls.end());
+      }
     }
   }
 
@@ -1103,18 +1116,10 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   }
 
   // Set the parameter bindings for the type we're creating - they can't be
-  // inferred since from the result type.
-  // FIXME: Why do we need this?  We should be able to infer this from the
-  // value passed for 'self'.
+  // inferred from the result type.
   callee.paramBindings =
       ParamBindings::getForDeclaredType(getDeclScope(), type, expr);
-
-  // Provide a self value so parameter inference can infer parameters from
-  // typeof(self).
-  assert(!callee.baseValue && "Shouldn't have a self value yet");
-  auto attr = UnknownAttr::get(RefType::getAnyOrigin(type, true));
-  callee.baseValue = {PValue(attr), expr};
-
+  callee.selfResultType = type;
   return callee.emitCall(std::move(callOperands), dest, *this);
 }
 
@@ -1147,18 +1152,8 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   if (!callee)
     return callee.isErroneous() ? FailureOr<PValue>(failure()) : PValue();
 
-  // Initializers take 'out self' as the first argument.
-  // TODO: We should add a new magic InferSelfLValue() IRValue type.  This
-  // would make the inference and overload resolution logic more consistent
-  // because the selfexpr should really be an LValue.
-  auto inferType =
-      requiredType.getWithUnknownParametersReplaced(declScope.getShared());
-  auto attr = UnknownAttr::get(RefType::getAnyOrigin(inferType, true));
-  operands.addSelf({PValue(attr), expr});
-
   // Install the Self type parameters on the callee directly, since they cannot
-  // always be inferred. This can happen if a constructor has more specific Self
-  // type parameters or for the deprecated `-> Self` form of initializers.
+  // be inferred from the result.
   callee.paramBindings =
       ParamBindings::getForDeclaredType(declScope, requiredType, expr);
 
@@ -1174,6 +1169,24 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
                                /*emitDiagnosticOnFailure=*/false, paramEmitter);
   if (callee.isErroneous())
     return FailureOr<PValue>(failure());
+  if (!result)
+    return result;
+
+  // If we found an unambiguous initializer to build this value, make sure that
+  // it returns the right thing we were expecting.  It is possible that
+  // conditional conformances constrain the result type more than we were
+  // expecting.
+  auto resultTy =
+      cast<LITSignatureType>(result.get().getType()).getUserResultType();
+  auto &shared = paramEmitter.shared;
+  if (!requiredType.isEqualCanon(resultTy)) {
+    // It is ok if the self type has different parameters than the
+    // declaration, this is a form of conditional conformance.
+    // TODO(requires / cond conformance): replace this with a better mechanism.
+    if (!ASTType(requiredType).isEqualAllowingUnknownAttr(resultTy, shared))
+      return failure();
+  }
+
   return result;
 }
 

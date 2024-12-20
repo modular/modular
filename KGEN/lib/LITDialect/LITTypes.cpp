@@ -1495,9 +1495,6 @@ size_t LITNewSignatureType::getNumImplicitOriginDecls() {
 }
 
 Type LITNewSignatureType::getUserResultType() {
-  // If this function has an init_self argument, then it returns None.
-  if (hasInitSelfArg())
-    return KGEN::NoneType::get(getContext());
   // If this function has a byref_result, return the reference element type.
   if (hasMemoryOnlyResult())
     return ::cast<RefType>(getArguments().back()).getElementType();
@@ -1582,9 +1579,6 @@ bool LITNewSignatureType::classof(Type type) {
 
 Type LIT::getSignatureUserResultType(SignatureType sigType,
                                      ArrayRef<Type> argTypes, Type resultType) {
-  // If this function has an init_self argument, then it returns None.
-  if (sigType.hasInitSelfArg())
-    return KGEN::NoneType::get(sigType.getContext());
   // If this function has a byref_result, return the reference element type.
   if (sigType.hasMemoryOnlyResult())
     return cast<RefType>(argTypes.back()).getElementType();

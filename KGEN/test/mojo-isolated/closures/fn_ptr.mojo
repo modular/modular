@@ -18,7 +18,7 @@ struct Reg:
 
 # CHECK-LABEL: lit.struct.decl @"fn(Mem
 # CHECK-LABEL: lit.func @"__init__
-# CHECK-SAME: (%self: {{.*}}, %other: {{.*}}[1](!lit.ref<!Mem{{[0-9]*}}, imm *[0,0]> read_mem, |) -> !Int>
+# CHECK-SAME: (%other: {{.*}}[1](!lit.ref<!Mem{{[0-9]*}}, imm *[0,0]> read_mem, |) -> !Int>>, ?, %self:
 # CHECK-NEXT: [[OPAQUE:%.*]] = pop.pointer.bitcast %other
 # CHECK-NEXT: [[FIELD0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT: store [[OPAQUE]], [[FIELD0]]
@@ -40,7 +40,7 @@ struct Reg:
 
 # CHECK-LABEL: lit.struct.decl @"fn(Reg
 # CHECK-LABEL: lit.func @"__init__
-# CHECK-SAME: (%self: {{.*}}, %other: {{.*}}({{.*}}"__error__": !lit.ref<!Error, mut *[0,1]> byref_error, "__result__": !lit.ref<!Mem, mut *[0,2]> byref_result) throws -> i1>
+# CHECK-SAME: (%other: {{.*}}({{.*}}"__error__": !lit.ref<!Error, mut *[0,1]> byref_error, "__result__": !lit.ref<!Mem, mut *[0,2]> byref_result) throws -> i1>
 # CHECK:      lit.func call_impl[imm [[REG:.*]], mut [[ELT:.*]], mut [[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none>,
 # CHECK-SAME: [[ARG:%.*]][*""]: !lit.ref<!Reg, imm [[REG]]> read_mem, |, ?, [[ERR:%.*]]: !lit.ref<!Error, mut [[ELT]]> byref_error, [[SLOT:%.*]]: !lit.ref<!Mem, mut [[LT]]> byref_result) throws -> i1
 # CHECK:        [[RES:%.*]] = lit.call_indirect %{{.*}}[imm [[REG]], mut [[ELT]], mut [[LT]]]([[ARG]], [[ERR]], [[SLOT]])

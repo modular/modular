@@ -480,28 +480,39 @@ void FnSigDecorators::applyImplicitDecorator(const DeclRefNode &node) {
   }
 
   ArrayRef<ParsedArgument> args = tcSignature.argList.parsedArgs;
-  if (args.size() <= 1) {
-    emitError(node.getLoc())
-        << "'@implicit' requires an argument to convert from";
-    return;
-  }
 
   // Drop any error and result slots, default arguments and variadics.
-  // Things like `__init__(out x, x: T, y : T = 42)
-  while (args.size() > 2) {
+  // Things like `__init__(out x, x: T, y : T = 42).
+  // Allow `__init__(out x, x: Int = 4)` which has a default.
+  while (1) {
+    if (args.empty())
+      break;
+
     auto &lastArg = args.back();
-    if (lastArg.convention == ParsedArgument::kConventionByRefResult ||
-        lastArg.initExpr ||                 // arg has a default.
-        lastArg.vararg != VarArgKind::None) // vararg lists can be empty
+    if (lastArg.convention == ParsedArgument::kConventionByRefResult) {
+      args = args.drop_back();
+      continue;
+    }
+
+    // Drop defaults and varargs so long as they aren't the last argument.
+    if (args.size() > 1 &&
+        (lastArg.initExpr ||                  // arg has a default.
+         lastArg.vararg != VarArgKind::None)) // vararg lists can be empty
       args = args.drop_back();
     else
       break;
   }
 
-  // We must have an InitSelf and a position argument.
-  if (args.size() != 2 ||
-      (args[1].kwArgHandling != KWArgHandling::kPositionalOnly &&
-       args[1].kwArgHandling != KWArgHandling::kPositionalOrKeyword)) {
+  if (args.empty()) {
+    emitError(node.getLoc())
+        << "'@implicit' requires an argument to convert from";
+    return;
+  }
+
+  // We must have a positional argument to take the new value.
+  if (args.size() != 1 ||
+      (args[0].kwArgHandling != KWArgHandling::kPositionalOnly &&
+       args[0].kwArgHandling != KWArgHandling::kPositionalOrKeyword)) {
     emitError(node.getLoc())
         << "'@implicit' initializers must accept a single argument value";
     return;
@@ -855,6 +866,8 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   CValue value = exprEmitter.emitConstructorCall(
       ASTType(closureImplType), std::move(closureImplInitArgs), node,
       CallSyntax::kTypeCall, closureDest);
+  if (!value)
+    return {};
 
   // Emit the Closure Wrapper instance.
   VarDeclOp var = exprEmitter.emitVarDecl(
@@ -1234,8 +1247,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     if (convention == ArgConvention::Ref ||
         convention == ArgConvention::MutRef ||
         convention == ArgConvention::OwnedMem ||
-        convention == ArgConvention::Mut ||
-        convention == ArgConvention::InitSelf) {
+        convention == ArgConvention::Mut) {
       setDecl(CValue::getMValueForRef(bbArg));
       continue;
     }
@@ -1261,6 +1273,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   }
 
   // If the function has a named result slot, bind it here.
+  // TODO: Move this to typeCheckResult in Signatures.cpp
   if (StringAttr namedResult = funcOp.getNamedResultAttr()) {
     assert(funcSignature.hasMemoryOnlyResult() && "already checked");
     Value result = funcOp.getArguments().back();

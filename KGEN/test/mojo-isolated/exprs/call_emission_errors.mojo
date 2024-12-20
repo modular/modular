@@ -212,17 +212,11 @@ struct MyStruct:
 fn exclusivity[
     spanlife: MutableOrigin
 ](mut x: MyStruct, span: MyMutSpan[spanlife]):
-    # expected-error @below {{argument of implicit __copyinit__ call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'x' value is passed through aliasing 'read' argument}}
+    # Compiler injects a temporary to make this ok.
     x = x
 
-    # expected-error @below {{argument of implicit __moveinit__ call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'x' value is passed through aliasing 'owned' argument}}
+    # Compiler injects a temporary to make this ok.
     x = x^
-
-    # expected-error @below {{argument of '__copyinit__' call allows writing a memory location previously writable through another aliased argument}}
-    # expected-note @below {{'x' value is passed through aliasing 'read' argument}}
-    x.__copyinit__(x)
 
     # expected-error @below {{argument of 'take_two_spans' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'spanlife' memory accessed through reference embedded in value of type 'MyMutSpan[spanlife]'}}

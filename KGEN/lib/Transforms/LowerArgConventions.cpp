@@ -10,8 +10,7 @@
 //
 // 1. Move register passable types passed as `{owned,borrowed}_in_mem` to be
 //    passed in register.
-// 2. Promote register passable `byref_result` and `init_self` arguments to
-//    function results.
+// 2. Promote register passable `byref_result` arguments to function results.
 //    - This also handles functions that throw.
 // 3. Sets all argument conventions to `none`, i.e. only `none`
 //    conventions are legal after this in the pipeline.
@@ -67,7 +66,7 @@ struct LoweredSignature {
   SmallVector<Type> newResTypes;
 
   int valIdx = -1, errIdx = -1;
-  /// This enum indicates whether a byref_result/init_self argument and/or a
+  /// This enum indicates whether a byref_result argument and/or a
   /// byref_error argument were promoted.
   enum ABI { Neither, ErrorOnly, ValueOnly, Both };
   int abiLowering = Neither;
@@ -125,8 +124,7 @@ static LoweredSignature lowerSignature(SignatureType sig) {
       }
       // Don't alter the result convention for async functions. The coroutine
       // lowering expects this ABI.
-    } else if ((SignatureType::isResultSlot(convention) && !sig.isAsync()) ||
-               convention == ArgConvention::InitSelf) {
+    } else if (SignatureType::isResultSlot(convention) && !sig.isAsync()) {
       Type loweredByrefResTy = lowerPointerType(argTy);
       if (!loweredByrefResTy)
         continue;

@@ -2054,10 +2054,11 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     emitError(exprLoc, "value of type ")
         << valueType << " cannot be copied into a non-default address space"
         << value.expr->getRange();
+    dest.resetForError();
     return {};
   }
 
-  // __copyinit__ has signature: `(out self, existing: Self)`.
+  // __copyinit__ has signature: `(existing: Self) -> Self`.
   MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
   if (!destBuffer)
     return {};
@@ -2080,6 +2081,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return emitCResult(MRValue(destBuffer), value.expr, dest);
   }
 
+  // Generate nicer error message for common cases.
   if (!valueType.isCopyable(exprLoc, shared)) {
     if (valueType.isMovableFrom(value, shared) &&
         !valueType.isRegisterPassable(exprLoc, shared)) {
@@ -2095,9 +2097,8 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     return {};
   }
 
-  CallOperands operands({ASTExprAnd<AnyValue>{destBuffer, value.expr}, value});
-  ValueDest copyDest(dest.getContext());
-  if (!emitNamedMethodCall("__copyinit__", std::move(operands), copyDest,
+  ValueDest copyDest(destBuffer, dest.getContext());
+  if (!emitNamedMethodCall("__copyinit__", {{value}}, copyDest,
                            CallSyntax::kImplicitCopyInit, value.expr))
     return {};
   // If we required an implicit conversion, make sure it happens.
@@ -2181,11 +2182,9 @@ CValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   // Otherwise, assign with a move constructor.  We own the RValue, so prefer
   // to use __moveinit__ if present.
   if (shared.typeHasMember(valueType, "__moveinit__", value.expr->getLoc())) {
-    // `__moveinit__(out self, owned existing: Self)`.
-    ASTExprAnd<AnyValue> operands[] = {
-        ASTExprAnd<AnyValue>{destRef, value.expr}, value};
-    ValueDest moveDest(context);
-    if (!emitNamedMethodCall("__moveinit__", {operands}, moveDest,
+    // `__moveinit__(owned existing: Self) -> Self`.
+    ValueDest moveDest(destRef, context);
+    if (!emitNamedMethodCall("__moveinit__", {{value}}, moveDest,
                              CallSyntax::kImplicitMoveInit, value.expr))
       return {};
     return MBValue(destRef);
@@ -2496,7 +2495,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   }
 
   if (markLastArgDestroyed) {
-    Value argToDestroy = func.getBody()->getArguments().back();
+    Value argToDestroy = func.getBody()->getArguments().front();
     builder.create<LIT::OwnershipMarkDestroyedOp>(argToDestroy);
   }
 

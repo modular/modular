@@ -211,11 +211,6 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// The caller is responsible for destroying the value.
   I32EnumAttrCase<"ByRefResult", 7, "byref_result">,
 
-  /// This is used on the 'self' argument to `__init__`.  It has identical
-  /// semantics to ByRefResult on the callee side, but isn't a result on the
-  /// caller side.
-  I32EnumAttrCase<"InitSelf", 8, "init_self">,
-
   /// This is used on the second-last argument of a function that may raise,
   /// returning a potentially initialized error value if the function throws.
   I32EnumAttrCase<"ByRefError", 9, "byref_error">,

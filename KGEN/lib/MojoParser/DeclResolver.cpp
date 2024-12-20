@@ -954,9 +954,6 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     case ArgConvention::MutRef:
       mangledName += '%';
       break;
-    case ArgConvention::InitSelf:
-      mangledName += "=&";
-      break;
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
       llvm_unreachable("byref_result should be skipped");

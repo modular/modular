@@ -88,7 +88,6 @@ bool LIT::canConvertFunctionTypes(LITSignatureType actual,
              "both functions must be throwing");
       [[fallthrough]];
     case ArgConvention::OwnedMem:
-    case ArgConvention::InitSelf:
     case ArgConvention::MutRef:
     case ArgConvention::Ref:
     case ArgConvention::Mut:
@@ -247,9 +246,6 @@ static LIT::FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
     switch (conv) {
     case ArgConvention::OwnedReg:
       llvm_unreachable("not used by the mojo parser");
-    case ArgConvention::InitSelf:
-      value = MLValue(arg);
-      break;
     case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
       continue; // Ignore this, it will be assigned to later.
@@ -280,9 +276,6 @@ static LIT::FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
     // An async call returns a coroutine we have to await.
   } else if (expected.hasMemoryOnlyResult()) {
     dest = ValueDest(MLValue(thunk.getArguments().back()), EC_Trait);
-  } else if (expected.hasInitSelfArg()) {
-    // If both the caller and callee take initself, we initialize it directly
-    // above and need to return none.
   } else {
     hasRegisterResult = true;
   }

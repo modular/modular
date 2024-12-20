@@ -280,9 +280,6 @@ def KGEN_NewSignatureType : KGENType<"NewSignature", "new_signature", [
     /// Return true if this signature's last argument is a result from the
     /// function returned through memory.
     bool hasMemoryOnlyResult();
-    /// Return true if this signature's first argument is an initializer result
-    /// returned through memory.
-    bool hasInitSelfArg();
 
     bool isThrows() const { return getFnEffects().isThrows(); }
     bool isAsync() const { return getFnEffects().isAsync(); }
@@ -390,9 +387,6 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Return true if this signature's last argument is a result from the
     /// the function returned through memory.
     bool hasMemoryOnlyResult();
-    /// Return true if this signature's first argument is an initializer result
-    /// returned through memory.
-    bool hasInitSelfArg();
 
     bool isThrows() const { return getFnEffects().isThrows(); }
     bool isAsync() const { return getFnEffects().isAsync(); }

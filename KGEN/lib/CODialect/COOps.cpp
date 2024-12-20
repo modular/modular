@@ -121,8 +121,6 @@ LogicalResult InvokeOp::verify() {
   auto signature = cast<SignatureType>(getCallee().getType());
   if (!signature.isAsync())
     return emitOpError("callable must be 'async'");
-  if (signature.hasInitSelfArg())
-    return emitOpError("callable cannot have an 'init_self' argument");
   return verifyCallOperands(*this, getOperands(), signature,
                             /*ignoreByRef=*/true);
 }
@@ -169,8 +167,6 @@ LogicalResult HotInvokeOp::verify() {
   auto signature = cast<SignatureType>(getCallee().getType());
   if (!signature.isAsync())
     return emitOpError("callable must be 'async'");
-  if (signature.hasInitSelfArg())
-    return emitOpError("callable cannot have an 'init_self' argument");
   return verifyCallOperands(*this, getOperands(), signature);
 }
 

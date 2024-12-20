@@ -26,10 +26,10 @@ fn foo(x: int, y: MemType, z: MemType):
 # CHECK: lit.struct.field field1 : !MemType
 # CHECK: lit.struct.field field2 : !MemType
 # CHECK: lit.func @"__init__{{.*}}(
-# CHECK-SAME: %self: !lit.ref<{{.*}}> init_self,
 # CHECK-SAME: %fld0: !int,
 # CHECK-SAME: %fld1: !lit.ref<!MemType, imm {{[^>]*}}> read_mem,
 # CHECK-SAME: %fld2: !lit.ref<!MemType, imm {{.*}}> read_mem,
+# CHECK-SAME: %self: !lit.ref<{{.*}}> byref_result)
 
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure_3

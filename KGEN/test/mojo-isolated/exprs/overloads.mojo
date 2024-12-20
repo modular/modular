@@ -49,7 +49,7 @@ fn test_kw_args_overload(x: int, y: int):
     overloaded_arg(b=y, a=x)
 
     # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
-    # CHECK: lit.call {{.*}}@MyInt::@"__init__{{.*}}([[TMP]], %y)
+    # CHECK: lit.call {{.*}}@MyInt::@"__init__{{.*}}(%y, [[TMP]])
     # CHECK: [[Y:%.*]] = lit.ref.load [[TMP]]
     # CHECK-NEXT: call {{.*}}@"overloaded_arg{{.*}}"(%x, [[Y]])
     overloaded_arg(b=MyInt(y), a=x)

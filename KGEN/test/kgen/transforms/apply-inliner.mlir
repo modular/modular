@@ -17,12 +17,6 @@ kgen.generator @fwd_reg<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> 
   kgen.return %arg0 : !kgen.paramref<T>
 }
 
-kgen.generator @fwd_reg_init_self<T: type>(%arg0: !kgen.pointer<T> init_self, %arg1: !kgen.paramref<T>) -> !kgen.none {
-  pop.store %arg1, %arg0 : !kgen.pointer<T>
-  %none = kgen.param.constant: none = <#kgen.none>
-  kgen.return %none : !kgen.none
-}
-
 kgen.generator @fwd_reg_byref_result_store_first<T: type>(%arg0: !kgen.paramref<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
   pop.store %arg0, %arg1 : !kgen.pointer<T>
   %none = kgen.param.constant: none = <#kgen.none>
@@ -44,8 +38,6 @@ kgen.generator @reg_constant<T: type, value: !kgen.paramref<T>>() -> !kgen.param
 kgen.generator @test_param_inline<param>() {
   // CHECK-NEXT: <1>
   kgen.param.constant = <apply(:(index) -> index @fwd_reg<:type index>, 1)>
-  // CHECK-NEXT: <2>
-  kgen.param.constant = <apply_result_slot(:(!kgen.pointer<index> init_self, index) -> !kgen.none @fwd_reg_init_self<:type index>, 2)>
   // CHECK-NEXT: <3>
   kgen.param.constant = <apply_result_slot(:(index, !kgen.pointer<index> byref_result) -> !kgen.none @fwd_reg_byref_result_store_first<:type index>, 3)>
   // CHECK-NEXT: <4>
@@ -66,15 +58,6 @@ kgen.generator @test_param_inline<param>() {
 kgen.generator @fwd_reg_debug<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
   debuginfo.value #var_paramref = %arg0 : !kgen.paramref<T>
   kgen.return %arg0 : !kgen.paramref<T>
-}
-
-kgen.generator @fwd_reg_init_self_debug<T: type>(%arg0: !kgen.pointer<T> init_self, %arg1: !kgen.paramref<T>) -> !kgen.none {
-  debuginfo.value #var_pointer = %arg0 : !kgen.pointer<T>
-  debuginfo.value #var_paramref = %arg1 : !kgen.paramref<T>
-  pop.store %arg1, %arg0 : !kgen.pointer<T>
-  %none = kgen.param.constant: none = <#kgen.none>
-  debuginfo.value #var_none = %none : !kgen.none
-  kgen.return %none : !kgen.none
 }
 
 kgen.generator @fwd_reg_byref_result_store_first_debug<T: type>(%arg0: !kgen.paramref<T>, %arg1: !kgen.pointer<T> byref_result) -> !kgen.none {
@@ -105,8 +88,6 @@ kgen.generator @reg_constant_debug<T: type, value: !kgen.paramref<T>>() -> !kgen
 kgen.generator @test_param_inline_debug<param>() {
   // CHECK-NEXT: <1>
   kgen.param.constant = <apply(:(index) -> index @fwd_reg_debug<:type index>, 1)>
-  // CHECK-NEXT: <2>
-  kgen.param.constant = <apply_result_slot(:(!kgen.pointer<index> init_self, index) -> !kgen.none @fwd_reg_init_self_debug<:type index>, 2)>
   // CHECK-NEXT: <3>
   kgen.param.constant = <apply_result_slot(:(index, !kgen.pointer<index> byref_result) -> !kgen.none @fwd_reg_byref_result_store_first_debug<:type index>, 3)>
   // CHECK-NEXT: <4>

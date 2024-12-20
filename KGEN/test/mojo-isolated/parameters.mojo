@@ -1058,7 +1058,7 @@ struct HasToInt(ToInt):
 struct MixedInferAndPosParam[size: Int]:
     var f0: Int
 
-    # CHECK-LABEL: lit.func @"__init__[{{.*}}ToInt]({{.*}}::MixedInferAndPosParam
+    # CHECK-LABEL: lit.func @"__init__[{{.*}}ToInt](
     # CHECK-SAME: T0: !ToInt, T1: !ToInt
     fn __init__[T0: ToInt, T1: ToInt, //](mut self, a: T0, b: T1):
         self.f0 = a.to_int()
@@ -1068,7 +1068,7 @@ struct MixedInferAndPosParam[size: Int]:
 struct MixedInferAndPosParamWithInferredOnStruct[ST: ToInt, //, size: Int]:
     var f0: Int
 
-    # CHECK-LABEL: lit.func @"__init__[{{.*}}ToInt]({{.*}}::MixedInferAndPosParam
+    # CHECK-LABEL: lit.func @"__init__[{{.*}}ToInt](
     # CHECK-SAME: T0: !ToInt, T1: !ToInt
     fn __init__[T0: ToInt, T1: ToInt, //](mut self, z: ST, a: T0, b: T1):
         self.f0 = a.to_int()
@@ -1121,15 +1121,15 @@ fn test_origin_struct_inf[imm_data: Int](mut data: Int):
    # This needs to infer the origin through an implicit conversion
    # CHECK: %0 = lit.ref.immut %data
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceImm::@"__init__
-   # CHECK-SAME: {_mlir_origin: origin<0> = (mutcast mut *"data`")}>(%immTest, %0)
+   # CHECK-SAME: {_mlir_origin: origin<0> = (mutcast mut *"data`")}>(%0, %immTest)
    immTest = OriginStructInferenceImm(data)
 
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferencePar::@"__init__
-   # CHECK-SAME: {_mlir_origin: origin<1> = *"data`"}>(%parTest, %data)
+   # CHECK-SAME: {_mlir_origin: origin<1> = *"data`"}>(%data, %parTest)
    parTest = OriginStructInferencePar(data)
 
    # CHECK-NEXT: lit.call {{.*}}OriginStructInferenceParWrapped::@"__init__
-   # CHECK-SAME: {_mlir_origin: origin<1> = *"data`"}>(%parWrappedTest, %data)
+   # CHECK-SAME: {_mlir_origin: origin<1> = *"data`"}>(%data, %parWrappedTest)
    parWrappedTest = OriginStructInferenceParWrapped(data)
 
    # CHECK: %[[IMMUT:.+]] = lit.ref.immut {{.*}} : <!Int, mut [[IMMUT_REF:.+]]>
@@ -1137,7 +1137,7 @@ fn test_origin_struct_inf[imm_data: Int](mut data: Int):
    # CHECK-SAME: :!Bool {:i1 0},
    # CHECK-SAME: :{{[^ ]*}}Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])},
    # CHECK-SAME: :{{[^ ]*}}Origin<:!Bool {:i1 0}> {_mlir_origin: origin<0> = (mutcast mut [[IMMUT_REF]])}>
-   # CHECK-SAME: (%parSpecializedTest, %[[IMMUT]])
+   # CHECK-SAME: (%[[IMMUT]], %parSpecializedTest)
    parSpecializedTest = OriginStructInferenceParSpecialized(imm_data)
 
 
@@ -1513,7 +1513,7 @@ struct StructWithSpecificSelfInitTypes[size: Int]:
 
 struct DependentSpecificInitSelf[T: AnyType]:
     @implicit
-    fn __init__[U: Movable](mut self: DependentSpecificInitSelf[U], owned value: U):
+    fn __init__[U: Movable](out self: DependentSpecificInitSelf[U], owned value: U):
         pass
 
 fn implicit_convert_specific_Self(value: StructWithSpecificSelfInitTypes[1]):
@@ -1525,14 +1525,14 @@ fn test_inference_from_Self_type(x: Int):
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {0}>([[TMP]])
   _ = StructWithSpecificSelfInitTypes()
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>([[TMP]], %x)
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>(%x, [[TMP]])
   _ = StructWithSpecificSelfInitTypes(x)
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {2}>([[TMP]], %x, %x)
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {2}>(%x, %x, [[TMP]])
   _ = StructWithSpecificSelfInitTypes(x, x)
 
   # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>([[TMP]], %x)
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}<:!Int {1}>(%x, [[TMP]])
   # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[TMP]]
   # CHECK-NEXT: call {{.*}}implicit_convert_specific_Self{{.*}}([[IMM]])
   implicit_convert_specific_Self(x)

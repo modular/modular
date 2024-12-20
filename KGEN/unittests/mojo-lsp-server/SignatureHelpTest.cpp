@@ -91,11 +91,11 @@ fn test():
                      [](const lsp::SignatureHelp2 &signatureHelp) {
                        ASSERT_EQ((int)signatureHelp.signatures.size(), 2);
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
-                       EXPECT_EQ(signatureHelp.activeParameter, 1);
+                       EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn __init__(out self)");
+                                 "fn __init__() -> Self");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn __init__(out self, a_field: Int)");
+                                 "fn __init__(a_field: Int) -> Self");
                      })
       .execute();
 }

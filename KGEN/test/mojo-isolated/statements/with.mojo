@@ -15,7 +15,7 @@
 # CHECK-LABEL: lit.func @"raise_string
 fn raise_string() raises:
     # CHECK: %0 = kgen.param.constant: !StringLiteral = <{:string "thing"}>
-    # CHECK: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}(%__error__, %0)
+    # CHECK: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}(%0, %__error__)
     # CHECK-NEXT: lit.raise
     raise "thing"
 
@@ -65,7 +65,7 @@ fn noop(a: Int):
 # CHECK-LABEL: lit.func @"testWithNonRaising
 fn testWithNonRaising(a: ExampleCM):
     # CHECK-NEXT: %$CONTEXTMGR = lit.var.decl "$CONTEXTMGR"
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%$CONTEXTMGR, %a)
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%a, %$CONTEXTMGR)
     # CHECK-NEXT: %val = lit.var.decl {{.*}} imp
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR
     # CHECK-NEXT: [[TARGET:%.*]] = lit.call {{.*}}__enter__{{.*}}([[IMMREF]])
@@ -83,7 +83,7 @@ fn testWithNonRaising(a: ExampleCM):
     # Test a with with no target.
 
     # CHECK: %$CONTEXTMGR_0 = lit.var.decl "$CONTEXTMGR"
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%$CONTEXTMGR_0, %a)
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%a, %$CONTEXTMGR_0)
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %$CONTEXTMGR_0
     # CHECK: lit.call {{.*}}__enter__{{.*}}([[IMMREF]]
     # CHECK: lit.try

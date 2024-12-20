@@ -527,17 +527,14 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
       // If we succeeded, figure out what the concrete type being inferred would
       // be with any parameters bound.
       auto initSig = cast<LITSignatureType>(pValue.value().getType());
-      // We expect args: 0=self, 1=value we're converting from.
-      assert(initSig.getArgConvention(0) == ArgConvention::InitSelf &&
-             initSig.getNumArguments() > 1);
-      auto selfType =
-          ASTType(initSig.getArguments()[0]).getReferenceElementType();
-      expDRT = cast<StructType>(selfType);
+      // The constructed type is the result of the initializer.
+      assert(initSig.getNumArguments() != 0);
+      expDRT = cast<StructType>(initSig.getUserResultType());
 
       // Finally, perform any implicit conversion of the actual value to
       // whatever the 'value' would provide.
-      auto argRVType = initSig.getArguments()[1];
-      if (SignatureType::hasAddress(initSig.getArgConvention(1)))
+      auto argRVType = initSig.getArguments()[0];
+      if (SignatureType::hasAddress(initSig.getArgConvention(0)))
         argRVType = ASTType(argRVType).getReferenceElementType();
 
       if (actual.getType() != argRVType &&
@@ -558,8 +555,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
   return matchParams(actual, expected);
 }
 
-/// When inferring an 'initself' argument, try to infer parameters of Self from
-/// the initializer if specialized.
+/// Try to infer parameters of Self from an initializer if specialized.
 ///
 /// Consider:
 ///    struct S[a: Int]:
@@ -578,45 +574,29 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
 /// custom logic is required because often (eg in this case) the "actual" type
 /// will have UnboundAttr parameters, instead of fully bound ones like a normal
 /// argument.
-LogicalResult ParameterInferenceState::inferInitSelfTypes(Type actualType,
-                                                          Type expectedType) {
-  // Perform standard inference, if this fails, then give up.
-  if (failed(matchTypes(actualType, expectedType)))
-    return failure();
-
+LogicalResult
+ParameterInferenceState::inferSelfFromInitResult(Type returnedType) {
   // We can only support struct inference right now.
-  auto actualDRT = dyn_cast<StructType>(actualType);
-  auto expectedDRT = dyn_cast<StructType>(expectedType);
-  if (!actualDRT)
+  auto returnedDRT = dyn_cast<StructType>(returnedType);
+  if (!returnedDRT)
     return success();
-
-  // We know the inference succeeded, so these must have matching symbols and
-  // matching numbers of parameters.
-  assert(actualDRT.getSymbol() == expectedDRT.getSymbol() &&
-         actualDRT.getParamValues().size() ==
-             expectedDRT.getParamValues().size());
 
   // Match up the parameter bindings if the 'actual' param is an UnboundAttr and
   // the expected has something more specific than a reference to the contextual
   // parameter.
-  for (auto [idx, actual, expected] : llvm::enumerate(
-           actualDRT.getParamValues(), expectedDRT.getParamValues())) {
-    // If this was already bound, then parameter inference would have handled
-    // it.
-    if (!isa<UnboundAttr>(actual))
-      continue;
+  for (auto [idx, param] : llvm::enumerate(returnedDRT.getParamValues())) {
     // If this is simply a reference to the enclosing parameter (as in a normal
     // Self) init, then we can't infer anything from it.
-    if (auto indexRef = dyn_cast<ParamIndexRefAttr>(expected))
+    if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param))
       if (indexRef.getDepth() == 0 && indexRef.getIndex() == idx)
         continue;
 
     // Otherwise, this is a more specialized parameter bound on Self for this
     // method.  Form the parameter that we need to infer.
     auto toInfer = ParamIndexRefAttr::get(/*depth*/ 0, /*isResult*/ false, idx,
-                                          expected.getType());
+                                          param.getType());
     // Try to infer this parameter from the expected (declared) type.
-    if (failed(matchParams(expected, toInfer)))
+    if (failed(matchParams(param, toInfer)))
       return failure();
 
     // If we successfully inferred a more specific value, we need to remember
@@ -624,7 +604,7 @@ LogicalResult ParameterInferenceState::inferInitSelfTypes(Type actualType,
     // have inferred a forward reference, such as in:
     //   struct Foo[T: AnyType]:
     //     fn __init__[U: Movable](out self: Foo[U], x: U):
-    initSelfParams.push_back(idx);
+    selfResultParams.push_back(idx);
   }
 
   return success();
@@ -689,10 +669,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // Early return if this operand will not help with inferring parameters. This
   // avoids unnecessary checks & dealing with errors unrelated to parameter
   // inference here. The only operands that can contribute to param inference
-  // are either those whose expected types contain param references, or InitSelf
-  // operands, since they may specialize the self type.
-  if (expectedConvention != ArgConvention::InitSelf &&
-      !paramFinder.hasReferences(expectedType.mlirType))
+  // are either those whose expected types contain param references.
+  if (!paramFinder.hasReferences(expectedType.mlirType))
     return success();
 
   AnyValue value = operand.ir;
@@ -721,16 +699,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   switch (expectedConvention) {
   case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
-  case ArgConvention::InitSelf:
-    // If this is an UnknownAttr, then it is a placeholder for type checking,
-    // match up the types, but otherwise let it pass.
-    if (PValue pValue = value.getIfPValue())
-      if (isa<UnknownAttr>(pValue.get())) {
-        ASTType argType = pValue.get().getType();
-        return inferInitSelfTypes(argType.getReferenceElementType(),
-                                  expectedType.getReferenceElementType());
-      }
-    [[fallthrough]];
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError: {
@@ -949,14 +917,10 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // conversions disabled of course) to resolve our value as the init
   // methods argument.  This allows us to infer parameters from it.
   auto initSig = cast<LITSignatureType>(pValue.value().getType());
-  // We expect args: 0=self, 1=value we're converting from.
-  assert(initSig.getArgConvention(0) == ArgConvention::InitSelf);
-  ASTType inferredSelf =
-      ASTType(initSig.getArguments()[0]).getReferenceElementType();
-
+  // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
-  auto result = matchTypes(inferredSelf, knownExpectedType);
+  auto result = matchTypes(initSig.getUserResultType(), knownExpectedType);
 
   // If the implicit conversion worked then we're good.
   if (succeeded(result))
@@ -1062,10 +1026,9 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
   }
 }
 
-LogicalResult
-ParameterInferenceState::infer(LITSignatureType signature,
-                               const CallOperands &operands,
-                               const OperandValueList &variadicKwOperands) {
+LogicalResult ParameterInferenceState::infer(
+    LITSignatureType signature, const CallOperands &operands,
+    const OperandValueList &variadicKwOperands, bool returnsSelf) {
   // First try to infer parameters from parameters.
   infer(signature.getParamTypes(), signature.getParamListAttrs(),
         /*hasArguments*/ true);
@@ -1075,6 +1038,21 @@ ParameterInferenceState::infer(LITSignatureType signature,
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
   std::tie(signature) = getPartiallySpecializedSignature(
       inferredParams, evaluator, /*signatureScoped=*/true, signature);
+
+  // If this is a result in a returnsSelf function like an __init__, infer
+  // self parameters (which could be specialized and shadowed).
+  // NOTE: This has to happen early due to crazy cases like this:
+  //   struct Example[T: AnyType]:
+  //      fn __init__[U: Movable](owned value: U) -> Example[U]:
+  //         pass
+  // The way this works is that we infer "T = $0" here, then go on to analyze
+  // the argument to infer that U = Int (or whatever), and then at the end of
+  // this we go ahead and resolve $0 = Int.  This is crazily circuitous but is
+  // because we have to infer parameter 0 before we can infer param #1.
+  if (returnsSelf) {
+    if (failed(inferSelfFromInitResult(signature.getUserResultType())))
+      return failure();
+  }
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
@@ -1241,23 +1219,21 @@ ParameterInferenceState::infer(LITSignatureType signature,
     evaluator.addInputValue(empty);
   }
 
-  // Make sure to rebind any initSelfParams if they've been inferred already.
+  // Make sure to rebind any selfResultParams if they've been inferred already.
   // This is because we have to support things like:
   //
   //     struct Foo[T: AnyType]:
-  //         fn __init__[U: Movable](out self: Foo[U], x: U):
+  //         fn __init__[U: Movable](x: U, out self: Foo[U]):
   //
-  // It would be really nice if we moved InitSelf arguments to the end of the
-  // initializer list to merge them with __result__.
-  if (!initSelfParams.empty()) {
-    // Need to first populate the evaluator with unbound attrs in case any
-    // InitSelf params were not deduced.
+  if (!selfResultParams.empty()) {
+    // Need to first populate the evaluator with unbound attrs in case some
+    // Self params were not deduced.
     ArrayRef<Type> paramTypes = signature.getParamTypes();
     for (size_t paramIdx = evaluator.getNumInputParams();
          paramIdx < signature.getNumParams(); ++paramIdx)
       evaluator.addInputValue(UnboundAttr::get(paramTypes[paramIdx]));
 
-    for (unsigned idx : initSelfParams) {
+    for (unsigned idx : selfResultParams) {
       if (idx < inferredParams.size()) {
         TypedAttr &param = inferredParams[idx];
         param = cast<TypedAttr>(evaluator.getReboundAttribute(param));

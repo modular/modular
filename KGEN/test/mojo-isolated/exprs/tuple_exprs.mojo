@@ -15,8 +15,9 @@
 fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK: [[PACK0:%.*]] = kgen.param.constant: !lit.ref.pack
     # CHECK-SAME: <:variadic<!AnyType> [], imm {}> = <<>>
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
+    # CHECK-NEXT:  kgen.param.constant: !Bool = <{:i1 0}> 
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl{{.*}}@Tuple<:variadic<!AnyType> []>,
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, [[TMPVAR]])
     _ = ()
 
     # CHECK-NEXT: [[AREF:%.*]] = lit.var.decl "anonymous*"
@@ -29,27 +30,27 @@ fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK-NEXT: [[BREBOUND:%.*]] = kgen.rebind [[BIMM]] : !lit.ref<!FloatDyn, muttoimm [[BLT]]> to !lit.ref<!FloatDyn, imm {(mutcast mut [[ALT]]), (mutcast mut [[BLT]])}>
     # CHECK-NEXT: = lit.ref.pack.create([[AREBOUND]], [[BREBOUND]])
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, [[TMPVAR]])
     _ = (a, b)
 
     # CHECK: = lit.ref.pack.create({{%[0-9]+}}, {{%[0-9]+}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, [[TMPVAR]])
     _ = a, b
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
     _ = (a,)
 
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}, [[TMPVAR]])
     _ = (a,)
 
     # CHECK: %c = lit.var.decl "c"
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
-    # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}(%c
+    # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}({{.*}}, %c)
     var c = a,
 
 
@@ -67,7 +68,7 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     var iTup: (Int, Int)
 
     # Tuple Rvalue
-    # CHECK: [[TUP:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}(%iTup,
+    # CHECK: [[TUP:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}({{.*}}, %iTup)
     iTup = (i1, i2)
 
     # Tuple LValue
@@ -87,7 +88,7 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
 
     # CHECK:  = lit.ref.pack.create
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
-    # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[TMPVAR]],
+    # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}({{.*}}, [[TMPVAR]])
 
     # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__getitem__{{.*}}>(
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELT]]

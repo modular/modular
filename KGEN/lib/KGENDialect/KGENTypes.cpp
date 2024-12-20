@@ -43,7 +43,6 @@ const char *KGEN::getUserSyntax(ArgConvention convention) {
   case ArgConvention::MutRef:
     return "ref";
   case ArgConvention::ByRefResult:
-  case ArgConvention::InitSelf:
   case ArgConvention::ByRefError:
     return "out";
   }
@@ -282,10 +281,6 @@ bool NewSignatureType::hasMemoryOnlyResult() {
   return !conventions.empty() &&
          conventions.back() == ArgConvention::ByRefResult;
 }
-bool NewSignatureType::hasInitSelfArg() {
-  ArrayRef<ArgConvention> conventions = getArgConventions();
-  return !conventions.empty() && conventions[0] == ArgConvention::InitSelf;
-}
 
 NewSignatureType NewSignatureType::getWithFnEffects(FnEffects effects) {
   return NewSignatureType::get(getValues(), getArgConventions(), effects,
@@ -303,7 +298,6 @@ NewSignatureType::getWithMetadata(FnMetadataAttrInterface metadata) {
 }
 
 size_t NewSignatureType::getNumAsyncReturnSlots() {
-  // Async functions can never have `init_self` arguments.
   return isAsync() ? (hasMemoryOnlyResult() + isThrows()) : 0;
 }
 
@@ -447,10 +441,6 @@ bool SignatureType::hasMemoryOnlyResult() {
   return !conventions.empty() &&
          conventions.back() == ArgConvention::ByRefResult;
 }
-bool SignatureType::hasInitSelfArg() {
-  ArrayRef<ArgConvention> conventions = getArgConventions();
-  return !conventions.empty() && conventions[0] == ArgConvention::InitSelf;
-}
 
 bool SignatureType::isConcrete() {
   return getInputParamTypes().empty() && getResultParamTypes().empty();
@@ -484,7 +474,6 @@ bool SignatureType::hasAddress(ArgConvention conv) {
   case ArgConvention::ReadMem:
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
-  case ArgConvention::InitSelf:
   case ArgConvention::ByRefError:
     return true;
   }
@@ -505,7 +494,6 @@ bool SignatureType::hasImplicitOrigin(ArgConvention conv) {
   case ArgConvention::ReadMem:
   case ArgConvention::Mut:
   case ArgConvention::ByRefResult:
-  case ArgConvention::InitSelf:
   case ArgConvention::ByRefError:
     return true;
   }
@@ -518,7 +506,6 @@ bool SignatureType::isResultSlot(ArgConvention conv) {
 }
 
 size_t SignatureType::getNumAsyncReturnSlots() {
-  // Async functions can never have `init_self` arguments.
   return isAsync() * (hasMemoryOnlyResult() + isThrows());
 }
 

@@ -52,9 +52,4 @@ kgen.func @byref_error(%arg0: !kgen.pointer<i32> byref_error, %arg1: !kgen.point
   kgen.return
 }
 
-// CHECK-LABEL: @init_self(ptr noalias noundef nonnull %0)
-kgen.func @init_self(%arg0: !kgen.pointer<i32> init_self) {
-  kgen.return
-}
-
 }
