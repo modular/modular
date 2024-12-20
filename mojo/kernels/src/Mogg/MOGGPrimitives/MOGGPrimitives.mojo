@@ -461,7 +461,7 @@ fn unpack_context(
 
 
 @register_internal("builtin.get_buffer_data")
-@no_inline
+@always_inline
 fn get_buffer_data(buffer: NDBuffer[DType.uint8, 1]) -> UnsafePointer[UInt8]:
     return buffer.data
 
