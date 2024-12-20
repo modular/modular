@@ -38,18 +38,22 @@ fn matmul_naive[
     @parameter
     if transpose_b:
         for i in range(m):
-            for l in range(k):
-                for j in range(n):
-                    var av = a[k * i + l].cast[c_type]()
-                    var bv = b[k * j + l].cast[c_type]()
-                    c[n * i + j] += av * bv
+            for j in range(n):
+                var s: Float32 = 0
+                for l in range(k):
+                    var av = a[k * i + l].cast[DType.float32]()
+                    var bv = b[k * j + l].cast[DType.float32]()
+                    s += av * bv
+                c[n * i + j] += s.cast[c_type]()
     else:
         for i in range(m):
-            for l in range(k):
-                for j in range(n):
-                    var av = a[k * i + l].cast[c_type]()
-                    var bv = b[n * l + j].cast[c_type]()
-                    c[n * i + j] += av * bv
+            for j in range(n):
+                var s: Float32 = 0
+                for l in range(k):
+                    var av = a[k * i + l].cast[DType.float32]()
+                    var bv = b[n * l + j].cast[DType.float32]()
+                    s += av * bv
+                c[n * i + j] += s.cast[c_type]()
 
 
 alias epilogue_func_type = fn[type: DType, width: Int, *, alignment: Int = 1] (
@@ -139,12 +143,10 @@ fn test[
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
-        val = 1
         a_host.tensor.data[i] = val.cast[in_type]()
 
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
-        val = 1
         b_host.tensor.data[i] = val.cast[in_type]()
 
     for i in range(M * N):
