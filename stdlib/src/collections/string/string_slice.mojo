@@ -358,6 +358,33 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         )
         self = StringSlice[O](unsafe_from_utf8=value.as_bytes())
 
+    # ===-------------------------------------------------------------------===#
+    # Factory methods
+    # ===-------------------------------------------------------------------===#
+
+    # TODO: Change to `__init__(out self, *, from_utf8: Span[..])` once ambiguity
+    #   with existing `unsafe_from_utf8` overload is fixed. Would require
+    #   signature comparision to take into account required named arguments.
+    @staticmethod
+    fn from_utf8(from_utf8: Span[Byte, origin]) raises -> StringSlice[origin]:
+        """Construct a new `StringSlice` from a buffer containing UTF-8 encoded
+        data.
+
+        Args:
+            from_utf8: A span of bytes containing UTF-8 encoded data.
+
+        Returns:
+            A new validated `StringSlice` pointing to the provided buffer.
+
+        Raises:
+            An exception is raised if the provided buffer byte values do not
+            form valid UTF-8 encoded codepoints.
+        """
+        if not _is_valid_utf8(from_utf8):
+            raise Error("StringSlice: buffer is not valid UTF-8")
+
+        return StringSlice[origin](unsafe_from_utf8=from_utf8)
+
     # ===------------------------------------------------------------------===#
     # Trait implementations
     # ===------------------------------------------------------------------===#

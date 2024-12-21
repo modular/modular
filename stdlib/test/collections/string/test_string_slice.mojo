@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal, assert_false, assert_true, assert_raises
 
 from collections.string.string_slice import (
     StringSlice,
@@ -351,6 +351,17 @@ def test_bad_utf8_sequences():
         assert_false(validate_utf8(sequence[]))
 
 
+def test_stringslice_from_utf8():
+    for sequence in GOOD_SEQUENCES:
+        var bytes = sequence[].as_bytes()
+        _ = StringSlice.from_utf8(bytes)
+
+    for sequence in BAD_SEQUENCES:
+        with assert_raises(contains="buffer is not valid UTF-8"):
+            var bytes = sequence[].as_bytes()
+            _ = StringSlice.from_utf8(bytes)
+
+
 def test_combination_good_utf8_sequences():
     # any combination of good sequences should be good
     for i in range(0, len(GOOD_SEQUENCES)):
@@ -651,6 +662,7 @@ def main():
     test_find()
     test_good_utf8_sequences()
     test_bad_utf8_sequences()
+    test_stringslice_from_utf8()
     test_combination_good_utf8_sequences()
     test_combination_bad_utf8_sequences()
     test_combination_good_bad_utf8_sequences()

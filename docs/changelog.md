@@ -86,6 +86,10 @@ what we publish.
   `Span[Scalar[..]]`, simplifying the writing of some optimized SIMD-aware
   functionality.
 
+- Added `StringSlice.from_utf()` factor method, for validated construction of
+  a `StringSlice` from a buffer containing UTF-8 encoded data. This method will
+  raise if the buffer contents are not valid UTF-8.
+
 - The `ExplicitlyCopyable` trait has changed to require a
   `fn copy(self) -> Self` method. Previously, an initializer with the signature
   `fn __init__(out self, *, other: Self)` had been required by
