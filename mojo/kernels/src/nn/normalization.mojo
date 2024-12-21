@@ -654,7 +654,7 @@ fn layer_norm[
             layer_norm_cpu[input_0_fn, input_1_fn](
                 shape.canonicalize(), beta, epsilon, output
             )
-        elif "cuda" in target:
+        elif target == "gpu":
             layer_norm_gpu[input_0_fn, input_1_fn](
                 shape.canonicalize(),
                 beta,
@@ -1011,7 +1011,7 @@ fn _rms_norm_impl[
     @parameter
     if target == "cpu":
         rms_norm_cpu[input_0_fn, output_fn](shape, gamma, epsilon)
-    elif "cuda" in target:
+    elif target == "gpu":
         rms_norm_gpu[input_0_fn, output_fn](
             shape, gamma, epsilon, ctx.get_device_context()
         )

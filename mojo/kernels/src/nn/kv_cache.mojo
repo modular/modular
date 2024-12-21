@@ -1699,7 +1699,7 @@ def print_kv_cache_cont_batch_h8_d128[
     context: MojoCallContextPtr,
 ):
     @parameter
-    if "cuda" in target:
+    if target == "gpu":
         print_kv_cache_cont_batch_generic_gpu[target](
             valid_lengths,
             kv_collection,
@@ -1730,7 +1730,7 @@ def print_kv_cache_cont_batch_h2_d128[
     context: MojoCallContextPtr,
 ):
     @parameter
-    if "cuda" in target:
+    if target == "gpu":
         print_kv_cache_cont_batch_generic_gpu[target](
             valid_lengths,
             kv_collection,
@@ -1761,7 +1761,7 @@ def print_kv_cache_cont_batch_h16_d128[
     context: MojoCallContextPtr,
 ):
     @parameter
-    if "cuda" in target:
+    if target == "gpu":
         print_kv_cache_cont_batch_generic_gpu[target](
             valid_lengths,
             kv_collection,
@@ -1792,7 +1792,7 @@ def print_kv_cache_cont_batch_h32_d128[
     context: MojoCallContextPtr,
 ):
     @parameter
-    if "cuda" in target:
+    if target == "gpu":
         print_kv_cache_cont_batch_generic_gpu[target](
             valid_lengths,
             kv_collection,

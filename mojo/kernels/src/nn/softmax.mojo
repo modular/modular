@@ -846,7 +846,7 @@ fn softmax[
             _softmax_cpu[type, simd_width, rank, static_shape, input_fn](
                 shape, output, axis
             )
-        elif "cuda" in target:
+        elif target == "gpu":
             _softmax_gpu[type, simd_width, rank, static_shape, input_fn](
                 shape,
                 output,

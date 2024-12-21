@@ -806,7 +806,7 @@ fn scatter_nd_generator[
     var r_minus_m = data_rank - last_shape_of_indices
 
     @parameter
-    if "cuda" in target:
+    if target == "gpu":
         # TODO: Does it matter if output.data or output_flat.data (and data)?
         var ctx = context.get_device_context()
         # TODO: Owning = True or False?
@@ -825,7 +825,7 @@ fn scatter_nd_generator[
         )
 
     @parameter
-    if "cuda" not in target:
+    if target == "cpu":
         memcpy(output_flat.data, data_flat.data, len(output_flat))
 
     @__copy_capture(

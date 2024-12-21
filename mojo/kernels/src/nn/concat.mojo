@@ -597,7 +597,7 @@ fn concat[
     inputs: StaticTuple[NDBuffer[type, rank], *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("concat"):
 
@@ -1022,7 +1022,7 @@ fn test_concat_fusion[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("concat"):
 
