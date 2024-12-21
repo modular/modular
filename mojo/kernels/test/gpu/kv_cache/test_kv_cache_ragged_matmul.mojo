@@ -254,7 +254,7 @@ def execute_matmul_kv_cache_ragged[
     )
 
     # Execute test.
-    _matmul_kv_cache_ragged_impl[target="cuda"](
+    _matmul_kv_cache_ragged_impl[target="gpu"](
         hidden_state_ragged_device.tensor,
         input_row_offsets_device.tensor,
         weight_device.tensor,
@@ -517,7 +517,7 @@ def generic_execute_fused_qkv_cache_ragged[
     test_output_device = test_output_host.copy_to_device(ctx)
 
     # execute the matmul
-    _fused_qkv_matmul_kv_cache_ragged_impl[target="cuda",](
+    _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
         hidden_state_ragged_device.tensor,
         input_row_offsets_device.tensor,
         weight_device.tensor,

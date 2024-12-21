@@ -187,7 +187,7 @@ def execute_fused_qkv_matmul[
 
     _fused_qkv_matmul_kv_cache_impl[
         kv_collection_device.CacheType,
-        target="cuda",
+        target="gpu",
     ](
         hidden_state_device.tensor,
         weight_device.tensor,

@@ -40,7 +40,7 @@ fn test_elementwise_print[
         print("print thousands of messages: m=", m, " n=", n, sep="")
 
     print("about to call elementwise, M=", M, "N=", N)
-    elementwise[binary, simd_width, target="cuda"](IndexList[2](M, N), ctx)
+    elementwise[binary, simd_width, target="gpu"](IndexList[2](M, N), ctx)
     print("called elementwise")
 
 
