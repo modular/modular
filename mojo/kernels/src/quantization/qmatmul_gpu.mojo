@@ -1170,7 +1170,7 @@ fn matmul_gpu_qint4[
     b: NDBuffer[DType.uint8, 2, b_shape],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained["cuda" in target, "unsupported target"]()
+    constrained[target == "gpu", "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
     alias pack_factor = 8
@@ -1256,7 +1256,7 @@ fn gpu_qint4_repack_Q4_0[
     b_packed: NDBuffer[DType.uint8, 2, b_shape],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained["cuda" in target, "unsupported target"]()
+    constrained[target == "gpu", "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
     alias pack_factor = 8
@@ -1310,7 +1310,7 @@ fn gpu_qint4_repack_GPTQ[
     perm_idx: OptionalReg[NDBuffer[DType.int32, 1]] = None,
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained["cuda" in target, "unsupported target"]()
+    constrained[target == "gpu", "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
     alias pack_factor = 8
