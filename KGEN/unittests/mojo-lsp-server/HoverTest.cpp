@@ -67,7 +67,7 @@ TEST(HoverTest, testHoverFunctionDecls) {
                EXPECT_EQ(hover.range, rangeInit);
                EXPECT_EQ(hover.contents.value,
                          R"(```mojo
-(function) fn __init__(borrowed_input: Int, init_arg: Int, owned owned_input: Int, *init_kargs: Int) -> Self
+(function) fn __init__(out self, borrowed_input: Int, init_arg: Int, owned owned_input: Int, *init_kargs: Int)
 ```
 ---
 
@@ -319,8 +319,6 @@ TEST(HoverTest, testHoverArgument) {
 
   createTestClient()
       .open(doc)
-#if 0 // FIXME(clattner): out self location should look at byref_result
- //  workaround to get #52887 to land
       .hover(doc, rangeSelfField.start,
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeSelfField);
@@ -328,7 +326,6 @@ TEST(HoverTest, testHoverArgument) {
 (argument) out self
 ```)");
              })
-#endif
       .hover(doc, rangeBorrowedInput.start,
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeBorrowedInput);
@@ -429,7 +426,7 @@ var var_global_variable: Int = 345
 
 
 fn main():
-    var sum = let_global_variable + var_global_variable
+    var sum = var_global_variable
 )");
   lsp::Range rangeGlobalVar = *doc.findFirstRange("var_global_variable");
 

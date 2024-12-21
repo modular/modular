@@ -775,15 +775,39 @@ std::string PublicFunctionDecl::getSignature(
     printArgOrParameterSignature(ctx, ArrayRef(parameters), parameterOffsets,
                                  signatureOS);
 
+  // If this is an initializer with an out argument, we permute the out argument
+  // to the start of the argument list to look more conventional.
+  ArrayRef<PublicArgumentDecl> args = getArguments();
+  SmallVector<PublicArgumentDecl> argTmp;
+
+  bool hasOutArgument =
+      !args.empty() &&
+      args.back().getConvention() == PublicArgumentDecl::Convention::kOut;
+
+  if (hasOutArgument && isInit) {
+    // Make a mutable copy of the arguments so we can change them around.
+    argTmp.append(args.begin(), args.end());
+    args = argTmp;
+
+    // Avoid weird punctuation in the signature if possible.
+    auto passingKind = LIT::PassingKind::PosOrKw;
+    if (args.size() != 1) {
+      // Rotate arg list so output is the first argument
+      std::rotate(argTmp.rbegin(), argTmp.rbegin() + 1, argTmp.rend());
+      if (argTmp[1].getPassingKind() == LIT::PassingKind::PosOnly)
+        passingKind = LIT::PassingKind::PosOnly;
+    }
+    argTmp[0].setPassingKind(passingKind);
+  }
+
   // Emit the arguments of the function.
-  printArgOrParameterSignature(ctx, ArrayRef(args), argumentOffsets,
-                               signatureOS,
+  printArgOrParameterSignature(ctx, args, argumentOffsets, signatureOS,
                                /*suppressSlashAfterSelf=*/isMethodFlag);
 
   // Emit the result type.
   if (returnOffset)
     *returnOffset = signature.size();
-  if (returnType)
+  if (returnType && !hasOutArgument)
     signatureOS << " -> " << *returnType;
   return signatureOS.str();
 }
@@ -819,6 +843,8 @@ PublicFunctionDecl::PublicFunctionDecl(MojoASTDeclRef declRef)
   isImplicitConversionFlag = funcOp.getIsImplicitConversion();
   isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
   isDefFlag = funcOp.isDef();
+  isInit = funcOp.getSpecialFunctionInfo().isInitializer();
+
   initFromSignature(declRef, funcOp.getSignature(), funcOp.getArgumentTypes(),
                     funcOp.getUserResultType());
 }
@@ -844,24 +870,6 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
   ArrayRef<Type> paramTypes = signature.getInputParamTypes();
 
-  // Check for a by-ref result type, which gets modeled as the last argument
-  // (as it needs to be passed through memory), and we don't want to include
-  // it in the normal argument list.
-  if (!argConventions.empty() &&
-      argConventions.back() == ArgConvention::ByRefResult) {
-    userArgTypes = userArgTypes.drop_back();
-    sigTypes = sigTypes.drop_back();
-    argPogs = argPogs.drop_back();
-    argConventions = argConventions.drop_back();
-  }
-  if (!argConventions.empty() &&
-      argConventions.back() == ArgConvention::ByRefError) {
-    userArgTypes = userArgTypes.drop_back();
-    sigTypes = sigTypes.drop_back();
-    argPogs = argPogs.drop_back();
-    argConventions = argConventions.drop_back();
-  }
-
   // If this is a method, grab the expected "Self" type.
   std::optional<ASTType> selfType;
   if (isa<StructDeclOp>(*declRef.getParent()))
@@ -877,12 +885,28 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
       defaultValue = generatePValueString(shared, defaultAttr);
 
     std::string prefix;
+    auto passingKind = pogAttr.getPassingKind();
     auto declConvention = PublicArgumentDecl::Convention::kBorrowed;
     switch (convention) {
+    case ArgConvention::ByRefError:
+      // Ignored.
+      continue;
+    case ArgConvention::ByRefResult:
+      // by-ref result types gets modeled as the last argument. we don't want to
+      // include it in the normal argument list unless it is explicitly named.
+      if (pogAttr.getName() == "__result__") // Gross way to detect implicit.
+        continue;
+      // The passing kind is typically set to "implicit", but we don't want it
+      // to print in the signature list with a ?, so switch it to the match the
+      // previous or default PassingKind.
+      declConvention = PublicArgumentDecl::Convention::kOut;
+      if (args.empty())
+        passingKind = LIT::PassingKind::PosOrKw;
+      else
+        passingKind = args.back().getPassingKind();
+      break;
     case ArgConvention::ReadReg:
     case ArgConvention::ReadMem:
-    case ArgConvention::ByRefResult:
-    case ArgConvention::ByRefError:
       break; // already handled.
     case ArgConvention::Mut:
       declConvention = PublicArgumentDecl::Convention::kInOut;
@@ -900,13 +924,26 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     }
     VariadicKind variadicKind =
         getVariadicKind(signature.getArgListAttrs(), argIdx);
-    bool isSelf = selfType && argIdx == 0;
+
+    bool isSelf = false;
+    if (selfType) {
+      // Init methods like copyinit have their output argument as 'self'.
+      auto fnDecl = dyn_cast_if_present<LIT::FuncOp>(declRef.getIfOperation());
+      if (fnDecl && fnDecl.getSpecialFunctionInfo().hasSelfResult()) {
+        isSelf = declConvention == PublicArgumentDecl::Convention::kOut;
+      } else {
+        // Otherwise, just treat the first arg as self.
+        // TODO: This is wrong for static methods.
+        isSelf = argIdx == 0;
+      }
+    }
+
     args.push_back(
         PublicArgumentDecl(pogAttr.getName(), std::move(prefix),
                            generateTypeString(shared, userType, variadicKind,
                                               selfType, convention),
-                           pogAttr.getPassingKind(), variadicKind,
-                           std::move(defaultValue), declConvention, isSelf));
+                           passingKind, variadicKind, std::move(defaultValue),
+                           declConvention, isSelf));
   }
 
   // Grab the types of the parameters to the function.

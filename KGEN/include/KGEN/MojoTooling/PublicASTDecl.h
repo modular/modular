@@ -404,6 +404,7 @@ public:
   Convention getConvention() const { return convention; }
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; }
+  void setPassingKind(KGEN::LIT::PassingKind kind) { passingKind = kind; }
 
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
@@ -633,6 +634,7 @@ private:
   bool isMethodFlag = false;
   bool isStaticFlag = false;
   bool raisesFlag = false;
+  bool isInit = false; // Is init or moveinit or copyinit.
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
