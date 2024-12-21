@@ -15,6 +15,7 @@ from gpu import (
     WARP_SIZE,
     BlockIdx,
     GridDim,
+    BlockDim,
     ThreadIdx,
     barrier,
     lane_id,
@@ -29,6 +30,7 @@ from gpu.memory import (
     external_memory,
 )
 from gpu.mma import ld_matrix, mma
+from gpu.semaphore import Semaphore
 from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -749,10 +751,12 @@ fn multistage_gemm_kernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    serial_reduction: Bool = False,
 ](
     c: LayoutTensor[c_type, c_layout],
     a: LayoutTensor[a_type, a_layout],
     b: LayoutTensor[b_type, b_layout],
+    locks: UnsafePointer[Scalar[DType.int32]],
 ):
     # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
@@ -1020,15 +1024,62 @@ fn multistage_gemm_kernel[
                         ](swizzled_idx).cast[c_type](),
                     )
         else:
-            copy_sram_to_dram[
-                thread_layout = Layout.row_major(
-                    WARP_SIZE * simd_size // WN, WN // simd_size
-                ),
-                swizzle=swizzle,
-            ](
-                c_gmem_warp_tile.vectorize[1, simd_size](),
-                accum_smem_warp_tile.vectorize[1, simd_size](),
-            )
+            var num_parts = GridDim.z
+            if serial_reduction and num_parts > 1:
+                var bid = block_idx[1] + BlockDim.x * block_idx[0]
+                var semaphore = Semaphore(locks.offset(bid), ThreadIdx.x)
+                semaphore.fetch()
+                semaphore.wait(BlockIdx.z)
+
+                # For the very first block the comes in, it needs to just copy and not reduce_copy
+                if BlockIdx.z == 0:
+                    copy_sram_to_dram[
+                        thread_layout = Layout.row_major(
+                            WARP_SIZE * simd_size // WN, WN // simd_size
+                        ),
+                        swizzle=swizzle,
+                    ](
+                        c_gmem_warp_tile.vectorize[1, simd_size](),
+                        accum_smem_warp_tile.vectorize[1, simd_size](),
+                    )
+                else:
+
+                    @always_inline
+                    fn add_op[
+                        type: DType, width: Int
+                    ](lhs: SIMD[type, width], rhs: SIMD[type, width]) -> SIMD[
+                        type, width
+                    ]:
+                        return lhs + rhs
+
+                    copy_sram_to_dram[
+                        thread_layout = Layout.row_major(
+                            WARP_SIZE * simd_size // WN, WN // simd_size
+                        ),
+                        swizzle=swizzle,
+                        binary_op=add_op,
+                    ](
+                        c_gmem_warp_tile.vectorize[1, simd_size](),
+                        accum_smem_warp_tile.vectorize[1, simd_size](),
+                    )
+
+                var lock_flag = 0
+                if num_parts == (BlockIdx.z + 1):
+                    lock_flag = 0
+                else:
+                    lock_flag = BlockIdx.z + 1
+                semaphore.release(lock_flag)
+
+            else:
+                copy_sram_to_dram[
+                    thread_layout = Layout.row_major(
+                        WARP_SIZE * simd_size // WN, WN // simd_size
+                    ),
+                    swizzle=swizzle,
+                ](
+                    c_gmem_warp_tile.vectorize[1, simd_size](),
+                    accum_smem_warp_tile.vectorize[1, simd_size](),
+                )
 
     elif c_type.is_half_float() and not is_nvidia_gpu():
 
@@ -1083,12 +1134,14 @@ fn multistage_gemm_split_k_kernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    serial_reduction: Bool = False,
 ](
     c: LayoutTensor[c_type, c_layout],
     a: LayoutTensor[a_type, a_layout],
     b: LayoutTensor[b_type, b_layout],
     work_space: NDBuffer[work_space_type, 3],
     num_partitions: UInt,
+    locks: UnsafePointer[Scalar[DType.int32]],
 ):
     var M = c.dim(0)
     var N = c.dim(1)
@@ -1101,26 +1154,52 @@ fn multistage_gemm_split_k_kernel[
     var b_part = b.split[axis= 1 if transpose_b else 0, alignment=BK](
         num_partitions, BlockIdx.z
     )
-    var work_space_part = LayoutTensor[work_space_type, c_layout](
-        work_space.data + BlockIdx.z * M * N,
-        RuntimeLayout[c_layout].row_major(IndexList[2](M, N)),
-    )
 
-    alias k_partition_config = MatmulConfig[
-        a_type, b_type, work_space_type, transpose_b
-    ](
-        config.block_tile_shape,
-        config.warp_tile_shape,
-        config.num_pipeline_stages,
-    )
+    @parameter
+    if serial_reduction:
+        alias k_partition_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            config.block_tile_shape,
+            config.warp_tile_shape,
+            config.num_pipeline_stages,
+        )
 
-    multistage_gemm_kernel[
-        work_space_type,
-        work_space_part.layout,
-        a_type,
-        a_part.layout,
-        b_type,
-        b_part.layout,
-        transpose_b,
-        k_partition_config,
-    ](work_space_part, a_part, b_part)
+        multistage_gemm_kernel[
+            c_type,
+            c.layout,
+            a_type,
+            a_part.layout,
+            b_type,
+            b_part.layout,
+            transpose_b,
+            k_partition_config,
+            serial_reduction=serial_reduction,
+        ](c, a_part, b_part, locks)
+    else:
+        var work_space_part = LayoutTensor[work_space_type, c_layout](
+            work_space.data + BlockIdx.z * M * N,
+            RuntimeLayout[c_layout].row_major(IndexList[2](M, N)),
+        )
+        alias k_partition_config = MatmulConfig[
+            a_type,
+            b_type,
+            work_space_type,
+            transpose_b,
+        ](
+            config.block_tile_shape,
+            config.warp_tile_shape,
+            config.num_pipeline_stages,
+        )
+
+        multistage_gemm_kernel[
+            work_space_type,
+            work_space_part.layout,
+            a_type,
+            a_part.layout,
+            b_type,
+            b_part.layout,
+            transpose_b,
+            k_partition_config,
+            serial_reduction=serial_reduction,
+        ](work_space_part, a_part, b_part, locks)
