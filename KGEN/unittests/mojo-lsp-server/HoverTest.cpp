@@ -307,7 +307,7 @@ Summary of a_field.
 TEST(HoverTest, testHoverArgument) {
   Document doc = createDocumentFromInputFile("functions.mojo");
 
-  lsp::Range rangeSelfField = *doc.findFirstRange("self");
+  [[maybe_unused]] lsp::Range rangeSelfField = *doc.findFirstRange("self");
   lsp::Range rangeBorrowedInput = *doc.findFirstRange("borrowed_input");
   lsp::Range rangeInitArg = *doc.findFirstRange("init_arg");
   lsp::Range rangeInitKargs = *doc.findFirstRange("init_kargs");
