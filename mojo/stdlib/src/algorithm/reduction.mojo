@@ -451,7 +451,7 @@ fn _reduce_generator[
         reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
-    constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
+    constrained[target in ("cpu", "gpu"), "unsupported target"]()
 
     @parameter
     if target == "cpu":

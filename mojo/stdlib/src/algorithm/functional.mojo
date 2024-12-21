@@ -1397,7 +1397,7 @@ fn elementwise[
     ):
 
         @parameter
-        if "cuda" in target:
+        if target == "gpu":
             _elementwise_impl_gpu[func, simd_width=simd_width](
                 shape, context.get_device_context()
             )
