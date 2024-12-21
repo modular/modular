@@ -1325,7 +1325,7 @@ fn argmax_wrapped[
     output: NDBuffer[out_type, rank, input_2_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("argmax"):
 
@@ -1367,7 +1367,7 @@ fn argmin_wrapped[
     output: NDBuffer[out_type, rank, input_2_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("argmin"):
 
@@ -1549,7 +1549,7 @@ fn avg_pool[
     output: NDBuffer[type, 4],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("avg_pool"):
 
@@ -1583,7 +1583,7 @@ fn avg_pool_ceil_mode_true[
     output: NDBuffer[type, 4],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("avg_pool_ceil_mode_true"):
 
@@ -1626,7 +1626,7 @@ fn max_pool[
     output: NDBuffer[type, 4],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("max_pool"):
 
@@ -1657,7 +1657,7 @@ fn max_pool_ceil_mode_true[
     output: NDBuffer[type, 4],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("max_pool_ceil_mode_true"):
 
@@ -3382,7 +3382,7 @@ fn conv[
     wrapper around the Stdlib conv. Currently the strides and dilation are NDBuffers,
     but eventually they will be IndexList parameters (along with padding).
     """
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
     constrained[
         strides_type.is_integral() and dilation_type.is_integral(),
         "stride and dilation must have integral type",
@@ -3677,7 +3677,7 @@ fn bottom_k[
     out_idxs: NDBuffer[out_idxs_type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("bottom_k"):
 
@@ -3739,7 +3739,7 @@ fn top_k[
     out_idxs: NDBuffer[out_idxs_type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("top_k"):
 
@@ -4163,7 +4163,7 @@ fn top_p_sampling[
     temperature: Scalar[type],  # should be default or no?
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("top_p_sampling"):
 
@@ -4195,7 +4195,7 @@ fn min_p_sampling[
     temperature: Scalar[type],  # should be default or no?
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("min_p_sampling"):
 
@@ -4226,7 +4226,7 @@ fn topk_fused_sampling[
     out_idxs: NDBuffer[out_idx_type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "not a valid target"]()
+    constrained[target in ("cpu", "gpu"), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("topk_fused_sampling"):
 
@@ -4407,7 +4407,7 @@ fn masked_flash_attention_gpu[
     by Tri Dao et al.
     """
 
-    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+    constrained[target == "gpu", "only valid on GPUs"]()
 
     flash_attention[add_attn_mask=True](
         output, q, k, v, mask, scale[0], context=ctx
@@ -4972,7 +4972,7 @@ fn qmatmul_b4_g32[
     c: NDBuffer[DType.bfloat16, 2, output_0_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+    constrained[target == "gpu", "only valid on GPUs"]()
 
     with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g32"):
         matmul_gpu_qint4[32, target](c, a, b, ctx)
@@ -5005,7 +5005,7 @@ fn qmatmul_b4_g128[
     c: NDBuffer[DType.bfloat16, 2, output_0_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+    constrained[target == "gpu", "only valid on GPUs"]()
 
     with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g128"):
         matmul_gpu_qint4[128, target](c, a, b, ctx)
@@ -5035,7 +5035,7 @@ fn GGUF_gpu_repack_q4_0[
     b_packed: NDBuffer[DType.uint8, 2, input_0_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+    constrained[target == "gpu", "only valid on GPUs"]()
 
     with Trace[TraceLevel.OP, target=target]("GGUF_gpu_repack_q4_0"):
         gpu_qint4_repack_Q4_0[target](b, b_packed, ctx)
@@ -5060,7 +5060,7 @@ fn GPTQ_gpu_repack_b4_g128[
     b_packed: NDBuffer[DType.uint8, 2, input_1_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+    constrained[target == "gpu", "only valid on GPUs"]()
 
     with Trace[TraceLevel.OP, target=target]("GPTQ_gpu_repack_b4_g128"):
         gpu_qint4_repack_GPTQ[128, target](b, b_packed, ctx=ctx)
@@ -5086,7 +5086,7 @@ fn GPTQ_gpu_repack_b4_g128[
     b_packed: NDBuffer[DType.uint8, 2, input_1_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+    constrained[target == "gpu", "only valid on GPUs"]()
 
     with Trace[TraceLevel.OP, target=target](
         "GPTQ_gpu_repack_b4_g128_desc_act"

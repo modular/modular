@@ -5149,7 +5149,7 @@ struct MaskedFlashAttentionGPU:
         The underlying fusion follows ideas taken from the 2022 FlashAttention paper
         by Tri Dao et al.
         """
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[target == "gpu", "only valid on GPUs"]()
 
         var output_buffer = managed_tensor_slice_to_ndbuffer[
             static_shape = compiler.specsof[output.type, output.rank](
@@ -5781,7 +5781,7 @@ struct QMatmulGPU_b4_g32:
         alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
         alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
         alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[target == "gpu", "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g32"):
             matmul_gpu_qint4[32, target](
@@ -5815,7 +5815,7 @@ struct QMatmulGPU_b4_g128:
         alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
         alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
         alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[target == "gpu", "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g128"):
             matmul_gpu_qint4[128, target](
@@ -5846,7 +5846,7 @@ struct QMatmulGPURepackGGUF:
         ctx: MojoCallContextPtr,
     ) raises:
         alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[target == "gpu", "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("GGUF_gpu_repack_q4_0"):
             gpu_qint4_repack_Q4_0[target](
@@ -5880,7 +5880,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         alias b_packed_shape = compiler.specsof[b_packed.type, b_packed.rank](
             "b_packed"
         ).shape
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[target == "gpu", "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("GPTQ_gpu_repack_b4_g128"):
             gpu_qint4_repack_GPTQ[128, target](
@@ -5915,7 +5915,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         alias b_packed_shape = compiler.specsof[b_packed.type, b_packed.rank](
             "b_packed"
         ).shape
-        constrained["cuda" in target, "only valid on CUDA GPUs"]()
+        constrained[target == "gpu", "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target](
             "GPTQ_gpu_repack_b4_g128_desc_act"
