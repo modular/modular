@@ -170,7 +170,7 @@ def execute_kv_cache_ragged_matmul[
         @parameter
         @always_inline
         fn kernel_launch(ctx: DeviceContext) raises:
-            _fused_qkv_matmul_kv_cache_ragged_impl[target="cuda",](
+            _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
                 hidden_state_device.tensor,
                 prefix_sums_device.tensor,
                 weight_device.tensor,
