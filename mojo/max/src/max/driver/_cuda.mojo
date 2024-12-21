@@ -72,8 +72,8 @@ struct CompiledDeviceKernel[func_type: AnyTrivialRegType, //, func: func_type]:
                 shared_mem_bytes (Int): Dynamic shared memory size available to kernel.
         """
 
-        if "cuda" not in str(device):
-            raise "launch() expects CUDA device."
+        if "gpu" not in str(device):
+            raise "launch() expects GPU device."
 
         if "grid_dim" not in kwargs or "block_dim" not in kwargs:
             raise "launch() requires grid_dim and block_dim to be specified."
@@ -132,8 +132,8 @@ fn compile[
         Kernel which can be launched on a Device.
 
     """
-    if "cuda" not in str(device):
-        raise "compile() expects CUDA device."
+    if "gpu" not in str(device):
+        raise "compile() expects GPU device."
 
     var device_context = call_dylib_func[DeviceContextPtr](
         device._lib.value().get_handle(), "M_getDeviceContext", device._cdev
