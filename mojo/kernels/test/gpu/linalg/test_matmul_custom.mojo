@@ -12,9 +12,10 @@ from sys import bitwidthof
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
-from gpu.host.info import DEFAULT_GPU_ARCH
+from gpu.host.info import DEFAULT_GPU_ARCH, A100
 from linalg.bmm import _batched_matmul_gpu
-from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive
+from linalg.matmul_gpu import _matmul_gpu, matmul_kernel_naive, multistage_gemm
+from linalg.utils_gpu import MatmulKernels, select_config, MatmulConfig
 from memory import UnsafePointer
 from testing import assert_almost_equal
 
@@ -264,6 +265,131 @@ fn run_matmul[
     _ = c_host_n
 
 
+fn run_matmul_split_k[
+    type: DType,
+    M: Int,
+    N: Int,
+    K: Int,
+    config: MatmulConfig[type, type, type, False],
+](
+    ctx: DeviceContext,
+    rtol: Scalar[type] = 1e-05,
+    atol: Scalar[type] = 0.1,
+    rng_width: Float64 = Float64(100.0),
+    debug: Bool = True,
+) raises:
+    print(
+        "== run_matmul kernel split_k serial reduction => ", str(type), M, N, K
+    )
+
+    var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
+    var b_host = UnsafePointer[Scalar[type]].alloc(K * N)
+    var c_host = UnsafePointer[Scalar[type]].alloc(M * N)
+    var c_host_n = UnsafePointer[Scalar[type]].alloc(M * N)
+
+    var rand_min = -1 * rng_width
+    var rand_max = rng_width
+
+    for i in range(M * K):
+        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        a_host[i] = val.cast[type]()
+
+    for i in range(K * N):
+        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        b_host[i] = val.cast[type]()
+
+    for i in range(M * N):
+        var val = Float32(0)
+        c_host[i] = val.cast[type]()
+        c_host_n[i] = c_host[i]
+
+    alias a_shape = DimList(M, K)
+    alias b_shape = DimList(K, N)
+    alias c_shape = DimList(M, N)
+
+    var a_device = ctx.enqueue_create_buffer[type](M * K)
+    var b_device = ctx.enqueue_create_buffer[type](K * N)
+    var c_device = ctx.enqueue_create_buffer[type](M * N)
+    var a_buf = NDBuffer[type, 2, a_shape](a_device.ptr, Index(M, K))
+    var b_buf = NDBuffer[type, 2, b_shape](b_device.ptr, Index(K, N))
+    var c_buf = NDBuffer[type, 2, c_shape](c_device.ptr, Index(M, N))
+
+    var a_device_n = ctx.enqueue_create_buffer[type](M * K)
+    var b_device_n = ctx.enqueue_create_buffer[type](K * N)
+    var c_device_n = ctx.enqueue_create_buffer[type](M * N)
+
+    ctx.enqueue_copy_to_device(a_device, a_host)
+    ctx.enqueue_copy_to_device(b_device, b_host)
+
+    var best_config = select_config[type, type, type, False](M, N, K, ctx)
+
+    multistage_gemm[
+        transpose_b=False,
+        config=config,
+        elementwise_lambda_fn=None,
+        serial_reduction=False,
+    ](
+        rebind[NDBuffer[type, 2, c_shape]](c_buf),
+        rebind[NDBuffer[type, 2, a_shape]](a_buf),
+        rebind[NDBuffer[type, 2, b_shape]](b_buf),
+        best_config,
+        ctx,
+    )
+
+    ctx.enqueue_copy_from_device(c_host, c_device)
+    ctx.synchronize()
+
+    # running naive
+    ctx.enqueue_copy_to_device(a_device_n, a_host)
+    ctx.enqueue_copy_to_device(b_device_n, b_host)
+
+    alias BLOCK_DIM = 16
+    var func_gemm_naive = ctx.compile_function[
+        matmul_kernel_naive[
+            type,
+            type,
+            type,
+            BLOCK_DIM,
+        ]
+    ]()
+
+    ctx.enqueue_function(
+        func_gemm_naive,
+        c_device_n,
+        a_device_n,
+        b_device_n,
+        M,
+        N,
+        K,
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+        block_dim=(BLOCK_DIM, BLOCK_DIM),
+    )
+
+    ctx.enqueue_copy_from_device(c_host_n, c_device_n)
+    ctx.synchronize()
+
+    for i in range(M * N):
+        var out_val = c_host[i]
+        var out_ref = c_host_n[i]
+        if debug:
+            if not isclose(out_val, out_ref, rtol=rtol, atol=atol):
+                print(i, out_val, out_ref)
+        assert_almost_equal(out_val, out_ref, rtol=rtol, atol=atol)
+
+    _ = a_device
+    _ = b_device
+    _ = c_device
+
+    _ = a_device_n
+    _ = b_device_n
+    _ = c_device_n
+
+    _ = a_host
+    _ = b_host
+    _ = c_host
+    _ = c_host_n
+
+
 fn run_matmul_transpose[
     type: DType,
     M: Int,
@@ -276,7 +402,7 @@ fn run_matmul_transpose[
     rng_width: Float64 = Float64(100.0),
     debug: Bool = True,
 ) raises:
-    print("== run_matmul kernel => ", str(type), M, N, K)
+    print("== run_matmul kernel transpose => ", str(type), M, N, K)
 
     alias transpose_b = True
     var a_host = UnsafePointer[Scalar[type]].alloc(M * K)
@@ -499,6 +625,18 @@ fn run_batched_matmul(
 
 def main():
     with DeviceContext() as ctx:
+        alias kernels = MatmulKernels[
+            DType.bfloat16, DType.bfloat16, DType.bfloat16, False
+        ]()
+        alias config = kernels.ampere_256x128_3 if ctx.device_info is A100 else kernels.ampere_128x128_4
+        run_matmul_split_k[DType.bfloat16, 512, 4096, 14336, config](
+            ctx, atol=1.0, rng_width=1.0
+        )
+
+        run_matmul_split_k[
+            DType.bfloat16, 128, 128, 4096, kernels.ampere_128x128_4
+        ](ctx, atol=0.5, rng_width=1.0)
+
         run_matmul_transpose[DType.bfloat16, 1, 200, 300](
             ctx, atol=0.25, rng_width=1.0
         )
