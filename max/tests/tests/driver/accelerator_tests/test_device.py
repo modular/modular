@@ -9,9 +9,9 @@ from max.graph import DeviceKind, DeviceRef
 
 def test_accelerator_device():
     # We should be able to create a Accelerator device.
-    cuda = Accelerator()
-    assert "cuda" in str(cuda)
-    assert not cuda.is_host
+    dev = Accelerator()
+    assert "gpu" in str(dev)
+    assert not dev.is_host
 
 
 def test_accelerator_device_label_id():
