@@ -12,9 +12,9 @@ from sys._libc import FILE_ptr, pclose, popen
 from sys.ffi import c_char
 from sys.info import os_is_windows
 
-from memory import UnsafePointer
+from memory import UnsafePointer, Span
 
-from utils import StringRef
+from collections.string import StringSlice
 
 
 struct _POpenHandle:
@@ -49,7 +49,12 @@ struct _POpenHandle:
         """Reads all the data from the handle.
 
         Returns:
-          A string containing the output of running the command.
+            A string containing the output of running the command.
+
+        Raises:
+            This method raises if:
+            * There is an IO error reading from the subprocess.
+            * The data written by the subprocess is not valid UTF-8.
         """
         var len: Int = 0
         var line = UnsafePointer[c_char]()
@@ -63,7 +68,14 @@ struct _POpenHandle:
             )
             if read == -1:
                 break
-            res += StringRef(line, read)
+
+            var span = Span[Byte, MutableAnyOrigin](
+                ptr=line.bitcast[Byte](),
+                length=read,
+            )
+
+            # Note: This will raise if the subprocess yields non-UTF-8 bytes.
+            res += StringSlice.from_utf8(span)
 
         if line:
             libc.free(line.bitcast[NoneType]())
