@@ -1586,7 +1586,12 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     // never looked up directly.
     if (fnDecl) {
       Block &body = *cast<LIT::FuncOp>(fnDecl).getBody();
-      (void)body.addArgument(refType, shared.translateLocation(resultArg.loc));
+      auto bbArg =
+          body.addArgument(refType, shared.translateLocation(resultArg.loc));
+
+      // Add a decl so this will be found by name lookup within the body.
+      shared.getDeclResolver().addFullyResolvedDecl(
+          MLValue(bbArg), resultArg.name, resultArg.loc, &declScope);
     }
 
     // We know the ABI register result will be None now, which is trivial.

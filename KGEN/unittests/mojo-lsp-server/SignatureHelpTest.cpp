@@ -93,9 +93,9 @@ fn test():
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn __init__() -> Self");
+                                 "fn __init__(out self)");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
-                                 "fn __init__(a_field: Int) -> Self");
+                                 "fn __init__(out self, a_field: Int)");
                      })
       .execute();
 }

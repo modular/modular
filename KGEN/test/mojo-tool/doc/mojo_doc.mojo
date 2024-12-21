@@ -542,6 +542,12 @@ fn fn_with_mult_result_origins(
     pass
 
 
+# CHECK-LABEL: "name": "fn_with_named_result",
+# CHECK:     "signature": "fn_with_named_result(a: Int, out res: String)",
+fn fn_with_named_result(a: Int, out res: String):
+    res = ""
+
+
 # CHECK: "kind": "function"
 # CHECK: "overloads":
 # CHECK:    "deprecated": "deprecated function"
@@ -628,8 +634,8 @@ struct HList[T: CollectionElement, hint_trivial_type: Bool = False]:
 # prioritization (i.e. not just name based).
 # CHECK:  "kind": "function",
 # CHECK:  "name": "__init__",
-# CHECK:     "signature": "__init__() -> Self",
-# CHECK:  "name": "__copyinit__",
+# CHECK:     "signature": "__init__(out self)",
+# CHECK:  "signature": "__copyinit__(out self, existing: Self)",
 # CHECK:  "name": "__del__",
 
 # CHECK: "name": "__add__",

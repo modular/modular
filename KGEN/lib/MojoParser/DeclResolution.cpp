@@ -1209,12 +1209,14 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     size_t argIdx = argIdxX;
 
     StringAttr argName = funcSignature.getArgName(argIdx);
-    // Don't bind byref-result, it is handled specially by 'return'.
-    if (SignatureType::isResultSlot(convention))
-      continue;
 
     // Figure out which decl corresponds to this argument so we can finish it.
     ArrayRef<ASTDecl *> argDeclList = decl.lookupInCurrentScope(argName);
+
+    // Don't bind anonymous result slots, they don't have a decl.
+    if (argDeclList.empty() && SignatureType::isResultSlot(convention))
+      continue;
+
     assert(argDeclList.size() == 1 &&
            "Argument should be added by signature resolution");
     ASTDecl &argDecl = *argDeclList[0];
@@ -1247,7 +1249,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     if (convention == ArgConvention::Ref ||
         convention == ArgConvention::MutRef ||
         convention == ArgConvention::OwnedMem ||
-        convention == ArgConvention::Mut) {
+        convention == ArgConvention::Mut ||
+        convention == ArgConvention::ByRefResult) {
       setDecl(CValue::getMValueForRef(bbArg));
       continue;
     }
@@ -1270,14 +1273,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       setDecl(DLValue(RCRef<DefArgumentWrapperDLValue>::create(
           &argDecl, argValue, argValue.getRValueType(), argIdx)));
     }
-  }
-
-  // If the function has a named result slot, bind it here.
-  // TODO: Move this to typeCheckResult in Signatures.cpp
-  if (StringAttr namedResult = funcOp.getNamedResultAttr()) {
-    assert(funcSignature.hasMemoryOnlyResult() && "already checked");
-    Value result = funcOp.getArguments().back();
-    addFullyResolvedDecl(MLValue(result), namedResult, decl.getLoc(), &decl);
   }
 
   Block *body = funcOp.getBody();
