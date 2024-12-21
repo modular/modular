@@ -778,7 +778,7 @@ fn matmul[
     b: NDBuffer[_, 2, _],
     ctx: Optional[DeviceContext],
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
+    constrained[target in ("cpu", "gpu"), "unsupported target"]()
     constrained[not transpose_a, "transpose_a not yet supported"]()
     debug_assert(
         target == "cpu" or bool(ctx),

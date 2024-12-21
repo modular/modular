@@ -1323,7 +1323,7 @@ fn swishGLU[
     and writing to the destination once.
     """
 
-    constrained["cuda" in target, "only valid on CUDA GPUs"]()
+    constrained[target == "gpu", "only valid on GPUs"]()
 
     @always_inline
     @parameter

@@ -591,7 +591,7 @@ fn batched_matmul[
     *,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target == "cpu" or "cuda" in target, "unsupported target"]()
+    constrained[target in ("cpu", "gpu"), "unsupported target"]()
 
     @parameter
     if target == "cpu":

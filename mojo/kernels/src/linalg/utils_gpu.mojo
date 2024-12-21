@@ -282,7 +282,7 @@ fn select_config[
     alias _128x128_4 = Index(128, 128, _bk_base[a_type](), 4)
     alias _256x64_4 = Index(64, 256, _bk_base[a_type](), 4)
     # Only enable this when the target is exactly A100. We use A100 properties
-    # for target="cuda" (default) on A10, L4. This avoids breaking tests there.
+    # for target="gpu" (default) on A10, L4. This avoids breaking tests there.
     # The tile is skipped in the loop for exceeding shared memory capacity when
     # sm_80 is present in target.
     alias _256x128_3 = Index(
