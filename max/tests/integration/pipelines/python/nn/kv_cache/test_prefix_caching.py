@@ -199,16 +199,24 @@ async def test_prefix_caching_with_no_release() -> None:
 async def test_prefix_caching_with_random_prompt() -> None:
     kv_manager = create_paged_manager(num_blocks=128)
 
-    # We expect to run out of blocks here.
-    with pytest.raises(RuntimeError):
-        # Try to assign and release more than 128 blocks.
-        for seq_id in range(1000):
-            kv_manager.external_claim([seq_id])
-            # Picking random prompts.
-            prompt = np.random.randint(0, 8, size=16)
-            seq_ids_and_prompts = {seq_id: prompt}
-            # This fetch will eventually trigger evictions from the tree. However,
-            # this is not yet supported.
-            _ = kv_manager.fetch(seq_ids_and_prompts)
-            kv_manager.step(seq_ids_and_prompts)
-            kv_manager.release(seq_id)
+    # Try to assign and release more than 128 blocks.
+    for seq_id in range(1000):
+        kv_manager.external_claim([seq_id])
+        # Picking random prompts.
+        prompt_len = np.random.randint(1, 64)
+        prompt = np.random.randint(0, 8, size=prompt_len)
+        seq_ids_and_prompts = {seq_id: prompt}
+        # This fetch can trigger evictions from the tree.
+        _ = kv_manager.fetch(seq_ids_and_prompts)
+        kv_manager.step(seq_ids_and_prompts)
+        kv_manager.release(seq_id)
+
+    # Evict all blocks from the trie.
+    total_num_blocks = kv_manager.total_num_blocks  # type: ignore
+    blocks_in_trie = kv_manager.radix_trie.evict_blocks(  # type: ignore
+        desired_num_evicted=total_num_blocks
+    )
+    available_blocks = len(kv_manager.available_blocks)  # type: ignore
+
+    # Check that all blocks are either in the trie or available.
+    assert available_blocks + len(blocks_in_trie) == total_num_blocks
