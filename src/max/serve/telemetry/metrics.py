@@ -130,7 +130,7 @@ class _Metrics:
             self.aq = AsyncCallConsumer()
             self.started = False
             try:
-                await self.aq.start()
+                self.aq.start()
             except Exception as e:
                 logger.exception("failed to start consumer")
             self.started = True
