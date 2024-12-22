@@ -2466,12 +2466,6 @@ MLValue ExprEmitter::findNearestErrorSlot() {
 }
 
 void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
-                                   const ASTDecl &funcDecl) {
-  auto func = cast<LIT::FuncOp>(funcDecl);
-  emitNormalReturn(builder, value, func);
-}
-
-void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                    LIT::FuncOp func) {
   bool markLastArgDestroyed = false;
   switch (func.getSpecialFunctionKind()) {
