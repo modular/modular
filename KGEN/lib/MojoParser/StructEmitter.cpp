@@ -251,26 +251,22 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
     return;
   }
 
-  auto makeNoneReturn = [&] {
-    emitter.emitNormalReturn(loc, /*none*/ Value(), /*emitEndFunc=*/true);
-  };
-
   // Functions with named results get a default return.
   // FIXME: This should use register results when possible.
   if (func.getNamedResultAttr())
-    return makeNoneReturn();
+    return emitter.emitNormalReturn(loc);
 
   ASTType resultType = func.getUserResultType();
   if (resultType.isNoneType()) {
     if (!sig.hasMemoryOnlyResult())
-      return makeNoneReturn();
+      return emitter.emitNormalReturn(loc);
 
     // Handle functions with memory-only results, which are returned through the
     // result slot.
     ValueDest resultDest(MLValue(func.getArguments().back()), EC_ReturnValue);
     emitter.emitResult(PValue(shared.getNoneAttr()),
                        SyntheticNode(funcDecl.getLoc()), resultDest);
-    return makeNoneReturn();
+    return emitter.emitNormalReturn(loc);
   }
 
   // `def foo():` will return a None object by default.
@@ -282,7 +278,7 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
       ValueDest resultDest(MLValue(func.getArguments().back()), EC_ReturnValue);
       emitter.emitConstructorCall(objType, {}, SyntheticNode(funcDecl.getLoc()),
                                   CallSyntax::kTypeCall, resultDest);
-      return makeNoneReturn();
+      return emitter.emitNormalReturn(loc);
     }
   }
 
@@ -345,8 +341,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   }
 
   // Finish off the function with a return + lit.endfunc.
-  emitter.emitNormalReturn(funcOp.getLoc(), /*none*/ Value(),
-                           /*emitEndFunc=*/true);
+  emitter.emitNormalReturn(funcOp.getLoc());
   return funcOp;
 }
 
@@ -427,8 +422,7 @@ LIT::FuncOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
 
   ImplicitLocOpBuilder b =
       ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), body);
-  ExprEmitter::emitNormalReturn(b, b.create<ParamConstantOp>(noneAttr), func);
-  b.create<LIT::EndFuncOp>();
+  ExprEmitter::emitNormalReturn(b);
   return func;
 }
 

@@ -836,7 +836,8 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   if (!resultVal)
     return {};
 
-  emitter.emitNormalReturn(translateLocation(loc), resultVal);
+  emitter.emitNormalReturn(translateLocation(loc), resultVal,
+                           /*emitEndFunc=*/false);
   return success();
 }
 

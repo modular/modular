@@ -532,8 +532,7 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   if (!ctorResult)
     return {};
 
-  emitter.emitNormalReturn(func.getLoc(), /*None*/ Value(),
-                           /*emitEndFunc=*/true);
+  emitter.emitNormalReturn(func.getLoc());
 
   //
   // Into PyInit_my_module, emit:

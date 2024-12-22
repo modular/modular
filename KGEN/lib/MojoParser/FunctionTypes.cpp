@@ -311,16 +311,10 @@ static LIT::FuncOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl) {
 
   // Emit the function return. It's just a none return if the function has a
   // result slot.
-  b = ImplicitLocOpBuilder(mlirLoc, *emitter.builder);
   Value retVal;
   if (hasRegisterResult)
     retVal = emitter.emitSRValue({callResult, node}, EC_Trait);
-  else if (expected.isThrows())
-    retVal = b.create<ParamConstantOp>(b.getBoolAttr(false));
-  else
-    retVal = b.create<ParamConstantOp>(shared.getNoneAttr());
-  b.create<KGEN::ReturnOp>(retVal);
-
+  emitter.emitNormalReturn(mlirLoc, retVal);
   return thunk;
 }
 

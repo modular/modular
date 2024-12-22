@@ -216,8 +216,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   storeField(b, self,
              b.create<CreateClosureOp>(ParamDeclRefAttr::get(paramDecl)),
              b.getStringAttr("call"));
-  b.create<LIT::ReturnOp>(Value(b.create<ParamConstantOp>(NoneAttr::get(ctx))));
-  b.create<EndFuncOp>();
+  ExprEmitter::emitNormalReturn(b);
 
   // Populate the lambda.
   b = ImplicitLocOpBuilder::atBlockBegin(callImpl.getLoc(), callImpl.getBody());
@@ -231,8 +230,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   auto callIndirect =
       b.create<CallIndirectOp>(fnPtrType.getResultType(), fnPtr, origins,
                                ArrayRef(callArgs).drop_front());
-  b.create<LIT::ReturnOp>(callIndirect.getResult(0));
-  b.create<EndFuncOp>();
+  ExprEmitter::emitNormalReturn(b, callIndirect.getResult(0));
 }
 
 StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
@@ -422,8 +420,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
     auto callResult = builder.create<CallIndirectOp>(
         resultType, callMemberPtr, implicitOrigins, arguments);
-    ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
-    builder.create<LIT::EndFuncOp>();
+    ExprEmitter::emitNormalReturn(builder, callResult.getResult(0));
   }
 
   synthesizeWrapperFnPtrCtor(structDecl, selfType, dependentSignatureType);
@@ -931,7 +928,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     auto loc = topLevelCopyInit.getLoc();
     Value erasedType = emitter.builder->create<POP::PointerBitcastOp>(
         loc, opaquePtrType, target);
-    emitter.emitNormalReturn(loc, erasedType, /*emitEndFunc=*/true);
+    emitter.emitNormalReturn(loc, erasedType);
     setMember(topLevelCopyInit, copyFieldAttr, topLevelTypes.copyFuncFieldType);
   }
 
@@ -970,9 +967,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     // Free the memory we allocated on the heap to store the closure.
     builder.create<POP::AlignedFreeOp>(implPtr);
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelDtor.getLoc(), body);
-    ExprEmitter::emitNormalReturn(builder,
-                                  builder.create<ParamConstantOp>(noneAttr),
-                                  topLevelDtor, /*emitEndFunc=*/true);
+    ExprEmitter::emitNormalReturn(builder);
   }
 
   // Set the member.
@@ -1045,8 +1040,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     Value result =
         builder.create<CallOp>(resultType, typedSymbol, implicitOrigins, args)
             .getResult(0);
-    ExprEmitter::emitNormalReturn(builder, result, topLevelCall);
-    builder.create<LIT::EndFuncOp>();
+    ExprEmitter::emitNormalReturn(builder, result);
   }
   setMember(topLevelCall, callFieldAttr, topLevelTypes.callFuncFieldType);
   return init;

@@ -2466,7 +2466,17 @@ MLValue ExprEmitter::findNearestErrorSlot() {
 }
 
 void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
-                                   LIT::FuncOp func, bool emitEndFunc) {
+                                   bool emitEndFunc) {
+  auto func = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
+
+  // If we're missing a value, generate a None to return.
+  if (!value) {
+    if (func.getSignature().isThrows())
+      value = builder.create<ParamConstantOp>(builder.getBoolAttr(false));
+    else
+      value = builder.create<ParamConstantOp>(NoneAttr::get(func.getContext()));
+  }
+
   bool markLastArgDestroyed = false;
   switch (func.getSpecialFunctionKind()) {
   default:
@@ -2506,22 +2516,9 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 /// treated as a 'return;' synthesizing a None result.
 void ExprEmitter::emitNormalReturn(Location loc, Value value,
                                    bool emitEndFunc) {
-  // Must be emitting into a nested or top level function.
-  auto funcOp = getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock());
-  assert(funcOp && "return not in a function?");
-
-  // If we're missing a value, generate a None to return.
-  if (!value) {
-    if (funcOp.getSignature().isThrows())
-      value = builder->create<ParamConstantOp>(funcOp.getLoc(),
-                                               builder->getBoolAttr(false));
-    else
-      value = builder->create<ParamConstantOp>(funcOp.getLoc(),
-                                               shared.getNoneAttr());
-  }
 
   ImplicitLocOpBuilder b(loc, *builder);
-  emitNormalReturn(b, value, funcOp, emitEndFunc);
+  emitNormalReturn(b, value, emitEndFunc);
 }
 
 //===--------------------------------------------------------------------===//
