@@ -692,61 +692,53 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
 
 /// return_stmt ::= "return" [expression_list]
 ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
-  auto func = dyn_cast<LIT::FuncOp>(getParentDecl());
   auto loc = consumeToken(Token::kw_return).getLoc();
 
   // If there is an expression list present, parse it.
   ExprNode *operandExpr = nullptr;
-  SimpleLiteralNode noneExpr(ExprNode::kNoneLiteral, loc);
-  if (!isTokenInCurrentStatement(returnIndent))
-    operandExpr = &noneExpr;
-  else if (parseExpressionList(operandExpr, returnIndent))
-    return failure();
+  if (isTokenInCurrentStatement(returnIndent)) {
+    if (parseExpressionList(operandExpr, returnIndent))
+      return failure();
+  }
 
   // Ok, now that we parsed all the tokens for this statement, do semantic
-  // analysis.
+  // analysis.  First ensure we're in a function.
+  auto func = dyn_cast<LIT::FuncOp>(getParentDecl());
   if (!func) {
     emitError(loc, "cannot return from this context");
     return success();
   }
 
   auto emitter = getEmitter();
+  LITSignatureType declSig = func.getSignature();
+  ASTType userResultType = func.getUserResultType();
+
+  // Next check the forms: We may or may not have a result expression.  If the
+  // result expression is missing and we have a named result slot, just emit a
+  // normal return with no value, assuming it has already been assigned.
+  if (!operandExpr && func.getNamedResultAttr()) {
+    emitter.emitNormalReturn(translateLocation(loc), /*result*/ {},
+                             /*emitEndFunc=*/false);
+    return success();
+  }
+
+  // Otherwise, we treat a missing result as "None", which can implicitly
+  // convert to whatever the expected type is.  This also keeps the logic below
+  // unified.
+  SimpleLiteralNode noneExpr(ExprNode::kNoneLiteral, loc);
+  if (!operandExpr)
+    operandExpr = &noneExpr;
 
   // Materialize the expression values into IR.
   AnyValue resultValue;
-  SignatureType declSig = func.getSignature();
-  ASTType userResultType = func.getUserResultType();
 
-  // If the result is memory-only, return into the result slot, otherwise we
-  // just need a value of the right type. If the function has a named result
-  // slot, we allow it to omit the expression.
+  // Figure out where to emit the value. If the result is memory-only, return
+  // into the result slot, otherwise just ensure the right SRValue type.
   ValueDest resultDest(userResultType, EC_ReturnValue);
-  if (func.getNamedResultAttr() && operandExpr == &noneExpr) {
-    // A named result is active, so we don't require a result.
-    resultDest = ValueDest(shared.getNoneType(), EC_ReturnValue);
-  } else if (declSig.hasMemoryOnlyResult())
+  if (declSig.hasMemoryOnlyResult())
     resultDest = ValueDest(MLValue(func.getArguments().back()), EC_ReturnValue);
 
   if (!declSig.isRefResult()) {
-    // Check for a common error of explicitly returning the name from a named
-    // result function.  This will turn into an exclusivity error downstream
-    // (reading and writing to the same result slot), so we want to reject it in
-    // the parser for better QoI.
-    if (auto resultName = func.getNamedResultAttr()) {
-      if (auto dre = dyn_cast<DeclRefNode>(operandExpr->getWithoutParens()))
-        if (dre->spelling == resultName.strref()) {
-          auto diag = emitter.emitError(loc);
-          diag << "'return' in function with a named return "
-                  "slot should not return the slot itself";
-          diag.attachNote(operandExpr->getLoc())
-              << "remove the expression if the return slot is already "
-                 "initialized"
-              << FixIt::remove(operandExpr->getRange());
-          resultDest.resetForError();
-          return {};
-        }
-    }
-
     // Convert the returned value to the returned type of the function.
     resultValue = emitter.emitExpr(operandExpr, resultDest);
     if (!resultValue) {
@@ -772,6 +764,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
     // We already checked the element type, check the origin and address
     // space.
+    // TODO: Move this to general implicit conversion diagnostics.
     if (!userResultType.isEqualCanon(argType)) {
       if (!emitter.canZeroCostConvert(argType, userResultType)) {
         auto expectedRefType = cast<RefType>(userResultType);
@@ -799,43 +792,54 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
         resultDest.resetForError();
         return {};
       }
-      // Rebind to make the reference compatible, e.g. converting to a more
-      // general origin union.
-      ASTExprAnd<CValue> rvAndExpr = {SRValue(refValue), operandExpr};
-      refValue =
-          emitter.emitZeroCostConvert(rvAndExpr, userResultType).getIfSRValue();
     }
 
-    // We're returning the reference itself, so switch to SRValue.
-    resultValue = SRValue(refValue);
-    // ... and emit to the ValueDest
-    resultValue = emitter.emitRValue({resultValue, operandExpr}, resultDest);
+    // We're returning the reference itself, so switch to SRValue and emit to
+    // the ValueDest. This does implicit conversions to the expected type (e.g.
+    // to a more general origin).
+    resultValue =
+        emitter.emitRValue({SRValue(refValue), operandExpr}, resultDest);
     if (!resultValue) {
       resultDest.resetForError();
       return success();
     }
-
-    if (declSig.hasMemoryOnlyResult())
-      resultValue = {};
   }
 
-  // If the result is a memory-only result, then handle the scalar result.
-  if (declSig.hasMemoryOnlyResult()) {
-    // The register result is a None value, or false if it throws.
-    if (func.isThrows())
-      resultValue = PValue(BoolAttr::get(getContext(), false));
-    else
-      resultValue = PValue(shared.getNoneAttr());
+  // Check for a common error of explicitly returning the name from a named
+  // result function.  This will turn into an exclusivity error downstream
+  // (reading and writing to the same result slot), so we want to reject it in
+  // the parser for better QoI.  Otherwise we get "use of uninit value".
+  //
+  // We do this syntactically because we have to emit the input expression
+  // directly into the result slot (e.g. we could be calling a function that
+  // returns a non-copyable type) and doing so with this pattern will create a
+  // copy+move into and out of a temporary.
+  if (auto resultName = func.getNamedResultAttr()) {
+    if (auto dre = dyn_cast<DeclRefNode>(operandExpr->getWithoutParens()))
+      if (dre->spelling == resultName.strref()) {
+        auto diag = emitter.emitError(loc);
+        diag << "'return' in function with a named return "
+                "slot should not return the slot itself";
+        diag.attachNote(operandExpr->getLoc())
+            << "remove the expression if the return slot is already "
+               "initialized"
+            << FixIt::remove(operandExpr->getRange());
+        return success();
+      }
   }
 
-  if (!resultValue)
-    return {};
+  // If the result is supposed to be an SRValue, ensure we promote to a
+  // register we can return.
+  Value resultVal;
+  if (!declSig.hasMemoryOnlyResult()) {
+    resultVal = emitter.emitSRValue({resultValue, operandExpr}, EC_ReturnValue,
+                                    func.getMLIRResultType());
+    if (!resultVal)
+      return {};
+  }
 
-  auto resultVal = emitter.emitSRValue(
-      {resultValue, operandExpr}, EC_ReturnValue, func.getMLIRResultType());
-  if (!resultVal)
-    return {};
-
+  // Finally emit the normal result value, handling things like throwing results
+  // and None logic.
   emitter.emitNormalReturn(translateLocation(loc), resultVal,
                            /*emitEndFunc=*/false);
   return success();
