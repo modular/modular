@@ -577,14 +577,14 @@ public:
   /// Emit a normal return (not a 'raise' return) out of the function, along
   /// with any special logic that goes with it.  `funcDecl` indicates the
   /// function we are returning out of.
-  static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
-                               FuncOp funcDecl, bool emitEndFunc = false);
+  static void emitNormalReturn(ImplicitLocOpBuilder &builder,
+                               Value value = Value(), bool emitEndFunc = true);
 
   /// Emit a normal return (not a 'raise' return) out of the function, along
   /// with any special logic that goes with it.  If the value is missing this is
   /// treated as a 'return;' synthesizing a None result.
   void emitNormalReturn(Location loc, Value value = Value(),
-                        bool emitEndFunc = false);
+                        bool emitEndFunc = true);
 
   //===--------------------------------------------------------------------===//
   // Var emission helpers.

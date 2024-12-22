@@ -858,8 +858,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   auto wrappedCall = shimBodyBuilder.create<CallOp>(
       shimMainFn.getArgumentTypes()[0], wrapperFnRef,
       /*originParams=*/std::nullopt, shimMainFn.getArguments());
-  shimBodyBuilder.create<LIT::ReturnOp>(wrappedCall.getResults());
-  shimBodyBuilder.create<EndFuncOp>();
+  ExprEmitter::emitNormalReturn(shimBodyBuilder, wrappedCall.getResult(0));
 
   exportedSymbolNames.insert({mainAttr, funcDecl.getLoc()});
 }

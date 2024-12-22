@@ -48,8 +48,7 @@ private:
 class StructEmitter : public SharedStateUser {
 public:
   StructEmitter(SharedState &sharedState)
-      : SharedStateUser(sharedState), noneType(shared.getNoneType()),
-        noneAttr(shared.getNoneAttr()) {}
+      : SharedStateUser(sharedState), noneType(shared.getNoneType()) {}
   /// Generate empty stubs for the destructor, copy constructor, and move
   /// constructor on the declOp if they are eligible and do not already exist.
   ///
@@ -163,7 +162,6 @@ private:
 
 protected:
   Type noneType;
-  NoneAttr noneAttr;
 };
 
 } // namespace M::KGEN::LIT
