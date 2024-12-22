@@ -882,7 +882,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
       PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly});
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
-  auto [topLevelCopyInit, _] = synthesizeFunction(
+  auto [topLevelCopyInit, copyInitDecl] = synthesizeFunction(
       moduleDecl, generateName("_copyinit_"), topLevelParams, paramListAttrs,
       {opaquePtrType}, {ArgConvention::ReadReg}, argListAttrs, opaquePtrType,
       SpecialFunctionKind::kNormal, loc, builder);
@@ -922,16 +922,16 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                          /*endUninit=*/false);
 
     // Copy the existing value into the target.
-    ExprEmitter emitter(moduleDecl, builder);
+    // TODO: Use nicer expr emitter for the result expr.
+    ExprEmitter emitter(*copyInitDecl, builder);
     emitter.emitStoreToLValue({MLValue(existingRef), &node}, MLValue(targetRef),
                               EC_Assignment);
 
     // Return the allocated and populated impl.
-    builder = ImplicitLocOpBuilder::atBlockEnd(topLevelCopyInit.getLoc(), body);
-    Value erasedType =
-        builder.create<POP::PointerBitcastOp>(opaquePtrType, target);
-    ExprEmitter::emitNormalReturn(builder, erasedType, topLevelCopyInit);
-    builder.create<LIT::EndFuncOp>();
+    auto loc = topLevelCopyInit.getLoc();
+    Value erasedType = emitter.builder->create<POP::PointerBitcastOp>(
+        loc, opaquePtrType, target);
+    emitter.emitNormalReturn(loc, erasedType, /*emitEndFunc=*/true);
     setMember(topLevelCopyInit, copyFieldAttr, topLevelTypes.copyFuncFieldType);
   }
 
@@ -970,9 +970,9 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     // Free the memory we allocated on the heap to store the closure.
     builder.create<POP::AlignedFreeOp>(implPtr);
     builder = ImplicitLocOpBuilder::atBlockEnd(topLevelDtor.getLoc(), body);
-    ExprEmitter::emitNormalReturn(
-        builder, builder.create<ParamConstantOp>(noneAttr), topLevelDtor);
-    builder.create<LIT::EndFuncOp>();
+    ExprEmitter::emitNormalReturn(builder,
+                                  builder.create<ParamConstantOp>(noneAttr),
+                                  topLevelDtor, /*emitEndFunc=*/true);
   }
 
   // Set the member.

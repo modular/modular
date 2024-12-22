@@ -835,8 +835,8 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
       {resultValue, operandExpr}, EC_ReturnValue, func.getMLIRResultType());
   if (!resultVal)
     return {};
-  ImplicitLocOpBuilder b(translateLocation(loc), builder);
-  ExprEmitter::emitNormalReturn(b, resultVal, func);
+
+  emitter.emitNormalReturn(translateLocation(loc), resultVal);
   return success();
 }
 

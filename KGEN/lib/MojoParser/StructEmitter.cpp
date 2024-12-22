@@ -240,25 +240,19 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
   auto func = cast<LIT::FuncOp>(funcDecl);
   LITSignatureType sig = func.getSignature();
   Block &body = *func.getBody();
-  auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), &body);
+  auto loc = func.getLoc();
 
-  // Insert the default end terminator.
-  auto terminate = llvm::make_scope_exit([&] { b.create<LIT::EndFuncOp>(); });
+  ExprEmitter emitter(funcDecl, OpBuilder::atBlockEnd(&body));
 
   // If the function had an explicit return, just append the default end
   // terminator.
-  if (!body.empty() && isa<LIT::ReturnOp, LIT::RaiseOp>(body.back()))
+  if (!body.empty() && isa<LIT::ReturnOp, LIT::RaiseOp>(body.back())) {
+    emitter.builder->create<LIT::EndFuncOp>(loc);
     return;
+  }
 
   auto makeNoneReturn = [&] {
-    // A none return either returns None through the SSA output or, in a
-    // throwing function, returns 0 as the error state.
-    Value result;
-    if (sig.isThrows())
-      result = b.create<ParamConstantOp>(b.getBoolAttr(false));
-    else
-      result = b.create<ParamConstantOp>(shared.getNoneAttr());
-    ExprEmitter::emitNormalReturn(b, result, func);
+    emitter.emitNormalReturn(loc, /*none*/ Value(), /*emitEndFunc=*/true);
   };
 
   // Functions with named results get a default return.
@@ -267,8 +261,6 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
     return makeNoneReturn();
 
   ASTType resultType = func.getUserResultType();
-  ExprEmitter emitter(funcDecl, EC_ReturnValue);
-  emitter.builder = b;
   if (resultType.isNoneType()) {
     if (!sig.hasMemoryOnlyResult())
       return makeNoneReturn();
@@ -286,12 +278,16 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
     ASTType objType = shared.lookupObjectType(funcDecl, funcDecl.getLoc());
     if (objType.isEqualCanon(resultType) && func.getNumArguments()) {
       // Emit `object()` into the memory type return slot.
+      // TODO: Use an expr form of result emission.
       ValueDest resultDest(MLValue(func.getArguments().back()), EC_ReturnValue);
       emitter.emitConstructorCall(objType, {}, SyntheticNode(funcDecl.getLoc()),
                                   CallSyntax::kTypeCall, resultDest);
       return makeNoneReturn();
     }
   }
+
+  // Otherwise, just fall off the end.
+  emitter.builder->create<LIT::EndFuncOp>(loc);
 }
 
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
@@ -349,9 +345,8 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   }
 
   // Finish off the function with a return + lit.endfunc.
-  ExprEmitter::emitNormalReturn(
-      builder, builder.create<ParamConstantOp>(noneAttr), funcOp);
-  builder.create<LIT::EndFuncOp>();
+  emitter.emitNormalReturn(funcOp.getLoc(), /*none*/ Value(),
+                           /*emitEndFunc=*/true);
   return funcOp;
 }
 

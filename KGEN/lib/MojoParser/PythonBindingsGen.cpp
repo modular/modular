@@ -529,14 +529,11 @@ ErrorOrSuccess BindingGenerator::genFunctionBinding(ASTDecl &funcDecl,
   CValue ctorResult = emitter.emitConstructorCall(
       pyObjType, CallOperands{ASTExprAnd<AnyValue>{noneThing, synth}}, synth,
       CallSyntax::kTypeCall, returnDest);
-  if (!ctorResult) {
+  if (!ctorResult)
     return {};
-  }
 
-  Value zero = builder.create<ParamConstantOp>((BoolAttr::get(ctx, 0)));
-  emitter.emitNormalReturn(builder, zero, wrapperFunc);
-
-  builder.create<LIT::EndFuncOp>();
+  emitter.emitNormalReturn(func.getLoc(), /*None*/ Value(),
+                           /*emitEndFunc=*/true);
 
   //
   // Into PyInit_my_module, emit:
