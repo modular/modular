@@ -31,8 +31,8 @@ class Dim:
     Tensor dimensions can be one of three types:
 
     - **Static**: Known size
-    - **Dynamic**: Unknown size
     - **Symbolic**: Unknown size but named
+    - **Algebraic**: Unknown size has an algebraic expression
 
 
     In most cases, you don't need to work with a ``Dim`` directly.
@@ -49,7 +49,6 @@ class Dim:
 
     - A symbolic "batch" dimension
     - A static dimension of size 10
-    - A dynamic dimension
 
     For explicit dimension construction, use the following helpers:
 
@@ -60,15 +59,15 @@ class Dim:
         some_dims = [
             SymbolicDim("batch"),
             StaticDim(5),
+            AlgebraicDim(Dim("batch") + 1),
         ]
 
     Constraining tensor dimensions is one important way to improve model
     performance. If tensors have unknown dimensions, we can't optimize them
     as aggressively. Symbolic tensors allow the compiler to learn constraints
-    on a specific dimension (eg. if 2 inputs have the same `batch` dimension)
-    which can be an important improvement over dynamic dimensions, but static
-    dims are the easiest to optimize and therefore the easiest to create
-    and work with.
+    on a specific dimension (eg. if 2 inputs have the same `batch` dimension),
+    but static dims are the easiest to optimize and therefore the easiest to
+    create and work with.
     """
 
     def __new__(cls, value: DimLike):
