@@ -253,13 +253,12 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
   auto makeNoneReturn = [&] {
     // A none return either returns None through the SSA output or, in a
     // throwing function, returns 0 as the error state.
-    if (sig.isThrows()) {
-      ExprEmitter::emitNormalReturn(
-          b, b.create<ParamConstantOp>(b.getBoolAttr(false)), funcDecl);
-    } else {
-      ExprEmitter::emitNormalReturn(
-          b, b.create<ParamConstantOp>(shared.getNoneAttr()), funcDecl);
-    }
+    Value result;
+    if (sig.isThrows())
+      result = b.create<ParamConstantOp>(b.getBoolAttr(false));
+    else
+      result = b.create<ParamConstantOp>(shared.getNoneAttr());
+    ExprEmitter::emitNormalReturn(b, result, func);
   };
 
   // Functions with named results get a default return.

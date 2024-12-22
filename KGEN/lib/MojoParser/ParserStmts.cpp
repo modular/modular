@@ -836,7 +836,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   if (!resultVal)
     return {};
   ImplicitLocOpBuilder b(translateLocation(loc), builder);
-  ExprEmitter::emitNormalReturn(b, resultVal, getParentDecl());
+  ExprEmitter::emitNormalReturn(b, resultVal, func);
   return success();
 }
 

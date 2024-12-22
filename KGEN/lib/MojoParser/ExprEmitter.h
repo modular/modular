@@ -578,8 +578,6 @@ public:
   /// with any special logic that goes with it.  `funcDecl` indicates the
   /// function we are returning out of.
   static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
-                               const ASTDecl &funcDecl);
-  static void emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                FuncOp funcDecl);
 
   //===--------------------------------------------------------------------===//
