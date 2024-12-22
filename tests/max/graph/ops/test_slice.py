@@ -11,6 +11,7 @@ import operator
 import random
 from typing import Any
 
+import numpy as np
 import pytest
 from conftest import tensor_types
 from hypothesis import assume, given
@@ -113,22 +114,48 @@ def test_slice_valid_ints(tensor_type: TensorType, index):
     assume(0 not in tensor_type.shape)
 
     with Graph("slice", input_types=[tensor_type]) as graph:
-        out = ops.slice_tensor(graph.inputs[0], index)
+        out = ops.slice_tensor(graph.inputs[0].tensor, index)
         assert out.shape == expected_slice_shape(tensor_type.shape, index)
         graph.output(out)
 
 
-def gen_slice(n, rand: random.Random) -> slice:
-    start: int | None = None
-    stop: int | None = None
-    step: int | None = None
+def gen_slice(n: int, rand: random.Random) -> slice:
+    # Assign random start and step with 50% probability else None.
+    start = rand.randint(-n, n - 1) if rand.randint(0, 1) else None
+    # TODO(AIPIPE-109): allow negative step.
+    step = rand.randint(1, n) if rand.randint(0, 1) else None
 
+    # Set default values to compute valid ranges if start/step is None.
+    start_val = 0 if start is None else start
+    step_val = 1 if step is None else step
+
+    stop: int | None = None
     if rand.randint(0, 1):
-        start = rand.randint(-1 * n, n - 1)
-    if rand.randint(0, 1):
-        step = rand.randint(-1 * n, n) or 1
-    if rand.randint(0, 1):
-        stop = rand.randint(-1 * n, n)
+        # Generate a valid, non-empty slice depending on positive/negative step.
+        normalized_start = start_val + n if start_val < 0 else start_val
+        normalized_stop = (
+            rand.randint(normalized_start + 1, n)
+            if step_val > 0
+            else rand.randint(0, normalized_start - 1)
+        )
+
+        # Filter [n:n+1:1] and [-n:-n-1:-1] (index out of bounds).
+        assume(normalized_stop < n and normalized_stop > -n - 1)
+
+        stop = normalized_stop if rand.randint(0, 1) else -n + normalized_stop
+
+    # Check for overflow.
+    stop_val = n if stop is None else stop
+    step_offset = step_val - 1 if step_val > 0 else step_val + 1
+    diff = stop_val - start_val
+    int64_max = np.iinfo(np.int64).max
+    int64_min = np.iinfo(np.int64).min
+
+    # Don't generate slices that would overflow --- that is checked elsewhere.
+    assume(
+        int64_min <= diff <= int64_max
+        and int64_min <= diff + step_offset <= int64_max
+    )
 
     return slice(start, stop, step)
 
@@ -143,10 +170,10 @@ def test_slice_static_dims(tensor_type: TensorType, rand: random.Random):
     assume(tensor_type.shape)
     assume(0 not in tensor_type.shape)
 
-    index = [gen_slice(d.dim, rand) for d in tensor_type.shape]
+    index = [gen_slice(int(d), rand) for d in tensor_type.shape]
 
     with Graph("slice", input_types=[tensor_type]) as graph:
-        out = ops.slice_tensor(graph.inputs[0], index)
+        out = ops.slice_tensor(graph.inputs[0].tensor, index)
         assert out.shape == expected_slice_shape(tensor_type.shape, index)
         graph.output(out)
 
@@ -201,6 +228,29 @@ def test_slice_symbolic_tensor(
         forward=operator.itemgetter(indices),
         input_types=[tensor_type],
     )
+
+
+@pytest.mark.parametrize(
+    ("tensor_type", "indices"),
+    [
+        (
+            TensorType(DType.int32, shape=[1]),
+            (slice(-6618538577426847335, None, 3019951631318595876)),
+        ),
+    ],
+)
+def test_slice_dim_overflow(
+    tensor_type: TensorType, indices: list[slice]
+) -> None:
+    """Tests cases that would overflow an int64 slice index."""
+    with pytest.raises(
+        ValueError, match="rmo.slice index computation overflow"
+    ):
+        Graph(
+            "slice",
+            forward=operator.itemgetter(indices),
+            input_types=[tensor_type],
+        )
 
 
 @pytest.mark.parametrize(

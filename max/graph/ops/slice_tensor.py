@@ -413,7 +413,7 @@ def slice_tensor(x: TensorValue, indices: SliceIndices) -> TensorValue:
     Returns:
         The sliced subtensor of `x`.
     """
-    if any(not isinstance(d, StaticDim) for d in x.shape) and not any(
+    if not any(
         isinstance(subslice, (TensorValue, tuple)) for subslice in indices
     ):
         # For symbolic tensors, take a special path that emits rmo.slice.

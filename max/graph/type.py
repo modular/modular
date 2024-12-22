@@ -84,6 +84,28 @@ class Dim:
             return super().__new__(AlgebraicDim)
         raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
 
+    def __index__(self) -> int:
+        """Converts this dim to an index as used by indexing and slicing.
+
+        This raises and suggests explicitly converting to int, so that we only
+        support implicit slicing operations on TensorValues.
+        Types such as list and np.ndarray call __index__ on inputs to their
+        __getitem__ special methods to convert those inputs to int.
+
+        This also prevents a MyPy false positive error: Slice index must be an
+        integer or None.
+        Related MyPy discussion: https://github.com/python/mypy/issues/2410
+        """
+        msg = (
+            "when using dims to index into a list or NumPy array, explicitly "
+            "convert to int with int(dim)"
+        )
+        raise TypeError(msg)
+
+    def __int__(self) -> int:
+        """Converts this dim to an int by casting to StaticDim."""
+        return int(StaticDim(self))
+
     def __eq__(self, other: Any) -> bool:
         """Checks whether two dimensions are equal.
 
