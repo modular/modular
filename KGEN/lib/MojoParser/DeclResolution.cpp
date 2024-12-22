@@ -1196,8 +1196,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
   // Set up information about value arguments.
-  Block *bodyBlock = funcOp.getBody();
-  ExprEmitter emitter(decl, OpBuilder::atBlockEnd(bodyBlock));
+  Block &body = *funcOp.getBody();
+  ExprEmitter emitter(decl, OpBuilder::atBlockEnd(&body));
 
   LITSignatureType funcSignature = funcOp.getSignature();
 
@@ -1275,10 +1275,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     }
   }
 
-  Block *body = funcOp.getBody();
-
   Operation *lastOpIterBefore =
-      body->empty() ? nullptr : &body->getOperations().back();
+      body.empty() ? nullptr : &body.getOperations().back();
 
   // With all the argument declarations set up, we can resolve the body of the
   // function.
@@ -1294,7 +1292,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   // Function body is empty if the body block is empty or the last operation in
   // the block is still the same as it was before parseSuite.
   bool emptyBody =
-      body->empty() || (lastOpIterBefore == &body->getOperations().back());
+      body.empty() || (lastOpIterBefore == &body.getOperations().back());
 
   // Emit a default "return None" if the function returns nothing, and add an
   // endop terminator.
@@ -1303,7 +1301,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // Wipe out the body which may already contain some compiler generated
     // operations for handling argLValueVarSlot.
     if (decl.declsInScope) {
-      body->walk([&](LIT::VarDeclOp op) {
+      body.walk([&](LIT::VarDeclOp op) {
         // Remove the value from parent's declsInScope first before destroying
         // the value.
         auto iter = decl.declsInScope->find(op.getNameAttr());
@@ -1322,10 +1320,41 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       }
     }
 
-    body->clear();
+    body.clear();
     // Don't append anything to an empty function if this is a trait function.
+  } else if (!body.empty() && isa<LIT::ReturnOp, LIT::RaiseOp>(body.back())) {
+    // If the function had an explicit return, just append the default end
+    // terminator.
+    emitter.builder->create<LIT::EndFuncOp>(funcOp.getLoc());
   } else {
-    StructEmitter(shared).appendDefaultReturnAndEndOp(decl);
+    // Determine if this is falling off the bottom of the function is an
+    // implicit return or if it should "fall off" in the case of a missing
+    // return.
+    bool needDefaultReturn = false;
+    if (ASTType(funcOp.getUserResultType()).isNoneType() ||
+        funcOp.getNamedResultAttr())
+      needDefaultReturn = true;
+
+    // In `def foo():` 'return' returns a None object by default.
+    if (funcOp.isDef()) {
+      ASTType objType = shared.lookupObjectType(decl, decl.getLoc());
+      ASTType resultType = funcOp.getUserResultType();
+      if (resultType.isEqualCanon(objType) && funcOp.getNumArguments()) {
+        // Emit `object()` into the memory type return slot.
+        // TODO: Use an expr form of result emission.
+        ValueDest resultDest(MLValue(funcOp.getArguments().back()),
+                             EC_ReturnValue);
+        emitter.emitConstructorCall(objType, {}, SyntheticNode(decl.getLoc()),
+                                    CallSyntax::kTypeCall, resultDest);
+        needDefaultReturn = true;
+      }
+    }
+
+    // Emit a none if needed and emit an EndFunc.
+    if (needDefaultReturn)
+      emitter.emitNormalReturn(funcOp.getLoc());
+    else
+      emitter.builder->create<LIT::EndFuncOp>(funcOp.getLoc());
   }
 
   // Now that the body of the function is parsed, run any body decorators.
