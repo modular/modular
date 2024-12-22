@@ -147,10 +147,6 @@ public:
   static void appendTraits(SmallVectorImpl<TypeLineageAttr> &parentTypes,
                            ASTDecl *traitDecl);
 
-  /// This adds a default return (lit.return of None, potentially converted
-  /// to a variant) and emits a EndFuncOp.
-  void appendDefaultReturnAndEndOp(ASTDecl &funcDecl);
-
 private:
   LIT::FuncOp createFunction(
       ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,

@@ -184,8 +184,8 @@ void BindingGenerator::finalizePyInit() {
   // Emit the terminator for the function.
   ImplicitLocOpBuilder b(pyInitFunc.getLoc(),
                          OpBuilder::atBlockEnd(pyInitFunc.getBody()));
-  b.create<KGEN::ReturnOp>(
-      Value(b.create<ParamConstantOp>(b.getBoolAttr(false))));
+  // Return none.
+  ExprEmitter::emitNormalReturn(b);
 }
 
 LogicalResult BindingGenerator::genPyInitHook() {

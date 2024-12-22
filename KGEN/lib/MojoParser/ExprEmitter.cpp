@@ -2468,12 +2468,30 @@ MLValue ExprEmitter::findNearestErrorSlot() {
 void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
                                    bool emitEndFunc) {
   auto func = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
+  assert(func && "Emitting a return in a non-function?");
 
-  // If we're missing a value, generate a None to return.
+  // If we're missing a value in a function that returns none, generate a None
+  // to return.
   if (!value) {
-    if (func.getSignature().isThrows())
+    // If the function returns a None type value by-reference, fill it in.  This
+    // happens in throwing functions.
+    auto signature = func.getSignature();
+    if (signature.hasMemoryOnlyResult() &&
+        ASTType(func.getUserResultType()).isNoneType()) {
+      assert(signature.getArgConventions().back() ==
+                 ArgConvention::ByRefResult &&
+             "by-ref result should be the last argument");
+
+      // This value will also get returned unless the function throws.
+      value = builder.create<ParamConstantOp>(NoneAttr::get(func.getContext()));
+      builder.create<RefStoreOp>(value, func.getArguments().back());
+    }
+
+    // Otherwise, the resulting actual function result must be a none-type or a
+    // bool for a throwing result.
+    if (signature.isThrows())
       value = builder.create<ParamConstantOp>(builder.getBoolAttr(false));
-    else
+    else if (!value)
       value = builder.create<ParamConstantOp>(NoneAttr::get(func.getContext()));
   }
 
@@ -2499,11 +2517,15 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   }
 
   if (markLastArgDestroyed) {
+    assert(func.getSignature().getArgConventions().front() ==
+               ArgConvention::OwnedMem &&
+           "Argument to be destroyed should be OwnedMem");
     Value argToDestroy = func.getBody()->getArguments().front();
     builder.create<LIT::OwnershipMarkDestroyedOp>(argToDestroy);
   }
 
   // Finally we emit a normal return with lit.return.
+  assert(value && "Didn't specify a return value for the function");
   builder.create<LIT::ReturnOp>(value);
 
   // If requested, emit the end func.

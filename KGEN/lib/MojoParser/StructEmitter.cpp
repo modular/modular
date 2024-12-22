@@ -236,56 +236,6 @@ void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
   structOp.setParentTypes(parentTypes);
 }
 
-void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
-  auto func = cast<LIT::FuncOp>(funcDecl);
-  LITSignatureType sig = func.getSignature();
-  Block &body = *func.getBody();
-  auto loc = func.getLoc();
-
-  ExprEmitter emitter(funcDecl, OpBuilder::atBlockEnd(&body));
-
-  // If the function had an explicit return, just append the default end
-  // terminator.
-  if (!body.empty() && isa<LIT::ReturnOp, LIT::RaiseOp>(body.back())) {
-    emitter.builder->create<LIT::EndFuncOp>(loc);
-    return;
-  }
-
-  // Functions with named results get a default return.
-  // FIXME: This should use register results when possible.
-  if (func.getNamedResultAttr())
-    return emitter.emitNormalReturn(loc);
-
-  ASTType resultType = func.getUserResultType();
-  if (resultType.isNoneType()) {
-    if (!sig.hasMemoryOnlyResult())
-      return emitter.emitNormalReturn(loc);
-
-    // Handle functions with memory-only results, which are returned through the
-    // result slot.
-    ValueDest resultDest(MLValue(func.getArguments().back()), EC_ReturnValue);
-    emitter.emitResult(PValue(shared.getNoneAttr()),
-                       SyntheticNode(funcDecl.getLoc()), resultDest);
-    return emitter.emitNormalReturn(loc);
-  }
-
-  // `def foo():` will return a None object by default.
-  if (func.isDef()) {
-    ASTType objType = shared.lookupObjectType(funcDecl, funcDecl.getLoc());
-    if (objType.isEqualCanon(resultType) && func.getNumArguments()) {
-      // Emit `object()` into the memory type return slot.
-      // TODO: Use an expr form of result emission.
-      ValueDest resultDest(MLValue(func.getArguments().back()), EC_ReturnValue);
-      emitter.emitConstructorCall(objType, {}, SyntheticNode(funcDecl.getLoc()),
-                                  CallSyntax::kTypeCall, resultDest);
-      return emitter.emitNormalReturn(loc);
-    }
-  }
-
-  // Otherwise, just fall off the end.
-  emitter.builder->create<LIT::EndFuncOp>(loc);
-}
-
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs) {
@@ -455,14 +405,15 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
       PogListAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
       shared.getNoneType(), structDecl, structDecl.getLoc(),
       SpecialFunctionKind::kDel);
+  funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
   // Finish off the function with a return + lit.endfunc.
-  appendDefaultReturnAndEndOp(*funcDecl);
-  funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
+  builder = ImplicitLocOpBuilder::atBlockEnd(funcOp.getLoc(), funcOp.getBody());
+  ExprEmitter::emitNormalReturn(builder);
   return funcOp;
 }
 
