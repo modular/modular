@@ -145,6 +145,7 @@ modular_py_test(
 
 modular_py_test(
     name = "tests_distributed_gpu",
+    size = "enormous",
     srcs = glob(
         [
             "**/*_distributed_gpu.py",
