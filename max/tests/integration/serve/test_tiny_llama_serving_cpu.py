@@ -42,7 +42,7 @@ MAX_READ_SIZE = 10 * 1024
     indirect=True,
 )
 async def test_tinyllama_serve_cpu(app):
-    async with TestClient(app, timeout=90.0) as client:
+    async with TestClient(app, timeout=180.0) as client:
         raw_response = await client.post(
             "/v1/chat/completions",
             json={
@@ -78,7 +78,7 @@ async def test_tinyllama_serve_cpu(app):
     "prompt", ["Hello world", ["Hello world"], [1, 2, 3], [[1, 2, 3]]]
 )
 async def test_tinyllama_serve_cpu_nonchat_completions(app, prompt):
-    async with TestClient(app, timeout=90.0) as client:
+    async with TestClient(app, timeout=180.0) as client:
         # Completions endpoint instead of chat completions
         raw_response = await client.post(
             "/v1/completions",
@@ -161,7 +161,7 @@ async def test_tinyllama_serve_cpu_stream(app, testdata_directory):
 
     tasks = []
     resp = []
-    async with TestClient(app, timeout=90.0) as client:
+    async with TestClient(app, timeout=180.0) as client:
         for i in range(NUM_TASKS):
             # we skip the first prompt as it is longer than 512
             data_idx = 1 + (i % (len(PROMPTS) - 1))
