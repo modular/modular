@@ -1825,8 +1825,8 @@ def _print_cache[
         var total_cache_length = int(
             valid_lengths[b_idx] + cache.cache_length(b_idx)
         )
-        for h in range(kv_collection.kv_params.num_heads):
-            for t_idx in range(min(num_to_print, total_cache_length)):
+        for t_idx in range(min(num_to_print, total_cache_length)):
+            for h in range(kv_collection.kv_params.num_heads):
                 for hd in range(
                     min(
                         num_to_print,
@@ -1946,10 +1946,14 @@ def print_kv_cache_cont_batch_generic_gpu[
     dev_ctx.synchronize()
 
     print("K:")
-    _print_cache(k_cache, host_kv_collection, valid_lengths, is_print_compact)
+    _print_cache(
+        k_cache, host_kv_collection, valid_lengths_host_nd, is_print_compact
+    )
 
     print("V:")
-    _print_cache(v_cache, host_kv_collection, valid_lengths, is_print_compact)
+    _print_cache(
+        v_cache, host_kv_collection, valid_lengths_host_nd, is_print_compact
+    )
 
     blocks_host_nd.data.free()
     cache_lengths_host_nd.data.free()
