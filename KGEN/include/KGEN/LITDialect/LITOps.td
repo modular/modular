@@ -1647,7 +1647,7 @@ def LIT_RefLoadOp : LITOp<"ref.load", [
 //===----------------------------------------------------------------------===//
 
 def LIT_RefStoreOp : LITOp<"ref.store", [
-    ReferenceElementType<"ref", "arg">,
+    ReferenceElementType<"dest", "value">,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Reference store operation";
   let description = [{
@@ -1662,8 +1662,8 @@ def LIT_RefStoreOp : LITOp<"ref.store", [
     ```
   }];
 
-  let arguments = (ins AnyType:$arg, LIT_RefType:$ref);
-  let assemblyFormat = "$arg `,` $ref attr-dict `:` type($ref)";
+  let arguments = (ins AnyType:$value, LIT_RefType:$dest);
+  let assemblyFormat = "$value `,` $dest attr-dict `:` type($dest)";
 }
 
 //===----------------------------------------------------------------------===//
