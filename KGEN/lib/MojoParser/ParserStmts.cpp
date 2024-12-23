@@ -711,13 +711,12 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   auto emitter = getEmitter();
   LITSignatureType declSig = func.getSignature();
-  ASTType userResultType = func.getUserResultType();
 
   // Next check the forms: We may or may not have a result expression.  If the
   // result expression is missing and we have a named result slot, just emit a
   // normal return with no value, assuming it has already been assigned.
   if (!operandExpr && func.getNamedResultAttr()) {
-    emitter.emitNormalReturn(translateLocation(loc), /*result*/ {},
+    emitter.emitNormalReturn(translateLocation(loc), /*resultVal*/ {},
                              /*emitEndFunc=*/false);
     return success();
   }
@@ -734,7 +733,9 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
 
   // Figure out where to emit the value. If the result is memory-only, return
   // into the result slot, otherwise just ensure the right SRValue type.
+  ASTType userResultType = func.getUserResultType();
   ValueDest resultDest(userResultType, EC_ReturnValue);
+
   if (declSig.hasMemoryOnlyResult())
     resultDest = ValueDest(MLValue(func.getArguments().back()), EC_ReturnValue);
 

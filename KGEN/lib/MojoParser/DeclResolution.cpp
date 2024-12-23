@@ -1275,6 +1275,21 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     }
   }
 
+  // If we had a named result in a register, create a var decl to hold the
+  // temporary and register it for name lookup.
+  if (!funcSignature.hasMemoryOnlyResult() && funcOp.getNamedResultAttr()) {
+    // Emit a VarDeclOp for the temporary within the function.  This makes it
+    // assignable etc.
+    // This also provides a user name for the argument.
+    StringAttr resultName = funcOp.getNamedResultAttr();
+    VarDeclOp varDecl =
+        emitter.emitVarDecl(resultName, funcOp.getUserResultType(),
+                            funcOp.getLoc(), VarDeclKind::Arg);
+    ASTDecl &argDecl = addFullyResolvedDecl(MLValue(varDecl), resultName,
+                                            decl.getLoc(), &decl);
+    shared.notifyListenerOnArgumentDecl(argDecl, resultName, argDecl.getLoc());
+  }
+
   Operation *lastOpIterBefore =
       body.empty() ? nullptr : &body.getOperations().back();
 
