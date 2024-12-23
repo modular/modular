@@ -977,3 +977,15 @@ trait RGTrivialTrait:
     # CHECK-NEXT: lit.func @"doSomething{{.*}}"(%self: !kgen.paramref<:!RGTrivialTrait {{.*}}>) -> !kgen.none
     fn doSomething(self):
         ...
+
+
+# https://github.com/modularml/mojo/issues/3540: Using the output slot breaks trait conformance
+# CHECK-LABEL: lit.struct.decl @TestNamedResultConformance
+@register_passable("trivial")
+struct TestNamedResultConformance(Trait1):
+
+    # CHECK: lit.func @"f
+    # CHECK-SAME: (%self: !TestNamedResultConformance) -> !TestNamedResultConformance 
+    fn f(self) -> Self as output:
+        pass
+        
