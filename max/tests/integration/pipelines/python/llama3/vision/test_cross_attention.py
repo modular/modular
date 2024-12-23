@@ -21,6 +21,7 @@ from max.pipelines.kv_cache import (
     load_kv_manager,
 )
 from nn import Linear, RMSNorm
+from test_common.distance_metrics import is_euclidean_distance_close
 from transformers.models.mllama.configuration_mllama import MllamaTextConfig
 from transformers.models.mllama.modeling_mllama import (
     MllamaTextCrossSdpaAttention,
@@ -286,7 +287,6 @@ def test_cross_attention(
         expected_ragged[start:stop] = expected[batch_idx, : stop - start]
 
     # Compare the outputs.
-    # TODO(AIPIPE-227): re-enable after supporting !mo.opaque in ops.inplace_custom.
-    # assert is_euclidean_distance_close(
-    #     predicted.to_numpy(), expected_ragged, rtol=1e-4
-    # )
+    assert is_euclidean_distance_close(
+        predicted.to_numpy(), expected_ragged, rtol=1e-4
+    )
