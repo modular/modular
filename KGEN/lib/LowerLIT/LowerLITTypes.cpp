@@ -678,7 +678,7 @@ static Value lowerOp(RefLoadOp op, RefLoadOpAdaptor adaptor,
 
 static Value lowerOp(RefStoreOp op, RefStoreOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  b.replaceOpWithNewOp<POP::StoreOp>(op, adaptor.getArg(), adaptor.getRef());
+  b.replaceOpWithNewOp<POP::StoreOp>(op, adaptor.getValue(), adaptor.getDest());
   return {};
 }
 
