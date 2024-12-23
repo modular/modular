@@ -2470,12 +2470,13 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   auto func = getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock());
   assert(func && "Emitting a return in a non-function?");
 
-  // If we're missing a value in a function that returns none, generate a None
-  // to return.
+  // If we're missing a value, then we either have a memory result that has
+  // already been emitted to its slot, or a function that returns None. Either
+  // way, generate a None or i1 to return with lit.return.
+  auto signature = func.getSignature();
   if (!value) {
     // If the function returns a None type value by-reference, fill it in.  This
     // happens in throwing functions.
-    auto signature = func.getSignature();
     if (signature.hasMemoryOnlyResult() &&
         ASTType(func.getUserResultType()).isNoneType()) {
       assert(signature.getArgConventions().back() ==
@@ -2517,8 +2518,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   }
 
   if (markLastArgDestroyed) {
-    assert(func.getSignature().getArgConventions().front() ==
-               ArgConvention::OwnedMem &&
+    assert(signature.getArgConventions().front() == ArgConvention::OwnedMem &&
            "Argument to be destroyed should be OwnedMem");
     Value argToDestroy = func.getBody()->getArguments().front();
     builder.create<LIT::OwnershipMarkDestroyedOp>(argToDestroy);
@@ -2538,6 +2538,30 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 /// treated as a 'return;' synthesizing a None result.
 void ExprEmitter::emitNormalReturn(Location loc, Value value,
                                    bool emitEndFunc) {
+
+  // If this function returns in a register, load the result value from the
+  // result slot temp. We compile things like:
+  //    fn example(out x: Int):
+  // to have a local vardecl that can be mutated, and is loaded implicitly
+  // when a "return" with no expression is used.
+  if (!value) {
+    auto func = getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock());
+    if (func.getNamedResultAttr() &&
+        !func.getSignature().hasMemoryOnlyResult()) {
+      auto *funcDecl = declScope.getNearestDeclOfType<LIT::FuncOp>();
+      assert(funcDecl && "must be in a function");
+      ArrayRef<ASTDecl *> declList =
+          funcDecl->lookupInCurrentScope(func.getNamedResultAttr());
+      assert(declList.size() == 1 && "result temp should always be findable");
+      auto irVal = declList[0]->getIfIRValue().getIfMLValue();
+      assert(irVal && "result temp should always be in memory");
+      SimpleLiteralNode exprTmp(ExprNode::kNoneLiteral, funcDecl->getLoc());
+      // Move the source by interpreting the MLValue as an MRvalue.
+      value = emitSRValue({MRValue(irVal), &exprTmp}, EC_ReturnValue);
+      if (!value)
+        return;
+    }
+  }
 
   ImplicitLocOpBuilder b(loc, *builder);
   emitNormalReturn(b, value, emitEndFunc);

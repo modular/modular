@@ -1421,7 +1421,7 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     if (!resultType)
       resultType = shared.getTypeCheckErrorType();
   } else {
-    // If the result type wasn't specified, we default to either "None".
+    // If the result type wasn't specified, we default to "None".
     resultType = shared.getNoneType();
   }
 
@@ -1559,8 +1559,9 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
     rp = TypeConvention::MemoryOnly;
 
   // If the result has a name binding, then always return it in-memory.
-  // FIXME: Return stuff by register.  This causes problems with traits
-  if (resultArg.name)
+  // FIXME: Return initializers by register too, this is just phased in to
+  // reduce churn.
+  if (resultArg.name && fnInfo.isInitializer())
     rp = TypeConvention::MemoryOnly;
 
   // If it is memory-only, pass it indirectly as the last argument to the

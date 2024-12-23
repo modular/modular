@@ -347,12 +347,18 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
     a + b
 
 # CHECK-LABEL: lit.func @"testContextSensitiveKeyword
-# CHECK-SAME: (%out: !Int, ?, %x: !lit.ref<!Int, mut *"x`"> byref_result)
+# CHECK-SAME: (%out: !Int) -> !Int
 fn testContextSensitiveKeyword(out x: Int, out: Int):
+    # Check that we handle the result slot correctly.
+
+    # CHECK-NEXT: %x = lit.var.decl "x"
+    # CHECK-NEXT: lit.ref.store %out, %x
+    # CHECK-NEXT: %0 = lit.load.consume %x
+    # CHECK-NEXT: lit.return %0 
+
     # out is an argument specifier, but that's a context sensitive keyword.
     # The identifier can be used like normal as well.
     x = out
-
 
 ##===----------------------------------------------------------------------===##
 # Conventions
