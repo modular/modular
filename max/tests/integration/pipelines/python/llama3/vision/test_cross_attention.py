@@ -103,6 +103,7 @@ class CrossAttentionModel:
         self,
         hidden_states: TensorValue,
         hidden_input_row_offsets: TensorValue,
+        hidden_max_seq_len: TensorValue,
         cross_attention_states: TensorValue,
         cross_input_row_offsets: TensorValue,
         *fetch_args: TensorValue,
@@ -112,6 +113,7 @@ class CrossAttentionModel:
         return self.cross_attention(
             hidden_states,
             hidden_input_row_offsets,
+            hidden_max_seq_len,
             cross_attention_states,
             cross_input_row_offsets,
             kv_collection,
@@ -119,14 +121,14 @@ class CrossAttentionModel:
 
 
 @pytest.mark.parametrize(
-    "seq_lens",
+    "hidden_seq_lens",
     [
         [10, 4],
         [1, 2],
     ],
 )
 def test_cross_attention(
-    session: InferenceSession, seq_lens: list[int]
+    session: InferenceSession, hidden_seq_lens: list[int]
 ) -> None:
     # Globally disable saving activations for backprop.
     torch.set_grad_enabled(False)
@@ -134,6 +136,7 @@ def test_cross_attention(
     num_tiles = 4
     # image_dim**2 // patch_dim**2 + 1 (cls token)
     num_vision_tokens = 1025
+    cross_seq_len = num_tiles * num_vision_tokens
     config = MllamaTextConfig(
         hidden_size=4096,
         num_attention_heads=32,
@@ -149,18 +152,18 @@ def test_cross_attention(
     # Set up MAX graph attention layer.
     n_heads = config.num_attention_heads
     head_dim = config.hidden_size // n_heads
-    batch_size = len(seq_lens)
+    batch_size = len(hidden_seq_lens)
 
     dtype = DType.float32
     hidden_states_type = TensorType(
         dtype, ["total_seq_len", config.hidden_size]
     )
     cross_attention_states_type = TensorType(
-        dtype,
-        shape=[batch_size * num_tiles * num_vision_tokens, config.hidden_size],
+        dtype, shape=[batch_size * cross_seq_len, config.hidden_size]
     )
 
     input_row_offsets_type = TensorType(DType.uint32, [batch_size + 1])
+    hidden_max_seq_len_type = TensorType(DType.uint32, [1])
 
     kv_params = KVCacheParams(
         dtype=dtype,
@@ -186,6 +189,7 @@ def test_cross_attention(
             # NOTE: 2 input row offsets: for hidden and cross attention states.
             hidden_states_type,
             input_row_offsets_type,
+            hidden_max_seq_len_type,
             cross_attention_states_type,
             input_row_offsets_type,
             *kv_manager.input_symbols()[0],
@@ -208,13 +212,15 @@ def test_cross_attention(
     # Phase 3: execution.
 
     seq_ids = kv_manager.claim(n=batch_size)
+    # Use cross states sequence length when fetching from the KV manager since
+    # KV are cross states.
     seq_ids_and_prompts = {
-        s: np.array([FAKE_TOKEN] * seq_lens[i]) for i, s in enumerate(seq_ids)
+        s: np.array([FAKE_TOKEN] * cross_seq_len) for i, s in enumerate(seq_ids)
     }
     kv_cache_inputs = kv_manager.fetch(seq_ids_and_prompts)[0]
 
     # Initialize model inputs.
-    total_seq_len = sum(seq_lens)
+    total_seq_len = sum(hidden_seq_lens)
     hidden_states = torch.randn(
         [total_seq_len, config.hidden_size], dtype=torch_dtype
     )
@@ -222,16 +228,18 @@ def test_cross_attention(
         cross_attention_states_type.shape.static_dims, dtype=torch_dtype
     )
     hidden_input_row_offsets = torch.tensor(
-        [0, *np.cumsum(seq_lens)], dtype=torch.uint32
+        [0, *np.cumsum(hidden_seq_lens)], dtype=torch.uint32
     )
     cross_input_row_offsets = torch.tensor(
         [i * num_tiles * num_vision_tokens for i in range(batch_size + 1)],
         dtype=torch.uint32,
     )
+    hidden_max_seq_len = np.array([max(hidden_seq_lens)], dtype=np.uint32)
 
     predicted = cross_attn_model(
         hidden_states,
         hidden_input_row_offsets,
+        hidden_max_seq_len,
         cross_attention_states,
         cross_input_row_offsets,
         *kv_cache_inputs,
@@ -242,7 +250,7 @@ def test_cross_attention(
     # Create padded inputs since the torch model doesn't support ragged
     # tensors.
     hidden_states_padded = torch.zeros(
-        size=[batch_size, max(seq_lens), config.hidden_size],
+        size=[batch_size, max(hidden_seq_lens), config.hidden_size],
         dtype=torch_dtype,
     )
     # Convert to int since torch can't subtract uint32.
@@ -255,7 +263,8 @@ def test_cross_attention(
         ]
 
     attention_mask = torch.ones(
-        [1, 1, max(seq_lens), num_tiles * num_vision_tokens], dtype=torch.bool
+        [1, 1, max(hidden_seq_lens), num_tiles * num_vision_tokens],
+        dtype=torch.bool,
     )
     expected = (
         torch_cross_attn(
