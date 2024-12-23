@@ -125,5 +125,8 @@ what we publish.
 - [Issue #3796](https://github.com/modularml/mojo/issues/3796) - Compiler crash
   handling for-else statement.
 
+- [Issue #3540](https://github.com/modularml/mojo/issues/3540) - Using named
+  output slot breaks trait conformance
+
 - The Mojo Language Server doesn't crash anymore on empty **init**.mojo files.
   [Issue #3826](https://github.com/modularml/mojo/issues/3826).
