@@ -19,6 +19,7 @@ from collections import List, Set
 
 from utils._select import _select_register_value
 from utils._visualizers import lldb_formatter_wrapping_type
+from hashlib._hasher import _Hasher
 
 # ===----------------------------------------------------------------------=== #
 #  Boolable
@@ -504,6 +505,17 @@ struct Bool(
             0 for -False and -1 for -True.
         """
         return __mlir_op.`index.casts`[_type = __mlir_type.index](self.value)
+
+    fn __hash__[H: _Hasher](self, mut hasher: H):
+        """Updates hasher with the underlying bytes.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        hasher._update_with_simd(Scalar[DType.bool](self))
 
 
 # ===----------------------------------------------------------------------=== #

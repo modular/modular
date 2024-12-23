@@ -28,6 +28,7 @@ from builtin.io import _get_dtype_printf_format, _snprintf
 
 from . import unroll
 from .static_tuple import StaticTuple
+from hashlib._hasher import _Hasher
 
 # ===-----------------------------------------------------------------------===#
 # Utilities
@@ -827,6 +828,20 @@ struct IndexList[
         return rebind[__type_of(result)](
             self.cast[_type_of_width[element_bitwidth, unsigned]()]()
         )
+
+    fn __hash__[H: _Hasher](self, mut hasher: H):
+        """Updates hasher with the underlying bytes.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+
+        @parameter
+        for i in range(size):
+            hasher.update(self.data[i])
 
 
 # ===-----------------------------------------------------------------------===#
