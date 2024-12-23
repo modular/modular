@@ -559,3 +559,14 @@ def test_view() -> None:
     # Check that shape deduction fails if the last axis is the wrong size.
     with pytest.raises(ValueError):
         _ = tensor8.view(DType.int64)
+
+
+def test_from_dlpack_noncontiguous() -> None:
+    array = np.arange(4).reshape(2, 2).transpose(1, 0)
+    assert not array.flags.c_contiguous
+
+    with pytest.raises(
+        ValueError,
+        match=r"from_dlpack only accepts contiguous arrays. First call np.ascontiguousarray",
+    ):
+        tensor = Tensor.from_dlpack(array)
