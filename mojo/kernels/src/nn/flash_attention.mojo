@@ -537,6 +537,7 @@ struct _FlashAttention[
         Scalar[type]
     ],
     q_length_fn: fn (batch: Int) capturing -> Int,
+    kv_length_fn: fn (batch: Int) capturing -> Int,
     kv_cache_length_fn: fn (batch: Int) capturing -> Int,
     padded_output_shape: DimList,
     *,
@@ -635,6 +636,7 @@ struct _FlashAttention[
         num_heads: Int,
         depth_dim: Int,
         num_kv_heads: Int,
+        # Max sequence length of query states.
         max_seq_len: Int,
         scale: Float32,
     ):
@@ -707,9 +709,9 @@ struct _FlashAttention[
                 var kv_head = head // kv_group_count
                 var kv_cache_len = kv_cache_length_fn(batch)
                 var seq_len = q_length_fn(batch)
-                var kv_seq_len = kv_cache_len + seq_len
+                var kv_seq_len = kv_cache_len + kv_length_fn(batch)
 
-                # exit early if there's no more work to do for this batch
+                # Exit early if there's no more work to do for this batch.
                 if m >= seq_len:
                     continue
 
@@ -938,6 +940,10 @@ fn _flash_attention[
         mask_fn,
         mask_rank,
         output_ptr_fn,
+        q_length_fn,
+        # Use the `q_length_fn` also for the KV length for now.
+        # Note that this is only correct for self attention and is broken for
+        # cross attention, which has different KV lengths.
         q_length_fn,
         kv_cache_length_fn,
         output.shape,
@@ -1175,9 +1181,11 @@ fn _flash_attention_kv_cache[
         input_q_ptr_fn,
         output_ptr_fn,
         q_length_fn,
-        mask_fn,
-        mask_rank,
-        output_shape,
+        # NOTE: kv_length_fn = q_length_fn is only correct for self attention.
+        kv_length_fn=q_length_fn,
+        mask_fn=mask_fn,
+        mask_rank=mask_rank,
+        output_shape=output_shape,
     ](k, v, num_batches, num_heads, max_seq_len, scale)
 
 
@@ -1188,6 +1196,7 @@ fn _flash_attention_kv_cache[
     input_q_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[type]],
     output_ptr_fn: fn (IndexList[4]) capturing -> UnsafePointer[Scalar[type]],
     q_length_fn: fn (batch: Int) capturing -> Int,
+    kv_length_fn: fn (batch: Int) capturing -> Int,
     mask_fn: fn[simd_width: Int, mask_rank: Int] (
         idx: IndexList[mask_rank],
         score_vec: SIMD[type, simd_width],
@@ -1247,6 +1256,7 @@ fn _flash_attention_kv_cache[
         mask_rank,
         output_ptr_fn,
         q_length_fn,
+        kv_length_fn,
         kv_cache_length_fn,
         output_shape,
         transpose_k=True,
@@ -1314,7 +1324,8 @@ fn flash_attention_kv_cache[
     mask_t: MHAMask, //,
 ](
     q: NDBuffer[type, 3, *_],
-    input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    q_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
+    kv_input_row_offsets: NDBuffer[DType.uint32, 1, *_],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
@@ -1341,14 +1352,21 @@ fn flash_attention_kv_cache[
     @always_inline
     @parameter
     fn q_length_fn(batch: Int) -> Int:
-        return int(input_row_offsets[batch + 1] - input_row_offsets[batch])
+        return int(q_input_row_offsets[batch + 1] - q_input_row_offsets[batch])
+
+    @always_inline
+    @parameter
+    fn kv_length_fn(batch: Int) -> Int:
+        return int(
+            kv_input_row_offsets[batch + 1] - kv_input_row_offsets[batch]
+        )
 
     @always_inline
     @parameter
     fn input_q_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
         var bs = idx[0]
         var tok_idx = idx[1]
-        var q_start = int(input_row_offsets[bs]) + tok_idx
+        var q_start = int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         return q._offset(flat_idx)
 
@@ -1357,12 +1375,12 @@ fn flash_attention_kv_cache[
     fn output_ptr_fn(idx: IndexList[4]) -> UnsafePointer[Scalar[type]]:
         var bs = idx[0]
         var tok_idx = idx[1]
-        var q_start = int(input_row_offsets[bs]) + tok_idx
+        var q_start = int(q_input_row_offsets[bs]) + tok_idx
         var flat_idx = IndexList[3](q_start, idx[2], idx[3])
         return output._offset(flat_idx)
 
     alias mask_rank = 4
-    var num_batches = input_row_offsets.dim[0]() - 1
+    var num_batches = q_input_row_offsets.dim[0]() - 1
     var max_seq_len = -1
     for bs in range(num_batches):
         max_seq_len = max(max_seq_len, q_length_fn(bs))
@@ -1375,6 +1393,7 @@ fn flash_attention_kv_cache[
         input_q_ptr_fn,
         output_ptr_fn,
         q_length_fn,
+        kv_length_fn,
         mask_fn,
         mask_rank,
         output_shape,

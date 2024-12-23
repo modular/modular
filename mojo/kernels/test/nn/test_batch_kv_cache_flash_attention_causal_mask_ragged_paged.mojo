@@ -228,6 +228,8 @@ def execute_ragged_flash_attention[
     flash_attention_kv_cache(
         q_ragged.tensor,
         input_row_offsets.tensor,
+        # Assume self attention: Q and KV sequence lengths are equal.
+        input_row_offsets.tensor,
         k_cache_continuous,
         v_cache_continuous,
         CausalMask(),
@@ -239,6 +241,8 @@ def execute_ragged_flash_attention[
     # paged execution
     flash_attention_kv_cache(
         q_ragged.tensor,
+        input_row_offsets.tensor,
+        # Assume self attention: Q and KV sequence lengths are equal.
         input_row_offsets.tensor,
         k_cache_paged,
         v_cache_paged,
