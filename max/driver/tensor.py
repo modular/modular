@@ -259,6 +259,13 @@ class Tensor(DLPackArray):
             # always delegate to from_dlpack.
             return MemMapTensor._from_numpy_memmap(arr)
         if isinstance(arr, np.ndarray):
+            if not arr.flags.c_contiguous:
+                msg = (
+                    "driver tensor's from_dlpack only accepts contiguous arrays. "
+                    "First call np.ascontiguousarray(arr)"
+                )
+                raise ValueError(msg)
+
             # TODO(MSDK-976): Older version of numpy don't support exporting
             # read-only arrays, so we copy if we can, and leave a hint if not.
             if copy is None and not arr.flags.writeable:
