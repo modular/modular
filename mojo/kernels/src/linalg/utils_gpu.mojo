@@ -24,6 +24,7 @@ from layout.tensor_core import (
 )
 
 from utils.index import Index, IndexList
+from hashlib._hasher import _Hasher
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
@@ -183,11 +184,34 @@ struct MatmulConfig[
         # transpose B
         writer.write("T" if transpose_b else "N")
 
+    fn __repr__(self) -> String:
+        return String.write(self)
+
+    fn __hash__[H: _Hasher](self, mut hasher: H):
+        """Updates hasher with the underlying bytes.
+
+        Parameters:
+            H: The hasher type.
+
+        Args:
+            hasher: The hasher instance.
+        """
+        hasher.update(a_type)
+        hasher.update(b_type)
+        hasher.update(c_type)
+        hasher.update(transpose_b)
+        hasher.update(self.block_tile_shape)
+        hasher.update(self.warp_tile_shape)
+        hasher.update(self.num_pipeline_stages)
+        hasher.update(self.num_k_partitions)
+        hasher.update(self.k_group_size)
+        hasher.update(self.split_k_reduction_scheme)
+
 
 # Helper for choosing the base of BK based on type.
 # Actual BK should be multiple of BK_base.
 fn _bk_base[type: DType]() -> Int:
-    return 32 if type in (DType.float16, DType.bfloat16) else 16
+    return 32 if type.is_half_float() else 16
 
 
 @always_inline
