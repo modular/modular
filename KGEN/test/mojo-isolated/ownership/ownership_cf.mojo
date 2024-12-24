@@ -145,6 +145,14 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     try:
         # The error value isn't used on the except branch, so it's copy from err
         # is completely optimized out.
+
+        # TODO: Eliminate this entirely by handling lit.ref.store!
+        # CHECK-NEXT: %11 = lit.call {{.*}}@Error::@"__copyinit__(::Error)"[imm *"err`"](%err)
+        # CHECK-NEXT: lit.var.lifetime.start %__try_error__
+        # CHECK-NEXT: lit.ref.store %11, %__try_error__
+        # CHECK-NEXT: %12 = lit.call {{.*}}@Error::@"__del__{{.*}}(%__try_error__)
+        # CHECK-NEXT: lit.var.lifetime.end %__try_error__
+
         # CHECK-NEXT: lit.try.raise
         raise err
     # CHECK: } except {

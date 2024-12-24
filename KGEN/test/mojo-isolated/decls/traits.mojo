@@ -270,7 +270,7 @@ trait TraitForReg:
 @register_passable
 struct RegTraitType(TraitForReg):
     # CHECK-LABEL: lit.func @"__init__
-    # CHECK-SAME: %x: index, ?, %self: !lit.ref<!RegTraitType, mut {{.*}}> byref_result)
+    # CHECK-SAME: (%x: index) -> !RegTraitType
     @implicit
     fn __init__(out self, x: int):
         pass

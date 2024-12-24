@@ -1795,6 +1795,7 @@ private:
     ConvertedToMove, // Instruction is still now a moveinit
   };
   CopyInitSuccess elideCopyInitMem(LIT::CallOp copyInitCall, Value copyInitSrc);
+  void elideCopyInitReg(LIT::CallOp copyInitCall, Value copyInitSrc);
 };
 } // end anonymous namespace
 
@@ -2026,6 +2027,20 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
 ///    NOTADDED: kgen.call __del__(%src)
 ///    kgen.call user(%src)      <<= Use %src instead.
 ///
+/// Similar, for a register form, we want to transform:
+///    %tmp = kgen.call __copyinit__(%src)
+///    kgen.call __del__(%src)   <<= Thinking about inserting this.
+///    ...
+///    lit.ref.store %tmp, %copy
+///    ...
+///    kgen.call user(%copy)      <<= Consuming call.
+///
+/// Into:
+///    %tmp = lit.ref.load %src
+///    ...
+///    lit.ref.store %tmp, %copy
+///    ...
+///    kgen.call user(%copy)      <<= using call.
 DestructorInserter::DtorEmissionResult
 DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   auto copyInitCall = dyn_cast_if_present<LIT::CallOp>(opWithUse);
@@ -2042,43 +2057,104 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
   // Check to see if the copy is immediately destroyed.  If so, we can elide
   // both the copy and the destroy.  This could also be the last use of %src as
   // well, but it will just get a destructor call like normal if so.
-  Value copyDest = copyInitCall.getOperand(1);
+
+  // Handle the register form: `__copyinit__(src) -> T`.  Note that the src is
+  // passed in memory.
+  Value copySrcMem = RefImmutOp::strip(copyInitCall.getOperand(0));
+  if (copyInitCall.getNumOperands() == 1) {
+    assert(copyInitCall.getCalleeType().getArgConvention(0) ==
+               ArgConvention::ReadMem &&
+           "non-trivial register types passed in memory");
+    ValueToDestroy *deadSrc = nullptr;
+    Value copyDst = copyInitCall.getResult(0);
+    for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
+      if (!elt.fieldsToDestroy.empty())
+        continue; // Can only optimize full object destructions.
+
+      // Check to see if the destination is unused.  If so, we can just drop the
+      // __copyinit__ entirely.
+      if (elt.value == copyDst && !elt.valueRef.isIndirect) {
+        Value immSrc = copyInitCall.getOperand(0); // src as immutable reference
+        copyInitCall->dropAllReferences();
+        valueSet.eraseValueInfo(copyDst);
+
+        // If the input was a lit.ref.immut that is now dead, clean it up.
+        if (immSrc.use_empty()) {
+          if (auto immut = immSrc.getDefiningOp<RefImmutOp>())
+            immut->erase();
+        }
+
+        // We're done with this destructor, so remove it from the list.
+        valuesToDestroy.erase(valuesToDestroy.begin() + i);
+        // Caller will remove the copyinit call.
+        return DtorEmissionResult::RemoveOpWithUse;
+      }
+
+      // Check to see the copy is the last use of the src value.  If so we can
+      // always use the source and avoid a copy.
+      if (elt.value == copySrcMem && elt.valueRef.isIndirect)
+        deadSrc = &elt;
+    }
+
+    // If the source is found to be dead, eliminate it.
+    if (deadSrc) {
+      elideCopyInitReg(copyInitCall, copySrcMem);
+
+      // We're done with this destructor, so remove it from the list.
+      valuesToDestroy.erase(deadSrc);
+      // Caller will remove the copyinit call.
+      return DtorEmissionResult::RemoveOpWithUse;
+    }
+
+    return DtorEmissionResult::KeepOp;
+  }
+
+  // Otherwise we have the memory form of `__copyinit__(src, dest)`.
+  Value copyDstMem = copyInitCall.getOperand(1);
+
+  // Check to see if the destination is unused.  If so, we can just drop the
+  // __copyinit__ entirely.  We need to do this before checking to see if the
+  // source is dead.
+  ValueToDestroy *deadSrc = nullptr;
   for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
-    if (elt.value == copyDest && elt.valueRef.isIndirect &&
+    if (!elt.fieldsToDestroy.empty())
+      continue; // Can only optimize full object destructions.
+
+    if (elt.value == copyDstMem && elt.valueRef.isIndirect &&
         elt.fieldsToDestroy.empty()) {
       copyInitCall->dropAllReferences();
-      emitLifetimeEndAfter(copyDest, copyInitCall);
+      emitLifetimeEndAfter(copyDstMem, copyInitCall);
 
       // We're done with this destructor, so remove it from the list.
       valuesToDestroy.erase(valuesToDestroy.begin() + i);
       // Caller will remove the copyinit call.
       return DtorEmissionResult::RemoveOpWithUse;
     }
+
+    // Check to see the copy is the last use of the src value, if so, try to
+    // use the src directly instead of copying it.
+    if (elt.value == copySrcMem && elt.valueRef.isIndirect)
+      deadSrc = &elt;
   }
 
-  // Get the 'existing' value.
-  Value copyInitSrc = RefImmutOp::strip(copyInitCall.getOperand(0));
-
-  // Check to see if we have this value to destroy.
-  for (auto [i, elt] : llvm::enumerate(valuesToDestroy)) {
-    if (elt.value == copyInitSrc && elt.valueRef.isIndirect &&
-        elt.fieldsToDestroy.empty()) {
-      // Ok, yep we can do this.
-      DtorEmissionResult result = DtorEmissionResult::KeepOp;
-      switch (elideCopyInitMem(copyInitCall, copyInitSrc)) {
-      case CopyInitSuccess::Failed:
-        continue; // Couldn't elide anything.
-      case CopyInitSuccess::Eliminated:
-        result = DtorEmissionResult::RemoveOpWithUse;
-        break;
-      case CopyInitSuccess::ConvertedToMove:
-        break; // Remove the dtor, but keep the move.
-      }
-
-      // We're done with this destructor, so remove it from the list.
-      valuesToDestroy.erase(valuesToDestroy.begin() + i);
-      return result;
+  // If the entire copy isn't dead, but the source is dead, then we can remove
+  // it.
+  if (deadSrc) {
+    DtorEmissionResult result = DtorEmissionResult::KeepOp;
+    switch (elideCopyInitMem(copyInitCall, copySrcMem)) {
+    case CopyInitSuccess::Failed:
+      return DtorEmissionResult::KeepOp;
+      // Couldn't elide anything.
+    case CopyInitSuccess::Eliminated:
+      result = DtorEmissionResult::RemoveOpWithUse;
+      break;
+    case CopyInitSuccess::ConvertedToMove:
+      break; // Remove the dtor, but keep the move.
     }
+
+    // We're done with this destructor, so remove it from the list.
+    valuesToDestroy.erase(deadSrc); // valuesToDestroy.begin() + i);
+    return result;
   }
 
   return DtorEmissionResult::KeepOp;
@@ -2187,6 +2263,8 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
     }
   }
 
+  // There have to be usersOfTmp: we check to see if the copy is dead before
+  // considering this optimization, so the copy itself can't also be dead.
   assert(!userOfTmp.empty() && "tmp should at least be destroyed");
 
   // Okay, we only see users of the 'tmp' decl that we can understand.  Do a
@@ -2217,6 +2295,42 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
     // Otherwise, keep looking through the block until we see all the users.
   }
   return true;
+}
+
+/// This function handles the case when we see a destructor destroying the src
+/// value for a copyinit call.  In these cases, we can just use the source value
+/// directly and drop the copy.
+void DestructorInserter::elideCopyInitReg(LIT::CallOp copyInitCall,
+                                          Value copySrcMem) {
+  Value copyDst = copyInitCall.getResult(0);
+
+  // Insert a consuming load after the copyinit (so our dtor walk doesn't
+  // see it) that will replace the copy.
+  ImplicitLocOpBuilder builder(copyInitCall.getLoc(),
+                               &*std::next(Block::iterator(copyInitCall)));
+  // TODO: we could get more aggressive and reuse the memory temp when the
+  // result is insta-stored if there is some reason to do so.
+  auto newResult = builder.create<LoadConsumeOp>(copySrcMem);
+  emitLifetimeEndAfter(copySrcMem, newResult);
+
+  copyDst.replaceAllUsesWith(newResult);
+  Value immSrc = copyInitCall.getOperand(0); // src as immutable reference
+  copyInitCall->dropAllReferences();
+
+  // If the input was a lit.ref.immut that is now dead, clean it up.
+  if (immSrc.use_empty()) {
+    if (auto immut = immSrc.getDefiningOp<RefImmutOp>())
+      immut->erase();
+  }
+
+  // The value returned by the copyinit is an owned value, update the
+  // ValueSet to know that the LoadConsume is the new value for the
+  // ValueID.
+  ValueRef ref = valueSet.getDirectValueRef(copyDst, /*isDeref*/ false);
+  assert(ref.valueId != 0 && "expected to find the copy value");
+  ValueInfo &info = valueSet.getValueInfo(ref.valueId);
+  assert(info.value == copyDst);
+  info.value = newResult;
 }
 
 /// We need to destroy the source for the specified call to a memory-only

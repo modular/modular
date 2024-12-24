@@ -62,8 +62,8 @@ CValue DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
   // Convert to an RValue to fully evaluate it.
   auto rvalue = emitter.emitRValue(value, EC_Assignment, elementType);
-  // Promote to a BValue to return.
-  return emitter.emitBValue({rvalue, value.expr}, EC_Assignment);
+  // Promote to a CValue to return.
+  return emitter.emitCValue({rvalue, value.expr}, EC_Assignment);
 }
 
 //===----------------------------------------------------------------------===//

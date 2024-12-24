@@ -77,8 +77,9 @@ fn test_owned_trait():
 
     # Create the VariadicPack
     # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
+    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
-    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]], [[ISOWNED]], [[PACKTMP]])
+    # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[PACKTMP]]
 
     # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[PACKTMP]])
     takeOwnedAnyTypePack(value1^, value2)
@@ -89,8 +90,10 @@ fn test_owned_trait():
 
     # Argument expressions emitted first
     # CHECK-NEXT: lit.ownership.use %value3
+    # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}SomeReg::@"__init__{{.*}}()
     # CHECK-NEXT: [[ANONSLOT:%.*]] = lit.var.decl "anonymous
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANONSLOT]])
+    # CHECK-NEXT: lit.ref.store [[RES]], [[ANONSLOT]]
+
     # Coerce to common origin
     # CHECK-NEXT: [[V3C:%.*]] = kgen.rebind %value3
     # CHECK-NEXT: [[V4C:%.*]] = kgen.rebind [[ANONSLOT]]
@@ -98,8 +101,9 @@ fn test_owned_trait():
 
     # Create the VariadicPack
     # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
+    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
-    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]], [[ISOWNED]], [[PACKTMP]])
+    # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[PACKTMP]]
     # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[PACKTMP]])
     takeOwnedAnyTypePack(value3^, SomeReg())
 
@@ -128,8 +132,9 @@ fn test_inout():
 
     # Create the VariadicPack
     # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
+    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.var.decl
-    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]], [[ISOWNED]], [[VARIADICPACK]])
+    # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[VARIADICPACK]]
 
     # CHECK-NEXT: [[PACKIMM:%.*]] = lit.ref.immut [[VARIADICPACK]]
     # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[PACKIMM]])
@@ -144,8 +149,9 @@ fn test_inout():
 
     # Create the VariadicPack
     # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
+    # CHECK-NEXT: [[PACKVAL:%.*]] = lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.var.decl
-    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACK]], [[ISOWNED]], [[VARIADICPACK]])
+    # CHECK-NEXT: lit.ref.store [[PACKVAL]], [[VARIADICPACK]]
     # CHECK-NEXT: [[PACKIMM:%.*]] = lit.ref.immut [[VARIADICPACK]]
 
     # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[PACKIMM]])

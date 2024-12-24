@@ -15,7 +15,8 @@
 
 # CHECK: lit.func @"__init__
 # CHECK: [[GEP:%.*]] = lit.ref.struct.ger %self[param_capture]
-# CHECK: lit.call {{.*}}@__ParameterClosureCaptureList::@"__init__{{.*}}([[GEP]])
+# CHECK: [[RES:%.*]] = lit.call {{.*}}@__ParameterClosureCaptureList::@"__init__{{.*}}()
+# CHECK-NEXT: lit.ref.store [[RES]], [[GEP]]
 
 
 fn func[pf: fn () capturing -> Int](x: Int):

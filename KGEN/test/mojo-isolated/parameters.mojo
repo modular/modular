@@ -172,7 +172,7 @@ struct Pair[dt: DType]:
   var a : SIMD[dt, 42]
   var b : Int
 
-  # CHECK: lit.func @"__init__{{.*}}@parameters::@Pair<:!DType dt>
+  # CHECK: lit.func @"__init__{{.*}}-> !lit.struct<#Pair <:!DType dt>>
   @implicit
   fn __init__(out self, a: SIMD[dt, 42]):
     self.a = a
