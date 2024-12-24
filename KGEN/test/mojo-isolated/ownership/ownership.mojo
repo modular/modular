@@ -1329,8 +1329,8 @@ fn testConds3(cond: __mlir_type.i1, owned a: MemExample, owned b: MemExample,
   # CHECK-NEXT: lit.ref.store [[TMP]], %t2
   var t2 = m^ if cond else n^
 
-  _ = t1
-  _ = t2
+  consume(t1^)
+  consume(t2^)
 
 # CHECK-LABEL: lit.func @"my_min1
 # CHECK-SAME: !lit.ref<!Int, mut=and(*"x_is_mut`", *"y_is_mut`2"), {(mutcast mut=*"x_is_mut`", *"x_is_origin`1"), (mutcast mut=*"y_is_mut`2", *"y_is_origin`3")}>
