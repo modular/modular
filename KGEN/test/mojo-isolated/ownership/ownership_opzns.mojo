@@ -231,8 +231,8 @@ fn optimizeCopyElision():
     var a = RegExample()
 
     # We need one copy of 'a' here, not two + dtor.
-    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl
     # CHECK-NEXT: [[A:%.*]] = lit.ref.immut %a
+    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl
     # CHECK-NEXT: lifetime.start [[ANON]]
     # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[A]], [[ANON]])
 
