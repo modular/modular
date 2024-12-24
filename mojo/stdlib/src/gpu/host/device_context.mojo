@@ -25,10 +25,6 @@ from utils import StringRef, Variant
 
 from .info import DEFAULT_GPU
 
-alias DeviceFunction = DeviceFunctionV2
-alias DeviceBuffer = DeviceBufferV2
-alias DeviceContext = DeviceContextV2
-
 
 # Create empty structs to ensure type checking when using the C++ handles.
 struct _DeviceContextCpp:
@@ -110,9 +106,9 @@ struct DeviceSyncMode:
     var _is_sync: Bool
 
 
-struct DeviceBufferV2[type: DType](Sized):
+struct DeviceBuffer[type: DType](Sized):
     # _device_ptr must be the first word in the struct to enable passing of
-    # DeviceBufferV2 to kernels. The first word is passed to the kernel and
+    # DeviceBuffer to kernels. The first word is passed to the kernel and
     # it needs to contain the value registered with the driver.
     var _device_ptr: UnsafePointer[Scalar[type]]
     var _handle: _DeviceBufferPtr
@@ -120,7 +116,7 @@ struct DeviceBufferV2[type: DType](Sized):
     @always_inline
     fn __init__(
         mut self,
-        ctx: DeviceContextV2,
+        ctx: DeviceContext,
         size: Int,
         sync_mode: DeviceSyncMode,
     ) raises:
@@ -183,7 +179,7 @@ struct DeviceBufferV2[type: DType](Sized):
 
     fn __init__(
         mut self,
-        ctx: DeviceContextV2,
+        ctx: DeviceContext,
         ptr: UnsafePointer[Scalar[type]],
         size: Int,
         *,
@@ -254,7 +250,7 @@ struct DeviceBufferV2[type: DType](Sized):
     @always_inline
     fn create_sub_buffer[
         view_type: DType
-    ](self, offset: Int, size: Int) raises -> DeviceBufferV2[view_type]:
+    ](self, offset: Int, size: Int) raises -> DeviceBuffer[view_type]:
         alias elem_size = sizeof[view_type]()
         var new_handle = _DeviceBufferPtr()
         var new_device_ptr = UnsafePointer[Scalar[view_type]]()
@@ -280,7 +276,7 @@ struct DeviceBufferV2[type: DType](Sized):
                 elem_size,
             )
         )
-        return DeviceBufferV2[view_type](new_handle, new_device_ptr)
+        return DeviceBuffer[view_type](new_handle, new_device_ptr)
 
     fn take_ptr(owned self) -> UnsafePointer[Scalar[type]]:
         # void AsyncRT_DeviceBuffer_release_ptr(const DeviceBuffer *buffer)
@@ -299,15 +295,15 @@ struct DeviceBufferV2[type: DType](Sized):
         if name == "ptr":
             return self.get_ptr()
 
-        abort("Unsupported attr for DeviceBufferV2: " + name)
+        abort("Unsupported attr for DeviceBuffer: " + name)
         return UnsafePointer[Scalar[type]]()
 
 
-struct DeviceStreamV2:
+struct DeviceStream:
     var _handle: _DeviceStreamPtr
 
     @always_inline
-    fn __init__(out self, ctx: DeviceContextV2) raises:
+    fn __init__(out self, ctx: DeviceContext) raises:
         var result = _DeviceStreamPtr()
         # const char *AsyncRT_DeviceContext_stream(const DeviceStream **result, const DeviceContext *ctx)
         _checked(
@@ -357,7 +353,7 @@ fn _is_amd_gpu[target: __mlir_type.`!kgen.target`]() -> Bool:
     return is_triple["amdgcn-amd-amdhsa", target]()
 
 
-struct DeviceFunctionV2[
+struct DeviceFunction[
     func_type: AnyTrivialRegType, //,
     func: func_type,
     *,
@@ -399,7 +395,7 @@ struct DeviceFunctionV2[
     @always_inline
     fn __init__(
         mut self,
-        ctx: DeviceContextV2,
+        ctx: DeviceContext,
         *,
         max_registers: OptionalReg[Int] = None,
         threads_per_block: OptionalReg[Int] = None,
@@ -419,15 +415,13 @@ struct DeviceFunctionV2[
                 max_dynamic_shared_size_bytes = func_attribute.value().value
             else:
                 print(
-                    "DeviceFunctionV2.__init__: func_attribute = ["
+                    "DeviceFunction.__init__: func_attribute = ["
                     + str(func_attribute.value().attribute.code)
                     + ", "
                     + str(func_attribute.value().value)
                     + "]"
                 )
-                not_implemented_yet[
-                    "DeviceFunctionV2.__init__: func_attribute"
-                ]()
+                not_implemented_yet["DeviceFunction.__init__: func_attribute"]()
 
         # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
@@ -603,7 +597,7 @@ struct DeviceFunctionV2[
         *Ts: AnyType
     ](
         self,
-        ctx: DeviceContextV2,
+        ctx: DeviceContext,
         args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
@@ -704,7 +698,7 @@ struct DeviceFunctionV2[
 
 
 @register_passable
-struct DeviceContextV2:
+struct DeviceContext:
     """DeviceContext backed by a C++ implementation."""
 
     alias device_info = DEFAULT_GPU
@@ -846,15 +840,15 @@ struct DeviceContextV2:
 
     fn enqueue_create_buffer[
         type: DType
-    ](self, size: Int) raises -> DeviceBufferV2[type]:
+    ](self, size: Int) raises -> DeviceBuffer[type]:
         """Enqueues a buffer creation using the DeviceBuffer constructor."""
-        return DeviceBufferV2[type](self, size, Self.ASYNC)
+        return DeviceBuffer[type](self, size, Self.ASYNC)
 
     fn create_buffer_sync[
         type: DType
-    ](self, size: Int) raises -> DeviceBufferV2[type]:
+    ](self, size: Int) raises -> DeviceBuffer[type]:
         """Creates a buffer synchronously using the DeviceBuffer constructor."""
-        var result = DeviceBufferV2[type](self, size, Self.SYNC)
+        var result = DeviceBuffer[type](self, size, Self.SYNC)
         self.synchronize()
         return result
 
@@ -877,7 +871,7 @@ struct DeviceContextV2:
         cache_mode: OptionalReg[CacheMode] = None,
         cache_config: OptionalReg[CacheConfig] = None,
         func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: DeviceFunctionV2[
+        out result: DeviceFunction[
             func,
             target=_target,
             _ptxas_info_verbose=_ptxas_info_verbose,
@@ -913,7 +907,7 @@ struct DeviceContextV2:
         *Ts: AnyType
     ](
         self,
-        f: DeviceFunctionV2,
+        f: DeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -941,7 +935,7 @@ struct DeviceContextV2:
         *Ts: AnyType
     ](
         self,
-        f: DeviceFunctionV2,
+        f: DeviceFunction,
         args: VariadicPack[_, AnyType, *Ts],
         grid_dim: Dim,
         block_dim: Dim,
@@ -1040,7 +1034,7 @@ struct DeviceContextV2:
     @always_inline
     fn enqueue_copy_to_device[
         type: DType
-    ](self, buf: DeviceBufferV2[type], ptr: UnsafePointer[Scalar[type]]) raises:
+    ](self, buf: DeviceBuffer[type], ptr: UnsafePointer[Scalar[type]]) raises:
         # const char * AsyncRT_DeviceContext_HtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
         _checked(
             external_call[
@@ -1059,7 +1053,7 @@ struct DeviceContextV2:
     @always_inline
     fn enqueue_copy_from_device[
         type: DType
-    ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBufferV2[type]) raises:
+    ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBuffer[type]) raises:
         # const char * AsyncRT_DeviceContext_DtoH_async(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1084,13 +1078,13 @@ struct DeviceContextV2:
         src: UnsafePointer[Scalar[type]],
         size: Int,
     ) raises:
-        var src_buf = DeviceBufferV2(self, src, size, owning=False)
+        var src_buf = DeviceBuffer(self, src, size, owning=False)
         self.enqueue_copy_from_device[type](dst, src_buf)
 
     @always_inline
     fn enqueue_copy_device_to_device[
         type: DType
-    ](self, dst: DeviceBufferV2[type], src: DeviceBufferV2[type]) raises:
+    ](self, dst: DeviceBuffer[type], src: DeviceBuffer[type]) raises:
         # const char * AsyncRT_DeviceContext_DtoD_async(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1115,15 +1109,15 @@ struct DeviceContextV2:
         src: UnsafePointer[Scalar[type]],
         size: Int,
     ) raises:
-        # Not directly implemented on DeviceContextV2, wrap in buffers first
-        var dst_buf = DeviceBufferV2(self, dst, size, owning=False)
-        var src_buf = DeviceBufferV2(self, src, size, owning=False)
+        # Not directly implemented on DeviceContext, wrap in buffers first
+        var dst_buf = DeviceBuffer(self, dst, size, owning=False)
+        var src_buf = DeviceBuffer(self, src, size, owning=False)
         self.enqueue_copy_device_to_device[type](dst_buf, src_buf)
 
     @always_inline
     fn copy_to_device_sync[
         type: DType
-    ](self, buf: DeviceBufferV2[type], ptr: UnsafePointer[Scalar[type]]) raises:
+    ](self, buf: DeviceBuffer[type], ptr: UnsafePointer[Scalar[type]]) raises:
         # const char * AsyncRT_DeviceContext_HtoD_sync(const DeviceContext *ctx, const DeviceBuffer *dst, const void *src)
         _checked(
             external_call[
@@ -1142,7 +1136,7 @@ struct DeviceContextV2:
     @always_inline
     fn copy_from_device_sync[
         type: DType
-    ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBufferV2[type]) raises:
+    ](self, ptr: UnsafePointer[Scalar[type]], buf: DeviceBuffer[type]) raises:
         # const char * AsyncRT_DeviceContext_DtoH_sync(const DeviceContext *ctx, void *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1161,7 +1155,7 @@ struct DeviceContextV2:
     @always_inline
     fn copy_device_to_device_sync[
         type: DType
-    ](self, dst: DeviceBufferV2[type], src: DeviceBufferV2[type]) raises:
+    ](self, dst: DeviceBuffer[type], src: DeviceBuffer[type]) raises:
         # const char * AsyncRT_DeviceContext_DtoD_sync(const DeviceContext *ctx, const DeviceBuffer *dst, const DeviceBuffer *src)
         _checked(
             external_call[
@@ -1180,7 +1174,7 @@ struct DeviceContextV2:
     @always_inline
     fn enqueue_memset[
         type: DType
-    ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
+    ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
         alias bitwidth = bitwidthof[type]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
@@ -1216,7 +1210,7 @@ struct DeviceContextV2:
     @always_inline
     fn memset_sync[
         type: DType
-    ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
+    ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
         alias bitwidth = bitwidthof[type]()
         constrained[
             bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
@@ -1251,11 +1245,11 @@ struct DeviceContextV2:
 
     fn memset[
         type: DType
-    ](self, dst: DeviceBufferV2[type], val: Scalar[type]) raises:
+    ](self, dst: DeviceBuffer[type], val: Scalar[type]) raises:
         self.enqueue_memset[type](dst, val)
 
-    fn stream(self) raises -> DeviceStreamV2:
-        return DeviceStreamV2(self)
+    fn stream(self) raises -> DeviceStream:
+        return DeviceStream(self)
 
     @always_inline
     fn synchronize(self) raises:
@@ -1355,7 +1349,7 @@ struct DeviceContextV2:
         return (free, total)
 
     @always_inline
-    fn can_access(self, peer: DeviceContextV2) raises -> Bool:
+    fn can_access(self, peer: DeviceContext) raises -> Bool:
         var result: Bool = False
         # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
         _checked(
@@ -1374,7 +1368,7 @@ struct DeviceContextV2:
         return result
 
     @always_inline
-    fn enable_peer_access(self, peer: DeviceContextV2) raises:
+    fn enable_peer_access(self, peer: DeviceContext) raises:
         # const char *AsyncRT_DeviceContext_enablePeerAccess(const DeviceContext *ctx, const DeviceContext *peer)
         _checked(
             external_call[

@@ -7,7 +7,7 @@
 from sys import external_call
 
 from gpu.host import DeviceContext, DeviceStream
-from gpu.host.device_context_v2 import (
+from gpu.host.device_context import (
     _CharPtr,
     _checked,
     _DeviceBufferPtr,
