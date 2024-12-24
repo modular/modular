@@ -294,8 +294,9 @@ fn chris_origin_example(a: Bool, b: Bool):
         # CHECK: } except {
     # CHECK: } except {
     except:
-        # CHECK: __del__{{.*}}(%x)
-        _ = x
+        # CHECK: lit.call {{.*}}@"use_mut{{.*}}(%x)
+        # CHECK: lit.call {{.*}}__del__{{.*}}(%x)
+        use_mut(x)
     # CHECK: else
     # CHECK-NEXT: lit.try.yield
 

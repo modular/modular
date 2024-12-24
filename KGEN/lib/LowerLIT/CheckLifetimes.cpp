@@ -1750,8 +1750,8 @@ public:
   /// builder.  If opWithUse is specified, then the inserter is allowed to
   /// perform various optimizations, e.g. if the opWithUse is a copyinit.
   ///
-  /// This returns success when the opWithUse is to be deleted by the caller, or
-  /// failure if it should stay in the instruction stream.
+  /// This returns an enum indicating what to do with opWithUse, e.g. if it is
+  /// to be deleted by the caller.
   DtorEmissionResult emitDestructors(ImplicitLocOpBuilder &builder,
                                      Operation *opWithUse);
 
@@ -1809,12 +1809,14 @@ void DestructorInserter::dump() const {
 /// This emits any destructors needed at the location specified by the
 /// builder.  If opWithUse is specified, then the inserter is allowed to
 /// perform various optimizations, e.g. if the opWithUse is a copyinit.
+///
+/// This returns an enum indicating what to do with opWithUse, e.g. if it is
+/// to be deleted by the caller.
 DestructorInserter::DtorEmissionResult
 DestructorInserter::emitDestructors(ImplicitLocOpBuilder &builder,
                                     Operation *opWithUse) {
   // If this is a __copyinit__ call, we can do elision, which may subsume
   // one of our dtors that we need to emit.
-  // TODO: Remove "opsToRemove" entirely, simplifying this code.
   DtorEmissionResult removedOp = optimizeCopyDestroys(opWithUse);
 
   // TODO: There can be dependencies between dtor calls (e.g. an array of
@@ -2055,8 +2057,12 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
     return DtorEmissionResult::KeepOp;
 
   // Check to see if the copy is immediately destroyed.  If so, we can elide
-  // both the copy and the destroy.  This could also be the last use of %src as
-  // well, but it will just get a destructor call like normal if so.
+  // both the copy and the destroy.
+  // NOTE: There is a corner case here to be aware of: the copyinit could be
+  // the last use of dest (if the result of the copy is dead) the last use of
+  // src (what you'd normally think of) as well as the last use of many other
+  // values when the input is a reference with an origin set containing
+  // multiple things.  We prefer to delete the copy entirely if we can.
 
   // Handle the register form: `__copyinit__(src) -> T`.  Note that the src is
   // passed in memory.
@@ -2120,8 +2126,7 @@ DestructorInserter::optimizeCopyDestroys(Operation *opWithUse) {
     if (!elt.fieldsToDestroy.empty())
       continue; // Can only optimize full object destructions.
 
-    if (elt.value == copyDstMem && elt.valueRef.isIndirect &&
-        elt.fieldsToDestroy.empty()) {
+    if (elt.value == copyDstMem && elt.valueRef.isIndirect) {
       copyInitCall->dropAllReferences();
       emitLifetimeEndAfter(copyDstMem, copyInitCall);
 
@@ -2187,8 +2192,7 @@ static bool mightPointTo(Value p1, Value p2) {
 //    kgen.call __copyinit__(%src, %tmp)  <<== Last use of %src
 // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
 //    kgen.call __init__(%src)  <<== Could reinitialize %src before use of %tmp!
-//    use(%tmp)
-//    use(%src)
+//    use(%tmp) use(%src)
 //
 // Doing this right requires non-trivial liveness analysis which should
 // itself be part of a standalone SSA pass post-inlining.  For now we'll
@@ -2245,9 +2249,9 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       if (!callUser)
         return false; // Unknown user.
 
-      // The argument convention for the callee must be consuming or borrowing,
-      // not initializing or anything else.  Allowing borrowing allows us to
-      // enable this pattern:
+      // The argument convention for the callee must be consuming or read, not
+      // initializing or anything else.  Allowing 'read' allows us to enable
+      // this pattern:
 
       //    %tmp = lit.var.decl "anonymous"
       //    kgen.call __copyinit__(%src, %tmp)  <<== Last use of %src
@@ -2742,9 +2746,10 @@ void DestructorInsertion::scanBlock(Block &block) {
     auto insertPt = std::next(Block::iterator(&op));
     ImplicitLocOpBuilder builder(op.getLoc(), op.getBlock(), insertPt);
     if (dtorInserter.emitDestructors(builder, &op) ==
-        DestructorInserter::DtorEmissionResult::RemoveOpWithUse)
-      // If we replaced this operation, remove it.
+        DestructorInserter::DtorEmissionResult::RemoveOpWithUse) {
+      // If we replaced this operation, remove it after our sweep.
       opsToRemove.push_back(&op);
+    }
   }
 
   // If we had any operations to remove, do so now, simplifying iterator
