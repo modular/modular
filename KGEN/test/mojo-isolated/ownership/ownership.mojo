@@ -154,8 +154,8 @@ fn destructors(owned arg0: MemExample):
   # CHECK-NEXT: lit.call {{.*}}@RegExample::@"__init__{{.*}}(%localReg)
   var localReg = RegExample()
 
-  # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous
   # CHECK-NEXT: [[REG:%.*]] = lit.ref.immut %localReg
+  # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous
   # CHECK-NEXT: lifetime.start [[ANON]]
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[REG]], [[ANON]])
   # CHECK-NEXT: [[REG2C:%.*]] = lit.load.consume [[ANON]]
@@ -561,8 +561,8 @@ fn bigreg_test():
   consume(varThing.a^)
 
   # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %varThing[b]
-  # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous
   # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.immut [[BREF]]
+  # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous
   # CHECK-NEXT: lifetime.start [[ANON]]
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[BVAL]], [[ANON]])
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[ANON]])
@@ -1000,8 +1000,8 @@ fn test_if_ownership(x: Bool, owned a: RegExample, owned b: RegExample) -> RegEx
     # CHECK-NEXT:  }
 
     # Copy into a local temporary.
-    # CHECK-NEXT:  [[TMP:%.*]] = lit.var.decl "anonymous
     # CHECK-NEXT:  [[IRES:%.*]] = lit.ref.immut [[RES]]
+    # CHECK-NEXT:  [[TMP:%.*]] = lit.var.decl "anonymous
     # CHECK-NEXT:  lit.var.lifetime.start [[TMP]]
     # CHECK-NEXT:  lit.call {{.*}}__copyinit__{{.*}}([[IRES]], [[TMP]])
 

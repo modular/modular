@@ -355,7 +355,7 @@ public:
                     ASTType resultType = {});
   LValue emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest);
 
-  /// Emit a register primary PValue to an SRValue.
+  /// Emit a register passable PValue to an SRValue.
   SRValue emitPValueToSRValue(ASTExprAnd<PValue> value, ExprContext context);
 
   /// This helper emits the specified value as a SRValue which has an SSA

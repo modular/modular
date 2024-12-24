@@ -2054,16 +2054,11 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     emitError(exprLoc, "value of type ")
         << valueType << " cannot be copied into a non-default address space"
         << value.expr->getRange();
-    dest.resetForError();
     return {};
   }
 
-  // __copyinit__ has signature: `(existing: Self) -> Self`.
-  MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
-  if (!destBuffer)
-    return {};
-
-  // Materialize any PValue into the memory slot directly.
+  // Materialize any PValue directly, so we can handle non-copyable and
+  // non-movable types.
   if (auto pValue = value.ir.getIfPValue()) {
     // We don't allow materializing Type values yet.
     if (emitErrorForMaterializingTypeValues(*this, {pValue, value.expr},
@@ -2076,9 +2071,18 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     // the variable does not get promoted off the stack, and after struct
     // lowering, the type is erased down to its MLIR constituents anyways.
     Location loc = translateLocation(value.expr->getLoc());
-    Value regValue = emitPValueToSRValue({pValue, value.expr}, dest.context);
-    builder->create<RefStoreOp>(loc, regValue, destBuffer);
-    return emitCResult(MRValue(destBuffer), value.expr, dest);
+    SRValue regValue = emitPValueToSRValue({pValue, value.expr}, dest.context);
+    CValue result;
+    if (valueType.isRegisterPassable(exprLoc, shared))
+      result = SRValue(regValue);
+    else {
+      MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
+      if (!destBuffer)
+        return {};
+      builder->create<RefStoreOp>(loc, regValue, destBuffer);
+      result = MRValue(destBuffer);
+    }
+    return emitCResult(result, value.expr, dest);
   }
 
   // Generate nicer error message for common cases.
@@ -2096,6 +2100,18 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     }
     return {};
   }
+
+  // Handle non-trivial register passable types.
+  // __copyinit__ has signature: `(existing: Self) -> Self`.
+  if (valueType.isRegisterPassable(exprLoc, shared)) {
+    return emitNamedMethodCall("__copyinit__", {{value}}, dest,
+                               CallSyntax::kImplicitCopyInit, value.expr);
+  }
+
+  // __copyinit__ has signature: `(existing: Self, out dest: Result)`.
+  MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
+  if (!destBuffer)
+    return {};
 
   ValueDest copyDest(destBuffer, dest.getContext());
   if (!emitNamedMethodCall("__copyinit__", {{value}}, copyDest,
