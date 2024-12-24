@@ -113,6 +113,7 @@ what we publish.
 ### ❌ Removed
 
 - `StringRef` is being deprecated. Use `StringSlice` instead.
+  - Changed `sys.argv()` to return list of `StringSlice`.
   - removed `StringRef.startswith()` and `StringRef.endswith()`
 
 ### 🛠️ Fixed

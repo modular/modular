@@ -34,17 +34,22 @@ from sys import external_call
 
 from memory import UnsafePointer
 
+from collections.string import StringSlice
+
 from utils import StringRef
 
 
 # TODO: When we have global variables, this should be a global list.
-fn argv() -> VariadicList[StringRef]:
+fn argv() -> VariadicList[StringSlice[StaticConstantOrigin]]:
     """The list of command line arguments.
 
     Returns:
         The list of command line arguments provided when mojo was invoked.
     """
-    var result = VariadicList[StringRef]("")
+    # SAFETY:
+    #   It is valid to use `StringSlice` here because `StringSlice` is
+    #   guaranteed to be ABI compatible with llvm::StringRef.
+    var result = VariadicList[StringSlice[StaticConstantOrigin]]("")
     external_call["KGEN_CompilerRT_GetArgV", NoneType](
         Pointer.address_of(result)
     )

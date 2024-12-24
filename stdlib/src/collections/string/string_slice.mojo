@@ -31,6 +31,7 @@ from memory.memory import _memcmp_impl_unconstrained
 from sys import bitwidthof, simdwidthof
 from sys.intrinsics import unlikely, likely
 from utils.stringref import StringRef, _memmem
+from os import PathLike
 
 alias StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice."""
@@ -239,8 +240,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
     CollectionElement,
     CollectionElementNew,
     Hashable,
+    PathLike,
 ):
     """A non-owning view to encoded string data.
+
+    This type is guaranteed to have the same ABI (size, alignment, and field
+    layout) as the `llvm::StringRef` type.
 
     Parameters:
         mut: Whether the slice is mutable.
@@ -437,6 +442,18 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             builtin documentation for more details.
         """
         return hash(self._slice._data, self._slice._len)
+
+    fn __fspath__(self) -> String:
+        """Return the file system path representation of this string.
+
+        Returns:
+          The file system path representation as a string.
+        """
+        return String(self)
+
+    # ===------------------------------------------------------------------===#
+    # Operator dunders
+    # ===------------------------------------------------------------------===#
 
     # This decorator informs the compiler that indirect address spaces are not
     # dereferenced by the method.

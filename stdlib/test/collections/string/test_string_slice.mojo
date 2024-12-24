@@ -19,7 +19,29 @@ from collections.string.string_slice import (
     _count_utf8_continuation_bytes,
 )
 from collections.string._utf8_validation import _is_valid_utf8
-from memory import Span
+from memory import Span, UnsafePointer
+
+from sys.info import sizeof, alignof
+
+
+fn test_string_slice_layout() raises:
+    # Test that the layout of `StringSlice` is the same as `llvm::StringRef`.
+    # This is necessary for `StringSlice` to be validly bitcasted to and from
+    # `llvm::StringRef`
+
+    # StringSlice should be two words in size.
+    assert_equal(sizeof[StringSlice[MutableAnyOrigin]](), 2 * sizeof[Int]())
+
+    var str_slice = StringSlice("")
+
+    var base_ptr = int(UnsafePointer.address_of(str_slice))
+    var first_word_ptr = int(UnsafePointer.address_of(str_slice._slice._data))
+    var second_word_ptr = int(UnsafePointer.address_of(str_slice._slice._len))
+
+    # 1st field should be at 0-byte offset from base ptr
+    assert_equal(first_word_ptr - base_ptr, 0)
+    # 2nd field should at 1-word offset from base ptr
+    assert_equal(second_word_ptr - base_ptr, sizeof[Int]())
 
 
 fn test_string_literal_byte_span() raises:
@@ -652,6 +674,7 @@ def test_count():
 
 
 def main():
+    test_string_slice_layout()
     test_string_literal_byte_span()
     test_string_byte_span()
     test_heap_string_from_string_slice()
