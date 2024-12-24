@@ -194,6 +194,11 @@ fn implicit_func_conversion():
 struct RegPassable:
   var value: Int
   # CHECK-LABEL: lit.func @"__init__
+  # CHECK-NEXT: %self = lit.var.decl "self" initoutarg
+  # CHECK-NEXT: [[VALREF:%.*]] = lit.ref.struct.ger %self[value]
+  # CHECK-NEXT: lit.ref.store %value, [[VALREF]]
+  # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %self
+  # CHECK-NEXT: lit.return [[TMP]]
   @implicit
   fn __init__(out self, value: Int):
     self.value = value
@@ -349,17 +354,21 @@ fn reverse_operators(a: Int):
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: RegPassable) -> RegPassable:
   # CHECK:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
-  # CHECK-NEXT: [[THREETMP:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREE]], [[THREETMP]])
+  # CHECK-NEXT:  [[THREERP:%.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREE]])
   # CHECK-NEXT:  [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
+  # CHECK-NEXT:  [[TWORP:%.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[TWO]])
   # CHECK-NEXT:  [[TWOTMP:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[TWO]], [[TWOTMP]])
+  # CHECK-NEXT:  lit.ref.store [[TWORP]], [[TWOTMP]]
   # CHECK-NEXT:  [[TWOTMP_IMM:%.*]] = lit.ref.immut [[TWOTMP]]
   # CHECK-NEXT:  [[NEG:%.*]] = lit.call {{.*}}@RegPassable::@"__neg__{{.*}}([[TWOTMP_IMM]])
+
+  # CHECK-NEXT:  [[THREETMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT:  lit.ref.store [[THREERP]], [[THREETMP]]
+  
   # CHECK-NEXT:  [[NEGTMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT:  lit.ref.store [[NEG]], [[NEGTMP]]
   # CHECK-NEXT:  [[THREETMP_IMM:%.*]] = lit.ref.immut [[THREETMP]]
-  # CHECK-NEXT:  [[NEGTMP_IMM:%.*]] = lit.ref.immut [[THREETMP]]
+  # CHECK-NEXT:  [[NEGTMP_IMM:%.*]] = lit.ref.immut [[NEGTMP]]
   # CHECK-NEXT:  [[MATMUL:%.*]] = lit.call {{.*}}@RegPassable::@"__matmul__{{.*}}([[THREETMP_IMM]], [[NEGTMP_IMM]])
   # CHECK-NEXT:  [[MMTMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT:  lit.ref.store [[MATMUL]], [[MMTMP]]
@@ -425,38 +434,41 @@ fn unary(a: Bool, b: Int, c: Boolish, d: MemBoolish):
   # CHECK-NEXT: lit.call {{.*}}__invert__{{.*}}([[BOOL]])
   _ = not d
 
-# CHECK-LABEL: lit.func @"andOr
-fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
+# CHECK-LABEL: lit.func @"andOr1
+fn andOr1(a: Boolish, b: Boolish):
   # Short circuiting AND returns second operand when the first is false-y, first
   # otherwise.
 
   # CHECK: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%a)
   # CHECK: [[I1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BOOL]])
   # CHECK: hlcf.if [[I1]] -> !Boolish {
-  # CHECK:   = lit.call {{.*}}__copyinit__{{.*}}(%b, {{.*}})
+  # CHECK:   = lit.call {{.*}}__copyinit__{{.*}}(%b)
   # CHECK:   hlcf.yield
   # CHECK: } else {
-  # CHECK:   [[ANON:%.*]] = lit.var.decl
-  # CHECK:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a, [[ANON]])
-  # CHECK:   [[A:%.*]] = lit.load.consume [[ANON]]
-  # CHECK:   hlcf.yield [[A]]
+  # CHECK:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
+  # CHECK:   hlcf.yield [[TMP]]
   # CHECK: }
   _ = a and b
 
+
+# CHECK-LABEL: lit.func @"andOr2
+fn andOr2(a: Boolish, b: Boolish):
   # Short circuiting OR returns first operand when it is true-y, second
   # otherwise.  Boolish is defined with copy ctor so it must be invoked.
 
   # CHECK: [[ABOOL:%.*]] = lit.call {{.*}}Boolish::@"__bool__{{.*}}(
   # CHECK-NEXT: [[I1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__{{.*}}([[ABOOL]])
   # CHECK-NEXT:  = hlcf.if [[I1]] -> !Boolish {
-  # CHECK:        = lit.call {{.*}}__copyinit__{{.*}}(%a, {{.*}})
-  # CHECK:        hlcf.yield
+  # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}Boolish::@"__copyinit__{{.*}}(%a)
+  # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
-  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}(%b, {{.*}})
-  # CHECK:        hlcf.yield
+  # CHECK:        [[TMP:%.*]] = lit.call {{.*}}Boolish::@"__copyinit__{{.*}}(%b)
+  # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: }
   _ = a or b
 
+# CHECK-LABEL: lit.func @"andOr3
+fn andOr3(a: Boolish, c: Bool):
   # Testing two different logic'y types returns the common bool type if present.
 
   # CHECK: [[ABOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%a)
@@ -465,14 +477,15 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT:   hlcf.yield %c
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[I1]], [[ANON]])
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}({{.*}}, [[ANON]])
   # CHECK-NEXT:   [[TMP:%.*]] = lit.load.consume [[ANON]]
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: }
   _ = a and c
 
+# CHECK-LABEL: lit.func @"andOr4
+fn andOr4(b: Boolish, c: Bool):
   # Check incompatible types that are nevertheless boolish.
-
   # CHECK: [[BBOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%b)
   # CHECK-NEXT: [[BI1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BBOOL]])
   # CHECK-NEXT: = hlcf.if [[BI1]] -> !Bool {
@@ -485,6 +498,8 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT: }
   _ = b or c
 
+# CHECK-LABEL: lit.func @"andOr2
+fn andOr2(b: Boolish, d: MemBoolish):
   # Check memory-only boolish types.
   # Boolish and MemBoolish has a common type of MemBoolish.
 

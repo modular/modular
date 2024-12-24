@@ -1282,9 +1282,14 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // assignable etc.
     // This also provides a user name for the argument.
     StringAttr resultName = funcOp.getNamedResultAttr();
-    VarDeclOp varDecl =
-        emitter.emitVarDecl(resultName, funcOp.getUserResultType(),
-                            funcOp.getLoc(), VarDeclKind::Arg);
+    // If this is the 'out' argument of an initializer, we use a special
+    // VarDeclKind so CheckLifetimes knows the whole object bit is live on
+    // input.
+    auto kind = funcOp.getSpecialFunctionInfo().isInitializer()
+                    ? VarDeclKind::InitOutArg
+                    : VarDeclKind::Arg;
+    VarDeclOp varDecl = emitter.emitVarDecl(
+        resultName, funcOp.getUserResultType(), funcOp.getLoc(), kind);
     ASTDecl &argDecl = addFullyResolvedDecl(MLValue(varDecl), resultName,
                                             decl.getLoc(), &decl);
     shared.notifyListenerOnArgumentDecl(argDecl, resultName, argDecl.getLoc());

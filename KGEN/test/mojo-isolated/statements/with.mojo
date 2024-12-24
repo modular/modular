@@ -14,8 +14,9 @@
 # Issue #12358
 # CHECK-LABEL: lit.func @"raise_string
 fn raise_string() raises:
-    # CHECK: %0 = kgen.param.constant: !StringLiteral = <{:string "thing"}>
-    # CHECK: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}(%0, %__error__)
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant: !StringLiteral = <{:string "thing"}>
+    # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}([[TMP]])
+    # CHECK-NEXT: lit.ref.store [[ERR]], %__error__
     # CHECK-NEXT: lit.raise
     raise "thing"
 

@@ -809,22 +809,34 @@ fn callMaybeStatic(a: Int, b: EmptyStruct):
     # CHECK-NEXT: lit.call @decls::@StructExample::@"maybe_static{{.*}}(%a)
     StructExample.maybe_static(a)
 
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}@StructExample::@"__init__{{.*}}()
     # CHECK-NEXT: [[ANONSE:%.*]] = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}@StructExample::@"__init__{{.*}}([[ANONSE]])
+    # CHECK-NEXT: lit.ref.store [[TMP]], [[ANONSE]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[ANONSE]]
     # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}([[TMP]], %b)
     StructExample.maybe_static(StructExample(), b)
 
-    # CHECK-NEXT: [[ANONSE:%.*]] = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}@"__init__{{.*}}([[ANONSE]])
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}@"__init__{{.*}}()
     # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}(%a)
     StructExample().maybe_static(a)
 
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}@StructExample::@"__init__{{.*}}()
     # CHECK-NEXT: [[ANONSE:%.*]] = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}@StructExample::@"__init__{{.*}}([[ANONSE]])
+    # CHECK-NEXT: lit.ref.store [[TMP]], [[ANONSE]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[ANONSE]]
     # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}([[TMP]], %b)
     StructExample().maybe_static(b)
+
+    # See that we can take the address of initializers without a thunk.
+    # CHECK-NEXT: %fn_ptr = lit.var.decl "fn_ptr"
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.signature<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
+    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr
+    var fn_ptr : fn() -> StructExample = StructExample.__init__
+
+    # CHECK-NEXT: %fn_ptr2 = lit.var.decl "fn_ptr2"
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(decls::StructExample)")]()  
+    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr2
+    var fn_ptr2 : fn(StructExample) -> StructExample = StructExample.__copyinit__
 
 
 # CHECK-LABEL: lit.struct.decl @DelegatingInitMem
@@ -895,7 +907,8 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store %2, %0
 # CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: %4 = lit.ref.struct.ger %other[b]
-# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%4, %3)
+# CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%4)
+# CHECK-NEXT: lit.ref.store [[TMP]], %3
 
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  %a: !Int,
@@ -973,7 +986,8 @@ struct ValueReg:
 # CHECK-NEXT: lit.ref.store [[TMP]], [[SELFA]]
 # CHECK-NEXT: [[SELFB:%.*]] = lit.ref.struct.ger %self[b]
 # CHECK-NEXT: [[OTHERB:%.*]] = lit.ref.struct.ger %other[b]
-# CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[OTHERB]], [[SELFB]])
+# CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[OTHERB]])
+# CHECK-NEXT: lit.ref.store [[TMP]], [[SELFB]]
 
 # CHECK: lit.func @"__init__(
 # CHECK-SAME:  (
@@ -1099,8 +1113,8 @@ async fn load(server_ptr: Container[__mlir_type.index]):
 # CHECK-LABEL: lit.func @"awaitSomething()"
 async fn awaitSomething():
     var ptr = Container[__mlir_type.index]()
-    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>(%{{.*}}, [[CORO:%.*]]) :
-    # CHECK-SAME: !lit.signature<[1]("handle": !co.routine, {{.*}}@Coroutine<:!AnyType [{{.*}}], :origin.set {}>
+    # CHECK: [[CORO:%.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>(%{{.*}}) :
+    # CHECK-SAME: !lit.signature<("handle": !co.routine) -> !lit.struct<#Coroutine <:!AnyType 
     await load(ptr)
 
 
@@ -1117,7 +1131,7 @@ struct StructWithAsync:
     # CHECK-LABEL: lit.func @"do_something{{.*}}({{.*}}) async
     async fn do_something(self: StructWithAsync):
         # CHECK-NEXT: %[[CORO:.*]] = lit.async.call[!lit.signature<[1](?, "__result__": !lit.ref<!Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
-        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :origin.set {}>(%[[CORO]], {{.*}})
+        # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [!Int, {{.*}}], :origin.set {}>(%[[CORO]])
         _ = coroutine()
 
 
@@ -1152,7 +1166,8 @@ async fn inline_async() -> Int:
 # CHECK-LABEL: lit.func @"use_inline_async()"
 async fn use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
-    # CHECK: lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[ASYNC_RESULT]], [[CORO:%.*]]) :
+    # CHECK: [[TMP:%.*]] = lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[ASYNC_RESULT]]) :
+    # CHECK: lit.ref.store [[TMP]], [[CORO:%.*]] : <
     # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %__result__)
     return await inline_async()
 
@@ -1180,7 +1195,7 @@ fn coroutine_origins():
     # CHECK: [[Y_IMM:%.*]] = lit.ref.immut %y
     # CHECK: [[CORO:%.*]] = lit.async.call[!lit.signature<[3]("x": !lit.ref<!Awaitable, mut *[0,0]> mut, "y": !lit.ref<!Awaitable, imm *[0,1]> read_mem, ?, "__result__": !lit.ref<none, mut *[0,2]> byref_result) async -> !kgen.none>
     # CHECK-SAME: [mut [[X_LT]], muttoimm [[Y_LT]], imm {}](%x, [[Y_IMM]])
-    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO]], %coro)
+    # CHECK: lit.call {{.*}}Coroutine::@"__init__{{.*}}<:!AnyType [none, {{.*}}], :origin.set {mut [[X_LT]], mut [[Y_LT]]}>([[CORO]])
     var coro = capture_byref(x, y)
 
     # CHECK: lit.async.call[!lit.signature<[2]("x": !lit.ref<@decls::@LifetimeAccess<:origin<1> [[Y_LT]]>,
@@ -1192,14 +1207,14 @@ fn coroutine_origins():
 # CHECK-LABEL: lit.func @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
 async fn mem_result() -> Awaitable:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_result()"][imm {}]()
-    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}([[CORO]], {{.*}})
+    # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}([[CORO]])
     var coro = mem_result()
 
 
 # CHECK-LABEL: lit.func @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!Int, {{.*}}> byref_result) throws|async -> i1
 async fn mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][imm {}, imm {}]()
-    # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}([[CORO]], %coro)
+    # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}([[CORO]])
     var coro = mem_raises()
 
 
@@ -1594,12 +1609,12 @@ struct RegPassableInitSelfInit:
     var a: Int
 
     # CHECK: lit.func @"__init__
-    # CHECK-SAME: (?, %self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> byref_result)
+    # CHECK-SAME: () -> !RegPassableInitSelfInit
     fn __init__(out self):
         self.a = 42
 
     # CHECK: lit.func @"__copyinit__
-    # CHECK-SAME: %self: !lit.ref<!RegPassableInitSelfInit, mut {{.*}}> byref_result)
+    # CHECK-SAME: -> !RegPassableInitSelfInit
     fn __copyinit__(out self, existing: Self):
         self.a = existing.a
 
@@ -1607,11 +1622,13 @@ struct RegPassableInitSelfInit:
 # CHECK-LABEL: testRegPassableInitSelf
 fn testRegPassableInitSelf():
     # CHECK-NEXT: %x = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%x)
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: lit.ref.store [[TMP]], %x
     var x = RegPassableInitSelfInit()
     # CHECK-NEXT: %x2 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut %x
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[TMP]], %x2)
+    # CHECK-NEXT: [[TMP2:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[TMP]])
+    # CHECK-NEXT: lit.ref.store [[TMP2]], %x2
     var x2 = x
 
     # CHECK-NEXT: [[AP:%.*]] = lit.ref.struct.ger %x[a]

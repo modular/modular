@@ -45,6 +45,12 @@ OriginTrackable::OriginTrackable(Value v) {
     isIndirect = true;
     startsUninit = true;
     endInitState = EndsUninit;
+
+    // If this is a vardecl shadow of a register passable 'out' argument, then
+    // the value is treated as if its whole-object bit is live on entry.  This
+    // allows it to be fieldwise assigned.
+    if (varDecl.getKind() == VarDeclKind::InitOutArg)
+      isFullObjectLiveOnEntry = true;
     return;
   }
 
@@ -267,19 +273,16 @@ static Value findRefPackCreate(Value val) {
     return {};
 
   for (Operation *user : varDecl.getResult().getUsers()) {
-    auto call = dyn_cast<LIT::CallOp>(user);
-    if (!call ||
-        // Ignore calls to __del__.
-        call.getNumOperands() != 3 ||
-        // Ignore calls that pass the pack to a function by reference, but don't
-        // initialize it.
-        call.getOperand(2) != varDecl.getResult() ||
-        call.getCalleeType().getArgConvention(2) != ArgConvention::ByRefResult)
+    // Find the store to the pack.
+    auto refStore = dyn_cast<RefStoreOp>(user);
+    if (!refStore || refStore.getDest() != varDecl.getResult())
+      continue;
+
+    auto call = refStore.getValue().getDefiningOp<LIT::CallOp>();
+    if (!call || call.getNumOperands() != 2)
       continue;
 
     // Make sure any change to the API forces this code to get updated.
-    assert(call.getNumOperands() == 3 &&
-           "VariadicPack::init currently takes 3 arguments");
     return call.getOperand(0);
   }
 

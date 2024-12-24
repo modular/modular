@@ -135,8 +135,9 @@ struct RaisingInit:
 fn finally_may_raise() raises:
     # CHECK: lit.try
     try:
+        # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}() : !lit.signature<() -> !Error> 
         # CHECK-NEXT: lifetime.start %__try_error__
-        # CHECK-NEXT: call {{.*}}__init__{{.*}}(%__try_error__)
+        # CHECK-NEXT: lit.ref.store [[TMP]], %__try_error__
         # CHECK-NEXT: lit.try.raise
         raise Error()
         # CHECK-NEXT: except
@@ -252,11 +253,13 @@ struct BigRegExample:
     # Test a raising constructor.
     # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
     fn __init__(out self, a: MemExample, b: MemExample) raises:
+        # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: [[A_REF:%.*]] = lit.ref.struct.ger %self[a]
-        # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}([[A_REF]])
+        # CHECK-NEXT: lit.ref.store [[A]], [[A_REF]]
         self.a = RegExample()
+        # CHECK-NEXT: [[B:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: [[B_REF:%.*]] = lit.ref.struct.ger %self[b]
-        # CHECK-NEXT: [[B:%.*]] = lit.call {{.*}}__init__{{.*}}([[B_REF]])
+        # CHECK-NEXT: lit.ref.store [[B]], [[B_REF]]
         self.b = RegExample()
         # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
         # CHECK-NEXT: kgen.return [[FALSE]]
@@ -412,7 +415,8 @@ struct ThrowingSelfInit:
 
 # CHECK-LABEL: lit.func @"emplace_error
 fn emplace_error() raises:
-    # CHECK: lit.call {{.*}}Error::@"__init__{{.*}}(%__error__)
+    # CHECK: [[TMP:%.*]] = lit.call {{.*}}Error::@"__init__{{.*}}()
+    # CHECK-NEXT: lit.ref.store [[TMP]], %__error__
     # CHECK: lit.error_return
     __get_nearest_error_slot() = Error()
     __mlir_op.`lit.raise`()
@@ -432,6 +436,7 @@ struct InitFieldsDestroyedInThrowingConstructor:
         # CHECK-NEXT: } then {
         # CHECK-NEXT:   lit.call {{.*}}__del__{{.*}}(%self)
         # CHECK-NEXT:   lit.call @{{.*}}::@Error::@"__init__
+        # CHECK-NEXT:   lit.ref.store
         # CHECK-NEXT:   kgen.param.constant
         # CHECK-NEXT:   lit.error_return
         # CHECK-NEXT: } else {

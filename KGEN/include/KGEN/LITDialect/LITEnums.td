@@ -65,6 +65,9 @@ def LIT_VarDeclKind : I32EnumAttr<"VarDeclKind",
   /// Value is a shadow of a function argument, for arguments that need a
   /// variable location.
   I32EnumAttrCase<"Arg", 3, "arg">,
+  /// Value is a shadow of an 'out' argument for a register passable
+  /// initializer.
+  I32EnumAttrCase<"InitOutArg", 4, "initoutarg">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;

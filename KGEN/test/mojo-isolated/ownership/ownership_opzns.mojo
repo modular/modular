@@ -153,11 +153,7 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: [[A:%.*]] = lit.ref.immut %a
-    # CHECK-NEXT: kgen.param.declare *"anonymous
-    # CHECK-NEXT: [[RB:%.*]] = kgen.rebind %a
-
-    # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[RB]]
+    # CHECK-NEXT: [[A:%.*]] = lit.load.consume %a
     # CHECK-NEXT: kgen.return [[A]]
     return a
 
@@ -226,23 +222,28 @@ fn takeTwo(owned x: MemExample, owned y: MemExample):
 # CHECK-LABEL: lit.func @"optimizeCopyElision
 fn optimizeCopyElision():
     # CHECK: %a = lit.var.decl "a"
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
     # CHECK-NEXT: lifetime.start %a
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%a)
+    # CHECK-NEXT: lit.ref.store [[TMP]], %a
     var a = RegExample()
 
     # We need one copy of 'a' here, not two + dtor.
     # CHECK-NEXT: [[A:%.*]] = lit.ref.immut %a
+    # CHECK-NEXT: [[COPY1:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[A]])
+    # CHECK-NEXT: [[COPY2:%.*]] = lit.load.consume %a
+    # CHECK-NEXT: lifetime.end %a
+
     # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl
     # CHECK-NEXT: lifetime.start [[ANON]]
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[A]], [[ANON]])
+    # CHECK-NEXT: lit.ref.store [[COPY1]], [[ANON]]
 
-    # CHECK-NEXT: [[AIMM:%.*]] = lit.ref.immut %a
-    # CHECK-NEXT: kgen.param.declare *"anonymous
-    # CHECK-NEXT: [[ATMP:%.*]] = kgen.rebind %a
+    # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl
+    # CHECK-NEXT: lifetime.start [[ANON2]]
+    # CHECK-NEXT: lit.ref.store [[COPY2]], [[ANON2]]
 
-    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ANON]], [[ATMP]])
+    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ANON]], [[ANON2]])
     takeTwo(a, a)
-    # CHECK-NEXT: lifetime.end %a
+    # CHECK-NEXT: lifetime.end [[ANON2]]
     # CHECK-NEXT: lifetime.end [[ANON]]
 
     # CHECK-NEXT: %x = lit.var.decl "x"
@@ -315,30 +316,35 @@ fn optimizeCopyToMove():
     # All the copyinit's should be removed.
 
     # CHECK-NEXT: %r1 = lit.var.decl "r1"
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
     # CHECK-NEXT: lifetime.start %r1
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%r1)
+    # CHECK-NEXT: lit.ref.store [[TMP]], %r1
     var r1 = RegExample()
     # CHECK-NEXT: [[R1:%.*]] = lit.ref.immut %r1
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R1]])
     r1.noop()
 
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %r1
-    # CHECK-NEXT: kgen.param.declare *"r2
-    # CHECK-NEXT: [[R2:%.*]] = kgen.rebind %r1
+    # CHECK-NEXT: %r2 = lit.var.decl "r2"
+    # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %r1
+    # CHECK-NEXT: lit.var.lifetime.end %r1 
+    # CHECK-NEXT: lit.var.lifetime.start %r2
+    # CHECK-NEXT: lit.ref.store [[TMP]], %r2
     var r2 = r1
-    # CHECK-NEXT: [[R2I:%.*]] = lit.ref.immut [[R2]]
+    # CHECK-NEXT: [[R2I:%.*]] = lit.ref.immut %r2
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R2I]])
     r2.noop()
 
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[R2]]
-    # CHECK-NEXT: kgen.param.declare *"r3
-    # CHECK-NEXT: [[R3:%.*]] = kgen.rebind [[R2]]
+    # CHECK-NEXT: %r3 = lit.var.decl "r3"
+    # CHECK-NEXT: [[TMP:%.*]] = lit.load.consume %r2
+    # CHECK-NEXT: lit.var.lifetime.end %r2
+    # CHECK-NEXT: lit.var.lifetime.start %r3
+    # CHECK-NEXT: lit.ref.store [[TMP]], %r3
     var r3 = r2
-    # CHECK-NEXT: [[R3I:%.*]] = lit.ref.immut [[R3]]
+    # CHECK-NEXT: [[R3I:%.*]] = lit.ref.immut %r3
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R3I]])
     r3.noop()
-    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[R3]])
-    # CHECK-NEXT: lifetime.end %r1
+    # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%r3)
+    # CHECK-NEXT: lifetime.end %r3
 
 
 # This is an integration test for elideCopyDestroyPair
