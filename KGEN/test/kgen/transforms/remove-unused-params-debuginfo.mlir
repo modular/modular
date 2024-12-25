@@ -22,12 +22,12 @@ kgen.generator @user<dt: dtype, T: type>(%arg0: !pop.scalar<dt>, %arg1: !kgen.po
 }
 
 // CHECK-DAG: ![[UNSPECIFIED:.+]] = !debuginfo.unspecified<"optimized out">
-// CHECK-DAG: ![[SUBROUTINE:.+]] = !debuginfo.subroutine<(![[UNSPECIFIED]], !kgen.pointer<*?>, !kgen.pointer<scalar<*?>>) -> (): DW_CC_normal>
+// CHECK-DAG: ![[SUBROUTINE:.+]] = !debuginfo.subroutine<(![[UNSPECIFIED]], !kgen.pointer<#interp.uninitmem>, !kgen.pointer<scalar<#interp.uninitmem>>) -> (): DW_CC_normal>
 // CHECK-DAG: #[[SP:.+]] = #debuginfo.subprogram<sourceName = <"basic_arg_remove_1">, linkageName = "basic_arg_remove_1_REMOVED_ARG"> : ![[SUBROUTINE]]
 // CHECK-DAG: #[[LOC]] = loc(fused<#[[SP]]>
 
 
-// CHECK-DAG: ![[OTHER_SUBROUTINE:.+]] = !debuginfo.subroutine<(!kgen.pointer<*?>) -> (): DW_CC_normal>
+// CHECK-DAG: ![[OTHER_SUBROUTINE:.+]] = !debuginfo.subroutine<(!kgen.pointer<#interp.uninitmem>) -> (): DW_CC_normal>
 // CHECK-DAG: #[[OTHER_SP:.+]] = #debuginfo.subprogram<sourceName = <"param_inlined_fn">> : ![[OTHER_SUBROUTINE]]
 // CHECK-DAG: #[[OTHER_LOC:.+]] = loc(fused<#[[OTHER_SP]]>
 // CHECK-DAG: #[[INLINED_LOC]] = loc(callsite(#[[OTHER_LOC]] at

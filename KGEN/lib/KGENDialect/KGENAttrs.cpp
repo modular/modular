@@ -755,6 +755,8 @@ TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
     return value.getValues()[fieldNo];
   if (::isa<UnknownAttr>(structValue))
     return UnknownAttr::get(resultType);
+  if (::isa<UninitMemAttr>(structValue))
+    return UninitMemAttr::get(resultType);
 
   return Base::get(context, structValue, fieldNo, resultType);
 }
@@ -2519,9 +2521,11 @@ static TypedAttr simplifyPtrBitcast(ArrayRef<TypedAttr> operands,
 static TypedAttr simplifyLoadFromMem(ArrayRef<TypedAttr> operands,
                                      Type resultType) {
   // If we get a PointerAttr, then it must not be mapped to any persistent
-  // memory. There is nothing we can ever do with it. Return a undef value.
+  // memory. There is nothing we can ever do with it. Return a UninitMemAttr
+  // value.
   if (isa<PointerAttr>(operands.front()))
-    return UnknownAttr::get(resultType);
+    return UninitMemAttr::get(resultType);
+
   return {};
 }
 

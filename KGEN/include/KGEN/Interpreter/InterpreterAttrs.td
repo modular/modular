@@ -279,9 +279,7 @@ def MemRefAttr : InterpreterAttr<"MemRef", "memref", [TypedAttrInterface]> {
                         "int64_t":$index,
                         "int64_t":$offset,
                         AttributeSelfTypeParameter<"">:$type);
-  let assemblyFormat = [{
-    `<` $model `,` $index `,` $offset `>`
-  }];
+  let assemblyFormat = "`<` $model `,` $index `,` $offset `>`";
 
   let builders = [
     AttrBuilderWithInferredContext<(ins "MemoryModelAttr":$model,
@@ -292,6 +290,26 @@ def MemRefAttr : InterpreterAttr<"MemRef", "memref", [TypedAttrInterface]> {
   ];
 
   let genVerifyDecl = 1;
+}
+
+
+//===----------------------------------------------------------------------===//
+// UninitMemAttr
+//===----------------------------------------------------------------------===//
+
+def UninitMemAttr : InterpreterAttr<"UninitMem", "uninitmem", 
+                                    [TypedAttrInterface]> {
+  let summary = "representation of loading uninitialized memory";
+  let description = [{
+    The `#interp.uninitmem` attribute represents uninitialized memory that can
+    be loaded and stored but not turned into a concrete value.
+  }];
+  let parameters = (ins AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "";
+
+  let builders = [TypeBuilderWithInferredContext<(ins "Type":$type), [{
+    return get(type.getContext(), type);
+  }]>];
 }
 
 #endif // INTERPRETERATTRS_TD

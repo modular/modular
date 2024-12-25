@@ -70,6 +70,10 @@ def StoreToMemAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def UninitMemAttr : DialectAttribute<(attr
+  Type:$type
+)>;
+
 def InterpreterDialectAttributes : DialectAttributes<"interp"> {
   let elems = [
     PointerAttr,
@@ -77,7 +81,8 @@ def InterpreterDialectAttributes : DialectAttributes<"interp"> {
     MemoryBlobAttr,
     MemorySpaceAttr,
     MemRefAttr,
-    StoreToMemAttr
+    StoreToMemAttr,
+    UninitMemAttr
   ];
 }
 

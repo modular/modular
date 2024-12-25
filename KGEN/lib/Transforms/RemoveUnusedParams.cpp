@@ -18,6 +18,7 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -532,7 +533,7 @@ void RemoveUnusedParams::runOnOperation() {
     // The DISubroutineType of the function may reference unused parameters.
     // This just means this function has a shared implementation across all
     // possible instantiations of this parameter. Concretize unused parameters
-    // into UnknownAttr for now.
+    // into UninitMemAttr  for now.
     // TODO (MOCO-900): Represent templated DISubroutineType and concretize
     // unused parameters to some special type (e.g. DIUnspecifiedType).
     if (DebugInfo::DISubprogramAttr oldScope =
@@ -541,7 +542,7 @@ void RemoveUnusedParams::runOnOperation() {
       ArrayRef<ParamDeclAttr> inputParams(oldFunction.getInputParams());
       for (size_t index : unusedParamsIndex.set_bits()) {
         ParamDeclAttr decl = inputParams[index];
-        evaluator.setParameterValue(decl, UnknownAttr::get(decl.getType()));
+        evaluator.setParameterValue(decl, UninitMemAttr::get(decl.getType()));
       }
 
       auto subroutineType =

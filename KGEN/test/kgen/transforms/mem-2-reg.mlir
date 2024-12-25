@@ -91,7 +91,7 @@ kgen.generator @nested_alloc(%arg0: index) -> index {
 
 // CHECK-LABEL: @read_uninitialized
 kgen.generator @read_uninitialized() -> index {
-  // CHECK-NEXT: %index = kgen.param.constant = <*?>
+  // CHECK-NEXT: %index = kgen.param.constant = <#interp.uninitmem>
   %0 = pop.stack_allocation 1 x index
   %1 = pop.load %0 : !kgen.pointer<index>
   // CHECK-NEXT: kgen.return %index
@@ -110,7 +110,7 @@ kgen.generator @if_empty_block(%arg0: i1, %arg1: index) -> index{
     // CHECK-NEXT: yield %arg1
     hlcf.yield
   } else {
-    // CHECK: %index = kgen.param.constant = <*?>
+    // CHECK: %index = kgen.param.constant = <#interp.uninitmem>
     // CHECK-NEXT: yield %index
     hlcf.yield
   }

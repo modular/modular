@@ -383,7 +383,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
     // Note: return -1 to indicate an error state.
     return {StructAttr::get({StringAttr::get(os.str(), StringType::get(ctx)),
                              b.getIndexAttr(-1),
-                             UnknownAttr::get(populateFnType)})};
+                             UninitMemAttr::get(populateFnType)})};
   }
 
   auto populate = cast<FuncOp>(closure->populateCapturesFn.release());

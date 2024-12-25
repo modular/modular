@@ -1668,7 +1668,7 @@ kgen.generator @might_fail<succeed: i1>() {
 
 // CHECK-LABEL: @compile_assembly_conditional
 kgen.generator export @compile_assembly_conditional() {
-  // CHECK-NEXT: <{ "failed {{.*}}", -1, *? }>
+  // CHECK-NEXT: <{ "failed {{.*}}", -1, #interp.uninitmem }>
   kgen.param.constant: !capture = <compile_assembly(current_target(), =llvm, "", 1, :() -> () @might_fail<:i1 0>)>
   // CHECK-NEXT: <{ "{{.*}}", 0, [[CAP_FN:@.*]] }>
   kgen.param.constant: !capture = <compile_assembly(current_target(), =llvm, "", 1, :() -> () @might_fail<:i1 1>)>

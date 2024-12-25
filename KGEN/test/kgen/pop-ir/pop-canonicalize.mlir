@@ -888,10 +888,10 @@ kgen.func @array_get() -> index {
 
 // CHECK-LABEL: @array_get_unknown
 kgen.func @array_get_unknown() -> index {
-  %array = kgen.param.constant: array<4, index> = <*?>
+  %array = kgen.param.constant: array<4, index> = <#interp.uninitmem>
   %0 = pop.array.get %array[0] : !pop.array<4, index>
   
-  // CHECK: %[[OUT:.*]] = kgen.param.constant = <*?>
+  // CHECK: %[[OUT:.*]] = kgen.param.constant = <#interp.uninitmem>
   // CHECK-NEXT: kgen.return %[[OUT]]
 
   kgen.return %0 : index
@@ -1272,7 +1272,7 @@ kgen.func @load_bitcast_func_ptr(%arg0: !kgen.signature<() -> ()>) ->
 
 // CHECK-LABEL: @store_unknown
 kgen.func @store_unknown(%ptr : !kgen.pointer<array<4, index>>) {
-  %array = kgen.param.constant: array<4, index> = <*?>
+  %array = kgen.param.constant: array<4, index> = <#interp.uninitmem>
   pop.store %array, %ptr align<1> : !kgen.pointer<array<4, index>>
 
   // CHECK-NEXT: kgen.return

@@ -232,7 +232,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(SignatureType type) {
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(ParamRefType type) {
-  if (isa<UnknownAttr>(type.getParam()))
+  if (isa<UnknownAttr, UninitMemAttr>(type.getParam()))
     return DIUnspecifiedType::get(type.getContext(), "unknown");
   llvm_unreachable("unresolved type parameter in debuginfo");
 }

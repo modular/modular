@@ -897,7 +897,7 @@ Value KGEN::convertParameterToLLVM(
   // builtin
 
   // Convert unknown values to undef.
-  if (isa<UnknownAttr>(attr)) {
+  if (isa<UnknownAttr>(attr) || isa<UninitMemAttr>(attr)) {
     Type type = tc.convertType(attr.getType());
     if (!type)
       return {};

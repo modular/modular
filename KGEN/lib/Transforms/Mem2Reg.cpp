@@ -6,6 +6,7 @@
 
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -90,7 +91,7 @@ struct PromotedStackAlloc {
       return currValue;
     // If the value is undefined, materialize an undef operation.
     ParamConstantOp undefConst = OpBuilder(user).create<ParamConstantOp>(
-        user->getLoc(), UnknownAttr::get(getAllocType(alloc)));
+        user->getLoc(), UninitMemAttr::get(getAllocType(alloc)));
     // Create a DebugInfo ValueOp right after this undef.
     updateValue(undefConst, undefConst);
     return undefConst;
@@ -122,7 +123,7 @@ struct PromotedStackAlloc {
       bool isUndef = false;
       if (auto cst = llvm::dyn_cast_if_present<ParamConstantOp>(
               currValue.getDefiningOp()))
-        isUndef = isa<UnknownAttr>(cst.getValue());
+        isUndef = isa<UninitMemAttr>(cst.getValue());
 
       if (!isUndef) {
         OpBuilder b(alloc->getContext());

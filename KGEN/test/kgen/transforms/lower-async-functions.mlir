@@ -57,7 +57,7 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
 
 // Check that the operands of parents that are state 0 are replaced with constants. All other ops in state 0 will be erased.
 // CHECK-LABEL:  kgen.func @coroutine_resume
-// CHECK-NEXT:   [[UNDEF:%.*]] = kgen.param.constant = <*?>
+// CHECK-NEXT:   [[UNDEF:%.*]] = kgen.param.constant = <#interp.uninitmem>
 // CHECK-NEXT:   hlcf.loop "_loop_0" (%arg1 = [[UNDEF]] : index) {
 kgen.func @trigger_creation(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async {
    %coro = co.hot_invoke[(i1, index, !kgen.pointer<index> byref_result) async -> index: @coroutine](%arg0, %arg1, %__result__)
@@ -1965,7 +1965,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // Verify that the hot resume has been stripped of the first state.
 // CHECK-LABEL:  kgen.func @conditional_suspoint_resume
-// CHECK-NEXT:   [[ARBITRARY_VALUE:%.*]] = kgen.param.constant: i1 = <*?>
+// CHECK-NEXT:   [[ARBITRARY_VALUE:%.*]] = kgen.param.constant: i1 = <#interp.uninitmem>
 // CHECK-NEXT:   hlcf.if [[ARBITRARY_VALUE]] {
 // CHECK-NEXT:   hlcf.yield
 // CHECK-NEXT:   } else {
@@ -2023,7 +2023,7 @@ kgen.func @conditional_suspoint_elif(%arg0: i1,
                      %arg2: index,
                      %__result__: !kgen.pointer<index> byref_result) async -> index {
   // CHECK-NEXT: hlcf.elif {
-  // CHECK-NEXT: [[V9:%.*]] = kgen.param.constant: i1 = <*?>
+  // CHECK-NEXT: [[V9:%.*]] = kgen.param.constant: i1 = <#interp.uninitmem>
   // CHECK-NEXT: hlcf.elif.yield [[V9]] : i1
   hlcf.elif {
     hlcf.elif.yield %arg0 : i1
@@ -2118,7 +2118,7 @@ kgen.func @coroutine(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> 
 
 // Check that the operands of parents that are state 0 are replaced with constants. All other ops in state 0 will be erased.
 // CHECK-LABEL:  kgen.func @coroutine_resume
-// CHECK-NEXT:   [[UNDEF:%.*]] = kgen.param.constant = <*?>
+// CHECK-NEXT:   [[UNDEF:%.*]] = kgen.param.constant = <#interp.uninitmem>
 // CHECK-NEXT:   hlcf.loop "_loop_0" (%arg1 = [[UNDEF]] : index) {
 kgen.func @trigger_creation(%arg0: i1, %arg1: index, %__result__: !kgen.pointer<index> byref_result) async {
    %coro = co.hot_invoke[(i1, index, !kgen.pointer<index> byref_result) async -> index: @coroutine](%arg0, %arg1, %__result__)
