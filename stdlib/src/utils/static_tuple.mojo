@@ -129,10 +129,7 @@ struct StaticTuple[element_type: AnyTrivialRegType, size: Int](Sized):
     fn __init__(out self):
         """Constructs an empty (undefined) tuple."""
         _static_tuple_construction_checks[size]()
-        self.array = __mlir_op.`kgen.param.constant`[
-            _type = Self.type,
-            value = __mlir_attr[`#kgen.unknown : `, Self.type],
-        ]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
     @implicit
