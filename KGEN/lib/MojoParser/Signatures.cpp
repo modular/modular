@@ -242,6 +242,19 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
   };
 
+  // Warn about legacy syntax.
+  if (p.getToken().isAny(Token::kw_borrowed, Token::kw_inout)) {
+    StringRef spelling = "";
+    if (p.getToken().is(Token::kw_borrowed))
+      spelling = "read";
+    if (p.getToken().is(Token::kw_inout))
+      spelling = "mut";
+    auto diag = p.emitWarning(p.getToken().getLoc());
+    diag << "'" << p.getTokenSpelling() << "' syntax deprecated, please use '"
+         << spelling << "' instead"
+         << FixIt::replaceToken(p.getToken().getLoc(), spelling);
+  }
+
   // Any owned/read/mut/ref keyword sets convention.
   if (p.consumeIf(Token::kw_owned))
     convention = kConventionOwned;
@@ -943,8 +956,13 @@ void ParsedArgumentList::parseResultIfPresent(
   (void)p.parseExpression(resultArg.typeExpr, stmtIndent);
 
   // Parse a name binding for the result if present.
-  if (p.consumeIf(Token::kw_as))
+  SMLoc asLoc;
+  if (p.consumeIf(Token::kw_as, &asLoc)) {
+    p.emitWarning(asLoc)
+        << "'as' result syntax deprecated, please move to 'out' "
+           "syntax instead";
     (void)p.parseIdentifier(resultArg.name, "expected result name");
+  }
 
   // If we already had a result, emit an error but keep parsing.
   if (resultArg.convention == ParsedArgument::kConventionOut) {

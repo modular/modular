@@ -98,7 +98,7 @@ fn bad_out5(out a: Int) -> Int: pass
 fn bad_out6(out self) -> None: pass
 
 struct BadInitResult:
-  fn __init__(inout self) raises -> None:
+  fn __init__(mut self) raises -> None:
     pass
 
 

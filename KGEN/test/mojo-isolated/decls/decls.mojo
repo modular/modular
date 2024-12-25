@@ -448,7 +448,7 @@ struct SomeResultType:
 # CHECK-LABEL: lit.func @"named_result
 # CHECK-SAME: %out: !lit.ref<!SomeResultType, {{.*}}> byref_result
 # CHECK-SAME: namedResult = "out"
-fn named_result() -> SomeResultType as out:
+fn named_result(out out: SomeResultType):
     # CHECK-NEXT: call {{.*}}SomeResultType::@"__init__{{.*}}(%out)
     out = SomeResultType()
     # CHECK: lit.return %none
@@ -457,7 +457,7 @@ fn named_result() -> SomeResultType as out:
 
 
 # CHECK-LABEL: lit.func @"named_result_return_expr
-fn named_result_return_expr() -> SomeResultType as out:
+fn named_result_return_expr(out out: SomeResultType):
     # CHECK-NEXT: call {{.*}}SomeResultType::@"__init__{{.*}}(%out)
     return SomeResultType()
 
