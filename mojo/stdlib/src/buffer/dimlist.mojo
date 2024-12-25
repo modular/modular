@@ -626,7 +626,7 @@ fn _make_tuple[
 @always_inline
 fn _make_partially_static_index_list[
     size: Int, static_list: DimList, *, unsigned: Bool = False
-](dynamic_list: IndexList) -> IndexList[size, unsigned=unsigned] as result:
+](dynamic_list: IndexList, out result: IndexList[size, unsigned=unsigned]):
     """Creates a tuple constant using the specified values.
 
     Args:
