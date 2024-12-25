@@ -27,6 +27,9 @@ what we publish.
   `x.__copyinit__(y)` no longer work.  Simply replace them with `instance = T()`
   and `x = y` respectively.
 
+- The legacy `borrowed`/`inout` keywords and `-> T as foo` syntax now generate
+  a warning.  Please move to `read`/`mut`/`out` argument syntax instead.
+
 ### Standard library changes
 
 - `UnsafePointer`'s `bitcast` method has now been split into `bitcast`

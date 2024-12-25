@@ -242,13 +242,13 @@ struct DictEntry[K: KeyElement, V: CollectionElement](
         """
         return self
 
-    fn reap_value(owned self) -> V as out:
+    fn reap_value(owned self, out result: V):
         """Take the value from an owned entry.
 
         Returns:
             The value of the entry.
         """
-        out = self.value^
+        result = self.value^
         __disable_del self
 
 
