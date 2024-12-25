@@ -689,18 +689,27 @@ fn field_sensitive_origins(a: ThingWithFields)
   return a
 
 
-fn bad_named_return() -> String as output:
+fn bad_named_return(out output: String):
    output = "emplaced!"
    # expected-note @below {{remove the expression if the return slot is already initialized}}
    # expected-error @below {{'return' in function with a named return slot should not return the slot itself}}
    return output
 
 
-fn bad_named_return2() -> Int as output:
+fn bad_named_return2(out output: Int):
    output = 42
    # expected-note @below {{remove the expression if the return slot is already initialized}}
    # expected-error @below {{'return' in function with a named return slot should not return the slot itself}}
    return output
+
+# expected-warning @+1 {{'as' result syntax deprecated, please move to 'out' syntax instead}}
+fn bad_named_return3() -> Int as output: pass
+
+fn bad_arg_convention(
+    # expected-warning @+1 {{'borrowed' syntax deprecated, please use 'read' instead}}
+    borrowed x: Int, 
+    # expected-warning @+1 {{'inout' syntax deprecated, please use 'mut' instead}}
+    inout y: Int): pass
 
 
 fn unbound_function_type():

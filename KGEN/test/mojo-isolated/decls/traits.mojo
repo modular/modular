@@ -785,7 +785,7 @@ trait Makeable:
 @register_passable
 struct MakeNamedResult(Makeable):
     @staticmethod
-    fn make() -> Self as out:
+    fn make(out out: Self):
         pass
 
 
@@ -986,6 +986,6 @@ struct TestNamedResultConformance(Trait1):
 
     # CHECK: lit.func @"f
     # CHECK-SAME: (%self: !TestNamedResultConformance) -> !TestNamedResultConformance 
-    fn f(self) -> Self as output:
+    fn f(self, out output: Self):
         pass
         
