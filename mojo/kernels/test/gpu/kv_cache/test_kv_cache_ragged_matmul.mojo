@@ -443,16 +443,20 @@ def generic_execute_fused_qkv_cache_ragged[
     k_cache: cache_t,
     v_cache: cache_t,
     ctx: DeviceContext,
-) -> (
-    DeviceNDBuffer[
-        type,
-        2,
-        DimList(
-            Dim(), (kv_params.num_heads * 2 + num_q_heads) * kv_params.head_size
-        ),
-    ],
-    DeviceNDBuffer[type, 2, DimList(Dim(), num_q_heads * kv_params.head_size)],
-) as result:
+    out result: (
+        DeviceNDBuffer[
+            type,
+            2,
+            DimList(
+                Dim(),
+                (kv_params.num_heads * 2 + num_q_heads) * kv_params.head_size,
+            ),
+        ],
+        DeviceNDBuffer[
+            type, 2, DimList(Dim(), num_q_heads * kv_params.head_size)
+        ],
+    ),
+):
     """Executes fused QKV matmul, writing results kv_cache objects.
 
     Returns:
