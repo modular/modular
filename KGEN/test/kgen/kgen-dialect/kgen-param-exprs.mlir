@@ -891,7 +891,7 @@ kgen.generator @unification() {
 kgen.generator @struct_extract() {
   // CHECK-NEXT: <2>
   kgen.param.constant = <#kgen.struct.extract<:struct<(index, index)> { 1, 2 }, 1>>
-  // CHECK-NEXT: <*?>
-  kgen.param.constant = <#kgen.struct.extract<:struct<(index, index)> *?, 0>>
+  // CHECK-NEXT: <#interp.uninitmem>
+  kgen.param.constant = <#kgen.struct.extract<:struct<(index, index)> #interp.uninitmem, 0>>
   kgen.return
 }

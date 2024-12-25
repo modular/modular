@@ -953,10 +953,11 @@ OpFoldResult SIMDExtractElementOp::fold(FoldAdaptor adaptor) {
 OpFoldResult SIMDInsertElementOp::fold(FoldAdaptor adaptor) {
   auto vec = dyn_cast_if_present<SIMDAttr>(adaptor.getVector());
 
-  // Treat insert into undef/unknownattr as being an insert into zero.
+  // Treat insert into undef as being an insert into zero.
   if (!vec) {
-    if (auto unknown = dyn_cast_if_present<UnknownAttr>(adaptor.getVector()))
-      vec = SIMDAttr::getZeroValue(getType());
+    if (auto vecCst = adaptor.getVector())
+      if (isa<UninitMemAttr, UnknownAttr>(vecCst))
+        vec = SIMDAttr::getZeroValue(getType());
   }
 
   auto val = dyn_cast_if_present<SIMDAttr>(adaptor.getValue());
@@ -1107,7 +1108,7 @@ LogicalResult StoreOp::canonicalize(StoreOp op, PatternRewriter &b) {
   // memory is already the same value.
   if (auto cst = dyn_cast_or_null<KGEN::ParamConstantOp>(
           op.getArg().getDefiningOp())) {
-    if (isa<UnknownAttr>(cst.getValue())) {
+    if (isa<UninitMemAttr>(cst.getValue())) {
       b.eraseOp(op);
       return success();
     }
@@ -1149,10 +1150,6 @@ ErrorTreeOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[1]);
   if (!value || !ptr)
     return ErrorTree(getLoc(), "non-constant inputs");
-
-  // Don't store undef values. Just leave the memory as-is.
-  if (isa<UnknownAttr>(value))
-    return success();
 
   ErrorOrSuccess result = state.writeAttributeToMemory(ptr.getAddr(), value);
   if (result.isError())
@@ -1245,9 +1242,9 @@ OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
     return getCondition();
 
   // Fold `select x, undef, y -> y` and `select x, y, undef -> y`.
-  if (isa_and_nonnull<UnknownAttr>(adaptor.getTrueValue()))
+  if (isa_and_nonnull<UnknownAttr, UninitMemAttr>(adaptor.getTrueValue()))
     return getFalseValue();
-  if (isa_and_nonnull<UnknownAttr>(adaptor.getFalseValue()))
+  if (isa_and_nonnull<UnknownAttr, UninitMemAttr>(adaptor.getFalseValue()))
     return getTrueValue();
 
   // `x ? y : y -> y`.
@@ -1517,10 +1514,12 @@ OpFoldResult ArrayRepeatOp::fold(FoldAdaptor adaptor) {
 
 OpFoldResult ArrayGetOp::fold(FoldAdaptor adaptor) {
 
-  // If the array comes from an unknown constant then the result is also
-  // unknown, irrespective of the index.
+  // If the array comes from an undef constant then the result is also undef,
+  // irrespective of the index.
   if (auto cst =
           dyn_cast_or_null<KGEN::ParamConstantOp>(getArray().getDefiningOp())) {
+    if (isa<UninitMemAttr>(cst.getValue()))
+      return UninitMemAttr::get(getType());
     if (isa<UnknownAttr>(cst.getValue()))
       return UnknownAttr::get(getType());
   }

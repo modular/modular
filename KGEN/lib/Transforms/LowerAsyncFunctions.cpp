@@ -8,6 +8,7 @@
 #include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
+#include "KGEN/Interpreter/InterpreterAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -750,8 +751,8 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
         if (isa<HLCF::ControlFlowTerminator>(op)) {
           builder.setInsertionPoint(op);
           for (auto [index, type] : llvm::enumerate(op->getOperandTypes()))
-            op->setOperand(
-                index, builder.create<ParamConstantOp>(UnknownAttr::get(type)));
+            op->setOperand(index, builder.create<ParamConstantOp>(
+                                      UninitMemAttr::get(type)));
         } else if (!isa<SuspendOp, SuspendEndOp>(op)) {
           opsToRemove.push_back(op);
         }
@@ -777,7 +778,7 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
       builder.setInsertionPoint(parent);
       for (auto [index, operand] : llvm::enumerate(parent->getOperands()))
         parent->setOperand(index, builder.create<ParamConstantOp>(
-                                      UnknownAttr::get(operand.getType())));
+                                      UninitMemAttr::get(operand.getType())));
     }
   }
 

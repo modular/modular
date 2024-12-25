@@ -45,7 +45,7 @@ lit.func @load_undef_var() -> index {
 
 // CHECK-LABEL: lit.func @interpret_undef_var
 lit.func @interpret_undef_var() {
-  // CHECK-NEXT: constant = <*?>
+  // CHECK-NEXT: constant = <#interp.uninitmem>
   kgen.param.constant = <apply(:!lit.signature<() -> index> @load_undef_var)>
   kgen.return
 }
@@ -64,7 +64,7 @@ lit.func @load_undef_ger() -> index {
 
 // CHECK-LABEL: lit.func @interpret_undef_ger_load
 lit.func @interpret_undef_ger_load() {
-  // CHECK-NEXT: constant = <*?>
+  // CHECK-NEXT: constant = <#interp.uninitmem>
   kgen.param.constant = <apply(:!lit.signature<() -> index> @load_undef_ger)>
   kgen.return
 }

@@ -91,8 +91,13 @@ void KGENDialect::injectAttrInterfaces() {
 
 bool ParameterAttr::isSimpleConstant(Attribute attr) {
   // Check for an interface.
-  if (auto itf = llvm::dyn_cast<ParameterAttr>(attr))
+  if (auto itf = ::dyn_cast<ParameterAttr>(attr))
     return itf.isConstant();
+
+  // Handle UninitMemAttr.  It cannot conform to ParameterAttr because it is
+  // KGEN level and the interpreter is a lower level dialect.
+  if (auto uninitMem = ::dyn_cast<UninitMemAttr>(attr))
+    return !isParameterizedType(uninitMem.getType());
 
   // Otherwise, assume the attribute is not a simple constant.
   return false;

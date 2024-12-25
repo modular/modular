@@ -172,7 +172,7 @@ kgen.generator @region_parameter(%arg0: index) -> index {
 
 kgen.generator @store_undef() -> index {
   %0 = pop.stack_allocation 1 x index
-  %1 = kgen.param.constant = <*?>
+  %1 = kgen.param.constant = <#interp.uninitmem>
   pop.store %1, %0 : !kgen.pointer<index>
   %2 = pop.load %0 : !kgen.pointer<index>
   kgen.return %2 : index

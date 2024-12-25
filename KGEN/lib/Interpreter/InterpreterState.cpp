@@ -308,6 +308,11 @@ ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
     return success();
   }
 
+  // Ignore UninitMemAttr: implementations of MemoryableTypeInterface may
+  // not be compatible with it, and storing a noop is a noop.
+  if (isa<UninitMemAttr>(value))
+    return success();
+
   if (auto itf = dyn_cast<MemoryableTypeInterface>(value.getType()))
     return itf.writeTo(value, addr, *this);
 

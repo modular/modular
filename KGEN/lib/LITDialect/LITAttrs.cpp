@@ -1285,7 +1285,7 @@ ErrorOr<TypedAttr> LIT::createUninitializedValueOf(Type type,
                                                    InterpreterState &state) {
   auto declRef = dyn_cast<StructType>(type);
   if (!declRef)
-    return {UnknownAttr::get(type)};
+    return {UninitMemAttr::get(type)};
   SmallVector<std::tuple<StringAttr, TypedAttr>> values;
   auto decl = cast_or_null<StructDeclOp>(
       state.lookupTypeDefinition(declRef.getSymbol()));
