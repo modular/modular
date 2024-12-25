@@ -80,10 +80,7 @@ struct InlineArray[
                 " 'unsafe_uninitialized'."
             ),
         ]()
-        self._array = __mlir_op.`kgen.param.constant`[
-            _type = Self.type,
-            value = __mlir_attr[`#kgen.unknown : `, Self.type],
-        ]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @always_inline
     fn __init__(out self, *, unsafe_uninitialized: Bool):
@@ -106,10 +103,7 @@ struct InlineArray[
                 Always set to `True` (it's not actually used inside the constructor).
         """
         _inline_array_construction_checks[size]()
-        self._array = __mlir_op.`kgen.param.constant`[
-            _type = Self.type,
-            value = __mlir_attr[`#kgen.unknown : `, Self.type],
-        ]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     fn __init__(
         mut self,
@@ -129,11 +123,7 @@ struct InlineArray[
             unsafe_assume_initialized: The array of `UnsafeMaybeUninitialized` elements.
         """
 
-        self._array = __mlir_op.`kgen.param.constant`[
-            _type = Self.type,
-            value = __mlir_attr[`#kgen.unknown : `, Self.type],
-        ]()
-
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         for i in range(Self.size):
             unsafe_assume_initialized[i].unsafe_ptr().move_pointee_into(
                 self.unsafe_ptr() + i
@@ -148,10 +138,7 @@ struct InlineArray[
             fill: The element to fill each index.
         """
         _inline_array_construction_checks[size]()
-        self._array = __mlir_op.`kgen.param.constant`[
-            _type = Self.type,
-            value = __mlir_attr[`#kgen.unknown : `, Self.type],
-        ]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
         @parameter
         for i in range(size):
@@ -183,10 +170,7 @@ struct InlineArray[
 
         debug_assert(len(storage) == size, "Elements must be of length size")
         _inline_array_construction_checks[size]()
-        self._array = __mlir_op.`kgen.param.constant`[
-            _type = Self.type,
-            value = __mlir_attr[`#kgen.unknown : `, Self.type],
-        ]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
         # Move each element into the array storage.
         @parameter

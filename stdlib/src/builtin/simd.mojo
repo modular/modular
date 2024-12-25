@@ -461,15 +461,7 @@ struct SIMD[type: DType, size: Int](
             ),
         )
 
-        self = __mlir_op.`kgen.param.constant`[
-            _type = __mlir_type[
-                `!pop.simd<`, size.value, `, `, type.value, `>`
-            ],
-            value = __mlir_attr[
-                `#kgen.unknown : `,
-                __mlir_type[`!pop.simd<`, size.value, `, `, type.value, `>`],
-            ],
-        ]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
         @parameter
         for i in range(size):
@@ -2022,17 +2014,12 @@ struct SIMD[type: DType, size: Int](
         fn _convert_variadic_to_pop_array[
             *mask: Int
         ]() -> __mlir_type[`!pop.array<`, output_size.value, `, `, Int, `>`]:
-            var array = __mlir_op.`kgen.param.constant`[
-                _type = __mlir_type[
-                    `!pop.array<`, output_size.value, `, `, Int, `>`
-                ],
-                value = __mlir_attr[
-                    `#kgen.unknown : `,
-                    __mlir_type[
-                        `!pop.array<`, output_size.value, `, `, Int, `>`
-                    ],
-                ],
-            ]()
+            var array: __mlir_type[
+                `!pop.array<`, output_size.value, `, `, Int, `>`
+            ]
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(array)
+            )
 
             var array_ptr = UnsafePointer.address_of(array)
 

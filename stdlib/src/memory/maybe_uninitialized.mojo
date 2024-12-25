@@ -36,10 +36,7 @@ struct UnsafeMaybeUninitialized[ElementType: AnyType](CollectionElementNew):
     @always_inline
     fn __init__(out self):
         """The memory is now considered uninitialized."""
-        self._array = __mlir_op.`kgen.param.constant`[
-            _type = Self.type,
-            value = __mlir_attr[`#kgen.unknown : `, Self.type],
-        ]()
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @doc_private
     @always_inline

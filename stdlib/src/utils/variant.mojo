@@ -121,7 +121,7 @@ struct Variant[*Ts: CollectionElement](
         Args:
             unsafe_uninitialized: Marker argument indicating this initializer is unsafe.
         """
-        self._impl = __mlir_attr[`#kgen.unknown : `, Self._mlir_type]
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
     @implicit
     fn __init__[T: CollectionElement](mut self, owned value: T):
@@ -134,7 +134,7 @@ struct Variant[*Ts: CollectionElement](
         Args:
             value: The value to initialize the variant with.
         """
-        self._impl = __mlir_attr[`#kgen.unknown : `, self._mlir_type]
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         alias idx = Self._check[T]()
         self._get_discr() = idx
         self._get_ptr[T]().init_pointee_move(value^)
@@ -171,7 +171,7 @@ struct Variant[*Ts: CollectionElement](
         Args:
             other: The variant to move.
         """
-        self._impl = __mlir_attr[`#kgen.unknown : `, self._mlir_type]
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         self._get_discr() = other._get_discr()
 
         @parameter
