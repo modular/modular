@@ -590,6 +590,13 @@ fn gcd_pow2[a: Int, b: Int]() -> Int:
     return min(a, b)
 
 
+fn get_kernel_simd_width[type: DType, target: StringLiteral]() -> Int:
+    return (
+        simdwidthof[type]() if target
+        == "cpu" else simdwidthof[type, target = _get_gpu_target()]()
+    )
+
+
 # This version of the function supports CPU only. For GPU, use the one with the
 # MojoCallContextPtr.
 @__mogg_intrinsic_attr("mogg.for_each")
@@ -600,13 +607,8 @@ fn foreach[
     func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
     synchronous: Bool = False,
     target: StringLiteral = "cpu",
+    simd_width: Int = get_kernel_simd_width[type, target](),
 ](tensor: ManagedTensorSlice[type, rank]):
-    alias simd_width = simdwidthof[
-        tensor.type
-    ]() if target == "cpu" else simdwidthof[
-        tensor.type, target = _get_gpu_target()
-    ]()
-
     @parameter
     @always_inline
     fn elementwise_fn_wrapper[
@@ -631,13 +633,8 @@ fn foreach[
     func: fn[width: Int] (IndexList[rank]) capturing -> SIMD[type, width],
     synchronous: Bool = False,
     target: StringLiteral = "cpu",
+    simd_width: Int = get_kernel_simd_width[type, target](),
 ](tensor: ManagedTensorSlice[type, rank], ctx: MojoCallContextPtr):
-    alias simd_width = simdwidthof[
-        tensor.type
-    ]() if target == "cpu" else simdwidthof[
-        tensor.type, target = _get_gpu_target()
-    ]()
-
     @parameter
     @always_inline
     fn elementwise_fn_wrapper[
