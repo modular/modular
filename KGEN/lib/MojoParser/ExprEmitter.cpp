@@ -1553,6 +1553,16 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
     }
   }
 
+  // VariadicListAttr's can be bitcast if each of their elements can.  This
+  // allows a list of derived types to be converted to a list of base types.
+  if (auto fromVar = dyn_cast<VariadicType>(fromType)) {
+    if (auto toVar = dyn_cast<VariadicType>(toType)) {
+      return fromVar.getConvention() == toVar.getConvention() &&
+             canZeroCostConvert(fromVar.getElementType(),
+                                toVar.getElementType(), shared);
+    }
+  }
+
   // Otherwise handle function conversions.
   auto from = dyn_cast<LITSignatureType>(fromType);
   auto to = dyn_cast<LITSignatureType>(toType);

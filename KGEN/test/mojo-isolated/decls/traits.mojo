@@ -989,8 +989,10 @@ struct TestNamedResultConformance(Trait1):
     fn f(self, out output: Self):
         pass
         
-#alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
-
 fn test_pack_of_traits1[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait]
                        (owned *args: *elt_types):
+     pass
+
+fn test_pack_of_traits2[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait](
+    owned storage: VariadicPack[_, elt_trait, *elt_types]):
      pass
