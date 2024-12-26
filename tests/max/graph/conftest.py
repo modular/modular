@@ -129,7 +129,7 @@ def shapes(
         # Ensure that the dim product fits in an int64.
         high = min(2 ** (exponent + 1) - 1, max_value)
         dim_value = draw(st.integers(min_value=low, max_value=high))
-        assert (dim_value * cumulative_product) <= MAX_INT64
+        assert (dim_value * cumulative_product) <= max_size
 
         dims.append(StaticDim(dim_value))
         cumulative_product *= dim_value
