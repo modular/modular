@@ -126,7 +126,7 @@ def gen_slice(n: int, rand: random.Random) -> slice:
     step = rand.randint(1, n) if rand.randint(0, 1) else None
 
     # Set default values to compute valid ranges if start/step is None.
-    start_val = 0 if start is None else start
+    start_val = 0 if start is None else start + n if start < 0 else start
     step_val = 1 if step is None else step
 
     stop: int | None = None
@@ -144,8 +144,8 @@ def gen_slice(n: int, rand: random.Random) -> slice:
 
         stop = normalized_stop if rand.randint(0, 1) else -n + normalized_stop
 
-    # Check for overflow.
-    stop_val = n if stop is None else stop
+    # Check for overflow with normalized start/stop.
+    stop_val = n if stop is None else stop + n if stop < 0 else stop
     step_offset = step_val - 1 if step_val > 0 else step_val + 1
     diff = stop_val - start_val
     int64_max = np.iinfo(np.int64).max
