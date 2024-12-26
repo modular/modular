@@ -1553,6 +1553,7 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
     }
   }
 
+  // Otherwise handle function conversions.
   auto from = dyn_cast<LITSignatureType>(fromType);
   auto to = dyn_cast<LITSignatureType>(toType);
   if (!from || !to)
