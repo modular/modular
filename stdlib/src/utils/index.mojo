@@ -514,7 +514,9 @@ struct IndexList[
             The resulting index tuple.
         """
 
-        @always_inline
+        # FIXME(#53331) - nodebug is required otherwise we crash in debug
+        # information generation.
+        @always_inline("nodebug")
         fn apply_fn[
             type: DType
         ](a: Scalar[type], b: Scalar[type]) -> Scalar[type]:
