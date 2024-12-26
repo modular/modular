@@ -984,7 +984,7 @@ fn deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
 
 # CHECK-LABEL: lit.func @"out_of_order_kw
 fn out_of_order_kw[x: int, y: IndexParam[x]]():
-    # CHECK-NEXT: out_of_order_kw{{.*}}<0, :{{.*}}IndexParam<0> {{.*}}IndexParam::@"__init__{{.*}}<0>), #kgen.none)>
+    # CHECK-NEXT: out_of_order_kw{{.*}}<0, :{{.*}}IndexParam<0> {{.*}}IndexParam::@"__init__{{.*}}<0>, #kgen.none)>>
     alias bound = out_of_order_kw[y=None, x=`0`]
 
 

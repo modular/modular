@@ -1148,13 +1148,15 @@ fn handleAnyLifetime2():
 # CHECK-LABEL: lit.func @"handleAnyLifetime3
 fn handleAnyLifetime3():
     # CHECK-NEXT: %a_packed_ptr = lit.var.decl
-    # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
     # CHECK-NEXT: lit.call {{.*}}__init__
+    # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
+    # CHECK-NEXT: lit.ref.store
     # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
     var a_packed_ptr = UnsafePointer[Int]()
 
-    # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
     # CHECK-NEXT: lit.call {{.*}}__init__
+    # CHECK-NEXT: lit.var.lifetime.start %a_packed_ptr
+    # CHECK-NEXT: lit.ref.store
     # CHECK-NEXT: lit.var.lifetime.end %a_packed_ptr
 
     # This shouldn't be treated as a use of `a_packed_ptr`

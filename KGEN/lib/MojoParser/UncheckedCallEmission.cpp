@@ -1037,9 +1037,9 @@ static TypedAttr tryOriginInitFold(SymbolRefAttr symbolRef,
     return {};
 
   // Okay, we know we want to fold this.
-  assert(sigType.getArgConvention(1) == ArgConvention::ByRefResult);
-  auto originStructType = cast<LIT::StructType>(
-      ASTType(sigType.getArguments()[1]).getReferenceElementType());
+  assert(sigType.getNumArguments() == 1 &&
+         sigType.getArgConvention(0) == ArgConvention::ReadReg);
+  auto originStructType = cast<LIT::StructType>(sigType.getUserResultType());
 
   // Figure out what the struct field is so we can form a StructAttr.  We know
   // the "self" type has been bound to any parameters, so it will be the actual
