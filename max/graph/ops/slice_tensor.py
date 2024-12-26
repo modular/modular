@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Optional, Union
 
 if sys.version_info >= (3, 10):
@@ -44,7 +45,7 @@ from .stack import stack_scalars
 
 
 SliceIndex = Union[TensorValue, int, slice, tuple[slice, DimLike]]
-SliceIndices = list[Union[SliceIndex, "EllipsisType"]]
+SliceIndices = Sequence[Union[SliceIndex, "EllipsisType"]]
 
 
 def _concrete_static_slice(n: int, index: slice) -> slice:
