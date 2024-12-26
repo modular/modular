@@ -1576,13 +1576,6 @@ static void typeCheckResult(ParsedArgument resultArg, bool isDef,
   if (tcSignature.argList.effects.isAsync())
     rp = TypeConvention::MemoryOnly;
 
-  // If the result is an initializer with a trivial result return it in-memory.
-  // FIXME: Return initializers for trivial registers too, this is just phased
-  // in to reduce churn.
-  if (resultArg.name && fnInfo.isInitializer() &&
-      resultType.isTrivial(fnDecl->getLoc(), shared))
-    rp = TypeConvention::MemoryOnly;
-
   // If it is memory-only, pass it indirectly as the last argument to the
   // function by-reference.
   if (rp == TypeConvention::MemoryOnly) {

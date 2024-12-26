@@ -827,16 +827,32 @@ fn callMaybeStatic(a: Int, b: EmptyStruct):
     # CHECK-NEXT: lit.call {{.*}}@"maybe_static{{.*}}([[TMP]], %b)
     StructExample().maybe_static(b)
 
-    # See that we can take the address of initializers without a thunk.
-    # CHECK-NEXT: %fn_ptr = lit.var.decl "fn_ptr"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.signature<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
-    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr
-    var fn_ptr : fn() -> StructExample = StructExample.__init__
+# CHECK-LABEL: lit.func @"initializersAsFunctions
+# See that we can take the address of initializers without a thunk.
+fn initializersAsFunctions():
+    # Register passable trivial.
+    # CHECK-NEXT: %fn_ptr1 = lit.var.decl
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.signature<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
+    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr1
+    var fn_ptr1 : fn(Int) -> MyInt = MyInt.__init__
 
+    # Register passable non-trivial.
+    
     # CHECK-NEXT: %fn_ptr2 = lit.var.decl "fn_ptr2"
-    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(decls::StructExample)")]()  
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.signature<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr2
-    var fn_ptr2 : fn(StructExample) -> StructExample = StructExample.__copyinit__
+    var fn_ptr2 : fn() -> StructExample = StructExample.__init__
+
+    # CHECK-NEXT: %fn_ptr4 = lit.var.decl "fn_ptr4"
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__copyinit__(decls::StructExample)")]()  
+    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr4
+    var fn_ptr4 : fn(StructExample) -> StructExample = StructExample.__copyinit__
+
+    # Memory
+    # CHECK-NEXT: %fn_ptr5 = lit.var.decl
+    # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.signature<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::Int)")
+    # CHECK-NEXT: lit.ref.store [[TMP]], %fn_ptr5
+    var fn_ptr5 :  fn(Int) -> StructWithInit = StructWithInit.__init__
 
 
 # CHECK-LABEL: lit.struct.decl @DelegatingInitMem

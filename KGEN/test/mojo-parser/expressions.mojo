@@ -131,9 +131,7 @@ fn memoryOnlyOps(mut a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[IMMREF]], %mpFloat)
   var mpFloat : MemoryOnlyFloat64 = v2.x
 
-  # CHECK: [[SIMDTMP:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__init__{{.*}}([[SIMDTMP]])
-  # CHECK-NEXT: [[SIMDVAL:%.*]] = lit.ref.load [[SIMDTMP]]
+  # CHECK-NEXT: [[SIMDVAL:%.*]] = lit.call {{.*}}SIMD::@"__init__{{.*}}()
 
   # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}([[SIMDVAL]], [[TMP]])
@@ -476,9 +474,7 @@ fn andOr3(a: Boolish, c: Bool):
   # CHECK-NEXT:  = hlcf.if [[I1]] -> !Bool {
   # CHECK-NEXT:   hlcf.yield %c
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}({{.*}}, [[ANON]])
-  # CHECK-NEXT:   [[TMP:%.*]] = lit.load.consume [[ANON]]
+  # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}([[I1]])
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK-NEXT: }
   _ = a and c
@@ -489,9 +485,7 @@ fn andOr4(b: Boolish, c: Bool):
   # CHECK: [[BBOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%b)
   # CHECK-NEXT: [[BI1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BBOOL]])
   # CHECK-NEXT: = hlcf.if [[BI1]] -> !Bool {
-  # CHECK-NEXT:   [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}([[BI1]], [[ANON]])
-  # CHECK-NEXT:   [[TMP:%.*]] = lit.load.consume [[ANON]]
+  # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}([[BI1]])
   # CHECK:        hlcf.yield [[TMP]]
   # CHECK: } else {
   # CHECK-NEXT: hlcf.yield %c : !Bool
@@ -1200,8 +1194,9 @@ struct TwoParamsStruct[a: Int, b: Int]:
 
 # CHECK-LABEL: lit.func @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> var>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
-    # CHECK-NEXT: %b_0 = lit.var.decl
-    # CHECK-NEXT: lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b, %b_0)
+    # CHECK-NEXT: %b_0 = lit.var.decl "b"
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)
+    # CHECK-NEXT: lit.ref.store [[TMP]], %b_0
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
     alias v0 = a[2]
 

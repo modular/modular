@@ -234,14 +234,12 @@ fn test_variadic_and_kw_only_params_indirect[x: int,
 fn initialize_in_addrspace(
     ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]
 ):
+    # CHECK-NEXT: [[REGVAL:%.*]] = lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}()
+
     # Get !lit.ref in addr space #1
     # CHECK-NEXT: [[PTRREF:%.*]] = lit.call{{.*}}@UnsafePointer::@"__getitem__{{.*}}(%ptr)
-
-    # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
-    # CHECK-NEXT: lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}(%anonymous2A)
-
-    # Use lit.load/store to move into addrspace 1
-    # CHECK-NEXT: [[REGVAL:%.*]] = lit.load.consume %anonymous2A
+    
+    # Use lit.ref.store to move into addrspace 1
     # CHECK-NEXT: lit.ref.store [[REGVAL]], [[PTRREF]] : <!ExampleRegPassable, mut #lit.any.origin, 1>
     ptr[] = ExampleRegPassable()
 
@@ -414,8 +412,9 @@ fn complex_ref_box_emission[p: Int](a: Int):
 
     # RValues infer as immutable, just like you can't pass them to mut.
     _ = test_int_ref(Int())
-    # CHECK: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[VAR]])
+    # CHECK: [[REGVAL:%.*]] = lit.call {{.*}}__init__{{.*}}()
+    # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl {{.*}}!lit.ref<!Int,
+    # CHECK-NEXT: lit.ref.store [[REGVAL]], [[VAR]]
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.immut [[VAR]]
     # CHECK-NEXT: lit.call {{.*}}test_int_ref{{.*}}([[TMP]])
 
