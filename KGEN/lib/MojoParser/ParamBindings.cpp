@@ -48,7 +48,7 @@ using namespace M::KGEN::LIT;
 /// https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
 ///
 /// TODO(MOCO-1259): Support static methods with associated aliases
-LITSignatureType M::KGEN::LIT::substituteTraitAliasesIntoSignature(
+LITSignatureType LIT::substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
     LITSignatureType desiredSignature, PValue selfPValue) {
   ParserParamEvaluator traitAliasReplacer(declResolver);

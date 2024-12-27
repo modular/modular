@@ -655,49 +655,6 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
   return 2 * passesVarArgArgument + 1 * hasVariadicParams;
 }
 
-/// If we're trying to call `foo.lork()`, like this:
-///
-///     fn callTraitMethodWithAliasArg[X: MyTrait](t: X, thing: MyStruct[X.T]):
-///         t.lork(thing)
-///
-/// and lork happens to be a trait method with an alias, like:
-///
-///     trait MyTrait:
-///         alias T: OtherTrait
-///         fn lork(self, thing: MyStruct[T]): ...
-///
-/// Then we'll need to adjust our desired signature from:
-///     fn lork(self, thing: MyStruct[T])
-/// to:
-///     fn lork(self, thing: MyStruct[get_vtable_entry(X, T)])
-///
-/// This function will do that conversion. If we aren't calling a trait method
-/// with an alias, it'll return the given desiredSignature unmodified.
-///
-/// For more context, see
-/// https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
-///
-/// TODO(MOCO-1259): Support static methods with associated aliases
-LITSignatureType substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
-    LITSignatureType desiredSignature, PValue selfPValue) {
-  ParserParamEvaluator traitAliasReplacer(declResolver);
-  for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
-    for (ASTDecl *decl : decls) {
-      AliasDeclOp traitAlias = dyn_cast<LIT::AliasDeclOp>(*decl);
-      if (!traitAlias)
-        continue;
-      StringAttr nameStringAttr = StringAttr::get(
-          name.str(), StringType::get(candidateFunc->getContext()));
-      TypedAttr aliasRef = ParamOperatorAttr::get(POC::GetVTableEntry,
-                                                  {selfPValue, nameStringAttr},
-                                                  traitAlias.getType());
-      traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(), aliasRef);
-    }
-  }
-  return traitAliasReplacer.replace(desiredSignature);
-}
-
 OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           const OverloadSet &callable,
                                           PValue selfPValue) {
