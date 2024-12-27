@@ -6,12 +6,16 @@
 """Distance function definitions for use in testing infrastructure."""
 
 import numpy as np
+import numpy.typing as npt
 import torch
 import torch.nn.functional as F
 
 
 def is_euclidean_distance_close(
-    result, expected, rtol: float = 0.01, atol: float = 1e-5
+    result: npt.NDArray[np.floating],
+    expected: npt.NDArray[np.floating],
+    rtol: float = 0.01,
+    atol: float = 1e-5,
 ) -> bool:
     """Computes whether the Euclidean distance between inputs is close."""
     diff_norm = np.linalg.norm(result - expected)
@@ -23,8 +27,8 @@ def is_euclidean_distance_close(
 
 
 def kl_divergence_verifier(
-    predicted: np.ndarray,
-    expected: np.ndarray,
+    predicted: npt.NDArray[np.floating],
+    expected: npt.NDArray[np.floating],
     description: str,
     threshold: float = 0.1,
 ) -> None:

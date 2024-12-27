@@ -14,8 +14,19 @@ modular_py_library(
         requirement("numpy"),
         ":distance_metrics",
         ":evaluate",
+        ":ndarray_from_tensor_type",
         ":numpy_encoder",
         ":path",
+    ],
+)
+
+modular_py_library(
+    name = "ndarray_from_tensor_type",
+    srcs = ["ndarray_from_tensor_type.py"],
+    imports = [".."],
+    deps = [
+        requirement("numpy"),
+        "//SDK/lib/API/python/max/graph",
     ],
 )
 
