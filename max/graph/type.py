@@ -72,16 +72,22 @@ class Dim:
 
     def __new__(cls, value: DimLike):
         """Converts valid input values to Dim."""
-        # There has to be a better pattern for this
+        if cls is not Dim:
+            # Create subclass if given instead of redirecting to Dim.
+            return super().__new__(cls)
+
         if isinstance(value, Dim):
-            return super().__new__(type(value))
+            # Directly return existing Dim instance.
+            return value
         elif isinstance(value, (int, np.integer)):
             return super().__new__(StaticDim)
         elif isinstance(value, str):
             return super().__new__(SymbolicDim)
         elif isinstance(value, mlir.Attribute):
             return super().__new__(AlgebraicDim)
-        raise TypeError(f"Unsupported dimension type {value} ({type(value)})")
+
+        msg = f"Unsupported dimension type {value} ({type(value)})"
+        raise TypeError(msg)
 
     def __index__(self) -> int:
         """Converts this dim to an index as used by indexing and slicing.

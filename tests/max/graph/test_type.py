@@ -116,6 +116,12 @@ def test_symbolic_dim_invalid(name: str):
         SymbolicDim(name)
 
 
+def test_symbolic_dim_to_int_error() -> None:
+    """Checks the error message when creating an int from a SymbolicDim."""
+    with pytest.raises(TypeError, match="expected statically known dim"):
+        int(SymbolicDim("x"))
+
+
 @given(dim=...)
 def test_dim_to_mlir_no_context(dim: Dim):
     with pytest.raises(RuntimeError):
