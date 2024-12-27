@@ -75,6 +75,7 @@ fn simd_store_into_managed_tensor_slice[
             tensor._ptr.store[alignment=max_alignment](flat_index, value)
 
     # Stride > 1
+    @parameter
     @always_inline
     fn store_strided(stride: Int):
         @parameter
