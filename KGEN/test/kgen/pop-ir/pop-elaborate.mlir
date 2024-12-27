@@ -286,7 +286,7 @@ kgen.generator export @do_it() {
 
   // CHECK-NEXT: <128>
   kgen.param.constant: i32 = <apply(
-    :(!kgen.struct<(i8, i16, i32)>) -> i32 @struct_gep_load, { *?, *?, 128 })>
+    :(!kgen.struct<(i8, i16, i32)>) -> i32 @struct_gep_load, { #interp.uninitmem, #interp.uninitmem, 128 })>
 
   // CHECK-NEXT: <{ 5, 0 }>
   kgen.param.constant: struct<(scalar<ui8>, scalar<ui8>)> = <apply(
