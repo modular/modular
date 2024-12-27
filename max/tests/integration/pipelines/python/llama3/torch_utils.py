@@ -14,19 +14,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-def torch_layer_norm(eps: float, x: torch.Tensor, weight):
-    # Compute the mean and variance along the last dimension (features)
-    mean = x.mean(dim=-1, keepdim=True)
-    variance = x.var(dim=-1, keepdim=True, unbiased=False)
-
-    # Normalize the input
-    x_normalized = (x - mean) / torch.sqrt(variance + eps)
-
-    after_weights = x_normalized * weight
-
-    return after_weights
-
-
 def torch_linear(weight, **kwargs):
     linear = nn.Linear(*weight.shape, **kwargs)
     linear.weight = nn.Parameter(weight)
