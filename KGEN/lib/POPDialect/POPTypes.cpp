@@ -262,10 +262,6 @@ ErrorOrSuccess SIMDType::writeTo(TypedAttr value, int64_t addr,
     return mem.takeError();
   auto *data = reinterpret_cast<uint8_t *>(*mem);
 
-  // Don't store undef values. Just leave the memory as-is.
-  if (::isa<UnknownAttr>(value))
-    return success();
-
   ArrayRef<DTypeValue> values = llvm::cast<SIMDAttr>(value).getValues();
 
   // Integer dtypes s/ui1/2/4 are densely packed. Handle them here.

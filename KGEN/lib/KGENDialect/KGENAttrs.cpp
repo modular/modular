@@ -753,8 +753,6 @@ TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
                                  unsigned fieldNo, Type resultType) {
   if (auto value = dyn_cast_if_present<StructAttr>(structValue))
     return value.getValues()[fieldNo];
-  if (::isa<UnknownAttr>(structValue))
-    return UnknownAttr::get(resultType);
   if (::isa<UninitMemAttr>(structValue))
     return UninitMemAttr::get(resultType);
 

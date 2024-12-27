@@ -1519,24 +1519,15 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
 
 ErrorOrSuccess StructType::writeTo(TypedAttr structValue, int64_t addr,
                                    InterpreterState &state) const {
-  // FIXME: Remove these hacks.
-  if (::isa<UnknownAttr>(structValue))
-    return success();
-
   int64_t offset = 0;
   for (TypedAttr value : ::cast<StructAttr>(structValue).getValues()) {
     auto dl = ::cast<DataLayoutInterface>(value.getType());
     // Store each element spaced apart by padding according to its alignment.
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
-    // Ignore unknown values. Just leave the memory as-is.
 
-    // FIXME: remove this.
-    if (!::isa<UnknownAttr>(value)) {
-      ErrorOrSuccess result =
-          state.writeAttributeToMemory(addr + offset, value);
-      if (result.isError())
-        return result.takeError();
-    }
+    ErrorOrSuccess result = state.writeAttributeToMemory(addr + offset, value);
+    if (result.isError())
+      return result.takeError();
     offset += *dl.getTypeSize(state.getTarget());
   }
   return success();
@@ -1693,13 +1684,10 @@ ErrorOrSuccess PackType::writeTo(TypedAttr packValue, int64_t addr,
     auto dl = ::cast<DataLayoutInterface>(value.getType());
     // Store each element spaced apart by padding according to its alignment.
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
-    // Ignore unknown values. Just leave the memory as-is.
-    if (!::isa<UnknownAttr>(value)) {
-      ErrorOrSuccess result =
-          state.writeAttributeToMemory(addr + offset, value);
-      if (result.isError())
-        return result.takeError();
-    }
+
+    ErrorOrSuccess result = state.writeAttributeToMemory(addr + offset, value);
+    if (result.isError())
+      return result.takeError();
     offset += *dl.getTypeSize(state.getTarget());
   }
   return success();
