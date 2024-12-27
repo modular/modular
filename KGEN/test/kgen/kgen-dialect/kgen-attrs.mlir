@@ -122,3 +122,8 @@ kgen.struct.generator @LinkedList<T: type, x: !kgen.paramref<T>> : type {
 "some.op"() {
   a = #kgen.typeref<@LinkedList<:type index, 3>>
 } : () -> ()
+
+
+// CHECK: kgen.param.assert <rebind(:i53 42)>, "rebind must fold"
+kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"
+

@@ -2365,6 +2365,11 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
   if (auto typeCst = dyn_cast<TypeConstantAttr>(input))
     return TypeConstantAttr::get(typeCst.getTypeValue(), typeCst.getMlirType(),
                                  resultType);
+  // rebind(rebind(x)) => rebind(x)
+  if (auto op = dyn_cast<ParamOperatorAttr>(input);
+      op && op.getOpcode() == POC::Rebind)
+    return ParamOperatorAttr::get(POC::Rebind, op.getOperand(0), resultType);
+
   return {};
 }
 
@@ -2592,7 +2597,7 @@ static TypedAttr simplifyStrConcat(TypedAttr lhs, TypedAttr rhs) {
 static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
                                              TypedAttr operand,
                                              Type resultType) {
-  assert(resultType && "rebind requires a result type");
+  assert(resultType && "function_get_arg_types requires a result type");
 
   if (!::isa<VariadicType>(resultType))
     return {};
