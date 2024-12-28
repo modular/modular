@@ -1074,6 +1074,7 @@ def POP_ArrayReplaceOp : POPOp<"array.replace", [Pure,
 
   let hasVerifier = 1;
   let hasFolder = 1;
+  let hasCanonicalizeMethod = true;
 }
 
 //===----------------------------------------------------------------------===//
