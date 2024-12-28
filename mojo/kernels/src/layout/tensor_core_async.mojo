@@ -20,25 +20,47 @@ from gpu.mma import (
 
 from utils import Index, IndexList
 
+alias supported_mma_shape = (
+    Index(64, 8, 8),
+    Index(64, 8, 16),
+)
+
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
 fn _lhs_layout[mma_shape: IndexList[3]]() -> Layout:
+    @parameter
+    if mma_shape == Index(64, 8, 8):
+        return Layout(
+            IntTuple(IntTuple(8, 8), IntTuple(4, 2)),
+            IntTuple(IntTuple(4, 32), IntTuple(1, 256)),
+        )
+    elif mma_shape == Index(64, 8, 16):
+        return Layout(
+            IntTuple(IntTuple(8, 8), IntTuple(8, 2)),
+            IntTuple(IntTuple(8, 64), IntTuple(1, 512)),
+        )
+
     constrained[
-        mma_shape == Index(64, 8, 8),
+        mma_shape in supported_mma_shape,
         "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
-    return Layout(
-        IntTuple(IntTuple(8, 8), IntTuple(4, 2)),
-        IntTuple(IntTuple(4, 32), IntTuple(1, 256)),
-    )
+
+    return Layout()
 
 
 fn _rhs_layout[mma_shape: IndexList[3]]() -> Layout:
+    @parameter
+    if mma_shape == Index(64, 8, 8):
+        return Layout(IntTuple(IntTuple(4, 2), 8), IntTuple(IntTuple(1, 32), 4))
+    elif mma_shape == Index(64, 8, 16):
+        return Layout(IntTuple(IntTuple(8, 2), 8), IntTuple(IntTuple(1, 64), 8))
+
     constrained[
-        mma_shape == Index(64, 8, 8),
+        mma_shape in supported_mma_shape,
         "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
-    return Layout(IntTuple(IntTuple(4, 2), 8), IntTuple(IntTuple(1, 32), 4))
+
+    return Layout()
 
 
 fn _lhs_descriptor[
@@ -47,7 +69,7 @@ fn _lhs_descriptor[
     tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
-        mma_shape == Index(64, 8, 8),
+        mma_shape in supported_mma_shape,
         "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
     return WGMMADescriptor.create[8, 64](tensor.ptr)
@@ -59,7 +81,7 @@ fn _rhs_descriptor[
     tensor: LayoutTensor[_, _, address_space = AddressSpace.SHARED, *_, **_]
 ) -> WGMMADescriptor[tensor.dtype]:
     constrained[
-        mma_shape == Index(64, 8, 8),
+        mma_shape in supported_mma_shape,
         "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
     return WGMMADescriptor.create[1, 8](tensor.ptr)
@@ -70,7 +92,7 @@ fn _output_register_size[
     mma_shape: IndexList[3]
 ](in_dtype: DType, out_dtype: DType) -> Int:
     constrained[
-        mma_shape == Index(64, 8, 8),
+        mma_shape in supported_mma_shape,
         "WGMMA operation of shape '" + str(mma_shape) + "' is not supported",
     ]()
     return 4
@@ -106,7 +128,7 @@ struct TensorCoreAsync[
     @always_inline
     fn __init__(out self):
         constrained[
-            mma_shape == Index(64, 8, 8),
+            mma_shape in supported_mma_shape,
             "WGMMA operation of shape '"
             + str(mma_shape)
             + "' is not supported",
@@ -149,7 +171,7 @@ struct TensorCoreAsync[
         res_reg_tile: Self.result_operand_type,
     ):
         constrained[
-            mma_shape == Index(64, 8, 8),
+            mma_shape in supported_mma_shape,
             "WGMMA operation of shape '"
             + str(mma_shape)
             + "' is not supported",
