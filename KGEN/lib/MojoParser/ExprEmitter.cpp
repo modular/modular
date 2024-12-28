@@ -1675,7 +1675,7 @@ ASTType ExprEmitter::getZeroCostCommonType(ASTType type1, ASTType type2) {
 /// by invoking (one level of) conversion operations.  This does not generate
 /// any IR.
 ///
-/// CAUTION: This method must line up with `emitResult`!!!
+/// CAUTION: This method must line up with `emitImplicitConversionToType`!!!
 bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                              ASTType requiredType,
                                              ASTDecl &declScope) {
@@ -1746,6 +1746,115 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   return cacheAndReturnVal(succeeded(result) && result.value());
 }
 
+/// This emits an implicit conversion to the specified type if the types
+/// differ, including emitting any implicit constructor calls as well as
+/// implicit promotions like origin conversions.
+///
+/// CAUTION: This method must line up with `canImplicitlyConvertToType`!!!
+CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
+                                                 ASTType requiredType,
+                                                 ValueDest &dest) {
+  CValue value = valueExpr.ir;
+  const ExprNode *expr = valueExpr.expr;
+
+  // If converting to or from a TypeCheckError type, then there is an
+  // already-diagnosed error about this expression.
+  auto rvType = value.getRValueType();
+  if (rvType.isTypeCheckErrorType() || requiredType.isTypeCheckErrorType()) {
+    dest.resetForError();
+    return {};
+  }
+
+  // If the types are already identical, then we're done.
+  if (requiredType.isEqualCanon(rvType))
+    return emitCResult(value, expr, dest);
+
+  // If we are dealing with types that differ only pre-elaboration,
+  // we insert a rebind or equivalent
+  if (canZeroCostConvert(rvType, requiredType, shared)) {
+    value = emitZeroCostConvert({value, expr}, requiredType);
+    return emitCResult(value, expr, dest);
+  }
+
+  // Handle conversions between origins and origin sets.
+  if (isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) {
+    // This can only be done in the parameter domain.
+    if (TypedAttr pv = value.getIfPValue()) {
+      pv = OriginSetAttr::get(pv, cast<OriginSetType>(requiredType));
+      return emitCResult(pv, expr, dest);
+    }
+  }
+  if (isa<OriginSetType>(rvType) && isa<OriginType>(requiredType)) {
+    // This can only be done in the parameter domain.
+    if (TypedAttr pv = value.getIfPValue()) {
+      pv = OriginSetUnionAttr::get(pv, cast<OriginType>(requiredType));
+      return emitCResult(pv, expr, dest);
+    }
+  }
+
+  // Emit metatype conversions to trait types if the metatype implements the
+  // specified trait.
+  if (auto trait = dyn_cast<TraitType>(requiredType)) {
+    // Check conversions from struct types.
+    if (isa<AnyStructType, TraitType>(rvType)) {
+      PValue result = emitMetaTypeToTraitConversion(valueExpr, trait);
+      return emitCResult(result, expr, dest);
+    }
+
+    // Check conversions from MLIR types.
+    if (isa<TypeType>(rvType)) {
+      PValue result = bindMLIRTypeToTrait(valueExpr, trait);
+      return emitCResult(result, expr, dest);
+    }
+  }
+
+  // Support implicit conversions of function types.
+  if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType)) {
+    if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
+      if (canConvertFunctionTypes(rvFunctionType, requiredFunction))
+        return convertFunctionValue(value, expr, requiredFunction, *this, dest);
+    }
+  }
+
+  // We disable implicit conversions to prevent converting T -> S -> U in
+  // one step, and to avoid infinite conversion cycles.
+  return emitConstructorCall(requiredType, CallOperands({valueExpr}), expr,
+                             CallSyntax::kImplicitConvert, dest);
+}
+
+/// Given a value of a type that can be zero cost converted to another type,
+/// emit a rebind or other operation to get it in the right type.
+PValue ExprEmitter::emitZeroCostConvert(PValue value, ASTType toType,
+                                        SharedState &shared) {
+  assert(toType.mlirType != value.getType() && "Already the same");
+
+  // PValues of origin type have a special conversion.
+  if (isa<OriginType>(toType) && isa<OriginType>(value.getType()))
+    value = OriginMutCastAttr::get(value, toType);
+
+  return PValue(ParamOperatorAttr::get(POC::Rebind, value.get(), toType));
+}
+
+CValue ExprEmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,
+                                        ASTType toType) {
+  assert(toType.mlirType != value.ir.getType() && "Already the same");
+
+  // PValue handling has a helper.
+  if (auto pv = value.ir.getIfPValue())
+    return emitZeroCostConvert(pv, toType, shared);
+
+  // The RValue types need to be rebound, but MValues have a level of
+  // reference around them that we want to maintain.
+  if (value.ir.isMValue())
+    toType = value.ir.getMValueType().getWithElement(toType);
+
+  // Rebind the value if we can.
+  auto result = rebindValue(value, toType);
+  assert((!result || result.getIfCValue()) &&
+         "rebindValue doesn't change types");
+  return result.getIfCValue();
+}
+
 /// When emitting a result value, attempt to "refine" the value type by
 /// evaluating 'apply' expressions in its type. Rebind the value if the type can
 /// be further specialized.
@@ -1765,47 +1874,14 @@ static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
   return emitter.rebindValue({cValue, expr}, refinedType);
 }
 
-/// Given a value of a type that can be zero cost converted to another type,
-/// emit a rebind or other operation to get it in the right type.
-PValue ExprEmitter::emitZeroCostConvert(PValue value, ASTType toType,
-                                        SharedState &shared) {
-  assert(toType.mlirType != value.getType() && "Already the same");
-
-  // PValues of origin type have a special conversion.
-  if (isa<OriginType>(toType) && isa<OriginType>(value.getType()))
-    value = OriginMutCastAttr::get(value, toType);
-
-  return PValue(ParamOperatorAttr::get(POC::Rebind, value.get(), toType));
-}
-
-AnyValue ExprEmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,
-                                          ASTType toType) {
-  assert(toType.mlirType != value.ir.getType() && "Already the same");
-
-  // PValue handling has a helper.
-  if (auto pv = value.ir.getIfPValue())
-    return emitZeroCostConvert(pv, toType, shared);
-
-  // The RValue types need to be rebound, but MValues have a level of
-  // reference around them that we want to maintain.
-  if (value.ir.isMValue())
-    toType = value.ir.getMValueType().getWithElement(toType);
-
-  return rebindValue(value, toType);
-}
-
 /// Emit the specified value into the current destination if present.  This
 /// accepts (and silently propagates) null values.
 ///
 /// Note that the `value` provided here may require an implicit conversion
 /// into the destination slot, so the input may be memory-only and result be
 /// register-passable (and visa-versa).
-///
-/// CAUTION: This method must line up with `canImplicitlyConvertToType`!!!
 AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
                                  ValueDest &dest) {
-  AnyValue originalValue = value;
-
   if (!value) {
     dest.resetForError();
     return {};
@@ -1837,88 +1913,29 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
   // conversions.
   if (ASTType requiredType =
           dest.resolveImpliedType(expr->getLoc(), rvType, *this)) {
-    // If converting to a TypeCheckError type, then there is an
-    // already-diagnosed error about this expression.
-    if (requiredType.isTypeCheckErrorType()) {
-      dest.resetForError();
-      return {};
-    }
-
     if (!requiredType.isEqualCanon(rvType)) {
-
-      // If we are dealing with types that differ only pre-elaboration,
-      // we insert a rebind or equivalent
-      if (canZeroCostConvert(rvType, requiredType, shared)) {
-        value = emitZeroCostConvert({cValue, expr}, requiredType);
-        return emitResult(value, expr, dest);
-      }
-
-      // Handle conversions between origins and origin sets.
-      if (isa<OriginType>(rvType) && isa<OriginSetType>(requiredType)) {
-        // This can only be done in the parameter domain.
-        if (TypedAttr value = cValue.getIfPValue()) {
-          value = OriginSetAttr::get(value, cast<OriginSetType>(requiredType));
-          return emitResult(value, expr, dest);
-        }
-      }
-      if (isa<OriginSetType>(rvType) && isa<OriginType>(requiredType)) {
-        // This can only be done in the parameter domain.
-        if (TypedAttr value = cValue.getIfPValue()) {
-          value =
-              OriginSetUnionAttr::get(value, cast<OriginType>(requiredType));
-          return emitResult(value, expr, dest);
-        }
-      }
-
-      // Emit metatype conversions to trait types if the metatype implements the
-      // specified trait.
-      if (auto trait = dyn_cast<TraitType>(requiredType)) {
-        // Check conversions from struct types.
-        if (isa<AnyStructType, TraitType>(rvType)) {
-          PValue result = emitMetaTypeToTraitConversion({cValue, expr}, trait);
-          assert(
-              result.get() != originalValue.getIfPValue().get() &&
-              "emitResult made no progress, stopping before stack overflow.");
-          return emitResult(result, expr, dest);
-        }
-
-        // Check conversions from MLIR types.
-        if (isa<TypeType>(rvType)) {
-          PValue result = bindMLIRTypeToTrait({cValue, expr}, trait);
-          assert(
-              result.get() != originalValue.getIfPValue().get() &&
-              "emitResult made no progress, stopping before stack overflow.");
-          return emitResult(result, expr, dest);
-        }
-      }
-
-      if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType)) {
-        if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
-          if (canConvertFunctionTypes(rvFunctionType, requiredFunction)) {
-            return convertFunctionValue(cValue, expr, requiredFunction, *this,
-                                        dest);
-          }
-        }
-      }
-
-      // We disable implicit conversions to prevent converting T -> S -> U in
-      // one step, and to avoid infinite conversion cycles.
-      return emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
-                                 expr, CallSyntax::kImplicitConvert, dest);
+      cValue = emitImplicitConversionToType({cValue, expr}, requiredType, dest);
+      // If this resolved the value dest, then we're done.   This handles the
+      // null result case as well.
+      if (!dest.isSpecified())
+        return cValue;
+      value = cValue;
+      assert(value);
     }
   }
 
   // If the destination is just a required type, then we now know it must agree
   // and therefore don't need to do anything more.
   if (isa<ASTType>(dest.representation)) {
-    dest = ValueDest(context); // Resolved the ValueDest;
+    dest.representation = NullRepresentation(); // Resolved the ValueDest;
     return cValue;
   }
 
   // If this destination was an LValue whose buffer was already taken to be
   // filled in by a client, then this is just completing the transaction.
   if (isa<LValueBufferTaken>(dest.representation)) {
-    dest = ValueDest(context); // Resolved the ValueDest;
+    dest.representation = NullRepresentation(); // Resolved the ValueDest;
+
     // The client directly filled in an LValue we provided which is great, but
     // that LValue we provided took ownership of the value, so we need to return
     // the result as a borrow, not an owned reference.
@@ -1939,7 +1956,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
   // This will have completely resolved all the ValueDest possibilities.
   assert(!dest.isSpecified() || isa<LValueBufferTaken>(dest.representation));
-  dest = ValueDest(context);
+  dest.representation = NullRepresentation(); // Resolved the ValueDest;
 
   // Finally, store the value into the lvalue.
   return emitStoreToLValue({cValue, expr}, destLV, context);
