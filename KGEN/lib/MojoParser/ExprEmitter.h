@@ -326,7 +326,7 @@ public:
   /// emit a rebind or other operation to get it in the right type.
   static PValue emitZeroCostConvert(PValue value, ASTType toType,
                                     SharedState &shared);
-  AnyValue emitZeroCostConvert(ASTExprAnd<CValue> value, ASTType toType);
+  CValue emitZeroCostConvert(ASTExprAnd<CValue> value, ASTType toType);
 
   /// Returns a type if there is a shared supertype for the two specified types,
   /// e.g. two derived classes may have the same base class even if neither is
@@ -455,6 +455,12 @@ public:
   static bool canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                          ASTType requiredType,
                                          ASTDecl &declScope);
+
+  /// This emits an implicit conversion to the specified type if the types
+  /// differ, including emitting any implicit constructor calls as well as
+  /// implicit promotions like origin conversions.
+  CValue emitImplicitConversionToType(ASTExprAnd<CValue> value,
+                                      ASTType requiredType, ValueDest &dest);
 
   /// Emit the specified expression into the specified destination.
   AnyValue emitExpr(const ExprNode *expr, ValueDest &dest);
