@@ -1569,6 +1569,40 @@ OpFoldResult ArrayReplaceOp::fold(FoldAdaptor adaptor) {
   return POP::ArrayAttr::get(values, getType());
 }
 
+LogicalResult ArrayReplaceOp::canonicalize(ArrayReplaceOp op,
+                                           PatternRewriter &rewriter) {
+  auto indexAttr = dyn_cast<IntegerAttr>(op.getIndex());
+  if (!indexAttr)
+    return rewriter.notifyMatchFailure(op, "dynamic index not supported");
+  unsigned index = indexAttr.getInt();
+
+  if (auto arrayCreateOp = op.getArray().getDefiningOp<ArrayCreateOp>()) {
+    SmallVector<Value> newOperands = arrayCreateOp.getOperands();
+    newOperands[index] = op.getValue();
+    rewriter.replaceOpWithNewOp<ArrayCreateOp>(op, newOperands);
+    return success();
+  }
+
+  if (auto paramConstantOp =
+          op.getArray().getDefiningOp<KGEN::ParamConstantOp>()) {
+    auto constArr = cast<POP::ArrayAttr>(paramConstantOp.getValue());
+    SmallVector<Value> newOperands;
+    newOperands.reserve(constArr.getValues().size());
+    for (unsigned i = 0, e = constArr.getValues().size(); i < e; ++i) {
+      if (i == index)
+        newOperands.push_back(op.getValue());
+      else
+        newOperands.push_back(rewriter.create<KGEN::ParamConstantOp>(
+            paramConstantOp.getLoc(), constArr.getValues()[i]));
+    }
+    rewriter.replaceOpWithNewOp<ArrayCreateOp>(op, newOperands);
+    return success();
+  }
+
+  return rewriter.notifyMatchFailure(
+      op, "array must be a constant or an ArrayCreateOp");
+}
+
 //===----------------------------------------------------------------------===//
 // ArrayGEPOp
 //===----------------------------------------------------------------------===//

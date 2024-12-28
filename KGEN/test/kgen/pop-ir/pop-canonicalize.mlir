@@ -890,7 +890,7 @@ kgen.func @array_get() -> index {
 kgen.func @array_get_unknown() -> index {
   %array = kgen.param.constant: array<4, index> = <#interp.uninitmem>
   %0 = pop.array.get %array[0] : !pop.array<4, index>
-  
+
   // CHECK: %[[OUT:.*]] = kgen.param.constant = <#interp.uninitmem>
   // CHECK-NEXT: kgen.return %[[OUT]]
 
@@ -941,6 +941,27 @@ kgen.func @array_replace() -> !pop.array<2, index> {
   %1 = index.constant 1
   %2 = pop.array.replace %1, %0[1] : !pop.array<2, index>
   kgen.return %2 : !pop.array<2, index>
+}
+
+kgen.func @array_replace_with_create(%idx0: index, %idx1: index, %idx2: index) -> !pop.array<3, index> {
+  // CHECK: (%[[IDX0:.*]]: index, %[[IDX1:.*]]: index, %[[IDX2:.*]]: index)
+  // CHECK-NEXT: %[[OUT:.*]] = pop.array.create [%[[IDX0]], %[[IDX1]], %[[IDX2]]]
+  // CHECK-NEXT: kgen.return %[[OUT]]
+  %0 = pop.array.create [%idx0, %idx0, %idx0] : !pop.array<3, index>
+  %1 = pop.array.replace %idx1, %0[1] : !pop.array<3, index>
+  %2 = pop.array.replace %idx2, %1[2] : !pop.array<3, index>
+  kgen.return %2 : !pop.array<3, index>
+}
+
+kgen.func @array_replace_with_const(%idx0: index, %idx1: index) -> !pop.array<3, index> {
+  // CHECK: (%[[IDX0:.*]]: index, %[[IDX1:.*]]: index)
+  // CHECK-NEXT: %[[C0:.*]] = kgen.param.constant = <0>
+  // CHECK-NEXT: %[[OUT:.*]] = pop.array.create [%[[C0]], %[[IDX0]], %[[IDX1]]]
+  // CHECK-NEXT: kgen.return %[[OUT]]
+  %0 = kgen.param.constant: array<3, index> = <[0, 0, 0]>
+  %1 = pop.array.replace %idx0, %0[1] : !pop.array<3, index>
+  %2 = pop.array.replace %idx1, %1[2] : !pop.array<3, index>
+  kgen.return %2 : !pop.array<3, index>
 }
 
 // CHECK-LABEL: @pointer_to_index
