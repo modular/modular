@@ -1149,6 +1149,26 @@ static LITSignatureType createRequirementSignature(
       replacer.replace(traitFnWithCorrectedSelfAndAliasParamRefs));
 }
 
+/// Emit a metatype conversion to a trait type by materializing the meta type
+/// of the specified CValue into a witness table for the trait.  For example,
+/// if 'value' has struct type, and the trait is Movable, then this forms a
+/// TypeConstantAttr PValue with a vtable containing the __del__ and
+/// __moveinit__ methods from the struct.
+///
+/// If the input value has a derived trait type and the required type is a
+/// base trait, then this remaps each of the requirements into the expected
+/// format of the result vtable, e.g.:
+///   fn take_any_type[ATT: AnyType](x: ATT): pass
+///   fn pass_movable[MTT: Movable](x: MTT): take_any_type(x)
+///
+/// Yields something like:
+///     #kgen.type<!kgen.paramref<:trait<@Movable> MTT>, {
+///        "__del__" : !lit.signature<[1](
+///                    "self": !lit.ref<:trait<@Movable> MTT, ...)>
+///          = get_vtable_entry(:trait<@Movable> MTT, "__del__")
+///     }> : !lit.trait<@AnyType>
+///
+/// This maps from the Movable trait metatype into the AnyType trait metatype.
 PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
                                                   TraitType trait) {
   assert((isa<AnyStructType, TraitType>(value.ir.getType())) &&
@@ -1450,6 +1470,7 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
         fromRebind && fromRebind.getOpcode() == POC::Rebind)
       return canZeroCostConvert(ASTType(fromRebind.getOperand(0)), toType,
                                 shared);
+
     // Strip them off 'to' type also.
     if (auto toRebind = dyn_cast<ParamOperatorAttr>(PValue(toType).get());
         toRebind && toRebind.getOpcode() == POC::Rebind)
@@ -1708,12 +1729,6 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
         checkMLIRTypeConformance(shared, value.expr->getLoc(), trait))
       return cacheAndReturnVal(true);
 
-    // If the source value is a parametric value of type 'AnyTrait[trait]'
-    // then the elaborator will turn it into something that conforms to 'trait'.
-    if (auto sourceTraitMT = dyn_cast<AnyTraitType>(rvType);
-        sourceTraitMT && sourceTraitMT.getTraitType() == trait)
-      return cacheAndReturnVal(true);
-
     return cacheAndReturnVal(false);
   }
 
@@ -1874,16 +1889,6 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
               result.get() != originalValue.getIfPValue().get() &&
               "emitResult made no progress, stopping before stack overflow.");
           return emitResult(result, expr, dest);
-        }
-
-        // If the source value is a parametric value of type 'AnyTrait[trait]'
-        // then the elaborator will turn it into something that conforms to
-        // 'trait' and a simple rebind is enough.
-        if (auto sourceTraitMT = dyn_cast<AnyTraitType>(rvType)) {
-          if (sourceTraitMT.getTraitType() == trait) {
-            value = rebindValue({cValue, expr}, requiredType);
-            return emitResult(value, expr, dest);
-          }
         }
       }
 
