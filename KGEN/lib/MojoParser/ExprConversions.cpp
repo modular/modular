@@ -21,9 +21,9 @@
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 
-// #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITAttrs.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Base64.h"
@@ -461,7 +461,8 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
     if (isa<AnyTraitType>(fromType))
       return true;
     if (auto structType = dyn_cast<AnyStructType>(fromType)) {
-      return ASTType(structType).getRegisterPassability(SMLoc(), shared) ==
+      return ASTType(structType.getStructType())
+                 .getRegisterPassability(SMLoc(), shared) ==
              TypeConvention::RegisterPassableTrivial;
     }
   }
@@ -857,7 +858,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   typeValue = PValue(type);
 
   // Check that the struct or super trait implements the trait.
-  ASTDecl *metaTypeDecl = ASTType(type.getMetaType()).getDecl(shared);
+  ASTDecl *metaTypeDecl = type.getDecl(shared);
   if (!metaTypeDecl) {
     emitError(value.expr->getLoc(), "cannot get metatype of ")
         << type << value.expr->getRange();
@@ -1202,22 +1203,25 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // Values of known {struct/trait/mlir} type can convert to any trait type they
   // implement.
   if (auto trait = dyn_cast<TraitType>(requiredType)) {
-    std::optional<InflightDiag> diag;
-    // Struct types and Trait types can conform to traits.
-    if (isa<AnyStructType, TraitType>(rvType) &&
-        rvType.getDecl(shared)->doesNominalTypeConformsTo(trait, diag))
-      return cacheAndReturnVal(true);
-    if (diag)
-      diag->abandon();
+    // Can only convert static types to traits, not existentials.
+    if (auto pval = value.ir.getIfPValue(); pval && LIT::isTypeExpr(pval)) {
+      std::optional<InflightDiag> diag;
+      // Struct types and Trait types can conform to traits.
+      if (ASTDecl *decl = ASTType(pval).getDecl(shared);
+          decl && decl->doesNominalTypeConformsTo(trait, diag))
+        return cacheAndReturnVal(true);
+      if (diag)
+        diag->abandon();
 
-    // MLIR types can conform to traits that have limited requirements.
-    // AnyTraitType (the type of all traits) conforms to traits with only a
-    // destructor (e.g. AnyType) since all traits have that.
-    if (isa<TypeType>(rvType) &&
-        checkMLIRTypeConformance(shared, value.expr->getLoc(), trait))
-      return cacheAndReturnVal(true);
+      // MLIR types can conform to traits that have limited requirements.
+      // AnyTraitType (the type of all traits) conforms to traits with only a
+      // destructor (e.g. AnyType) since all traits have that.
+      if (isa<TypeType>(rvType) &&
+          checkMLIRTypeConformance(shared, value.expr->getLoc(), trait))
+        return cacheAndReturnVal(true);
 
-    return cacheAndReturnVal(false);
+      return cacheAndReturnVal(false);
+    }
   }
 
   // Check for non-trivial function type conversions.
