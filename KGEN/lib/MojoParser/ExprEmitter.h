@@ -420,10 +420,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.
 
-  /// Emit a conversion from an MLIR type to a trait type by materializing stubs
-  /// for the type's witness table.
-  PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait);
-
   /// Emit a metatype conversion to a trait type by materializing the meta type
   /// of the specified CValue into a witness table for the trait.  For example,
   /// if 'value' has struct type, and the trait is Movable, then this forms a
