@@ -11,7 +11,6 @@
 #include "CallEmission.h"
 #include "ExprEmitter.h"
 #include "ExprNodes.h"
-#include "FunctionTypes.h"
 #include "MojoUtils.h"
 #include "OverloadFitness.h"
 #include "ParameterInference.h"
