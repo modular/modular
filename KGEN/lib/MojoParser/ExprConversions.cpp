@@ -850,16 +850,19 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // Get the AnyStructType or the TraitType of the value that we're checking for
   // conversion to the trait type.  This can also bind empty variadic parameter
   // lists and default parameters.
-  ASTType metaType = emitType({typeValue, value.expr}, /*allowUnbound*/ false);
-  if (!metaType)
+  ASTType type = emitType({typeValue, value.expr}, /*allowUnbound*/ false);
+  if (!type)
     return {};
   // Make sure to update typeValue if the type was rebound.
-  typeValue = PValue(metaType);
+  typeValue = PValue(type);
 
   // Check that the struct or super trait implements the trait.
-  ASTDecl *metaTypeDecl = metaType.getDecl(shared);
-  if (!metaTypeDecl)
+  ASTDecl *metaTypeDecl = ASTType(type.getMetaType()).getDecl(shared);
+  if (!metaTypeDecl) {
+    emitError(value.expr->getLoc(), "cannot get metatype of ")
+        << type << value.expr->getRange();
     return {}; // erroneous
+  }
 
   std::optional<InflightDiag> checkDiag;
   if (!metaTypeDecl->doesNominalTypeConformsTo(trait, checkDiag)) {
@@ -932,58 +935,41 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     if (requirementDecls.empty())
       continue;
 
-    if (auto traitAliasDecl =
-            dyn_cast<LIT::AliasDeclOp>(requirementDecls.front())) {
-      // Find candidates in the implementing type (either a struct or trait)
-      // which also may have multiple overloads.
-      LookupResult result =
-          shared.lookupAndResolveDecl(name, value.expr->getLoc(), *metaTypeDecl,
-                                      /*searchParentScopes=*/false);
-      ArrayRef<ASTDecl *> structMatchingMembers = result.getIfSuccess();
+    // Find candidates in the implementing type (either a struct or trait) which
+    // also may have multiple overloads.
+    LookupResult result =
+        shared.lookupAndResolveDecl(name, value.expr->getLoc(), *metaTypeDecl,
+                                    /*searchParentScopes=*/false);
+    ArrayRef<ASTDecl *> impls = result.getIfSuccess();
 
+    if (auto traitAliasDecl = dyn_cast<AliasDeclOp>(requirementDecls.front())) {
       // These asserts should be safe because we already know it correctly
       // conforms because we called `doesNominalTypeConformsTo` above.
-      assert(structMatchingMembers.size() == 1);
-      auto implAlias = cast<LIT::AliasDeclOp>(structMatchingMembers.front());
+      assert(impls.size() == 1);
+      auto implAlias = cast<AliasDeclOp>(impls.front());
       assert(implAlias.getValueAttr() && "struct's alias should have value");
 
       TypedAttr newValue = implAlias.getValueAttr();
       newValue = implGenericsReplacer.replace(newValue);
       // If a decl has a parameter "T : Trait" where Trait defines an associated
       // type "U : Trait2", then when we emit vtable for T, we must also emit
-      // vtable for T.U.
-      if (auto subTraitType =
-              dyn_cast<LIT::TraitType>(traitAliasDecl.getType())) {
-        if (isa<AnyStructType>(newValue.getType())) {
-          SyntheticNode syntheticNode(declScope.getLoc());
-          PValue subvalue = emitMetaTypeToTraitConversion(
-              {newValue, syntheticNode}, subTraitType);
-          newValue = subvalue.get();
-        } else if (!isa<TraitType>(newValue.getType())) {
-          SyntheticNode syntheticNode(declScope.getLoc());
-          PValue subvalue =
-              bindMLIRTypeToTrait({newValue, syntheticNode}, subTraitType);
-          newValue = subvalue.get();
-        }
-      }
+      // vtable for T.U.  We perform this by implicitly converting to the alias'
+      // declared type.
+      newValue = emitPValue({newValue, value.expr}, EC_Trait,
+                            traitAliasDecl.getType());
+      if (!newValue)
+        return {};
 
       vtable.push_back(VTableEntryAttr::get(name, newValue));
-
       traitAliasReplacer.setParameterValue(traitAliasDecl.getParamDecl(),
                                            newValue);
       aliasNameToReplacement.emplace(name.str(), newValue);
       continue;
     }
 
+    // Traits shouldn't have var decls or other things.
     if (!isa<LIT::FuncOp>(requirementDecls.front()))
       continue;
-
-    // Find candidates in the implementing type (either a struct or trait) which
-    // also may have multiple overloads.
-    LookupResult result =
-        shared.lookupAndResolveDecl(name, value.expr->getLoc(), *metaTypeDecl,
-                                    /*searchParentScopes=*/false);
-    ArrayRef<ASTDecl *> implFuncs = result.getIfSuccess();
 
     // Each requirement may be overloaded, resolve each individually.
     for (ASTDecl *expected : requirementDecls) {
@@ -1028,7 +1014,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
           requirementSig.getSpecializedSignature(evaluator.getInputParams());
 
       // Grab the matching function.
-      OverloadSet ov(name, implFuncs, std::move(implBindings), value.expr,
+      OverloadSet ov(name, impls, std::move(implBindings), value.expr,
                      CallSyntax::kMethodCallSynthetic);
       auto result = ov.filterOverloadSetForValueType(
           requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/false);
