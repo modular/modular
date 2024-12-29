@@ -1070,6 +1070,91 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
   return true;
 }
 
+/// Emit a conversion from an MLIR type to a trait type by materializing stubs
+/// for the type's witness table.
+static PValue bindMLIRTypeToTrait(ASTExprAnd<CValue> value, TraitType trait,
+                                  ExprEmitter &emitter) {
+  SharedState &shared = emitter.shared;
+
+  // Only static vtables are supported right now.
+  PValue typeValue = value.ir.getIfPValue();
+  if (!typeValue) {
+    shared.emitError(value.expr->getLoc(),
+                     "existentials are not supported yet!");
+    return {};
+  }
+  ASTType mlirType = typeValue.getIfTypeValue();
+
+  SMLoc loc = value.expr->getLoc();
+  ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
+  // Make sure the body of the trait is resolved.
+  if (failed(shared.declResolver->resolveFully(traitDecl, loc)))
+    return {};
+
+  // Use a special wrapper decl in the builtins as stubs.
+  ASTDecl *wrapperDecl = shared.getBuiltinStubsMLIRType(loc).getDecl(shared);
+  if (!wrapperDecl || !isa<StructDeclOp>(wrapperDecl)) {
+    shared.emitError(loc, "malformed builtin._stubs.__MLIRType");
+    return {};
+  }
+  ASTType boundWrapper =
+      cast<StructDeclOp>(wrapperDecl).bindReference({typeValue});
+
+  // NOTE: This substantially duplicates emitMetaTypeToTraitConversion because
+  // it is doing some crazy manual binding of the type into the parameter list
+  // so the vtable entries are specialized on the MLIR type.
+  //
+  // FIXME(MOCO-1146): Could we instead just synthesize the members required and
+  // eliminate __mlir_type entirely?  This __mlir_type thing introduces other
+  // bugs.  We already do this for rp-trivial types which MLIR types are.
+  SmallVector<VTableEntryAttr> vtable;
+  for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
+    if (decls.empty() || !isa<LIT::FuncOp>(decls.front())) {
+      InflightDiag diag = shared.emitError(loc, "cannot bind MLIR type ")
+                          << mlirType << " to trait " << ASTType(trait);
+      diag.attachNote(decls.front()->getLoc())
+          << "MLIR type cannot satisfy this requirement";
+      return {};
+    }
+
+    for (ASTDecl *decl : decls) {
+      // MLIR types are movable, copyable, and destructible only.
+      switch (SpecialFunctionInfo::getKind(name)) {
+      case SpecialFunctionKind::kMoveInit:
+      case SpecialFunctionKind::kCopyInit:
+      case SpecialFunctionKind::kDel:
+        break;
+      default:
+        InflightDiag diag = shared.emitError(loc, "cannot bind MLIR type ")
+                            << mlirType << " to trait " << ASTType(trait);
+        diag.attachNote(decl->getLoc())
+            << "MLIR type cannot satisfy required trait function here";
+        return {};
+      }
+      // We know the stub will provide exactly one overload for each allowed
+      // trait requirement.
+      auto ovSet =
+          OverloadSet::lookup(emitter.getDeclScope(), boundWrapper, name,
+                              value.expr, CallSyntax::kMethodCall);
+      // Manually bind the type into the parameter list so the vtable entries
+      // are specialized on the MLIR type.
+      ovSet.paramBindings = ParamBindings::getForDeclaredType(
+          emitter.getDeclScope(), boundWrapper, value.expr);
+
+      PValue callee = ovSet.getIfPValue();
+      if (!callee) {
+        shared.emitError(loc, "internal error: MLIR type stub didn't resolve ")
+            << name;
+        return {};
+      }
+      vtable.push_back(VTableEntryAttr::get(name, callee));
+    }
+  }
+
+  return TypeConstantAttr::get(mlirType, trait,
+                               VTableAttr::get(shared.getContext(), vtable));
+}
+
 //===----------------------------------------------------------------------===//
 // Generalized Implicit Conversions
 //===----------------------------------------------------------------------===//
@@ -1206,7 +1291,7 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
     // Check conversions from MLIR types.
     if (isa<TypeType>(rvType)) {
-      PValue result = bindMLIRTypeToTrait(valueExpr, trait);
+      PValue result = bindMLIRTypeToTrait(valueExpr, trait, *this);
       return emitCResult(result, expr, dest);
     }
   }

@@ -736,7 +736,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
           continue;
         TraitType trait = traitDecl.bindReference();
         if (PValue result =
-                emitter.bindMLIRTypeToTrait({PValue(type), node}, trait))
+                emitter.emitPValue({PValue(type), node}, EC_Trait, trait))
           conformances.push_back(result);
       }
       return conformances;
