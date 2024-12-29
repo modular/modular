@@ -193,7 +193,7 @@ void LIT::emitModuleCallSubscriptDiag(InflightDiag &diag,
   diag << "module " << name << " is not " << callOrSubscript << "able";
 
   LookupResult lookupResult = shared.lookupAndResolveDecl(
-      name, loc, metaType, /*searchParentScopes=*/false);
+      name, loc, metaType.getStructType(), /*searchParentScopes=*/false);
   if (ArrayRef<ASTDecl *> resDecls = lookupResult.getIfSuccess();
       !resDecls.empty()) {
     diag << "; did you mean to " << callOrSubscript << ' ' << name.strref()

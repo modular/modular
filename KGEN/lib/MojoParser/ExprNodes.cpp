@@ -965,7 +965,7 @@ static PValue substituteParametersIntoUserDefinedType(
     PValue typeValue, ArrayRef<Operand> operands, SMLoc loc, SMLoc lhsLoc,
     SMLoc rhsLoc, ExprEmitter &emitter) {
   auto metaType = cast<AnyStructType>(typeValue.getType());
-  ASTDecl *typeDecl = ASTType(metaType).getDecl(emitter.shared);
+  ASTDecl *typeDecl = ASTType(typeValue).getDecl(emitter.shared);
   auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
   if (!structOp) {
     auto diag = emitter.emitError(loc);

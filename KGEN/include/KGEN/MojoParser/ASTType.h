@@ -59,7 +59,7 @@ public:
   Type getMetaType() const;
 
   /// If this is a user declared type, return the declaration that this came
-  /// from.  If this is a raw MLIR type, return null.
+  /// from.  If this is a raw MLIR type or a metatype, return null.
   ASTDecl *getDecl(SharedState &shared) const;
 
   /// If this is a parametric user defined type, return all parameter bindings

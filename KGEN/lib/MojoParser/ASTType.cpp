@@ -61,16 +61,12 @@ Type ASTType::getMetaType() const {
   return {};
 }
 
+/// If this is a user declared type, return the declaration that this came
+/// from.  If this is a raw MLIR type or a metatype, return null.
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
   Type type = getMetaType();
-  if (!type) {
-    // FIXME: we currently support references directly to the metatype as a way
-    // to look up the decl.  This is pretty weird.
-    if (isa_and_nonnull<AnyStructType>(mlirType))
-      type = mlirType;
-    else
-      return nullptr;
-  }
+  if (!type)
+    return nullptr;
 
   if (auto anyStruct = dyn_cast<AnyStructType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
@@ -825,7 +821,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
   } else if (auto anyStruct = dyn_cast<AnyStructType>(type)) {
     ASTDecl *decl = nullptr;
     if (diagShared)
-      decl = ASTType(type).getDecl(*diagShared);
+      decl = ASTType(anyStruct.getStructType()).getDecl(*diagShared);
     os << "AnyStruct[";
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(), decl);
     os << ']';
