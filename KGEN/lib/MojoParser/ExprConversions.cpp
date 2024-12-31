@@ -763,22 +763,44 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 };
 } // namespace
 
+/// Given a method from a trait like 'Movable.__del__', rebind the method to
+/// have a different self for a conforming type, e.g.
+/// 'RefinedMovableTrait.__del__' or 'Int.__del__'.  'newSelfType' is the
+/// struct or trait type to bind.  For example, AnyType.__del__'s signature
+/// looks like:
+///    !lit.signature<[1]<trait<@AnyType>>("self":
+///        !lit.ref<:trait<@AnyType> *(0,0), mut *[0,0]> owned_in_mem) -> none>
+/// When binding this down to some MTT conforming to Movable, this will give us
+/// something like:
+///    !lit.signature<[1]>("self":
+///        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
+/// Resolving the *(0,0) into the Movable type, as well as the first param type.
 static LITSignatureType createRequirementSignature(
-    MLIRContext *context, TypedAttr newSelfValue,
+    LIT::FuncOp traitFn, ASTType newSelfType,
     ParserParamEvaluator &traitAliasReplacer,
     const std::unordered_map<std::string, TypedAttr> &aliasNameToReplacement,
-    LIT::FuncOp traitFn) {
+    DeclResolver &declResolver) {
+  // Get the selfType as a TypedAttr since we'll be using it as a parameter
+  // value below.
+  TypedAttr newSelfValue = PValue(newSelfType).get();
+
+  // Start with the full signature for the trait requirement.
+  LITSignatureType signature = traitFn.getFullSignature();
+
   // The requirement will have a Self parameter whose type will be of the
   // current trait.  In order to get types to line up, we need to force it
   // to the implementation type.  This changes the parameter value, but also
   // changes the metatype of the value.  To support this, we use a custom
   // replacer.
   TraitSelfBinder selfBinder(newSelfValue);
-  LITSignatureType traitFnWithCorrectedSelf =
-      selfBinder.replace(traitFn.getFullSignature());
-  // At this point, requirementSig's `self` argument's type is the struct.
+  signature = selfBinder.replace(signature);
 
-  // Next we'll replace trait aliases that appear in the trait methods, such as:
+  // At this point, the first parameter is gone:
+  //    !lit.signature<[1]("self":
+  //        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
+
+  // Next we'll replace trait aliases that appear in the trait methods, such
+  // as:
   //
   //     trait MyTrait:
   //         alias T: ATrait
@@ -792,8 +814,7 @@ static LITSignatureType createRequirementSignature(
   //         fn bork(self) -> SIMD[int]: ...
 
   // bork's `T` is a regular paramRef, we use traitAliasReplacer to replace it.
-  LITSignatureType traitFnWithCorrectedSelfAndAliasParamRefs =
-      traitAliasReplacer.replace(traitFnWithCorrectedSelf);
+  signature = traitAliasReplacer.replace(signature);
 
   // However, zork's `Self.T` is different, like: get_vtable_entry(Self, "T").
   // And after the first step, that Self is actually the struct, so the
@@ -811,9 +832,25 @@ static LITSignatureType createRequirementSignature(
     }
     return paramOp;
   });
+  signature = cast<LITSignatureType>(replacer.replace(signature));
 
-  return cast<KGEN::SignatureType>(
-      replacer.replace(traitFnWithCorrectedSelfAndAliasParamRefs));
+  // At this point, signature's `self` argument's type is the struct or
+  // trait.  For example when binding Self down to some "MTT: Movable", we have:
+  //    !lit.signature<[1]<trait<@AnyType>>("self":
+  //        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
+  // Now we need to drop the "<trait<@AnyType>" parameter, which we do by
+  // specializing it away.  We know all references to it are already gone.
+
+  // NOTE: This is an UnknownAttr (which is an arbitrary attr that is never
+  // used) not an UnboundAttr which remains an unbound parameter.
+  ParserParamEvaluator evaluator(declResolver);
+  evaluator.addInputValue(UnknownAttr::get(signature.getParamTypes()[0]));
+  // Use UnboundAttr for any other parameters so they remain in the result.
+  for (Type type : signature.getParamTypes().drop_front())
+    evaluator.addInputValue(UnboundAttr::get(evaluator.getReboundType(type)));
+  signature = signature.getSpecializedSignature(evaluator.getInputParams());
+
+  return signature;
 }
 
 /// Emit a metatype conversion to a trait type by materializing the meta type
@@ -842,8 +879,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
          "should only be called on metatypes");
 
   // Only static vtables are supported right now.
-  PValue typeValue = value.ir.getIfPValue();
-  if (!typeValue) {
+  PValue typePValue = value.ir.getIfPValue();
+  if (!typePValue) {
     emitError(value.expr->getLoc(), "existentials are not supported yet!");
     return {};
   }
@@ -851,11 +888,10 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // Get the AnyStructType or the TraitType of the value that we're checking for
   // conversion to the trait type.  This can also bind empty variadic parameter
   // lists and default parameters.
-  ASTType type = emitType({typeValue, value.expr}, /*allowUnbound*/ false);
+  ASTType type = emitType({typePValue, value.expr}, /*allowUnbound*/ false);
   if (!type)
     return {};
-  // Make sure to update typeValue if the type was rebound.
-  typeValue = PValue(type);
+  value.ir = PValue(type); // update value.ir if the type was rebound.
 
   // Check that the struct or super trait implements the trait.
   ASTDecl *metaTypeDecl = type.getDecl(shared);
@@ -868,7 +904,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   std::optional<InflightDiag> checkDiag;
   if (!metaTypeDecl->doesNominalTypeConformsTo(trait, checkDiag)) {
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
-                        << ASTType(typeValue) << " to trait " << ASTType(trait)
+                        << type << " to trait " << ASTType(trait)
                         << value.expr->getRange();
     if (checkDiag)
       diag.attachNote(metaTypeDecl->getLoc()) << std::move(*checkDiag);
@@ -925,9 +961,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // alias value while filling the above traitAliasReplacer.
   // FIXME: We need to reject accessing aliases of a partially bound type, until
   // ParameterizedType is a thing!
-  ParserParamEvaluator implGenericsReplacer(
-      getDeclResolver(), structParamDecls,
-      ASTType(typeValue).getParamBindings());
+  ParserParamEvaluator implGenericsReplacer(getDeclResolver(), structParamDecls,
+                                            type.getParamBindings());
 
   // Bind each trait requirement into vtable entries.
   SmallVector<VTableEntryAttr> vtable;
@@ -990,29 +1025,21 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // to the implementation type.  This changes the parameter value, but also
       // changes the metatype of the value.  To support this, we use a custom
       // replacer.
-      LITSignatureType requirementSig = createRequirementSignature(
-          getContext(), typeValue, traitAliasReplacer, aliasNameToReplacement,
-          traitFn);
+      LITSignatureType requirementSig =
+          createRequirementSignature(traitFn, type, traitAliasReplacer,
+                                     aliasNameToReplacement, getDeclResolver());
 
-      // Form a set of bindings to plow into the impl signature.
-      auto implBindings = ParamBindings::getForDeclaredType(
-          getDeclScope(), ASTType(typeValue), value.expr);
-
-      // Bind the implicit T parameter on trait members to something with the
-      // right metatype to keep the remapper happy.  We already replaced all
-      // uses of the attr with TraitSelfBinder.
-      // NOTE: This is an UnknownAttr not an UnboundAttr.
+      // Form a set of bindings to plow into the impl signature by binding Self
+      // to the appropriate Struct or derived Trait type.
+      auto implBindings =
+          ParamBindings::getForDeclaredType(getDeclScope(), type, value.expr);
+      // Leave the rest of the the parameters Unbound.
       ParserParamEvaluator evaluator(getDeclResolver());
-      evaluator.addInputValue(
-          UnknownAttr::get(requirementSig.getParamTypes()[0]));
-
-      for (Type type : requirementSig.getParamTypes().drop_front()) {
+      for (Type type : requirementSig.getParamTypes()) {
         auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
         evaluator.addInputValue(unbound);
         implBindings.addPrechecked(value.expr, unbound);
       }
-      requirementSig =
-          requirementSig.getSpecializedSignature(evaluator.getInputParams());
 
       // Grab the matching function.
       OverloadSet ov(name, impls, std::move(implBindings), value.expr,
@@ -1041,7 +1068,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   }
 
   // Create the new type value with the vtable and the trait metatype.
-  return TypeConstantAttr::get(ASTType(typeValue), trait,
+  return TypeConstantAttr::get(type, trait,
                                VTableAttr::get(getContext(), vtable));
 }
 
