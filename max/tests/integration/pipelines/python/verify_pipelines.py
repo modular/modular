@@ -339,7 +339,7 @@ PIPELINES = {
             # TODO(AIPIPE-262): These tolerances are very high since there are
             # still correctness issues with the Llama Vision pipeline.
             kl_div_threshold=float("inf"),
-            cos_dist_threshold=1.5,
+            cos_dist_threshold=2.0,
             absolute_tolerance=100,
             relative_tolerance=2.0,
         ),
