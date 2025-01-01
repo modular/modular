@@ -426,17 +426,9 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag,
 /// Try to extract a symbol reference from the given parameter. Returns nullptr
 /// otherwise.
 static SymbolRefAttr tryGetSymbolName(TypedAttr param) {
+  param = ParamOperatorAttr::stripRebind(param);
   if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param))
     return symbolCst.getSymbol();
-  if (auto op = dyn_cast<ParamOperatorAttr>(param)) {
-    switch (op.getOpcode()) {
-      // rebind is used to bind implicit lifetimes away.
-    case POC::Rebind:
-      return tryGetSymbolName(op.getOperands().front());
-    default:
-      break;
-    }
-  }
   return {};
 }
 

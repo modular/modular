@@ -440,8 +440,7 @@ static CValue convertFunctionValue(CValue value, const ExprNode *expr,
 
   // Finally, cast the result back to the expected type.
   return emitter.emitCResult(
-      PValue(ParamOperatorAttr::get(POC::Rebind, {symbol}, expected)), expr,
-      dest);
+      ParamOperatorAttr::get(POC::Rebind, {symbol}, expected), expr, dest);
 }
 
 //===----------------------------------------------------------------------===//
@@ -712,7 +711,7 @@ PValue ExprEmitter::emitZeroCostConvert(PValue value, ASTType toType,
   if (isa<OriginType>(toType) && isa<OriginType>(value.getType()))
     value = OriginMutCastAttr::get(value, toType);
 
-  return PValue(ParamOperatorAttr::get(POC::Rebind, value.get(), toType));
+  return ParamOperatorAttr::get(POC::Rebind, value.get(), toType);
 }
 
 CValue ExprEmitter::emitZeroCostConvert(ASTExprAnd<CValue> value,

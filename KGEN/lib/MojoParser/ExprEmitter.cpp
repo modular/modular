@@ -946,7 +946,7 @@ Value ExprEmitter::emitRefValue(ASTExprAnd<AnyValue> value,
 AnyValue ExprEmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
   // Materialize a parameter rebind.
   if (auto pvalue = value.ir.getIfPValue())
-    return PValue(ParamOperatorAttr::get(POC::Rebind, pvalue.get(), destType));
+    return ParamOperatorAttr::get(POC::Rebind, pvalue.get(), destType);
   if (auto dlValue = value.ir.getIfDLValue()) {
     dlValue->elementType = destType;
     return dlValue;

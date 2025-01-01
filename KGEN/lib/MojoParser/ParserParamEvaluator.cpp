@@ -80,11 +80,7 @@ ParserParamEvaluator::ParserParamEvaluator(DeclResolver &resolver,
     : ParameterEvaluator(paramValues), resolver(resolver) {}
 
 SymbolConstantAttr ParserParamEvaluator::findDirectCallee(TypedAttr callee) {
-  ParamOperatorAttr op;
-  while ((op = dyn_cast<ParamOperatorAttr>(callee)) &&
-         op.getOpcode() == POC::Rebind)
-    callee = op.getOperands().front();
-  return dyn_cast<SymbolConstantAttr>(callee);
+  return dyn_cast<SymbolConstantAttr>(ParamOperatorAttr::stripRebind(callee));
 }
 
 FailureOr<TypedAttr>

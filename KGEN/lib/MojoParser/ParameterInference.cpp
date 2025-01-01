@@ -134,13 +134,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       // type erases, e.g. because it passed through some generic function which
       // had a looser type bound.  Remove the downcast to infer from the
       // super-type bound.
-      if (auto rebind = dyn_cast<ParamOperatorAttr>(actualParam);
-          rebind && rebind.getOpcode() == POC::Rebind)
-        actualParam = rebind.getOperand(0);
-      if (auto rebind = dyn_cast<ParamOperatorAttr>(expectedParam);
-          rebind && rebind.getOpcode() == POC::Rebind)
-        expectedParam = rebind.getOperand(0);
-
+      actualParam = ParamOperatorAttr::stripRebind(actualParam);
+      expectedParam = ParamOperatorAttr::stripRebind(expectedParam);
       return matchParams(actualParam, expectedParam);
     }
 

@@ -919,6 +919,10 @@ def KGEN_ParamOperatorAttr : KGEN_ExprAttr<"ParamOperator", "param.expr", [
     /// must have `index` type.
     static TypedAttr getSub(TypedAttr lhs, TypedAttr rhs);
 
+    /// If the specified attribute is a rebind, return its operand, otherwise
+    /// return the rebind itself.
+    static TypedAttr stripRebind(TypedAttr src);
+
     /// A specific builder used to build the attribute from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static ParamOperatorAttr getFromBytecode(
