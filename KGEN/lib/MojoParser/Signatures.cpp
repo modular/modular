@@ -1025,8 +1025,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
 
   // Make sure the param value is a variadic list of types.
-  VariadicType paramVariadicType =
-      dyn_cast<VariadicType>(param.getRValueType().mlirType);
+  auto paramVariadicType = dyn_cast<VariadicType>(param.getRValueType());
   if (!paramVariadicType) {
     emitter.emitError(arg.typeExpr->getLoc(),
                       "pack argument type list must reference a variadic list")
@@ -1064,7 +1063,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
       emitter.shared.getBuiltinVariadicPackType(emitter.declScope, arg.loc);
 
   // Sanity check the returned VariadicPack declaration.
-  if (isa<TypeCheckErrorType>(variadicPackType.mlirType))
+  if (isa<TypeCheckErrorType>(variadicPackType))
     return {};
   auto packStruct = dyn_cast_if_present<StructDeclOp>(
       variadicPackType.getDecl(emitter.shared));
@@ -1089,9 +1088,16 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // it will be that traits metatype.  Downcast to the same type, but with
   // !lit.anytrait<AnyType> type.
   TypedAttr elementTrait = PValue(elementType).get();
-  if (elementTrait.getType() != elementTraitParamTy)
+  if (elementTrait.getType() != elementTraitParamTy) {
     elementTrait =
         ParamOperatorAttr::get(POC::Rebind, elementTrait, elementTraitParamTy);
+    elementType = ASTType(elementTrait);
+    // Downcast the variadic list as well so the element type is AnyType
+    // metatype.
+    paramVariadicType =
+        VariadicType::get(elementType, paramVariadicType.getConvention());
+    param = ParamOperatorAttr::get(POC::Rebind, param.get(), paramVariadicType);
+  }
 
   CValue isMutableCValue =
       emitter.emitBool({refType.isMutable(), arg.typeExpr}, EC_Type);

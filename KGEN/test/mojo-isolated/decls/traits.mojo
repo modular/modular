@@ -1009,3 +1009,15 @@ fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: Pas
     # CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<:!Movable rebind(:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT), mut *[0,0]> owned_in_mem, |) -> !kgen.none>
     # CHECK-SAME: = get_vtable_entry(:!Movable rebind(:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT), "__del__")}], :i1 1, :origin<1> *"a`">(%a) : !lit.signature<("value": !lit.ref<:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref)
     take_anytype_ref(a)
+
+alias _CollectionElementMetaType = __mlir_type[`!lit.anytrait<`, CollectionElement, `>`]
+
+struct FormVariadicPackWithCastedElementVariadic[
+    element_trait: _CollectionElementMetaType, //,
+    *element_types: element_trait]:
+
+    fn __init__(out self, owned *args: *element_types):
+        # This should work.
+        self.foo(args^)
+    fn foo(self, owned storage: VariadicPack[_, element_trait, *element_types]):
+        pass
