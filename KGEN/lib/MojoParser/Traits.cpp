@@ -20,8 +20,6 @@
 #include "Support/STLExtras.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 
-#include <unordered_map>
-
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
@@ -29,11 +27,12 @@ using namespace LIT;
 /// Get specialized signature of a trait function with a struct (who implements
 /// the trait) type. Also return parameter bindings for specializing the
 /// expected struct method with the current struct type.
-static std::pair<LITSignatureType, ParamBindings> getTraitFunctionSignature(
-    ExprEmitter &emitter, LIT::FuncOp traitFn, ASTType structSelfType,
-    TraitType trait, const ExprNode *expr,
-    const std::unordered_map<std::string, TypedAttr> &aliasNameToReplacement,
-    ParserParamEvaluator &traitAliasReplacer) {
+static std::pair<LITSignatureType, ParamBindings>
+getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
+                          ASTType structSelfType, TraitType trait,
+                          const ExprNode *expr,
+                          const DenseMap<StringAttr, TypedAttr> &aliasValues,
+                          ParserParamEvaluator &traitAliasReplacer) {
 
   LITSignatureType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
@@ -58,17 +57,17 @@ static std::pair<LITSignatureType, ParamBindings> getTraitFunctionSignature(
     if (paramOp.getOpcode() == POC::GetVTableEntry &&
         paramOp.getOperand(0) == selfStructAsTrait) {
       auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
-      auto iter = aliasNameToReplacement.find(aliasName.str());
-      if (iter != aliasNameToReplacement.end()) {
+      // The vtable entries have type !kgen.string, but the entries from the
+      // trait decl have a StringAttr with no type.  Reunique them to look up.
+      aliasName = StringAttr::get(aliasName.getContext(), aliasName.strref());
+      auto iter = aliasValues.find(aliasName);
+      if (iter != aliasValues.end())
         return iter->second;
-      }
     }
     return paramOp;
   });
   newSignature = cast<KGEN::SignatureType>(replacer.replace(newSignature));
-
   newSignature = traitAliasReplacer.replace(newSignature);
-
   return {newSignature, bindings};
 }
 
@@ -190,7 +189,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   }
 
   ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
-  std::unordered_map<std::string, TypedAttr> aliasNameToReplacement;
+  DenseMap<StringAttr, TypedAttr> aliasValues;
 
   bool allMatchFound = true;
   // Prepare an error. It will be abandoned if the check succeeds.
@@ -229,10 +228,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     }
 
     SyntheticNode syntheticNode(structDecl.getLoc());
-
     auto [traitSignature, bindings] = getTraitFunctionSignature(
-        emitter, traitFn, selfType, trait, syntheticNode,
-        aliasNameToReplacement, traitAliasReplacer);
+        emitter, traitFn, selfType, trait, syntheticNode, aliasValues,
+        traitAliasReplacer);
 
     // Match against the transformed calling convention if the struct is
     // register-passable.
@@ -270,7 +268,6 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     }
 
     assert(!traitAlias.getValueAttr() && "trait alias shouldn't have a value");
-
     Type traitAliasType = traitAlias.getType();
 
     ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(name);
@@ -293,7 +290,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 
     traitAliasReplacer.setParameterValue(traitAlias.getParamDecl(),
                                          initializerExpr);
-    aliasNameToReplacement.emplace(name.str(), initializerExpr);
+    aliasValues[name] = initializerExpr;
 
     SyntheticNode synthNode(structAliasDecl->getLoc());
     if (!ExprEmitter::canImplicitlyConvertToType({initializerExpr, synthNode},

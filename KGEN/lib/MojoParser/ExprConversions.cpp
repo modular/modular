@@ -775,11 +775,11 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 ///    !lit.signature<[1]>("self":
 ///        !lit.ref<:trait<@Movable> MTT>, mut *[0,0]> owned_in_mem) -> none>>
 /// Resolving the *(0,0) into the Movable type, as well as the first param type.
-static LITSignatureType createRequirementSignature(
-    LIT::FuncOp traitFn, ASTType newSelfType,
-    ParserParamEvaluator &traitAliasReplacer,
-    const std::unordered_map<std::string, TypedAttr> &aliasNameToReplacement,
-    DeclResolver &declResolver) {
+static LITSignatureType
+createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
+                           ParserParamEvaluator &traitAliasReplacer,
+                           DenseMap<StringAttr, TypedAttr> &aliasValues,
+                           DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
   // value below.
   TypedAttr newSelfValue = PValue(newSelfType).get();
@@ -825,10 +825,12 @@ static LITSignatureType createRequirementSignature(
     if (paramOp.getOpcode() == POC::GetVTableEntry &&
         paramOp.getOperand(0) == newSelfValue) {
       auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
-      auto iter = aliasNameToReplacement.find(aliasName.str());
-      if (iter != aliasNameToReplacement.end()) {
+      // The vtable entries have type !kgen.string, but the entries from the
+      // trait decl have a StringAttr with no type.  Reunique them to look up.
+      aliasName = StringAttr::get(aliasName.getContext(), aliasName.strref());
+      auto iter = aliasValues.find(aliasName);
+      if (iter != aliasValues.end())
         return iter->second;
-      }
     }
     return paramOp;
   });
@@ -954,7 +956,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   // we don't want to look for a `fn bork(self) -> Something[T]` in the struct,
   // we want to look for a `fn bork(self) -> SIMD[int]`. This helps us do that.
   ParserParamEvaluator traitAliasReplacer(*shared.declResolver);
-  std::unordered_map<std::string, TypedAttr> aliasNameToReplacement;
+  DenseMap<StringAttr, TypedAttr> aliasValues;
 
   // If the struct (e.g. List[T]) has an alias that uses an input parameter,
   // (e.g. `alias element_type = T`), then this will help us interpret that
@@ -999,7 +1001,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       vtable.push_back(VTableEntryAttr::get(name, newValue));
       traitAliasReplacer.setParameterValue(traitAliasDecl.getParamDecl(),
                                            newValue);
-      aliasNameToReplacement.emplace(name.str(), newValue);
+      aliasValues[name] = newValue;
       continue;
     }
 
@@ -1025,9 +1027,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // to the implementation type.  This changes the parameter value, but also
       // changes the metatype of the value.  To support this, we use a custom
       // replacer.
-      LITSignatureType requirementSig =
-          createRequirementSignature(traitFn, type, traitAliasReplacer,
-                                     aliasNameToReplacement, getDeclResolver());
+      LITSignatureType requirementSig = createRequirementSignature(
+          traitFn, type, traitAliasReplacer, aliasValues, getDeclResolver());
 
       // Form a set of bindings to plow into the impl signature by binding Self
       // to the appropriate Struct or derived Trait type.
