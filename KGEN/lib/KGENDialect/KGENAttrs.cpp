@@ -2366,9 +2366,8 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
     return TypeConstantAttr::get(typeCst.getTypeValue(), typeCst.getMlirType(),
                                  resultType);
   // rebind(rebind(x)) => rebind(x)
-  if (auto op = dyn_cast<ParamOperatorAttr>(input);
-      op && op.getOpcode() == POC::Rebind)
-    return ParamOperatorAttr::get(POC::Rebind, op.getOperand(0), resultType);
+  if (auto x = ParamOperatorAttr::stripRebind(input); x != input)
+    return ParamOperatorAttr::get(POC::Rebind, x, resultType);
 
   return {};
 }
@@ -2819,6 +2818,15 @@ TypedAttr ParamOperatorAttr::getNeg(TypedAttr operand) {
 /// must have `index` type.
 TypedAttr ParamOperatorAttr::getSub(TypedAttr lhs, TypedAttr rhs) {
   return get(POC::Add, lhs, getNeg(rhs));
+}
+
+/// If the specified attribute is a rebind, return its operand, otherwise
+/// return the rebind itself.
+TypedAttr ParamOperatorAttr::stripRebind(TypedAttr src) {
+  if (auto rebind = ::dyn_cast<ParamOperatorAttr>(src);
+      rebind && rebind.getOpcode() == POC::Rebind)
+    return rebind.getOperand(0);
+  return src;
 }
 
 /// Parameter operators are the basis of parameter expressions and are never
