@@ -64,9 +64,21 @@ Type ASTType::getMetaType() const {
 /// If this is a user declared type, return the declaration that this came
 /// from.  If this is a raw MLIR type or a metatype, return null.
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
+  // We get the declaration from the metatype of the type.  For example, if we
+  // have a parametric type like "T" where "T: AnyType", we can know that T has
+  // AnyType bound.
   Type type = getMetaType();
   if (!type)
     return nullptr;
+
+  // If our metatype is itself parametric, for example, we have something like:
+  //     !kgen.paramref<:!lit.anytrait<<@Movable>> elt_trait>
+  // Then this type conforms to some parametric trait that is bound by at least
+  // Movable.  Use Movable as the declaration we're working with.
+  if (auto paramRef = dyn_cast<ParamRefType>(type)) {
+    // AnyTrait is the only metatype of a metatype.
+    type = cast<AnyTraitType>(paramRef.getParam().getType());
+  }
 
   if (auto anyStruct = dyn_cast<AnyStructType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());

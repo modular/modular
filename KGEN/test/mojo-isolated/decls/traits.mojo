@@ -996,3 +996,16 @@ fn test_pack_of_traits1[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait]
 fn test_pack_of_traits2[elt_trait: _AnyTypeMetaType, *elt_types: elt_trait](
     owned storage: VariadicPack[_, elt_trait, *elt_types]):
      pass
+
+
+alias _MovableMetaType = __mlir_type[`!lit.anytrait<`, Movable, `>`]
+
+fn take_anytype_ref[type: AnyType](ref value: type): pass
+
+# CHECK-LABEL: lit.func @"pass_movable_mt_ref
+fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: PassT):
+    # CHECK-NEXT: lit.call @traits::@"take_anytype_ref
+    # CHECK-SAME: <:!AnyType [!kgen.paramref<:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT>, {
+    # CHECK-SAME: "__del__" : !lit.signature<[1]("self": !lit.ref<:!Movable rebind(:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT), mut *[0,0]> owned_in_mem, |) -> !kgen.none>
+    # CHECK-SAME: = get_vtable_entry(:!Movable rebind(:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT), "__del__")}], :i1 1, :origin<1> *"a`">(%a) : !lit.signature<("value": !lit.ref<:!kgen.paramref<:!lit.anytrait<!Movable> elt_trait> PassT, mut *"a`"> ref)
+    take_anytype_ref(a)
