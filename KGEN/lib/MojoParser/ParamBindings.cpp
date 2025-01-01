@@ -115,7 +115,7 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
   }
 
   // When binding a trait function, add the self type bindings.
-  if (auto trait = dyn_cast_or_null<TraitType>(type.getMetaType()))
+  if (isa<TraitDeclOp>(decl))
     paramBindings.addPrechecked(expr, PValue(type).get());
 
   ArrayRef<TypedAttr> paramValues = type.getParamBindings();

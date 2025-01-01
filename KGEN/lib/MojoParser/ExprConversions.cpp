@@ -778,7 +778,7 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
 static LITSignatureType
 createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
                            ParserParamEvaluator &traitAliasReplacer,
-                           DenseMap<StringAttr, TypedAttr> &aliasValues,
+                           const DenseMap<StringAttr, TypedAttr> &aliasValues,
                            DeclResolver &declResolver) {
   // Get the selfType as a TypedAttr since we'll be using it as a parameter
   // value below.
@@ -823,7 +823,7 @@ createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement([&](KGEN::ParamOperatorAttr paramOp) -> Attribute {
     if (paramOp.getOpcode() == POC::GetVTableEntry &&
-        paramOp.getOperand(0) == newSelfValue) {
+        paramOp.getOperand(0) == PValue(newSelfType).get()) {
       auto aliasName = cast<StringAttr>(paramOp.getOperand(1));
       // The vtable entries have type !kgen.string, but the entries from the
       // trait decl have a StringAttr with no type.  Reunique them to look up.
@@ -877,9 +877,6 @@ createRequirementSignature(LIT::FuncOp traitFn, ASTType newSelfType,
 /// This maps from the Movable trait metatype into the AnyType trait metatype.
 PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
                                                   TraitType trait) {
-  assert((isa<AnyStructType, TraitType>(value.ir.getType())) &&
-         "should only be called on metatypes");
-
   // Only static vtables are supported right now.
   PValue typePValue = value.ir.getIfPValue();
   if (!typePValue) {
@@ -900,7 +897,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   if (!metaTypeDecl) {
     emitError(value.expr->getLoc(), "cannot get metatype of ")
         << type << value.expr->getRange();
-    return {}; // erroneous
+    return {};
   }
 
   std::optional<InflightDiag> checkDiag;
@@ -911,6 +908,24 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
     if (checkDiag)
       diag.attachNote(metaTypeDecl->getLoc()) << std::move(*checkDiag);
     return {};
+  }
+
+  // The source value may be a struct like Int, it may be something of trait
+  // type like Movable, or it may be something of AnyTraitType type, like
+  //   fn ex[Trait: MovableMetaType, T: Trait](argument: T):
+  // where T is some type that is known to conform to Movable.  In the later
+  // case we just know that the input type conforms to Movable, and we want to
+  // look up members to bind in Movable, so bind the Trait type here.  If this
+  // is a struct, or simple trait, keep it.
+  Type traitOrStructType = type;
+  if (auto paramRef = dyn_cast<ParamRefType>(type.getMetaType())) {
+    auto simpleTraitType =
+        cast<AnyTraitType>(paramRef.getParam().getType()).getTraitType();
+    // Cast from a parametric type of trait metatype value (e.g. "some type that
+    // conforms to Movable) to the simple trait type (Movable) so we can
+    // substitute the value into the signature.
+    traitOrStructType = ASTType(ParamOperatorAttr::get(
+        POC::Rebind, {PValue(type).get()}, simpleTraitType));
   }
 
   // Synthesize the vtable required for the trait from the struct. Make sure the
@@ -1028,12 +1043,13 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
       // changes the metatype of the value.  To support this, we use a custom
       // replacer.
       LITSignatureType requirementSig = createRequirementSignature(
-          traitFn, type, traitAliasReplacer, aliasValues, getDeclResolver());
+          traitFn, traitOrStructType, traitAliasReplacer, aliasValues,
+          getDeclResolver());
 
       // Form a set of bindings to plow into the impl signature by binding Self
       // to the appropriate Struct or derived Trait type.
-      auto implBindings =
-          ParamBindings::getForDeclaredType(getDeclScope(), type, value.expr);
+      auto implBindings = ParamBindings::getForDeclaredType(
+          getDeclScope(), traitOrStructType, value.expr);
       // Leave the rest of the the parameters Unbound.
       ParserParamEvaluator evaluator(getDeclResolver());
       for (Type type : requirementSig.getParamTypes()) {
@@ -1042,7 +1058,10 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
         implBindings.addPrechecked(value.expr, unbound);
       }
 
-      // Grab the matching function.
+      // Grab the matching function.  If the input type is a StructType, this
+      // will directly bind the method in question.  If the input type is
+      // something like "T: Movable" and we're binding __del__ then this will
+      // end up with `get_vtable_entry(T, "__del__")`.
       OverloadSet ov(name, impls, std::move(implBindings), value.expr,
                      CallSyntax::kMethodCallSynthetic);
       auto result = ov.filterOverloadSetForValueType(
@@ -1230,7 +1249,17 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // Values of known {struct/trait/mlir} type can convert to any trait type they
   // implement.
-  if (auto trait = dyn_cast<TraitType>(requiredType)) {
+  if (auto anyTrait =
+          dyn_cast_if_present<AnyTraitType>(requiredType.getMetaType())) {
+    TraitType trait = anyTrait.getTraitType();
+
+    // MLIR types can conform to traits that have limited requirements.
+    // AnyTraitType (the type of all traits) conforms to traits with only a
+    // destructor (e.g. AnyType) since all traits have that.
+    if (isa<TypeType>(rvType) &&
+        checkMLIRTypeConformance(shared, value.expr->getLoc(), trait))
+      return cacheAndReturnVal(true);
+
     // Can only convert static types to traits, not existentials.
     if (auto pval = value.ir.getIfPValue(); pval && LIT::isTypeExpr(pval)) {
       std::optional<InflightDiag> diag;
@@ -1240,13 +1269,6 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
         return cacheAndReturnVal(true);
       if (diag)
         diag->abandon();
-
-      // MLIR types can conform to traits that have limited requirements.
-      // AnyTraitType (the type of all traits) conforms to traits with only a
-      // destructor (e.g. AnyType) since all traits have that.
-      if (isa<TypeType>(rvType) &&
-          checkMLIRTypeConformance(shared, value.expr->getLoc(), trait))
-        return cacheAndReturnVal(true);
 
       return cacheAndReturnVal(false);
     }
@@ -1314,18 +1336,18 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
 
   // Emit metatype conversions to trait types if the metatype implements the
   // specified trait.
-  if (auto trait = dyn_cast<TraitType>(requiredType)) {
-    // Check conversions from struct types.
-    if (isa<AnyStructType, TraitType>(rvType)) {
-      PValue result = emitMetaTypeToTraitConversion(valueExpr, trait);
-      return emitCResult(result, expr, dest);
-    }
+  if (auto anyTrait =
+          dyn_cast_if_present<AnyTraitType>(requiredType.getMetaType())) {
+    TraitType trait = anyTrait.getTraitType();
 
     // Check conversions from MLIR types.
-    if (isa<TypeType>(rvType)) {
-      PValue result = bindMLIRTypeToTrait(valueExpr, trait, *this);
-      return emitCResult(result, expr, dest);
-    }
+    PValue result;
+    if (isa<TypeType>(rvType))
+      result = bindMLIRTypeToTrait(valueExpr, trait, *this);
+    else // Conversions from everything else.
+      result = emitMetaTypeToTraitConversion(valueExpr, trait);
+
+    return emitCResult(result, expr, dest);
   }
 
   // Support implicit conversions of function types.
