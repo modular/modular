@@ -519,26 +519,10 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
   if (auto fromRef = dyn_cast<RefType>(fromType)) {
     if (auto toRef = dyn_cast<RefType>(toType)) {
       // Element types and address space have to be exactly equal.
-      if (fromRef.getAddressSpace() != toRef.getAddressSpace())
+      if (fromRef.getAddressSpace() != toRef.getAddressSpace() ||
+          !ASTType(fromRef.getElementType())
+               .isEqualCanon(toRef.getElementType()))
         return false;
-
-      // The element type needs to exactly match, but we allow rebinds to a
-      // different metatype in the way.
-      auto fromEltType = fromRef.getElementType();
-      auto toEltType = toRef.getElementType();
-      if (!ASTType(fromEltType).isEqualCanon(toEltType)) {
-        // If these are both parametric types, they may have a rebind in the
-        // way.  This rebind will be a downcast of a trait, e.g. from Copyable
-        // to AnyType, which is needed because Mojo/MLIR doesn't have subtype
-        // type compatibility of attributes.
-        bool isJustRebind = false;
-        if (isa<ParamRefType>(fromEltType) && isa<ParamRefType>(toEltType) &&
-            canZeroCostConvert(fromEltType, toEltType, shared))
-          isJustRebind = true;
-
-        if (!isJustRebind)
-          return false;
-      }
 
       // Verify compatible OriginType(mutability).  This is checking the type
       // of the origin, which contains its mutability specifier.
@@ -1037,9 +1021,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
             requirementSig, getDeclScope(), /*emitDiagnosticOnFailure=*/true);
         return {};
       }
-      if (result.getType().mlirType != requirementSig)
-        result =
-            ParamOperatorAttr::get(POC::Rebind, result.get(), requirementSig);
+      assert(result.getType().mlirType == requirementSig &&
+             "didn't form a fn with signature of expected type");
       vtable.push_back(VTableEntryAttr::get(name, result));
     }
   }
