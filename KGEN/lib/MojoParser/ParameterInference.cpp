@@ -127,27 +127,16 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
   if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType)) {
-    if (auto actualParamRef = dyn_cast<ParamRefType>(actualType)) {
-      auto actualParam = actualParamRef.getParam();
-      auto expectedParam = expectedParamRef.getParam();
-      // If this type is a rebind of another type, then this is a downcast that
-      // type erases, e.g. because it passed through some generic function which
-      // had a looser type bound.  Remove the downcast to infer from the
-      // super-type bound.
-      actualParam = ParamOperatorAttr::stripRebind(actualParam);
-      expectedParam = ParamOperatorAttr::stripRebind(expectedParam);
-      return matchParams(actualParam, expectedParam);
-    }
+    // If this is a non-materializable type (like IntLiteral), infer it like its
+    // materializable type (like Int), for example:
+    //    fn example[T: AnyTrivialRegType](a: T): ...
+    //    example(1) # T should be Int, not IntLiteral.
+    // TODO: Why is this here?  Seems like a strange place to do this.
+    if (ASTType nmTarget =
+            ASTType(actualType).getNonmaterializableTarget(shared))
+      actualType = nmTarget;
 
-    ASTType type = actualType;
-    if (ASTType nmTarget = type.getNonmaterializableTarget(shared))
-      type = nmTarget;
-    Type metatype = type.getMetaType();
-    if (!metatype) // Otherwise, this is an MLIR type.
-      metatype = TypeType::get(actualType.getContext());
-
-    return matchParams(TypeConstantAttr::get(type, metatype),
-                       expectedParamRef.getParam());
+    return matchParams(PValue(actualType).get(), expectedParamRef.getParam());
   }
 
   // Handle when both are StructTypes.
@@ -158,10 +147,9 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
         return failure();
 
       // Fail if the parameter lists fundamentally mismatch.
-      // TODO: Defaulted parameters could make this ok?
-      if (actualDRT.getParamValues().size() !=
-          expectedDRT.getParamValues().size())
-        return failure();
+      assert(actualDRT.getParamValues().size() ==
+                 expectedDRT.getParamValues().size() &&
+             "two instances of same struct must have same length param lists");
 
       // Match up the parameter bindings.
       for (auto [actual, expected] :

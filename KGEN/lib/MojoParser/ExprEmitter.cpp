@@ -961,10 +961,9 @@ AnyValue ExprEmitter::rebindValue(ASTExprAnd<CValue> value, Type destType) {
     if (v.getType() == destType)
       return v;
 
-    // Reference casts use a special op for IR clarity.
+    // Sanity check that rebind isn't *introducing* reference mutability.
     if (auto srcRefType = dyn_cast<RefType>(v.getType()))
       if (auto dstRefType = dyn_cast<RefType>(destType)) {
-        // Make sure rebind isn't *introducing* reference mutability.
         assert(!(srcRefType.isMutableKnown(false) &&
                  dstRefType.isMutableKnown(true)) &&
                "Rebind is introducing mutability");

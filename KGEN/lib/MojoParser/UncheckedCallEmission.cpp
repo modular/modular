@@ -278,18 +278,6 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
           refValueType.getWithOrigin(expectedRefType.getOrigin()), refValue);
       refValueType = cast<RefType>(refValue.getType());
     }
-    // The element types may disagree if we're dealing with ParamRef types
-    // downcast from a trait type to AnyType.
-    if (refValueType.getElementType() != expectedRefType.getElementType()) {
-      assert(isa<ParamRefType>(refValueType.getElementType()) &&
-             isa<ParamRefType>(expectedRefType.getElementType()) &&
-             "Unknown element type mismatch in ref binding");
-      refValue = emitter.builder->create<RebindOp>(
-          operand.expr->getLocation(emitter),
-          refValueType.getWithElement(expectedRefType.getElementType()),
-          refValue);
-      refValueType = cast<RefType>(refValue.getType());
-    }
 
     assert(refValueType == expectedType && "Should have exact match now");
     return CValue::getMValueForRef(refValue);
