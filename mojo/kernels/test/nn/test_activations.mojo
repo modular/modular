@@ -12,7 +12,9 @@ from random import randn, seed
 from internal_utils import compare
 from memory import UnsafePointer
 from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
+from sys.info import has_neon
 from test_utils import libm_call
+from testing import assert_almost_equal
 
 
 # CHECK-LABEL: test_elu
@@ -61,6 +63,14 @@ fn test_relu_n1():
 
     # CHECK: [0.0, 0.5, 1.0, 1.0]
     print(relu_n1(0.5 * simd_val))
+
+
+def test_gelu_bfloat16():
+    # Ground truth values from torch 2.5.1+cu124.
+    assert_almost_equal(gelu(BFloat16(-2.6094)), BFloat16(-1.1841e-02))
+    assert_almost_equal(
+        gelu_approximate(BFloat16(-2.6094)), BFloat16(-1.1353e-02)
+    )
 
 
 # CHECK-LABEL: test_gelu_float32
@@ -193,10 +203,14 @@ fn test_gelu_libm():
     libm_out.free()
 
 
-fn main():
+def main():
     test_elu()
     test_relu()
     test_relu_n1()
     test_gelu_float32()
     test_gelu_float64()
     test_gelu_libm()
+
+    @parameter
+    if not has_neon():
+        test_gelu_bfloat16()

@@ -9,6 +9,7 @@
 import math
 
 from register import register_internal
+from utils.numerics import get_accum_type
 
 
 @value
@@ -209,16 +210,21 @@ fn gelu[
     Constraints:
         Type must be a floating point type.
     """
+    # Do the intermediate computation in `accum_type` to match
+    # torch.nn.functional.gelu:
+    # https://github.com/pytorch/pytorch/blob/3054aae493a5347cf8187b5ce611b9a38aace202/aten/src/ATen/native/cuda/ActivationGeluKernel.cu#L21-L42
+    alias accum_type = get_accum_type[type]()
     alias inv_SQRT_2 = 0.70710678118654752440
     constrained[
         type.is_floating_point(),
         "dtype must be a floating point type",
     ]()
+
     # 0.5 * x * (1 + erf(x / SQRT_2))
     # x_half + x_half * erf_res
-    var x_half = 0.5 * x
-    var erf_res = math.erf(x * inv_SQRT_2)
-    return x_half.fma(erf_res, x_half)
+    var x_half = 0.5 * x.cast[accum_type]()
+    var erf_res = math.erf(x.cast[accum_type]() * inv_SQRT_2)
+    return x_half.fma(erf_res, x_half).cast[type]()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -246,10 +252,24 @@ fn gelu_approximate[
     Returns:
         The result of the approximate GELU operation.
     """
+    # Do the intermediate computation in `accum_type` to match
+    # torch.nn.functional.gelu:
+    # https://github.com/pytorch/pytorch/blob/3054aae493a5347cf8187b5ce611b9a38aace202/aten/src/ATen/native/cuda/ActivationGeluKernel.cu#L21-L42
+    alias accum_type = get_accum_type[type]()
     alias SQRT_TWO_OVER_PI = 0.797884560802865
     constrained[
         type.is_floating_point(),
         "dtype must be a floating point type",
     ]()
-    var x3 = x * x * x
-    return 0.5 * x * (1 + math.tanh(SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
+
+    var x3 = x.cast[accum_type]() * x.cast[accum_type]() * x.cast[accum_type]()
+    return (
+        0.5
+        * x.cast[accum_type]()
+        * (
+            1
+            + math.tanh(
+                SQRT_TWO_OVER_PI * (x.cast[accum_type]() + 0.044715 * x3)
+            )
+        )
+    ).cast[type]()
