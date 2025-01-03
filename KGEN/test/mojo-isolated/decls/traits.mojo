@@ -1012,13 +1012,12 @@ fn pass_movable_mt_ref[elt_trait: _MovableMetaType, PassT: elt_trait](mut a: Pas
 
 alias _CollectionElementMetaType = __mlir_type[`!lit.anytrait<`, CollectionElement, `>`]
 
-# FIXME(clattner): re-enable.
-#struct FormVariadicPackWithCastedElementVariadic[
-#    element_trait: _CollectionElementMetaType, //,
-#    *element_types: element_trait]:
-#
-#    fn __init__(out self, owned *args: *element_types):
-#        # This should work.
-#        self.foo(args^)
-#    fn foo(self, owned storage: VariadicPack[_, element_trait, *element_types]):
-#        pass
+struct FormVariadicPackWithCastedElementVariadic[
+    element_trait: _CollectionElementMetaType, //,
+    *element_types: element_trait]:
+
+    fn __init__(out self, owned *args: *element_types):
+        # This should work.
+        self.foo(args^)
+    fn foo(self, owned storage: VariadicPack[_, element_trait, *element_types]):
+        pass
