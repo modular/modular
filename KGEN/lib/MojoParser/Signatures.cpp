@@ -1087,17 +1087,11 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // If the declared type of the pack elements is a trait subtype of AnyType,
   // it will be that traits metatype.  Downcast to the same type, but with
   // !lit.anytrait<AnyType> type.
-  TypedAttr elementTrait = PValue(elementType).get();
-  if (elementTrait.getType() != elementTraitParamTy) {
-    elementTrait =
-        ParamOperatorAttr::get(POC::Rebind, elementTrait, elementTraitParamTy);
-    elementType = ASTType(elementTrait);
-    // Downcast the variadic list as well so the element type is AnyType
-    // metatype.
-    paramVariadicType =
-        VariadicType::get(elementType, paramVariadicType.getConvention());
-    param = ParamOperatorAttr::get(POC::Rebind, param.get(), paramVariadicType);
-  }
+  TypedAttr elementTrait = emitter.emitPValue(
+      {PValue(elementType), arg.typeExpr}, EC_Type, elementTraitParamTy);
+  if (!elementTrait)
+    return {};
+  elementType = ASTType(elementTrait);
 
   CValue isMutableCValue =
       emitter.emitBool({refType.isMutable(), arg.typeExpr}, EC_Type);

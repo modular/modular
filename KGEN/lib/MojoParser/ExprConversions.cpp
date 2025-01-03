@@ -466,17 +466,6 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
     }
   }
 
-  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base] with a
-  // rebind.
-  if (auto toAnyTrait = dyn_cast<AnyTraitType>(toType)) {
-    if (auto fromAnyTrait = dyn_cast<AnyTraitType>(fromType)) {
-      auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared);
-      if (!fromDecl)
-        return false;
-      return fromDecl->doesNominalTypeConformTo(toAnyTrait.getTraitType());
-    }
-  }
-
   // Check for closure structs and dig out their underlying signature types to
   // check whether the conversion can occur.
   auto fromDecl = dyn_cast_or_null<StructDeclOp>(fromType.getDecl(shared));
@@ -537,16 +526,6 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
           {toOrigin, OriginMutCastAttr::get(fromRef.getOrigin(), toOriginType)},
           toOriginType);
       return toOrigin == originUnion;
-    }
-  }
-
-  // VariadicListAttr's can be bitcast if each of their elements can.  This
-  // allows a list of derived types to be converted to a list of base types.
-  if (auto fromVar = dyn_cast<VariadicType>(fromType)) {
-    if (auto toVar = dyn_cast<VariadicType>(toType)) {
-      return fromVar.getConvention() == toVar.getConvention() &&
-             canZeroCostConvert(fromVar.getElementType(),
-                                toVar.getElementType(), shared);
     }
   }
 
@@ -1186,30 +1165,38 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   if (auto anyTrait =
           dyn_cast_if_present<AnyTraitType>(requiredType.getMetaType())) {
     TraitType trait = anyTrait.getTraitType();
+    bool result = false;
 
     // MLIR types can conform to traits that have limited requirements.
     // AnyTraitType (the type of all traits) conforms to traits with only a
     // destructor (e.g. AnyType) since all traits have that.
-    if (isa<TypeType>(rvType) &&
-        checkMLIRTypeConformance(shared, value.expr->getLoc(), trait))
-      return cacheAndReturnVal(true);
-
-    // Can only convert static types to traits, not existentials.
-    if (auto pval = value.ir.getIfPValue(); pval && LIT::isTypeExpr(pval)) {
-      // Struct types and Trait types can conform to traits.
-      bool result = false;
+    if (isa<TypeType>(rvType)) {
+      result = checkMLIRTypeConformance(shared, value.expr->getLoc(), trait);
+    } else if (auto pval = value.ir.getIfPValue();
+               pval && LIT::isTypeExpr(pval)) {
+      // Can only convert static types to traits, not existentials.
       if (ASTDecl *decl = ASTType(pval).getDecl(shared))
-        result = decl->doesNominalTypeConformTo(trait);
-      return cacheAndReturnVal(result);
+        return cacheAndReturnVal(decl->doesNominalTypeConformTo(trait));
     }
+    return cacheAndReturnVal(result);
+  }
+
+  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
+  // This is a conversion of things like "the Movable type" (which has type
+  // "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
+  if (auto anyTrait = dyn_cast<AnyTraitType>(requiredType)) {
+    if (auto fromAnyTrait = dyn_cast<AnyTraitType>(rvType))
+      if (auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared))
+        return cacheAndReturnVal(
+            fromDecl->doesNominalTypeConformTo(anyTrait.getTraitType()));
   }
 
   // Check for non-trivial function type conversions.
-  if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType)) {
-    if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
-      bool result = canConvertFunctionTypes(rvFunctionType, requiredFunction);
-      return cacheAndReturnVal(result);
-    }
+  if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
+    bool result = false;
+    if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType))
+      result = canConvertFunctionTypes(rvFunctionType, requiredFunction);
+    return cacheAndReturnVal(result);
   }
 
   // We can implicitly convert to the specified type if we can construct it with
@@ -1271,10 +1258,8 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
   if (auto anyTrait =
           dyn_cast_if_present<AnyTraitType>(requiredType.getMetaType())) {
     TraitType trait = anyTrait.getTraitType();
-
-    // Check conversions from MLIR types.
     PValue result;
-    if (isa<TypeType>(rvType))
+    if (isa<TypeType>(rvType)) // Conversions from MLIR types.
       result = bindMLIRTypeToTrait(valueExpr, trait, *this);
     else // Conversions from everything else.
       result = emitMetaTypeToTraitConversion(valueExpr, trait);
@@ -1282,12 +1267,26 @@ CValue ExprEmitter::emitImplicitConversionToType(ASTExprAnd<CValue> valueExpr,
     return emitCResult(result, expr, dest);
   }
 
+  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base].
+  // This is a conversion of things like "the Movable type" (which has type
+  // "AnyTraitType[Movable]") to "AnyTraitType[AnyType]".
+  if (auto anyTrait = dyn_cast<AnyTraitType>(requiredType)) {
+    PValue typePValue = value.getIfPValue();
+    if (!typePValue) {
+      emitError(expr->getLoc(), "existentials are not supported yet!");
+      return {};
+    }
+
+    // This is just the trait itself, not a conformance, so we can use an empty
+    // vtable, just upcast from
+    return TypeConstantAttr::get(ASTType(typePValue), anyTrait);
+  }
+
   // Support implicit conversions of function types.
-  if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType)) {
-    if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
+  if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
+    if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType))
       if (canConvertFunctionTypes(rvFunctionType, requiredFunction))
         return convertFunctionValue(value, expr, requiredFunction, *this, dest);
-    }
   }
 
   // We disable implicit conversions to prevent converting T -> S -> U in
