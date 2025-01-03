@@ -2501,13 +2501,30 @@ static TypedAttr simplifyGetVTableEntry(ArrayRef<TypedAttr> operands,
   StringAttr targetName = cast<StringAttr>(operands[1]);
 
   // Scan the vtable for a name + signature match, then the method is the
-  // payload.
+  // payload.  Traits may have overloaded requirements, and it is important to
+  // pick the right one.
+  VTableEntryAttr mismatchedEntry;
   for (VTableEntryAttr entry : vtable.getEntries()) {
-    if (entry.getName() == targetName.getValue() &&
-        entry.getMethod().getType() == resultType) {
-      return entry.getMethod();
+    if (entry.getName() == targetName.getValue()) {
+      if (entry.getMethod().getType() == resultType)
+        return entry.getMethod();
+
+      // Keep this for hapless compiler engineers debugging vtable type
+      // mismatches.
+      mismatchedEntry = entry;
     }
   }
+
+#if 0
+  if (mismatchedEntry) {
+    llvm::errs() << "Found vtable lookup miss of " << targetName
+                 << " based on on type mismatch:\n"
+                 << "  expected: " << resultType << "\n"
+                 << "  actual: " << mismatchedEntry.getMethod().getType()
+                 << "\n\n";
+  }
+#endif
+
   return {};
 }
 

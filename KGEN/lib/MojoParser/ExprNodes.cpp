@@ -1410,7 +1410,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle method references, which might be overloaded.
   if (isa<LIT::FuncOp>(memberDecls[0])) {
     // Build an overload set of all matching function declarations.
-    //
+
     // TODO(ParameterizedType): This representation is subtly wrong.  We should
     // be inferring Self parameters from the expression later rather than
     // installing "getForDeclaredType", because this won't work correctly with
@@ -1423,10 +1423,10 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // of `[A, B, Int]`.  If we had ParameterizedType then we could model this
     // correctly as have an unspecified first set of bindings for the type,
     // and the Int binding could go in a subsequent parameter list.
+    auto bindings = ParamBindings::getForDeclaredType(emitter.getDeclScope(),
+                                                      baseRVType, this);
     auto result =
-        OverloadSetUValue::create(spelling, memberDecls,
-                                  ParamBindings::getForDeclaredType(
-                                      emitter.getDeclScope(), baseRVType, this),
+        OverloadSetUValue::create(spelling, memberDecls, std::move(bindings),
                                   this, CallSyntax::kDirectCall);
 
     // If the callee is a static method, we can directly reference it
