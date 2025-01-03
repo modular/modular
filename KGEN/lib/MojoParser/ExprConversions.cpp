@@ -473,13 +473,7 @@ bool ExprEmitter::canZeroCostConvert(ASTType fromType, ASTType toType,
       auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared);
       if (!fromDecl)
         return false;
-
-      std::optional<InflightDiag> diag;
-      if (fromDecl->doesNominalTypeConformsTo(toAnyTrait.getTraitType(), diag))
-        return true;
-      if (diag)
-        diag->abandon();
-      return false;
+      return fromDecl->doesNominalTypeConformTo(toAnyTrait.getTraitType());
     }
   }
 
@@ -842,7 +836,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
   }
 
   std::optional<InflightDiag> checkDiag;
-  if (!metaTypeDecl->doesNominalTypeConformsTo(trait, checkDiag)) {
+  if (!metaTypeDecl->doesNominalTypeConformTo(trait, checkDiag)) {
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                         << type << " to trait " << ASTType(trait)
                         << value.expr->getRange();
@@ -938,7 +932,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 
     if (auto traitAliasDecl = dyn_cast<AliasDeclOp>(requirementDecls.front())) {
       // These asserts should be safe because we already know it correctly
-      // conforms because we called `doesNominalTypeConformsTo` above.
+      // conforms because we called `doesNominalTypeConformTo` above.
       assert(impls.size() == 1);
       auto implAlias = cast<AliasDeclOp>(impls.front());
       assert(implAlias.getValueAttr() && "struct's alias should have value");
@@ -1202,22 +1196,20 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
     // Can only convert static types to traits, not existentials.
     if (auto pval = value.ir.getIfPValue(); pval && LIT::isTypeExpr(pval)) {
-      std::optional<InflightDiag> diag;
       // Struct types and Trait types can conform to traits.
-      if (ASTDecl *decl = ASTType(pval).getDecl(shared);
-          decl && decl->doesNominalTypeConformsTo(trait, diag))
-        return cacheAndReturnVal(true);
-      if (diag)
-        diag->abandon();
-
-      return cacheAndReturnVal(false);
+      bool result = false;
+      if (ASTDecl *decl = ASTType(pval).getDecl(shared))
+        result = decl->doesNominalTypeConformTo(trait);
+      return cacheAndReturnVal(result);
     }
   }
 
   // Check for non-trivial function type conversions.
   if (auto rvFunctionType = dyn_cast<LITSignatureType>(rvType)) {
-    if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType))
-      return canConvertFunctionTypes(rvFunctionType, requiredFunction);
+    if (auto requiredFunction = dyn_cast<LITSignatureType>(requiredType)) {
+      bool result = canConvertFunctionTypes(rvFunctionType, requiredFunction);
+      return cacheAndReturnVal(result);
+    }
   }
 
   // We can implicitly convert to the specified type if we can construct it with

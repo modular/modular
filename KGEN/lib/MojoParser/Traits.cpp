@@ -365,8 +365,8 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
 /// to the specified trait type.  On failure, this may set 'diag' to an inflight
 /// diagnostic that explains why this doesn't conform.  It can be reported or
 /// abandoned based on the client's needs.
-bool ASTDecl::doesNominalTypeConformsTo(TraitType trait,
-                                        std::optional<InflightDiag> &diag) {
+bool ASTDecl::doesNominalTypeConformTo(TraitType trait,
+                                       std::optional<InflightDiag> &diag) {
   assert((::isa<StructDeclOp, TraitDeclOp>(*this)) && "Invalid decl kind");
 
   if (failed(shared.declResolver->resolveFully(*this, getLoc())))
@@ -411,4 +411,13 @@ bool ASTDecl::doesNominalTypeConformsTo(TraitType trait,
   // If we succeeded, remember this so we don't check again.
   structOp.setParentTypes(newParentTypes);
   return true;
+}
+
+/// Helper for clients that don't care about the diagnostic.
+bool ASTDecl::doesNominalTypeConformTo(TraitType trait) {
+  std::optional<InflightDiag> diag;
+  auto result = doesNominalTypeConformTo(trait, diag);
+  if (diag)
+    diag->abandon();
+  return result;
 }
