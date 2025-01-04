@@ -132,5 +132,8 @@ what we publish.
 - [Issue #3540](https://github.com/modularml/mojo/issues/3540) - Using named
   output slot breaks trait conformance
 
+- [Issue #3617](https://github.com/modularml/mojo/issues/3617) - Can't generate
+  the constructors for a type wrapping `!lit.ref`
+
 - The Mojo Language Server doesn't crash anymore on empty **init**.mojo files.
   [Issue #3826](https://github.com/modularml/mojo/issues/3826).
