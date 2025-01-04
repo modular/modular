@@ -477,7 +477,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
       ASTDecl *result = lookupResult.getIfSuccess().front();
       if (auto func = dyn_cast<LIT::FuncOp>(result))
         if ((SpecialFunctionKind)func.getSpecialFnKind() == kind)
-          existingFunctions[index].flip();
+          existingFunctions[index] = 1;
     }
 
     return success();
@@ -523,8 +523,16 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
          llvm::zip(inputTypes, convs, structOp.getFieldDecls())) {
       // Strip the pointer type if present.
       Type argType = type;
-      if (SignatureType::hasImplicitOrigin(conv))
+      // Memberwise initializers must have read/owned conventions. ref etc
+      // are lit.ref's mechanically but these are invisible the to the caller.
+      if (SignatureType::hasImplicitOrigin(conv)) {
+        if (conv != ArgConvention::ReadMem && conv != ArgConvention::OwnedMem) {
+          isMatch = false;
+          break;
+        }
         argType = ASTType(argType).getReferenceElementType();
+      }
+
       StructFieldOp op = field;
       if (argType != op.getType()) {
         isMatch = false;
@@ -532,7 +540,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl) {
       }
     }
     if (isMatch)
-      existingFunctions[FuncIndex::FieldwiseInit].flip();
+      existingFunctions[FuncIndex::FieldwiseInit] = 1;
   }
   return ValueInfo(existingFunctions);
 }
