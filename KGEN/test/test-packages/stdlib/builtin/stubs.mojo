@@ -44,6 +44,8 @@ struct Origin[is_mutable: Bool]:
 
     var _mlir_origin: Self.type
 
+    alias cast_from = _lit_mut_cast[result_mutable=is_mutable]
+
     @implicit
     @always_inline("nodebug")
     fn __init__(out self, mlir_origin: Self.type):
@@ -52,6 +54,20 @@ struct Origin[is_mutable: Bool]:
         Args:
             mlir_origin: The raw MLIR origin value."""
         self._mlir_origin = mlir_origin
+
+
+struct _lit_mut_cast[
+    is_mutable: Bool, //,
+    result_mutable: Bool,
+    operand: Origin[is_mutable],
+]:
+    alias result = __mlir_attr[
+        `#lit.origin.mutcast<`,
+        operand._mlir_origin,
+        `> : !lit.origin<`,
+        result_mutable.value,
+        `>`,
+    ]
 
 
 # Static constants are a named subset of the global origin.
@@ -70,20 +86,6 @@ struct _lit_indirect_origin[
         Self.base,
         `> : `,
         __type_of(Self.base),
-    ]
-
-
-struct _lit_mut_cast[
-    is_mutable: Bool, //,
-    operand: Origin[is_mutable].type,
-    result_mutable: Bool,
-]:
-    alias result = __mlir_attr[
-        `#lit.origin.mutcast<`,
-        operand,
-        `> : !lit.origin<`,
-        +result_mutable.value,
-        `>`,
     ]
 
 
@@ -468,9 +470,7 @@ struct _VariadicListMemIter[
         list_origin: The origin of the VariadicListMem.
     """
 
-    alias variadic_list_type = VariadicListMem[
-        elt_type, elt_is_mutable.value, elt_origin
-    ]
+    alias variadic_list_type = VariadicListMem[elt_type, elt_origin]
 
     var index: Int
     var src: Pointer[Self.variadic_list_type, list_origin]
@@ -484,9 +484,9 @@ struct _VariadicListMemIter[
 
 
 struct VariadicListMem[
+    elt_is_mutable: Bool, //,
     element_type: AnyType,
-    elt_is_mutable: __mlir_type.i1,
-    origin: __mlir_type[`!lit.origin<`, elt_is_mutable, `>`],
+    origin: __mlir_type[`!lit.origin<`, elt_is_mutable.value, `>`],
 ]:
     alias _mlir_type = __mlir_type[
         `!lit.ref<`, element_type, `, `, origin, `, 0>`
@@ -520,15 +520,12 @@ struct VariadicListMem[
     fn __getitem__(
         self, idx: Int
     ) -> ref [
-        _lit_origin_union[
-            origin,
-            # cast mutability of self to match the mutability of the element,
-            # since that is what we want to use in the ultimate reference and
-            # the union overall doesn't matter.
-            _lit_mut_cast[
-                __origin_of(self), Bool {value: elt_is_mutable}
-            ].result,
-        ].result
+        # cast mutability of self to match the mutability of the element,
+        # since that is what we want to use in the ultimate reference and
+        # the union overall doesn't matter.
+        Origin[elt_is_mutable]
+        .cast_from[__origin_of(origin, self)]
+        .result
     ] element_type:
         while True:
             pass
@@ -723,7 +720,7 @@ struct UnsafePointer[
     fn get_unique_item_ref[
         self_origin: ImmutableOrigin
     ](ref [self_origin]self, offset: Int = 0) -> ref [
-        _lit_mut_cast[_lit_indirect_origin[self_origin].result, True].result,
+        Origin[True].cast_from[_lit_indirect_origin[self_origin].result].result,
         address_space,
     ] T:
         while __mlir_attr.true:
