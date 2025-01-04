@@ -1075,11 +1075,8 @@ struct VarArgInit:
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the
 # COM: trait requirements for Copyable and Movable are generated early.
-
-
 struct BoxCopyable[T: Copyable]:
     pass
-
 
 @value
 struct Node:
@@ -1651,3 +1648,21 @@ fn testRegPassableInitSelf():
     # CHECK-NEXT: [[ONE:%.*]] = kgen.param.constant
     # CHECK-NEXT: lit.ref.store [[ONE:%.*]], [[AP]]
     x.a = 1
+
+# Can't generate the constructors for a type wrapping !lit.ref
+@value
+struct MOCO1320[
+    mut: Bool, //,
+    origin: Origin[mut]
+]:
+    alias _mlir_type = __mlir_type[`!lit.ref<`, Int,
+        `, `,
+        origin._mlir_origin,
+        `>`,
+    ]
+    var _value: Self._mlir_type
+    fn __init__(out self, *, x: Self._mlir_type):
+        self._value = x
+    fn __init__(out self, *, ref [origin]to: Int):
+        self._value = __get_mvalue_as_litref(to)
+
