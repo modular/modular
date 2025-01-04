@@ -52,7 +52,6 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerRaiseForLoops();
-  KGEN::registerRegisterCustomOps();
   KGEN::registerRemoveUnusedParams();
   KGEN::registerSROA();
   KGEN::registerSimplifyCF();
@@ -77,8 +76,6 @@ void KGEN::registerDefaultKGENPasses() {
   // Passes that require a runtime.
   mlir::registerPass(
       [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(); });
-  mlir::registerPass(
-      [&] { return KGEN::createLowerCustomOpsWithDefaultJIT(); });
   KGEN::registerInlineParametric();
   KGEN::registerAutomaticInline();
   KGEN::registerDeadArgumentElimination();

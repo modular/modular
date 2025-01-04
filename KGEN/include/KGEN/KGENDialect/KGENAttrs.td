@@ -1094,47 +1094,6 @@ def KGEN_LinkDependencyArrayAttr : ArrayOfAttr<KGENDialect,
 }
 
 //===----------------------------------------------------------------------===//
-// CustomOpImplAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_CustomOpImplAttr : KGENAttr<"CustomOpImpl", "custom.op_impl"> {
-  let summary = "Describes the implementation of a custom operation";
-  let description = [{
-    The `#kgen.custom.op_impl` attribute contains a `custom` op name and a
-    symbol reference to its implementation method.
-
-    Example:
-    ```mlir
-    #kgen.custom.op_impl<"custom.add", @impl_method>
-    ```
-  }];
-
-  let parameters = (ins
-    "StringAttr":$proto,
-    "PreservedAttr":$params,
-    "PreservedAttr":$patterns
-  );
-  let assemblyFormat = "`<` $proto `,` $params `,` $patterns `>`";
-
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins
-        "StringAttr":$proto, "PreservedAttr":$params, "PreservedAttr":$patterns), [{
-      return $_get(proto.getContext(), proto, params, patterns);
-    }]>,
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// CustomOpImplArray
-//===----------------------------------------------------------------------===//
-
-def KGEN_CustomOpImplArrayAttr : ArrayOfAttr<KGENDialect, "CustomOpImplArray",
-    "custom.op_impls", "CustomOpImplAttr"> {
-  let summary = "An array of custom ops implementations, sorted by name";
-}
-
-//===----------------------------------------------------------------------===//
 // TailKindAttr
 //===----------------------------------------------------------------------===//
 

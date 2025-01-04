@@ -16,7 +16,6 @@ pkg_files(
     name = "docs",
     srcs = [
         ":CODialect.doc",
-        ":CUSTOMDialect.doc",
         ":HLCFDialect.doc",
         ":INTERPDialect.doc",
         ":KGENDialect.doc",
@@ -27,35 +26,6 @@ pkg_files(
     ],
     prefix = "KGEN/docs",
     visibility = ["//visibility:public"],
-)
-
-td_library(
-    name = "CustomDialectTdFiles",
-    srcs = glob(["include/KGEN/CustomDialect/*.td"]),
-    includes = ["include"],
-    deps = [
-        "//Support:MTdFiles",
-    ],
-)
-
-gentbl_mlir_dialect(
-    name = "CustomDialectIncGen",
-    dialect = "custom",
-    td_file = "include/KGEN/CustomDialect/Custom.td",
-    deps = [
-        ":CustomDialectTdFiles",
-    ],
-)
-
-modular_cc_library(
-    name = "CustomDialect",
-    srcs = glob(["lib/CustomDialect/**/*.cpp"]),
-    hdrs = glob(["include/KGEN/CustomDialect/**/*.h"]),
-    deps = [
-        ":CustomDialectIncGen",
-        "//Support:Base",
-        "@llvm-project//mlir:IR",
-    ],
 )
 
 td_library(
@@ -1057,7 +1027,6 @@ modular_cc_library(
     srcs = glob(["lib/Transforms/*.cpp"]),
     deps = [
         ":CODialect",
-        ":CustomDialect",
         ":HLCFDialect",
         ":HLCFDialectAnalysis",
         ":LITDialect",
@@ -1081,7 +1050,6 @@ modular_cc_library(
         "lib/Elaborator/*.h",
     ]),
     deps = [
-        ":CustomDialect",
         ":KGENDialect",
         ":LITDialect",
         ":ToolCommon.headers",
@@ -1229,7 +1197,6 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/ToolCommon/**/*.h"]),
     deps = [
         ":CODialect",
-        ":CustomDialect",
         ":ExecutionEngine",
         ":HLCFDialect",
         ":Interpreter",

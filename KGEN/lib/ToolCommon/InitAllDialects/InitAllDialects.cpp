@@ -8,7 +8,6 @@
 #include "KGEN/ToolCommon/InitAllDialects/IndexInterpreterInterface.h"
 
 #include "KGEN/CODialect/CODialect.h"
-#include "KGEN/CustomDialect/CustomDialect.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/Interpreter/InterpreterDialect.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
@@ -251,7 +250,6 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
       LIT::LITDialect,
       POP::POPDialect,
       CO::CODialect,
-      Custom::CustomDialect,
       MDialect,
       DebugInfo::DebugInfoDialect,
       mlir::index::IndexDialect,
@@ -274,7 +272,6 @@ void M::preloadAllKGENDialects(MLIRContext *ctx) {
       KGENDialect,
       LIT::LITDialect,
       POP::POPDialect,
-      Custom::CustomDialect,
       MDialect,
       DebugInfo::DebugInfoDialect,
       mlir::index::IndexDialect,

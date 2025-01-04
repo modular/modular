@@ -403,7 +403,6 @@ private:
   void applyCopyOrMoveCapture(const CallNode &node, bool isMove,
                               StringRef decorator);
   void applyLLVMMetadata(const CallNode &node);
-  void applyOp(const CallNode *node);
 
   ASTDecl &decl;
   ASTDecl &sigDecl;
@@ -430,8 +429,6 @@ LogicalResult FnSigDecorators::apply(ExprNode *decorator) {
       tcSignature.isNestedOriginExclusivityCheckingDisabled = true;
     else if (declRef->spelling == "implicit")
       applyImplicitDecorator(*declRef);
-    else if (declRef->spelling == "op")
-      applyOp(/*patterns=*/nullptr);
     else
       return failure();
     return success();
@@ -453,8 +450,6 @@ LogicalResult FnSigDecorators::apply(ExprNode *decorator) {
         applyCopyOrMoveCapture(*callNode, /*isMove=*/false, declRef->spelling);
       else if (declRef->spelling == "__llvm_metadata")
         applyLLVMMetadata(*callNode);
-      else if (declRef->spelling == "op")
-        applyOp(callNode);
       else
         return failure();
       return success();
@@ -627,18 +622,6 @@ void FnSigDecorators::applyLLVMMetadata(const CallNode &node) {
       attrs.append(value.name, attr);
   }
   funcOp.setLLVMMetadataAttr(attrs.getDictionary(getContext()));
-}
-
-void FnSigDecorators::applyOp(const CallNode *node) {
-  SmallVector<Attribute> patterns;
-  if (node) {
-    ExprEmitter emitter(sigDecl, EC_Decorator);
-    for (const Operand &arg : node->operands)
-      if (PValue pattern = emitter.emitExprPValue(arg.expr, EC_Decorator))
-        patterns.push_back(pattern.get());
-  }
-  funcOp.setPatternsAttr(ArrayAttr::get(getContext(), patterns));
-  funcOp.setInlineLevel(InlineLevel::Never);
 }
 
 /// Process an extensibility decorator by generating additional trait binding

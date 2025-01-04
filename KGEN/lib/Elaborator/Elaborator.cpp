@@ -14,7 +14,6 @@
 
 #include "AsyncRT/CompilerSupport/Context.h"
 #include "AsyncRT/Support/ForkJoin.h"
-#include "KGEN/CustomDialect/CustomDialect.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -1384,8 +1383,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
             generatorOp.getSignatureGenerator().getBody().getFnEffects()),
         generatorOp.getInlineLevel(), generatorOp.getExportKind(),
         generatorOp.getDecorators(), generatorOp.getLLVMMetadata()));
-    if (ArrayAttr patterns = generatorOp.getPatternsAttr())
-      instance->setAttr("tmp_patterns", patterns);
+
   } else {
     auto structGenOp = dyn_cast<StructGeneratorOp>(*gen);
     instance = cast<InstantiatedOpInterface>(*b.create<StructInstanceOp>(
@@ -1852,16 +1850,6 @@ Elaborator::run(ModuleOp theModule,
 
     genInstantiations[node.gen].push_back(SuccessfulInstances{
         mlir::debugString(node.inputParams), node.impl->inst});
-
-    if (auto gen = dyn_cast<GeneratorOp>(*node.gen)) {
-      if (auto patterns = dyn_cast_or_null<ArrayAttr>(
-              node.impl->inst->removeAttr("tmp_patterns"))) {
-        auto impl = CustomOpImplAttr::get(gen.getSymNameAttr(),
-                                          PreservedAttr::get(node.inputParams),
-                                          PreservedAttr::get(patterns));
-        cast<FuncOp>(*node.impl->inst).setPatternsAttr(impl);
-      }
-    }
   }
 
   // Now reorder all instantiations of each generator to be deterministic.

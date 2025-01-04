@@ -6,8 +6,6 @@
 
 #include "KGEN/ToolCommon/KGENPasses.h"
 
-#include "KGEN/CustomDialect/CustomDialect.h"
-#include "KGEN/CustomDialect/CustomUtils.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
