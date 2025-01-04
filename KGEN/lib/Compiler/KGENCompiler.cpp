@@ -181,87 +181,6 @@ writeCaptureArgs(ModuleOp module, StringAttr name) {
 }
 
 //===----------------------------------------------------------------------===//
-// createLowerCustomOpsWithDefaultJIT
-//===----------------------------------------------------------------------===//
-
-/// Compile the pre-elaboration canonicalizations patterns present in the
-/// module. Requires the module symbol table, and the exportMap of all the
-/// canonicalization functions.
-static ErrorOr<SmallVector<SmallVector<CAPICanonicalizationFn>>>
-compilePatterns(OwningOpRef<ModuleOp> module,
-                ArrayRef<SmallVector<StringAttr>> patterns) {
-  MLIRContext *ctx = module->getContext();
-
-  // Start the execution engine.
-  CompilationOptions options;
-  ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      initializeExecutionEngine(*ctx, options, ExecutionEngineOptions(),
-                                /*isJIT=*/true, PassManagerConfigOptions());
-  if (execEngineOr.isError())
-    return execEngineOr.takeError();
-
-  // We place the engine in a shared pointer that is going to be owned by all
-  // canonicalization patterns. This is so it stays alive for as long the
-  // operations are loaded.
-  std::shared_ptr<ExecutionEngine> engine(execEngineOr->release());
-
-  // Create the object compiler and slice a new module with the operations we
-  // want to JIT.
-  auto objCompilerOr =
-      ObjectCompiler::create(".mojo_cache", options, /*isJIT=*/true, *ctx);
-  if (failed(objCompilerOr))
-    return objCompilerOr.takeError();
-  ObjectCompiler &objCompiler = **objCompilerOr;
-
-  // Add an environment variable to specify that the CAPI is linked in the
-  // JIT'ed code.
-  auto dict = DictionaryAttr::get(
-      ctx, {{StringAttr::get("MLIRCAPI_LINKED", StringType::get(ctx)),
-             UnitAttr::get(ctx)}});
-  (*module)->setAttr(EnvAttr::getEnvAttrName(), EnvAttr::get(dict));
-
-  // Run the KGEN pipeline, and compile it to an archive.
-  KGENCompiler kgenCompiler(*ctx, options);
-  TargetInfoAttr target = *getTargetInfoFor(
-      ctx, llvm::sys::getDefaultTargetTriple(), llvm::sys::getHostCPUName(),
-      getHostCPUFeatures(), /*tuneCpu=*/"",
-      /*acceleratorArch=*/options.targetAccelerator);
-  if (auto err = kgenCompiler.runElaborationPipeline(
-          *module, target, *loadContext(ctx)->get<AsyncRT::Runtime>()))
-    return err.takeError();
-  ErrorOr<BufferRef> archiveOr = objCompiler.emitArchive(std::move(module));
-  if (archiveOr.isError())
-    return archiveOr.takeError();
-
-  // Add the canonicalization pattern layer.
-  if (ErrorOrSuccess err = engine->addIfAbsent<StaticArchiveLayer>(
-          "canonicalization_patterns", archiveOr.takeValue()))
-    return err.takeError();
-
-  // The map of compiled functions.
-  SmallVector<SmallVector<CAPICanonicalizationFn>> compiledFns;
-  for (ArrayRef<StringAttr> patternList : patterns) {
-    SmallVector<CAPICanonicalizationFn> compiledPatternList;
-    for (StringRef name : patternList) {
-      ErrorOr<CompiledFunc> funcOrRes = engine->lookup(name);
-      if (funcOrRes.isError())
-        return funcOrRes.takeError();
-      // Both the operation and the rewriter are passed as pointers, as the
-      // mojo canonicalization pattern is marked as inout.
-      compiledPatternList.push_back(
-          [engine = engine, func = *funcOrRes](MlirOperation *op,
-                                               MlirRewriterBase *rewriter,
-                                               void *payload) mutable {
-            return func.invoke<bool>(op, rewriter, payload);
-          });
-    }
-    compiledFns.push_back(std::move(compiledPatternList));
-  }
-
-  return compiledFns;
-}
-
-//===----------------------------------------------------------------------===//
 // compileElaboratorAsm
 //===----------------------------------------------------------------------===//
 
@@ -332,15 +251,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
   pm.addPass(createElaborateGenerators(
       target, elaboratorOptions, compilationOptions, compileElaboratorAsm));
-  LibraryOptConfig lib;
-  lib.buildElaboratePipeline = [&](mlir::PassManager &pm,
-                                   const LibraryOptConfig &lib) {
-    buildElaborateModulePipeline(pm, target, compilationOptions,
-                                 compileElaboratorAsm);
-    buildFirstOptPipeline(pm, compilationOptions, lib);
-  };
-  lib.compilePatterns = compilePatterns;
-  buildPostElaborationPipeline(pm, compilationOptions, lib);
+  buildPostElaborationPipeline(pm, compilationOptions);
 
   if (failed(pm.run(*module)))
     return Error("failed to run the pass manager");
@@ -435,22 +346,6 @@ std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
                                    /*options=*/{}, compileElaboratorAsm);
 }
 
-/// Create an instance of the elaborator pass using the given configuration.
-/// The created elaborator pass uses a default specialization executor that
-/// JITs and executes in-process.
-std::unique_ptr<Pass> KGEN::createLowerCustomOpsWithDefaultJIT() {
-  LibraryOptConfig lib;
-  lib.buildElaboratePipeline = [=](mlir::PassManager &pm,
-                                   const LibraryOptConfig &lib) {
-    CompilationOptions options;
-    buildElaborateModulePipeline(pm, TargetInfoAttr(), options,
-                                 compileElaboratorAsm);
-    buildFirstOptPipeline(pm, options, lib);
-  };
-  lib.compilePatterns = compilePatterns;
-  return createLowerCustomOps(lib);
-}
-
 //===----------------------------------------------------------------------===//
 // populateElaborateModulePasses
 //===----------------------------------------------------------------------===//
@@ -459,14 +354,7 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
                                          TargetInfoAttr target,
                                          const CompilationOptions &options) {
   buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm);
-  LibraryOptConfig lib;
-  lib.buildElaboratePipeline = [=](mlir::PassManager &pm,
-                                   const LibraryOptConfig &lib) {
-    buildElaborateModulePipeline(pm, target, options, compileElaboratorAsm);
-    buildFirstOptPipeline(pm, options, lib);
-  };
-  lib.compilePatterns = compilePatterns;
-  buildPostElaborationPipeline(pm, options, lib);
+  buildPostElaborationPipeline(pm, options);
 }
 
 //===----------------------------------------------------------------------===//

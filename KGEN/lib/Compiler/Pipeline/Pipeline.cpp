@@ -119,7 +119,6 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
                                         TargetInfoAttr target,
                                         const CompilationOptions &options,
                                         ElaboratorCompileAsmFn compileAsmFn) {
-  pm.addPass(createRegisterCustomOps());
   pm.addPass(createEliminateDeadSymbols());
 
   // Erase debuginfo from all sources if compiling with no debuginfo.
@@ -151,15 +150,13 @@ void KGEN::buildElaborateModulePipeline(mlir::PassManager &pm,
 }
 
 void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
-                                        const CompilationOptions &options,
-                                        const LibraryOptConfig &lib) {
-  buildFirstOptPipeline(pm, options, std::move(lib));
+                                        const CompilationOptions &options) {
+  buildFirstOptPipeline(pm, options);
   buildLateOptPipeline(pm, options);
 }
 
 void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
-                                 const CompilationOptions &options,
-                                 const LibraryOptConfig &lib) {
+                                 const CompilationOptions &options) {
   // Deduplicates functions coming out of the elaborator. Run before DCE as the
   // pass could introduce more dead symbols.
   pm.addPass(createEliminateDuplicateFunctions());
@@ -231,7 +228,6 @@ void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
   }
 
   pm.addPass(createEliminateDeadSymbols());
-  pm.addPass(createLowerCustomOps(lib));
 }
 
 void KGEN::buildLateOptPipeline(mlir::PassManager &pm,

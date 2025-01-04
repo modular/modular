@@ -82,8 +82,7 @@ def LIT_FuncOp : LITOp<"func", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
-    OptionalAttr<AnyAttr>:$thunkKey,
-    OptionalAttr<ArrayAttr>:$patterns
+    OptionalAttr<AnyAttr>:$thunkKey
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 

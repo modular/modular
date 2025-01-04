@@ -58,10 +58,6 @@ namespace POP {
 class POPDialect;
 } // namespace POP
 
-namespace Custom {
-class CustomDialect;
-} // namespace Custom
-
 //===----------------------------------------------------------------------===//
 // Shared Enums
 //===----------------------------------------------------------------------===//
@@ -130,26 +126,6 @@ createElaborateGenerators(TargetInfoAttr target,
                           const ElaborateGeneratorsOptions &elabOpts = {},
                           const CompilationOptions &options = {},
                           ElaboratorCompileAsmFn compileAsmFn = {});
-
-//===----------------------------------------------------------------------===//
-// Custom op registration
-//===----------------------------------------------------------------------===//
-
-struct LibraryOptConfig;
-using CAPICanonicalizationFn =
-    std::function<bool(MlirOperation *, MlirRewriterBase *, void *)>;
-using CompilePatternsFn =
-    ErrorOr<SmallVector<SmallVector<CAPICanonicalizationFn>>> (*)(
-        OwningOpRef<ModuleOp>, ArrayRef<SmallVector<StringAttr>>);
-using BuildPipelineFn =
-    std::function<void(mlir::PassManager &, const LibraryOptConfig &)>;
-
-struct LibraryOptConfig {
-  BuildPipelineFn buildElaboratePipeline = {};
-  CompilePatternsFn compilePatterns = {};
-};
-
-std::unique_ptr<mlir::Pass> createLowerCustomOps(const LibraryOptConfig &lib);
 
 //===----------------------------------------------------------------------===//
 // Inlining

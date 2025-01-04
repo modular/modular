@@ -37,7 +37,6 @@ def Canonicalizer : Pass<"canonicalizer"> {
     "DebugInfo::DebugInfoDialect",
     "HLCF::HLCFDialect",
     "MDialect",
-    "Custom::CustomDialect",
     "mlir::LLVM::LLVMDialect",
     "mlir::NVVM::NVVMDialect",
     "mlir::index::IndexDialect",
@@ -343,7 +342,6 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
     "DebugInfo::DebugInfoDialect",
     "HLCF::HLCFDialect",
     "MDialect",
-    "Custom::CustomDialect",
     "mlir::LLVM::LLVMDialect",
     "mlir::NVVM::NVVMDialect",
     "mlir::index::IndexDialect",
@@ -1007,52 +1005,4 @@ def RemoveUnusedParams : Pass<"remove-unused-params", "mlir::ModuleOp"> {
     parameters and arguments, updating all the callers to reflect
     the new function call.
   }];
-}
-
-//===----------------------------------------------------------------------===//
-// `custom` dialect lowering
-//===----------------------------------------------------------------------===//
-
-def LowerCustomOps : Pass<"lower-custom-ops", "ModuleOp"> {
-  let summary = "Lower operations from the `custom` dialect";
-  let description = [{
-    This pass lowers all operations of the `custom` dialect to function calls
-    to their implementation.
-  }];
-
-  let dependentDialects = [
-    "KGENDialect",
-    "DebugInfo::DebugInfoDialect",
-    "HLCF::HLCFDialect",
-    "MDialect",
-    "Custom::CustomDialect",
-    "mlir::LLVM::LLVMDialect",
-    "mlir::NVVM::NVVMDialect",
-    "mlir::index::IndexDialect",
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// `custom` dialect registration
-//===----------------------------------------------------------------------===//
-
-def RegisterCustomOps : Pass<"register-custom-ops", "ModuleOp"> {
-  let summary = "Register ops from the `custom` dialect";
-  let description = [{
-    This pass registers all `custom` ops in the `custom` dialect.
-    In particular, it JITs the canonicalization patterns and registers them in
-    the `custom` dialect.
-  }];
-
-  // FIXME(#15949): Should not require all these dialects to be loaded.
-  let dependentDialects = [
-    "KGENDialect",
-    "DebugInfo::DebugInfoDialect",
-    "HLCF::HLCFDialect",
-    "MDialect",
-    "Custom::CustomDialect",
-    "mlir::LLVM::LLVMDialect",
-    "mlir::NVVM::NVVMDialect",
-    "mlir::index::IndexDialect",
-  ];
 }

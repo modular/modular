@@ -87,8 +87,7 @@ def KGEN_FuncOp : KGENOp<"func", [
     KGEN_ExportKindAttr:$exportKind,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
     DefaultValuedAttr<StringArrayAttr, "std::nullopt">:$crossDeviceCaptures,
-    OptionalAttr<TypeAttr>:$coroutineType,
-    OptionalAttr<KGEN_CustomOpImplAttr>:$patterns
+    OptionalAttr<TypeAttr>:$coroutineType
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -126,7 +125,7 @@ def KGEN_FuncOp : KGENOp<"func", [
       auto sigGen = GeneratorType::get(/*inputParamTypes=*/{}, type);
       build($_builder, $_state, name, sigGen, decorators, inlineLevel,
             exportKind, llvmMetadata, /*crossDeviceCaptures=*/{},
-            /*coroutineType=*/{}, /*patterns=*/{});
+            /*coroutineType=*/{});
     }]>,
   ];
 
@@ -170,8 +169,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     KGEN_DecoratorsAttr:$decorators,
     KGEN_InlineLevelAttr:$inlineLevel,
     KGEN_ExportKindAttr:$exportKind,
-    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata,
-    OptionalAttr<ArrayAttr>:$patterns
+    DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
@@ -199,7 +197,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
         llvmMetadata = DictionaryAttr::get(name.getContext());
       build($_builder, $_state, name, type, functionType, inputParams,
             /*decorators=*/{}, inlineLevel, ExportKind::NotExported,
-            llvmMetadata, /*patterns=*/{});
+            llvmMetadata);
     }]>,
     OpBuilder<(ins "StringAttr":$name, "SignatureGeneratorType":$type), [{
       build($_builder, $_state, name, type, type.getBody().getValues(), {}, {});

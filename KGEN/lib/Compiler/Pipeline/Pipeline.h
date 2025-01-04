@@ -59,11 +59,9 @@ void populateElaborateModulePasses(mlir::PassManager &pm, TargetInfoAttr target,
 /// This populates the post-elaboration optimization and simplification passes.
 /// These passes are intended to run immediately after the elaborator.
 void buildPostElaborationPipeline(mlir::PassManager &pm,
-                                  const CompilationOptions &options,
-                                  const LibraryOptConfig &lib);
+                                  const CompilationOptions &options);
 void buildFirstOptPipeline(mlir::PassManager &pm,
-                           const CompilationOptions &options,
-                           const LibraryOptConfig &lib);
+                           const CompilationOptions &options);
 void buildLateOptPipeline(mlir::PassManager &pm,
                           const CompilationOptions &options);
 

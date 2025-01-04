@@ -83,11 +83,6 @@ ErrorOr<std::unique_ptr<ExecutionEngine>> initializeExecutionEngine(
 /// JITs and executes in-process.
 std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT();
 
-/// Create an instance of the custom ops lowering pass using the given
-/// configuration. The created pass uses a default specialization executor that
-/// JITs and executes in-process.
-std::unique_ptr<Pass> createLowerCustomOpsWithDefaultJIT();
-
 } // namespace M::KGEN
 
 #endif // KGEN_COMPILER_KGENCOMPILER_H
