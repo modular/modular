@@ -234,61 +234,6 @@ Value OriginTrackable::findUnderlyingValueFromField(Value value) {
 // OperationValueEffects
 //===----------------------------------------------------------------------===//
 
-/// Given a call to a function that takes a VariadicPack argument, we need to
-/// dig out the RefPackCreateOp that formed it.  This code grovels through the
-/// IR to find it, looking for the standard pattern of:
-///
-///   %1 = lit.ref.pack.create(...)
-///   %anonymous2A_0 = lit.var.decl "anonymous*"
-///   lit.call VariadicPack::__init__(%anonymous2A_0, %1, ...)
-///   %4 = lit.load.consume / lit.ref.load %anonymous2A_0  <<= we are here.
-///
-/// This happens because we're passing the VariadicPack to the callee, and it
-/// has a memory-style init.
-///
-/// TODO: We should eliminate this when/if we support more fine grain declared
-/// effects on function declarations.  We could then say that we consume the
-/// origins for these values (in the owned case) instead of relying on this.
-static Value findRefPackCreate(Value val) {
-  Value loadOperand;
-
-  // If the operand is already a reference to a pack, then use it.  Otherwise
-  // we must have a register pack.  Figure out how it is formed.
-  if (isa<RefType>(val.getType())) {
-    loadOperand = val;
-    if (auto immOp = val.getDefiningOp<RefImmutOp>())
-      loadOperand = immOp.getOperand();
-
-  } else {
-    if (auto load = val.getDefiningOp<RefLoadOp>())
-      loadOperand = load.getOperand();
-    else if (auto load = val.getDefiningOp<LoadConsumeOp>())
-      loadOperand = load.getOperand();
-    else
-      return {};
-  }
-
-  auto varDecl = loadOperand.getDefiningOp<VarDeclOp>();
-  if (!varDecl)
-    return {};
-
-  for (Operation *user : varDecl.getResult().getUsers()) {
-    // Find the store to the pack.
-    auto refStore = dyn_cast<RefStoreOp>(user);
-    if (!refStore || refStore.getDest() != varDecl.getResult())
-      continue;
-
-    auto call = refStore.getValue().getDefiningOp<LIT::CallOp>();
-    if (!call || call.getNumOperands() != 2)
-      continue;
-
-    // Make sure any change to the API forces this code to get updated.
-    return call.getOperand(0);
-  }
-
-  return {};
-}
-
 /// This is a helper for LIT::getOperationEffects split out since calls are so
 /// interesting.
 static void getCallOpEffects(
@@ -418,7 +363,7 @@ static void getCallOpEffects(
     // TODO: This should be removed. This is disabled for packs passed by-ref
     // when they are owned.
     if (signature.isPackVarArg(idx)) {
-      auto packVal = findRefPackCreate(arg);
+      auto packVal = RefPackCreateOp::findRefPackCreate(arg);
       assert(packVal && "couldn't decode variadic pack information!");
 
       if (auto pack = packVal.getDefiningOp<RefPackCreateOp>()) {

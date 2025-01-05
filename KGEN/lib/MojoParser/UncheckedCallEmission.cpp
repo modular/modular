@@ -1235,7 +1235,7 @@ struct ExclusivityChecker : public SharedStateUser {
 
   /// As each argument is emitted, check against previous arguments for
   /// exclusivity violations.
-  void checkArgument(Value val, ArgConvention convention, unsigned argIdx);
+  void checkArgument(Value val, unsigned argIdx, LITSignatureType signature);
 
 private:
   RValue callee;
@@ -1351,39 +1351,91 @@ void ExclusivityChecker::checkOriginAccess(
 
 /// As each argument is emitted, check against previous arguments for
 /// exclusivity violations.
-void ExclusivityChecker::checkArgument(Value val, ArgConvention convention,
-                                       unsigned argIdx) {
-  // We sometimes get rebinds for downcasts of origins, e.g. to AnyOrigin.
-  // Ignore those so we can see the actual incoming value's origin.
-  if (auto rebind = val.getDefiningOp<RebindOp>())
-    val = rebind.getOperand();
+void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
+                                       LITSignatureType signature) {
+  // We get passed the MLIR representation for the dynamic argument, which
+  // includes variadic and pack constructions.  Make sure to handle each
+  // variadic argument separately.
+  auto checkArg = [&](Value argVal, ArgConvention convention) {
+    // We sometimes get rebinds for downcasts of origins, e.g. to AnyOrigin.
+    // Ignore those so we can see the actual incoming value's origin.
+    if (auto rebind = argVal.getDefiningOp<RebindOp>())
+      argVal = rebind.getOperand();
 
-  // If this is a result argument, then we only look at the origin of the
-  // destination that we're storing into, not any nested references that may
-  // be in the result. This returned value is derived from the other arguments
-  // passed to the function, it doesn't conflict with them.
-  if (convention == ArgConvention::ByRefResult ||
-      convention == ArgConvention::ByRefError) {
-    checkOriginAccess(val, convention, argIdx,
-                      cast<RefType>(val.getType()).getOrigin());
+    // If this is a result argument, then we only look at the origin of the
+    // destination that we're storing into, not any nested references that may
+    // be in the result. This returned value is derived from the other arguments
+    // passed to the function, it doesn't conflict with them.
+    if (convention == ArgConvention::ByRefResult ||
+        convention == ArgConvention::ByRefError) {
+      checkOriginAccess(argVal, convention, argIdx,
+                        cast<RefType>(argVal.getType()).getOrigin());
+      return;
+    }
+
+    // Don't look at nested origins if checking for them has been explicitly
+    // disabled.
+    if (isNestedOriginExclusivityCheckingDisabled) {
+      // DO check the origin of any in-memory arguments, we only ignore nested
+      // origins.
+      if (SignatureType::hasAddress(convention))
+        checkOriginAccess(argVal, convention, argIdx,
+                          cast<RefType>(argVal.getType()).getOrigin());
+      return;
+    }
+
+    // Find all the of the origins that are buried in the specified type.
+    for (TypedAttr origin :
+         shared.cachedOriginFinder.findOriginsIn(argVal.getType()))
+      checkOriginAccess(argVal, convention, argIdx, origin);
+  };
+
+  // Handle positional/homogenous variadics.
+  if (signature.isPosVarArg(argIdx)) {
+    // There are two ways to form a pos vararg:
+    // VariadicSplatOp/VariadicCreateOp.  Unfurl these.
+    SmallVector<Value> unpackedArgs;
+    if (auto splat = argVal.getDefiningOp<POP::VariadicSplatOp>()) {
+      // We know these are only created by the parser, so will have a concrete
+      // element count.
+      auto numElements = cast<IntegerAttr>(splat.getNumElements()).getInt();
+      unpackedArgs.resize(numElements, splat.getOperand());
+    } else if (auto vararg = argVal.getDefiningOp<POP::VariadicCreateOp>()) {
+      assert(vararg && "only two ways to create a variadic list");
+      unpackedArgs.append(vararg.getOperands().begin(),
+                          vararg.getOperands().end());
+    } else {
+      // Zero elements
+      assert(argVal.getDefiningOp<ParamConstantOp>() &&
+             "Unknown way to create variadic list");
+    }
+
+    auto conv = cast<VariadicType>(argVal.getType()).getConvention();
+    for (auto elt : unpackedArgs)
+      checkArg(elt, conv);
     return;
   }
 
-  // Don't look at nested origins if checking for them has been explicitly
-  // disabled.
-  if (isNestedOriginExclusivityCheckingDisabled) {
-    // DO check the origin of any in-memory arguments, we only ignore nested
-    // origins.
-    if (SignatureType::hasAddress(convention))
-      checkOriginAccess(val, convention, argIdx,
-                        cast<RefType>(val.getType()).getOrigin());
+  // Normal arguments.
+  if (!signature.isPackVarArg(argIdx)) {
+    checkArg(argVal, signature.getArgConvention(argIdx));
     return;
   }
 
-  // Find all the of the origins that are buried in the specified type.
-  for (TypedAttr origin :
-       shared.cachedOriginFinder.findOriginsIn(val.getType()))
-    checkOriginAccess(val, convention, argIdx, origin);
+  // Handle variadic packs.
+  auto packVal = RefPackCreateOp::findRefPackCreate(argVal);
+  assert(packVal && "couldn't decode variadic pack information!");
+
+  /// Zero argument packs are kgen.param.constant but they have no
+  /// references anyway.
+  if (packVal.getDefiningOp<ParamConstantOp>())
+    return;
+
+  auto pack = packVal.getDefiningOp<RefPackCreateOp>();
+  assert(pack && "unknown variadic pack processing logic");
+  auto conv = signature.getPackVarArgConvention(argIdx);
+  for (auto packOperand : pack.getOperands())
+    checkArg(packOperand, conv);
 }
 
 /// Emit an error about an access to a conflicting origin after a previous
@@ -1649,7 +1701,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
 
     // The argument looks good on its own, check to see if it is an exclusivity
     // violation with a previous argument.
-    exclusivityChecker.checkArgument(arg, convention, argIdx);
+    exclusivityChecker.checkArgument(arg, argIdx, calleeSig);
 
     // All looks good!
     callArgs.push_back(arg);
