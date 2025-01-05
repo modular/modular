@@ -441,6 +441,12 @@ struct ValueInfo {
   /// Return a ValueRef that covers this whole value.  The caller must provide
   /// the valueId.
   ValueRef getFullValueRef(unsigned valueId) const;
+
+  ValueInfo(ValueInfo &&) = default;
+
+private:
+  ValueInfo(const ValueInfo &) = delete;
+  ValueInfo &operator=(const ValueInfo &) = delete;
 };
 
 /// A ValueRef indicates a slice reference into the BitVector for all the
@@ -555,22 +561,12 @@ struct ValueSet {
   /// This sentinel is also used by DestructorInsertion as a marker for
   /// "unreachable" code to avoid unnecessary meets.
   ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
-           CachedOriginFinder &originFinder)
-      : typeDeclInfo(typeDeclInfo), originFinder(originFinder), func(func) {
-    addValue(Value(), OriginTrackable(Value()));
-  }
+           CachedOriginFinder &originFinder);
 
   /// Return the number of values we are tracking.
   MutableArrayRef<ValueInfo> getValueInfos() { return valueInfos; }
   ValueInfo &getValueInfo(size_t idx) { return valueInfos[idx]; }
   const ValueInfo &getValueInfo(size_t idx) const { return valueInfos[idx]; }
-
-  /// Add a value to the set that we are tracking.  This includes:
-  ///  * the MLIR representation for the value itself
-  ///  * whether the value is a by-ref to the underlying logical value
-  ///  * The bitrange it covers
-  void addValue(Value val, const OriginTrackable &trackable,
-                DebugInfo::DILocalVariableAttr debugVariable = {});
 
   /// Remove a tracked value from the valueset maps, and reset its ValueEntry to
   /// have a null Value.
@@ -606,7 +602,11 @@ struct ValueSet {
 
   /// Return true if this reference is to a trivial value that is not tracked
   /// for liveness.
-  bool isTrivial(Type type, bool isIndirect) const;
+  bool isTrivial(Type type, bool isIndirect) const {
+    auto eltType = ValueRef::getDereferencedType(type, isIndirect);
+    return typeDeclInfo.isRegisterPassableTrivial(eltType);
+  }
+
   bool isTrivial(Value value, bool isIndirect) const {
     return isTrivial(value.getType(), isIndirect);
   }
@@ -633,12 +633,129 @@ private:
   DenseMap<Value, unsigned> valueInfoIndex;
   /// This is a mapping of origin attrs to the value index that defines them.
   DenseMap<TypedAttr, unsigned> originToValueIndex;
+
+  /// Add a value to the set that we are tracking.  This includes:
+  ///  * the MLIR representation for the value itself
+  ///  * whether the value is a by-ref to the underlying logical value
+  ///  * The bitrange it covers
+  void addValue(Value val, const OriginTrackable &trackable,
+                DebugInfo::DILocalVariableAttr debugVariable);
 };
 } // namespace
 
-bool ValueSet::isTrivial(Type type, bool isIndirect) const {
-  auto eltType = ValueRef::getDereferencedType(type, isIndirect);
-  return typeDeclInfo.isRegisterPassableTrivial(eltType);
+/// Initialize the value set with one entry, so index #0 is always invalid and
+/// can be used as a sentinel, and so a null Value is always treated as
+/// untracked.
+///
+/// This sentinel is also used by DestructorInsertion as a marker for
+/// "unreachable" code to avoid unnecessary meets.
+ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
+                   CachedOriginFinder &originFinder)
+    : typeDeclInfo(typeDeclInfo), originFinder(originFinder), func(func) {
+  addValue(Value(), OriginTrackable(Value()), DebugInfo::DILocalVariableAttr());
+
+  // Check if the local variables of this function need debug info.
+  DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();
+  DebugInfo::DICompileUnitAttr compileUnit =
+      funcSpAttr ? funcSpAttr.getCompileUnit() : nullptr;
+  bool genDebugInfo = compileUnit && compileUnit.getEmissionKind() ==
+                                         DebugInfo::EmissionKind::Full;
+
+  SmallVector<bool> argShadowed(func.getNumArguments(), false);
+  func.getBody()->walk<mlir::WalkOrder::PreOrder>(
+      [&](Operation *op) -> WalkResult {
+        // Skip looking at nested functions, they are handled as separate
+        // contexts.
+        if (isa<LIT::FuncOp>(op))
+          return WalkResult::skip();
+
+        // All the ops that define trackable values have a single result.
+        if (op->getNumResults() == 1) {
+          Value result = op->getResult(0);
+          if (auto trackable = OriginTrackable(result)) {
+            // Generate debug info for VarDecls if needed.
+            DebugInfo::DILocalVariableAttr debugVariable;
+            if (genDebugInfo) {
+              if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
+                debugVariable =
+                    createDebugVariableForVarDecl(varDecl, funcSpAttr);
+                if (varDecl.getArgShadowIndex())
+                  argShadowed[*varDecl.getArgShadowIndex()] = true;
+              }
+            }
+
+            addValue(result, trackable, debugVariable);
+          }
+        }
+
+        // If there are any regions, check the block arguments for arguments.
+        for (auto &region : op->getRegions()) {
+          for (auto &block : region)
+            for (auto arg : block.getArguments())
+              if (auto trackable = OriginTrackable(arg))
+                addValue(arg, trackable, DebugInfo::DILocalVariableAttr());
+        }
+
+        return WalkResult::advance();
+      });
+
+  ArrayRef<PogMetadataAttr> pogList =
+      func.getSignature().getArgListAttrs().getPogs();
+  OpBuilder debugBuilder = OpBuilder::atBlockBegin(func.getBody());
+  for (BlockArgument arg : func.getArguments()) {
+    DebugInfo::DILocalVariableAttr debugVariable;
+    if (genDebugInfo && !argShadowed[arg.getArgNumber()])
+      debugVariable = insertDebugVariableForArg(debugBuilder, func, arg,
+                                                pogList, funcSpAttr);
+    if (auto trackable = OriginTrackable(arg))
+      addValue(arg, trackable, debugVariable);
+  }
+}
+
+/// Add a value to the set that we are tracking.  This includes:
+///  * the MLIR representation for the value itself
+///  * whether the value is a by-ref to the underlying logical value
+///  * The bitrange it covers
+void ValueSet::addValue(Value val, const OriginTrackable &trackable,
+                        DebugInfo::DILocalVariableAttr debugVariable) {
+  // Figure out how many bits to track for this value at the value if mem.
+  unsigned numValueBits;
+  TypedAttr valueOrigin;
+  if (!val) {
+    numValueBits = 1; // Nothing to do for the sentinel.
+  } else if (trackable.isIndirect) {
+    // This should be an assertion, but check softly to help IR clients.
+    auto refType = dyn_cast<RefType>(val.getType());
+    if (!refType) {
+      mlir::emitError(val.getLoc())
+          << "trackable IR value of type " << val.getType()
+          << " should have type '!lit.ref': " << val;
+      return;
+    }
+    Type valType = refType.getElementType();
+    numValueBits = typeDeclInfo.getNumFieldsInType(valType);
+
+    // Remember the origin if not unknown.
+    if (!isa<AnyOriginAttr>(refType.getOrigin()))
+      valueOrigin = refType.getOrigin();
+  } else {
+    // We don't track trivial values of register type.
+    if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
+      return;
+    // We are only field sensitive for memory objects, not in-register values.
+    numValueBits = 1;
+  }
+  unsigned firstValueBit = getNumTotalBits();
+
+  // Record this information in our tables.
+  valueInfoIndex[val] = valueInfos.size();
+  if (valueOrigin)
+    originToValueIndex[valueOrigin] = valueInfos.size();
+
+  valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
+                        trackable.startsUninit, trackable.endInitState,
+                        trackable.isIndirect, trackable.isFullObjectLiveOnEntry,
+                        /*hasErrorDiagnosed=*/false, debugVariable});
 }
 
 raw_ostream &ValueSet::printBV(const BitVector &bv, raw_ostream &os) const {
@@ -713,52 +830,6 @@ void ValueSet::dump() const {
     os << info.value << "\n";
   }
   os.flush();
-}
-
-/// Add a value to the set that we are tracking.  This includes:
-///  * the MLIR representation for the value itself
-///  * whether the value is a by-ref to the underlying logical value
-///  * The bitrange it covers
-void ValueSet::addValue(Value val, const OriginTrackable &trackable,
-                        DebugInfo::DILocalVariableAttr debugVariable) {
-  // Figure out how many bits to track for this value at the value if mem.
-  unsigned numValueBits;
-  TypedAttr valueOrigin;
-  if (!val) {
-    numValueBits = 1; // Nothing to do for the sentinel.
-  } else if (trackable.isIndirect) {
-    // This should be an assertion, but check softly to help IR clients.
-    auto refType = dyn_cast<RefType>(val.getType());
-    if (!refType) {
-      mlir::emitError(val.getLoc())
-          << "trackable IR value of type " << val.getType()
-          << " should have type '!lit.ref': " << val;
-      return;
-    }
-    Type valType = refType.getElementType();
-    numValueBits = typeDeclInfo.getNumFieldsInType(valType);
-
-    // Remember the origin if not unknown.
-    if (!isa<AnyOriginAttr>(refType.getOrigin()))
-      valueOrigin = refType.getOrigin();
-  } else {
-    // We don't track trivial values of register type.
-    if (typeDeclInfo.isRegisterPassableTrivial(val.getType()))
-      return;
-    // We are only field sensitive for memory objects, not in-register values.
-    numValueBits = 1;
-  }
-  unsigned firstValueBit = getNumTotalBits();
-
-  // Record this information in our tables.
-  valueInfoIndex[val] = valueInfos.size();
-  if (valueOrigin)
-    originToValueIndex[valueOrigin] = valueInfos.size();
-
-  valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
-                        trackable.startsUninit, trackable.endInitState,
-                        trackable.isIndirect, trackable.isFullObjectLiveOnEntry,
-                        /*hasErrorDiagnosed=*/false, debugVariable});
 }
 
 /// Remove a tracked value from the valueset maps, and reset its ValueEntry to
@@ -3539,66 +3610,9 @@ LogicalResult
 CheckLifetimes::processFunction(LIT::FuncOp func, TypeDeclInfo &typeDeclInfo,
                                 CachedOriginFinder &originFinder) {
 
-  // Pass #1: Collect all of the values declared in the function that have
+  // Walk #1: Collect all of the values declared in the function that have
   // ownership to track, and number them.
   ValueSet valueSet(typeDeclInfo, func, originFinder);
-
-  // Check if the local variables of this function need debug info.
-  DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();
-  DebugInfo::DICompileUnitAttr compileUnit =
-      funcSpAttr ? funcSpAttr.getCompileUnit() : nullptr;
-  const bool genDebugInfo = compileUnit && compileUnit.getEmissionKind() ==
-                                               DebugInfo::EmissionKind::Full;
-
-  SmallVector<bool> argShadowed(func.getNumArguments(), false);
-  func.getBody()->walk<mlir::WalkOrder::PreOrder>(
-      [&](Operation *op) -> WalkResult {
-        // Skip looking at nested functions, they are handled as separate
-        // contexts.
-        if (isa<LIT::FuncOp>(op))
-          return WalkResult::skip();
-
-        // All the ops that define trackable values have a single result.
-        if (op->getNumResults() == 1) {
-          Value result = op->getResult(0);
-          if (auto trackable = OriginTrackable(result)) {
-            // Generate debug info for VarDecls if needed.
-            DebugInfo::DILocalVariableAttr debugVariable;
-            if (genDebugInfo) {
-              if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
-                debugVariable =
-                    createDebugVariableForVarDecl(varDecl, funcSpAttr);
-                if (varDecl.getArgShadowIndex())
-                  argShadowed[*varDecl.getArgShadowIndex()] = true;
-              }
-            }
-
-            valueSet.addValue(result, trackable, debugVariable);
-          }
-        }
-
-        // If there are any regions, check the block arguments for arguments.
-        for (auto &region : op->getRegions()) {
-          for (auto &block : region)
-            for (auto arg : block.getArguments())
-              if (auto trackable = OriginTrackable(arg))
-                valueSet.addValue(arg, trackable);
-        }
-
-        return WalkResult::advance();
-      });
-
-  ArrayRef<PogMetadataAttr> pogList =
-      func.getSignature().getArgListAttrs().getPogs();
-  OpBuilder debugBuilder = OpBuilder::atBlockBegin(func.getBody());
-  for (BlockArgument arg : func.getArguments()) {
-    DebugInfo::DILocalVariableAttr debugVariable;
-    if (genDebugInfo && !argShadowed[arg.getArgNumber()])
-      debugVariable = insertDebugVariableForArg(debugBuilder, func, arg,
-                                                pogList, funcSpAttr);
-    if (auto trackable = OriginTrackable(arg))
-      valueSet.addValue(arg, trackable, debugVariable);
-  }
 
   // Walk #2: Scan the function and identify any uses of values that are not
   // defined, emitting diagnostics as we go.
