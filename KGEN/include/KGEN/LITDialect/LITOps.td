@@ -1736,6 +1736,14 @@ def LIT_RefPackCreateOp : LITOp<"ref.pack.create", [Pure]> {
     custom<RefPackCreateType>(type($result), type($elements))
   }];
 
+
+  let extraClassDeclaration = [{
+    /// Given an argument to a function that takes a VariadicPack argument, dig
+    /// out the RefPackCreateOp (or ParamConstantOp) that formed it.  This is
+    /// guaranteed to succeed immediately during/after the parser, not later.
+    static Value findRefPackCreate(Value val);
+  }];
+
   let hasVerifier = 1;
 }
 

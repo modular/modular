@@ -232,6 +232,11 @@ fn mutate_two_AnyLifetime(
 ):
     pass
 
+fn mutate_variadic_any[T: AnyType](mut *values: T):
+    pass 
+
+fn mutate_pack[*Ts: AnyType](mut *strs: *Ts):
+    pass 
 
 fn inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     # This is ok.
@@ -260,6 +265,39 @@ fn inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     # expected-error @below {{argument of 'mutate_two_AnyLifetime' call allows writing a memory location previously writable through another aliased argument}}
     # expected-note @below {{'a' value is passed through aliasing 'ref' argument}}
     mutate_two_AnyLifetime(a, a)
+
+    # These are all ok.
+    mutate_variadic_any[Int]()
+    mutate_variadic_any(s)
+    mutate_variadic_any(a, b)
+
+    # expected-error @below {{argument of 'mutate_variadic_any' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
+    mutate_variadic_any(a, a)
+
+    # expected-error @below {{argument of 'mutate_variadic_any' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
+    mutate_variadic_any(a, b, a)
+
+    # expected-error @below {{argument of 'mutate_variadic_any' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'s' value is passed through aliasing 'mut' argument}}
+    mutate_variadic_any(s, s)
+
+    # These are ok.
+    mutate_pack(a)
+    mutate_pack(a, s)
+
+    # expected-error @below {{argument of 'mutate_pack' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
+    mutate_pack(a, a)
+
+    # expected-error @below {{argument of 'mutate_pack' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'a' value is passed through aliasing 'mut' argument}}
+    mutate_pack(a, b, a)
+
+    # expected-error @below {{argument of 'mutate_pack' call allows writing a memory location previously writable through another aliased argument}}
+    # expected-note @below {{'s' value is passed through aliasing 'mut' argument}}
+    mutate_pack(s, s)
 
 
 fn capture_exclusivity(owned x: MemExample):
