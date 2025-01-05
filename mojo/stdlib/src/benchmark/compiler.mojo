@@ -67,7 +67,9 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
         return
 
     var tmp = val
-    var tmp_ptr = UnsafePointer.address_of(tmp)
+    var tmp_ptr = UnsafePointer.address_of(tmp).origin_cast[
+        mut=False, origin=ImmutableAnyOrigin
+    ]()
 
     @parameter
     if (
