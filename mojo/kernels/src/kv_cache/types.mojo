@@ -577,14 +577,18 @@ struct PagedKVCache[type_: DType, kv_params_: KVCacheStaticParams](KVCacheT):
 
 
 trait KVCollectionT(CollectionElement):
+    alias CacheType: KVCacheT
+    alias type: DType
+    alias kv_params: KVCacheStaticParams
+
     @staticmethod
     fn id() -> String:
         ...
 
-    fn get_key_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
+    fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
         ...
 
-    fn get_value_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
+    fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
         ...
 
     fn cache_length(self, bs_idx: Int) -> Int:
@@ -592,8 +596,8 @@ trait KVCollectionT(CollectionElement):
 
 
 struct ContiguousKVCacheCollection[
-    type: DType,
-    kv_params: KVCacheStaticParams,
+    type_: DType,
+    kv_params_: KVCacheStaticParams,
 ](KVCollectionT):
     """This is a "view" of the cache for the given sequences
     in the batch.
@@ -603,10 +607,12 @@ struct ContiguousKVCacheCollection[
     It does own the Pointer[NDBuffer[type, 3]] and valid_lengths buffer
     """
 
-    # TODO outer should be list, inner can be Pointer?
-    alias CacheType = ContiguousKVCache[type, kv_params]
-    var key_cache: NDBuffer[type, 5]
-    var value_cache: NDBuffer[type, 5]
+    alias type = type_
+    alias kv_params = kv_params_
+    alias CacheType = ContiguousKVCache[Self.type, Self.kv_params]
+
+    var key_cache: NDBuffer[Self.type, 5]
+    var value_cache: NDBuffer[Self.type, 5]
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var is_context_encoding: Bool
     var num_layers: Int
@@ -615,8 +621,8 @@ struct ContiguousKVCacheCollection[
 
     fn __init__(
         mut self,
-        key_cache: NDBuffer[type, 5],
-        value_cache: NDBuffer[type, 5],
+        key_cache: NDBuffer[Self.type, 5],
+        value_cache: NDBuffer[Self.type, 5],
         cache_lengths: NDBuffer[DType.uint32, 1],
         is_context_encoding: Bool,
         num_layers: Int,
@@ -657,16 +663,15 @@ struct ContiguousKVCacheCollection[
     fn id() -> String:
         return (
             "ContiguousKVCacheCollection+"
-            + str(type)
+            + str(Self.type)
             + "+"
-            + str(kv_params.num_heads)
+            + str(Self.kv_params.num_heads)
             + "+"
-            + str(kv_params.head_size)
+            + str(Self.kv_params.head_size)
         )
 
-    fn get_key_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
-        constrained[_type_is_eq[cache_t, self.CacheType]()]()
-        var layer_size = self.batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
+    fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
+        var layer_size = self.batch_size * self.kv_params.num_heads * self.max_seq_len * self.kv_params.head_size
         var k_shape = IndexList[4](
             self.key_cache.dim[1](),
             self.key_cache.dim[2](),
@@ -677,17 +682,15 @@ struct ContiguousKVCacheCollection[
         var layer_key_cache = Self.CacheType.BlockType(
             self.key_cache.data + (layer_idx * layer_size), k_shape
         )
-        return rebind[cache_t](
-            self.CacheType(
-                layer_key_cache,
-                self.cache_lengths,
-                self.is_context_encoding,
-                self.batch_size,
-            )
+        return self.CacheType(
+            layer_key_cache,
+            self.cache_lengths,
+            self.is_context_encoding,
+            self.batch_size,
         )
 
-    fn get_value_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
-        var layer_size = self.batch_size * kv_params.num_heads * self.max_seq_len * kv_params.head_size
+    fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
+        var layer_size = self.batch_size * self.kv_params.num_heads * self.max_seq_len * self.kv_params.head_size
         var v_shape = IndexList[4](
             self.value_cache.dim[1](),
             self.value_cache.dim[2](),
@@ -699,13 +702,11 @@ struct ContiguousKVCacheCollection[
             self.value_cache.data + (layer_idx * layer_size), v_shape
         )
 
-        return rebind[cache_t](
-            self.CacheType(
-                layer_value_cache,
-                self.cache_lengths,
-                self.is_context_encoding,
-                self.batch_size,
-            )
+        return self.CacheType(
+            layer_value_cache,
+            self.cache_lengths,
+            self.is_context_encoding,
+            self.batch_size,
         )
 
     fn cache_length(self, batch_idx: Int) -> Int:
@@ -716,8 +717,8 @@ struct ContiguousKVCacheCollection[
 
 
 struct ContinuousBatchingKVCacheCollection[
-    type: DType,
-    kv_params: KVCacheStaticParams,
+    type_: DType,
+    kv_params_: KVCacheStaticParams,
 ](KVCollectionT):
     """This is a "view" of the cache for the given sequences
     in the batch.
@@ -727,7 +728,10 @@ struct ContinuousBatchingKVCacheCollection[
     It does own the Pointer[NDBuffer[type, 3]] and valid_lengths buffer
     """
 
-    alias CacheType = ContinuousBatchingKVCache[type, kv_params]
+    alias type = type_
+    alias kv_params = kv_params_
+    alias CacheType = ContinuousBatchingKVCache[Self.type, Self.kv_params]
+
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 1]
     var blocks: Self.CacheType.BlocksType
@@ -789,46 +793,41 @@ struct ContinuousBatchingKVCacheCollection[
     fn id() -> String:
         return "KVCacheCollection"
 
-    fn get_key_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
-        constrained[
-            _type_is_eq[cache_t, ContinuousBatchingKVCache[type, kv_params]]()
-        ]()
-        return rebind[cache_t](
-            self.CacheType(
-                self.blocks,
-                self.cache_lengths,
-                self.lookup_table,
-                self.max_seq_length,
-                self.max_cache_length,
-                layer_idx,
-                Self.CacheType.KeyIdx,
-            )
+    fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
+        return self.CacheType(
+            self.blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_seq_length,
+            self.max_cache_length,
+            layer_idx,
+            Self.CacheType.KeyIdx,
         )
 
-    fn get_value_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
-        constrained[_type_is_eq[cache_t, self.CacheType]()]()
-        return rebind[cache_t](
-            self.CacheType(
-                self.blocks,
-                self.cache_lengths,
-                self.lookup_table,
-                self.max_seq_length,
-                self.max_cache_length,
-                layer_idx,
-                Self.CacheType.ValueIdx,
-            )
+    fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
+        return self.CacheType(
+            self.blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_seq_length,
+            self.max_cache_length,
+            layer_idx,
+            Self.CacheType.ValueIdx,
         )
 
     fn cache_length(self, bs_idx: Int) -> Int:
         return int(self.cache_lengths[bs_idx])
 
 
-struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
-    KVCollectionT
-):
-    alias CacheType = PagedKVCache[type, kv_params]
+struct PagedKVCacheCollection[
+    type_: DType,
+    kv_params_: KVCacheStaticParams,
+](KVCollectionT):
+    alias type = type_
+    alias kv_params = kv_params_
+    alias CacheType = PagedKVCache[Self.type, Self.kv_params]
 
-    var blocks: NDBuffer[type, 6]
+    var blocks: NDBuffer[Self.type, 6]
     var cache_lengths: NDBuffer[DType.uint32, 1]
     var lookup_table: NDBuffer[DType.uint32, 2]
     var max_seq_length: UInt32
@@ -836,7 +835,7 @@ struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
 
     fn __init__(
         out self,
-        blocks: NDBuffer[type, 6],
+        blocks: NDBuffer[Self.type, 6],
         cache_lengths: NDBuffer[DType.uint32, 1],
         lookup_table: NDBuffer[DType.uint32, 2],
         max_seq_length: UInt32,
@@ -864,46 +863,28 @@ struct PagedKVCacheCollection[type: DType, kv_params: KVCacheStaticParams](
 
     @staticmethod
     fn id() -> String:
-        return "PagedKVCacheCollection+" + str(type)
+        return "PagedKVCacheCollection+" + str(Self.type)
 
-    fn get_key_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
-        constrained[
-            _type_is_eq[cache_t, self.CacheType](),
-            (
-                "Invalid cache type passed to"
-                " PagedKVCacheCollection::get_key_cache"
-            ),
-        ]()
-        return rebind[cache_t](
-            self.CacheType(
-                self.blocks,
-                self.cache_lengths,
-                self.lookup_table,
-                self.max_seq_length,
-                self.max_cache_length,
-                layer_idx,
-                Self.CacheType.KeyIdx,
-            )
+    fn get_key_cache(self, layer_idx: Int) -> Self.CacheType:
+        return self.CacheType(
+            self.blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_seq_length,
+            self.max_cache_length,
+            layer_idx,
+            Self.CacheType.KeyIdx,
         )
 
-    fn get_value_cache[cache_t: KVCacheT](self, layer_idx: Int) -> cache_t:
-        constrained[
-            _type_is_eq[cache_t, self.CacheType](),
-            (
-                "Invalid cache type passed to"
-                " PagedKVCacheCollection::get_value_cache"
-            ),
-        ]()
-        return rebind[cache_t](
-            self.CacheType(
-                self.blocks,
-                self.cache_lengths,
-                self.lookup_table,
-                self.max_seq_length,
-                self.max_cache_length,
-                layer_idx,
-                Self.CacheType.ValueIdx,
-            )
+    fn get_value_cache(self, layer_idx: Int) -> Self.CacheType:
+        return self.CacheType(
+            self.blocks,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_seq_length,
+            self.max_cache_length,
+            layer_idx,
+            Self.CacheType.ValueIdx,
         )
 
     fn cache_length(self, bs_idx: Int) -> Int:

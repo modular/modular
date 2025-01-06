@@ -58,7 +58,7 @@ def do_test[cache_block_size: Int, layout_block_size: Int]():
         IntTuple(int(kv_params.num_heads * kv_params.head_size), 1),
     )
 
-    var cache = collection.get_key_cache[collection.CacheType](1)
+    var cache = collection.get_key_cache(1)
     var layout_tensor = cache.block_paged_ptr[layout_block_size](
         1, layout_block_size, 0
     )
