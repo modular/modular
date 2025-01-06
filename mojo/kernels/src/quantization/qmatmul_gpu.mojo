@@ -15,7 +15,7 @@ from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import DEFAULT_GPU_ARCH
+from gpu.host.info import DEFAULT_GPU_ARCH, is_gpu
 from gpu.intrinsics import lop
 from gpu.memory import (
     AddressSpace,
@@ -1170,7 +1170,7 @@ fn matmul_gpu_qint4[
     b: NDBuffer[DType.uint8, 2, b_shape],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target == "gpu", "unsupported target"]()
+    constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
     alias pack_factor = 8
@@ -1256,7 +1256,7 @@ fn gpu_qint4_repack_Q4_0[
     b_packed: NDBuffer[DType.uint8, 2, b_shape],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target == "gpu", "unsupported target"]()
+    constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
     alias pack_factor = 8
@@ -1310,7 +1310,7 @@ fn gpu_qint4_repack_GPTQ[
     perm_idx: OptionalReg[NDBuffer[DType.int32, 1]] = None,
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target == "gpu", "unsupported target"]()
+    constrained[is_gpu[target](), "unsupported target"]()
     var cuda_ctx = ctx.get_device_context()
 
     alias pack_factor = 8
