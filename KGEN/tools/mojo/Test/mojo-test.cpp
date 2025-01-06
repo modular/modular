@@ -164,7 +164,7 @@ static ErrorOr<TempFile> generateEntrypointSource(ArrayRef<TestID> unitTests) {
     os << "for line in lines:\n";
     os.indent();
     os << "print(line[])\n";
-    os << "ids.add(line[].strip())\n";
+    os << "ids.add(String(line[].strip()))\n";
     os.unindent();
     os.unindent();
     os.unindent();

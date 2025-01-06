@@ -30,8 +30,8 @@ fn makeClosure(x: Int) -> Coroutine[Int, __origin_of()]:
 
 fn main():
     try:
-        var x = atol(String(argv()[1]))
-        var y = atol(String(argv()[2]))
+        var x = atol(argv()[1])
+        var y = atol(argv()[2])
 
         var writer = makeClosure(x)
         var w = takeClosure(writer^)
