@@ -185,10 +185,7 @@ def execute_fused_qkv_matmul[
         batch_size,
     )
 
-    _fused_qkv_matmul_kv_cache_impl[
-        kv_collection_device.CacheType,
-        target="gpu",
-    ](
+    _fused_qkv_matmul_kv_cache_impl[target="gpu",](
         hidden_state_device.tensor,
         weight_device.tensor,
         kv_collection_device,
@@ -220,12 +217,8 @@ def execute_fused_qkv_matmul[
 
     ref_out = ref_output_host.tensor
     test_out = test_output_host.tensor
-    k_cache_host = kv_collection_host.get_key_cache[
-        kv_collection_host.CacheType
-    ](layer_idx)
-    v_cache_host = kv_collection_host.get_value_cache[
-        kv_collection_host.CacheType
-    ](layer_idx)
+    k_cache_host = kv_collection_host.get_key_cache(layer_idx)
+    v_cache_host = kv_collection_host.get_value_cache(layer_idx)
     for bs in range(batch_size):
         for s in range(prompt_len):
             for q_dim in range(hidden_size):
