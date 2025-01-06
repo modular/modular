@@ -824,3 +824,27 @@ fn _quantized_ceil(a: Float64, b: Int) -> Int:
 
 fn _quantized_floor(a: Float64, b: Int) -> Int:
     return int(floor(a / b) * b)
+
+
+fn is_gpu[target: StringLiteral]() -> Bool:
+    return is_gpu(target)
+
+
+fn is_gpu(target: String) -> Bool:
+    return target == "gpu"
+
+
+fn is_cpu[target: StringLiteral]() -> Bool:
+    return is_cpu(target)
+
+
+fn is_cpu(target: String) -> Bool:
+    return target == "cpu"
+
+
+fn is_valid_target[target: StringLiteral]() -> Bool:
+    return is_valid_target(target)
+
+
+fn is_valid_target(target: String) -> Bool:
+    return is_gpu(target) or is_cpu(target)
