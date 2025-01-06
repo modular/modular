@@ -17,7 +17,9 @@ using namespace M;
 
 namespace {
 struct REPLOptTable : public llvm::opt::PrecomputedOptTable {
-  REPLOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  REPLOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 } // namespace
 

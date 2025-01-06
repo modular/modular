@@ -31,7 +31,9 @@ using namespace M::KGEN::LIT;
 
 namespace {
 struct DemangleOptTable : public llvm::opt::PrecomputedOptTable {
-  DemangleOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  DemangleOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 } // namespace
 

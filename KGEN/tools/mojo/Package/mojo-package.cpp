@@ -58,7 +58,9 @@ using namespace M::KGEN;
 
 namespace {
 struct PackageOptTable : public llvm::opt::PrecomputedOptTable {
-  PackageOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  PackageOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 } // namespace
 

@@ -61,7 +61,9 @@ using namespace mlir;
 
 namespace {
 struct RunOptTable : public llvm::opt::PrecomputedOptTable {
-  RunOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  RunOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 
 } // namespace

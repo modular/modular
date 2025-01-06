@@ -650,7 +650,7 @@ Function *MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
   auto doWork = [&]() -> Function * {
     assert(funcRange.front().GetBaseAddress().IsValid());
 
-    DWARFRangeList funcRanges;
+    llvm::DWARFAddressRangesVector funcRanges;
     const char *name = nullptr;
     const char *mangled = nullptr;
     std::optional<int> declFile;

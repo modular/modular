@@ -41,7 +41,9 @@ using namespace M::KGEN;
 
 namespace {
 struct DocOptTable : public llvm::opt::PrecomputedOptTable {
-  DocOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  DocOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 } // namespace
 

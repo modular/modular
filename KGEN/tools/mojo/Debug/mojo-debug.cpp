@@ -21,7 +21,9 @@ using namespace M;
 
 namespace {
 struct DebugOptTable : public llvm::opt::PrecomputedOptTable {
-  DebugOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  DebugOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 } // namespace
 

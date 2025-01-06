@@ -23,7 +23,9 @@ using namespace M;
 
 namespace {
 struct ByeOptTable : public llvm::opt::PrecomputedOptTable {
-  ByeOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  ByeOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 } // namespace
 
