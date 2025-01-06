@@ -45,6 +45,7 @@ from buffer.dimlist import Dim, DimList
 from builtin.simd import _pow
 from compiler_internal import StaticTensorSpec
 from gpu.host import DeviceContext
+from gpu.host.info import is_gpu, is_cpu
 from linalg.bmm import batched_matmul, batched_matmul_shape
 from linalg.bmm import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
@@ -2709,7 +2710,7 @@ struct ArgMax:
         with Trace[TraceLevel.OP, target=target]("argmax"):
 
             @parameter
-            if target == "cpu":
+            if is_cpu[target]():
                 var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
                     static_shape=output_shape
                 ](output)
@@ -2758,7 +2759,7 @@ struct ArgMin:
         with Trace[TraceLevel.OP, target=target]("argmin"):
 
             @parameter
-            if target == "cpu":
+            if is_cpu[target]():
                 var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
                     static_shape=output_shape
                 ](output)
@@ -4865,7 +4866,7 @@ struct Conv:
         ](output)
 
         @parameter
-        if target == "cpu":
+        if is_cpu[target]():
             conv_nhwc_direct[
                 input.rank,
                 filter.rank,
@@ -5149,7 +5150,7 @@ struct MaskedFlashAttentionGPU:
         The underlying fusion follows ideas taken from the 2022 FlashAttention paper
         by Tri Dao et al.
         """
-        constrained[target == "gpu", "only valid on GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         var output_buffer = managed_tensor_slice_to_ndbuffer[
             static_shape = compiler.specsof[output.type, output.rank](
@@ -5781,7 +5782,7 @@ struct QMatmulGPU_b4_g32:
         alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
         alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
         alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
-        constrained[target == "gpu", "only valid on GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g32"):
             matmul_gpu_qint4[32, target](
@@ -5815,7 +5816,7 @@ struct QMatmulGPU_b4_g128:
         alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
         alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
         alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
-        constrained[target == "gpu", "only valid on GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g128"):
             matmul_gpu_qint4[128, target](
@@ -5846,7 +5847,7 @@ struct QMatmulGPURepackGGUF:
         ctx: MojoCallContextPtr,
     ) raises:
         alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
-        constrained[target == "gpu", "only valid on GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("GGUF_gpu_repack_q4_0"):
             gpu_qint4_repack_Q4_0[target](
@@ -5880,7 +5881,7 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         alias b_packed_shape = compiler.specsof[b_packed.type, b_packed.rank](
             "b_packed"
         ).shape
-        constrained[target == "gpu", "only valid on GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("GPTQ_gpu_repack_b4_g128"):
             gpu_qint4_repack_GPTQ[128, target](
@@ -5915,7 +5916,7 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         alias b_packed_shape = compiler.specsof[b_packed.type, b_packed.rank](
             "b_packed"
         ).shape
-        constrained[target == "gpu", "only valid on GPUs"]()
+        constrained[is_gpu[target](), "only valid on GPUs"]()
 
         with Trace[TraceLevel.OP, target=target](
             "GPTQ_gpu_repack_b4_g128_desc_act"
@@ -8208,7 +8209,7 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
     context: MojoCallContextPtr,
 ) raises:
     @parameter
-    if target == "gpu":
+    if is_gpu[target]():
         print_kv_cache_cont_batch_generic_gpu[target](
             managed_tensor_slice_to_ndbuffer(valid_lengths),
             kv_collection,
@@ -8216,7 +8217,7 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
             is_print_compact[0],
             context,
         )
-    elif target == "cpu":
+    elif is_cpu[target]():
         print_kv_cache_cont_batch_generic_cpu[target](
             managed_tensor_slice_to_ndbuffer(valid_lengths),
             kv_collection,

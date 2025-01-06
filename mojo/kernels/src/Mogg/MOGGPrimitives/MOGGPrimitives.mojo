@@ -13,6 +13,7 @@ from sys import alignof, external_call, sizeof
 from buffer import NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host.info import is_cpu, is_gpu
 from memory import UnsafePointer, memcpy
 from memory.memory import _malloc as _malloc_cpu
 from MOGGIntList import IntList
@@ -627,7 +628,7 @@ fn mgp_buffer_set_with_index[
     bDevice: StringLiteral
 ](buffer: NDBuffer[DType.uint8, 1], *vals: Int) raises -> Int:
     debug_assert(
-        bDevice == "cpu", "set_with_index can only work on cpu buffers"
+        is_cpu[bDevice](), "set_with_index can only work on cpu buffers"
     )
     var bufSize = buffer.num_elements()
     var numArgs = len(vals)
@@ -651,7 +652,7 @@ fn mgp_buffer_set_with_index[
 fn mgp_buffer_to_bool[
     bDevice: StringLiteral
 ](buffer: NDBuffer[DType.uint8, 1]) -> Bool:
-    debug_assert(bDevice == "cpu", "to_bool can only work on cpu buffers")
+    debug_assert(is_cpu[bDevice](), "to_bool can only work on cpu buffers")
     var bufSize = buffer.num_elements()
     debug_assert(
         bufSize == 1,
@@ -715,7 +716,7 @@ fn mgp_buffer_device_to_host[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if (dHostDevice == "cpu") and ("gpu" in cOtherDevice):
+    if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
         dev_ctx[].enqueue_copy_from_device[DType.uint8](
             host_buf.data,
             DeviceBuffer[DType.uint8](
@@ -743,7 +744,7 @@ fn mgp_buffer_device_to_device[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if ("gpu" in cSrcDevice) and ("gpu" in dDstDevice):
+    if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
         dst_dev_ctx[].enqueue_copy_device_to_device[DType.uint8](
             DeviceBuffer[DType.uint8](
                 dst_dev_ctx[],
@@ -758,7 +759,7 @@ fn mgp_buffer_device_to_device[
                 owning=False,
             ),
         )
-    elif cSrcDevice == dDstDevice == "cpu":
+    elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
         memcpy(dst_buf.data, src_buf.data, src_buf.size())
     else:
         raise Error(
@@ -780,7 +781,7 @@ fn mgp_buffer_host_to_device[
     call_ctx: MojoCallContextPtr,
 ) raises -> Int:
     @parameter
-    if ("gpu" in dOtherDevice) and (cHostDevice == "cpu"):
+    if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx[].enqueue_copy_to_device[DType.uint8](
             DeviceBuffer[DType.uint8](
                 dev_ctx[],
