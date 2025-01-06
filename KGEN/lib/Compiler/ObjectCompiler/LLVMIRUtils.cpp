@@ -205,7 +205,7 @@ private:
 static LLVMModuleAndContext readAndMaterializeDependencies(
     BufferRef buf,
     const llvm::MapVector<const llvm::GlobalValue *, unsigned> &set,
-    const StringConstantTable &strtab, llvm::StringSet<> ignoreFns) {
+    const StringConstantTable &strtab) {
 
   // First, create a lazy module with an internal bitcode materializer.
   // TODO: Not sure how to make lazy loading metadata work.
@@ -254,15 +254,7 @@ static LLVMModuleAndContext readAndMaterializeDependencies(
   for (llvm::Function &func : result->functions()) {
     if (idxIt != idxEnd && curIdx == *idxIt) {
       ++idxIt;
-
-      if (ignoreFns.contains(func.getName())) {
-        // Don't materialize if the function is a duplicate.
-        func.deleteBody();
-        func.setComdat(nullptr);
-        func.setLinkage(llvm::GlobalValue::ExternalLinkage);
-      } else {
-        llvm::cantFail(func.materialize());
-      }
+      llvm::cantFail(func.materialize());
     } else {
       func.deleteBody();
       func.setComdat(nullptr);
@@ -456,8 +448,7 @@ void LLVMModuleSplitterImpl::split(LLVMSplitProcessFn processFn) {
     unsigned next = numFunctions + set->size();
     auto makeModule = [set = std::move(*set), buf = BufferRef(buf.copy()),
                        strtab = strtab.copy()]() mutable {
-      return readAndMaterializeDependencies(std::move(buf), set, *strtab,
-                                            /*ignoreFns=*/{});
+      return readAndMaterializeDependencies(std::move(buf), set, *strtab);
     };
     processFn(std::move(makeModule), idx, numFunctions);
     numFunctions = next;
@@ -528,15 +519,15 @@ private:
 } // namespace
 
 static void
-checkDuplicates(llvm::MapVector<const llvm::GlobalValue *, unsigned> &set,
-                llvm::StringSet<> &seenFns, llvm::StringSet<> &dupFns) {
-  for (auto [gv, _] : set) {
-    if (auto fn = dyn_cast<llvm::Function>(gv)) {
-      if (!seenFns.insert(fn->getName()).second) {
-        dupFns.insert(fn->getName());
-      }
+removeDuplicates(llvm::MapVector<const llvm::GlobalValue *, unsigned> &set,
+                 llvm::StringSet<> &seenFns, llvm::StringSet<> &dupFns) {
+  set.remove_if([&](std::pair<const llvm::GlobalValue *, unsigned int> &kv) {
+    if (auto fn = dyn_cast<llvm::Function>(kv.first)) {
+      StringRef name = fn->getName();
+      return !seenFns.insert(name).second || dupFns.contains(name);
     }
-  }
+    return false;
+  });
 }
 
 /// support for splitting an LLVM module into multiple parts with each part
@@ -701,14 +692,14 @@ void LLVMModulePerFunctionSplitterImpl::split(
     // Giving each function a unique ID across all splits for proper MC level
     // linking and codegen into one object file where duplicated functions
     // in each split will be deduplicated (with the linking).
-    llvm::StringSet<> currDuplicatedFns = duplicatedFns;
-    checkDuplicates(set, seenFns, currDuplicatedFns);
+    removeDuplicates(set, seenFns, duplicatedFns);
+    if (set.empty())
+      continue;
 
     unsigned next = numFunctions + set.size();
     auto makeModule = [set = std::move(set), buf = BufferRef(buf.copy()),
-                       strtab = strtab.copy(), currDuplicatedFns]() mutable {
-      return readAndMaterializeDependencies(std::move(buf), set, *strtab,
-                                            currDuplicatedFns);
+                       strtab = strtab.copy()]() mutable {
+      return readAndMaterializeDependencies(std::move(buf), set, *strtab);
     };
     processFn(std::move(makeModule), idx, numFunctions);
     numFunctions = next;
