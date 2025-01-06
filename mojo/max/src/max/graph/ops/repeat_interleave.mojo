@@ -113,8 +113,8 @@ def repeat_interleave(
     reshape_dims = input.tensor_type().dims
     if reshape_dims[repeat_dim] != Dim.dynamic():
         repeat_dim_value = (
-            input.tensor_type().dim(repeat_dim).value[StaticDim].dim.value
+            input.tensor_type().dim(repeat_dim).value[StaticDim].dim
         )
-        reshape_dims[repeat_dim] = repeat_dim_value * repeats
+        reshape_dims[repeat_dim] = int(repeat_dim_value) * repeats
 
     return reshape(tiled_input, result_shape, reshape_dims)
