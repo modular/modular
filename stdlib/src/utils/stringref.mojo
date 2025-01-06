@@ -14,7 +14,7 @@
 """
 
 from collections.string import StringSlice
-from collections.string.string import _atol, _isspace
+from collections.string.string import _isspace
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from sys import simdwidthof
 from sys.ffi import c_char
@@ -380,7 +380,7 @@ struct StringRef(
         var str_slice = StringSlice[ImmutableAnyOrigin](
             unsafe_from_utf8_strref=self
         )
-        return _atol(str_slice)
+        return atol(str_slice)
 
     @always_inline
     fn __len__(self) -> Int:

@@ -25,7 +25,7 @@ from bit import count_leading_zeros
 from collections import List, Optional
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
 from collections.string._utf8_validation import _is_valid_utf8
-from collections.string.string import _atof, _atol, _isspace
+from collections.string.string import _isspace
 from memory import UnsafePointer, memcmp, memcpy, Span
 from memory.memory import _memcmp_impl_unconstrained
 from sys import bitwidthof, simdwidthof
@@ -620,7 +620,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             An integer value that represents the string, or otherwise raises.
         """
-        return _atol(self)
+        return atol(self)
 
     @always_inline
     fn __float__(self) raises -> Float64:
@@ -630,7 +630,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
         Returns:
             A float value that represents the string, or otherwise raises.
         """
-        return _atof(self)
+        return atof(self)
 
     fn __mul__(self, n: Int) -> String:
         """Concatenates the string `n` times.

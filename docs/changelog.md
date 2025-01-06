@@ -93,6 +93,13 @@ what we publish.
   a `StringSlice` from a buffer containing UTF-8 encoded data. This method will
   raise if the buffer contents are not valid UTF-8.
 
+- Several standard library functions have been changed to take `StringSlice`
+  instead of `String`. This generalizes them to be used for any appropriately
+  encoded string in memory, without requiring that the string be heap allocated.
+
+  - `atol()`
+  - `atof()`
+
 - The `ExplicitlyCopyable` trait has changed to require a
   `fn copy(self) -> Self` method. Previously, an initializer with the signature
   `fn __init__(out self, *, other: Self)` had been required by

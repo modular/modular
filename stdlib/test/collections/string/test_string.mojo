@@ -363,13 +363,13 @@ def test_string_indexing():
 
 def test_atol():
     # base 10
-    assert_equal(375, atol(String("375")))
-    assert_equal(1, atol(String("001")))
-    assert_equal(5, atol(String(" 005")))
-    assert_equal(13, atol(String(" 013  ")))
-    assert_equal(-89, atol(String("-89")))
-    assert_equal(-52, atol(String(" -52")))
-    assert_equal(-69, atol(String(" -69  ")))
+    assert_equal(375, atol("375"))
+    assert_equal(1, atol("001"))
+    assert_equal(5, atol(" 005"))
+    assert_equal(13, atol(" 013  "))
+    assert_equal(-89, atol("-89"))
+    assert_equal(-52, atol(" -52"))
+    assert_equal(-69, atol(" -69  "))
     assert_equal(1_100_200, atol(" 1_100_200"))
 
     # other bases
@@ -393,12 +393,12 @@ def test_atol():
     with assert_raises(
         contains="String is not convertible to integer with base 10: '9.03'"
     ):
-        _ = atol(String("9.03"))
+        _ = atol("9.03")
 
     with assert_raises(
         contains="String is not convertible to integer with base 10: ' 10 1'"
     ):
-        _ = atol(String(" 10 1"))
+        _ = atol(" 10 1")
 
     # start/end with underscore double underscores
     with assert_raises(
@@ -455,12 +455,12 @@ def test_atol():
     with assert_raises(
         contains="String is not convertible to integer with base 10: ''"
     ):
-        _ = atol(String(""))
+        _ = atol("")
 
     with assert_raises(
         contains="String expresses an integer too large to store in Int."
     ):
-        _ = atol(String("9223372036854775832"))
+        _ = atol("9223372036854775832")
 
 
 def test_atol_base_0():
@@ -521,63 +521,63 @@ def test_atol_base_0():
 
 
 def test_atof():
-    assert_equal(375.0, atof(String("375.f")))
-    assert_equal(1.0, atof(String("001.")))
-    assert_equal(+5.0, atof(String(" +005.")))
-    assert_equal(13.0, atof(String(" 013.f  ")))
-    assert_equal(-89, atof(String("-89")))
-    assert_equal(-0.3, atof(String(" -0.3")))
-    assert_equal(-69e3, atof(String(" -69E+3  ")))
-    assert_equal(123.2e1, atof(String(" 123.2E1  ")))
-    assert_equal(23e3, atof(String(" 23E3  ")))
-    assert_equal(989343e-13, atof(String(" 989343E-13  ")))
-    assert_equal(1.123, atof(String(" 1.123f")))
-    assert_equal(0.78, atof(String(" .78 ")))
-    assert_equal(121234.0, atof(String(" 121234.  ")))
-    assert_equal(985031234.0, atof(String(" 985031234.F  ")))
-    assert_equal(FloatLiteral.negative_zero, atof(String("-0")))
-    assert_equal(FloatLiteral.nan, atof(String("  nan")))
-    assert_equal(FloatLiteral.infinity, atof(String(" inf ")))
-    assert_equal(FloatLiteral.negative_infinity, atof(String("-inf  ")))
+    assert_equal(375.0, atof("375.f"))
+    assert_equal(1.0, atof("001."))
+    assert_equal(+5.0, atof(" +005."))
+    assert_equal(13.0, atof(" 013.f  "))
+    assert_equal(-89, atof("-89"))
+    assert_equal(-0.3, atof(" -0.3"))
+    assert_equal(-69e3, atof(" -69E+3  "))
+    assert_equal(123.2e1, atof(" 123.2E1  "))
+    assert_equal(23e3, atof(" 23E3  "))
+    assert_equal(989343e-13, atof(" 989343E-13  "))
+    assert_equal(1.123, atof(" 1.123f"))
+    assert_equal(0.78, atof(" .78 "))
+    assert_equal(121234.0, atof(" 121234.  "))
+    assert_equal(985031234.0, atof(" 985031234.F  "))
+    assert_equal(FloatLiteral.negative_zero, atof("-0"))
+    assert_equal(FloatLiteral.nan, atof("  nan"))
+    assert_equal(FloatLiteral.infinity, atof(" inf "))
+    assert_equal(FloatLiteral.negative_infinity, atof("-inf  "))
 
     # Negative cases
     with assert_raises(contains="String is not convertible to float: ''"):
-        _ = atof(String(""))
+        _ = atof("")
 
     with assert_raises(
         contains="String is not convertible to float: ' 123 asd'"
     ):
-        _ = atof(String(" 123 asd"))
+        _ = atof(" 123 asd")
 
     with assert_raises(
         contains="String is not convertible to float: ' f.9123 '"
     ):
-        _ = atof(String(" f.9123 "))
+        _ = atof(" f.9123 ")
 
     with assert_raises(
         contains="String is not convertible to float: ' 989343E-1A3 '"
     ):
-        _ = atof(String(" 989343E-1A3 "))
+        _ = atof(" 989343E-1A3 ")
 
     with assert_raises(
         contains="String is not convertible to float: ' 124124124_2134124124 '"
     ):
-        _ = atof(String(" 124124124_2134124124 "))
+        _ = atof(" 124124124_2134124124 ")
 
     with assert_raises(
         contains="String is not convertible to float: ' 123.2E '"
     ):
-        _ = atof(String(" 123.2E "))
+        _ = atof(" 123.2E ")
 
     with assert_raises(
         contains="String is not convertible to float: ' --958.23 '"
     ):
-        _ = atof(String(" --958.23 "))
+        _ = atof(" --958.23 ")
 
     with assert_raises(
         contains="String is not convertible to float: ' ++94. '"
     ):
-        _ = atof(String(" ++94. "))
+        _ = atof(" ++94. ")
 
 
 def test_calc_initial_buffer_size_int32():
