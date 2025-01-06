@@ -21,7 +21,9 @@ using namespace M;
 
 namespace {
 struct HiOptTable : public llvm::opt::PrecomputedOptTable {
-  HiOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  HiOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 } // namespace
 

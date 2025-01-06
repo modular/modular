@@ -27,7 +27,9 @@ using namespace M;
 
 namespace {
 struct FormatOptTable : public llvm::opt::PrecomputedOptTable {
-  FormatOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  FormatOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 } // namespace
 

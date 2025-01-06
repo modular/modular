@@ -29,25 +29,17 @@ enum ID {
 } // namespace options
 } // namespace
 
-#define OPTTABLE_VALUES_CODE
+#define OPTTABLE_STR_TABLE_CODE
 #include DRIVER_OPTIONS_PATH
-#undef OPTTABLE_VALUES_CODE
+#undef OPTTABLE_STR_TABLE_CODE
 
-#define PREFIX(NAME, VALUE)                                                    \
-  static constexpr llvm::StringLiteral NAME##_init[] = VALUE;                  \
-  static constexpr llvm::ArrayRef<llvm::StringLiteral> NAME(                   \
-      NAME##_init, std::size(NAME##_init) - 1);
+#define OPTTABLE_PREFIXES_TABLE_CODE
 #include DRIVER_OPTIONS_PATH
-#undef PREFIX
+#undef OPTTABLE_PREFIXES_TABLE_CODE
 
-static constexpr const llvm::StringLiteral PrefixTable_init[] =
-#define PREFIX_UNION(VALUES) VALUES
+#define OPTTABLE_PREFIXES_UNION_CODE
 #include DRIVER_OPTIONS_PATH
-#undef PREFIX_UNION
-    ;
-
-static constexpr const llvm::ArrayRef<llvm::StringLiteral>
-    PrefixTable(PrefixTable_init, std::size(PrefixTable_init) - 1);
+#undef OPTTABLE_PREFIXES_UNION_CODE
 
 using llvm::opt::DefaultVis;
 using llvm::opt::HelpHidden;

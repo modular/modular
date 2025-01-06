@@ -38,7 +38,9 @@ using namespace M::KGEN::Mojo;
 
 namespace {
 struct TestOptTable : public llvm::opt::PrecomputedOptTable {
-  TestOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  TestOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 
 } // namespace

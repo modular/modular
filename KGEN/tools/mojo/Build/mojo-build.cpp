@@ -64,7 +64,9 @@ using namespace mlir;
 
 namespace {
 struct BuildOptTable : public llvm::opt::PrecomputedOptTable {
-  BuildOptTable() : llvm::opt::PrecomputedOptTable(InfoTable, PrefixTable) {}
+  BuildOptTable()
+      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
+                                       InfoTable, OptionPrefixesUnion) {}
 };
 } // namespace
 
