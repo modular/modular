@@ -9,9 +9,9 @@ from collections import List
 from os import abort
 from pathlib import Path
 from sys.ffi import _OwnedDLHandle, _Global
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+from sys.ffi import _get_dylib_function as _ffi_get_dylib_function, c_char
 
-from memory import UnsafePointer
+from memory import UnsafePointer, stack_allocation
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -64,6 +64,38 @@ fn _get_dylib_function[
         func_name,
         result_type,
     ]()
+
+
+# ===-----------------------------------------------------------------------===#
+# NVIDIA Driver Version
+# ===-----------------------------------------------------------------------===#
+
+
+@value
+struct DriverVersion:
+    var _value: List[String]
+
+    @implicit
+    fn __init__(out self, value: List[String]):
+        self._value = value
+
+    fn major(self) raises -> Int:
+        return int(self._value[0])
+
+    fn minor(self) raises -> Int:
+        return int(self._value[1])
+
+    fn patch(self) raises -> Int:
+        return int(self._value[2])
+
+    fn __str__(self) raises -> String:
+        return (
+            str(self.major())
+            + "."
+            + str(self.minor())
+            + "."
+            + str(self.patch())
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -367,6 +399,21 @@ struct Device(Writable):
     fn __copyinit__(out self, existing: Self):
         self.idx = existing.idx
         self.device = existing.device
+
+    fn get_driver_version(self) raises -> DriverVersion:
+        """Returns NVIDIA driver version."""
+        alias max_length = 16
+        var driver_version_buffer = stack_allocation[max_length, c_char]()
+
+        _check_error(
+            _get_dylib_function[
+                "nvmlSystemGetDriverVersion",
+                fn (UnsafePointer[c_char], UInt32) -> Result,
+            ]()(driver_version_buffer, UInt32(max_length))
+        )
+        var driver_version_list = String(driver_version_buffer).split(".")
+        var driver_version = DriverVersion(driver_version_list)
+        return driver_version
 
     fn _max_clock(self, clock_type: ClockType) raises -> Int:
         var clock = UInt32()
