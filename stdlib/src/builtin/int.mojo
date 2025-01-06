@@ -352,51 +352,6 @@ struct Int(
     @doc_private
     @always_inline("nodebug")
     @implicit
-    fn __init__(out self, value: __mlir_type.`!pop.scalar<si16>`):
-        """Construct Int from the given Int16 value.
-
-        Args:
-            value: The init value.
-        """
-        self = Self(
-            __mlir_op.`pop.cast`[_type = __mlir_type.`!pop.scalar<index>`](
-                value
-            )
-        )
-
-    @doc_private
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: __mlir_type.`!pop.scalar<si32>`):
-        """Construct Int from the given Int32 value.
-
-        Args:
-            value: The init value.
-        """
-        self = Self(
-            __mlir_op.`pop.cast`[_type = __mlir_type.`!pop.scalar<index>`](
-                value
-            )
-        )
-
-    @doc_private
-    @always_inline("nodebug")
-    @implicit
-    fn __init__(out self, value: __mlir_type.`!pop.scalar<si64>`):
-        """Construct Int from the given Int64 value.
-
-        Args:
-            value: The init value.
-        """
-        self = Self(
-            __mlir_op.`pop.cast`[_type = __mlir_type.`!pop.scalar<index>`](
-                value
-            )
-        )
-
-    @doc_private
-    @always_inline("nodebug")
-    @implicit
     fn __init__(out self, value: __mlir_type.`!pop.scalar<index>`):
         """Construct Int from the given Index value.
 

@@ -472,11 +472,12 @@ struct FileHandle:
         return self^
 
     fn _get_raw_fd(self) -> Int:
-        var i64_res = external_call[
-            "KGEN_CompilerRT_IO_GetFD",
-            Int64,
-        ](self.handle)
-        return Int(i64_res.value)
+        return int(
+            external_call[
+                "KGEN_CompilerRT_IO_GetFD",
+                Int64,
+            ](self.handle)
+        )
 
 
 fn open[
