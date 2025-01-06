@@ -22,7 +22,7 @@ from gpu import (
     warp_sum,
 )
 from gpu.host import DeviceContext, FuncAttribute
-from gpu.host.info import A100
+from gpu.host.info import A100, is_gpu
 from gpu.memory import (
     async_copy_commit_group,
     async_copy_wait_group,
@@ -1323,7 +1323,7 @@ fn swishGLU[
     and writing to the destination once.
     """
 
-    constrained[target == "gpu", "only valid on GPUs"]()
+    constrained[is_gpu[target](), "only valid on GPUs"]()
 
     @always_inline
     @parameter

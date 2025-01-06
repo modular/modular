@@ -11,6 +11,7 @@ from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import Buffer, NDBuffer
 from buffer.dimlist import Dim, DimList
 from gpu.host import DeviceContext
+from gpu.host.info import is_valid_target, is_cpu
 from memory import UnsafePointer, memset_zero
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -746,9 +747,9 @@ fn matmul[
     b: NDBuffer[_, 2, _],
     ctx: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    var cuda_ctx = Optional[
-        DeviceContext
-    ]() if target == "cpu" else ctx.get_device_context()
+    var cuda_ctx = Optional[DeviceContext]() if is_cpu[
+        target
+    ]() else ctx.get_device_context()
 
     return matmul[
         transpose_a=transpose_a,
@@ -778,10 +779,10 @@ fn matmul[
     b: NDBuffer[_, 2, _],
     ctx: Optional[DeviceContext],
 ) raises:
-    constrained[target in ("cpu", "gpu"), "unsupported target"]()
+    constrained[is_valid_target[target](), "unsupported target"]()
     constrained[not transpose_a, "transpose_a not yet supported"]()
     debug_assert(
-        target == "cpu" or bool(ctx),
+        is_cpu[target]() or bool(ctx),
         "expected DeviceContext to be provided if target != cpu",
     )
 
@@ -808,7 +809,7 @@ fn matmul[
     ):
 
         @parameter
-        if target == "cpu":
+        if is_cpu[target]():
             var kernel_type_m = a.shape.at[0]().or_else(0)
 
             _matmul_cpu[

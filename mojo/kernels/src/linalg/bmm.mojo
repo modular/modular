@@ -20,6 +20,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx, GlobalIdx
 from gpu.host import DeviceContext
+from gpu.host.info import is_valid_target, is_cpu
 from memory import UnsafePointer, memset_zero
 from register import register_internal, register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
@@ -273,7 +274,7 @@ fn batched_matmul[
         if (
             single_thread_blocking_override
             and not transpose_b
-            and target == "cpu"
+            and is_cpu[target]()
         ):
             return _small_batched_matmul[
                 rank,
@@ -591,10 +592,10 @@ fn batched_matmul[
     *,
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target in ("cpu", "gpu"), "unsupported target"]()
+    constrained[is_valid_target[target](), "unsupported target"]()
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         _batched_matmul_cpu[
             transpose_b=transpose_b,
             elementwise_epilogue_fn=elementwise_epilogue_fn,
