@@ -14,7 +14,7 @@ from buffer import Buffer
 
 from math import align_down, fma, iota
 from pathlib import Path
-from sys.info import alignof, is_nvidia_gpu, simdwidthof, sizeof
+from sys.info import alignof, is_gpu, is_nvidia_gpu, simdwidthof, sizeof
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store, prefetch
 
 from buffer.dimlist import Dim, DimList, _make_tuple
@@ -311,6 +311,15 @@ struct Buffer[
 
 
 @always_inline
+fn _use_32bit_indexing[address_space: AddressSpace]() -> Bool:
+    return is_gpu() and address_space in (
+        _GPUAddressSpace.SHARED,
+        _GPUAddressSpace.LOCAL,
+        _GPUAddressSpace.CONSTANT,
+    )
+
+
+@always_inline
 fn _compute_nd_index(buf: NDBuffer, index: Int) -> IndexList[buf.rank]:
     """Computes the NDBuffer's offset using the index positions provided.
 
@@ -361,11 +370,7 @@ fn _compute_ndbuffer_offset(
         return 0
 
     @parameter
-    if is_nvidia_gpu() and buf.address_space in (
-        _GPUAddressSpace.SHARED,
-        _GPUAddressSpace.LOCAL,
-        _GPUAddressSpace.CONSTANT,
-    ):
+    if _use_32bit_indexing[buf.address_space]():
         var result: Int32 = 0
 
         @parameter
@@ -406,7 +411,7 @@ fn _compute_ndbuffer_offset(
         return 0
 
     @parameter
-    if is_nvidia_gpu() and buf.address_space == _GPUAddressSpace.SHARED:
+    if _use_32bit_indexing[buf.address_space]():
         var result: Int32 = 0
 
         @parameter
