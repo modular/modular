@@ -15,6 +15,7 @@
 
 import os
 from collections import List
+from collections.string import StringSlice
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, listdir, stat_result
 from sys import external_call, os_is_windows
@@ -82,6 +83,15 @@ struct Path(
     fn __init__(out self) raises:
         """Initializes a path with the current directory."""
         self = cwd()
+
+    # Note: Not @implicit so that allocation is not implicit.
+    fn __init__(out self, path: StringSlice):
+        """Initializes a path with the provided path.
+
+        Args:
+          path: The file system path.
+        """
+        self.path = String(path)
 
     @implicit
     fn __init__(out self, path: String):

@@ -109,7 +109,7 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
         Args:
             literal: The string to append.
         """
-        self.__iadd__(StringRef(literal))
+        self.__iadd__(StringSlice(literal))
 
     fn __iadd__(mut self, string: String):
         """Appends another string to this string.
@@ -169,7 +169,7 @@ struct InlineString(Sized, Stringable, CollectionElement, CollectionElementNew):
         """
 
         var string = self
-        string += StringRef(other)
+        string += StringSlice(other)
         return string
 
     fn __add__(self, other: String) -> Self:

@@ -897,7 +897,7 @@ struct StringLiteral(
         Returns:
             A string with no leading or trailing whitespaces.
         """
-        return self.lstrip().rstrip()
+        return String(self.lstrip().rstrip())
 
     fn strip(self, chars: String) -> String:
         """Return a copy of the string literal with leading and trailing characters
@@ -910,7 +910,7 @@ struct StringLiteral(
             A string with no leading or trailing characters.
         """
 
-        return self.lstrip(chars).rstrip(chars)
+        return String(self.lstrip(chars).rstrip(chars))
 
     fn rstrip(self, chars: String) -> String:
         """Return a copy of the string literal with trailing characters removed.
@@ -921,7 +921,7 @@ struct StringLiteral(
         Returns:
             A string with no trailing characters.
         """
-        return str(self).rstrip(chars)
+        return String(str(self).rstrip(chars))
 
     fn rstrip(self) -> String:
         """Return a copy of the string with trailing whitespaces removed. This
@@ -931,7 +931,7 @@ struct StringLiteral(
         Returns:
             A copy of the string with no trailing whitespaces.
         """
-        return str(self).rstrip()
+        return String(str(self).rstrip())
 
     fn lstrip(self, chars: String) -> String:
         """Return a copy of the string with leading characters removed.
@@ -942,7 +942,7 @@ struct StringLiteral(
         Returns:
             A copy of the string with no leading characters.
         """
-        return str(self).lstrip(chars)
+        return String(str(self).lstrip(chars))
 
     fn lstrip(self) -> String:
         """Return a copy of the string with leading whitespaces removed. This
@@ -952,4 +952,4 @@ struct StringLiteral(
         Returns:
             A copy of the string with no leading whitespaces.
         """
-        return str(self).lstrip()
+        return String(str(self).lstrip())

@@ -852,21 +852,19 @@ struct String(
         """
         return self  # Just use the implicit copyinit.
 
-    @implicit
-    fn __init__(out self, str: StringRef):
+    fn __init__(out self, strref: StringRef):
         """Construct a string from a StringRef object.
 
         Args:
-            str: The StringRef from which to construct this string object.
+            strref: The StringRef from which to construct this string object.
         """
-        var length = len(str)
+        var length = len(strref)
         var buffer = Self._buffer_type()
         # +1 for null terminator, initialized to 0
         buffer.resize(length + 1, 0)
-        memcpy(dest=buffer.data, src=str.data, count=length)
+        memcpy(dest=buffer.data, src=strref.data, count=length)
         self = Self(buffer^)
 
-    @implicit
     fn __init__(out self, str_slice: StringSlice):
         """Construct a string from a string slice.
 
@@ -1087,7 +1085,7 @@ struct String(
         start, end, step = span.indices(self.byte_length())
         var r = range(start, end, step)
         if step == 1:
-            return StringRef(self._buffer.data + start, len(r))
+            return String(StringRef(self._buffer.data + start, len(r)))
 
         var buffer = Self._buffer_type()
         var result_len = len(r)

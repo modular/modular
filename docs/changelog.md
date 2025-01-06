@@ -100,6 +100,15 @@ what we publish.
   - `atol()`
   - `atof()`
 
+- Removed `@implicit` decorator from some standard library initializer methods
+  that perform allocation. This reduces places where Mojo code could implicitly
+  allocate where the user may not be aware.
+
+  Remove `@implicit` from:
+
+  - `String.__init__(out self, StringRef)`
+  - `String.__init__(out self, StringSlice)`
+
 - The `ExplicitlyCopyable` trait has changed to require a
   `fn copy(self) -> Self` method. Previously, an initializer with the signature
   `fn __init__(out self, *, other: Self)` had been required by
@@ -124,6 +133,7 @@ what we publish.
 
 - `StringRef` is being deprecated. Use `StringSlice` instead.
   - Changed `sys.argv()` to return list of `StringSlice`.
+  - Added `Path` explicit constructor from `StringSlice`.
   - removed `StringRef.startswith()` and `StringRef.endswith()`
 
 ### 🛠️ Fixed

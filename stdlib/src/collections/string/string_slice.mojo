@@ -358,9 +358,14 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut]](
             value: The string value.
         """
 
-        debug_assert(
-            _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
-        )
+        # TODO(MOCO-1525):
+        #   Support skipping UTF-8 during comptime evaluations, or support
+        #   the necessary SIMD intrinsics to allow this to evaluate at compile
+        #   time.
+        # debug_assert(
+        #     _is_valid_utf8(value.as_bytes()), "value is not valid utf8"
+        # )
+
         self = StringSlice[O](unsafe_from_utf8=value.as_bytes())
 
     # ===-------------------------------------------------------------------===#

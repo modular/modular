@@ -263,11 +263,11 @@ def test_iter():
     var i = 0
     for c in s:
         if i == 0:
-            assert_equal(c, "o")
+            assert_equal(String(c), "o")
         elif i == 1:
-            assert_equal(c, "n")
+            assert_equal(String(c), "n")
         elif i == 2:
-            assert_equal(c, "e")
+            assert_equal(String(c), "e")
 
 
 def test_layout():
