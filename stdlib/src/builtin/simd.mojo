@@ -184,17 +184,6 @@ fn _simd_construction_checks[type: DType, size: Int]():
         not (type is DType.bfloat16 and has_neon()),
         "bf16 is not supported for ARM architectures",
     ]()
-    constrained[
-        not (type.is_float8() and not _has_native_f8_support()),
-        "f8 is not supported on non sm_89 and sm_90 architectures",
-    ]()
-    constrained[
-        not (
-            type in (DType.float8e4m3fnuz, DType.float8e5m2fnuz)
-            and not is_amd_gpu()
-        ),
-        "f8 fnuz variants is only supported for AMD GPU.",
-    ]()
 
 
 @always_inline("nodebug")
