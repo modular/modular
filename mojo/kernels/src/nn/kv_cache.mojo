@@ -11,6 +11,7 @@ from sys.info import _current_target, simdwidthof
 from algorithm.functional import elementwise
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
+from gpu.host.info import is_gpu, is_cpu
 from kv_cache.types import (
     ContiguousKVCache,
     ContiguousKVCacheCollection,
@@ -325,7 +326,7 @@ fn _fused_qkv_matmul_kv_cache[
     var cuda_ctx: Optional[DeviceContext] = None
 
     @parameter
-    if target != "cpu":
+    if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_impl[target=target](
@@ -369,7 +370,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
             for the given layer from kv_collection.
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
-        context: The DeviceContext. This is unused if target == "cpu".
+        context: The DeviceContext. This is unused if is_cpu[target]().
     """
     alias cache_t = collection_t.CacheType
     alias cache_type = cache_t.type
@@ -463,7 +464,7 @@ fn _matmul_common[
     var c_nd: NDBuffer[type, 2, DimList(Dim(), N)]
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         var c_ptr = UnsafePointer[Scalar[type]].alloc(BS * SEQ_LEN * N)
 
         c_nd = NDBuffer[type, 2, DimList(Dim(), N)](
@@ -483,7 +484,7 @@ fn _matmul_common[
     ](c_nd, hidden_state_2d, weight, context)
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         c_nd.data.free()
 
 
@@ -525,9 +526,9 @@ fn generic_fused_qk_rope_bshd_continuous_batch[
         )
 
     # Pass device context only on GPU.
-    var dev_ctx = Optional[
-        DeviceContext
-    ]() if target == "cpu" else context.get_device_context()
+    var dev_ctx = Optional[DeviceContext]() if is_cpu[
+        target
+    ]() else context.get_device_context()
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h"
         + str(kv_collection.kv_params.num_heads)
@@ -943,7 +944,7 @@ fn _flash_attention_kv_cache[
     var cuda_ctx: Optional[DeviceContext] = None
 
     @parameter
-    if target != "cpu":
+    if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _flash_attention_kv_cache_impl[cache_t, target=target](
@@ -985,7 +986,7 @@ fn _flash_attention_kv_cache_impl[
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
-        context: CUDA DeviceContext. This is not used if target == "cpu"
+        context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
 
     var layer_idx_cast = int(layer_idx)
@@ -993,7 +994,7 @@ fn _flash_attention_kv_cache_impl[
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         return flash_attention_kv_cache_cpu(q, k, v, mask, scale, output)
     else:
         return _flash_attention_kv_cache_gpu[target=target](
@@ -1335,7 +1336,7 @@ fn _flash_attention_kv_cache_causal_mask[
     var cuda_ctx: Optional[DeviceContext] = None
 
     @parameter
-    if target != "cpu":
+    if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _flash_attention_kv_cache_causal_mask_impl[cache_t, target=target](
@@ -1368,14 +1369,14 @@ fn _flash_attention_kv_cache_causal_mask_impl[
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
-        context: CUDA DeviceContext. This is not used if target == "cpu"
+        context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
     var layer_idx_cast = int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         return flash_attention_kv_cache_cpu(
             q, k, v, CausalMask(), scale, output
         )
@@ -1511,7 +1512,7 @@ fn _flash_attention_kv_cache_causal_alibi_mask[
     var cuda_ctx: Optional[DeviceContext] = None
 
     @parameter
-    if target != "cpu":
+    if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _flash_attention_kv_cache_causal_alibi_mask_impl[cache_t, target=target](
@@ -1545,14 +1546,14 @@ fn _flash_attention_kv_cache_causal_alibi_mask_impl[
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (batch_size, num_heads, seq_len, head_size).
-        context: CUDA DeviceContext. This is not used if target == "cpu"
+        context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
     var layer_idx_cast = int(layer_idx)
     var k = kv_collection.get_key_cache(layer_idx_cast)
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         return flash_attention_kv_cache_cpu(
             q, k, v, CausalMask(), scale, output
         )
@@ -1697,7 +1698,7 @@ def print_kv_cache_cont_batch_h8_d128[
     context: MojoCallContextPtr,
 ):
     @parameter
-    if target == "gpu":
+    if is_gpu[target]():
         print_kv_cache_cont_batch_generic_gpu[target](
             valid_lengths,
             kv_collection,
@@ -1705,7 +1706,7 @@ def print_kv_cache_cont_batch_h8_d128[
             is_print_compact[0],
             context,
         )
-    elif target == "cpu":
+    elif is_cpu[target]():
         print_kv_cache_cont_batch_generic_cpu[target](
             valid_lengths,
             kv_collection,
@@ -1728,7 +1729,7 @@ def print_kv_cache_cont_batch_h2_d128[
     context: MojoCallContextPtr,
 ):
     @parameter
-    if target == "gpu":
+    if is_gpu[target]():
         print_kv_cache_cont_batch_generic_gpu[target](
             valid_lengths,
             kv_collection,
@@ -1736,7 +1737,7 @@ def print_kv_cache_cont_batch_h2_d128[
             is_print_compact[0],
             context,
         )
-    elif target == "cpu":
+    elif is_cpu[target]():
         print_kv_cache_cont_batch_generic_cpu[target](
             valid_lengths,
             kv_collection,
@@ -1759,7 +1760,7 @@ def print_kv_cache_cont_batch_h16_d128[
     context: MojoCallContextPtr,
 ):
     @parameter
-    if target == "gpu":
+    if is_gpu[target]():
         print_kv_cache_cont_batch_generic_gpu[target](
             valid_lengths,
             kv_collection,
@@ -1767,7 +1768,7 @@ def print_kv_cache_cont_batch_h16_d128[
             is_print_compact[0],
             context,
         )
-    elif target == "cpu":
+    elif is_cpu[target]():
         print_kv_cache_cont_batch_generic_cpu[target](
             valid_lengths,
             kv_collection,
@@ -1790,7 +1791,7 @@ def print_kv_cache_cont_batch_h32_d128[
     context: MojoCallContextPtr,
 ):
     @parameter
-    if target == "gpu":
+    if is_gpu[target]():
         print_kv_cache_cont_batch_generic_gpu[target](
             valid_lengths,
             kv_collection,
@@ -1798,7 +1799,7 @@ def print_kv_cache_cont_batch_h32_d128[
             is_print_compact[0],
             context,
         )
-    elif target == "cpu":
+    elif is_cpu[target]():
         print_kv_cache_cont_batch_generic_cpu[target](
             valid_lengths,
             kv_collection,

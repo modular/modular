@@ -8,6 +8,7 @@ from collections import Optional, OptionalReg
 
 from buffer import Dim, DimList, NDBuffer
 from gpu.host import DeviceContext
+from gpu.host.info import is_cpu, is_gpu
 from kv_cache.types import (
     ContinuousBatchingKVCache,
     ContinuousBatchingKVCacheCollection,
@@ -797,7 +798,7 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
-    if target != "cpu":
+    if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     return _fused_qkv_matmul_kv_cache_ragged_impl[target=target](
@@ -841,7 +842,7 @@ fn _fused_qkv_matmul_kv_cache_ragged_impl[
         output: The pre-allocated output buffer for Q projections. K and V
             projections are written in-place to k_cache and v_cache.
             Shape is (sum(seq_lens), num_heads * head_size)
-        context: The DeviceContext. This is unused if target == "cpu".
+        context: The DeviceContext. This is unused if is_cpu[target]().
     """
     alias kv_type = cache_t.type
     alias kv_params = cache_t.kv_params
@@ -920,7 +921,7 @@ fn _matmul_common[
     var c_nd: NDBuffer[type, 2, DimList(Dim(), N)]
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         # The CPU matmul codepath uses the C buffer as a workspace
         # even if an epilogue is provided, here we just allocate
         # something to ensure we don't segfault.
@@ -943,7 +944,7 @@ fn _matmul_common[
     ](c_nd, hidden_state, weight, context)
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         c_nd.data.free()
 
 
@@ -1040,7 +1041,7 @@ fn _matmul_kv_cache_ragged[
     v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
-    if target != "cpu":
+    if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _matmul_kv_cache_ragged_impl[target=target](
@@ -1185,9 +1186,9 @@ fn generic_fused_qk_rope_bshd_continous_batch_ragged[
         )
 
     # Pass device context only on GPU.
-    var dev_ctx = Optional[
-        DeviceContext
-    ]() if target == "cpu" else context.get_device_context()
+    var dev_ctx = Optional[DeviceContext]() if is_cpu[
+        target
+    ]() else context.get_device_context()
 
     with Trace[TraceLevel.OP, target=target](
         "fused_qk_rope_h"
@@ -1648,9 +1649,9 @@ fn generic_fused_qk_rope_bshd_paged_ragged[
         )
 
     # Pass device context only on GPU.
-    var dev_ctx = Optional[
-        DeviceContext
-    ]() if target == "cpu" else context.get_device_context()
+    var dev_ctx = Optional[DeviceContext]() if is_cpu[
+        target
+    ]() else context.get_device_context()
 
     alias name = "fused_qk_rope_h" + str(
         kv_collection.kv_params.num_heads
@@ -2310,7 +2311,7 @@ fn _cross_attention_kv_cache_ragged[
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         return flash_attention_kv_cache_cpu(
             q,
             q_input_row_offsets,
@@ -2694,7 +2695,7 @@ fn _flash_attention_kv_cache_ragged[
     var cuda_ctx: Optional[DeviceContext] = None
 
     @parameter
-    if target != "cpu":
+    if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _flash_attention_kv_cache_ragged_impl[cache_t, target=target](
@@ -2739,7 +2740,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged[
     var cuda_ctx: Optional[DeviceContext] = None
 
     @parameter
-    if target != "cpu":
+    if is_gpu[target]():
         cuda_ctx = context.get_device_context()
 
     _flash_attention_kv_cache_alibi_mask_ragged_impl[cache_t, target=target](
@@ -2781,7 +2782,7 @@ fn _flash_attention_kv_cache_ragged_impl[
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (sum(seq_lens in batch), num_heads, head_size).
-        context: CUDA DeviceContext. This is not used if target == "cpu"
+        context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
 
     var layer_idx_cast = int(layer_idx)
@@ -2789,7 +2790,7 @@ fn _flash_attention_kv_cache_ragged_impl[
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         return flash_attention_kv_cache_cpu(
             q, input_row_offsets, input_row_offsets, k, v, mask, scale, output
         )
@@ -2824,7 +2825,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
         scale: The scaled factor in scaled-dot product attention. Usually isqrt(head_size).
         output: The Pre-allocated output buffer to write results to. Has shape:
             (sum(seq_lens in batch), num_heads, head_size).
-        context: CUDA DeviceContext. This is not used if target == "cpu"
+        context: CUDA DeviceContext. This is not used if is_cpu[target]()
     """
 
     var layer_idx_cast = int(layer_idx)
@@ -2832,7 +2833,7 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
     var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         # TODO: I dont think this is set up yet.
         return flash_attention_kv_cache_cpu(
             q,

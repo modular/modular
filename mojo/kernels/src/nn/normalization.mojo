@@ -28,6 +28,7 @@ from gpu import (
 )
 from gpu.host import DeviceContext
 from gpu.host._compile import _get_gpu_target
+from gpu.host.info import is_gpu, is_cpu
 from gpu.memory import AddressSpace
 from gpu.shuffle import (
     shuffle_down,
@@ -650,11 +651,11 @@ fn layer_norm[
     ):
 
         @parameter
-        if target == "cpu":
+        if is_cpu[target]():
             layer_norm_cpu[input_0_fn, input_1_fn](
                 shape.canonicalize(), beta, epsilon, output
             )
-        elif target == "gpu":
+        elif is_gpu[target]():
             layer_norm_gpu[input_0_fn, input_1_fn](
                 shape.canonicalize(),
                 beta,
@@ -1009,9 +1010,9 @@ fn _rms_norm_impl[
         )
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         rms_norm_cpu[input_0_fn, output_fn](shape, gamma, epsilon)
-    elif target == "gpu":
+    elif is_gpu[target]():
         rms_norm_gpu[input_0_fn, output_fn](
             shape, gamma, epsilon, ctx.get_device_context()
         )

@@ -13,6 +13,7 @@ from algorithm import elementwise, sync_parallelize
 from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host.info import is_cpu
 from gpu.host._compile import _get_gpu_target
 from memory import UnsafePointer, memcpy, memset_zero
 from nn.gather_scatter import normalize_neg_index
@@ -186,7 +187,7 @@ fn index_tensor[
     """
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         return _index_tensor_1d[
             batch_dims,
             target=target,
@@ -344,7 +345,9 @@ fn _index_tensor_impl[
             output_idx, data.load[width=simd_width](data_idx)
         )
 
-    alias compile_target = _current_target() if target == "cpu" else _get_gpu_target()
+    alias compile_target = _current_target() if is_cpu[
+        target
+    ]() else _get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
 
     # Only use SIMD if:
@@ -359,7 +362,7 @@ fn _index_tensor_impl[
     ) == 0
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         if use_simd:
             elementwise[
                 index_tensor_elementwise_fn,

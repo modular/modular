@@ -20,6 +20,7 @@ from algorithm.functional import (
 from buffer import NDBuffer
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import DeviceBuffer, DeviceContext
+from gpu.host.info import is_valid_target, is_cpu
 from memory import UnsafePointer, memcpy
 from register import register_internal, register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr
@@ -597,12 +598,12 @@ fn concat[
     inputs: StaticTuple[NDBuffer[type, rank], *_],
     context: MojoCallContextPtr = MojoCallContextPtr(),
 ) raises:
-    constrained[target in ("cpu", "gpu"), "not a valid target"]()
+    constrained[is_valid_target[target](), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("concat"):
 
         @parameter
-        if target == "cpu":
+        if is_cpu[target]():
             var inputVec = InlinedFixedVector[NDBuffer[type, rank]](len(inputs))
 
             @parameter
@@ -1022,12 +1023,12 @@ fn test_concat_fusion[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ) raises:
-    constrained[target in ("cpu", "gpu"), "not a valid target"]()
+    constrained[is_valid_target[target](), "not a valid target"]()
 
     with Trace[TraceLevel.OP, target=target]("concat"):
 
         @parameter
-        if target == "cpu":
+        if is_cpu[target]():
             return _fused_concat_cpu[
                 rank,
                 type,

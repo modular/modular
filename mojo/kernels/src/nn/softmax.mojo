@@ -20,6 +20,7 @@ from buffer.dimlist import Dim, DimList
 from builtin.uint import _temp_uint_from_int
 from gpu import WARP_SIZE, BlockIdx, GridDim, ThreadIdx, barrier, lane_id
 from gpu.host import DeviceAttribute, DeviceContext
+from gpu.host.info import is_gpu, is_cpu
 from gpu.memory import AddressSpace
 from gpu.shuffle import (
     shuffle_up,
@@ -842,11 +843,11 @@ fn softmax[
     ):
 
         @parameter
-        if target == "cpu":
+        if is_cpu[target]():
             _softmax_cpu[type, simd_width, rank, static_shape, input_fn](
                 shape, output, axis
             )
-        elif target == "gpu":
+        elif is_gpu[target]():
             _softmax_gpu[type, simd_width, rank, static_shape, input_fn](
                 shape,
                 output,

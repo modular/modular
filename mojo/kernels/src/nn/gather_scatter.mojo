@@ -17,6 +17,7 @@ from buffer import NDBuffer
 from buffer.dimlist import DimList
 from gpu.host import DeviceBuffer, DeviceContext
 from gpu.host._compile import _get_gpu_target
+from gpu.host.info import is_gpu, is_cpu
 from memory import UnsafePointer, memcpy, memset_zero, stack_allocation
 from register import register_internal, register_internal_shape_func
 from runtime.asyncrt import MojoCallContextPtr, parallelism_level
@@ -677,7 +678,9 @@ fn gather[
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
-    alias compile_target = _current_target() if target == "cpu" else _get_gpu_target()
+    alias compile_target = _current_target() if is_cpu[
+        target
+    ]() else _get_gpu_target()
 
     gather_guards(axis, input_shape, indices_shape, output_shape)
     with Trace[TraceLevel.OP, target=target]("gather"):
@@ -806,7 +809,7 @@ fn scatter_nd_generator[
     var r_minus_m = data_rank - last_shape_of_indices
 
     @parameter
-    if target == "gpu":
+    if is_gpu[target]():
         # TODO: Does it matter if output.data or output_flat.data (and data)?
         var ctx = context.get_device_context()
         # TODO: Owning = True or False?
@@ -825,7 +828,7 @@ fn scatter_nd_generator[
         )
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         memcpy(output_flat.data, data_flat.data, len(output_flat))
 
     @__copy_capture(
@@ -1416,7 +1419,7 @@ fn gather_nd[
     """
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         return _gather_nd_impl[
             batch_dims,
             target=target,
@@ -1507,7 +1510,9 @@ fn _gather_nd_impl[
             output_idx, data.load[width=simd_width](data_idx)
         )
 
-    alias compile_target = _current_target() if target == "cpu" else _get_gpu_target()
+    alias compile_target = _current_target() if is_cpu[
+        target
+    ]() else _get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
 
     # Only use SIMD if:
@@ -1522,7 +1527,7 @@ fn _gather_nd_impl[
     ) == 0
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         if use_simd:
             elementwise[
                 gather_nd_elementwise_fn,

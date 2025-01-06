@@ -12,6 +12,7 @@ from algorithm.functional import elementwise
 from buffer import NDBuffer
 from complex import ComplexSIMD
 from gpu.host import DeviceContext
+from gpu.host.info import is_cpu
 from gpu.host._compile import _get_gpu_target
 from kv_cache.types import KVCacheT, KVCollectionT
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -212,13 +213,15 @@ fn fused_qk_rope[
         num_q_heads + num_k_heads,  # concat q and k along head dim
         head_size,
     )
-    alias compile_target = _current_target() if target == "cpu" else _get_gpu_target()
+    alias compile_target = _current_target() if is_cpu[
+        target
+    ]() else _get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
     alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
             launch_shape
         )
@@ -304,13 +307,15 @@ fn fused_qk_rope_ragged[
         num_q_heads + num_k_heads,  # concat q and k along head dim
         head_size,
     )
-    alias compile_target = _current_target() if target == "cpu" else _get_gpu_target()
+    alias compile_target = _current_target() if is_cpu[
+        target
+    ]() else _get_gpu_target()
     alias target_simd_width = simdwidthof[type, target=compile_target]()
     alias kernel_simd_width = gcd(target_simd_width, kv_params.head_size)
     constrained[kernel_simd_width >= 2, "invalid simd_width and head size"]()
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         elementwise[func=rope_fn, simd_width=kernel_simd_width, target=target](
             launch_shape
         )
