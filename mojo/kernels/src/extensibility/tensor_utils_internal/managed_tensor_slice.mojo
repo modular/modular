@@ -6,6 +6,7 @@
 
 from collections import InlineArray, OptionalReg
 from gpu.host._compile import _get_gpu_target
+from gpu.host.info import is_cpu
 from math import ceil, fma
 from sys import alignof, simdwidthof
 from sys.info import is_nvidia_gpu
@@ -592,10 +593,9 @@ fn gcd_pow2[a: Int, b: Int]() -> Int:
 
 
 fn get_kernel_simd_width[type: DType, target: StringLiteral]() -> Int:
-    return (
-        simdwidthof[type]() if target
-        == "cpu" else simdwidthof[type, target = _get_gpu_target()]()
-    )
+    return simdwidthof[type]() if is_cpu[target]() else simdwidthof[
+        type, target = _get_gpu_target()
+    ]()
 
 
 # This version of the function supports CPU only. For GPU, use the one with the
