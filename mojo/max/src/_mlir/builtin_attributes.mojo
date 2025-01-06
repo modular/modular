@@ -28,7 +28,8 @@ struct BoolAttr(DialectAttribute):
         if not _c.BuiltinAttributes.mlirAttributeIsABool(attr.c):
             raise "Attribute is not a Bool"
         return Self(
-            attr.context(), _c.BuiltinAttributes.mlirBoolAttrGetValue(attr.c)
+            attr.context(),
+            _c.BuiltinAttributes.mlirBoolAttrGetValue(attr.c),
         )
 
 
@@ -68,5 +69,5 @@ struct StringAttr(DialectAttribute):
             raise "Attribute is not a String"
         return Self(
             attr.context(),
-            _c.BuiltinAttributes.mlirStringAttrGetValue(attr.c),
+            String(_c.BuiltinAttributes.mlirStringAttrGetValue(attr.c)),
         )

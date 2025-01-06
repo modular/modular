@@ -118,7 +118,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             value: Tensor to be held in map.
         """
         var spec = EngineTensorSpec(
-            key.as_string_slice(),
+            key,
             value.spec(),
             self._lib,
             self._session,
@@ -146,7 +146,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             ptr: The tensor pointer.
         """
         var tensor_spec = EngineTensorSpec(
-            key.as_string_slice(),
+            key,
             spec,
             self._lib,
             self._session,
@@ -167,7 +167,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             value: View of a tensor.
         """
         var spec = EngineTensorSpec(
-            key.as_string_slice(),
+            key,
             value.spec(),
             self._lib,
             self._session,
@@ -184,7 +184,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             value: View of a numpy array.
         """
         var spec = EngineTensorSpec(
-            key.as_string_slice(),
+            key,
             value.spec(),
             self._lib,
             self._session,
@@ -200,9 +200,7 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             key: Name of value in map.
             value: Value to insert into map.
         """
-        self._ptr.borrow_value_by_name(
-            key.as_string_slice(), value._ptr.ptr, self._lib
-        )
+        self._ptr.borrow_value_by_name(key, value._ptr.ptr, self._lib)
 
     fn _move_mojo_value[T: Movable](self, key: String, owned value: T) raises:
         """Move the mojo value inside the map at the key location.

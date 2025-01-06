@@ -635,7 +635,7 @@ struct Identifier(CollectionElement, Stringable):
         )
 
     fn __str__(self) -> String:
-        return _c.IR.mlirIdentifierStr(self.c)
+        return String(_c.IR.mlirIdentifierStr(self.c))
 
 
 @value

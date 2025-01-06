@@ -88,7 +88,7 @@ fn call_dylib_func[
     var args_pack = args.get_loaded_kgen_pack()
 
     var func_ptr = lib.get_function[fn (__type_of(args_pack)) -> ReturnType](
-        name
+        String(name)
     )
 
     return func_ptr(args_pack)

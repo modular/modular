@@ -148,8 +148,8 @@ struct Device(Stringable):
             String representation of device.
         """
 
-        return StringRef(
-            ptr=self._lib.value().get_device_desc_fn(self._cdev._ptr)
+        return String(
+            StringRef(ptr=self._lib.value().get_device_desc_fn(self._cdev._ptr))
         )
 
     fn __del__(owned self):
