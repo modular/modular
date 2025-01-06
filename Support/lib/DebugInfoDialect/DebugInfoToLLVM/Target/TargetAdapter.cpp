@@ -567,7 +567,7 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
         };
 
         // Store into the alloca at the place where the value was tracked.
-        if (auto *definingOp = oldValue.getDefiningOp()) {
+        if (oldValue.getDefiningOp()) {
           makeStore(OpBuilder(valueOp), oldValue.getLoc());
         } else {
           // If the value is a block argument, we need to search for an
