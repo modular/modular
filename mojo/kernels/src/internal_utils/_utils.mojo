@@ -419,5 +419,5 @@ fn arg_parse(handle: String, default: String) raises -> String:
     for i in range(len(args)):
         if String(args[i]).startswith("--" + handle):
             var name_val = String(args[i]).split("=")
-            return name_val[1]
+            return String(name_val[1])
     return default
