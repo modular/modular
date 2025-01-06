@@ -729,7 +729,7 @@ struct _Accumulator[
             @parameter
             for i in range(row_start, row_stop):
                 # Broadcast an scalar from A to a simd vector.
-                var a_idx = a_base_offsets[i].value + a_offset + l
+                var a_idx = int(a_base_offsets[i]) + a_offset + l
                 var a_splat_vec = SIMD[a_type, simd_width](a[a_idx])
 
                 @parameter
@@ -874,7 +874,7 @@ struct _Accumulator[
             # Load vectors of size num_lanes from input.
             @parameter
             for i in range(row_start, row_stop):
-                var a_idx = a_base_offsets[i].value + a_offset + offset
+                var a_idx = int(a_base_offsets[i]) + a_offset + offset
                 a_vecs[i] = a.load[width=num_lanes](a_idx)
 
             var b_ptr = b + offset * b_stride
