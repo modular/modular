@@ -80,7 +80,7 @@ struct _POpenHandle:
         if line:
             libc.free(line.bitcast[NoneType]())
 
-        return res.rstrip()
+        return String(res.rstrip())
 
 
 fn run(cmd: String) raises -> String:
