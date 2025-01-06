@@ -328,7 +328,7 @@ fn _fused_qkv_matmul_kv_cache[
     if target != "cpu":
         cuda_ctx = context.get_device_context()
 
-    return _fused_qkv_matmul_kv_cache_impl[cache_t, target=target](
+    return _fused_qkv_matmul_kv_cache_impl[target=target](
         hidden_state, weight, kv_collection, layer_idx, output, cuda_ctx
     )
 
@@ -345,7 +345,6 @@ fn _fused_qkv_matmul_kv_cache_impl[
     weight_shape: DimList,
     output_shape: DimList,
     collection_t: KVCollectionT, //,
-    cache_t: KVCacheT,
     *,
     target: StringLiteral,
     q_embed_fn: OptionalReg[embed_fn_type] = None,
@@ -372,6 +371,7 @@ fn _fused_qkv_matmul_kv_cache_impl[
             projections are written in-place to k_cache and v_cache.
         context: The DeviceContext. This is unused if target == "cpu".
     """
+    alias cache_t = collection_t.CacheType
     alias cache_type = cache_t.type
 
     constrained[
@@ -392,8 +392,8 @@ fn _fused_qkv_matmul_kv_cache_impl[
     var k_dim = kv_params.head_size * kv_params.num_heads
     var qk_offset = q_dim + k_dim
 
-    var k_cache = kv_collection.get_key_cache[cache_t](int(layer_idx))
-    var v_cache = kv_collection.get_value_cache[cache_t](int(layer_idx))
+    var k_cache = kv_collection.get_key_cache(int(layer_idx))
+    var v_cache = kv_collection.get_value_cache(int(layer_idx))
 
     @parameter
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache)
@@ -989,8 +989,8 @@ fn _flash_attention_kv_cache_impl[
     """
 
     var layer_idx_cast = int(layer_idx)
-    var k = kv_collection.get_key_cache[cache_t](layer_idx_cast)
-    var v = kv_collection.get_value_cache[cache_t](layer_idx_cast)
+    var k = kv_collection.get_key_cache(layer_idx_cast)
+    var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if target == "cpu":
@@ -1371,8 +1371,8 @@ fn _flash_attention_kv_cache_causal_mask_impl[
         context: CUDA DeviceContext. This is not used if target == "cpu"
     """
     var layer_idx_cast = int(layer_idx)
-    var k = kv_collection.get_key_cache[cache_t](layer_idx_cast)
-    var v = kv_collection.get_value_cache[cache_t](layer_idx_cast)
+    var k = kv_collection.get_key_cache(layer_idx_cast)
+    var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if target == "cpu":
@@ -1548,8 +1548,8 @@ fn _flash_attention_kv_cache_causal_alibi_mask_impl[
         context: CUDA DeviceContext. This is not used if target == "cpu"
     """
     var layer_idx_cast = int(layer_idx)
-    var k = kv_collection.get_key_cache[cache_t](layer_idx_cast)
-    var v = kv_collection.get_value_cache[cache_t](layer_idx_cast)
+    var k = kv_collection.get_key_cache(layer_idx_cast)
+    var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if target == "cpu":
@@ -1628,9 +1628,7 @@ def rms_norm_key_cache_h8_d128_cont_batch[
     """
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     alias rank = 3
-    var k_cache = kv_collection.get_key_cache[kv_collection.CacheType](
-        int(layer_idx)
-    )
+    var k_cache = kv_collection.get_key_cache(int(layer_idx))
     var kv_params = k_cache.kv_params
     var shape = IndexList[rank](
         int(total_seq_len), kv_params.num_heads, kv_params.head_size
@@ -1855,12 +1853,8 @@ def print_kv_cache_cont_batch_generic_cpu[
     is_print_compact: Bool,
     context: MojoCallContextPtr,
 ):
-    var k_cache = kv_collection.get_key_cache[kv_collection.CacheType](
-        int(layer_idx)
-    )
-    var v_cache = kv_collection.get_value_cache[kv_collection.CacheType](
-        int(layer_idx)
-    )
+    var k_cache = kv_collection.get_key_cache(int(layer_idx))
+    var v_cache = kv_collection.get_value_cache(int(layer_idx))
 
     print("K:")
     _print_cache(k_cache, kv_collection, valid_lengths, is_print_compact)
@@ -1935,12 +1929,8 @@ def print_kv_cache_cont_batch_generic_gpu[
         valid_lengths.num_elements(),
     )
 
-    var k_cache = host_kv_collection.get_key_cache[
-        host_kv_collection.CacheType
-    ](int(layer_idx))
-    var v_cache = host_kv_collection.get_value_cache[
-        host_kv_collection.CacheType
-    ](int(layer_idx))
+    var k_cache = host_kv_collection.get_key_cache(int(layer_idx))
+    var v_cache = host_kv_collection.get_value_cache(int(layer_idx))
 
     # Bring host buffers in sync with device buffers.
     dev_ctx.synchronize()

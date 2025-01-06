@@ -793,8 +793,8 @@ fn _fused_qkv_matmul_kv_cache_ragged[
     """
     var cuda_ctx: Optional[DeviceContext] = None
     var layer_idx_cast = int(layer_idx)
-    var k_cache = kv_collection.get_key_cache[cache_t](layer_idx_cast)
-    var v_cache = kv_collection.get_value_cache[cache_t](layer_idx_cast)
+    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if target != "cpu":
@@ -1036,12 +1036,8 @@ fn _matmul_kv_cache_ragged[
     """
     var cuda_ctx: Optional[DeviceContext] = None
     layer_idx_cast = int(layer_idx)
-    k_cache = kv_collection.get_key_cache[kv_collection.CacheType](
-        layer_idx_cast
-    )
-    v_cache = kv_collection.get_value_cache[kv_collection.CacheType](
-        layer_idx_cast
-    )
+    k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    v_cache = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if target != "cpu":
@@ -2310,8 +2306,8 @@ fn _cross_attention_kv_cache_ragged[
         context: Pointer containing the runtime context for the target device.
     """
     var layer_idx_cast = int(layer_idx)
-    var k = kv_collection.get_key_cache[cache_t](layer_idx_cast)
-    var v = kv_collection.get_value_cache[cache_t](layer_idx_cast)
+    var k = kv_collection.get_key_cache(layer_idx_cast)
+    var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if target == "cpu":
@@ -2789,8 +2785,8 @@ fn _flash_attention_kv_cache_ragged_impl[
     """
 
     var layer_idx_cast = int(layer_idx)
-    var k = kv_collection.get_key_cache[cache_t](layer_idx_cast)
-    var v = kv_collection.get_value_cache[cache_t](layer_idx_cast)
+    var k = kv_collection.get_key_cache(layer_idx_cast)
+    var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if target == "cpu":
@@ -2832,8 +2828,8 @@ fn _flash_attention_kv_cache_alibi_mask_ragged_impl[
     """
 
     var layer_idx_cast = int(layer_idx)
-    var k = kv_collection.get_key_cache[cache_t](layer_idx_cast)
-    var v = kv_collection.get_value_cache[cache_t](layer_idx_cast)
+    var k = kv_collection.get_key_cache(layer_idx_cast)
+    var v = kv_collection.get_value_cache(layer_idx_cast)
 
     @parameter
     if target == "cpu":
