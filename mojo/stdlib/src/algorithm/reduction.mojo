@@ -26,6 +26,7 @@ from buffer.dimlist import Dim, DimList
 from builtin.math import max as _max
 from builtin.math import min as _min
 from gpu.host import DeviceContext
+from gpu.host.info import is_valid_target, is_cpu
 from memory.unsafe import bitcast
 from runtime.asyncrt import MojoCallContextPtr
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -451,10 +452,10 @@ fn _reduce_generator[
         reduce_dim: The dimension we are reducing.
         context: The pointer to DeviceContext.
     """
-    constrained[target in ("cpu", "gpu"), "unsupported target"]()
+    constrained[is_valid_target[target](), "unsupported target"]()
 
     @parameter
-    if target == "cpu":
+    if is_cpu[target]():
         _reduce_generator_cpu[
             num_reductions,
             init_type,

@@ -20,7 +20,7 @@ from bit import is_power_of_two
 from buffer import NDBuffer
 from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx
 from gpu.host import DeviceContext
-from gpu.host.info import Info
+from gpu.host.info import Info, is_gpu, is_cpu, is_valid_target
 from runtime import tracing
 from runtime.asyncrt import MojoCallContextPtr, TaskGroup, parallelism_level
 from runtime.tracing import Trace, TraceLevel, trace_arg
@@ -1271,7 +1271,7 @@ fn elementwise[
     """
 
     constrained[
-        target == "cpu",
+        is_cpu[target](),
         (
             "the target must be CPU use the elementwise which takes the"
             " DeviceContext to be able to use the GPU version"
@@ -1397,7 +1397,7 @@ fn elementwise[
     ):
 
         @parameter
-        if target == "gpu":
+        if is_gpu[target]():
             _elementwise_impl_gpu[func, simd_width=simd_width](
                 shape, context.get_device_context()
             )
@@ -1418,7 +1418,7 @@ fn _elementwise_impl[
     target: StringLiteral = "cpu",
 ](shape: IndexList[rank, **_], context: DeviceContext):
     @parameter
-    if "cpu" in target:
+    if is_cpu[target]():
         _elementwise_impl_cpu[
             func, simd_width, use_blocking_impl=use_blocking_impl
         ](shape)
