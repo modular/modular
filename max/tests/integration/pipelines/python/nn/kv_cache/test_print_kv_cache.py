@@ -79,7 +79,7 @@ def test_print_kv_cache() -> None:
         "print_kv_cache",
         forward=PrintKVCacheModel(fetch_layer, kv_params, layer_idx=0),
         input_types=[
-            TensorType(dtype=DType.int64, shape=[batch_size]),
+            TensorType(dtype=DType.uint32, shape=[batch_size]),
             *kv_manager.input_symbols()[0],
         ],
     )
