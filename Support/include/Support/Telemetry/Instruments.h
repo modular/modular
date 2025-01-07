@@ -181,6 +181,11 @@ public:
     for (auto &attr : owned_attributes) {
       std::visit([&](auto &v) { attrs[attr.first] = v; }, attr.second);
     }
+
+    for (auto &attr : additionalAttributes) {
+      std::visit([&](auto &v) { attrs[attr.first.str()] = v; }, attr.second);
+    }
+
     histogram->Record(value, attrs, context);
   }
 
