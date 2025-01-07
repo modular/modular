@@ -15,6 +15,8 @@ from layout.int_tuple import product
 from layout.layout import Layout
 from layout.layout_tensor import *
 
+from testing import assert_equal
+
 
 fn print_raw_major_tensor(tensor: LayoutTensor):
     for i in range(tensor.shape[0]()):
@@ -1907,7 +1909,19 @@ fn test_binary_math_ops():
     _ = managed_tensor_b^
 
 
-fn main():
+fn test_vectorized_tile() raises:
+    var managed_tensor_a = ManagedLayoutTensor[
+        DType.float32, Layout(IntTuple(8, 4))
+    ]()
+    var tensor_a = managed_tensor_a.tensor
+    var vt = tensor_a.vectorize[1, 2]().tile[4, 2](0, 0)
+    assert_equal(to_int(vt.layout.shape[0]), 4)
+    assert_equal(to_int(vt.layout.shape[1]), 2)
+    assert_equal(to_int(vt.element_layout.shape[0]), 1)
+    assert_equal(to_int(vt.element_layout.shape[1]), 2)
+
+
+fn main() raises:
     test_basic_tensor_ops()
     test_tesnsor_fragments()
     test_tensor_tile_and_distribute()
@@ -1937,3 +1951,4 @@ fn main():
     # test_copy_from_vectorized_masked_write()
     # test_copy_from_vectorized_masked_read()
     test_binary_math_ops()
+    test_vectorized_tile()

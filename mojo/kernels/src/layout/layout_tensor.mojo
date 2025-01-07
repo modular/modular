@@ -1110,6 +1110,7 @@ struct LayoutTensor[
             dtype,
             Self._compute_tile_layout[*tile_sizes]()[0],
             address_space=address_space,
+            element_layout=element_layout,
             masked = masked or _tile_is_masked[layout, *tile_sizes](),
         ],
     ):
