@@ -71,6 +71,7 @@ class _Metrics:
         self._reqs_running: Any = _NoOpMetric()
         self._model_load_time: Any = _NoOpMetric()
         self._itl: Any = _NoOpMetric()
+        self._configured = False
 
         # by default, configure _Metrics to public sync
         self.call_async = False
@@ -86,45 +87,49 @@ class _Metrics:
             else default_config.async_metrics
         )
 
-        _meter = get_meter_provider().get_meter("modular")
-        self._req_count = _meter.create_counter(
-            "maxserve.request_count", description="Http request count"
-        )
-        self._req_time = _meter.create_histogram(
-            "maxserve.request_time", "ms", "Time spent in requests"
-        )
-        self._input_time = _meter.create_histogram(
-            "maxserve.input_processing_time", "ms", "Input processing time"
-        )
-        self._output_time = _meter.create_histogram(
-            "maxserve.output_processing_time", "ms", "Output processing time"
-        )
-        self._ttft = _meter.create_histogram(
-            "maxserve.time_to_first_token", "ms", "Time to first token"
-        )
-        self._input_tokens = _meter.create_counter(
-            "maxserve.num_input_tokens", description="Count of input tokens"
-        )
-        self._output_tokens = _meter.create_counter(
-            "maxserve.num_output_tokens",
-            description="Count of generated tokens",
-        )
-        self._reqs_queued = _meter.create_up_down_counter(
-            "maxserve.num_requests_queued",
-            description="Count of requests waiting to be processed",
-        )
-        self._reqs_running = _meter.create_up_down_counter(
-            "maxserve.num_requests_running",
-            description="Count of requests currently being processed",
-        )
-        self._model_load_time = _meter.create_histogram(
-            "maxserve.model_load_time",
-            unit="ms",
-            description="Time to load a model",
-        )
-        self._itl = _meter.create_histogram(
-            "maxserve.itl", unit="ms", description="inter token latency"
-        )
+        if not self._configured:
+            self._configured = True
+            _meter = get_meter_provider().get_meter("modular")
+            self._req_count = _meter.create_counter(
+                "maxserve.request_count", description="Http request count"
+            )
+            self._req_time = _meter.create_histogram(
+                "maxserve.request_time", "ms", "Time spent in requests"
+            )
+            self._input_time = _meter.create_histogram(
+                "maxserve.input_processing_time", "ms", "Input processing time"
+            )
+            self._output_time = _meter.create_histogram(
+                "maxserve.output_processing_time",
+                "ms",
+                "Output processing time",
+            )
+            self._ttft = _meter.create_histogram(
+                "maxserve.time_to_first_token", "ms", "Time to first token"
+            )
+            self._input_tokens = _meter.create_counter(
+                "maxserve.num_input_tokens", description="Count of input tokens"
+            )
+            self._output_tokens = _meter.create_counter(
+                "maxserve.num_output_tokens",
+                description="Count of generated tokens",
+            )
+            self._reqs_queued = _meter.create_up_down_counter(
+                "maxserve.num_requests_queued",
+                description="Count of requests waiting to be processed",
+            )
+            self._reqs_running = _meter.create_up_down_counter(
+                "maxserve.num_requests_running",
+                description="Count of requests currently being processed",
+            )
+            self._model_load_time = _meter.create_histogram(
+                "maxserve.model_load_time",
+                unit="ms",
+                description="Time to load a model",
+            )
+            self._itl = _meter.create_histogram(
+                "maxserve.itl", unit="ms", description="inter token latency"
+            )
 
         if self.call_async and not self.started:
             self.aq = AsyncCallConsumer()
