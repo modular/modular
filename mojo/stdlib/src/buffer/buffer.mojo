@@ -560,6 +560,45 @@ struct NDBuffer[
         self.dynamic_stride = _compute_ndbuffer_stride[rank](self.dynamic_shape)
 
     @always_inline
+    @implicit
+    fn __init__(
+        mut self,
+        # For functions
+        other: NDBuffer[type, rank, *_, **_],
+    ):
+        """Converts NDBuffers between different variants which do not effect
+        the underlying memory representation.
+
+        E.g. this allows implicit conversion between
+
+        NDBuffer[type, rank, DimList(1, 2, 3), DimList(6, 6, 1), alignment=16]
+          to
+        NDBuffer[type, rank, DimList(1, 2, 3), DimList.create_unknown[rank](), alignment=4]
+
+        Args:
+            other: The other NDBuffer type.
+        """
+        # It is probably unsafe to convert between address spaces
+        constrained[other.address_space == address_space]()
+
+        # We can only downgrade our alignment
+        constrained[
+            other.alignment >= alignment and other.alignment % alignment == 0
+        ]()
+
+        # Exclusivity can only be lost
+        constrained[other.exclusive == exclusive or not exclusive]()
+
+        # We can lose information about shape/stride, but not gain information
+        alias unknown_dim_list = DimList.create_unknown[rank]()
+        constrained[other.shape == shape or shape == unknown_dim_list]()
+        constrained[other.strides == strides or strides == unknown_dim_list]()
+
+        self.data = rebind[__type_of(self.data)](other.data)
+        self.dynamic_shape = other.dynamic_shape
+        self.dynamic_stride = other.dynamic_stride
+
+    @always_inline
     fn __init__(
         mut self,
         ptr: UnsafePointer[
