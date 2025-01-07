@@ -764,3 +764,39 @@ struct OpThatAlwaysRaises:
     ) raises:
         out_tensor[0] = in_tensor[0]
         raise Error("This is an error")
+
+
+@compiler.register("monnx.abs_v13")
+struct MONNXAbsOverload:
+    @staticmethod
+    fn execute[
+        type: DType, rank: Int
+    ](
+        out_tensor: ManagedTensorSlice[type, rank],
+        in_tensor: ManagedTensorSlice[type, rank],
+    ) raises:
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[rank]) -> SIMD[type, width]:
+            return abs(in_tensor._fused_load[width](idx))
+
+        print("The custom identity op is running!")
+        foreach[func](out_tensor)
+
+
+@compiler.register("torch.aten.abs")
+struct MTorchAbsOverload:
+    @staticmethod
+    fn execute[
+        type: DType, rank: Int
+    ](
+        out_tensor: ManagedTensorSlice[type, rank],
+        in_tensor: ManagedTensorSlice[type, rank],
+    ) raises:
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[rank]) -> SIMD[type, width]:
+            return abs(in_tensor._fused_load[width](idx))
+
+        print("The custom identity op is running!")
+        foreach[func](out_tensor)
