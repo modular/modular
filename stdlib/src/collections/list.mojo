@@ -176,7 +176,9 @@ struct List[T: CollectionElement, hint_trivial_type: Bool = False](
         for value in span:
             self.append(value[])
 
-    fn __init__(mut self, *, ptr: UnsafePointer[T], length: Int, capacity: Int):
+    fn __init__(
+        out self, *, ptr: UnsafePointer[T], length: UInt, capacity: UInt
+    ):
         """Constructs a list from a pointer, its length, and its capacity.
 
         Args:

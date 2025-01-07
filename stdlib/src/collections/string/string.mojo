@@ -893,7 +893,7 @@ struct String(
         self = literal.__str__()
 
     @always_inline
-    fn __init__(out self, *, ptr: UnsafePointer[Byte], length: Int):
+    fn __init__(out self, *, ptr: UnsafePointer[Byte], length: UInt):
         """Creates a string from the buffer. Note that the string now owns
         the buffer.
 
@@ -1328,7 +1328,7 @@ struct String(
             An iterator of references to the string elements.
         """
         return _StringSliceIter[__origin_of(self)](
-            unsafe_pointer=self.unsafe_ptr(), length=self.byte_length()
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     fn __reversed__(self) -> _StringSliceIter[__origin_of(self), False]:
@@ -1338,7 +1338,7 @@ struct String(
             A reversed iterator of references to the string elements.
         """
         return _StringSliceIter[__origin_of(self), forward=False](
-            unsafe_pointer=self.unsafe_ptr(), length=self.byte_length()
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     # ===------------------------------------------------------------------=== #

@@ -116,7 +116,7 @@ struct Span[
     # ===------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(out self, *, ptr: UnsafePointer[T], length: Int):
+    fn __init__(out self, *, ptr: UnsafePointer[T], length: UInt):
         """Unsafe construction from a pointer and length.
 
         Args:

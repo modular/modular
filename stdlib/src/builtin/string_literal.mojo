@@ -440,7 +440,7 @@ struct StringLiteral(
             An iterator over the string.
         """
         return _StringSliceIter[StaticConstantOrigin](
-            unsafe_pointer=self.unsafe_ptr(), length=self.byte_length()
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     fn __reversed__(self) -> _StringSliceIter[StaticConstantOrigin, False]:
@@ -450,7 +450,7 @@ struct StringLiteral(
             A reversed iterator over the string.
         """
         return _StringSliceIter[StaticConstantOrigin, False](
-            unsafe_pointer=self.unsafe_ptr(), length=self.byte_length()
+            ptr=self.unsafe_ptr(), length=self.byte_length()
         )
 
     fn __getitem__[IndexerType: Indexer](self, idx: IndexerType) -> String:
