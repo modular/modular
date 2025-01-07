@@ -49,8 +49,6 @@ BB="$MODULAR_PATH/bazelw build"
 get_build_alias() {
     if [ "$1" = "kgen" ]; then
         echo "kgen-tool"
-    elif [ "$1" = "kernels-benchmark" ]; then
-        echo "Faux/tools/kernels-benchmark"
     elif [ "$1" = "check-kgen" ]; then
         echo "KGEN/test/kgen/..."
     elif [ "$1" = "check-mojo-integration" ]; then
