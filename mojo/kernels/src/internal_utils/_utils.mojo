@@ -186,6 +186,13 @@ struct DeviceNDBuffer[
     ) raises:
         self = Self(_make_tuple[rank](dynamic_shape), stride=stride, ctx=ctx)
 
+    def copy_from_device(
+        self, ctx: DeviceContext
+    ) -> HostNDBuffer[type, rank, shape]:
+        var retval = HostNDBuffer[type, rank, shape](self.tensor.dynamic_shape)
+        ctx.enqueue_copy_from_device(retval.tensor.data, self.buffer)
+        return retval^
+
 
 # TODO: add address_space: AddressSpace = AddressSpace.GENERIC
 @value
