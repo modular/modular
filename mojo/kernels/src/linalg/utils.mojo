@@ -21,7 +21,6 @@ from sys.info import (
 
 from algorithm import vectorize
 from buffer.buffer import (
-    DynamicRankBuffer,
     NDBuffer,
     partial_simd_load,
     partial_simd_store,
@@ -111,19 +110,6 @@ struct GemmShape:
             b: Buffer containing matrix operand B.
         """
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
-
-    @staticmethod
-    fn get(
-        c: DynamicRankBuffer,
-        a: DynamicRankBuffer,
-        b: DynamicRankBuffer,
-        transpose_b: Bool,
-    ) -> GemmShape:
-        return GemmShape(
-            c.dim(0),
-            c.dim(1),
-            a.dim(1),
-        )
 
     # TODO: re-enable using IndexList.
     @always_inline
