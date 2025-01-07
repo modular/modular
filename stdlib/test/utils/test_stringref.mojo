@@ -12,9 +12,44 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from testing import assert_equal, assert_false, assert_raises, assert_true
+from testing import (
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+    assert_not_equal,
+)
 
 from utils import StringRef
+
+
+def test_stringref():
+    var a = StringRef("AAA")
+    var b = StringRef("BBB")
+    var c = StringRef("AAA")
+
+    assert_equal(3, len(a))
+    assert_equal(3, len(b))
+    assert_equal(3, len(c))
+    assert_equal(4, len("ABBA"))
+
+    # Equality operators
+    assert_not_equal(a, b)
+    assert_not_equal(b, a)
+
+    # Self equality
+    assert_equal(a, a)
+
+    # Value equality
+    assert_equal(a, c)
+
+
+def test_stringref_from_pointer():
+    var a = StringRef("AAA")
+    var b = StringRef(ptr=a.data)
+    assert_equal(3, len(a))
+    assert_equal(3, len(b))
+    assert_equal(a, b)
 
 
 def test_strref_from_start():
@@ -169,6 +204,8 @@ def test_str_and_ref():
 
 
 def main():
+    test_stringref()
+    test_stringref_from_pointer()
     test_strref_from_start()
     test_stringref_split()
     test_comparison_operators()

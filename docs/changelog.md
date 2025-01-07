@@ -143,6 +143,7 @@ what we publish.
   - Changed `sys.argv()` to return list of `StringSlice`.
   - Added `Path` explicit constructor from `StringSlice`.
   - removed `StringRef.startswith()` and `StringRef.endswith()`
+  - removed `StringRef.strip()`
 
 ### 🛠️ Fixed
 
