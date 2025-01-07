@@ -7,7 +7,6 @@
 
 from .buffer import (  # Explicitly don't import these; partial_simd_store,; prod_dims,
     Buffer,
-    DynamicRankBuffer,
     NDBuffer,
 )
 from .dimlist import Dim, DimList
