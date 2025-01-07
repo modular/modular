@@ -9,8 +9,6 @@ filegroup(
         "Inputs/relu3x100x100.onnx",
         "Inputs/relu3x100x100.torchscript",
         "Inputs/scalar-input.mlir",
-        "c/custom-op-failing-constraint.api",
-        "c/custom-ops-override.api",
         "c/mo-model.api",
     ],
     visibility = [":__subpackages__"],

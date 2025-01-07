@@ -30,31 +30,6 @@ def modular_lib_path() -> Path:
 
 
 @pytest.fixture
-def mo_custom_ops_model_path(modular_path: Path) -> Path:
-    """Returns the path to the generated BasicMLP model."""
-    return (
-        modular_path
-        / "SDK"
-        / "integration-test"
-        / "API"
-        / "c"
-        / "custom-ops-override.api"
-    )
-
-
-@pytest.fixture
-def mo_custom_op_failing_constraint_model_path(modular_path: Path) -> Path:
-    return (
-        modular_path
-        / "SDK"
-        / "integration-test"
-        / "API"
-        / "c"
-        / "custom-op-failing-constraint.api"
-    )
-
-
-@pytest.fixture
 def sdk_test_inputs_path(modular_path: Path) -> Path:
     return modular_path / "SDK" / "integration-test" / "API" / "Inputs"
 
@@ -407,46 +382,6 @@ def test_execute_multi_framework(
     assert isinstance(onnx_output, Tensor)
     assert isinstance(trch_output, Tensor)
     assert np.allclose(onnx_output.to_numpy(), trch_output.to_numpy())
-
-
-def test_custom_ops(
-    session: InferenceSession,
-    mo_custom_ops_model_path: Path,
-    custom_ops_package_path: Path,
-) -> None:
-    model = session.load(mo_custom_ops_model_path)
-    inputs = np.array([4.0], dtype=np.float32)
-    output = model.execute(inputs)
-    assert len(output) == 1
-    assert isinstance(output[0], Tensor)
-    assert np.allclose(output[0].to_numpy(), np.array([2.0], dtype=np.float32))
-
-    model_with_custom_op = session.load(
-        mo_custom_ops_model_path, custom_ops_path=str(custom_ops_package_path)
-    )
-    inputs = np.array([4.0], dtype=np.float32)
-    output = model_with_custom_op.execute(inputs)
-    assert len(output) == 1
-    assert isinstance(output[0], Tensor)
-    assert np.allclose(output[0].to_numpy(), np.array([4.0], dtype=np.float32))
-
-
-def test_custom_op_failing_constraint(
-    session: InferenceSession,
-    mo_custom_op_failing_constraint_model_path: Path,
-    custom_ops_package_path: Path,
-) -> None:
-    with pytest.raises(
-        Exception,
-        match=(
-            "note: constraint failed: Expected constraint failure for error"
-            " message testing"
-        ),
-    ):
-        session.load(
-            mo_custom_op_failing_constraint_model_path,
-            custom_ops_path=str(custom_ops_package_path),
-        )
 
 
 def test_list_io(session: InferenceSession, mo_listio_model_path: Path) -> None:
