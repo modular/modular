@@ -264,3 +264,34 @@ modular_py_binary(
         requirement("requests"),
     ],
 )
+
+modular_py_test(
+    name = "test_pipelines_lm_eval",
+    size = "medium",
+    srcs = ["test_pipelines_lm_eval.py"],
+    data = [
+        "//GenericML:MGPRT",
+        "//KGEN:CompilerRT",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "BAZEL": "true",
+        "HF_ESCAPES_SANDBOX": "1",
+    },
+    requires_gpu = False,
+    tags = [
+        "huggingface",
+        "no-remote-exec",
+        "no-sandbox",
+        "requires-network",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:tsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":pipelines-lm-eval",
+        requirement("click"),
+    ],
+)

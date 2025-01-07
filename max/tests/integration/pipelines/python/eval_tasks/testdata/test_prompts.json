@@ -1,0 +1,18 @@
+[
+    {
+        "prompt": "One of the most important aspects of performance benchmarking when it pertains to comparison of different implementations is making sure comparisons are fair. This is a place where most discussions occur, as deviation from best practices can make one’s performance claims easy to dismiss. For faster results of a given implementation (the Mojo implementation in our case) to be meaningful, the comparison needs to be apples-to-apples.\n    * Make sure you use equivalent optimization flags across implem",
+        "target": "* Make sure you use"
+    },
+    {
+        "prompt": "def is_prime(x):\n",
+        "target": "if x < 2"
+    },
+    {
+        "prompt": "The meaning of life is ",
+        "target": "100% a matter of perspective"
+    },
+    {
+        "prompt": "Translate the English text to Italian.\n    Text: Sometimes, I've believed as many as six impossible things before breakfast.\n    Translation:",
+        "target": "Incorrect prediction for testing."
+    }
+]

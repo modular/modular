@@ -1,5 +1,5 @@
 filegroup(
     name = "eval_tasks",
-    srcs = glob(["**"]),
+    srcs = glob(["**/**"]),
     visibility = ["//visibility:public"],
 )

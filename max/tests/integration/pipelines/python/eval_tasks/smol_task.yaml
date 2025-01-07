@@ -1,0 +1,25 @@
+##===----------------------------------------------------------------------===##
+#
+# This file is Modular Inc proprietary.
+#
+##===----------------------------------------------------------------------===##
+
+task: smol_task
+dataset_path: json
+dataset_name: null
+dataset_kwargs:
+  data_files:
+    test: SDK/integration-test/pipelines/python/eval_tasks/testdata/test_prompts.json
+test_split: test
+output_type: generate_until
+generation_kwargs:
+  max_gen_toks: 10
+  temperature: 0
+doc_to_text: prompt
+doc_to_target: target
+metric_list:
+  - metric: !function smol_task_utils.results_match
+    aggregation: mean
+    higher_is_better: True
+metadata:
+  version: 1.0

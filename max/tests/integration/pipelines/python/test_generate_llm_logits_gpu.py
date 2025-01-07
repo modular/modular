@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"Unit test to test generate_llm_logits functionality"
+"""Unit test to test generate_llm_logits functionality"""
 
 import generate_llm_logits
 from click.testing import CliRunner
