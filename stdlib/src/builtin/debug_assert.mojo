@@ -17,7 +17,7 @@ These are Mojo built-ins, so you don't need to import them.
 
 
 from os import abort
-from sys import is_gpu, is_nvidia_gpu, llvm_intrinsic
+from sys import is_gpu, is_nvidia_gpu, is_amd_gpu, llvm_intrinsic
 from sys._build import is_debug_build
 from sys.ffi import c_char, c_size_t, c_uint, external_call
 from sys.param_env import env_get_string
@@ -241,7 +241,10 @@ fn _debug_assert_msg(
     var stdout = sys.stdout
 
     @parameter
-    if is_gpu():
+    if is_amd_gpu():
+        # FIXME: debug_assert printing is disabled on AMD GPU, see KERN-1448
+        pass
+    elif is_nvidia_gpu():
         # Count the total length of bytes to allocate only once
         var arg_bytes = _ArgBytes()
         arg_bytes.write(
@@ -269,10 +272,6 @@ fn _debug_assert_msg(
             Span[Byte, ImmutableAnyOrigin](ptr=buffer.data, length=buffer.pos)
         )
 
-        @parameter
-        if defined_mode != "warn":
-            abort()
-
     else:
         var buffer = _WriteBufferStack[4096](stdout)
         buffer.write("At ", loc, ": ")
@@ -286,9 +285,9 @@ fn _debug_assert_msg(
         write_args(buffer, messages, end="\n")
         buffer.flush()
 
-        @parameter
-        if defined_mode != "warn":
-            abort()
+    @parameter
+    if defined_mode != "warn":
+        abort()
 
 
 struct _ThreadContext(Writable):
