@@ -162,14 +162,34 @@ class Tensor(DLPackArray):
 
     @property
     def is_host(self) -> bool:
-        """Whether or not tensor is host-resident. Returns false for GPU tensors,
-        true for CPU tensors."""
+        """
+        Whether or not tensor is host-resident. Returns false for GPU tensors,
+        true for CPU tensors.
+
+        .. code-block:: python
+
+            from max import driver
+            from max.dtype import DType
+
+            cpu_tensor = driver.Tensor([2, 3], dtype=DType.bfloat16, device=driver.CPU())
+
+            print(cpu_tensor.is_host)
+        """
         return self._impl.is_host
 
     def copy(self, device: Optional[Device] = None) -> Tensor:
         """Create a deep copy on an optionally given device.
 
-        If a device is None (default), a copy is created on the same device."""
+        If a device is None (default), a copy is created on the same device.
+        .. code-block:: python
+
+            from max import driver
+            from max.dtype import DType
+
+            cpu_tensor = driver.Tensor([2, 3], dtype=DType.bfloat16, device=driver.CPU())
+
+            cpu_copy = cpu_tensor.copy()
+        """
         if device is None:
             device = self.device
         return self._from_impl(self._impl.copy_to(device._device))

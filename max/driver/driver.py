@@ -34,24 +34,60 @@ class Device:
 
     @property
     def is_host(self):
-        """Returns whether the device is the CPU."""
+        """
+        Whether this device is the CPU (host) device.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.is_host
+        """
         return self._device.is_host
 
     @property
     def stats(self) -> Mapping[str, Any]:
-        """Returns utilization data for the device."""
+        """
+        Returns utilization data for the device.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.stats
+        """
         stat = loads(self._device.stats)
         stat["timestamp"] = datetime.now().isoformat()
         return stat
 
     @property
     def label(self) -> str:
-        """Returns device label."""
+        """
+        Returns device label.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.label
+        """
         return self._device.label
 
     @property
     def id(self) -> int:
-        """Returns device id."""
+        """
+        Returns device id.
+
+        .. code-block:: python
+
+            from max import driver
+
+            device = driver.CPU()
+            device.id
+        """
         return self._device.id
 
     @classmethod
@@ -66,12 +102,43 @@ class Device:
 
 
 def CPU(id: int = -1) -> Device:
-    """Creates a CPU device with the provided numa id."""
+    """Creates a CPU device with the provided numa id.
+
+    .. code-block:: python
+
+        from max import driver
+
+        # Create default CPU device
+        device = driver.CPU()
+
+        # Or specify NUMA node id if using NUMA architecture
+        device = driver.CPU(id=0)  # First NUMA node
+        device = driver.CPU(id=1)  # Second NUMA node
+
+        # Get device id
+        device_id = device.id
+    """
     return Device.cpu(id)
 
 
 def Accelerator(id: int = -1) -> Device:
-    """Creates an accelerator (e.g. GPU) device with the provided id."""
+    """
+    Creates an accelerator (e.g. GPU) device with the provided id.
+
+    .. code-block:: python
+
+        from max import driver
+
+        # Create default accelerator (usually first available GPU)
+        device = driver.Accelerator()
+
+        # Or specify GPU id
+        device = driver.Accelerator(id=0)  # First GPU
+        device = driver.Accelerator(id=1)  # Second GPU
+
+        # Get device id
+        device_id = device.id
+    """
     return Device.accelerator(id)
 
 
