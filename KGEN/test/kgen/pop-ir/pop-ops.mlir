@@ -435,11 +435,11 @@ kgen.generator @pointer_bitcast(%arg0: !kgen.pointer<scalar<f32>>, %arg1: !kgen.
 }
 
 // CHECK-LABEL: @pointer_bitcast_funcptr
-kgen.generator @pointer_bitcast_funcptr<T:type>(%arg0: !kgen.signature<() -> ()>) {
-  // CHECK: pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.signature<(i32) -> i32>
-  %0 = pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.signature<(i32) -> i32>
-  // CHECK: pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.paramref<T>
-  %1 = pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.paramref<T>
+kgen.generator @pointer_bitcast_funcptr<T:type>(%arg0: !kgen.generator<() -> ()>) {
+  // CHECK: pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.generator<(i32) -> i32>
+  %0 = pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.generator<(i32) -> i32>
+  // CHECK: pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.paramref<T>
+  %1 = pop.pointer.bitcast %arg0 : !kgen.generator<() -> ()> to !kgen.paramref<T>
   kgen.return
 }
 

@@ -184,6 +184,9 @@ def KGEN_FloatLiteralType : KGENType<"FloatLiteral", "float_literal", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_GeneratorType : KGENType<"Generator", "generator", [
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     ParameterScopeTypeInterface]> {
   let summary = "The type of a generator (i.e. a parameterized value)";
   let description = [{
@@ -209,6 +212,9 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
   ];
 
   let extraClassDeclaration = [{
+    /// Get this GeneratorType with a new body.
+    GeneratorType getWithBody(Type newBody);
+
     /// Returns true if the signature has no input params.
     bool isFullyBound() { return getInputParamTypes().empty(); };
 
@@ -235,7 +241,7 @@ def KGEN_SignatureGeneratorType : DialectType<KGENDialect,
 // NewSignatureType
 //===----------------------------------------------------------------------===//
 
-def KGEN_NewSignatureType : KGENType<"NewSignature", "new_signature", [
+def KGEN_NewSignatureType : KGENType<"NewSignature", "signature", [
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
   let summary = "The type of a KGEN function";
@@ -321,7 +327,7 @@ def KGEN_NewSignatureType : KGENType<"NewSignature", "new_signature", [
 // SignatureType
 //===----------------------------------------------------------------------===//
 
-def KGEN_SignatureType : KGENType<"Signature", "signature", [
+def KGEN_SignatureType : KGENType<"Signature", "old_signature", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
@@ -475,9 +481,11 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
 }
 
 def CalleeArgumentTypes : TypesMatchWith<"operands match callee argument types",
-    "callee", "operands", "cast<SignatureType>($_self).getArguments()">;
+    "callee", "operands",
+    "cast<SignatureGeneratorType>($_self).getBody().getArguments()">;
 def CalleeResultTypes : TypesMatchWith<"results match callee result types",
-    "callee", "results", "cast<SignatureType>($_self).getResults()">;
+    "callee", "results",
+    "cast<SignatureGeneratorType>($_self).getBody().getResults()">;
 
 //===----------------------------------------------------------------------===//
 // PointerType

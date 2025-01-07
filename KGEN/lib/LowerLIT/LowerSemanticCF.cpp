@@ -365,7 +365,7 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
 /// This function adds the error branch regions to a call operation to a
 /// throwing function. These are required by CheckLifetimes to understand
 /// conditional initialization of the 'mut' results.
-static void addErrorRegions(Operation &op, LIT::LITSignatureType sig,
+static void addErrorRegions(Operation &op, LIT::LITNewSignatureType sig,
                             ValueRange operands) {
   // Clone the op and add the error regions.
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(&op));
@@ -460,7 +460,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Add error branches to calls to throwing functions.
     if (isa<LIT::CallOp, LIT::CallIndirectOp>(op)) {
-      if (auto sig = LIT::getCalleeType(&op); sig.isThrows()) {
+      if (auto sig = LIT::getCalleeType(&op).getBody(); sig.isThrows()) {
         doesRaise = doesFallThrough = true;
         addErrorRegions(op, sig, LIT::getCalleeArguments(&op));
       }

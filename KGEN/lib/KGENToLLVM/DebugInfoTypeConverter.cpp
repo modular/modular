@@ -227,7 +227,12 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(StringType type) {
        DIMemberType::get("size", convertDebugType(IndexType::get(ctx)))});
 }
 
-DIType KGEN::DebugInfoTypeConverter::buildDebugType(SignatureType type) {
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(GeneratorType type) {
+  // TODO(MOCO-1513): Remove generator type case from type lowerer.
+  return convertDebugType(type.getBody());
+}
+
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(NewSignatureType type) {
   return buildPointerType(buildDebugSubroutineType(type.getValues()));
 }
 
@@ -341,10 +346,11 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc,
   });
 
   // Add direct debug info conversions.
+  addConversion([&](GeneratorType type) { return buildDebugType(type); });
   addConversion([&](IndexType type) { return buildDebugType(type); });
   addConversion([&](ParamRefType type) { return buildDebugType(type); });
   addConversion([&](StringType type) { return buildDebugType(type); });
-  addConversion([&](SignatureType type) { return buildDebugType(type); });
+  addConversion([&](NewSignatureType type) { return buildDebugType(type); });
   addConversion([&](POP::UnionType type) { return buildDebugType(type); });
   addConversion([&](KGEN::NoneType type) { return buildDebugType(type); });
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });

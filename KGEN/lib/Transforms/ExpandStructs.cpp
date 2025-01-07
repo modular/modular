@@ -92,8 +92,7 @@ void ExpandStructsPass::rewriteFn(Operation *op,
   return recursiveRewrite(op, replacer);
 }
 
-template <typename SigT>
-SigT replaceSignature(SigT sig) {
+NewSignatureType replaceSignature(NewSignatureType sig) {
   SmallVector<Type> newArgTypes, newResTypes;
   SmallVector<ArgConvention> newConvs;
 
@@ -107,13 +106,12 @@ SigT replaceSignature(SigT sig) {
   }
 
   auto func = FunctionType::get(sig.getContext(), newArgTypes, newResTypes);
-  return SigT::get(func, newConvs, sig.getFnEffects());
+  return NewSignatureType::get(func, newConvs, sig.getFnEffects());
 }
 
 void ExpandStructsPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(replaceSignature<SignatureType>);
-  replacer.addReplacement(replaceSignature<NewSignatureType>);
+  replacer.addReplacement(replaceSignature);
 
   rewriteFn(getOperation(), replacer);
 }

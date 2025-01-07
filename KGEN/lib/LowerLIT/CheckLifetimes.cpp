@@ -258,7 +258,7 @@ static SymbolConstantAttr getSpecialMemberForType(
     return attr;
 
   ArrayRef<TypedAttr> paramValues = valueType.getParamValues();
-  auto newSig = attr.getType().getSpecializedSignature(paramValues);
+  auto newSig = attr.getType().getSpecializedGenerator(paramValues);
   return SymbolConstantAttr::get(attr.getSymbol(), newSig, paramValues);
 }
 
@@ -267,13 +267,14 @@ static SymbolConstantAttr getSpecialMemberForType(
 TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
   if (auto generic = dyn_cast<ParamRefType>(type)) {
     if (auto trait = dyn_cast<TraitType>(generic.getParam().getType())) {
-      SignatureType dtorSig = TraitDeclOp(traitMap.at(trait.getSymbol()))
-                                  .getDtorSig()
-                                  .value_or(SignatureType());
+      SignatureGeneratorType dtorSig =
+          TraitDeclOp(traitMap.at(trait.getSymbol()))
+              .getDtorSig()
+              .value_or(SignatureGeneratorType());
       if (dtorSig) {
         // Bind the *(0,0) parameter to a concrete type we're using in this
         // context.
-        auto specSig = dtorSig.getSpecializedSignature({generic.getParam()});
+        auto specSig = dtorSig.getSpecializedGenerator({generic.getParam()});
         auto delStr =
             StringAttr::get("__del__", StringType::get(type.getContext()));
         return ParamOperatorAttr::get(POC::GetVTableEntry,
@@ -2030,7 +2031,8 @@ void DestructorInserter::emitDestructorCall(Value value, ValueRef valueRef,
     return emitLifetimeEnd(value, builder);
   }
 
-  auto signature = cast<SignatureType>(dtor.getType());
+  NewSignatureType signature =
+      cast<SignatureGeneratorType>(dtor.getType()).getBody();
   assert(signature.getNumResults() == 1 &&
          "dtor should have one result (none type)");
   assert(signature.getNumArguments() == 1 && "dtor should have one operand");
@@ -2329,8 +2331,8 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
       //    use(%tmp)       <= use the temp
       //    consume(%tmp)   <= eventually consume it.
-      auto convention =
-          callUser.getCalleeType().getArgConvention(operand.getOperandNumber());
+      auto convention = callUser.getCalleeType().getBody().getArgConvention(
+          operand.getOperandNumber());
       if (convention != ArgConvention::OwnedMem &&
           convention != ArgConvention::ReadMem)
         return false;
@@ -2475,7 +2477,8 @@ DestructorInserter::elideCopyInitMem(LIT::CallOp copyInitCall,
 
     // moveCtor must have __moveinit__(out self, owned: Self) type.
 #ifndef NDEBUG
-  auto moveSig = cast<SignatureType>(moveCtor.getType());
+  NewSignatureType moveSig =
+      cast<SignatureGeneratorType>(moveCtor.getType()).getBody();
   assert(moveSig.getNumArguments() == 2);
   assert(moveSig.getArgConvention(0) == ArgConvention::OwnedMem);
   assert(moveSig.getArgConvention(1) == ArgConvention::ByRefResult);

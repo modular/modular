@@ -47,7 +47,7 @@ class SpecialFunctionInfo;
 Operation *findOpProcessingRaise(Block *currentBlock);
 
 /// Given a call or indirect call, return the callee signature type.
-LITSignatureType getCalleeType(Operation *op);
+LITSignatureGeneratorType getCalleeType(Operation *op);
 /// Given a call or indirect call, return the callee argument values.
 ValueRange getCalleeArguments(Operation *op);
 
@@ -57,8 +57,8 @@ ValueRange getCalleeArguments(Operation *op);
 SymbolRefAttr getFullyResolvedSymbolRef(mlir::SymbolOpInterface op);
 
 /// Get the full signature of a declaration in the given context.
-LITSignatureType getFullSignature(Operation *container,
-                                  LITSignatureType signature);
+LITSignatureGeneratorType getFullSignature(Operation *container,
+                                           LITSignatureGeneratorType signature);
 
 } // namespace LIT
 } // namespace M::KGEN

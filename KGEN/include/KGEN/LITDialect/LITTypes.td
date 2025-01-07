@@ -46,6 +46,14 @@ def LIT_NewSignatureType : DialectType<LITDialect,
     "LITNewSignatureType">;
 
 //===----------------------------------------------------------------------===//
+// SignatureGeneratorType
+//===----------------------------------------------------------------------===//
+
+def LIT_SignatureGeneratorType : DialectType<LITDialect,
+    CPred<"llvm::isa<LITSignatureGeneratorType>($_self)">,
+    "LIT signature generator type", "LITSignatureGeneratorType">;
+
+//===----------------------------------------------------------------------===//
 // TypeCheckErrorType
 //===----------------------------------------------------------------------===//
 

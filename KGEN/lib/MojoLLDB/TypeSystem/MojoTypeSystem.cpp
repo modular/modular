@@ -1125,7 +1125,8 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
   // We might need to fill in the full signature when expression evaluation is
   // needed. We don't need it for now.
   auto metadata = LIT::FnMetadataAttr::get(getMLIRContext());
-  auto signature = LIT::LITSignatureType::get(fnType, {}, {}, {}, metadata);
+  auto signature = LIT::LITSignatureGeneratorType::get(
+      {}, fnType, {}, {}, metadata, metadata.getParamListAttrs());
 
   // FIXME(23810): We need to support nested functions.
 
@@ -1133,7 +1134,7 @@ MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
       LIT::DeclResolver::getMangledName(name, *parentDecl, signature);
   auto newFunction = builder.create<LIT::FuncOp>(
       sharedState.translateLocation(parentDecl->getLoc()), nameAttr, name,
-      signature);
+      signature.asOldSignature());
   return MojoASTDeclRef(&sharedState.declResolver->addDecl(
       newFunction, parentDecl->getLoc(), name, &*parentDecl, {}, {}, -1));
 }

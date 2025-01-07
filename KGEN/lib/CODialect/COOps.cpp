@@ -94,7 +94,8 @@ static ParseResult parseAsyncParametricCallee(
     return failure();
   // Operands match signature arguments with the exception that byref error and
   // byref result are omitted.
-  SignatureType signature = cast<SignatureType>(callee.getType());
+  NewSignatureType signature =
+      cast<SignatureGeneratorType>(callee.getType()).getBody();
   ArrayRef<Type> argumentTypes =
       signature.getArguments().drop_back(signature.getNumAsyncReturnSlots());
   llvm::append_range(operandTypes, argumentTypes);
@@ -118,7 +119,8 @@ static void printAsyncParametricCallee(OpAsmPrinter &p, Operation *op,
 }
 
 LogicalResult InvokeOp::verify() {
-  auto signature = cast<SignatureType>(getCallee().getType());
+  NewSignatureType signature =
+      cast<SignatureGeneratorType>(getCallee().getType()).getBody();
   if (!signature.isAsync())
     return emitOpError("callable must be 'async'");
   return verifyCallOperands(*this, getOperands(), signature,
@@ -126,7 +128,8 @@ LogicalResult InvokeOp::verify() {
 }
 
 FailureOr<InlineResult> InvokeOp::prepInline(mlir::RewriterBase &b) {
-  auto op = b.create<ExecuteOp>(getLoc(), getCalleeType().getResults());
+  auto op =
+      b.create<ExecuteOp>(getLoc(), getCalleeType().getBody().getResults());
   return {{op, [](Operation *) {}}};
 }
 
@@ -142,7 +145,8 @@ static ParseResult parseHotAsyncParametricCallee(
     return failure();
 
   // Parse async function operands.
-  SignatureType signature = cast<SignatureType>(callee.getType());
+  NewSignatureType signature =
+      cast<SignatureGeneratorType>(callee.getType()).getBody();
   llvm::append_range(operandTypes, signature.getArguments());
   if (failed(p.parseCommaSeparatedList(
           mlir::AsmParser::Delimiter::Paren, [&]() -> ParseResult {
@@ -164,7 +168,8 @@ static void printHotAsyncParametricCallee(OpAsmPrinter &p, Operation *op,
 }
 
 LogicalResult HotInvokeOp::verify() {
-  auto signature = cast<SignatureType>(getCallee().getType());
+  NewSignatureType signature =
+      cast<SignatureGeneratorType>(getCallee().getType()).getBody();
   if (!signature.isAsync())
     return emitOpError("callable must be 'async'");
   return verifyCallOperands(*this, getOperands(), signature);

@@ -366,9 +366,9 @@ ASTType ASTType::getKwargsDictRefValueType() const {
 /// Returns the user-defined result type, looking through implicit memory
 /// results and stripping off the variant from error throwing results if needed.
 ASTType ASTType::getSignatureUserResultType() const {
-  auto sigType = cast<SignatureType>(mlirType);
-  return LIT::getSignatureUserResultType(sigType, sigType.getArguments(),
-                                         sigType.getResults().front());
+  auto sigGenType = cast<LITSignatureGeneratorType>(mlirType);
+  return LIT::getSignatureUserResultType(sigGenType, sigGenType.getArguments(),
+                                         sigGenType.getResults().front());
 }
 
 /// Given a SymbolRefAttr, return the underlying symbol name.
@@ -845,16 +845,16 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
     printConvention(variadic.getConvention());
     ASTType(variadic.getElementType()).print(os, diagShared, demangleParams);
     os << "]";
-  } else if (auto sig = dyn_cast<LITSignatureType>(type)) {
+  } else if (auto sig = dyn_cast<LITSignatureGeneratorType>(type)) {
     if (sig.isAsync())
       os << "async ";
     os << "fn";
-    if (!sig.getParamTypes().empty() || !sig.getResultParamTypes().empty()) {
+    if (!sig.getInputParamTypes().empty()) {
       os << '[';
-      if (!sig.getParamTypes().empty()) {
+      if (!sig.getInputParamTypes().empty()) {
         auto printFn = [&](auto p) {
           auto [i, type] = p;
-          if (sig.isParamVarArg(i)) {
+          if (sig.getParamListAttrs().isVariadic(i)) {
             os << '*';
             ASTType(cast<VariadicType>(type).getElementType())
                 .print(os, diagShared, demangleParams);
@@ -862,13 +862,11 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
             ASTType(type).print(os, diagShared, demangleParams);
           }
         };
-        llvm::interleaveComma(llvm::enumerate(sig.getParamTypes()), os,
+        llvm::interleaveComma(llvm::enumerate(sig.getInputParamTypes()), os,
                               printFn);
       } else {
         os << "()";
       }
-      assert(sig.getResultParamTypes().empty() &&
-             "Mojo doesn't support result parameters");
       os << ']';
     }
     os << '(';
@@ -944,7 +942,7 @@ void ASTType::print(raw_ostream &os, SharedState *diagShared,
       if (enabled)
         os << ' ' << effect;
     os << " -> ";
-    Type resultType = ASTType(sig).getSignatureUserResultType();
+    Type resultType = sig.getUserResultType();
 
     if (sig.isRefResult()) {
       auto refType = cast<RefType>(resultType);

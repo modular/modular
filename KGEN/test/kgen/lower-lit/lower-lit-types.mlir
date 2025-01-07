@@ -257,7 +257,7 @@ lit.func @pass_pack<life: !lit.origin<1>>
   // CHECK-NEXT: kgen.pack.create(%arg0, %arg1) : !kgen.pack<[pointer<index, 42>, pointer<f32, 42>]>
   %pack = lit.ref.pack.create(%index, %float) :
     !lit.ref.pack<:variadic<!kgen.type> [index, f32], mut life, 42>
-  // CHECK-NEXT: kgen.call @takes_pack<:variadic<type> [index, f32]>(%0) 
+  // CHECK-NEXT: kgen.call @takes_pack<:variadic<type> [index, f32]>(%0)
   kgen.call @takes_pack<:origin<1> life, :variadic<!kgen.type> [index, f32]>(%pack)
      : (!lit.ref.pack<:variadic<!kgen.type> [index, f32], mut life, 42>) -> ()
 
@@ -296,7 +296,7 @@ lit.struct.decl @StaticTuple<size, ty: type> register_passable {
 // -----
 
 // CHECK-LABEL: kgen.generator @nested_declref_type
-// CHECK-SAME: !kgen.signature<(!pop.simd<apply(:(index) -> index @pass, 1), si32>
+// CHECK-SAME: !kgen.generator<(!pop.simd<apply(:(index) -> index @pass, 1), si32>
 lit.func @nested_declref_type(
     %arg1: !lit.struct<@UnaryClosure<:type !lit.struct<@SIMD<1>>>>) {
   kgen.return
@@ -311,7 +311,7 @@ lit.struct.decl @SIMD<size> register_passable {
 }
 
 lit.struct.decl @UnaryClosure<input_type: type> register_passable {
-  lit.struct.field value : !kgen.signature<(!kgen.paramref<input_type>) -> ()>
+  lit.struct.field value : !kgen.generator<(!kgen.paramref<input_type>) -> ()>
 }
 
 //===----------------------------------------------------------------------===//
@@ -520,4 +520,3 @@ lit.func @x() {
 lit.func @example<T: trait<@Bar>>() -> !lit.struct<@Thing<:trait<@Foo> [!kgen.paramref<:trait<@Bar> T>, {"f": !lit.signature<() -> ()> = @x}]>> {
   kgen.unreachable
 }
-

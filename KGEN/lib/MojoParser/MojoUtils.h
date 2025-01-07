@@ -21,7 +21,7 @@ class InflightDiag;
 namespace M::KGEN {
 enum class ArgConvention : uint32_t;
 class ParamDeclAttr;
-class SignatureType;
+class SignatureGeneratorType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {

@@ -403,8 +403,8 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
   let builders = [
     OpBuilder<(ins "SymbolConstantAttr":$callee, "ValueRange":$operands), [{
-      return build($_builder, $_state, callee.getType().getResults(), callee,
-                   operands);
+      return build($_builder, $_state,
+        callee.getType().getBody().getValues().getResults(), callee, operands);
     }]>
   ];
 
@@ -414,6 +414,10 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
     /// Return the symbol reference to the callee.
     FlatSymbolRefAttr getCalleeSymbol() {
       return cast<FlatSymbolRefAttr>(getCallee().getSymbol());
+    }
+
+    SignatureGeneratorType getCalleeType() {
+      return cast<SignatureGeneratorType>(getCallee().getType());
     }
 
     /// Return the bound input parameter values.
@@ -450,7 +454,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   }];
 
   let arguments = (ins
-    AttrOfType<KGEN_SignatureType>:$callee,
+    AttrOfType<KGEN_SignatureGeneratorType>:$callee,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
@@ -462,6 +466,10 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   let extraClassDeclaration = [{
     void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
     bool isAllowedInFunc() { return false; }
+
+    SignatureGeneratorType getCalleeType() {
+      return cast<SignatureGeneratorType>(getCallee().getType());
+    }
   }];
 
   let hasCanonicalizeMethod = 1;
@@ -697,7 +705,7 @@ def KGEN_ParamApplyOp : KGENOp<"param.apply",
   }];
 
   let arguments = (ins KGEN_ParamDeclAttr:$paramDecl,
-                       AttrOfType<KGEN_SignatureType>:$callee,
+                       AttrOfType<KGEN_SignatureGeneratorType>:$callee,
                        KGEN_ParameterExprArrayAttr:$operands);
   let assemblyFormat = [{
     custom<ParamApplyOp>($paramDecl, $callee, $operands) attr-dict
@@ -848,7 +856,7 @@ def KGEN_ParamForOp : KGENOp<"param.for", [DeclInterface,
 
   let arguments = (ins
     TypedAttrInterface:$initial,
-    AttrOfType<KGEN_SignatureType>:$iterate,
+    AttrOfType<KGEN_SignatureGeneratorType>:$iterate,
     KGEN_ParamDeclAttr:$paramDecl,
     Variadic<AnyType>:$operands,
     UnitAttr:$bodyIsolated,
@@ -1079,8 +1087,10 @@ def KGEN_RebindOp : KGENOp<"rebind", [Pure]> {
 
 def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
     TypesMatchWith<"operands match callee argument types", "callee",
-    "arguments", "cast<SignatureType>($_self).getArguments()">,
-    CalleeResultTypes, DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+    "arguments",
+    "cast<SignatureGeneratorType>($_self).getBody().getArguments()">,
+    CalleeResultTypes,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Call a signature typed instance";
   let description = [{
     The `kgen.call_indirect` operation takes an SSA value of `!kgen.signature`
@@ -1095,7 +1105,7 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
   }];
 
   let arguments = (ins
-    KGEN_SignatureType:$callee,
+    KGEN_SignatureGeneratorType:$callee,
     Variadic<AnyType>:$arguments,
     DefaultValuedAttr<KGEN_TailKindAttr, "{}">:$tailKind
   );
@@ -1103,7 +1113,7 @@ def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
 
   let assemblyFormat = [{
     `` custom<OptionalEnum>($tailKind, "symbolizeTailKind") $callee
-    `(` $arguments `)` `:` custom<Signature>(type($callee)) attr-dict
+    `(` $arguments `)` `:` custom<Generator>(type($callee)) attr-dict
   }];
 
   let hasCanonicalizeMethod = 1;
@@ -1135,7 +1145,7 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
     ```
   }];
 
-  let results = (outs KGEN_SignatureType:$result);
+  let results = (outs KGEN_SignatureGeneratorType:$result);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
@@ -1144,7 +1154,7 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
 
   let extraClassDeclaration = [{
     ArrayRef<Type> getResultTypes() {
-       return getResult().getType().getValues().getResults();
+       return getResult().getType().getBody().getValues().getResults();
     }
   }];
 }
@@ -1168,9 +1178,9 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
     ```
   }];
 
-  let arguments = (ins AttrOfType<KGEN_SignatureType>:$callee,
+  let arguments = (ins AttrOfType<KGEN_SignatureGeneratorType>:$callee,
                        Variadic<AnyType>:$captures);
-  let results = (outs KGEN_SignatureType:$result);
+  let results = (outs KGEN_SignatureGeneratorType:$result);
   let assemblyFormat = [{
     `` custom<ParametricCallee>($callee) `(` $captures `)`
     custom<ClosureCaptureTypes>(ref($callee), ref($captures), type($captures))
@@ -1182,6 +1192,12 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
       build($_builder, $_state, callee, {});
     }]>,
   ];
+
+  let extraClassDeclaration = [{
+    SignatureGeneratorType getCalleeType() {
+      return cast<SignatureGeneratorType>(getCallee().getType());
+    }
+  }];
 
   let hasVerifier = 1;
 }
@@ -1239,8 +1255,8 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
     ```
   }];
 
-  let arguments = (ins AttrOfType<KGEN_SignatureType>:$callee);
-  let results = (outs KGEN_SignatureType:$result);
+  let arguments = (ins AttrOfType<KGEN_SignatureGeneratorType>:$callee);
+  let results = (outs KGEN_SignatureGeneratorType:$result);
 
   let assemblyFormat = [{
     custom<ParametricCallee>($callee) attr-dict `:` type($result)
@@ -1253,7 +1269,7 @@ def KGEN_CreateRegStubOp : KGENOp<"create_reg_stub", [Pure,
   let extraClassDeclaration = [{
     /// Get the signature type of the output stub.
     /// `calleeSign` is the original callee with by-memory operands.
-    static SignatureType getStubSignatureType(SignatureType calleeSign);
+    static NewSignatureType getStubSignatureType(NewSignatureType calleeSign);
 
     /// The stub signature wraps some arguments to preserve the semantics.
     /// Returns the original (unwrapped) argument type.

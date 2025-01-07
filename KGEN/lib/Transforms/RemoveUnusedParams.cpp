@@ -221,9 +221,8 @@ private:
     }
     auto symbol = SymbolConstantAttr::get(
         flatSym,
-        newFunc.getSignatureGenerator()
-            .getSpecializedGenerator(newParams, oldCall.getLoc())
-            .asOldSignature(),
+        newFunc.getSignatureGenerator().getSpecializedGenerator(
+            newParams, oldCall.getLoc()),
         newParams);
 
     auto newCall =

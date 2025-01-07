@@ -24,7 +24,7 @@
 #include "llvm/ADT/StringExtras.h"
 
 namespace M::KGEN {
-class SignatureType;
+class SignatureGeneratorType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {

@@ -5,7 +5,7 @@
 !voidPointerTest = !kgen.pointer<none>
 !structTest = !kgen.struct<(index, struct<(index)>)>
 !variantTest = !pop.union<index, index>
-!signatureTest = !kgen.signature<(index) -> index>
+!signatureTest = !kgen.generator<(index) -> index>
 !typeValuePairTest = !kgen.typevalue<[typevalue<#kgen.typeref<@Pair>>, struct<(index, i1)>]>
 !typeValueRecursionTest = !kgen.typevalue<[typevalue<#kgen.typeref<@ListNode>>, struct<(pointer<none>)>]>
 

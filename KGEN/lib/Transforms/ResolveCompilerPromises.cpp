@@ -292,7 +292,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
     // function it is calling. Rewrite the call to provide them.
     if (auto call = dyn_cast<KGENCallOpInterface>(op)) {
       auto symbol = cast<SymbolConstantAttr>(call.getCallee());
-      SignatureType sig = symbol.getType();
+      NewSignatureType sig = symbol.getType().getBody();
       // Calls to functions that are not capturing cannot have captures.
       if (!sig.isCapturing())
         return;
@@ -312,7 +312,7 @@ bool CallGraph::doAnalysis(CallGraphNode *node) {
       // signature on the call. The function already has the updated signature.
       call->insertOperands(fulfilled, captures);
       call.setCalleeAttr(SymbolConstantAttr::get(
-          symbol.getSymbol(), callee.getSignatureGenerator().asOldSignature()));
+          symbol.getSymbol(), callee.getSignatureGenerator()));
       return;
     }
 

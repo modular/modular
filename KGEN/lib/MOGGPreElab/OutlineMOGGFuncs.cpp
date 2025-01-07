@@ -249,8 +249,8 @@ private:
     auto specializedSig =
         outlinedFunction.getSignatureGenerator().getSpecializedGenerator(
             paramArgs, outlinedFunction.getLoc());
-    auto symbol = KGEN::SymbolConstantAttr::get(
-        flatSym, specializedSig.asOldSignature(), paramArgs);
+    auto symbol =
+        KGEN::SymbolConstantAttr::get(flatSym, specializedSig, paramArgs);
 
     // Create the KGEN parameter bindings. I.E the <> "template" parameters.
     // Note this is empty as we expect all parameters to be bound in the above

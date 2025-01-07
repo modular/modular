@@ -180,7 +180,7 @@ parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
     argTypes.push_back(arg.type);
   functionType = TypeAttr::get(functionTypeValue);
   type = TypeAttr::get(sigGenType);
-  paramDecl = ParamDeclAttr::get(paramName, sigGenType.asOldSignature());
+  paramDecl = ParamDeclAttr::get(paramName, sigGenType);
   return success();
 }
 
@@ -227,7 +227,7 @@ static ParseResult parseParamApplyOp(AsmParser &p, ParamDeclAttr &paramDecl,
                                      TypedAttr &callee,
                                      ParameterExprArrayAttr &operands) {
   StringAttr paramName;
-  SignatureType calleeType;
+  SignatureGeneratorType calleeType;
   SmallVector<TypedAttr> operandValues;
   llvm::SMLoc sigLoc;
   if (parseParamName(p, paramName) || p.parseEqual() || p.parseLSquare() ||
@@ -235,16 +235,17 @@ static ParseResult parseParamApplyOp(AsmParser &p, ParamDeclAttr &paramDecl,
       p.getCurrentLocation(&sigLoc) || parseParamValue(p, callee, calleeType) ||
       p.parseRSquare() || p.parseLParen() ||
       failableInterleave(
-          calleeType.getArguments(),
+          calleeType.getBody().getArguments(),
           [&](Type type) {
             return parseParamValue(p, operandValues.emplace_back(), type);
           },
           [&] { return p.parseComma(); }) ||
       p.parseRParen())
     return failure();
-  if (calleeType.getNumResults() != 1)
+  if (calleeType.getBody().getNumResults() != 1)
     return p.emitError(sigLoc, "expected callee to have 1 result");
-  paramDecl = ParamDeclAttr::get(paramName, calleeType.getResults().front());
+  paramDecl =
+      ParamDeclAttr::get(paramName, calleeType.getBody().getResults().front());
   operands = ParameterExprArrayAttr::get(p.getContext(), operandValues);
   return success();
 }
@@ -264,8 +265,8 @@ static void printParamApplyOp(AsmPrinter &p, Operation *op,
 }
 
 LogicalResult ParamApplyOp::verify() {
-  auto type = cast<SignatureType>(getCallee().getType());
-  if (type.getInputParamTypes().empty() && type.getResultParamTypes().empty())
+  auto type = cast<SignatureGeneratorType>(getCallee().getType());
+  if (type.getInputParamTypes().empty())
     return success();
   return emitOpError("callee signature must be concrete");
 }
@@ -505,15 +506,15 @@ static ParseResult parseExternGenerator(OpAsmParser &p, TypeAttr &signature,
                                         ParamDeclArrayAttr &inputParams) {
   SmallVector<OpAsmParser::Argument> args;
   FunctionType funcType;
-  SignatureType sigType;
+  SignatureGeneratorType sigType;
   ParamDeclArrayAttr resultParams;
-  if (parseFunctionSignature(p, args, inputParams, resultParams, funcType,
-                             sigType))
+  if (parseFunctionSignatureGenerator(p, args, inputParams, resultParams,
+                                      funcType, sigType))
     return failure();
   if (!resultParams.empty())
     return p.emitError(p.getCurrentLocation(), "invalid result parameters");
   functionType = TypeAttr::get(funcType);
-  signature = TypeAttr::get(SignatureGeneratorType::get(sigType));
+  signature = TypeAttr::get(sigType);
   return success();
 }
 
@@ -579,9 +580,9 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
       p.parseColon())
     return failure();
 
-  SignatureType signature;
+  SignatureGeneratorType signature;
   FunctionType functionType;
-  if (parseKGENSignature(p, functionType, signature))
+  if (parseKGENSignatureGenerator(p, functionType, signature))
     return failure();
   calleeCst = SymbolConstantAttr::get(callee, signature, paramValues);
   llvm::append_range(operandTypes, functionType.getInputs());
@@ -599,7 +600,7 @@ static void printCallOp(OpAsmPrinter &p, Operation *op,
   p << ") : ";
   printSignatureValues(
       p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
-      calleeCst.getType());
+      calleeCst.getType().asOldSignature());
 }
 
 void CallOp::concretizeCallee(IRRewriter &b, SymbolConstantAttr callee) {
@@ -619,10 +620,8 @@ FailureOr<InlineResult> CallOp::prepInline(mlir::RewriterBase &b) {
            }}};
 }
 
-template <typename CalleeT>
 static LogicalResult verifyCallOp(Operation *op, ValueRange args,
-                                  CalleeT callee) {
-  auto signature = cast<SignatureType>(callee.getType());
+                                  NewSignatureType signature) {
   if (failed(verifyCallOperands(op, args, signature)) ||
       failed(verifyCallResults(op, op->getResults(), signature)))
     return failure();
@@ -630,7 +629,7 @@ static LogicalResult verifyCallOp(Operation *op, ValueRange args,
 }
 
 LogicalResult CallOp::verify() {
-  return verifyCallOp(*this, getOperands(), getCallee());
+  return verifyCallOp(*this, getOperands(), getCalleeType().getBody());
 }
 
 //===----------------------------------------------------------------------===//
@@ -638,7 +637,7 @@ LogicalResult CallOp::verify() {
 //===----------------------------------------------------------------------===//
 
 LogicalResult CallIndirectOp::verify() {
-  return verifyCallOp(*this, getArguments(), getCallee());
+  return verifyCallOp(*this, getArguments(), getCallee().getType().getBody());
 }
 
 //===----------------------------------------------------------------------===//
@@ -655,7 +654,7 @@ FailureOr<InlineResult> CallParamOp::prepInline(mlir::RewriterBase &b) {
 }
 
 LogicalResult CallParamOp::verify() {
-  return verifyCallOp(*this, getOperands(), getCallee());
+  return verifyCallOp(*this, getOperands(), getCalleeType().getBody());
 }
 
 //===----------------------------------------------------------------------===//
@@ -841,15 +840,15 @@ static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
   // we expect the following syntax:
   // kgen.stage_closure = () capturing -> index {
   // } { name = foo }
-  SignatureType signatureType;
+  SignatureGeneratorType signatureType;
   ParamDeclArrayAttr inputParams;
   ParamDeclArrayAttr resultParams;
   FunctionType functionTypeValue;
   SmallVector<OpAsmParser::Argument> args;
   llvm::SMLoc bodyLoc;
   if (p.parseEqual() ||
-      parseFunctionSignature(p, args, inputParams, resultParams,
-                             functionTypeValue, signatureType) ||
+      parseFunctionSignatureGenerator(p, args, inputParams, resultParams,
+                                      functionTypeValue, signatureType) ||
       p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
     return failure();
   if (!inputParams.empty() || !resultParams.empty())
@@ -859,9 +858,11 @@ static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
 }
 
 static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
-                                SignatureType resultType, Region &body) {
+                                SignatureGeneratorType resultType,
+                                Region &body) {
   p << "= ";
-  printFunctionSignature(p, &body, {}, {}, resultType.getValues(), resultType);
+  printFunctionSignatureGenerator(p, &body, {}, {},
+                                  resultType.getBody().getValues(), resultType);
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
@@ -879,12 +880,14 @@ LogicalResult CreateClosureOp::inferReturnTypes(
     return mlir::emitOptionalError(
         loc, "'create_closure' expected TypedAttr 'callee'");
   }
-  auto sig = dyn_cast<SignatureType>(callee.getType());
-  if (!sig) {
+  auto sigGen = dyn_cast<SignatureGeneratorType>(callee.getType());
+  if (!sigGen) {
     return mlir::emitOptionalError(
-        loc, "'create_closure' attribute 'callee' must have SignatureType");
+        loc,
+        "'create_closure' attribute 'callee' must have SignatureGeneratorType");
   }
 
+  NewSignatureType sig = sigGen.getBody();
   unsigned numCaptures = captures.size();
   if (numCaptures > sig.getNumArguments()) {
     return mlir::emitOptionalError(loc, "provided ", numCaptures,
@@ -899,11 +902,13 @@ LogicalResult CreateClosureOp::inferReturnTypes(
   FnEffects effects = sig.getFnEffects();
   if (!captures.empty())
     effects.setCapturing();
-  results.push_back(SignatureType::get(
-      Builder(ctx).getFunctionType(newArgTypes, sig.getResults()),
-      sig.getInputParamTypes(), sig.getResultParamTypes(), newArgConvs, effects,
+  results.push_back(SignatureGeneratorType::get(
+      sigGen.getInputParamTypes(),
+      Builder(ctx).getFunctionType(newArgTypes, sig.getResults()), newArgConvs,
+      effects,
       sig.getMetadata() ? sig.getMetadata().getWithBoundPosArgs(numCaptures)
-                        : nullptr));
+                        : nullptr,
+      sigGen.getMetadata()));
   return mlir::success();
 }
 
@@ -911,11 +916,12 @@ static ParseResult
 parseClosureCaptureTypes(AsmParser &p, TypedAttr callee,
                          ArrayRef<OpAsmParser::UnresolvedOperand> captures,
                          SmallVectorImpl<Type> &captureTypes) {
-  auto sig = dyn_cast<SignatureType>(callee.getType());
-  if (!sig) {
+  auto sigGen = dyn_cast<SignatureGeneratorType>(callee.getType());
+  if (!sigGen) {
     return p.emitError(p.getCurrentLocation(),
-                       "expected type of callee to be SignatureType");
+                       "expected type of callee to be SignatureGeneratorType");
   }
+  NewSignatureType sig = sigGen.getBody();
 
   unsigned numCaptures = captures.size();
   if (numCaptures > sig.getNumArguments()) {
@@ -934,22 +940,23 @@ static void printClosureCaptureTypes(AsmPrinter &p, Operation *,
                                      TypeRange captureTypes) {}
 
 LogicalResult CreateClosureOp::verify() {
-  SignatureType sig = getCalleeType();
-  if (getNumOperands() > sig.getNumArguments()) {
+  NewSignatureType calleeSig = getCalleeType().getBody();
+  if (getNumOperands() > calleeSig.getNumArguments()) {
     return emitOpError("provided ")
            << getNumOperands() << " operands but callee only has "
-           << sig.getNumArguments() << " to bind";
+           << calleeSig.getNumArguments() << " to bind";
   }
-  unsigned expectedArgs = sig.getNumArguments() - getNumOperands();
-  if (getType().getNumArguments() != expectedArgs) {
+  unsigned expectedArgs = calleeSig.getNumArguments() - getNumOperands();
+  NewSignatureType sig = getType().getBody();
+  if (sig.getNumArguments() != expectedArgs) {
     return emitOpError("result signature has ")
-           << getType().getNumArguments() << " arguments but expected "
+           << sig.getNumArguments() << " arguments but expected "
            << expectedArgs;
   }
 
   for (auto [i, type, argType] :
        llvm::enumerate(getOperandTypes(),
-                       sig.getArguments().take_front(getNumOperands()))) {
+                       calleeSig.getArguments().take_front(getNumOperands()))) {
     if (type != argType) {
       return emitOpError("operand #")
              << i << " has type " << type
@@ -957,15 +964,15 @@ LogicalResult CreateClosureOp::verify() {
     }
   }
   for (auto [i, type, argType] :
-       llvm::enumerate(getType().getArguments(),
-                       sig.getArguments().drop_front(getNumOperands()))) {
+       llvm::enumerate(sig.getArguments(),
+                       calleeSig.getArguments().drop_front(getNumOperands()))) {
     if (type != argType) {
       return emitOpError("result signature argument #")
              << i << " type is " << argType << " but expected to be " << type;
     }
   }
 
-  if (!getCaptures().empty() && !getType().isCapturing())
+  if (!getCaptures().empty() && !sig.isCapturing())
     return emitOpError("has captures, so result signature must be 'capturing'");
   return success();
 }
@@ -980,8 +987,9 @@ FailureOr<InlineResult> CreateClosureOp::prepInline(mlir::RewriterBase &b) {
 //===----------------------------------------------------------------------===//
 
 LogicalResult CreateRegStubOp::verify() {
-  auto calleeSig = cast<SignatureType>(getCallee().getType());
-  SignatureType resSig = getType();
+  NewSignatureType calleeSig =
+      cast<SignatureGeneratorType>(getCallee().getType()).getBody();
+  NewSignatureType resSig = getType().getBody();
 
   if (calleeSig.isThrows() || resSig.isThrows())
     return emitOpError("throwing function not supported");
@@ -1019,12 +1027,14 @@ LogicalResult CreateRegStubOp::verify() {
 void CreateRegStubOp::build(mlir::OpBuilder &builder,
                             mlir::OperationState &state,
                             mlir::TypedAttr callee) {
-  SignatureType resultTy =
-      getStubSignatureType(cast<SignatureType>(callee.getType()));
+  NewSignatureType resultSig = getStubSignatureType(
+      cast<SignatureGeneratorType>(callee.getType()).getBody());
+  auto resultTy = GeneratorType::get(/*inputParamTypes=*/{}, resultSig);
   build(builder, state, resultTy, callee);
 }
 
-SignatureType CreateRegStubOp::getStubSignatureType(SignatureType calleeSign) {
+NewSignatureType
+CreateRegStubOp::getStubSignatureType(NewSignatureType calleeSign) {
   FunctionType values = calleeSign.getValues();
 
   // Check if type is a memory type that can be promoted to value.
@@ -1061,13 +1071,14 @@ SignatureType CreateRegStubOp::getStubSignatureType(SignatureType calleeSign) {
     }
   }
 
-  return SignatureType::get(FunctionType::get(calleeSign.getContext(),
-                                              newArgTypes, values.getResults()),
-                            calleeSign.getArgConventions());
+  return NewSignatureType::get(FunctionType::get(calleeSign.getContext(),
+                                                 newArgTypes,
+                                                 values.getResults()),
+                               calleeSign.getArgConventions());
 }
 
 Type CreateRegStubOp::getOriginalArgType(unsigned index) {
-  Type rawArgTy = getType().getValues().getInput(index);
+  Type rawArgTy = getType().getBody().getValues().getInput(index);
   Type calleeArgTy = getCalleeArgType(index);
   // The type isn't transformed if it's identical to callee.
   if (rawArgTy == calleeArgTy)
@@ -1075,7 +1086,7 @@ Type CreateRegStubOp::getOriginalArgType(unsigned index) {
 
   // Wrapped types are memory types of the form `pointer<struct<(T)
   // memoryOnly>`.
-  if (!SignatureType::hasAddress(getType().getArgConvention(index)))
+  if (!SignatureType::hasAddress(getType().getBody().getArgConvention(index)))
     return rawArgTy;
 
   PointerType ptrTy = dyn_cast<PointerType>(rawArgTy);
@@ -1092,20 +1103,20 @@ Type CreateRegStubOp::getOriginalArgType(unsigned index) {
 
 Type CreateRegStubOp::getCalleeArgType(unsigned index) {
   // Some arguments might be promoted to outputs.
-  SignatureType calleeSig = getCalleeSignature();
-  SignatureType resSig = getType();
+  NewSignatureType calleeSigBase = getCalleeSignature().getBody();
+  NewSignatureType resSig = getType().getBody();
   bool promotedOutputs =
-      resSig.hasMemoryOnlyResult() && !calleeSig.hasMemoryOnlyResult();
+      resSig.hasMemoryOnlyResult() && !calleeSigBase.hasMemoryOnlyResult();
   if (!promotedOutputs)
-    return calleeSig.getValues().getInput(index);
+    return calleeSigBase.getValues().getInput(index);
 
   ArgConvention conv = resSig.getArgConvention(index);
   // If `conv` is ByRefResult, the promoted output has to be this argument.
   if (conv == ArgConvention::ByRefResult)
-    return calleeSig.getValues().getResult(0);
+    return calleeSigBase.getValues().getResult(0);
 
   // A different argument is promoted.
-  return calleeSig.getValues().getInput(index);
+  return calleeSigBase.getValues().getInput(index);
 }
 
 //===----------------------------------------------------------------------===//

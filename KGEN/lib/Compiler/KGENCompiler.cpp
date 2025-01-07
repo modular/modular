@@ -57,7 +57,8 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
   StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
-  SignatureType sig = symbol.getType();
+  SignatureGeneratorType sigGen = symbol.getType();
+  NewSignatureType sigBase = sigGen.getBody();
 
   // Build debuginfo for the stub if requested.
   if (auto sp = func.getSubprogramScope()) {
@@ -67,7 +68,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
     // since the stub is a compiler-synthesized function).
     auto stubSourceName =
         DebugInfo::SourceNameAttr::get("asm_stub", sp.getSourceName());
-    FunctionType stubFuncType = sig.getValues();
+    FunctionType stubFuncType = sigBase.getValues();
     DebugInfo::DIUnresolvedMLIRType (*mapToDIUnresolvedType)(Type) =
         &DebugInfo::DIUnresolvedMLIRType::get;
     auto stubSp = DebugInfo::DISubprogramAttr::get(
@@ -88,11 +89,11 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   sliced.setNotExported();
   sliced.setInlineLevel(InlineLevel::Always);
   sliced.setSymNameAttr(stubName);
-  auto wrapper = b.create<GeneratorOp>(name, sig.asSignatureGenerator());
+  auto wrapper = b.create<GeneratorOp>(name, sigGen);
   wrapper.setExported();
   wrapper.setLLVMMetadataAttr(sliced.getLLVMMetadataAttr());
   Block *entry =
-      b.createBlock(&wrapper.getBodyRegion(), {}, sig.getArguments(),
+      b.createBlock(&wrapper.getBodyRegion(), {}, sigBase.getArguments(),
                     llvm::map_to_vector(sliced.getArguments(),
                                         [](Value v) { return v.getLoc(); }));
 
@@ -102,7 +103,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
     b.create<ParamDeclareOp>(decl, value);
 
   auto call = b.create<CallOp>(
-      SymbolConstantAttr::get(stubName, sig, symbol.getParamValues()),
+      SymbolConstantAttr::get(stubName, sigGen, symbol.getParamValues()),
       entry->getArguments());
   b.create<ReturnOp>(call.getResults());
 }

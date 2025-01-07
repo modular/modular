@@ -27,7 +27,7 @@ kgen.func @lower_args(
   kgen.return
 }
 
-!lower_args_sig = !kgen.signature<(
+!lower_args_sig = !kgen.generator<(
   !kgen.pointer<index> owned_in_mem,
   !kgen.pointer<struct<(index, index)>> read_mem,
   !kgen.pointer<struct<(index, index) memoryOnly>> read_mem,
@@ -95,9 +95,9 @@ kgen.func @byref_res_mem_only(%arg0: index owned, %__result__: !kgen.pointer<str
   kgen.return %none : !kgen.none
 }
 
-!byref_res_sig = !kgen.signature<(index owned, !kgen.pointer<index> byref_result) -> !kgen.none>
-!byref_res_reg_passable_sig = !kgen.signature<(index owned, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none>
-!byref_res_mem_only_sig = !kgen.signature<(index owned, !kgen.pointer<struct<(index, index) memoryOnly>> byref_result) -> !kgen.none>
+!byref_res_sig = !kgen.generator<(index owned, !kgen.pointer<index> byref_result) -> !kgen.none>
+!byref_res_reg_passable_sig = !kgen.generator<(index owned, !kgen.pointer<struct<(index, index)>> byref_result) -> !kgen.none>
+!byref_res_mem_only_sig = !kgen.generator<(index owned, !kgen.pointer<struct<(index, index) memoryOnly>> byref_result) -> !kgen.none>
 
 // CHECK-LABEL: kgen.func @test_lower_res
 kgen.func @test_lower_res(%arg0: !byref_res_sig, %arg1: !byref_res_reg_passable_sig, %arg2: !byref_res_mem_only_sig, %arg3: index) {
@@ -172,7 +172,7 @@ kgen.func @byref_throws(
   kgen.return %0 : i1
 }
 
-!byref_throws_sig = !kgen.signature<(
+!byref_throws_sig = !kgen.generator<(
   !kgen.pointer<!Error> byref_error, !kgen.pointer<index> byref_result
 ) throws -> i1>
 
@@ -251,10 +251,10 @@ kgen.func @unreachable_byref_result(%arg0: !kgen.pointer<index> byref_result) ->
 }
 
 // CHECK-LABEL: kgen.func @byref_error
-// CHECK-SAME: (%arg0: !kgen.signature<(index, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> (i1, f16)>
+// CHECK-SAME: (%arg0: !kgen.generator<(index, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> (i1, f16)>
 // CHECK-SAME:  %arg1: !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> (i1, f16)
 kgen.func @byref_error(
-    %f: !kgen.signature<(index, !kgen.pointer<f16> byref_error, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> i1>,
+    %f: !kgen.generator<(index, !kgen.pointer<f16> byref_error, !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> i1>,
     %err: !kgen.pointer<f16> byref_error,
     %result: !kgen.pointer<struct<(i16) memoryOnly>> byref_result) throws -> i1 {
   // CHECK-NEXT: [[F_ERR:%.*]] = pop.stack_allocation 1 x f16
@@ -285,7 +285,7 @@ kgen.func @dont_alter_async_results(%arg0: !kgen.pointer<index> read_mem, %arg1:
 }
 
 // CHECK-LABEL: kgen.func @two_call_indirect
-kgen.func @two_call_indirect(%arg0: !kgen.signature<(!kgen.pointer<index> byref_result) -> !kgen.none>) {
+kgen.func @two_call_indirect(%arg0: !kgen.generator<(!kgen.pointer<index> byref_result) -> !kgen.none>) {
   %0 = pop.stack_allocation 1 x index
   %1 = pop.stack_allocation 1 x index
   // CHECK: kgen.call_indirect %arg0() : () -> index

@@ -98,6 +98,8 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     DTypeType,
     StringType,
     IntLiteralType,
+    GeneratorType,
+    NewSignatureType,
     SignatureType,
     PointerType,
     VariadicType,
@@ -197,7 +199,7 @@ def IntLiteralBinopKindAttr : DialectAttribute<(attr
 def SymbolConstantAttr : DialectAttribute<(attr
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
-  ConcreteType<"SignatureType">:$type
+  ConcreteType<"GeneratorType">:$type
 )>;
 
 def TargetParamAttr : DialectAttribute<(attr
@@ -217,7 +219,7 @@ def WrappedParamOperatorAttr : DialectAttribute<(attr
 def MLIROpAttr : DialectAttribute<(attr
   StringAttr:$name,
   ConcreteAttribute<"DictionaryAttr">:$attrs,
-  ConcreteType<"SignatureType">:$type
+  ConcreteType<"SignatureGeneratorType">:$type
 )>;
 
 def DecoratorsAttr : DialectAttribute<(attr

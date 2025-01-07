@@ -493,9 +493,9 @@ kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <8>
   kgen.param.constant: !kgen.int_literal = <get_sizeof(index, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: !kgen.int_literal = <get_sizeof(!kgen.signature<() -> ()>, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_sizeof(!kgen.generator<() -> ()>, #target)>
   // CHECK-NEXT: <16>
-  kgen.param.constant: !kgen.int_literal = <get_sizeof(!kgen.signature<() capturing -> ()>, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_sizeof(!kgen.generator<() capturing -> ()>, #target)>
 
   // CHECK-NEXT: <4>
   kgen.param.constant: !kgen.int_literal = <get_alignof(i32, #target)>
@@ -506,7 +506,7 @@ kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <8>
   kgen.param.constant: !kgen.int_literal = <get_alignof(index, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant: !kgen.int_literal = <get_alignof(!kgen.signature<() -> ()>, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_alignof(!kgen.generator<() -> ()>, #target)>
 
   // CHECK-NEXT: <1>
   kgen.param.constant: !kgen.int_literal = <get_alignof(!pop.simd<0, f32>, #target)>
@@ -628,10 +628,7 @@ kgen.generator @pointer_param_ops<ptr: pointer<index, 1>>() {
 // CHECK-LABEL: kgen.generator @region_params<
 kgen.generator @region_params
   // CHECK-SAME: r1: (si32) -> si32,
-  <r1: <[]>(si32) -> si32,
-   // This has an input and output parameter.
-   // CHECK-SAME: r2: <[] -> i1>() -> (),
-   r2: <[] -> i1>() -> (),
+  <r1: <>(si32) -> si32,
    // This uses a different parameter.
    // CHECK-SAME: r3: <dtype>() -> !pop.scalar<*(0,0)>
    r3: <dtype>() -> !pop.scalar<*(0,0)>
@@ -783,7 +780,7 @@ kgen.generator @mlirOperationExpr() {
   kgen.return
 }
 
-kgen.generator @evaluator(%funcs: !kgen.pointer<!kgen.signature<() -> ()>>, %num: index) -> index {
+kgen.generator @evaluator(%funcs: !kgen.pointer<!kgen.generator<() -> ()>>, %num: index) -> index {
   %0 = kgen.param.constant = <2>
   kgen.return %0 : index
 }
@@ -797,15 +794,14 @@ kgen.generator @f2() {
 }
 
 lit.struct.decl @IndexParams0<a, b: f32> {}
-lit.struct.decl @IndexParams1<a: i32, b: i64, c: f32, d: i8> {}
+lit.struct.decl @IndexParams1<a: i32, b: i64, c: f32> {}
 
 // CHECK-LABEL: kgen.generator @indexParamRef
-// CHECK-SAME: @IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1), :i8 *(1,0)*>
+// CHECK-SAME: @IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1)>
 // CHECK-SAME: @IndexParams0<*(0,0), :f32 *(0,1)>
 kgen.generator @indexParamRef<
   fn: <index, f32, <i32, i64>()
-      -> !lit.struct<@IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1), :i8 *(1,0)*>>
-      -> i8>()
+      -> !lit.struct<@IndexParams1<:i32 *(0,0), :i64 *(0,1), :f32 *(1,1)>>>()
     -> !lit.struct<@IndexParams0<*(0,0), :f32 *(0,1)>>
 >() {
   kgen.return

@@ -108,14 +108,14 @@ public:
   ///
   /// returnsSelf is True if this is performing inference on a function like
   /// __init__ that returns Self, which might be specialized.
-  LogicalResult infer(LITSignatureType signature,
+  LogicalResult infer(LITSignatureGeneratorType signature,
                       const CallOperands &callOperands,
                       const OperandValueList &variadicKwOperands,
                       bool returnsSelf);
 
   /// Given an incomplete parameter binding set, try to infer parameters on Self
   /// of a method from the first argument.
-  LogicalResult inferCTADParams(LITSignatureType signature,
+  LogicalResult inferCTADParams(LITSignatureGeneratorType signature,
                                 const CallOperands &callOperands);
 
   /// After inferring parameter values, this allows access to the results.

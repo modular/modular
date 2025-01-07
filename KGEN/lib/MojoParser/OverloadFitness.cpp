@@ -205,12 +205,13 @@ static void addTypeConversionDetail(InflightDiag &diag,
     return;
   }
   // Try to detect mismatched memory result type.
-  auto lhsSig = dyn_cast<SignatureType>(operandType);
-  auto rhsSig = dyn_cast<SignatureType>(argType);
+  auto lhsSig = dyn_cast<LITSignatureGeneratorType>(operandType);
+  auto rhsSig = dyn_cast<LITSignatureGeneratorType>(argType);
   if (lhsSig && rhsSig) {
-    auto getByRefResult = [](SignatureType sig) -> std::pair<bool, Type> {
-      return {sig.hasMemoryOnlyResult(),
-              ASTType(sig).getSignatureUserResultType()};
+    auto getByRefResult =
+        [](LITSignatureGeneratorType sig) -> std::pair<bool, Type> {
+      return {sig.getBody().hasMemoryOnlyResult(),
+              ASTType(sig.getUserResultType())};
     };
     auto [lhsByRef, lhsRetType] = getByRefResult(lhsSig);
     auto [rhsByRef, rhsRetType] = getByRefResult(rhsSig);
@@ -412,7 +413,7 @@ InflightDiag DiagEmitter::badImplicitConversion(ASTType fromType,
 /// Calculate the minimum required and maximum allowed number of positional
 /// operands for a signature, assuming that the signature has a variadic pack;
 static std::pair<size_t, size_t>
-calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
+calculateRequiredPosOperandsForPacks(LITSignatureGeneratorType signature) {
   // This function heavily assumes that a signature has at most
   // one pack variadic argument and that variadics are always the last
   // positional args.
@@ -660,7 +661,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
                                           PValue selfPValue) {
   DeclResolver &resolver = *callable.getShared().declResolver;
   auto func = cast<LIT::FuncOp>(*candidate);
-  LITSignatureType signature = func.getFullSignature();
+  LITSignatureGeneratorType signature = func.getFullSignature();
 
   if (selfPValue) {
     // TODO(MOCO-1259): Support static methods with associated aliases
@@ -672,7 +673,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
   }
 
   auto [bindings, fitness, diag] = callable.paramBindings.verifyBindings(
-      signature.getParamTypes(), signature.getParamListAttrs(),
+      signature.getInputParamTypes(), signature.getMetadata(),
       callable.baseName, callable.expr->getLoc(),
       /*opLoc=*/{}, /*partial=*/true);
   if (!bindings)
@@ -690,7 +691,7 @@ OverloadFitness OverloadFitness::evaluate(ASTDecl *candidate,
 ///
 /// The 'funcIfDirect' member is set if this is a direct call, or null if
 /// indirect.  It can be used to tune diagnostics.
-OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
+OverloadFitness OverloadFitness::evaluate(LITSignatureGeneratorType signature,
                                           ASTDecl *funcIfDirect,
                                           const OverloadSet &callable,
                                           const CallOperands &operands,
@@ -719,9 +720,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   }
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
+  PogListAttr argListAttr = signature.getArgListAttrs();
   OperandValueList variadicKwOperands;
-  auto [kwDiagRes, kwDiagNames] = operands.diagnoseKeywordOperands(
-      signature.getArgListAttrs(), variadicKwOperands);
+  auto [kwDiagRes, kwDiagNames] =
+      operands.diagnoseKeywordOperands(argListAttr, variadicKwOperands);
   switch (kwDiagRes) {
   case CallOperands::KwDiagResult::kMissingKwOnly:
     return emitDiagFor.missingArgs(kwDiagNames, "keyword-only");
@@ -733,7 +735,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     break;
   }
 
-  PogListAttr argListAttr = signature.getArgListAttrs();
   auto [posDiagRes, posDiagNames] = operands.diagnosePosOperands(argListAttr);
   switch (posDiagRes) {
   case CallOperands::PosDiagResult::kMissingPos:
@@ -752,7 +753,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // diagnostic handlers to capture any issues.
   InflightDiag diag = shared.emitError(callLoc);
   ParameterInferenceDiagnostics inferenceDiags;
-  PogListAttr paramListAttr = signature.getParamListAttrs();
+  PogListAttr paramListAttr = signature.getMetadata();
   ParamBindings::DiagEmitter bindingDiag{
       /*emitParamCount=*/
       [&](size_t numActual, bool posOnly) {
@@ -766,7 +767,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           if (funcIfDirect &&
               isa<TraitDeclOp>(cast<LIT::FuncOp>(*funcIfDirect)->getParentOp()))
             hidden = 1;
-          size_t numExpected = signature.getNumParams() - hidden -
+          size_t numExpected = signature.getInputParamTypes().size() - hidden -
                                countNumImplicitKinds(paramListAttr) -
                                countNumInferredKinds(paramListAttr);
           diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);

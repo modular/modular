@@ -265,6 +265,13 @@ PogListAttr::verifyGenerator(function_ref<InFlightDiagnostic()> emitError,
 void PogListAttr::printGenerator(AsmPrinter &p, GeneratorType generator) const {
   ArrayRef<Type> paramTypes = generator.getInputParamTypes();
 
+  // Temporary sugar for lit.signature so we don't have to update all the tests
+  // just yet.
+  if (auto sigGen = ::dyn_cast<LITSignatureGeneratorType>(generator)) {
+    sigGen.getBody().getMetadata().printSignature(p, sigGen.asOldSignature());
+    return;
+  }
+
   p << "!lit.generator<";
   if (paramTypes.empty())
     p << "<>";
@@ -397,6 +404,7 @@ FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
   MLIRContext *ctx = argListAttrs.getContext();
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
+  assert(paramListAttrs);
   return get(ctx, argListAttrs, paramListAttrs, numImplicitOriginDecls,
              captureOrigins, nestedOriginFlag);
 }
@@ -498,6 +506,11 @@ FnMetadataAttrInterface
 FnMetadataAttr::prependPosParamsFromOps(ArrayRef<Operation *> ops) const {
   SmallVector<bool> variadicMask = getContextualVariadicMask(ops);
   return prependPosParams(variadicMask.size(), variadicMask);
+}
+
+SignatureGeneratorType
+FnMetadataAttr::asSignatureGenerator(SignatureType sig) const {
+  return LITSignatureType(sig).asSignatureGenerator();
 }
 
 LogicalResult FnMetadataAttr::verifySignature(

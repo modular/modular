@@ -307,7 +307,7 @@ struct SharedState::Impl {
 
   /// The closure wrapper types that have already been generated, keyed off
   /// signature and module.
-  DenseMap<std::pair<SignatureType, ASTDecl *>, StructDeclOp> closureWrappers;
+  DenseMap<std::pair<GeneratorType, ASTDecl *>, StructDeclOp> closureWrappers;
 
   /// The capture values and decls associated with their enclosing nested
   /// function.
@@ -1759,9 +1759,9 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }
 
-LIT::StructDeclOp SharedState::getOrCreateClosureWrapper(SMLoc loc,
-                                                         SignatureType sig,
-                                                         ASTDecl *moduleDecl) {
+LIT::StructDeclOp
+SharedState::getOrCreateClosureWrapper(SMLoc loc, SignatureGeneratorType sig,
+                                       ASTDecl *moduleDecl) {
   StructDeclOp &existing = impl->closureWrappers[{sig, moduleDecl}];
   if (!existing) {
     std::string name =

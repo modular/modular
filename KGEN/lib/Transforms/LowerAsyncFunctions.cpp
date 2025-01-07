@@ -368,9 +368,9 @@ enum class VisitedState { SUS, NOSUS, SUS_AND_NOSUS };
 
 static Operation *insertCoroutineEnd(ImplicitLocOpBuilder &builder,
                                      Value callback, Value closure) {
-  SignatureType signatureType = cast<SignatureType>(callback.getType());
-  auto callIndirect = builder.create<CallIndirectOp>(signatureType.getResults(),
-                                                     callback, closure);
+  auto signatureType = cast<SignatureGeneratorType>(callback.getType());
+  auto callIndirect = builder.create<CallIndirectOp>(
+      signatureType.getBody().getResults(), callback, closure);
   callIndirect.setTailKind(TailKind::MustTail);
   return callIndirect;
 }
@@ -1333,10 +1333,12 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &&frameData,
   SmallVector<Type> results;
   inputs.push_back(opaquePointerType);
   FunctionType resumeFunctionType = FunctionType::get(cxt, inputs, results);
-  resumeSignatureType = SignatureType::get(resumeFunctionType);
+  resumeSignatureType =
+      SignatureGeneratorType::get(/*inputParamTypes=*/{}, resumeFunctionType);
   FunctionType callbackFunctionType =
       FunctionType::get(cxt, opaquePointerType, results);
-  callbackSignature = SignatureType::get(callbackFunctionType);
+  callbackSignature =
+      SignatureGeneratorType::get(/*inputParamTypes=*/{}, callbackFunctionType);
 
   // Build Continuation Type.
   size_t size = Promise;

@@ -716,10 +716,10 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   // it.
   // TODO: We should have a general predicate from this provided by the KGEN
   // parameter utilities.
-  if (auto signature = dyn_cast<LITSignatureType>(attr.getType())) {
+  if (auto signature = dyn_cast<LITSignatureGeneratorType>(attr.getType())) {
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
-    if (!signature.getParamTypes().empty()) {
+    if (!signature.getInputParamTypes().empty()) {
       ParamBindings paramBindings(getDeclScope());
       // Try to fully bind the signature, in case it can be made concrete with
       // default values, etc.
@@ -1478,7 +1478,7 @@ ASTType ExprEmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
     return type;
 
   // Check for a function type.
-  if (auto sig = dyn_cast<LITSignatureType>(type)) {
+  if (auto sig = dyn_cast<LITSignatureGeneratorType>(type)) {
     // For a fully bound type, require that the origin set is concrete.
     if (isa<UnboundAttr>(sig.getCaptureOrigins())) {
       emitError(value.expr->getLoc(),

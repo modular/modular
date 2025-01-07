@@ -107,12 +107,12 @@ kgen.generator @use() {
   // COM: Construct a scenario where a signature with an escaped index reference
   // COM: is being passed as a type parameter to a function that references it
   // COM: in its result.
-  // CHECK: rebind(:() -> !pop.simd<*(1,0), si8> apply(:() -> !kgen.signature<() -> !pop.simd<*(2,0), si8>> @pass_type<:type () -> !pop.simd<*(1,0), si8>>)
+  // CHECK: rebind(:() -> !pop.simd<*(1,0), si8> apply(:() -> !kgen.generator<() -> !pop.simd<*(2,0), si8>> @pass_type<:type () -> !pop.simd<*(1,0), si8>>)
   kgen.param.declare use: <
     index,
     !kgen.paramref<rebind(:() -> !pop.simd<*(1,0), si8>
       apply(
-        :() -> !kgen.signature<() -> !pop.simd<*(2,0), si8>>
+        :() -> !kgen.generator<() -> !pop.simd<*(2,0), si8>>
           @pass_type<:type () -> !pop.simd<*(1,0), si8>>))>
   >() -> () = <?>
   kgen.return
@@ -125,11 +125,11 @@ lit.struct.decl @T<a> {
 
 // CHECK-LABEL: kgen.generator @f
 kgen.generator @f<a, b: @T<a>>() -> !kgen.type {
-  // CHECK-NEXT: ref: <index, @T<*(0,0)>, <!kgen.paramref<apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>>() -> ()>() -> () = <?>
-  kgen.param.declare ref: <index, @T<*(0,0)>, <!kgen.paramref<apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>>() -> ()>() -> () = <?>
+  // CHECK-NEXT: ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>() -> ()>() -> () = <?>
+  kgen.param.declare ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>() -> ()>() -> () = <?>
 
-  // CHECK-NEXT: relative: <type, <!kgen.paramref<*(1,0)>>(!kgen.pointer<:!kgen.paramref<*(1,0)> *(0,0)>) -> ()>
-  kgen.param.declare relative: <type, <!kgen.paramref<*(1,0)>>(!kgen.pointer<:!kgen.paramref<*(1,0)> *(0,0)>) -> ()>() -> () = <?>
+  // CHECK-NEXT: relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.paramref<*(1,0)> *(0,0)>) -> ()>
+  kgen.param.declare relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.paramref<*(1,0)> *(0,0)>) -> ()>() -> () = <?>
   kgen.unreachable
 }
 

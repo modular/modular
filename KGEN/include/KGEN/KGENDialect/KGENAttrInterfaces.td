@@ -168,6 +168,11 @@ def FnMetadataAttrInterface : AttrInterface<"FnMetadataAttrInterface"> {
       given ops. The given operations must implement `DeclInterface`.
     }], "FnMetadataAttrInterface", "prependPosParamsFromOps", (ins
       "ArrayRef<Operation *>":$ops)>,
+    InterfaceMethod<[{
+      Request the custom metadata attribute to convert an old SignatureType into
+      a GeneratorType that wraps a NewSignatureType.
+    }], "SignatureGeneratorType", "asSignatureGenerator", (ins
+      "SignatureType":$signature)>,
   ];
 }
 

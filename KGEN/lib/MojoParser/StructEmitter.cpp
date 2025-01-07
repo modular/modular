@@ -86,17 +86,19 @@ LIT::FuncOp StructEmitter::createFunction(
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {resultType});
   Location location = shared.translateLocation(loc);
-  LITSignatureType signature = SignatureType::remapToSignature(
-      params, {}, functionType, argConventions, fnEffects, metadata,
-      [&] { return mlir::emitError(location); });
+  LITSignatureGeneratorType sigGen =
+      SignatureGeneratorType::remapToSignatureGenerator(
+          params, functionType, argConventions, fnEffects, metadata,
+          metadata.getParamListAttrs(),
+          [&] { return mlir::emitError(location); });
   // Strip off the named origin decl references and replace them with indices.
   // We keep the named parameters in the ParamDeclAttr list on the FuncOp and
   // in the BBArgs.
-  signature = signature.replaceImplicitOriginsWithIndexes(implOriginParams);
+  sigGen = sigGen.replaceImplicitOriginsWithIndexes(implOriginParams);
 
   StringAttr sourceName = builder.getStringAttr(name);
   StringAttr mangledName = builder.getStringAttr(
-      DeclResolver::getMangledName(sourceName, parent, signature).getValue() +
+      DeclResolver::getMangledName(sourceName, parent, sigGen).getValue() +
       suffix);
 
   // If a function with this signature already exists in the struct, don't
@@ -105,8 +107,8 @@ LIT::FuncOp StructEmitter::createFunction(
   if (shared.lookupSymbolIn(&parent, mangledName))
     return nullptr;
 
-  auto funcOp = builder.create<LIT::FuncOp>(mangledName, sourceName, signature,
-                                            specialFnID);
+  auto funcOp = builder.create<LIT::FuncOp>(
+      mangledName, sourceName, sigGen.asOldSignature(), specialFnID);
   funcOp.setIsSynthetic(true);
 
   if (funcOp.getSpecialFunctionInfo().isImplicitlyStatic())

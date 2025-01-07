@@ -183,7 +183,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
                                         getIndexType());
   });
 
-  addConversion([=](SignatureType signatureType) -> std::optional<Type> {
+  addConversion([=](NewSignatureType signatureType) -> std::optional<Type> {
     MLIRContext *ctx = signatureType.getContext();
     if (signatureType.isCapturing()) {
       auto pointerTy = LLVM::LLVMPointerType::get(ctx);
@@ -191,6 +191,11 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
     } else {
       return convertType(signatureType.getValues());
     }
+  });
+
+  // TODO(MOCO-1253): GeneratorType should not be allowed during LLVM lowering.
+  addConversion([=](SignatureGeneratorType sigGenType) -> std::optional<Type> {
+    return convertType(sigGenType.getBody());
   });
 
   // Variadic types are converted to a struct representing a pointer to the
@@ -975,7 +980,7 @@ Value KGEN::convertParameterToLLVM(
   }
 
   if (auto cst = dyn_cast<SymbolConstantAttr>(attr)) {
-    if (cst.getType().isCapturing()) {
+    if (cst.getType().getBody().isCapturing()) {
       b.emitError("TODO: capturing closures cannot be materialized as runtime "
                   "values");
       return {};

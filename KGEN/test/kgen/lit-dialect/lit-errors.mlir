@@ -29,11 +29,6 @@ lit.func @func_param_return<() -> dtype> {}
 
 // -----
 
-// expected-error @below {{expected no result parameters}}
-!type = !lit.signature<<[] -> dtype>() -> ()>
-
-// -----
-
 lit.struct.decl @StructDuplicate {
   // expected-note @below {{see previous declaration here}}
   lit.struct.field x : i32

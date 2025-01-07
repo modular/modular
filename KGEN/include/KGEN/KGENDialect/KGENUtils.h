@@ -331,9 +331,19 @@ void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
 void printNewSignature(AsmPrinter &p, NewSignatureType signatureType);
 ParseResult parseNewSignature(AsmParser &p, Type &signature);
 
+void printGenerator(AsmPrinter &p, GeneratorType generator);
+inline void printGenerator(AsmPrinter &p, Operation *op, Type generator) {
+  printGenerator(p, cast<GeneratorType>(generator));
+}
+ParseResult parseGenerator(AsmParser &p, Type &generator);
+
 /// Parse a plain (i.e. non-lit) signature.
-ParseResult parseKGENSignature(AsmParser &p, FunctionType &functionType,
-                               SignatureType &signature);
+ParseResult parseKGENSignatureGeneratorOld(AsmParser &p,
+                                           FunctionType &functionType,
+                                           SignatureGeneratorType &signature);
+ParseResult parseKGENSignatureGenerator(AsmParser &p,
+                                        FunctionType &functionType,
+                                        SignatureGeneratorType &generator);
 
 /// Parse a function signature with optional metadata. In the assembly format,
 /// the SSA value names are optional in the argument list. If they are present,
@@ -441,12 +451,12 @@ LogicalResult checkResultArgumentTypes(Operation *op,
 /// Verify that the types of operands passed as arguments to a call match the
 /// expected types on the callee signature.
 LogicalResult verifyCallOperands(Operation *op, ValueRange args,
-                                 SignatureType callee,
+                                 NewSignatureType callee,
                                  bool ignoreByRef = false);
 /// Verify that the types of operation results corresponding to call results
 /// match the expected types on the callee signature.
 LogicalResult verifyCallResults(Operation *op, ValueRange results,
-                                SignatureType callee);
+                                NewSignatureType callee);
 
 /// Whether the decorator's name is (starts with) the specific annotation.
 bool hasDecorator(ArrayRef<TypedAttr> decorators, StringRef annotation);

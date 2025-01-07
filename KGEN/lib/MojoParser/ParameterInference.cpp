@@ -227,9 +227,9 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       return matchParams(actual.getAddressSpace(), expected.getAddressSpace());
     }
 
-  // Handle SignatureType
-  if (auto actual = dyn_cast<LITSignatureType>(actualType))
-    if (auto expected = dyn_cast<LITSignatureType>(expectedType)) {
+  // Handle SignatureGeneratorType
+  if (auto actual = dyn_cast<LITSignatureGeneratorType>(actualType))
+    if (auto expected = dyn_cast<LITSignatureGeneratorType>(expectedType)) {
       // When checking SignatureTypes, we have to keep track of
       // paramIndexRefDepth to be sure we are binding the right parameters.
       if (actual.getArguments().size() == expected.getArguments().size() &&
@@ -509,7 +509,7 @@ ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
 
       // If we succeeded, figure out what the concrete type being inferred would
       // be with any parameters bound.
-      auto initSig = cast<LITSignatureType>(pValue.value().getType());
+      auto initSig = cast<LITSignatureGeneratorType>(pValue.value().getType());
       // The constructed type is the result of the initializer.
       assert(initSig.getNumArguments() != 0);
       expDRT = cast<StructType>(initSig.getUserResultType());
@@ -899,7 +899,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // If we found one, we recursively call inferOneOperand (but with implicit
   // conversions disabled of course) to resolve our value as the init
   // methods argument.  This allows us to infer parameters from it.
-  auto initSig = cast<LITSignatureType>(pValue.value().getType());
+  auto initSig = cast<LITSignatureGeneratorType>(pValue.value().getType());
   // We expect the initializer to return the constructed type.
   // Infer the parameters of this overload candidate against the computed
   // result type of the initializer.
@@ -1010,10 +1010,10 @@ void ParameterInferenceState::infer(ArrayRef<Type> paramTypes,
 }
 
 LogicalResult ParameterInferenceState::infer(
-    LITSignatureType signature, const CallOperands &operands,
+    LITSignatureGeneratorType signature, const CallOperands &operands,
     const OperandValueList &variadicKwOperands, bool returnsSelf) {
   // First try to infer parameters from parameters.
-  infer(signature.getParamTypes(), signature.getParamListAttrs(),
+  infer(signature.getInputParamTypes(), signature.getParamListAttrs(),
         /*hasArguments*/ true);
 
   size_t numOperands = operands.size();
@@ -1185,18 +1185,18 @@ LogicalResult ParameterInferenceState::infer(
   }
 
   // If we have left over operands, then this signature cannot match.
-  if (posOperandIdx != numOperands && !signature.hasParamVarArgs())
+  if (posOperandIdx != numOperands && !signature.getMetadata().hasVariadic())
     return failure();
 
   // If we had a variadic parameter that is unspecified, it must be because of
   // an empty variadic list.
   size_t nextParamNo = evaluator.getNumInputParams();
-  if (nextParamNo < signature.getParamTypes().size() &&
+  if (nextParamNo < signature.getInputParamTypes().size() &&
       signature.getParamListAttrs().isVariadic(nextParamNo)) {
     // If we didn't already have a slot for this, make space.
     if (inferredParams.size() <= nextParamNo)
       inferredParams.resize(nextParamNo + 1);
-    auto type = signature.getParamTypes()[evaluator.getNumInputParams()];
+    auto type = signature.getInputParamTypes()[evaluator.getNumInputParams()];
     auto empty = VariadicAttr::get({}, cast<VariadicType>(type));
     inferredParams[nextParamNo] = empty;
     evaluator.addInputValue(empty);
@@ -1211,9 +1211,9 @@ LogicalResult ParameterInferenceState::infer(
   if (!selfResultParams.empty()) {
     // Need to first populate the evaluator with unbound attrs in case some
     // Self params were not deduced.
-    ArrayRef<Type> paramTypes = signature.getParamTypes();
+    ArrayRef<Type> paramTypes = signature.getInputParamTypes();
     for (size_t paramIdx = evaluator.getNumInputParams();
-         paramIdx < signature.getNumParams(); ++paramIdx)
+         paramIdx < signature.getInputParamTypes().size(); ++paramIdx)
       evaluator.addInputValue(UnboundAttr::get(paramTypes[paramIdx]));
 
     for (unsigned idx : selfResultParams) {
@@ -1231,7 +1231,7 @@ LogicalResult ParameterInferenceState::infer(
 /// Given an incomplete parameter binding set, try to infer parameters on Self
 /// of a method from the first argument.
 LogicalResult
-ParameterInferenceState::inferCTADParams(LITSignatureType signature,
+ParameterInferenceState::inferCTADParams(LITSignatureGeneratorType signature,
                                          const CallOperands &operands) {
   // Consider "conditional conformance" cases like:
   //     struct X[A: AnyType]:

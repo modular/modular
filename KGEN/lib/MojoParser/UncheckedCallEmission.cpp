@@ -87,7 +87,7 @@ public:
       : emitter(emitter), callee(callee), callExpr(callExpr),
         loc(emitter.translateLocation(callExpr->getLoc())),
         evaluator(emitter.getDeclResolver()), dest(dest),
-        calleeSig(cast<SignatureType>(callee.getRValueType())),
+        calleeSig(cast<SignatureGeneratorType>(callee.getRValueType())),
         afterCallActions(*this) {}
 
   /// Emit IR for a single argument, according to its convention.
@@ -157,7 +157,7 @@ private:
   /// The destination context we're emitting into.
   ValueDest &dest;
   /// The signature type of the callee, stored for convenience.
-  LITSignatureType calleeSig;
+  LITSignatureGeneratorType calleeSig;
 
   /// This struct accumulates information about IR to emit after the call, e.g.
   /// writebacks for computed mut lvalues, and origin markers.
@@ -929,7 +929,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 /// only.
 template <typename T>
 static ArrayRef<T> dropResultSlots(ArrayRef<T> argumentValues,
-                                   SignatureType sig) {
+                                   LITSignatureGeneratorType sig) {
   // TODO: What about throwing functions?
   if (sig.hasMemoryOnlyResult() &&
       sig.getNumArguments() == argumentValues.size())
@@ -998,11 +998,11 @@ struct DanglingImplicitOriginRefEraser
   }
 
   /// Get this signature with all the implicit origins bound to the empty union.
-  LITSignatureType replaceSignature(LITSignatureType sig) {
+  LITSignatureGeneratorType replaceSignature(LITSignatureGeneratorType sig) {
     FunctionType newFnType = replace(sig.getValues());
-    return LITSignatureType::get(newFnType, sig.getParamTypes(),
-                                 sig.getArgConventions(), sig.getFnEffects(),
-                                 sig.getMetadata());
+    return sig.getWithBody(
+        NewSignatureType::get(newFnType, sig.getArgConventions(),
+                              sig.getFnEffects(), sig.getFnMetadata()));
   }
 };
 } // namespace
@@ -1015,7 +1015,7 @@ struct DanglingImplicitOriginRefEraser
 /// to see through this rather than getting param calls of the initializer.
 static TypedAttr tryOriginInitFold(SymbolRefAttr symbolRef,
                                    ArrayRef<TypedAttr> operands,
-                                   LITSignatureType sigType,
+                                   LITSignatureGeneratorType sigType,
                                    SharedState &shared) {
   auto nestedRefs = symbolRef.getNestedReferences();
   auto numNested = nestedRefs.size();
@@ -1075,7 +1075,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 
   // If the callee has implicit origins, we need to bind them to immortal
   // references and rebind the callee.
-  LITSignatureType boundSigType = calleeSig;
+  LITSignatureGeneratorType boundSigType = calleeSig;
   std::optional<DanglingImplicitOriginRefEraser> implicitOriginRefEraser;
   if (calleeSig.getNumImplicitOriginDecls()) {
     implicitOriginRefEraser.emplace();
@@ -1152,7 +1152,8 @@ TypedAttr CallEmitter::emitCallInParamContext(
 /// function looks up the corresponding coroutine type and binds its result
 /// type.
 static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
-                                     SignatureType sig, TypedAttr origin) {
+                                     LITSignatureGeneratorType sig,
+                                     TypedAttr origin) {
   auto &shared = declScope.getShared();
   SMLoc loc = expr->getLoc();
   ASTDecl *decl = sig.isThrows() ? shared.getBuiltinRaisingCoroutineType(loc)
@@ -1163,7 +1164,7 @@ static ASTType getBoundCoroutineType(ASTDecl &declScope, const ExprNode *expr,
     return {};
   }
   // If the async function throws, extract the normal result type.
-  ASTType resultType = ASTType(sig).getSignatureUserResultType();
+  ASTType resultType = ASTType(sig.getUserResultType());
 
   // Bind the result type to the base coroutine type.
   ParamBindings paramBinds(declScope);
@@ -1226,7 +1227,7 @@ struct ExclusivityChecker : public SharedStateUser {
 
     // Handle __unsafe_disable_nested_origin_exclusivity.
     isNestedOriginExclusivityCheckingDisabled =
-        cast<LITSignatureType>(callee.getRValueType())
+        cast<LITSignatureGeneratorType>(callee.getRValueType())
             .getIsNestedOriginExclusivityCheckingDisabled();
 
     // Check capture origins first so we know if argument values may overlap.
@@ -1235,7 +1236,8 @@ struct ExclusivityChecker : public SharedStateUser {
 
   /// As each argument is emitted, check against previous arguments for
   /// exclusivity violations.
-  void checkArgument(Value val, unsigned argIdx, LITSignatureType signature);
+  void checkArgument(Value val, unsigned argIdx,
+                     LITSignatureGeneratorType signature);
 
 private:
   RValue callee;
@@ -1278,7 +1280,8 @@ private:
 
 void ExclusivityChecker::checkCaptureOrigins() {
   TypedAttr captureOrigins =
-      cast<LITSignatureType>(callee.getRValueType()).getCaptureOrigins();
+      cast<LITSignatureGeneratorType>(callee.getRValueType())
+          .getCaptureOrigins();
   for (TypedAttr origin : shared.cachedOriginFinder.findOriginsIn(
            /*types=*/{}, captureOrigins))
     checkOriginAccess(Value(), /*convention=*/{}, /*argIdx=*/{}, origin);
@@ -1352,7 +1355,7 @@ void ExclusivityChecker::checkOriginAccess(
 /// As each argument is emitted, check against previous arguments for
 /// exclusivity violations.
 void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
-                                       LITSignatureType signature) {
+                                       LITSignatureGeneratorType signature) {
   // We get passed the MLIR representation for the dynamic argument, which
   // includes variadic and pack constructions.  Make sure to handle each
   // variadic argument separately.
@@ -1540,7 +1543,7 @@ void ExclusivityChecker::diagViolation(Value val, ArgConvention convention,
 /// interpretable. If all other arguments are PValues, we can safely emit the
 /// call in a parameter context.
 static bool
-shouldEmitParameterCall(LITSignatureType calleeSig,
+shouldEmitParameterCall(LITSignatureGeneratorType calleeSig,
                         ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
                         SharedState &shared) {
   argumentValues = dropResultSlots(argumentValues, calleeSig);
@@ -1576,7 +1579,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
                                       ValueDest &dest, CallSyntax syntax,
                                       const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);
-  auto calleeSig = cast<LITSignatureType>(callee.getRValueType());
+  auto calleeSig = cast<LITSignatureGeneratorType>(callee.getRValueType());
 
   // We first emit all the arguments.
   FailureOr<SmallVector<ASTExprAnd<AnyValue>>> argumentValuesOr =

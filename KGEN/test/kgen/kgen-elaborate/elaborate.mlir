@@ -321,7 +321,7 @@ kgen.generator @indirect_callee() -> index {
   kgen.return %0: index
 }
 
-kgen.generator @call_indirect(%fp: !kgen.signature<() -> index>) -> index {
+kgen.generator @call_indirect(%fp: !kgen.generator<() -> index>) -> index {
   %0 = kgen.call_indirect %fp() : () -> index
   kgen.return %0: index
 }
@@ -329,7 +329,7 @@ kgen.generator @call_indirect(%fp: !kgen.signature<() -> index>) -> index {
 // CHECK-LABEL: kgen.func @test_comptime_call_indirect
 kgen.generator @test_comptime_call_indirect() -> index {
   // CHECK-NEXT: %index42 = kgen.param.constant = <42>
-  %0 = kgen.param.constant = <apply(:(!kgen.signature<() -> index>) -> index @call_indirect, @indirect_callee)>
+  %0 = kgen.param.constant = <apply(:(!kgen.generator<() -> index>) -> index @call_indirect, @indirect_callee)>
   kgen.return %0: index
 }
 
@@ -1112,7 +1112,7 @@ kgen.generator @main() {
 
 // -----
 
-kgen.generator @take_closure(%arg0: !kgen.signature<(index) capturing -> index>, %arg1: index) {
+kgen.generator @take_closure(%arg0: !kgen.generator<(index) capturing -> index>, %arg1: index) {
   %0 = kgen.call_indirect %arg0(%arg1) : (index) capturing -> index
   kgen.return
 }
@@ -1142,7 +1142,7 @@ kgen.generator @main() {
 }
 
 // COM: Ensure that staged closures follow the global store
-kgen.generator @take_bat(%arg0: !kgen.signature<(index) capturing -> index>) {
+kgen.generator @take_bat(%arg0: !kgen.generator<(index) capturing -> index>) {
 	kgen.return
 }
 
@@ -1442,7 +1442,7 @@ kgen.generator @create<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.variant<T, i1
 // CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry() {
   // CHECK: constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <{:<index>() -> !pop.simd<*(0,0), f32> @func, 0}>
-  kgen.param.apply value = [(!kgen.signature<<index>() -> !pop.simd<*(0,0), f32>>) -> !kgen.variant<<index>() -> !pop.simd<*(0,0), f32>, i1>: @create<:type <index>() -> !pop.simd<*(0,0), f32>>](@func)
+  kgen.param.apply value = [(!kgen.generator<<index>() -> !pop.simd<*(0,0), f32>>) -> !kgen.variant<<index>() -> !pop.simd<*(0,0), f32>, i1>: @create<:type <index>() -> !pop.simd<*(0,0), f32>>](@func)
   kgen.param.constant: variant<<index>() -> !pop.simd<*(0,0), f32>, i1> = <value>
   kgen.return
 }
@@ -1500,7 +1500,7 @@ kgen.generator @make<x>(%arg0: !pop.array<cond(apply(:(index, index) -> i1 @eq, 
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK-NEXT: constant: struct<()> = <{ }>
-  kgen.param.apply lifted = [(!kgen.signature<<index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>) -> !kgen.struct<()>: @init<:type <index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>](@make)
+  kgen.param.apply lifted = [(!kgen.generator<<index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>) -> !kgen.struct<()>: @init<:type <index>(!pop.array<cond(apply(:(index, index) -> i1 @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>](@make)
   kgen.param.constant: struct<()> = <lifted>
   kgen.return
 }
@@ -1508,10 +1508,10 @@ kgen.generator export @top() {
 // -----
 
 // CHECK-LABEL: kgen.func @"pass_paramref
-// CHECK-SAME: () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
+// CHECK-SAME: () -> !kgen.generator<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
 kgen.generator @pass_paramref<T: type>() -> !kgen.paramref<T> {
   %0 = kgen.param.constant : !kgen.paramref<T> = <#kgen.unknown : !kgen.paramref<T>>
-  // CHECK: return %0 : !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
+  // CHECK: return %0 : !kgen.generator<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
   kgen.return %0 : !kgen.paramref<T>
 }
 
@@ -1519,16 +1519,16 @@ kgen.generator @some_func(%arg0: index) -> index {
   kgen.return %arg0: index
 }
 
-kgen.generator @give_func() -> !kgen.signature<(index) -> index>{
+kgen.generator @give_func() -> !kgen.generator<(index) -> index>{
   %0 = kgen.param.constant: (index) -> index = <@some_func>
-  kgen.return %0 : !kgen.signature<(index) -> index>
+  kgen.return %0 : !kgen.generator<(index) -> index>
 }
 
 // CHECK-LABEL: kgen.func @top
 kgen.generator @top() {
-  kgen.param.apply func = [() -> !kgen.signature<(index) -> index>: @give_func]()
-  // CHECK: () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
-  kgen.call @pass_paramref<:type <index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>() : () -> !kgen.signature<<index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>
+  kgen.param.apply func = [() -> !kgen.generator<(index) -> index>: @give_func]()
+  // CHECK: () -> !kgen.generator<<index>() -> !pop.simd<apply(:(index) -> index @some_func, *(0,0)), f32>>
+  kgen.call @pass_paramref<:type <index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>() : () -> !kgen.generator<<index>() -> !pop.simd<apply(:(index) -> index func, *(0,0)), f32>>
   kgen.return
 }
 
@@ -1698,7 +1698,7 @@ kgen.generator export @conditional_alias() {
 
 // -----
 
-kgen.generator @call_it(%arg0: !kgen.signature<() -> index>) -> index {
+kgen.generator @call_it(%arg0: !kgen.generator<() -> index>) -> index {
   %0 = kgen.call_indirect %arg0() : () -> index
   kgen.return %0 : index
 }
@@ -1712,14 +1712,14 @@ kgen.generator @give<a>() -> index {
 // CHECK-LABEL: kgen.func export @apply_expr
 kgen.generator export @apply_expr() {
   // CHECK-NEXT: <1>
-  kgen.param.constant = <apply(:(!kgen.signature<() -> index>) -> index @call_it, @give<1>)>
+  kgen.param.constant = <apply(:(!kgen.generator<() -> index>) -> index @call_it, @give<1>)>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func export @apply_op
 kgen.generator export @apply_op() {
   // CHECK-NEXT: <2>
-  kgen.param.apply x = [(!kgen.signature<() -> index>) -> index: @call_it](@give<2>)
+  kgen.param.apply x = [(!kgen.generator<() -> index>) -> index: @call_it](@give<2>)
   kgen.param.constant = <x>
   kgen.return
 }
@@ -1730,8 +1730,8 @@ kgen.generator @fwd_type(%arg0: !kgen.type) -> !kgen.type {
   kgen.return %arg0 : !kgen.type
 }
 
-kgen.generator @fwd_sig(%arg0: !kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>) -> !kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()> {
-  kgen.return %arg0 :  !kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>
+kgen.generator @fwd_sig(%arg0: !kgen.generator<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>) -> !kgen.generator<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()> {
+  kgen.return %arg0 :  !kgen.generator<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>
 }
 
 kgen.generator @fn<T: type>(%arg0: !kgen.paramref<apply(:(!kgen.type) -> !kgen.type @fwd_type, T)>) {
@@ -1741,7 +1741,7 @@ kgen.generator @fn<T: type>(%arg0: !kgen.paramref<apply(:(!kgen.type) -> !kgen.t
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // COM: Just check that the parameter expression can be resolved.
-  kgen.param.declare f: <type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> () = <apply(:(!kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>) -> !kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()> @fwd_sig, @fn)>
+  kgen.param.declare f: <type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> () = <apply(:(!kgen.generator<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>) -> !kgen.generator<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()> @fwd_sig, @fn)>
   kgen.return
 }
 

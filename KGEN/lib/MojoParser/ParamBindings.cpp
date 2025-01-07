@@ -48,9 +48,9 @@ using namespace M::KGEN::LIT;
 /// https://www.notion.so/modularai/verifyConformance-Arcana-13e1044d37bb80e88cb5c285a232784e?pvs=4#13e1044d37bb80bf8b42f3953af880f8
 ///
 /// TODO(MOCO-1259): Support static methods with associated aliases
-LITSignatureType LIT::substituteTraitAliasesIntoSignature(
+LITSignatureGeneratorType LIT::substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
-    LITSignatureType desiredSignature, PValue selfPValue) {
+    LITSignatureGeneratorType desiredSignature, PValue selfPValue) {
   ParserParamEvaluator traitAliasReplacer(declResolver);
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
@@ -570,16 +570,16 @@ ParamBindings::verifyBindingsImpl(
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(
-    LITSignatureType sig, const DiagEmitter &diagEmitter,
+    LITSignatureGeneratorType sig, const DiagEmitter &diagEmitter,
     ParameterInferenceHookTy parameterInferenceHook) const {
-  return verifyBindingsImpl(parameters, sig.getParamTypes(),
-                            sig.getParamListAttrs(), parameterInferenceHook,
+  return verifyBindingsImpl(parameters, sig.getInputParamTypes(),
+                            sig.getMetadata(), parameterInferenceHook,
                             &diagEmitter, /*partial=*/false);
 }
 
 ParameterExprArrayAttr
-ParamBindings::verifyBindings(LITSignatureType sig) const {
-  return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
+ParamBindings::verifyBindings(LITSignatureGeneratorType sig) const {
+  return verifyBindings(sig.getInputParamTypes(), sig.getMetadata(),
                         /*partial=*/true);
 }
 
@@ -615,11 +615,11 @@ ParameterExprArrayAttr ParamBindings::verifyBindings(StructDeclOp structOp,
 }
 
 ParameterExprArrayAttr
-ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
+ParamBindings::verifyBindings(LITSignatureGeneratorType sig, StringRef baseName,
                               SMLoc exprLoc,
                               std::optional<Location> opLoc) const {
   auto [newBindings, _, diag] =
-      verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
+      verifyBindings(sig.getInputParamTypes(), sig.getMetadata(),
                      opLoc ? Twine("'") + baseName + "'" : Twine(baseName),
                      exprLoc, opLoc, /*partial=*/true);
   return newBindings;
@@ -772,7 +772,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
                                               StringRef baseName,
                                               const ExprNode *expr) const {
-  LITSignatureType signature = funcOp.getFullSignature();
+  LITSignatureGeneratorType signature = funcOp.getFullSignature();
 
   // If this is a global function or struct reference, bind it directly.
   auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());
@@ -808,7 +808,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
 
   auto it = bindings.parameters.values.begin();
   bindings.parameters.values.erase(it, it + 1);
-  for (Type type : signature.getParamTypes().drop_front())
+  for (Type type : signature.getInputParamTypes().drop_front())
     paramValues.push_back(UnboundAttr::get(type));
 
   ASTDecl &traitDecl = *selfExpr.getType().getDecl(shared);
@@ -816,7 +816,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
   signature = substituteTraitAliasesIntoSignature(
       *shared.declResolver, &traitDecl, funcOp, signature, selfPValue);
 
-  signature = signature.getSpecializedSignature(paramValues, [&]() {
+  signature = signature.getSpecializedGenerator(paramValues, [&]() {
     return mlir::emitError(shared.translateLocation(expr->getLoc()))
            << "internal error: ";
   });

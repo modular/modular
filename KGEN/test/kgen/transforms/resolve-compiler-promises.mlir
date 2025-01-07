@@ -45,11 +45,11 @@ kgen.func @inner() capturing {
 }
 
 // CHECK-LABEL: kgen.func @make_a_closure(%arg0: index)
-kgen.func @make_a_closure(%arg0: index) -> !kgen.signature<()capturing -> ()> {
+kgen.func @make_a_closure(%arg0: index) -> !kgen.generator<()capturing -> ()> {
   pop.compiler.global_store "foobar", %arg0 : index
   // CHECK: create_closure[(index) capturing -> (): @capturing](%arg0)
   %0 = kgen.create_closure[() capturing -> (): @capturing]()
-  kgen.return %0: !kgen.signature<()capturing -> ()>
+  kgen.return %0: !kgen.generator<()capturing -> ()>
 }
 
 // CHECK-LABEL: kgen.func @capturing(%arg0: index) capturing

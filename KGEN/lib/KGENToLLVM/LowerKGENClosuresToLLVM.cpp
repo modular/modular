@@ -91,8 +91,8 @@ private:
   LLVM::LLVMFuncOp
   generateWrapperFunction(CreateClosureOp op,
                           ConversionPatternRewriter &rewriter) const {
-    SignatureType calleeSignature = op.getCalleeType();
-    FunctionType calleeType = calleeSignature.getValues();
+    SignatureGeneratorType calleeSignature = op.getCalleeType();
+    FunctionType calleeType = calleeSignature.getBody().getValues();
     MLIRContext *context = getContext();
 
     // the signature if the wrapper is (opaquePointer, PM, ..., PN) -> R, where
@@ -172,11 +172,11 @@ private:
     rewriter.setInsertionPointToStart(&wrapperFnBody);
 
     Type envCalleeType = adaptor.getCallee().getType();
-    if (auto sigType = dyn_cast<SignatureType>(envCalleeType))
-      envCalleeType = typeConverter->convertType(sigType.getValues());
+    if (auto sigType = dyn_cast<SignatureGeneratorType>(envCalleeType))
+      envCalleeType = typeConverter->convertType(sigType.getBody().getValues());
 
     SmallVector<Value> liftedNestedFunctionCallArgs(
-        op.getCalleeType().getValues().getNumInputs());
+        op.getCalleeType().getBody().getValues().getNumInputs());
     auto flatSymbol = dyn_cast<FlatSymbolRefAttr>(
         cast<SymbolConstantAttr>(op.getCallee()).getSymbol());
     if (!flatSymbol)
@@ -200,7 +200,7 @@ private:
     }
     size_t numCaptures = op.getCaptures().size();
     size_t numberDynamicArgs =
-        op.getCalleeType().getValues().getNumInputs() - numCaptures;
+        op.getCalleeType().getBody().getValues().getNumInputs() - numCaptures;
     for (size_t i = 0; i < numberDynamicArgs; i++)
       liftedNestedFunctionCallArgs[i + numCaptures] =
           wrapperFnBody.getArgument(i + 1);
@@ -267,7 +267,7 @@ public:
   LogicalResult
   matchAndRewrite(CreateClosureOp op, CreateClosureOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    if (!op.getType().isCapturing() && op.getCaptures().empty()) {
+    if (!op.getType().getBody().isCapturing() && op.getCaptures().empty()) {
       rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(
           op, convertType(op.getType()),
           cast<FlatSymbolRefAttr>(
@@ -320,8 +320,8 @@ struct CallIndirectOpConversion
     Value callee = op.getCallee();
     LLVM::CallOp llvmCall;
     auto isClosureType = [](Type type) {
-      if (auto sigType = dyn_cast<SignatureType>(type))
-        return sigType.isCapturing();
+      if (auto sigType = dyn_cast<SignatureGeneratorType>(type))
+        return sigType.getBody().isCapturing();
       return false;
     };
 
@@ -338,7 +338,8 @@ struct CallIndirectOpConversion
       SmallVector<Type> wrapperFnArgTypes;
       wrapperFnArgTypes.push_back(pointerType);
 
-      auto calleeFuncTy = cast<SignatureType>(callee.getType()).getValues();
+      auto calleeFuncTy =
+          cast<SignatureGeneratorType>(callee.getType()).getBody().getValues();
       for (Type argTy : calleeFuncTy.getInputs()) {
         Type ty = convertType(argTy);
         if (!ty)

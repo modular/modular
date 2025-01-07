@@ -160,7 +160,7 @@ static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
   if (callLoc)
     b.setLoc(callLoc);
   Value call = b.create<CO::InvokeOp>(
-      op.getType(), SymbolConstantAttr::get(name, sig.asOldSignature()),
+      op.getType(), SymbolConstantAttr::get(name, GeneratorType::get({}, sig)),
       captures);
   op.replaceAllUsesWith(call);
   op.erase();
@@ -188,8 +188,8 @@ static void lowerAwait(CO::AwaitOp op) {
   Value parent = body->addArgument(op.getCoroutine().getType(), op.getLoc());
 
   auto coroutineType = CO::CoroutineType::get(ctx);
-  auto signatureType =
-      SignatureType::get(b.getFunctionType({coroutineType}, {}));
+  auto signatureType = SignatureGeneratorType::get(
+      /*inputParamTypes=*/{}, b.getFunctionType({coroutineType}, {}));
   auto callbackType =
       PointerType::get(StructType::get({signatureType, coroutineType}));
   Value callback =
@@ -235,7 +235,8 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   // If the `stage_closure` is not capturing, then this is an inline (?)
   // function pointer. Force the transitive closure of operations to be cloned
   // into the body to isolate it.
-  liftClosureRegion(body, captures, domInfo, !op.getType().isCapturing());
+  liftClosureRegion(body, captures, domInfo,
+                    !op.getType().getBody().isCapturing());
   // Add the captured arguments to the front so they can be partially applied by
   // `kgen.create_closure`.
   std::rotate(body.getArguments().begin(),
@@ -243,7 +244,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 
   // We need to ensure we have conventions for each argument.
   // TODO: what convention do we use for the captures?
-  SignatureType oldSig = op.getType();
+  NewSignatureType oldSig = op.getType().getBody();
   // TODO: What conventions do we use for captures.
   SmallVector<ArgConvention> newConventions(
       body.getArguments().size() - numArgs, ArgConvention::ReadReg);
@@ -280,7 +281,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   if (callLoc)
     b.setLoc(callLoc);
   auto create = b.create<CreateClosureOp>(
-      op.getType(), SymbolConstantAttr::get(name, sig.asOldSignature()),
+      op.getType(), SymbolConstantAttr::get(name, GeneratorType::get({}, sig)),
       captures);
   op.replaceAllUsesWith(create.getResult());
   op.erase();

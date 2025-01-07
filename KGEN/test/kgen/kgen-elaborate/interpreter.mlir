@@ -265,15 +265,15 @@ kgen.generator @some_function() {
   kgen.return
 }
 
-kgen.generator @return_closure_formation() -> !kgen.signature<() -> ()> {
+kgen.generator @return_closure_formation() -> !kgen.generator<() -> ()> {
   %0 = kgen.create_closure[() -> (): @some_function]()
-  kgen.return %0 : !kgen.signature<() -> ()>
+  kgen.return %0 : !kgen.generator<() -> ()>
 }
 
 // CHECK-LABEL: kgen.func export @interpret_create_closure
 kgen.generator export @interpret_create_closure() {
   // CHECK-NEXT: constant: () -> () = <@some_function>
-  kgen.param.constant: () -> () = <apply(:() -> !kgen.signature<() -> ()> @return_closure_formation)>
+  kgen.param.constant: () -> () = <apply(:() -> !kgen.generator<() -> ()> @return_closure_formation)>
   kgen.return
 }
 
@@ -284,17 +284,17 @@ kgen.generator @a_function() {
   kgen.return
 }
 
-kgen.generator @load_store_function(%arg0: !kgen.signature<() -> ()>) -> !kgen.signature<() -> ()> {
-  %0 = pop.stack_allocation 1 x !kgen.signature<() -> ()>
+kgen.generator @load_store_function(%arg0: !kgen.generator<() -> ()>) -> !kgen.generator<() -> ()> {
+  %0 = pop.stack_allocation 1 x !kgen.generator<() -> ()>
   pop.store %arg0, %0 : !kgen.pointer<() -> ()>
   %1 = pop.load %0 : !kgen.pointer<() -> ()>
-  kgen.return %1 : !kgen.signature<() -> ()>
+  kgen.return %1 : !kgen.generator<() -> ()>
 }
 
 // CHECK-LABEL: kgen.func export @call_it
 kgen.generator export @call_it() {
   // CHECK-NEXT: constant: () -> () = <@a_function>
-  kgen.param.constant: () -> () = <apply(:(!kgen.signature<() -> ()>) -> !kgen.signature<() -> ()> @load_store_function, @a_function)>
+  kgen.param.constant: () -> () = <apply(:(!kgen.generator<() -> ()>) -> !kgen.generator<() -> ()> @load_store_function, @a_function)>
   kgen.return
 }
 
@@ -580,7 +580,7 @@ kgen.generator @testExternalization(%arg0: !kgen.pointer<(index) -> index>) -> !
 // CHECK-LABEL: kgen.func @"testInternalization{{.*}}() -> index {
 kgen.generator @testInternalization<ptr: !kgen.pointer<(index) -> index>>() -> index {
   %0 = kgen.param.constant = <7>
-  // CHECK: %pointer = kgen.param.constant: pointer<(index) -> index> = <#interp.memref<{[(#memory_handle, stack, [], [0])], [#kgen.symbol.constant<@target> : !kgen.signature<(index) -> index>]}, 0, 0>>
+  // CHECK: %pointer = kgen.param.constant: pointer<(index) -> index> = <#interp.memref<{[(#memory_handle, stack, [], [0])], [#kgen.symbol.constant<@target> : !kgen.generator<(index) -> index>]}, 0, 0>>
   %pointer = kgen.param.constant: pointer<(index) -> index> = <ptr>
   %3 = pop.load %pointer : !kgen.pointer<(index) -> index>
   %4 = kgen.call_indirect %3(%0) : (index) -> index
@@ -611,7 +611,7 @@ kgen.generator export @root() -> index {
 // CHECK-DAG: [[MHSig:#.*]] = #interp.memory_handle<8, "0x0000000000000000">
 // CHECK-LABEL: kgen.func @"captureIt{{.*}}"(%arg0: index) -> index {
 kgen.generator @"captureIt"<dst_layout: pointer<index>, idx_type: dtype>(%arg0: index) -> index {
-  // CHECK-NEXT: %pointer = kgen.param.constant: pointer<index> = <#interp.memref<{[([[MHVal]], heap, [], []), ([[MHSig]], stack, [], [0])], [#kgen.symbol.constant<@captureIt<:pointer<index> #interp<coord(0, 0)>, :dtype ?>> : !kgen.signature<<dtype>(index) -> index>]}, 0, 0>>
+  // CHECK-NEXT: %pointer = kgen.param.constant: pointer<index> = <#interp.memref<{[([[MHVal]], heap, [], []), ([[MHSig]], stack, [], [0])], [#kgen.symbol.constant<@captureIt<:pointer<index> #interp<coord(0, 0)>, :dtype ?>> : !kgen.generator<<dtype>(index) -> index>]}, 0, 0>>
   %pointer = kgen.param.constant: pointer<index> = <dst_layout>
   %3 = pop.load %pointer : !kgen.pointer<index>
   kgen.return %3 : index
@@ -622,7 +622,7 @@ kgen.generator @embedMemRefInSymbol<dst_layout: pointer<index>>() -> index {
   kgen.param.declare symbolWithMemRef: <dtype>(index) -> index = <@"captureIt"<:struct<(pointer<index>)> dst_layout, :dtype ?>>
 
   // The "store to mem" operation results in an opaque capture of a PointerAttr.
-  kgen.param.apply callIt = [(!kgen.pointer<<dtype>(index) -> index>) -> !kgen.signature<<dtype>(index) -> index>: @call_it](store_to_mem(symbolWithMemRef))
+  kgen.param.apply callIt = [(!kgen.pointer<<dtype>(index) -> index>) -> !kgen.generator<<dtype>(index) -> index>: @call_it](store_to_mem(symbolWithMemRef))
 
   // The call_param of the loaded symbol results in a read of the symbol with the unmapped pointer symbol
   %1 = kgen.call_param[(index) -> index: bind_signature(:<dtype>(index) -> index callIt, index)](%0)
@@ -637,9 +637,9 @@ kgen.generator export @main() -> index {
   kgen.return %0 : index
 }
 
-kgen.generator @call_it(%arg1: !kgen.pointer<<dtype>(index) -> index>) -> !kgen.signature<<dtype>(index) -> index> {
+kgen.generator @call_it(%arg1: !kgen.pointer<<dtype>(index) -> index>) -> !kgen.generator<<dtype>(index) -> index> {
   %1 = pop.load %arg1 : !kgen.pointer<<dtype>(index) -> index>
-  kgen.return %1 : !kgen.signature<<dtype>(index) -> index>
+  kgen.return %1 : !kgen.generator<<dtype>(index) -> index>
 }
 
 // -----
