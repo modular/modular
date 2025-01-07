@@ -28,7 +28,7 @@ from collections import InlineArray
 from math.math import _compile_time_iota
 from sys import llvm_intrinsic
 
-from memory import UnsafePointer, bitcast, memcpy
+from memory import Span, UnsafePointer, bitcast, memcpy
 
 from utils import IndexList
 
@@ -195,10 +195,10 @@ fn load_incomplete_simd[
     return result
 
 
-# TODO: Use Span instead of List as input when Span is easier to use
 @no_inline
 fn b64encode_with_buffers(
-    input_bytes: List[UInt8, _], mut result: List[UInt8, _]
+    input_bytes: Span[Byte, _],
+    mut result: List[UInt8, _],
 ):
     alias simd_width = sys.simdbytewidth()
     alias input_simd_width = simd_width * 3 // 4

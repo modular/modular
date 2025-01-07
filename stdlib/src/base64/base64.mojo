@@ -20,6 +20,7 @@ from base64 import b64encode
 """
 
 from collections import List
+from memory import Span
 from sys import simdwidthof
 
 import bit
@@ -64,8 +65,7 @@ fn _ascii_to_value(char: String) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-# TODO: Use Span instead of List as input when Span is easier to use
-fn b64encode(input_bytes: List[UInt8, _], mut result: List[UInt8, _]):
+fn b64encode(input_bytes: Span[Byte, _], mut result: List[Byte, _]):
     """Performs base64 encoding on the input string.
 
     Args:
@@ -85,11 +85,10 @@ fn b64encode(input_string: String) -> String:
     Returns:
         The ASCII base64 encoded string.
     """
-    # Slicing triggers a copy, but it should work with Span later on.
-    return b64encode(input_string._buffer[:-1])
+    return b64encode(input_string.as_bytes())
 
 
-fn b64encode(input_bytes: List[UInt8, _]) -> String:
+fn b64encode(input_bytes: Span[Byte, _]) -> String:
     """Performs base64 encoding on the input string.
 
     Args:

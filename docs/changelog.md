@@ -99,6 +99,11 @@ what we publish.
 
   - `atol()`
   - `atof()`
+  - `ord()`
+  - `ascii()`
+  - `b64encode()`
+    - The `b64encode()` overload that previously took `List` has been changed to
+      take a `Span`.
 
 - Various functionality has moved from `String` and `StringRef` to the more
   general `StringSlice` type.

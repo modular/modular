@@ -53,22 +53,6 @@ from collections.string.string_slice import (
 # ===----------------------------------------------------------------------=== #
 
 
-fn ord(s: String) -> Int:
-    """Returns an integer that represents the given one-character string.
-
-    Given a string representing one character, return an integer
-    representing the code point of that character. For example, `ord("a")`
-    returns the integer `97`. This is the inverse of the `chr()` function.
-
-    Args:
-        s: The input string slice, which must contain only a single character.
-
-    Returns:
-        An integer representing the code point of the given character.
-    """
-    return ord(s.as_string_slice())
-
-
 fn ord(s: StringSlice) -> Int:
     """Returns an integer that represents the given one-character string.
 
@@ -200,7 +184,7 @@ fn _repr_ascii(c: UInt8) -> String:
 
 
 @always_inline
-fn ascii(value: String) -> String:
+fn ascii(value: StringSlice) -> String:
     """Get the ASCII representation of the object.
 
     Args:
@@ -213,8 +197,8 @@ fn ascii(value: String) -> String:
     var result = String()
     var use_dquote = False
 
-    for idx in range(len(value._buffer) - 1):
-        var char = value._buffer[idx]
+    for idx in range(len(value._slice)):
+        var char = value._slice[idx]
         result += _repr_ascii(char)
         use_dquote = use_dquote or (char == ord_squote)
 
