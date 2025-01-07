@@ -735,3 +735,32 @@ struct CustomOpThatRaises:
         if out_shape[0] == 20:
             raise ("data.get_shape()[0] == 20")
         return out_shape
+
+
+@compiler.register("mo.test.failing_constraint")
+struct OpThatAlwaysFailsConstraint:
+    @staticmethod
+    fn execute[
+        type: DType, rank: Int
+    ](
+        out_tensor: ManagedTensorSlice[type, rank],
+        in_tensor: ManagedTensorSlice[type, rank],
+    ):
+        constrained[
+            1 == 2,
+            "Expected constraint failure for error message testing",
+        ]()
+        out_tensor[0] = in_tensor[0]
+
+
+@compiler.register("mo.test.return_error")
+struct OpThatAlwaysRaises:
+    @staticmethod
+    fn execute[
+        type: DType, rank: Int
+    ](
+        out_tensor: ManagedTensorSlice[type, rank],
+        in_tensor: ManagedTensorSlice[type, rank],
+    ) raises:
+        out_tensor[0] = in_tensor[0]
+        raise Error("This is an error")
