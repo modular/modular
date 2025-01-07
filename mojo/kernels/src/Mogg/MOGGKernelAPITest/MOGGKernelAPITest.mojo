@@ -708,3 +708,30 @@ struct ElementwisePrintShape:
     @staticmethod
     fn shape(x: ManagedTensorSlice) -> IndexList[x.rank]:
         return x.shape()
+
+
+# Raises if input shape is 10
+@compiler.register("custom_op_that_raises")
+struct CustomOpThatRaises:
+    @staticmethod
+    fn execute[
+        synchronous: Bool,
+        target: StringLiteral,
+    ](z: ManagedTensorSlice, x: ManagedTensorSlice) raises:
+        if x.shape()[0] == 10:
+            raise ("input_shape[0] == 10")
+
+        @parameter
+        @always_inline
+        fn func[width: Int](idx: IndexList[z.rank]) -> SIMD[z.type, width]:
+            return rebind[SIMD[z.type, width]](x._fused_load[width](idx))
+
+        foreach[func](z)
+
+    @staticmethod
+    fn shape(x: ManagedTensorSlice) raises -> IndexList[x.rank]:
+        print("Hello")
+        var out_shape = x.shape()
+        if out_shape[0] == 20:
+            raise ("data.get_shape()[0] == 20")
+        return out_shape
