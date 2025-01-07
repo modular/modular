@@ -39,27 +39,29 @@ def test_mnist_low_level():
     var cst = g.op(
         "mo.constant",
         TensorType(DType.float32, 128, 10),
-        _tensor_attr(g._context(), "value", cst_data),
+        List(_tensor_attr(g._context(), "value", cst_data)),
     )
     var cst_0 = g.op(
         "mo.constant",
         TensorType(DType.float32, 1, 10),
-        _tensor_attr(
-            g._context(),
-            "value",
-            Tensor[DType.float32](
-                TensorShape(1, 10),
-                -0.0675942451,
-                0.0063267909,
-                7.43086217e-4,
-                -0.0126994187,
-                0.0148473661,
-                0.108896509,
-                -0.0398316309,
-                0.0461452715,
-                -0.0281771384,
-                -0.0431172103,
-            ),
+        List(
+            _tensor_attr(
+                g._context(),
+                "value",
+                Tensor[DType.float32](
+                    TensorShape(1, 10),
+                    -0.0675942451,
+                    0.0063267909,
+                    7.43086217e-4,
+                    -0.0126994187,
+                    0.0148473661,
+                    0.108896509,
+                    -0.0398316309,
+                    0.0461452715,
+                    -0.0281771384,
+                    -0.0431172103,
+                ),
+            )
         ),
     )
 
@@ -68,22 +70,24 @@ def test_mnist_low_level():
     var cst_1 = g.op(
         "mo.constant",
         TensorType(DType.float32, 784, 128),
-        _tensor_attr(g._context(), "value", cst_1_data),
+        List(_tensor_attr(g._context(), "value", cst_1_data)),
     )
     var cst_2_data = Tensor[DType.float32](1, 128)
     cst_2_data._to_buffer().fill(0.5)
     var cst_2 = g.op(
         "mo.constant",
         TensorType(DType.float32, 1, 128),
-        _tensor_attr(g._context(), "value", cst_2_data),
+        List(_tensor_attr(g._context(), "value", cst_2_data)),
     )
     var cst_3 = g.op(
         "mo.constant",
         TensorType(DType.int32, 2),
-        _tensor_attr(
-            g._context(),
-            "value",
-            Tensor[DType.int32](TensorShape(2), -1, 784),
+        List(
+            _tensor_attr(
+                g._context(),
+                "value",
+                Tensor[DType.int32](TensorShape(2), -1, 784),
+            )
         ),
     )
     var p1 = g.op(
@@ -104,7 +108,7 @@ def test_mnist_low_level():
     var p6 = g.op(
         "mo.add", List[Symbol](p5, cst_0), TensorType(DType.float32, 1, 10)
     )
-    _ = g.nvop("mo.output", p6)
+    _ = g.nvop("mo.output", List(p6))
 
     # CHECK: test_mnist_low_level
     g.verify()

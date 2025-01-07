@@ -822,9 +822,9 @@ struct Symbol(CollectionElement, Stringable, Writable):
         # a chain as input and output enabling proper sequencing of prints.
         _ = g.nvop(
             "mo.debug.tensor.unsafe.print",
-            self,
+            List(self),
             List[Type](),
-            _string_attr(g._context(), "label", label_prefix + label),
+            List(_string_attr(g._context(), "label", label_prefix + label)),
         )
 
     # ===------------------------------------------------------------------=== #

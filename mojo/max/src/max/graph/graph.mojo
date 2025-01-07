@@ -511,7 +511,30 @@ struct Graph(CollectionElement, Stringable, Writable):
         Returns:
             The symbolic output of the newly-added node.
         """
-        return self.nvop(name, out_types=out_type, attrs=attrs)[0]
+        return self.nvop(name, out_types=List(out_type), attrs=attrs)[0]
+
+    fn op(
+        self,
+        name: String,
+        input: Symbol,
+        out_type: Type,
+        attrs: List[_mlir.NamedAttribute] = List[_mlir.NamedAttribute](),
+    ) raises -> Symbol:
+        """Adds a new single-input, single-output node to the `Graph`.
+
+        See `Graph.nvop` for details. This overload can be used for operations
+        that take a single input, and return a single result.
+
+        Args:
+            name: The name of the operation to use.
+            input: The symbolic operand.
+            out_type: The output type.
+            attrs: Any attributes that the operation might require.
+
+        Returns:
+            The symbolic output of the newly-added node.
+        """
+        return self.nvop(name, List(input), List(out_type), attrs)[0]
 
     fn op(
         self,
@@ -534,7 +557,7 @@ struct Graph(CollectionElement, Stringable, Writable):
         Returns:
             The symbolic output of the newly-added node.
         """
-        return self.nvop(name, inputs, out_type, attrs)[0]
+        return self.nvop(name, inputs, List(out_type), attrs)[0]
 
     fn op(
         self,
@@ -864,6 +887,18 @@ struct Graph(CollectionElement, Stringable, Writable):
         return self.scalar(value).broadcast_to(
             dims, location or __call_location()
         )
+
+    fn output(mut self, output: Symbol) raises:
+        """Adds an output for the graph.
+
+        This is a special node that all graphs must have in order to deliver
+        inference results. The `output` symbol given here must match the shape
+        and type of the `out_types` given when constructing the graph.
+
+        Args:
+            output: The return value, usually the result from an op.
+        """
+        return self.output(List(output))
 
     fn output(mut self, outputs: List[Symbol]) raises:
         """Adds an output for the graph.

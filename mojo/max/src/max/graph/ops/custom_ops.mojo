@@ -11,6 +11,26 @@ from max.graph._attributes import _string_attr
 from max.graph.type import Type
 
 
+def custom[name: StringLiteral](value: Symbol, out_type: Type) -> Symbol:
+    """Creates a node to execute a custom graph operation in the graph.
+
+    The custom op should be registered by annotating a function with
+    the [`max.register.op`](/max/api/mojo/register/register/op)
+    decorator.
+
+    Parameters:
+        name: The op name provided to `max.register.op`.
+
+    Args:
+        value: The op function's argument.
+        out_type: The op function's return type.
+
+    Returns:
+        A symbolic value representing the output of the op in the graph.
+    """
+    return custom[name](List(value), List(out_type))[0]
+
+
 def custom[name: StringLiteral](values: List[Symbol], out_type: Type) -> Symbol:
     """Creates a node to execute a custom graph operation in the graph.
 
@@ -53,4 +73,4 @@ def custom[
     """
     var g = values[0].graph()
     var symbol_attr = _string_attr(g._context(), "symbol", name)
-    return g.nvop("mo.custom", values, out_types, symbol_attr)
+    return g.nvop("mo.custom", values, out_types, List(symbol_attr))
