@@ -353,7 +353,7 @@ class Graph:
             [t.to_mlir() for t in self._input_types],
             output_types,
         )
-        signature = mlir.Type.parse(f"!kgen.signature<{function_type}>")
+        signature = mlir.Type.parse(f"!kgen.old_signature<{function_type}>")
         self._mlir_op.attributes["signature"] = mlir.TypeAttr.get(signature)
         self._mlir_op.attributes["functionType"] = mlir.TypeAttr.get(
             function_type
