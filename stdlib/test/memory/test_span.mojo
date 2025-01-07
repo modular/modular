@@ -208,6 +208,19 @@ def test_reversed():
         i += 1
 
 
+# We don't actually need to call this test
+# but we want to make sure it compiles
+def test_span_coerce():
+    var l = List[Int](1, 2, 3)
+    var a = InlineArray[Int, 3](1, 2, 3)
+
+    fn takes_span(s: Span[Int]):
+        pass
+
+    takes_span(l)
+    takes_span(a)
+
+
 def main():
     test_span_list_int()
     test_span_list_str()

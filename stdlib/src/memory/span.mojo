@@ -147,6 +147,7 @@ struct Span[
         self._len = len(list)
 
     @always_inline
+    @implicit
     fn __init__[
         size: Int, //
     ](mut self, ref [origin]array: InlineArray[T, size]):
