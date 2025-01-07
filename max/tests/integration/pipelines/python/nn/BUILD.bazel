@@ -87,6 +87,7 @@ modular_py_test(
         "//SDK/lib/API/python/max/serve",
         "//SDK/public/max-repo/pipelines/python/dataprocessing",
         "//SDK/public/max-repo/pipelines/python/nn",
+        "//SDK/public/max-repo/pipelines/python/nn/hooks",
         requirement("torch"),
         requirement("transformers"),
         requirement("hypothesis"),
