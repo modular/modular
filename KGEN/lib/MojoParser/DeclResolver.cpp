@@ -295,14 +295,16 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
           return false;
         LIT::FuncOp existingOp = cast<LIT::FuncOp>(existing->getIfOperation());
 
-        LITSignatureType declSignature = declOp.getFullSignature();
-        LITSignatureType existingSignature = existingOp.getFullSignature();
+        LITSignatureGeneratorType declSignature = declOp.getFullSignature();
+        LITSignatureGeneratorType existingSignature =
+            existingOp.getFullSignature();
         // If the argument types match exactly *and* the parameter
         // types match exactly, then we don't want to merge this decl into the
         // set. We also need to remove the by-ref result type from the
         // input types, so that aliasing is strictly based on the actual
         // inputs.
-        auto getActualArgs = [](LITSignatureType signature) -> ArrayRef<Type> {
+        auto getActualArgs =
+            [](LITSignatureGeneratorType signature) -> ArrayRef<Type> {
           ArrayRef<Type> inputTypes = signature.getArguments();
           // Drop the trailing result slots. Memory-only functions and throwing
           // functions each add a result slot.
@@ -312,7 +314,8 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
         };
 
         if (getActualArgs(declSignature) == getActualArgs(existingSignature) &&
-            declSignature.getParamTypes() == existingSignature.getParamTypes())
+            declSignature.getInputParamTypes() ==
+                existingSignature.getInputParamTypes())
           return false;
 
         // We can merge the decl into the set.
@@ -849,9 +852,9 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   // main to be provided via an parameter.
   SymbolConstantAttr wrapperFnRef = SymbolConstantAttr::get(
       getFullyResolvedSymbolRef(mainWrapperFn),
-      mainWrapperFn.getSignature().dropParamValues(),
+      mainWrapperFn.getSignature().dropParamValues().asSignatureGenerator(),
       {SymbolConstantAttr::get(getFullyResolvedSymbolRef(userMainFn),
-                               userMainSignature)});
+                               userMainSignature.asSignatureGenerator())});
 
   auto shimBodyBuilder = ImplicitLocOpBuilder::atBlockBegin(
       shimMainFn->getLoc(), shimMainFn.getBody());
@@ -866,28 +869,29 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 //===----------------------------------------------------------------------===//
 // Decl Helpers
 
-StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
-                                        LITSignatureType signature) {
+StringAttr
+DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
+                             LITSignatureGeneratorType signatureGen) {
   // Compute the full signature of the decl to ensure dependent parameters from
   // a parent decl are name-erased in the mangled name.
-  LITSignatureType fullSig =
-      LIT::getFullSignature(container.getIfOperation(), signature);
+  LITSignatureGeneratorType fullSig =
+      LIT::getFullSignature(container.getIfOperation(), signatureGen);
 
   SmallString<64> mangledName(baseName.getValue().begin(),
                               baseName.getValue().end());
   llvm::raw_svector_ostream os(mangledName);
   // Don't include parent parameters in the mangling.
-  ArrayRef<Type> params =
-      fullSig.getParamTypes().take_back(signature.getNumParams());
+  ArrayRef<Type> params = fullSig.getInputParamTypes().take_back(
+      signatureGen.getInputParamTypes().size());
   if (!params.empty()) {
-    size_t numSkipped = fullSig.getParamTypes().size() - params.size();
+    size_t numSkipped = fullSig.getInputParamTypes().size() - params.size();
     os << '[';
     llvm::interleave(
         llvm::enumerate(params), os,
         [&](auto typeAndIdx) {
           auto [idx, implType] = typeAndIdx;
           ASTType type = implType;
-          if (fullSig.getParamListAttrs().isVariadic(idx + numSkipped)) {
+          if (fullSig.getMetadata().isVariadic(idx + numSkipped)) {
             os << "*";
             type = type.getVariadicElementType();
           }

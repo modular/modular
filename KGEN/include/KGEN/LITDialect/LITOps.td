@@ -121,7 +121,7 @@ def LIT_FuncOp : LITOp<"func", [
 
     /// Return the full signature of this declaration, including parameters from
     /// enclosing struct declarations.
-    LITSignatureType getFullSignature();
+    LITSignatureGeneratorType getFullSignature();
 
     /// Return a collection of the ParamDeclAttr's that are declared on this
     /// function and any enclosing unit, ordered as will be required by a call.
@@ -177,7 +177,7 @@ def LIT_CallOp : LITOp<"call", [
   }];
 
   let arguments = (ins
-    AttrOfType<LIT_SignatureType>:$callee,
+    AttrOfType<LIT_SignatureGeneratorType>:$callee,
     KGEN_ParameterExprArrayAttr:$implicitOrigins,
     Variadic<AnyType>:$operands
   );
@@ -193,8 +193,8 @@ def LIT_CallOp : LITOp<"call", [
     /// Get the direct callee symbol if this is a direct call.
     SymbolRefAttr getDirectCallee();
     /// Get the callee signature type.
-    LITSignatureType getCalleeType() {
-      return cast<LITSignatureType>(getCallee().getType());
+    LITSignatureGeneratorType getCalleeType() {
+      return cast<LITSignatureGeneratorType>(getCallee().getType());
     }
   }];
 }
@@ -218,7 +218,7 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
   }];
 
   let arguments = (ins
-    LIT_SignatureType:$callee,
+    LIT_SignatureGeneratorType:$callee,
     KGEN_ParameterExprArrayAttr:$implicitOrigins,
     Variadic<AnyType>:$arguments
   );
@@ -227,13 +227,13 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
 
   let assemblyFormat = [{
     $callee `` custom<OriginParams>($implicitOrigins) `(` $arguments `)` `:`
-    custom<Signature>(type($callee)) attr-dict ``
+    custom<Generator>(type($callee)) attr-dict ``
     custom<CallOpTypes>(type($arguments), type($results), ref(type($callee)),
                         ref($implicitOrigins))
   }];
 
   let extraClassDeclaration = [{
-    LITSignatureType getCalleeType() { return getCallee().getType(); }
+    LITSignatureGeneratorType getCalleeType() { return getCallee().getType(); }
   }];
 }
 
@@ -379,7 +379,7 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
-    OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$closureSignature,
+    OptionalAttr<TypeAttrOf<KGEN_SignatureGeneratorType>>:$closureSignature,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     OptionalAttr<SourceNameAttr>:$sourceName,
@@ -616,7 +616,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     KGEN_ParamDeclArrayAttr:$params,
     TypeLineageArrayAttr:$parentTypes,
     EnumProperty<"TypeConvention">:$convention,
-    OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$dtorSig,
+    OptionalAttr<TypeAttrOf<KGEN_SignatureGeneratorType>>:$dtorSig,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<StrAttr>:$deprecationWarning,
     // This is the error message to produce if a non-destructible type needs an
@@ -977,7 +977,7 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
   }];
 
   let arguments = (ins
-    AttrOfType<KGEN_SignatureType>:$callee,
+    AttrOfType<KGEN_SignatureGeneratorType>:$callee,
     KGEN_ParameterExprArrayAttr:$implicitOrigins,
     Variadic<AnyType>:$operands
   );

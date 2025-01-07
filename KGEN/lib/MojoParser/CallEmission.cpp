@@ -268,7 +268,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings() const {
 }
 
 static LogicalResult emitOperandsNeedingOriginsToMemory(
-    const OverloadFitness &info, LITSignatureType expectedSig,
+    const OverloadFitness &info, LITSignatureGeneratorType expectedSig,
     CallOperands &operands, ExprEmitter &emitter) {
   const auto &argsNeedingOrigins = info.getArgsNeedingOrigins();
   assert(argsNeedingOrigins.any() && "should emit something");
@@ -502,7 +502,8 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
       // Emit one or more operands to memory.  We know this can't infinitely
       // loop because there is a forward progress guarantee here.
       if (failed(emitOperandsNeedingOriginsToMemory(
-              *bestFitness, cast<LITSignatureType>(boundFunction.getType()),
+              *bestFitness,
+              cast<LITSignatureGeneratorType>(boundFunction.getType()),
               operands, emitter)))
         return {};
 
@@ -559,7 +560,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     function_ref<InflightDiag &(SMLoc)> emitError) const {
   // If the target type is something weird then don't filter.  Let the error be
   // reported another way.
-  if (!isa<LITSignatureType>(functionType)) {
+  if (!isa<LITSignatureGeneratorType>(functionType)) {
     if (emitError) {
       auto &diag = emitError(expr->getLoc())
                    << "cannot convert function to non-function type "
@@ -580,7 +581,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   // TODO: We could also support generating a lambda for fancy implicit
   // conversions and subtyping some day.
   auto getBindingsIfValidCandidate =
-      [&](LITSignatureType candidateType) -> ParameterExprArrayAttr {
+      [&](LITSignatureGeneratorType candidateType) -> ParameterExprArrayAttr {
     // Apply any bound parameters to the candidate's type since they will be
     // applied when a reference is made.  We only do this if there are some
     // bindings present, because (unlike normal function calls) the result type
@@ -593,7 +594,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     // If anything was bound, apply it to the signature so the expected
     // argument types are updated.
     if (!newBindings.empty())
-      candidateType = candidateType.getSpecializedSignature(newBindings);
+      candidateType = candidateType.getSpecializedGenerator(newBindings);
 
     // This candidate is valid if it can be implicitly converted to the required
     // function type.
@@ -607,7 +608,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   SmallVector<ASTDecl *> validCandidates;
   SmallVector<ParameterExprArrayAttr> candidateBindings;
   for (ASTDecl *candidate : fnDecls) {
-    LITSignatureType candidateType =
+    LITSignatureGeneratorType candidateType =
         cast<LIT::FuncOp>(*candidate).getFullSignature();
     if (ParameterExprArrayAttr bindings =
             getBindingsIfValidCandidate(candidateType)) {
@@ -870,7 +871,7 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // Otherwise, we have a base symbol for an instance method /and/ a self value
   // to apply to it.  Partially apply it to form a result closure.
   [[maybe_unused]] auto calleeSignature =
-      cast<LITSignatureType>(directSymbolAttr.getType().mlirType);
+      cast<LITSignatureGeneratorType>(directSymbolAttr.getType().mlirType);
 
   assert(!calleeSignature.isAnyVarArg(0) && "Error: self shouldn't be varargs");
 
@@ -913,10 +914,10 @@ CValue OverloadSet::emitCall(CallOperands &&operands, ValueDest &dest,
 CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
                                      ValueDest &dest, CallSyntax syntax,
                                      const ExprNode *callExpr) {
-  auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType());
+  auto calleeSig = dyn_cast<SignatureGeneratorType>(callee.getRValueType());
   if (!calleeSig) {
-    // If we are invoking something other than a SignatureType, try to invoke
-    // its `__call__` method.
+    // If we are invoking something other than a SignatureGeneratorType, try to
+    // invoke its `__call__` method.
     operands.addSelf({callee, callExpr});
     return emitNamedMethodCall("__call__", std::move(operands), dest, syntax,
                                callExpr);
@@ -962,8 +963,8 @@ CValue ExprEmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
     // Emit one or more operands to memory.  We know this can't infinitely
     // loop because there is a forward progress guarantee here.
     if (failed(emitOperandsNeedingOriginsToMemory(
-            fitness, cast<LITSignatureType>(boundCalleeRV.getType()), operands,
-            *this))) {
+            fitness, cast<LITSignatureGeneratorType>(boundCalleeRV.getType()),
+            operands, *this))) {
       dest.resetForError();
       return {};
     }
@@ -1175,8 +1176,8 @@ FailureOr<PValue> OverloadSet::canConstructType(ASTType requiredType,
   // it returns the right thing we were expecting.  It is possible that
   // conditional conformances constrain the result type more than we were
   // expecting.
-  auto resultTy =
-      cast<LITSignatureType>(result.get().getType()).getUserResultType();
+  auto resultTy = cast<LITSignatureGeneratorType>(result.get().getType())
+                      .getUserResultType();
   auto &shared = paramEmitter.shared;
   if (!requiredType.isEqualCanon(resultTy)) {
     // It is ok if the self type has different parameters than the

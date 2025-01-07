@@ -19,7 +19,7 @@ using llvm::SMLoc;
 class DeclResolver;
 class ExprNode;
 class FuncOp;
-class LITSignatureType;
+class LITSignatureGeneratorType;
 class ParserParamEvaluator;
 class PogListAttr;
 class PValue;
@@ -135,14 +135,14 @@ public:
   /// signature doesn't match, the provided DiagEmitter will be used to emit
   /// diagnostics. A parameter inference must must be provided.
   std::pair<ParameterExprArrayAttr, Fitness>
-  verifyBindings(LITSignatureType sig, const DiagEmitter &diagEmitter,
+  verifyBindings(LITSignatureGeneratorType sig, const DiagEmitter &diagEmitter,
                  ParameterInferenceHookTy parameterInferenceHook) const;
 
   /// Attempt to bind the current set of parameters to the provided signature.
   /// This applies parameter inference and any default values to form a full
   /// binding set, which is returned along with the binding fitness. This will
   /// form a partial binding of the signature.
-  ParameterExprArrayAttr verifyBindings(LITSignatureType sig) const;
+  ParameterExprArrayAttr verifyBindings(LITSignatureGeneratorType sig) const;
 
   /// Attempt to bind the current set of parameters to the provided parameter
   /// types and list. This applies parameter inference and any default values to
@@ -163,7 +163,8 @@ public:
   /// doesn't match, diagnostics will be emitted using the given baseName and
   /// locations.
   ParameterExprArrayAttr
-  verifyBindings(LITSignatureType sig, StringRef baseName, SMLoc exprLoc,
+  verifyBindings(LITSignatureGeneratorType sig, StringRef baseName,
+                 SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt) const;
 
   /// Check that our set of parameter bindings work with the specified input
@@ -219,9 +220,9 @@ private:
   size_t numPreTypeChecked = 0;
 };
 
-LITSignatureType substituteTraitAliasesIntoSignature(
+LITSignatureGeneratorType substituteTraitAliasesIntoSignature(
     DeclResolver &declResolver, ASTDecl *traitDecl, LIT::FuncOp candidateFunc,
-    LITSignatureType desiredSignature, PValue selfPValue);
+    LITSignatureGeneratorType desiredSignature, PValue selfPValue);
 
 } // namespace M::KGEN::LIT
 

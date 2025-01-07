@@ -21,8 +21,8 @@ kgen.func @none_func_other_results(%arg0: i32, %arg1: i64) -> (i32, !kgen.none, 
 }
 
 // CHECK-LABEL: kgen.func @none_stage_closure
-// CHECK-SAME: -> !kgen.signature<() -> ()>
-kgen.func @none_stage_closure() -> !kgen.signature<() -> !kgen.none> {
+// CHECK-SAME: -> !kgen.generator<() -> ()>
+kgen.func @none_stage_closure() -> !kgen.generator<() -> !kgen.none> {
   // CHECK: kgen.stage_closure = () {
   %0 = kgen.stage_closure = () -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
@@ -30,8 +30,8 @@ kgen.func @none_stage_closure() -> !kgen.signature<() -> !kgen.none> {
     // CHECK-NOT: !kgen.none
     kgen.return %none : !kgen.none
   }
-  // CHECK: return %0 : !kgen.signature<() -> ()>
-  kgen.return %0 : !kgen.signature<() -> !kgen.none>
+  // CHECK: return %0 : !kgen.generator<() -> ()>
+  kgen.return %0 : !kgen.generator<() -> !kgen.none>
 }
 
 // CHECK-LABEL: @early_return_loop
@@ -80,16 +80,16 @@ kgen.func @call_none() {
 }
 
 // CHECK-LABEL: kgen.func @call_indirect
-// CHECK-SAME: %arg0: !kgen.signature<() -> ()>
-kgen.func @call_indirect(%arg0: !kgen.signature<() -> !kgen.none>) {
+// CHECK-SAME: %arg0: !kgen.generator<() -> ()>
+kgen.func @call_indirect(%arg0: !kgen.generator<() -> !kgen.none>) {
   // CHECK: kgen.call_indirect %arg0() : () -> ()
   %0 = kgen.call_indirect %arg0() : () -> !kgen.none
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @async_signature
-// CHECK-SAME: !kgen.signature<() async -> ()>
-kgen.func @async_signature(%arg0: !kgen.signature<() async -> !kgen.none>) {
+// CHECK-SAME: !kgen.generator<() async -> ()>
+kgen.func @async_signature(%arg0: !kgen.generator<() async -> !kgen.none>) {
   kgen.return
 }
 
@@ -181,7 +181,7 @@ kgen.func @byrefresult_fun(%arg0: index, %arg1: !kgen.pointer<none>) -> !pop.sca
   kgen.return %0 : !pop.scalar<si32>
 }
 // CHECK-LABEL: kgen.func @byrefresult_create_reg_stub
-kgen.func @byrefresult_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none> {
+kgen.func @byrefresult_create_reg_stub() -> !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none> {
   // CHECK: kgen.stage_closure = ([[ARG0:%.*]]: !kgen.pointer<struct<(index) memoryOnly>> read_mem, [[ARG1:%.*]]: !kgen.pointer<none>, [[ARG2:%.*]]: !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) {
   // CHECK-NEXT: [[V1:%.*]] = pop.pointer.bitcast [[ARG0]] : !kgen.pointer<struct<(index) memoryOnly>> to !kgen.pointer<index>
   // CHECK-NEXT: [[V2:%.*]] = pop.load [[V1]] : !kgen.pointer<index>
@@ -190,7 +190,7 @@ kgen.func @byrefresult_create_reg_stub() -> !kgen.signature<(!kgen.pointer<struc
   // CHECK-NEXT: pop.store [[V4]], [[V3]] : !kgen.pointer<scalar<si32>>
   // CHECK-NEXT: kgen.return
   %0 = kgen.create_reg_stub [(index, !kgen.pointer<none>) -> !pop.scalar<si32>: @byrefresult_fun] : <(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
-  kgen.return %0 : !kgen.signature<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
+  kgen.return %0 : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> read_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
 }
 
 kgen.func @noargs_fun() -> !kgen.none {
@@ -198,10 +198,10 @@ kgen.func @noargs_fun() -> !kgen.none {
     kgen.return %none : !kgen.none
 }
 // CHECK-LABEL kgen.func @noargs_create_reg_stub
-kgen.func @noargs_create_reg_stub() -> !kgen.signature<() -> !kgen.none> {
+kgen.func @noargs_create_reg_stub() -> !kgen.generator<() -> !kgen.none> {
   // CHECK: kgen.create_closure[() -> (): @noargs_create_reg_stub]()
   %0 = kgen.create_reg_stub [() -> !kgen.none: @noargs_create_reg_stub] : <() -> !kgen.none>
-  kgen.return %0 : !kgen.signature<() -> !kgen.none>
+  kgen.return %0 : !kgen.generator<() -> !kgen.none>
 }
 
 // CHECK-LABEL: @lower_variants
@@ -242,16 +242,16 @@ kgen.func @empty_variant(%arg0: !kgen.variant<[[]]>) {
   kgen.return
 }
 
-// CHECK-LABEL: @return_empty() { 
+// CHECK-LABEL: @return_empty() {
 kgen.func @return_empty() -> !kgen.struct<()> {
   %struct = kgen.param.constant: struct<()> = <{  }>
   kgen.return %struct : !kgen.struct<()>
 }
 
 // CHECK-LABEL: @call_empty_thing
-// CHECK-SAME: (%arg0: !kgen.signature<() -> ()>) {
-kgen.func @call_empty_thing(%arg0: !kgen.signature<() -> !kgen.struct<()>>) -> !kgen.struct<()> {
-  // CHECK-NEXT: kgen.call_indirect %arg0() : () -> () 
+// CHECK-SAME: (%arg0: !kgen.generator<() -> ()>) {
+kgen.func @call_empty_thing(%arg0: !kgen.generator<() -> !kgen.struct<()>>) -> !kgen.struct<()> {
+  // CHECK-NEXT: kgen.call_indirect %arg0() : () -> ()
   %0 = kgen.call_indirect %arg0() : () -> !kgen.struct<()>
   kgen.return %0 : !kgen.struct<()>
 }

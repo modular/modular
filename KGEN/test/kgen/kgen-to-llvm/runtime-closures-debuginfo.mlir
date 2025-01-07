@@ -35,8 +35,8 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %idx98 = index.constant 98
     %0 = kgen.create_closure[(index) -> index: @h](%idx98) loc(#loc7)
     %1 = kgen.create_closure[(index) -> index: @g](%idx98) loc(#loc8)
-    "use.closure"(%0) : (!kgen.signature<() capturing -> index>) -> ()
-    "use.closure"(%1) : (!kgen.signature<() capturing -> index>) -> ()
+    "use.closure"(%0) : (!kgen.generator<() capturing -> index>) -> ()
+    "use.closure"(%1) : (!kgen.generator<() capturing -> index>) -> ()
     llvm.return
   }
 

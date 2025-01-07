@@ -431,9 +431,9 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // If this type is a function with no formal arguments and an ignorable type,
   // we emit a warning with a fix it hint suggesting that it get called.
   // TODO: This is incorrect for default arguments and varargs.
-  if (auto sig = dyn_cast<SignatureType>(valueType)) {
+  if (auto sig = dyn_cast<LITSignatureGeneratorType>(valueType)) {
     // Get the result type without any error handling in the way.
-    Type resultType = ASTType(sig).getSignatureUserResultType();
+    Type resultType = sig.getUserResultType();
     if ((sig.getNumArguments() ==
          ((unsigned)sig.hasMemoryOnlyResult() + (unsigned)sig.isThrows())) &&
         isImplicitlyIgnorableType(resultType)) {
@@ -1584,9 +1584,10 @@ ParseResult StmtParser::parseSingleWithStmt(size_t curIndent, SMLoc smLoc,
           CallSyntax::kMethodCall, enterEmitter)) {
     // If there is no exit method, we can pass the argument as an RValue so the
     // enter method can consume the value... unless __enter__ takes self 'mut'.
-    if (auto signature = dyn_cast<SignatureType>(enterMethod.getType());
-        signature && !signature.getArgConventions().empty()) {
-      auto firstArgConvention = signature.getArgConventions()[0];
+    if (auto signature =
+            dyn_cast<SignatureGeneratorType>(enterMethod.getType());
+        signature && !signature.getBody().getArgConventions().empty()) {
+      auto firstArgConvention = signature.getBody().getArgConventions()[0];
       if (firstArgConvention != ArgConvention::Mut && !hasExitMethod)
         contextVal = MRValue(contextMgrDecl);
 

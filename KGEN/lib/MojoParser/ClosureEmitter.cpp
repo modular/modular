@@ -108,9 +108,9 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
 
 /// Given a signature of a function, create a new signature by inserting a
 /// closure argument at index 0 with the given convention.
-static LITSignatureType
+static LITSignatureGeneratorType
 addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
-                                     LITSignatureType sig) {
+                                     LITSignatureGeneratorType sig) {
   MLIRContext *ctx = sig.getContext();
 
   unsigned newArgCount = sig.getNumArguments() + 1;
@@ -127,8 +127,9 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   argPogs.emplace_back(
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   // Add the rest of the arguments.
-  FnMetadataAttr oldMetadata = sig.getMetadata();
-  PogListAttr argListAttr = oldMetadata.getArgListAttrs();
+  FnMetadataAttr oldFnMetadata = sig.getFnMetadata();
+  PogListAttr argListAttr = oldFnMetadata.getArgListAttrs();
+  PogListAttr paramListAttr = sig.getMetadata();
   llvm::append_range(signatureInputs, sig.getArguments());
   llvm::append_range(argConventions, sig.getArgConventions());
   llvm::append_range(argPogs, argListAttr.getPogs());
@@ -137,13 +138,14 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   // A closure signature is not escaping because its 'escaping' state is
   // captured in the self argument we are inserting in this function.
   auto metadata = FnMetadataAttr::get(
-      argListAttr.cloneWith(argPogs), oldMetadata.getParamListAttrs(),
-      oldMetadata.getNumImplicitOriginDecls(), oldMetadata.getCaptureOrigins(),
-      oldMetadata.getIsNestedOriginExclusivityCheckingDisabled());
-  return SignatureType::get(
-      FunctionType::get(ctx, signatureInputs, sig.getResults()),
-      sig.getParamTypes(), /*resultParamTypes=*/{}, argConventions,
-      sig.getFnEffects().setEscaping(false), metadata);
+      argListAttr.cloneWith(argPogs), oldFnMetadata.getParamListAttrs(),
+      oldFnMetadata.getNumImplicitOriginDecls(),
+      oldFnMetadata.getCaptureOrigins(),
+      oldFnMetadata.getIsNestedOriginExclusivityCheckingDisabled());
+  return SignatureGeneratorType::get(
+      sig.getInputParamTypes(),
+      FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
+      sig.getFnEffects().setEscaping(false), metadata, paramListAttr);
 }
 
 /// ```mojo
@@ -156,14 +158,15 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
 ///     self.call = call_impl
 /// ```
 void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
-                                                LITSignatureType sig) {
+                                                LITSignatureGeneratorType sig) {
   // Skip this if builtins are not found.
   if (!shared.hasBuiltinModule())
     return;
 
   // Declare the function.
-  LITSignatureType fnPtrType =
-      sig.getWithFnEffects(sig.getFnEffects().setEscaping(false));
+  LITSignatureGeneratorType fnPtrType =
+      sig.getWithBody(sig.getBody().getWithFnEffects(
+          sig.getBody().getFnEffects().setEscaping(false)));
   auto b = ImplicitLocOpBuilder::atBlockEnd(
       translateLocation(decl.getLoc()),
       &cast<StructDeclOp>(decl).getFields().front());
@@ -201,15 +204,16 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   storeField(b, self, copyRef, b.getStringAttr("copy"));
 
   // Generate the 'call_impl' function that performs the indirect call.
-  LITSignatureType callImplType = addClosureSelfArgToFunctionSignature(
+  LITSignatureGeneratorType callImplType = addClosureSelfArgToFunctionSignature(
       opaquePtrType, ArgConvention::ReadReg, fnPtrType);
   StringAttr lambdaName = b.getStringAttr("call_impl");
   auto [callImpl, callDecl] = synthesizeFunction(
-      decl, lambdaName, /*params=*/{}, callImplType.getParamListAttrs(),
+      decl, lambdaName, /*params=*/{}, callImplType.getMetadata(),
       callImplType.getArguments(), callImplType.getArgConventions(),
       callImplType.getArgListAttrs(), fnPtrType.getResultType(),
       SpecialFunctionKind::kNormal, decl.getLoc(), b, fnPtrType.getFnEffects());
-  auto paramDecl = ParamDeclAttr::get(lambdaName, callImpl.getSignature());
+  auto paramDecl = ParamDeclAttr::get(
+      lambdaName, callImpl.getSignature().asSignatureGenerator());
   callImpl.setParamDeclAttr(paramDecl);
 
   // Store it into the call field.
@@ -234,17 +238,15 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
 }
 
 StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
-    StringAttr name, LITSignatureType dependentSignatureType,
+    StringAttr name, LITSignatureGeneratorType dependentSignatureType,
     SMLoc nestedFunctionOrTypeLocation) {
   SmallVector<Type> fieldTypes{opaquePtrType};
 
-  assert(dependentSignatureType.getResultParamTypes().empty() &&
-         "mojo doesn't have result parameters");
   SmallVector<ParamDeclAttr> wrapperDecls;
   ParserParamEvaluator evaluator(getDeclResolver());
   SmallVector<TypedAttr> paramValues;
   for (auto [i, type] :
-       llvm::enumerate(dependentSignatureType.getParamTypes())) {
+       llvm::enumerate(dependentSignatureType.getInputParamTypes())) {
     wrapperDecls.push_back(
         ParamDeclAttr::get(StringAttr::get(getContext(), "p" + Twine(i)),
                            evaluator.getReboundType(type)));
@@ -263,9 +265,10 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
   auto dtorMetadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}));
-  auto dtorSig = SignatureType::get(b.getFunctionType(opaquePtrType, noneType),
-                                    ArgConvention::ReadReg,
-                                    /*effects=*/{}, dtorMetadata);
+  auto dtorSig = SignatureGeneratorType::get(
+      /*inputParamTypes=*/{}, b.getFunctionType(opaquePtrType, noneType),
+      ArgConvention::ReadReg,
+      /*effects=*/{}, dtorMetadata, dtorMetadata.getParamListAttrs());
   auto dtor = b.create<StructFieldOp>(declOp.getLoc(), dtorFieldAttr, dtorSig);
 
   // Create Copy Member.
@@ -273,12 +276,13 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       b.getType<FunctionType>(ArrayRef<Type>{opaquePtrType}, opaquePtrType);
   auto metadata = FnMetadataAttr::get(
       PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly}));
-  auto cpySignatureType = SignatureType::get(fnType, {ArgConvention::ReadReg},
-                                             /*effects=*/{}, metadata);
+  auto cpySignatureType = SignatureGeneratorType::get(
+      /*inputParamTypes=*/{}, fnType, {ArgConvention::ReadReg},
+      /*effects=*/{}, metadata, metadata.getParamListAttrs());
   auto copy =
       b.create<StructFieldOp>(declOp.getLoc(), copyFieldAttr, cpySignatureType);
 
-  dependentSignatureType = dependentSignatureType.getSpecializedSignature(
+  dependentSignatureType = dependentSignatureType.getSpecializedGenerator(
       paramValues, translateLocation(nestedFunctionOrTypeLocation));
   auto sigMetadata =
       FnMetadataAttr::get(dependentSignatureType.getArgListAttrs(),
@@ -286,12 +290,14 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   Type resultType = dependentSignatureType.getResults().front();
   FunctionType functionType =
       b.getFunctionType(dependentSignatureType.getArguments(), resultType);
-  LITSignatureType signatureType = SignatureType::get(
-      functionType, {}, {}, dependentSignatureType.getArgConventions(),
-      dependentSignatureType.getFnEffects(), sigMetadata);
+  LITSignatureGeneratorType signatureType = SignatureGeneratorType::get(
+      /*inputParamTypes=*/{}, functionType,
+      dependentSignatureType.getArgConventions(),
+      dependentSignatureType.getFnEffects(), sigMetadata,
+      sigMetadata.getParamListAttrs());
 
   // Add the call member
-  LITSignatureType callMemberSignatureType =
+  LITSignatureGeneratorType callMemberSignatureType =
       addClosureSelfArgToFunctionSignature(
           opaquePtrType, ArgConvention::ReadReg, signatureType);
   auto callMember = b.create<StructFieldOp>(declOp.getLoc(), callFieldAttr,
@@ -383,7 +389,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   // Add the __call__ Method.
   ASTType selfType = structDecl.getTypeDeclSelf();
   auto refToSelfType = selfType.getRefForArgument("self", /*isMut=*/false);
-  LITSignatureType closureMethodSignatureType =
+  LITSignatureGeneratorType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(
           refToSelfType, ArgConvention::ReadMem, signatureType);
   // The __call__ method is effectively the in-source body of the function. Mark
@@ -413,7 +419,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value callMemberPtr = loadField(builder, callSelf, callMember);
 
     SmallVector<TypedAttr> implicitOrigins;
-    auto calleeSig = cast<SignatureType>(callMemberPtr.getType());
+    auto calleeSig = cast<LITSignatureGeneratorType>(callMemberPtr.getType());
     for (auto [arg, conv] : llvm::zip(arguments, calleeSig.getArgConventions()))
       if (SignatureType::hasImplicitOrigin(conv))
         implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
@@ -429,7 +435,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
 StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     ArrayRef<Capture> captures, ArrayRef<ParamDeclRefAttr> paramCaptures,
-    ASTDecl &nestedFnDecl, LITSignatureType wrapperSig) {
+    ASTDecl &nestedFnDecl, LITSignatureGeneratorType wrapperSig) {
   auto implName =
       StringAttr::get(ctx, "`_CI_" + fileModuleOp.getSymName() + "_escaping" +
                                Twine(moduleDecl.getNextUniqueID()));
@@ -437,8 +443,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Create map from the parent name to the index of the parameter in the
   // closure struct.
   FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
-  wrapperSig = nestedFn.getSignature();
-  if (wrapperSig.getNumParams()) {
+  wrapperSig = nestedFn.getSignature().asSignatureGenerator();
+  if (!wrapperSig.getInputParamTypes().empty()) {
     shared.emitError(
         nestedFnDecl.getLoc(),
         "add parameters of nested function to parent function and capture "
@@ -455,7 +461,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Check for parameter closure captures.
   bool hasParamClosureCaptures = false;
   mlir::AttrTypeWalker walker;
-  walker.addWalk([](SignatureType sig) {
+  walker.addWalk([](NewSignatureType sig) {
     if (sig.isCapturing())
       return WalkResult::interrupt();
     return WalkResult::advance();
@@ -976,11 +982,13 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   // Create the __call__ function.
   assert(closureWrapper.getClosureSignature().has_value() &&
          "The closure signature should have been set at creation time");
-  SignatureType functionSignature = *closureWrapper.getClosureSignature();
-  LITSignatureType closureSignature = addClosureSelfArgToFunctionSignature(
-      opaquePtrType, ArgConvention::ReadReg, functionSignature);
+  SignatureGeneratorType functionSignature =
+      *closureWrapper.getClosureSignature();
+  LITSignatureGeneratorType closureSignature =
+      addClosureSelfArgToFunctionSignature(
+          opaquePtrType, ArgConvention::ReadReg, functionSignature);
   assert(closureSignature.getResults().size() == 1);
-  closureSignature = closureSignature.getSpecializedSignature(
+  closureSignature = closureSignature.getSpecializedGenerator(
       ArrayRef(topLevelParamRefs).take_front(wrapperParamDecls.size()),
       translateLocation(loc));
 
@@ -1032,7 +1040,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
     SymbolConstantAttr typedSymbol = createTypedSymbol(symbol, topLevelParams);
 
     SmallVector<TypedAttr> implicitOrigins;
-    auto finalSig = cast<SignatureType>(typedSymbol.getType());
+    auto finalSig = cast<LITSignatureGeneratorType>(typedSymbol.getType());
     for (auto [arg, conv] : llvm::zip(args, finalSig.getArgConventions()))
       if (SignatureType::hasImplicitOrigin(conv))
         implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());

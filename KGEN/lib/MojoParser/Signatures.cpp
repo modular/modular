@@ -745,7 +745,7 @@ static ASTType addImplicitTypeParams(ASTType type,
 
   // First check for a function type.
   // FIXME: We need an AnyFunction metatype.
-  if (auto sig = dyn_cast<LITSignatureType>(type)) {
+  if (auto sig = dyn_cast<LITSignatureGeneratorType>(type)) {
     TypedAttr origins = sig.getCaptureOrigins();
     if (!isa<UnboundAttr>(origins))
       return type;
@@ -1169,8 +1169,8 @@ static void typeCheckOneArgument(size_t idx, bool isDef, bool isStaticMethod,
   tcSignature.argTypes.push_back(type);
 
   // Check if the argument is a parametric function.
-  if (auto fType = dyn_cast<LITSignatureType>(type)) {
-    if (fType.getNumParams() != 0) {
+  if (auto fType = dyn_cast<LITSignatureGeneratorType>(type)) {
+    if (!fType.getInputParamTypes().empty()) {
       arg.isErroneous = true;
       shared.emitError(shared.diags.translateLocation(arg.typeExpr->getLoc()),
                        "parametric functions may not be used as arguments; "
@@ -1945,7 +1945,8 @@ FunctionType TypeCheckedFnSignature::getFunctionType() const {
 
 /// Form a LIT signature packaging up all the stuff we need to know about this
 /// type checked function.
-LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
+LITSignatureGeneratorType
+TypeCheckedFnSignature::getLITSignatureGeneratorType() const {
   MLIRContext *ctx = paramList.shared.getContext();
 
   size_t numArgs = argList.parsedArgs.size();
@@ -1987,7 +1988,7 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   };
 
   FunctionType functionType = getFunctionType();
-  return SignatureType::remapToSignature(
-      paramList.paramDeclAttrs, /*resultParams=*/{}, functionType,
-      argConventions, argList.effects, metadata, silenceErrors);
+  return SignatureGeneratorType::remapToSignatureGenerator(
+      paramList.paramDeclAttrs, functionType, argConventions, argList.effects,
+      metadata, metadata.getParamListAttrs(), silenceErrors);
 }

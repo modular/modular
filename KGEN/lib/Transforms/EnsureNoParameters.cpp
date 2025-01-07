@@ -26,8 +26,8 @@ static LogicalResult legalizeOp(Operation *op) {
   mlir::AttrTypeWalker legalizer;
   bool isFailure = false;
 
-  // SignatureType must not be parameterized anymore.
-  legalizer.addWalk([&](SignatureType sig) {
+  // SignatureGeneratorType must not be parameterized anymore.
+  legalizer.addWalk([&](SignatureGeneratorType sig) {
     if (!sig.getInputParamTypes().empty()) {
       mlir::emitError(op->getLoc(),
                       "parameterized functions cannot be used at runtime");
@@ -47,7 +47,7 @@ static LogicalResult legalizeOp(Operation *op) {
   if (isa<ParamConstantOp, ParamMaterializeOp>(op)) {
     // Capturing closure references are not materialize-able.
     legalizer.addWalk([&](SymbolConstantAttr ref) {
-      if (ref.getType().isCapturing()) {
+      if (ref.getType().getBody().isCapturing()) {
         mlir::emitError(op->getLoc(),
                         "capturing closures cannot be materialized at runtime");
         isFailure = true;
@@ -56,7 +56,7 @@ static LogicalResult legalizeOp(Operation *op) {
       return WalkResult::advance();
     });
   } else if (auto createClosure = dyn_cast<CreateClosureOp>(op)) {
-    if (createClosure.getCalleeSignature().isCapturing()) {
+    if (createClosure.getCalleeSignature().getBody().isCapturing()) {
       mlir::emitError(op->getLoc(),
                       "capturing closures cannot be materialized at runtime");
       isFailure = true;

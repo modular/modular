@@ -629,8 +629,8 @@ static void updateCallOps(CallGraphNode *node, CallGraph &cg,
     auto specializedSig =
         specialized.getSignatureGenerator().getSpecializedGenerator(
             newParamBuffer, oldCall.getLoc());
-    auto symbol = SymbolConstantAttr::get(
-        flatSym, specializedSig.asOldSignature(), newParamBuffer);
+    auto symbol =
+        SymbolConstantAttr::get(flatSym, specializedSig, newParamBuffer);
 
     // Replace the call with a new call operator.
     oldCall.setCalleeAttr(symbol);

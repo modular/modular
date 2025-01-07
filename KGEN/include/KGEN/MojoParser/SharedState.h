@@ -23,7 +23,7 @@ namespace M::KGEN {
 class CompilationOptions;
 class NoneAttr;
 class ParamDeclAttr;
-class SignatureType;
+class SignatureGeneratorType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -447,7 +447,7 @@ public:
 
   /// This gets the typed-erased closure wrapper for `sig`, or creates one in
   /// the provided module if one does not already exist.
-  StructDeclOp getOrCreateClosureWrapper(SMLoc loc, SignatureType sig,
+  StructDeclOp getOrCreateClosureWrapper(SMLoc loc, SignatureGeneratorType sig,
                                          ASTDecl *moduleDecl);
 
   /// Function used to create a thunk. This API is limited intentionally to

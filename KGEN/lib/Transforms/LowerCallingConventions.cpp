@@ -41,20 +41,7 @@ static std::pair<bool, SmallVector<Type>> removeNoneTypes(TypeRange types) {
 /// Lower the signature results by replacing all the `!kgen.none` results in a
 /// signature. This will also set the signature to non-throwing, and erase
 /// `byref_result` argument conventions.
-static SignatureType lowerResult(SignatureType signature) {
-  auto [anyNone, newResults] = removeNoneTypes(signature.getResults());
-  // Micro-optimization: don't hash a new type if it won't change.
-  if (!anyNone)
-    return signature;
-  return SignatureType::get(
-      FunctionType::get(signature.getContext(), signature.getArguments(),
-                        newResults),
-      signature.getArgConventions(), signature.getFnEffects().setThrows(false));
-}
-
-/// Same as `lowerResult` but for `NewSignatureType`. Both are needed until
-/// CallOps also switch over.
-static NewSignatureType lowerNewResult(NewSignatureType signature) {
+static NewSignatureType lowerResult(NewSignatureType signature) {
   auto [anyNone, newResults] = removeNoneTypes(signature.getResults());
   // Micro-optimization: don't hash a new type if it won't change.
   if (!anyNone)
@@ -125,11 +112,11 @@ static StructAttr lowerVariantAttr(VariantAttr attr) {
 }
 
 static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
-  SignatureType resSig = op.getResult().getType();
-  SignatureType calleeSig = cast<SignatureType>(op.getCallee().getType());
+  SignatureGeneratorType resSigGen = op.getResult().getType();
+  auto calleeSigGen = cast<SignatureGeneratorType>(op.getCallee().getType());
   SymbolConstantAttr callee = cast<SymbolConstantAttr>(op.getCallee());
 
-  if (calleeSig == resSig) {
+  if (calleeSigGen == resSigGen) {
     // Signatures are equal, no need to transform the arguments.
     // Directly lower to CreateClosureOp.
     b.replaceOpWithNewOp<CreateClosureOp>(op, callee);
@@ -139,11 +126,13 @@ static void lowerCreateRegStubOp(IRRewriter &b, CreateRegStubOp op) {
   // The created closure is a synthesized operation. No debug scopes should be
   // carried into it from the originating op.
   LocationAttr loc = DebugInfo::stripDebugScopesRecursively(op->getLoc());
-  auto closureWrapper = b.create<StageClosureOp>(loc, resSig);
+  auto closureWrapper = b.create<StageClosureOp>(loc, resSigGen);
   closureWrapper.setCallLocAttr(op->getLoc());
   Block *body = b.createBlock(&closureWrapper.getBodyRegion());
 
   // Bitcast the function arguments and load the inputs.
+  NewSignatureType resSig = resSigGen.getBody();
+  NewSignatureType calleeSig = calleeSigGen.getBody();
   SmallVector<Value> insValues;
   SmallVector<Value> outsPointers;
   bool promotedOutputs =
@@ -358,7 +347,6 @@ static void recursiveRewrite(Operation *op, mlir::AttrTypeReplacer &replacer) {
 void LowerCallingConventionsPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement(lowerResult);
-  replacer.addReplacement(lowerNewResult);
   replacer.addReplacement(removeDINoneResults);
   replacer.addReplacement(lowerPackTypeToStruct);
   replacer.addReplacement(lowerPackAttrToStruct);

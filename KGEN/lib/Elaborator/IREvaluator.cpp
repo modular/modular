@@ -328,7 +328,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   StringRef emissionOptionsStr = cast<StringAttr>(op.getOperand(2)).getValue();
   bool propagateError = cast<IntegerAttr>(op.getOperand(3)).getInt();
   auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(4));
-  if (!symbol || !symbol.getType().isConcrete()) {
+  if (!symbol || !symbol.getType().isFullyBound()) {
     emitError({*errorLoc, "'compile_assembly' function is not concrete"});
     return failure();
   }
@@ -341,8 +341,9 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   MLIRContext *ctx = op.getContext();
   Builder b(ctx);
   auto noneType = KGEN::NoneType::get(ctx);
-  auto populateFnType = SignatureType::get(
-      b.getFunctionType(PointerType::get(noneType), noneType), {}, {},
+  auto populateFnType = SignatureGeneratorType::get(
+      /*inputParamTypes=*/{},
+      b.getFunctionType(PointerType::get(noneType), noneType),
       {ArgConvention::ReadReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
@@ -407,7 +408,7 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
       symbol.getSymbol().getRootReference());
   assert(genOp && "expected a valid generator reference");
 
-  if (!symbol.getType().isConcrete())
+  if (!symbol.getType().isFullyBound())
     return {StringAttr::get(genOp.getSymName(), op.getType())};
 
   // HACK HACK HACK: Our current name mangling scheme is not compatible with the

@@ -208,8 +208,8 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
 
   let extraSharedClassDeclaration = [{
     /// Get the signature type of the callee, if it is known.
-    SignatureType getCalleeSignature() {
-      return dyn_cast<SignatureType>($_op.getCallee().getType());
+    SignatureGeneratorType getCalleeSignature() {
+      return dyn_cast<SignatureGeneratorType>($_op.getCallee().getType());
     }
   }];
 
@@ -463,8 +463,8 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
 
   let extraSharedClassDeclaration = [{
     /// Get the signature type of the callee.
-    SignatureType getCalleeType() {
-      return cast<SignatureType>($_op.getCallee().getType());
+    SignatureGeneratorType getCalleeType() {
+      return cast<SignatureGeneratorType>($_op.getCallee().getType());
     }
   }];
 }

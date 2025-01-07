@@ -37,8 +37,12 @@ static LITSignatureType getSignatureFromDecl(ASTDecl *decl) {
     return nullptr;
   if (auto func = dyn_cast<LIT::FuncOp>(*decl))
     return func.getSignature();
-  if (auto pValue = decl->getIfIRValue().getIfPValue())
-    return dyn_cast_or_null<LITSignatureType>(pValue.getIfTypeValue().mlirType);
+  if (auto pValue = decl->getIfIRValue().getIfPValue()) {
+    Type valueType = pValue.getIfTypeValue().mlirType;
+    if (auto sigGen = dyn_cast_or_null<LITSignatureGeneratorType>(valueType))
+      return sigGen.asOldSignature();
+    return dyn_cast_or_null<LITSignatureType>(valueType);
+  }
   return nullptr;
 }
 

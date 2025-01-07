@@ -9,4 +9,3 @@ kgen.func @main() -> !kgen.none {
 } loc(#loc)
 
 // CHECK: !debuginfo.subroutine<() -> ()
-

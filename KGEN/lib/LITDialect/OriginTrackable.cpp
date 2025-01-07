@@ -240,14 +240,14 @@ static void getCallOpEffects(
     Operation &op, SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
     SmallVectorImpl<ResultEffect> &results, SmallVectorImpl<TypedAttr> &origins,
     CachedOriginFinder &originFinder) {
-  LITSignatureType signature;
+  LITNewSignatureType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
   size_t argIdxOffset = 0;
 
   if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
     // These all have the callee as a parameter, not operand.
-    signature = directCall.getCalleeType();
+    signature = directCall.getCalleeType().getBody();
     conventions = signature.getArgConventions().drop_back(
         signature.getNumAsyncReturnSlots());
 
@@ -260,7 +260,7 @@ static void getCallOpEffects(
     assert(conventions.size() == op.getNumOperands());
   } else {
     auto call = cast<LIT::CallIndirectOp>(op);
-    signature = call.getCallee().getType();
+    signature = call.getCallee().getType().getBody();
     conventions = signature.getArgConventions();
 
     // We use the callee value, and process the rest as operands.

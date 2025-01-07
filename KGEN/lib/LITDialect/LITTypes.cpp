@@ -1042,7 +1042,7 @@ Type LITDialect::parseType(DialectAsmParser &p) const {
     if (p.parseLess() || parseLITSignature(p, genType, /*isNew=*/false) ||
         p.parseGreater())
       return {};
-    return genType;
+    return cast<LITSignatureType>(genType).asSignatureGenerator();
   } else if (mnemonic == "new_signature") {
     if (p.parseLess() || parseLITSignature(p, genType, /*isNew=*/true) ||
         p.parseGreater())
@@ -1148,6 +1148,12 @@ PogListAttr LITGeneratorType::getMetadata() {
   return ::cast<PogListAttr>(GeneratorType::getMetadata());
 }
 
+PogListAttr LITGeneratorType::getParamListAttrs() { return getMetadata(); }
+
+StringAttr LITGeneratorType::getParamName(size_t idx) {
+  return getMetadata().getName(idx);
+}
+
 //===----------------------------------------------------------------------===//
 // LITSignatureType
 //===----------------------------------------------------------------------===//
@@ -1214,8 +1220,10 @@ size_t LITSignatureType::getNumImplicitOriginDecls() {
 }
 
 Type LITSignatureType::getUserResultType() {
-  return LIT::getSignatureUserResultType(*this, getArguments(),
-                                         getResultType());
+  // If this function has a byref_result, return the reference element type.
+  if (hasMemoryOnlyResult())
+    return ::cast<RefType>(getArguments().back()).getElementType();
+  return getResultType();
 }
 
 LITSignatureType LITSignatureType::dropParamValues() {
@@ -1501,11 +1509,48 @@ Type LITNewSignatureType::getUserResultType() {
   return getResultType();
 }
 
+/// Substitute the specified implicit origin references into the specified
+/// type, replacing them with `values` if they are at depth 0, or decrementing
+/// their depth if not.  This returns the resultant FunctionType on success,
+/// and invokes 'emitError'+returns null on error.
+FunctionType LITNewSignatureType::substituteImplicitOriginsIntoValues(
+    ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError) {
+  assert(values.size() == getNumImplicitOriginDecls() &&
+         "Incorrect # implicit origins specified");
+
+  struct Substitutor : IndexParameterReplacer<Substitutor> {
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      if (auto ref = ::dyn_cast<ImplicitOriginRefAttr>(attr);
+          ref && ref.getDepth() == depth) {
+        if (ref.getIndex() >= values.size()) {
+          emitError() << "implicit origin reference at depth " << depth
+                      << " has an out-of-range index: " << ref.getIndex()
+                      << " >= " << values.size();
+          hadError = true;
+          return ref;
+        }
+        return values[ref.getIndex()];
+      }
+      return nullptr;
+    }
+
+    ArrayRef<TypedAttr> values;
+    function_ref<InFlightDiagnostic()> emitError;
+    bool hadError = false;
+  } substitutor;
+  substitutor.values = values;
+  substitutor.emitError = emitError;
+  FunctionType result = substitutor.replace(getValues());
+  return substitutor.hadError ? FunctionType() : result;
+}
+
 LITNewSignatureType
 LITNewSignatureType::getWithCaptureOrigins(TypedAttr origins) {
-  return getWithMetadata(FnMetadataAttr::get(
-      getArgListAttrs(), {}, getNumImplicitOriginDecls(), origins,
-      getIsNestedOriginExclusivityCheckingDisabled()));
+  return getWithMetadata(
+      FnMetadataAttr::get(getArgListAttrs(), getMetadata().getParamListAttrs(),
+                          getNumImplicitOriginDecls(), origins,
+                          getIsNestedOriginExclusivityCheckingDisabled()));
 }
 
 bool LITNewSignatureType::isAnyVarArg(size_t index) {
@@ -1574,13 +1619,236 @@ bool LITNewSignatureType::classof(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// LITSignatureGeneratorType
+//===----------------------------------------------------------------------===//
+
+LITSignatureGeneratorType::LITSignatureGeneratorType(LITGeneratorType gen)
+    : SignatureGeneratorType(gen) {
+  assert((!gen || (::isa<LITNewSignatureType>(gen.getBody()))) &&
+         "expected LIT generator wrapping LIT new signature");
+}
+
+LITSignatureGeneratorType::LITSignatureGeneratorType(SignatureGeneratorType gen)
+    : SignatureGeneratorType(gen) {
+  assert((!gen || (::isa<LITGeneratorType>(gen) &&
+                   ::isa<LITNewSignatureType>(gen.getBody()))) &&
+         "expected LIT generator wrapping LIT new signature");
+}
+
+LITNewSignatureType LITSignatureGeneratorType::getBody() {
+  return ::cast<LITNewSignatureType>(GeneratorType::getBody());
+}
+
+PogListAttr LITSignatureGeneratorType::getMetadata() {
+  return ::cast<PogListAttr>(GeneratorType::getMetadata());
+}
+
+PogListAttr LITSignatureGeneratorType::getParamListAttrs() {
+  return getMetadata();
+}
+
+StringAttr LITSignatureGeneratorType::getParamName(size_t idx) {
+  return getMetadata().getName(idx);
+}
+
+FnMetadataAttr LITSignatureGeneratorType::getFnMetadata() {
+  return getBody().getMetadata();
+}
+
+PogListAttr LITSignatureGeneratorType::getArgListAttrs() {
+  return getBody().getArgListAttrs();
+}
+
+StringAttr LITSignatureGeneratorType::getArgName(size_t idx) {
+  return getArgListAttrs().getName(idx);
+}
+
+TypedAttr LITSignatureGeneratorType::getCaptureOrigins() {
+  return getBody().getCaptureOrigins();
+}
+
+bool LITSignatureGeneratorType::getIsNestedOriginExclusivityCheckingDisabled() {
+  return getBody().getIsNestedOriginExclusivityCheckingDisabled();
+}
+
+ArrayRef<TypedAttr> LITSignatureGeneratorType::getDefaultPosArgs() {
+  return getBody().getDefaultPosArgs();
+}
+
+ArrayRef<TypedAttr> LITSignatureGeneratorType::getDefaultKwOnlyArgs() {
+  return getBody().getDefaultKwOnlyArgs();
+}
+
+/// Get the number of implicit origin decls this function type carries.
+size_t LITSignatureGeneratorType::getNumImplicitOriginDecls() {
+  return getBody().getNumImplicitOriginDecls();
+}
+
+Type LITSignatureGeneratorType::getUserResultType() {
+  return getBody().getUserResultType();
+}
+
+/// Substitute the specified implicit origin references into the specified
+/// type, replacing them with `values` if they are at depth 0, or decrementing
+/// their depth if not.  This returns the resultant FunctionType on success,
+/// and invokes 'emitError'+returns null on error.
+FunctionType LITSignatureGeneratorType::substituteImplicitOriginsIntoValues(
+    ArrayRef<TypedAttr> values, function_ref<InFlightDiagnostic()> emitError) {
+  return getBody().substituteImplicitOriginsIntoValues(values, emitError);
+}
+
+LITSignatureGeneratorType
+LITSignatureGeneratorType::getWithCaptureOrigins(TypedAttr origins) {
+  return getWithBody(getBody().getWithCaptureOrigins(origins));
+}
+
+bool LITSignatureGeneratorType::isAnyVarArg(size_t index) {
+  return getBody().isAnyVarArg(index);
+}
+
+bool LITSignatureGeneratorType::isPosVarArg(size_t index) {
+  return getBody().isPosVarArg(index);
+}
+
+/// For a PosVarArg, return the declared ArgConvention of the elements. For
+/// example: fn x(inout *args: Int) is declared 'inout'.
+ArgConvention LITSignatureGeneratorType::getPosVarArgConvention(size_t index) {
+  return getBody().getPosVarArgConvention(index);
+}
+
+bool LITSignatureGeneratorType::isKwVarArg(size_t index) {
+  return getBody().isKwVarArg(index);
+}
+
+bool LITSignatureGeneratorType::isPackVarArg(size_t index) {
+  return getBody().isPackVarArg(index);
+}
+
+/// If the specified argument is a variadic pack, return the VariadicPack.
+Type LITSignatureGeneratorType::getIfVariadicPack(size_t index) {
+  return getBody().getIfVariadicPack(index);
+}
+
+/// For a PosVarArg, return the declared ArgConvention of the elements. For
+/// example: fn x(inout *args: Int) is declared 'inout'.
+ArgConvention LITSignatureGeneratorType::getPackVarArgConvention(size_t index) {
+  return getBody().getPackVarArgConvention(index);
+}
+
+bool LITSignatureGeneratorType::hasPackVarArgs() {
+  return getBody().hasPackVarArgs();
+}
+
+bool LITSignatureGeneratorType::hasKwVarArgs() {
+  return getBody().hasKwVarArgs();
+}
+
+unsigned LITSignatureGeneratorType::getErrorSlotOffset() {
+  assert(getBody().isThrows() &&
+         "signature does not refer to a throwing function");
+  return 1 + getBody().hasMemoryOnlyResult();
+}
+
+/// This method replaces direct uses of NAMED implicit origin declarations
+/// with index-based references.  originDecls specifies the names of the
+/// implicit origin decls to replace.
+///
+/// If indexOffset is subtracted from depth when set.
+Type LITSignatureGeneratorType::replaceImplicitOriginsWithIndexes(
+    Type origType, ArrayRef<ParamDeclAttr> originDecls, size_t indexOffset) {
+
+  // If there are no implicit origins, then this is a noop.
+  if (originDecls.empty())
+    return origType;
+
+  // Replace named implicit origin parameter references with index-based
+  // references in the signature.
+  struct OriginDeclRemapper : IndexParameterReplacer<OriginDeclRemapper> {
+    OriginDeclRemapper(size_t indexOffset) : indexOffset(indexOffset) {}
+
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      if (auto ref = ::dyn_cast<ParamDeclRefAttr>(attr)) {
+        if (auto it = mapping.find(ref.getName()); it != mapping.end()) {
+          // Subtract indexOffset because we may be replacing the signature
+          // directly.
+          size_t index = it->second;
+          return ImplicitOriginRefAttr::get(depth - indexOffset, index,
+                                            ref.getType());
+        }
+      }
+      return nullptr;
+    }
+
+    size_t indexOffset;
+    DenseMap<StringAttr, size_t> mapping;
+  } remapper(indexOffset);
+  for (auto [i, decl] : llvm::enumerate(originDecls))
+    remapper.mapping.try_emplace(decl.getName(), i);
+  return remapper.replace(origType);
+}
+
+/// This method replaces direct uses of NAMED implicit origin declarations
+/// with index-based references corresponding to the signature. `originDecls`
+/// specifies the names of the implicit origin decls.
+LITSignatureGeneratorType
+LITSignatureGeneratorType::replaceImplicitOriginsWithIndexes(
+    ArrayRef<ParamDeclAttr> originDecls) {
+  assert(originDecls.size() == getBody().getNumImplicitOriginDecls() &&
+         "Incorrect number of origin decls");
+  return ::cast<LITSignatureGeneratorType>(
+      replaceImplicitOriginsWithIndexes(*this, originDecls, 1));
+}
+
+/// Reconstruct the signature using a list of named input parameters and
+/// indices indicating which one of them are variadic. These parameters are
+/// prepended to the current signature and references are remapped to index
+/// references. An additional array of indices corresponding to variadic
+/// parameters of the prepended parameters is also required.
+LITSignatureGeneratorType
+LITSignatureGeneratorType::prependParams(LITSignatureGeneratorType sigGen,
+                                         ArrayRef<ParamDeclAttr> parentParams,
+                                         ArrayRef<bool> parentVariadicMask) {
+  IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
+                            parentParams.size());
+  SmallVector<Type> inputParamTypes;
+  for (ParamDeclAttr param : parentParams)
+    inputParamTypes.push_back(remapper.replace(param.getType()));
+  for (Type type : sigGen.getInputParamTypes())
+    inputParamTypes.push_back(remapper.replace(type));
+
+  LITNewSignatureType sig = sigGen.getBody();
+  FnMetadataAttrInterface fnMetadata =
+      remapper.replace(sig.getMetadata().prependPosParams(parentParams.size(),
+                                                          parentVariadicMask));
+  GeneratorMetadataAttrInterface genMetadata =
+      remapper.replace(sigGen.getMetadata().prependPosParams(
+          parentParams.size(), parentVariadicMask));
+
+  return SignatureGeneratorType::get(
+      inputParamTypes, remapper.replace(sig.getValues()),
+      sig.getArgConventions(), sig.getFnEffects(), fnMetadata, genMetadata);
+}
+
+bool LITSignatureGeneratorType::classof(SignatureGeneratorType type) {
+  return ::isa<LITGeneratorType>(type) &&
+         ::isa<LITNewSignatureType>(type.getBody());
+}
+
+bool LITSignatureGeneratorType::classof(Type type) {
+  if (auto sig = ::dyn_cast<SignatureGeneratorType>(type))
+    return classof(sig);
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
 // Type Utilities
 //===----------------------------------------------------------------------===//
 
-Type LIT::getSignatureUserResultType(SignatureType sigType,
+Type LIT::getSignatureUserResultType(LITSignatureGeneratorType sigType,
                                      ArrayRef<Type> argTypes, Type resultType) {
   // If this function has a byref_result, return the reference element type.
-  if (sigType.hasMemoryOnlyResult())
+  if (sigType.getBody().hasMemoryOnlyResult())
     return cast<RefType>(argTypes.back()).getElementType();
   return resultType;
 }
@@ -1590,8 +1858,8 @@ Type LIT::getSignatureUserResultType(SignatureType sigType,
 /// KGEN does not since it cannot always have access to a symbol table.
 /// Specialize a signature type while rebinding the input parameter values to
 /// the expected input parameter types.
-std::pair<LITSignatureType, ParameterExprArrayAttr>
-LIT::getUnboundSpecializedSignature(LITSignatureType type,
+std::pair<LITSignatureGeneratorType, ParameterExprArrayAttr>
+LIT::getUnboundSpecializedSignature(LITSignatureGeneratorType type,
                                     ParameterExprArrayAttr bindings) {
   if (bindings.empty())
     return {type, bindings};
@@ -1600,7 +1868,7 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
   // parameters to the expected types.
   SmallVector<TypedAttr> unboundBindings;
   ParameterEvaluator evaluator;
-  for (auto [binding, type] : llvm::zip(bindings, type.getParamTypes())) {
+  for (auto [binding, type] : llvm::zip(bindings, type.getInputParamTypes())) {
     TypedAttr value = binding;
     Type unboundType = evaluator.getReboundType(type);
     if (unboundType != value.getType())
@@ -1608,7 +1876,7 @@ LIT::getUnboundSpecializedSignature(LITSignatureType type,
     evaluator.addInputValue(value);
     unboundBindings.push_back(value);
   }
-  type = type.getSpecializedSignature(
+  type = type.getSpecializedGenerator(
       unboundBindings, [&]() -> InFlightDiagnostic {
         return mlir::emitError(UnknownLoc::get(type.getContext()));
       });

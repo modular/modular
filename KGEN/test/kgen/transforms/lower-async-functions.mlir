@@ -1246,9 +1246,9 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   // CHECK-NEXT: co.suspend {
   %coro = co.invoke[(i1) async -> index: @coroutine1](%true)
   %callback = kgen.create_closure[(!kgen.pointer<none>) -> (): @callback]()
-  %ptr = co.get_callback_ptr %coro : <struct<(!kgen.signature<(!kgen.pointer<none>) -> ()>, pointer<none>)>>
-  %callbackSlot = kgen.struct.gep %ptr[0] : <struct<(!kgen.signature<(!kgen.pointer<none>) -> ()>, pointer<none>)>>
-  pop.store %callback, %callbackSlot : !kgen.pointer<!kgen.signature<(!kgen.pointer<none>) -> ()>>
+  %ptr = co.get_callback_ptr %coro : <struct<(!kgen.generator<(!kgen.pointer<none>) -> ()>, pointer<none>)>>
+  %callbackSlot = kgen.struct.gep %ptr[0] : <struct<(!kgen.generator<(!kgen.pointer<none>) -> ()>, pointer<none>)>>
+  pop.store %callback, %callbackSlot : !kgen.pointer<!kgen.generator<(!kgen.pointer<none>) -> ()>>
   co.suspend (%hdl) {
     co.suspend.end
   }
@@ -1893,7 +1893,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: kgen.func @conditional_suspoint_hot_ramp
-// CHECK-SAME: (%arg0: !kgen.signature<(!kgen.pointer<none>) -> ()>, %arg1: !kgen.pointer<none>, %arg2: i1, %arg3: index, %arg4: index, %arg5: !kgen.pointer<index>)
+// CHECK-SAME: (%arg0: !kgen.generator<(!kgen.pointer<none>) -> ()>, %arg1: !kgen.pointer<none>, %arg2: i1, %arg3: index, %arg4: index, %arg5: !kgen.pointer<index>)
 // CHECK-SAME:  -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>> {
 
 // FRAME ALLOCATION: Frame space is the same as cold.
@@ -1999,10 +1999,10 @@ kgen.func @trigger_creation(%arg0: i1, %arg1: index, %arg2: index, %__result__: 
    // CHECK: co.suspend {
    // CHECK: [[V9:%.*]] = kgen.struct.gep %arg0[1]
    // CHECK-NEXT: [[V10:%.*]] = pop.load [[V9]] : !kgen.pointer<pointer<none>>
-   // CHECK-NEXT: [[V11:%.*]] = pop.pointer.bitcast [[V10]] : !kgen.pointer<none> to !kgen.signature<(!kgen.pointer<none>) -> ()>
+   // CHECK-NEXT: [[V11:%.*]] = pop.pointer.bitcast [[V10]] : !kgen.pointer<none> to !kgen.generator<(!kgen.pointer<none>) -> ()>
    // CHECK-NEXT: [[V12:%.*]] = pop.pointer.bitcast %arg0 : !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>, struct<()>, pointer<struct<{{.*}}>>, i1, index, index)>> to !kgen.pointer<none>
    // CHECK-NEXT: kgen.call @conditional_suspoint_hot_ramp([[V11]], [[V12]], %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) :
-   // CHECK-SAME: (!kgen.signature<(!kgen.pointer<none>) -> ()>, !kgen.pointer<none>, i1, index, index, !kgen.pointer<index>) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>
+   // CHECK-SAME: (!kgen.generator<(!kgen.pointer<none>) -> ()>, !kgen.pointer<none>, i1, index, index, !kgen.pointer<index>) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>>
    // CHECK-NEXT: kgen.struct.gep
    // CHECK-NEXT: pop.store
    // CHECK-NEXT: co.suspend.end
@@ -2223,7 +2223,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // HOT RAMP
 
 // CHECK-LABEL: kgen.func @needsBoth_hot_ramp
-// CHECK-SAME: (%arg0: !kgen.signature<(!kgen.pointer<none>) -> ()>, %arg1: !kgen.pointer<none>, %arg2: index) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>> {
+// CHECK-SAME: (%arg0: !kgen.generator<(!kgen.pointer<none>) -> ()>, %arg1: !kgen.pointer<none>, %arg2: index) -> !kgen.pointer<struct<(i32, pointer<none>, (!kgen.pointer<none>) -> (), pointer<none>, pointer<none>, pointer<none>)>> {
 
 // Instantiate Continuation and initialize state to 1
 // CHECK-NEXT: %idx64 = index.constant 64

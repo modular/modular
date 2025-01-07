@@ -966,7 +966,7 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
   }
 
   // Grab the result type, if it's non-none.
-  ASTType resultType = ASTType(signature).getSignatureUserResultType();
+  ASTType resultType = signature.getUserResultType();
   assert(resultType && "didn't find a result type?");
   std::string resultPrefix;
 

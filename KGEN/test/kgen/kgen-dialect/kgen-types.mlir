@@ -72,20 +72,24 @@ kgen.func @type_value() {
 
 // CHECK-LABEL: kgen.func @generator_types
 kgen.func @generator_types() {
-  // CHECK-NEXT: type = <!kgen.generator<<> None>>
-  kgen.param.declare atype: type = <!kgen.generator<<> None>>
-  // CHECK-NEXT: type = <!kgen.generator<<AnyType> i1>>
-  kgen.param.declare atype: type = <!kgen.generator<<AnyType> i1>>
-  // CHECK-NEXT: type = <!kgen.generator<<AnyType, index, index> i1>>
-  kgen.param.declare atype: type = <!kgen.generator<<AnyType, index, index> i1>>
+  // CHECK-NEXT: type = <<>None>
+  kgen.param.declare atype: type = <!kgen.generator<<>None>>
+  // CHECK-NEXT: type = <<AnyType>i1>
+  kgen.param.declare atype: type = <!kgen.generator<<AnyType>i1>>
+  // CHECK-NEXT: type = <<AnyType, index, index>i1>
+  kgen.param.declare atype: type = <!kgen.generator<<AnyType, index, index>i1>>
+  // CHECK-NEXT: type = <<AnyType, index, index>i1>
+  kgen.param.declare atype: type = <<AnyType, index, index>i1>
+  // CHECK-NEXT: type = <<AnyType, index>(!kgen.paramref<*(0,0)>, i8) -> !kgen.paramref<*(0,1)>>
+  kgen.param.declare atype: type = <<AnyType, index>(!kgen.paramref<*(0,0)>, i8) -> !kgen.paramref<*(0,1)>>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @new_signature_types
 kgen.func @new_signature_types() {
-  // CHECK-NEXT: atype: type = <!kgen.new_signature<() -> ()>>
-  kgen.param.declare atype: type = <!kgen.new_signature<() -> ()>>
-  // CHECK-NEXT: btype: type = <!kgen.new_signature<(index, i8) -> none>>
-  kgen.param.declare btype: type = <!kgen.new_signature<(index, i8) -> none>>
+  // CHECK-NEXT: atype: type = <() -> ()>
+  kgen.param.declare atype: type = <!kgen.generator<() -> ()>>
+  // CHECK-NEXT: btype: type = <(index, i8) -> none>
+  kgen.param.declare btype: type = <!kgen.generator<(index, i8) -> none>>
   kgen.return
 }

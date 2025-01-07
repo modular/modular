@@ -660,7 +660,7 @@ static void processExtensibilityDecorator(SharedState &shared, ASTDecl &decl,
     return;
   }
 
-  LITSignatureType sig = func.getFullSignature();
+  LITSignatureGeneratorType sig = func.getFullSignature();
   ArrayRef<Type> sigArgTypes = func.getFunctionType().getInputs();
   ASTType resultType = func.getUserResultType();
   // Reduce `sigArgTypes` to just the array of declared arguments.
@@ -761,7 +761,7 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp, StructDeclOp parent,
   // Any function that contains a capturing closure as a parameter is itself
   // capturing, include parent struct parameters.
   mlir::AttrTypeWalker walker;
-  walker.addWalk([](SignatureType sig) {
+  walker.addWalk([](NewSignatureType sig) {
     if (sig.isCapturing())
       return WalkResult::interrupt();
     return WalkResult::advance();
@@ -772,8 +772,8 @@ static bool isCapturingByDefault(LIT::FuncOp funcOp, StructDeclOp parent,
       [&](ParamDeclAttr decl) { return walker.walk(decl).wasInterrupted(); });
 }
 
-std::pair<SmallVector<ParamDeclRefAttr>, LITSignatureType>
-DeclResolver::createSelfContainedSignature(LITSignatureType original) {
+std::pair<SmallVector<ParamDeclRefAttr>, LITSignatureGeneratorType>
+DeclResolver::createSelfContainedSignature(LITSignatureGeneratorType original) {
   // Collect the subset of referenced parameters. Use a set vector to keep the
   // order deterministic.
   llvm::SmallSetVector<ParamDeclRefAttr, 4> capturedRefs;
@@ -784,7 +784,7 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   // parameters prepended.
   // TODO: what if we capture a variadic?
   SmallVector<bool> variadicMask(captured.size(), false);
-  auto unbound = LITSignatureType::prependParams(
+  auto unbound = LITSignatureGeneratorType::prependParams(
       original,
       llvm::map_to_vector(
           captured,
@@ -810,8 +810,8 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   OpBuilder::InsertPoint insertPoint = builder.saveInsertionPoint();
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
 
-  auto [capturedRefs, wrapperSig] =
-      DeclResolver::createSelfContainedSignature(nestedFn.getSignature());
+  auto [capturedRefs, wrapperSig] = DeclResolver::createSelfContainedSignature(
+      nestedFn.getSignature().asSignatureGenerator());
   if (!wrapperSig)
     return {};
   StructDeclOp closureWrapper =
@@ -972,7 +972,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   NamedAttrList attrs = funcOp->getAttrDictionary();
 
   // Compute the signature of the function.
-  LITSignatureType signature = tcSignature.getLITSignatureType();
+  LITSignatureGeneratorType signature =
+      tcSignature.getLITSignatureGeneratorType();
   if (!signature)
     return failure();
 
@@ -998,7 +999,8 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
   // with indices.
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
-  attrs.set(funcOp.getSignatureAttrName(), TypeAttr::get(signature));
+  attrs.set(funcOp.getSignatureAttrName(),
+            TypeAttr::get(signature.asOldSignature()));
 
   // Set the symbol to the mangled name and check for redefinition.
   attrs.set(funcOp.getSymNameAttrName(),
@@ -1023,9 +1025,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
     // We need to compare the (name erased) user result types, since memory-only
     // types may result in `!kgen.none` in the mlir signature result.
-    auto resTy = ASTType(signature).getSignatureUserResultType();
+    auto resTy = ASTType(signature.getUserResultType());
     auto existingResTy =
-        ASTType(existingFunc.getSignature()).getSignatureUserResultType();
+        ASTType(existingFunc.getSignature().getUserResultType());
     if (!resTy.isEqualCanon(existingResTy))
       errorMessage = " cannot overload on return type only";
     else
@@ -1096,10 +1098,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
     SmallVector<TypedAttr> origins =
         shared.cachedOriginFinder.findOriginsIn(captureTypes);
-    signature =
-        signature.getWithMetadata(signature.getMetadata().addCaptureOrigins(
-            OriginSetAttr::get(getContext(), origins)));
-    funcOp.setSignature(signature);
+    signature = signature.getWithBody(signature.getBody().getWithMetadata(
+        signature.getFnMetadata().addCaptureOrigins(
+            OriginSetAttr::get(getContext(), origins))));
+    funcOp.setSignature(signature.asOldSignature());
 
     funcOp.setParamDeclAttr(
         ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));
@@ -1120,8 +1122,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
     return emitError(funcOp.getLoc(), "TODO: closures cannot have parameters");
 
   // Emit closure structures necessary for instantiating an escaping closure
-  funcOp.setSignature(
-      signature.getWithFnEffects(signature.getFnEffects().setEscaping()));
+  signature = signature.getWithBody(signature.getBody().getWithFnEffects(
+      signature.getFnEffects().setEscaping()));
+  funcOp.setSignature(signature.asOldSignature());
   MLValue instance = emitClosureInstance(captures, paramCaptures, decl, shared);
   if (!instance)
     return failure();

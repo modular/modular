@@ -173,8 +173,9 @@ std::optional<StringRef> ASTDecl::getNameIfOperation() const {
 }
 
 PValue ASTDecl::getFuncAsPValue() const {
-  return SymbolConstantAttr::get(getSymbolRef(),
-                                 cast<LIT::FuncOp>(*this).getSignature());
+  return SymbolConstantAttr::get(
+      getSymbolRef(),
+      cast<LIT::FuncOp>(*this).getSignature().asSignatureGenerator());
 }
 
 /// Return the SymbolRefAttr for a declaration, including all scoping that may

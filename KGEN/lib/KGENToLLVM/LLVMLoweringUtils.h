@@ -23,10 +23,11 @@ class LLVMFuncOp;
 
 namespace M::KGEN {
 class KGENDType;
+class GeneratorType;
 class ParamRefType;
 class PointerType;
+class NewSignatureType;
 class NoneType;
-class SignatureType;
 class StringType;
 class StructType;
 class StructInstanceType;
@@ -333,10 +334,11 @@ private:
   buildDebugType(DebugInfo::DITargetIndependentPointerType type);
 
   /// Build fully resolved debug type from kgen/pop types.
+  DebugInfo::DIType buildDebugType(GeneratorType type);
   DebugInfo::DIType buildDebugType(IndexType type);
   DebugInfo::DIType buildDebugType(ParamRefType type);
   DebugInfo::DIType buildDebugType(StringType type);
-  DebugInfo::DIType buildDebugType(SignatureType type);
+  DebugInfo::DIType buildDebugType(NewSignatureType type);
   DebugInfo::DIType buildDebugType(POP::UnionType type);
   DebugInfo::DIType buildDebugType(KGEN::NoneType type);
   DebugInfo::DIType buildDebugType(POP::ArrayType type);

@@ -528,38 +528,38 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
     [DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
   let summary = "kgen.func or kgen.generator reference";
   let description = [{
-    This is a value of !kgen.signature type, which refers to a func or
+    This is a value of SignatureGenerator type, which refers to a func or
     generator.  This may optionally bind the input parameter values at time of
     formation - when this happens, the result type is non-parametric.
   }];
 
-  let parameters = (ins "SymbolRefAttr":$symbol,
-                        OptionalArrayRefParameter<"TypedAttr">:$paramValues,
-                        AttributeSelfTypeParameter<"", "SignatureType">:$type);
+  let parameters = (ins
+    "SymbolRefAttr":$symbol,
+    OptionalArrayRefParameter<"TypedAttr">:$paramValues,
+    AttributeSelfTypeParameter<"", "SignatureGeneratorType">:$type
+  );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-        "SymbolRefAttr":$symbol, "SignatureType":$type,
+        "SymbolRefAttr":$symbol, "SignatureGeneratorType":$type,
         CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
       return get(type.getContext(), symbol, paramValues, type);
     }]>,
     AttrBuilderWithInferredContext<(ins
-        "StringAttr":$name, "SignatureType":$type,
+        "StringAttr":$name, "SignatureGeneratorType":$type,
         CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
       return get(FlatSymbolRefAttr::get(name), type, paramValues);
     }]>,
     AttrBuilderWithInferredContext<(ins
-        "GeneratorOp":$func, "SignatureType":$type,
+        "GeneratorOp":$func, "SignatureGeneratorType":$type,
         CArg<"ArrayRef<TypedAttr>", "{}">:$paramValues), [{
       return get(func.getSymNameAttr(), type, paramValues);
     }]>,
     AttrBuilderWithInferredContext<(ins "GeneratorOp":$func), [{
-      return get(func.getSymNameAttr(),
-                 func.getSignatureGenerator().asOldSignature());
+      return get(func.getSymNameAttr(), func.getSignatureGenerator());
     }]>,
     AttrBuilderWithInferredContext<(ins "FuncOp":$func), [{
-      return get(func.getSymNameAttr(),
-                 func.getSignatureGenerator().asOldSignature());
+      return get(func.getSymNameAttr(), func.getSignatureGenerator());
     }]>,
   ];
 
@@ -971,15 +971,19 @@ def KGEN_MLIROpAttr : KGEN_ExprAttr<"MLIROp", "param.mlir_op"> {
     Parametric operations can be bound using `bind_signature`.
   }];
 
-  let parameters = (ins "StringAttr":$name, "DictionaryAttr":$attrs,
-                        AttributeSelfTypeParameter<"", "SignatureType">:$type);
+  let parameters = (ins
+    "StringAttr":$name,
+    "DictionaryAttr":$attrs,
+    AttributeSelfTypeParameter<"", "SignatureGeneratorType">:$type
+  );
 
   let assemblyFormat = "`<` $name `,` $attrs `>`";
   let genVerifyDecl = 1;
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-        "StringAttr":$name, "DictionaryAttr":$attrs, "SignatureType":$type), [{
+        "StringAttr":$name, "DictionaryAttr":$attrs,
+        "SignatureGeneratorType":$type), [{
       return $_get(name.getContext(), name, attrs, type);
     }]>
   ];

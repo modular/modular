@@ -201,55 +201,8 @@ ErrorOr<TypedAttr> TypeType::readFrom(int64_t addr,
 // GeneratorType
 //===----------------------------------------------------------------------===//
 
-/// Parse a plain (i.e. non-LIT) generator type.
-static OptionalParseResult
-parseOptionalKGENGenerator(AsmParser &p, GeneratorType &generator) {
-  if (failed(p.parseOptionalLess()))
-    return std::nullopt;
-
-  SmallVector<Type> paramTypes;
-  Type body;
-
-  // A failure is if the param list is not empty, and param type parsing failed.
-  if (failed(p.parseOptionalGreater()) &&
-      (parseParamTypes(p, paramTypes) || p.parseGreater())) {
-    return failure();
-  }
-
-  if (parseParamType(p, body))
-    return failure();
-
-  generator = GeneratorType::get(paramTypes, body);
-  return mlir::success();
-}
-
-static ParseResult parseGenerator(AsmParser &p, GeneratorType &generator) {
-  // Try parsing as a plain KGEN generator first (no metadata);
-  OptionalParseResult result = parseOptionalKGENGenerator(p, generator);
-  if (result.has_value())
-    return *result;
-
-  result = p.parseOptionalType(generator);
-  if (!result.has_value())
-    return p.emitError(p.getCurrentLocation(),
-                       "expected '<' to begin a generator");
-  if (failed(*result))
-    return failure();
-  if (!isa<GeneratorType>(generator))
-    return p.emitError(p.getCurrentLocation(), "expected a generator type");
-  return success();
-}
-
-static void printGenerator(AsmPrinter &p, GeneratorType generator) {
-  if (GeneratorMetadataAttrInterface metadata = generator.getMetadata()) {
-    metadata.printGenerator(p, generator);
-    return;
-  }
-
-  p << '<';
-  printParamTypes(p, generator.getInputParamTypes());
-  p << "> ";
-  printParamType(p, generator.getBody());
+GeneratorType GeneratorType::getWithBody(Type newBody) {
+  return GeneratorType::get(getInputParamTypes(), newBody, getMetadata());
 }
 
 Type GeneratorType::parse(AsmParser &p) {
@@ -263,6 +216,97 @@ void GeneratorType::print(AsmPrinter &p) const {
   p << '<';
   printGenerator(p, *this);
   p << '>';
+}
+
+OptionalParseResult GeneratorType::parseValue(AsmParser &p,
+                                              TypedAttr &value) const {
+  if (auto sigGen = ::dyn_cast<SignatureGeneratorType>(*this)) {
+    // Parse a keyword or string as an MLIR operation attribute.
+    std::string opName;
+    llvm::SMLoc loc = p.getCurrentLocation();
+    if (succeeded(p.parseOptionalString(&opName))) {
+      NamedAttrList attrs;
+      if (failed(p.parseOptionalAttrDict(attrs)))
+        return failure();
+      value =
+          MLIROpAttr::getChecked([&] { return p.emitError(loc); },
+                                 StringAttr::get(p.getContext(), opName),
+                                 attrs.getDictionary(p.getContext()), sigGen);
+      return mlir::success(!!value);
+    }
+
+    Attribute attr;
+    OptionalParseResult result = p.parseOptionalAttribute(attr, sigGen);
+    if (!result.has_value())
+      return std::nullopt;
+    if (failed(*result))
+      return failure();
+
+    // Parse a symbol reference as a signature type attribute.
+    if (auto symbol = llvm::dyn_cast<SymbolRefAttr>(attr)) {
+      // Parse any trailing parameter bindings.
+      ParameterExprArrayAttr paramValues;
+      if (parseParameterValues(p, paramValues))
+        return failure();
+      value = SymbolConstantAttr::get(symbol, sigGen, paramValues);
+    } else {
+      value = llvm::cast<TypedAttr>(attr);
+    }
+    return mlir::success();
+  }
+
+  return failure();
+}
+
+LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
+  if (::isa<SignatureGeneratorType>(*this)) {
+    if (auto mlirOp = ::dyn_cast<MLIROpAttr>(value)) {
+      p << mlirOp.getName();
+      if (!mlirOp.getAttrs().empty())
+        p << mlirOp.getAttrs();
+      return success();
+    }
+
+    auto symbolCst = ::dyn_cast<SymbolConstantAttr>(value);
+    if (!symbolCst)
+      return failure();
+    p << symbolCst.getSymbol();
+    printParameterValues(p, symbolCst.getParamValues());
+    return success();
+  }
+
+  return failure();
+}
+
+std::optional<int64_t> GeneratorType::getTypeSize(TargetInfoAttr target) const {
+  // Temporary back-compat: delegate to new signature type.
+  if (auto sig = ::dyn_cast<NewSignatureType>(getBody()))
+    return sig.getTypeSize(target);
+  return std::nullopt;
+}
+
+std::optional<int64_t>
+GeneratorType::getTypeAlign(TargetInfoAttr target) const {
+  // Temporary back-compat: delegate to new signature type.
+  if (auto sig = ::dyn_cast<NewSignatureType>(getBody()))
+    return sig.getTypeAlign(target);
+  return std::nullopt;
+}
+
+ErrorOrSuccess GeneratorType::writeTo(TypedAttr value, int64_t addr,
+                                      InterpreterState &state) const {
+  // Temporary back-compat: delegate to new signature type.
+  if (auto sig = ::dyn_cast<NewSignatureType>(getBody()))
+    return sig.writeTo(value, addr, state);
+  return Error("Generator not a writeable type");
+}
+
+ErrorOr<TypedAttr> GeneratorType::readFrom(int64_t addr,
+                                           InterpreterState &state) const {
+  // Temporary back-compat: delegate to new signature type.
+  if (auto sig = ::dyn_cast<NewSignatureType>(getBody()))
+    return sig.readFrom(addr, state);
+  return Error("Generator not a readable type");
 }
 
 //===----------------------------------------------------------------------===//
@@ -748,6 +792,7 @@ SignatureGeneratorType SignatureType::asSignatureGenerator() const {
 
 OptionalParseResult SignatureType::parseValue(AsmParser &p,
                                               TypedAttr &value) const {
+  assert(getMetadata() && "Deprecated non-LIT KGEN signature-typed value");
   // Parse a keyword or string as an MLIR operation attribute.
   std::string opName;
   llvm::SMLoc loc = p.getCurrentLocation();
@@ -757,7 +802,8 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
       return failure();
     value = MLIROpAttr::getChecked([&] { return p.emitError(loc); },
                                    StringAttr::get(p.getContext(), opName),
-                                   attrs.getDictionary(p.getContext()), *this);
+                                   attrs.getDictionary(p.getContext()),
+                                   asSignatureGenerator());
     return mlir::success(!!value);
   }
 
@@ -774,7 +820,8 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
     ParameterExprArrayAttr paramValues;
     if (parseParameterValues(p, paramValues))
       return failure();
-    value = SymbolConstantAttr::get(symbol, *this, paramValues);
+    value =
+        SymbolConstantAttr::get(symbol, asSignatureGenerator(), paramValues);
   } else {
     value = llvm::cast<TypedAttr>(attr);
   }
@@ -782,6 +829,7 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
 }
 
 LogicalResult SignatureType::printValue(AsmPrinter &p, TypedAttr value) const {
+  assert(getMetadata() && "Deprecated non-LIT KGEN signature-typed value");
   if (auto mlirOp = ::dyn_cast<MLIROpAttr>(value)) {
     p << mlirOp.getName();
     if (!mlirOp.getAttrs().empty())
@@ -994,22 +1042,25 @@ SignatureGeneratorType SignatureGeneratorType::remapToSignatureGenerator(
   auto newSig = NewSignatureType::getChecked(
       emitError, remapper.replace(functionType), argConventions, effects,
       fnMetadata ? remapper.replace(fnMetadata) : nullptr);
+  if (!newSig)
+    return nullptr;
   return GeneratorType::get(inputParamTypes, newSig,
                             genMetadata ? remapper.replace(genMetadata)
                                         : nullptr);
 }
 
 SignatureGeneratorType SignatureGeneratorType::get(SignatureType sig) {
-  assert(!sig.getMetadata() && "cannot convert signature with metadata");
+  if (FnMetadataAttrInterface metadata = sig.getMetadata())
+    return metadata.asSignatureGenerator(sig);
+
   return SignatureGeneratorType::get(sig.getInputParamTypes(), sig.getValues(),
                                      sig.getArgConventions(),
                                      sig.getFnEffects());
 }
 
 SignatureType SignatureGeneratorType::asOldSignature() {
-  if (GeneratorMetadataAttrInterface metadata = getMetadata()) {
+  if (GeneratorMetadataAttrInterface metadata = getMetadata())
     return metadata.asOldSignature(*this);
-  }
 
   NewSignatureType sig = getBody();
   assert(!sig.getMetadata() &&

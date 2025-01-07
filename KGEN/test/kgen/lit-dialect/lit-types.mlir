@@ -77,7 +77,7 @@ kgen.generator @bind_nested() {
   kgen.param.declare bound1: (!lit.type_signature<index, index = *(0,0)>) -> () = <@subst_type<:type !lit.type_signature<index, index = *(0,0)>>>
   // CHECK: result0: !lit.type_signature<index, index = *(0,0)> = <apply(:() -> !lit.type_signature<index, index = *(0,0)> @return_type)>
   kgen.param.declare result0: !lit.type_signature<index, index = *(0,0)> = <apply(:() -> !lit.type_signature<index, index = *(0,0)> @return_type)>
-  // CHECK: result1: !lit.signature<<index, index = *(0,0)>() -> ()> = <apply(:() -> !kgen.signature<!lit.signature<<index, index = *(0,0)>() -> ()>> @return_sig)>
+  // CHECK: result1: !lit.signature<<index, index = *(0,0)>() -> ()> = <apply(:() -> !kgen.generator<!lit.signature<<index, index = *(0,0)>() -> ()>> @return_sig)>
   kgen.param.declare result1: !lit.signature<<index, index = *(0,0)>() -> ()> = <apply(:() -> !lit.signature<<index, index = *(0,0)>() -> ()> @return_sig)>
   kgen.return
 }
@@ -97,14 +97,14 @@ kgen.generator @passing_kinds(
 }
 
 // Test that passing kind printing/parsing works correctly for long signatures.
-!t = !kgen.signature<!lit.signature<(
+!t = !kgen.generator<!lit.signature<(
     "a": index owned, |, *,
     "b": index owned, "c": index owned, "d": index owned, "e": index owned,
     "f": index owned, "g": index owned, "h": index owned, "i": index owned,
     "j": index owned, "k": index owned, "l": index owned, "m": index owned
 ) -> !kgen.none>>
 
-// CHECK-LABEL: lit.func @long_sig(%t: !kgen.signature<!lit.signature<
+// CHECK-LABEL: lit.func @long_sig(%t: !kgen.generator<!lit.signature<
 // CHECK-SAME: "a": index owned, |, *,
 // CHECK-SAME: "b": index owned, "c": index owned, "d": index owned, "e": index owned,
 // CHECK-SAME: "f": index owned, "g": index owned, "h": index owned, "i": index owned,
@@ -178,7 +178,7 @@ kgen.func @new_signature_types() {
   // CHECK-NEXT: type = <!lit.new_signature<(index, i8) -> ()>>
   kgen.param.declare type1: type = <!lit.new_signature<(index, i8) -> ()>>
   // CHECK-NEXT: type = <!lit.new_signature<(index, i8) -> ()>>
-  kgen.param.declare type2: type = <!kgen.new_signature<!lit.new_signature<(index, i8) -> ()>>>
+  kgen.param.declare type2: type = <!kgen.signature<!lit.new_signature<(index, i8) -> ()>>>
   // CHECK-NEXT: type = <!lit.new_signature<("a": index, "b": i8 = 2) -> none>>
   kgen.param.declare type3: type = <!lit.new_signature<("a": index, "b": i8 = 2) -> none>>
   kgen.return

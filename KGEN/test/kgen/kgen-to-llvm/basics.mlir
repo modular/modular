@@ -111,10 +111,10 @@ kgen.func @test_unreachable() -> !pop.simd<1, f32> {
 }
 
 // CHECK-LABEL: @address_of
-kgen.func @address_of() -> !kgen.signature<() -> !pop.scalar<f32>> {
+kgen.func @address_of() -> !kgen.generator<() -> !pop.scalar<f32>> {
   // CHECK: llvm.mlir.addressof @test_unreachable : !llvm.ptr
   %0 = kgen.param.constant: () -> !pop.scalar<f32> = <@test_unreachable>
-  kgen.return %0 : !kgen.signature<() -> !pop.scalar<f32>>
+  kgen.return %0 : !kgen.generator<() -> !pop.scalar<f32>>
 }
 
 // CHECK: llvm.func internal @used_internally_c_wrapped

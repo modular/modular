@@ -324,10 +324,11 @@ void Graph::doRewrite(const Node *node) {
     newOperands.clear();
     outArgs.clear();
 
-    SignatureType signature = call.getCalleeSignature();
+    SignatureGeneratorType sigGen = call.getCalleeSignature();
+    NewSignatureType sigBase = sigGen.getBody();
     ImplicitLocOpBuilder b{call.getLoc(), OpBuilder(call)};
     for (auto [arg, conv, state] :
-         llvm::zip(call.getOperands(), signature.getArgConventions(),
+         llvm::zip(call.getOperands(), sigBase.getArgConventions(),
                    node->argStates)) {
 
       // If the argument can't be rewritten, just forward it.
@@ -385,10 +386,10 @@ void Graph::doRewrite(const Node *node) {
     // Finally, update the callee signature.
     functionType = FunctionType::get(func.getContext(), call->getOperandTypes(),
                                      call->getResultTypes());
-    signature =
-        SignatureType::get(functionType, convs, signature.getFnEffects());
+    SignatureGeneratorType calleeSignature = SignatureGeneratorType::get(
+        {}, functionType, convs, sigBase.getFnEffects());
     call.setCalleeAttr(
-        SymbolConstantAttr::get(call.getCalleeSymbol(), signature));
+        SymbolConstantAttr::get(call.getCalleeSymbol(), calleeSignature));
   }
 }
 
