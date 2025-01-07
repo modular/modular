@@ -108,6 +108,8 @@ what we publish.
 
   - `String.__init__(out self, StringRef)`
   - `String.__init__(out self, StringSlice)`
+  - `List.__init__(out self, owned *values: T)`
+  - `List.__init__(out self, span: Span[T])`
 
 - The `ExplicitlyCopyable` trait has changed to require a
   `fn copy(self) -> Self` method. Previously, an initializer with the signature
