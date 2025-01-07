@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 from max.engine import InferenceSession
 
+pytest_plugins = "test_common.registry"
+
 
 @pytest.fixture
 def modular_path() -> Path:

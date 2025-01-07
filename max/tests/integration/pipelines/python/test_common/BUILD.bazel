@@ -11,12 +11,14 @@ modular_py_library(
     srcs = ["__init__.py"],
     imports = ["."],
     deps = [
+        requirement("pytest"),
         requirement("numpy"),
         ":distance_metrics",
         ":evaluate",
         ":ndarray_from_tensor_type",
         ":numpy_encoder",
         ":path",
+        ":registry",
     ],
 )
 
@@ -67,6 +69,18 @@ modular_py_library(
     imports = [".."],
     deps = [
         "//SDK/public/max-repo/pipelines/python/llama3",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+modular_py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    imports = [".."],
+    deps = [
+        requirement("pytest"),
+        "//SDK/lib/API/python/max/pipelines",
+        "//SDK/public/max-repo/pipelines/python/architectures",
         "@rules_python//python/runfiles",
     ],
 )

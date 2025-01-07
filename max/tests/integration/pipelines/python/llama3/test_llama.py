@@ -9,12 +9,11 @@ golden values.
 
 import pytest
 from evaluate_llama import SupportedTestModels
-from llama3 import Llama3Model
-from max.engine import InferenceSession
-from max.pipelines import TextTokenizer
 from test_common.evaluate import PROMPTS, compare_values, run_model
 from test_common.numpy_encoder import NumpyDecoder
 from test_common.path import find_runtime_path
+
+pytest_plugins = "test_common.registry"
 
 
 @pytest.mark.parametrize(
@@ -23,15 +22,13 @@ from test_common.path import find_runtime_path
         ("llama3_1", "q4_k"),
     ],
 )
-def test_llama(model, encoding, testdata_directory):
+def test_llama(pipeline_registry, model, encoding, testdata_directory):
     test_model = SupportedTestModels.get(model, encoding)
     config = test_model.build_config()
 
-    tokenizer = TextTokenizer(config)
-    session = InferenceSession(devices=[config.device])
-    model = Llama3Model(pipeline_config=config, session=session)
+    tokenizer, pipeline = pipeline_registry.retrieve(config)
     actual = run_model(
-        model,
+        pipeline._pipeline_model,
         tokenizer,
         prompts=PROMPTS[:1],
     )
