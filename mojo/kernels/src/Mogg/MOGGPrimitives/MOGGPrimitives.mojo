@@ -132,9 +132,9 @@ fn byte_buffer_alloc[
 # ===-----------------------------------------------------------------------===#
 
 
-@register_internal("builtin.create_errror_async_values_and_destruct_error")
+@register_internal("builtin.create_error_async_values_and_destruct_error")
 @no_inline
-fn create_errror_async_values_and_destruct_error(
+fn create_error_async_values_and_destruct_error(
     ctx: MojoCallContextPtr,
     async_ptr: UnsafePointer[UnsafePointer[NoneType]],
     async_len: Int,
