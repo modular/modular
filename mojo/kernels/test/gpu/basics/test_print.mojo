@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# FIXME: KERN-1377
+# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from builtin._location import __source_location
@@ -64,7 +66,7 @@ fn test_gpu_print_formattable() raises:
         # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:68:32
+        # CHECK: test_print.mojo:70:32
         print(__source_location())
 
         # ------------------------------

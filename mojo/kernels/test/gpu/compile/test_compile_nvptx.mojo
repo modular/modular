@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: NVIDIA-GPU
 # RUN: %mojo-no-debug-no-assert %s | FileCheck %s
 
 from pathlib import Path

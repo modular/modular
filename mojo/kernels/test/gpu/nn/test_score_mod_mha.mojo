@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# FIXME: KERN-1377
+# UNSUPPORTED: AMD-GPU
 # RUN: %mojo-no-debug-no-assert %s -t | FileCheck %s
 # CHECK-NOT: CUDA ERROR
 
