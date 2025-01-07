@@ -147,6 +147,7 @@ DUMMY_ARCH = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.float32: [KVCacheStrategy.CONTINUOUS],
         SupportedEncoding.bfloat16: [KVCacheStrategy.CONTINUOUS],
+        SupportedEncoding.q6_k: [KVCacheStrategy.CONTINUOUS],
     },
     pipeline_model=DummyPipelineModel,
     tokenizer=TextTokenizer,
@@ -302,7 +303,7 @@ def test_registry__update_weight_paths():
     assert len(config.weight_path) == 1
     assert config.weight_path == [Path("llama-3.1-8b-instruct-f32.gguf")]
 
-    # This second example, is requesitng float32 from a safetensors repository.
+    # This second example, is requesting float32 from a safetensors repository.
     config = PipelineConfig(
         huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
         quantization_encoding=SupportedEncoding.float32,
@@ -313,15 +314,28 @@ def test_registry__update_weight_paths():
     assert len(config.weight_path) == 1
     assert config.weight_path == [Path("model.safetensors")]
 
-    # This example, should raise, as you are requesting bfloat16 from a fp32 safetensors repo.
+    # This example, should raise, as you are requesting q6_k from a fp32
+    # safetensors repo.
+    config = PipelineConfig(
+        huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
+        quantization_encoding=SupportedEncoding.q6_k,
+    )
+
+    # This should raise, as this repository, does not have q6_k weights.
+    with pytest.raises(ValueError, match="compatible weights cannot be found"):
+        PIPELINE_REGISTRY.validate_pipeline_config(config)
+
+    # This example, should pass, since using fp32 weights for bfloat16 is
+    # listed as an alternate encoding for fp32.
     config = PipelineConfig(
         huggingface_repo_id="trl-internal-testing/tiny-random-LlamaForCausalLM",
         quantization_encoding=SupportedEncoding.bfloat16,
     )
 
-    # This should raise, as this repository, does not have bfloat16 weights.
-    with pytest.raises(ValueError):
-        PIPELINE_REGISTRY.validate_pipeline_config(config)
+    # This should pass, since the float16 weights will be used for bfloat16.
+    PIPELINE_REGISTRY.validate_pipeline_config(config)
+    assert len(config.weight_path) == 1
+    assert config.weight_path == [Path("model.safetensors")]
 
     # This example, should raise as we dont have q4_k listed as supported.
     config = PipelineConfig(
