@@ -16,8 +16,7 @@ ARG TARGETPLATFORM
 
 WORKDIR /app
 
-# g++ currently only necessary for the faster-fifo build. See SDLC-1381
-RUN apt-get update && apt-get install -y wget g++
+RUN apt-get update && apt-get install -y wget
 
 # Install Conda
 ENV CONDA_DIR=/opt/conda

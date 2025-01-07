@@ -8,16 +8,17 @@
 import asyncio
 import contextlib
 import logging
+import multiprocessing
 import os
 import queue
 from dataclasses import dataclass
 from enum import Enum
+from multiprocessing import Queue
 from multiprocessing.context import SpawnProcess
 from typing import AsyncGenerator, Generator, Generic, Optional, TypeVar
 
 import psutil
 import sentinel
-from faster_fifo import Queue as MPQueue  # type: ignore
 
 BatchReqId = TypeVar("BatchReqId")
 BatchReqInput = TypeVar("BatchReqInput")
@@ -65,13 +66,14 @@ class BatchQueueConfig:
 
 
 class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
-    def __init__(self):
+    def __init__(self, context=None):
         super().__init__()
+        self.context = context or multiprocessing.get_context("spawn")
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.request_q = MPQueue(max_size_bytes=1_000_000_000)
-        self.response_q = MPQueue(max_size_bytes=100_000_000)
-        self.cancel_q = MPQueue(max_size_bytes=10_000_000)
-        self.health_q = MPQueue(max_size_bytes=1_000)  # a small q is sufficient
+        self.request_q: Queue = self.context.Queue()
+        self.response_q: Queue = self.context.Queue()
+        self.cancel_q: Queue = self.context.Queue()
+        self.health_q: Queue = self.context.Queue()
         self.pending_out_queues: dict[ReqId, asyncio.Queue] = {}
         self.pid: int = -1
         self.process: Optional[SpawnProcess] = None
@@ -93,12 +95,9 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                 "HEALTH": self.health_q,
             }.items():
                 logging.critical(
-                    "FULL[%s]@ size: %d (bytes: %d) max: %d (bytes:%d)",
+                    "FULL[%s]@ size: %d",
                     name,
                     q.qsize(),
-                    q.data_size(),
-                    q.maxsize,
-                    q.max_size_bytes,
                 )
             raise
         finally:
@@ -129,8 +128,8 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                         await asyncio.sleep(0)
 
                     cancelled = set()
-                    for batch in self.response_q.get_many_nowait():
-                        for req_id, response in batch.items():
+                    for responses in self.response_q.get_nowait():
+                        for req_id, response in responses.items():
                             if req_id in self.pending_out_queues:
                                 await self.pending_out_queues[req_id].put(
                                     response
@@ -139,7 +138,7 @@ class EngineQueue(Generic[ReqId, ReqInput, ReqOutput]):
                                 cancelled.add(req_id)
 
                     if cancelled:
-                        self.cancel_q.put_many_nowait(list(cancelled))
+                        self.cancel_q.put_nowait(list(cancelled))
 
                 except queue.Empty:
                     await asyncio.sleep(0)

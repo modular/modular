@@ -7,18 +7,18 @@
 import asyncio
 import logging
 import math
+import multiprocessing
 import os
 import queue
 import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from multiprocessing import get_context as mp_get_context
-from multiprocessing.synchronize import Event as MPEvent
+from multiprocessing import Queue
+from multiprocessing.synchronize import Event
 from typing import AsyncGenerator, Mapping, Optional
 
 import uvloop
-from faster_fifo import Queue as MPQueue  # type: ignore
 from max.pipelines.interfaces import TokenGeneratorFactory
 from max.profiler import Tracer, traced
 from max.serve.pipelines.llm import TokenGeneratorPipelineConfig
@@ -43,8 +43,8 @@ def _model_worker_process_fn(
     model_factory: TokenGeneratorFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
     worker_config: ModelWorkerConfig,
-    queues: Mapping[str, MPQueue],
-    events: Mapping[str, MPEvent],
+    queues: Mapping[str, Queue],
+    events: Mapping[str, Event],
 ):
     try:
         uvloop.run(
@@ -81,8 +81,8 @@ async def start_model_worker(
         Iterator[AsyncIterator[Worker]]: _description_
     """
 
-    mp_context = mp_get_context("spawn")
-    engine_queue: EngineQueue = EngineQueue()
+    mp_context = multiprocessing.get_context("spawn")
+    engine_queue: EngineQueue = EngineQueue(context=mp_context)
     queue_args = {
         "REQUEST": engine_queue.request_q,
         "RESPONSE": engine_queue.response_q,
@@ -121,7 +121,15 @@ async def start_model_worker(
             curr_time = last_health_check
             while True:
                 await asyncio.sleep(config.health_check_sleep_sec)
-                msgs = engine_queue.health_q.get_many_nowait()
+                msgs = []
+                # Drain all messages from the queue
+                while True:
+                    try:
+                        msg = engine_queue.health_q.get_nowait()
+                        msgs.append(msg)
+                    except queue.Empty:
+                        break
+
                 curr_time = time.time()
                 if msgs:
                     logger.debug("HEALTH_MESSAGE :: %s", msgs)
@@ -137,8 +145,8 @@ async def start_model_worker(
                 for m in msgs:
                     if m != "OK":
                         raise RuntimeError("Model worker corrupted")
-        except (TimeoutError, queue.Empty):
-            logger.exception("Model worker timeout or empty")
+        except TimeoutError:
+            logger.exception("Model worker timeout")
         finally:
             logger.info("Exiting health check task")
             shutdown_event.set()
@@ -200,8 +208,8 @@ async def model_worker_run_v2(
     model_factory: TokenGeneratorFactory,
     pipeline_config: TokenGeneratorPipelineConfig,
     worker_config: ModelWorkerConfig,
-    queues: Mapping[str, MPQueue],
-    events: Mapping[str, MPEvent],
+    queues: Mapping[str, Queue],
+    events: Mapping[str, Event],
 ):
     configure_metrics()
     await METRICS.configure()
@@ -215,9 +223,9 @@ async def model_worker_run_v2(
         stopped = events["STOPPED"]
         shutdown = events["SHUTDOWN"]
 
-        request_queue = queues["REQUEST"]
-        response_queue = queues["RESPONSE"]
-        cancel_queue = queues["CANCEL"]
+        request_q = queues["REQUEST"]
+        response_q = queues["RESPONSE"]
+        cancel_q = queues["CANCEL"]
         health_q = queues["HEALTH"]
 
         logger.info("Worker Queues: %s, Events: %s", queues, events)
@@ -262,7 +270,7 @@ async def model_worker_run_v2(
 
             if should_schedule_ce(
                 batch_continuous,
-                request_queue,
+                request_q,
                 max_batch_size_tg,
                 start_time,
                 batch_timeout,
@@ -273,7 +281,7 @@ async def model_worker_run_v2(
                 )
                 if len(
                     batch_to_execute := create_batch(
-                        request_queue,
+                        request_q,
                         max_batch_size_to_execute,
                         cache_indices,
                         target_sum_seq_len,
@@ -293,9 +301,9 @@ async def model_worker_run_v2(
                     for req_id in batch_to_execute:
                         batch_continuous[req_id] = batch_to_execute[req_id]
 
-                    tracer.push("put_many_nowait")
-                    response_queue.put_many_nowait(batch_responses)
-                    tracer.pop()  # pops put_many_nowait
+                    tracer.push("put_nowait")
+                    response_q.put_nowait(batch_responses)
+                    tracer.pop()  # pops put_nowait
                     start_time[0] = None
                     tracer.pop()  # pops batch_to_execute
                 tracer.pop()  # pops scheduling_ce
@@ -310,16 +318,16 @@ async def model_worker_run_v2(
                     batch_continuous, batch_responses, model, cache_indices
                 )
 
-                tracer.push("put_many_nowait")  # pops batch_continuous
-                response_queue.put_many_nowait(batch_responses)
-                tracer.pop()  # pops put_many_nowait
+                tracer.push("put_nowait")  # pops batch_continuous
+                response_q.put_nowait(batch_responses)
+                tracer.pop()  # pops put_nowait
                 tracer.pop()  # pops batch_continuous
 
             # Occasionally clear out contexts cancelled out API worker side.
-            if i % 20 == 0 and not cancel_queue.empty():
+            if i % 20 == 0 and not cancel_q.empty():
                 tracer.push("cancel_queue")
                 try:
-                    for req_id in cancel_queue.get_many_nowait():
+                    for req_id in cancel_q.get_nowait():
                         if req_id in batch_continuous:
                             model.release(batch_continuous[req_id])
                             cache_indices.add(
@@ -345,16 +353,16 @@ async def model_worker_run_v2(
 @traced
 def should_schedule_ce(
     batch_continuous: BatchInputs,
-    request_queue: MPQueue,
+    request_q: Queue,
     max_batch_size_tg: int,
     start_time: list,
     batch_timeout_s: Optional[float],
 ):
     # The incoming request queue is empty; no CE to schedule
-    if request_queue.empty():
+    if request_q.empty():
         return False
 
-    # logger.info("Worker-Queue-Size: %d", request_queue.qsize())
+    # logger.info("Worker-Queue-Size: %d", request_q.qsize())
 
     # At this point there are incoming requests, we start the batch clock if not yet
     if not start_time[0]:
@@ -374,20 +382,24 @@ def should_schedule_ce(
         if time.monotonic() >= start_time[0] + batch_timeout_s:
             return True
         else:
-            messages_needed = max_batch_size_tg - len(batch_continuous)
-            if request_queue.qsize() >= messages_needed:
-                # If there are enough request to fill the TG batch then schedule CE
-                return True
-            else:
-                # If not enough requests then wait with CE and continue with TG
-                return False
+            # TODO(SI-808): The The multiprocessing.Queue implementation isn't portable.
+            # Its Queue.qsize() method throws NotImplementedError exception on MacOS and Graviton
+            # messages_needed = max_batch_size_tg - len(batch_continuous)
+            # if request_q.qsize() >= messages_needed:
+            #     # If there are enough request to fill the TG batch then schedule CE
+            #     return True
+            # else:
+            #     # If not enough requests then wait with CE and continue with TG
+            #     return False
+
+            return False
 
     return True
 
 
 @traced
 def create_batch(
-    request_queue: MPQueue,
+    request_q: Queue,
     max_batch_size: int,
     request_indices: set,
     target_sum_seq_len: Optional[int],
@@ -396,21 +408,16 @@ def create_batch(
     sum_seq_len = 0
     while len(batch) < max_batch_size:
         try:
-            max_messages_to_get = (
-                1 if target_sum_seq_len else max_batch_size - len(batch)
-            )
-            for req_id, data in request_queue.get_many_nowait(
-                max_messages_to_get=max_messages_to_get
+            req_id, data = request_q.get_nowait()
+            data.cache_seq_id = request_indices.pop()
+            batch[req_id] = data
+            sum_seq_len += getattr(data, "seq_len", 0)
+            # if the batch has hit the target sum sequence length, break early
+            if (
+                target_sum_seq_len is not None
+                and sum_seq_len > target_sum_seq_len
             ):
-                data.cache_seq_id = request_indices.pop()
-                batch[req_id] = data
-                sum_seq_len += getattr(data, "seq_len", 0)
-                # if the batch has hit the target sum sequence length, break early
-                if (
-                    target_sum_seq_len is not None
-                    and sum_seq_len > target_sum_seq_len
-                ):
-                    break
+                break
         except queue.Empty:
             break
     return batch
