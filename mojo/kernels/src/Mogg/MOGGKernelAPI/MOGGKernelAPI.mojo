@@ -525,6 +525,30 @@ fn managed_tensor_slice_to_ndbuffer_primitive[
 
 
 @always_inline
+fn managed_tensor_slice_to_ndbuffer_with_spec[
+    spec: StaticTensorSpec
+](tensor: ManagedTensorSlice[spec.type, spec.rank]) -> NDBuffer[
+    spec.type,
+    spec.rank,
+    spec.shape,
+    spec.strides,
+    alignment = spec.alignment,
+    address_space = spec.address_space,
+    exclusive = spec.exclusive,
+]:
+    var ptr = tensor._ptr.address_space_cast[spec.address_space]()
+    return NDBuffer[
+        spec.type,
+        spec.rank,
+        spec.shape,
+        spec.strides,
+        alignment = spec.alignment,
+        address_space = spec.address_space,
+        exclusive = spec.exclusive,
+    ](ptr, tensor.shape(), tensor._runtime_strides)
+
+
+@always_inline
 fn managed_tensor_slice_to_ndbuffer[
     type: DType,
     rank: Int,
@@ -690,9 +714,15 @@ struct Range:
         step: ScalarTensor[type=type],
     ) raises -> IndexList[1]:
         return arange_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(start),
-            managed_tensor_slice_to_ndbuffer(stop),
-            managed_tensor_slice_to_ndbuffer(step),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                spec = compiler.specsof[start.type, start.rank]("start")
+            ](start),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                spec = compiler.specsof[stop.type, stop.rank]("stop")
+            ](stop),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                spec = compiler.specsof[step.type, step.rank]("step")
+            ](step),
         )
 
 
@@ -1599,10 +1629,18 @@ struct ScatterND:
         ctx: MojoCallContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
         scatter_nd[
             output_ndbuffer.type,
             indices_ndbuffer.type,
@@ -1628,9 +1666,15 @@ struct ScatterND:
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=synchronous](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[updates.type, updates.rank]("updates")
+            ](updates),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
         )
 
 
@@ -1648,10 +1692,18 @@ struct ScatterNDAdd:
         ctx: MojoCallContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
 
         @always_inline
         @parameter
@@ -1686,9 +1738,15 @@ struct ScatterNDAdd:
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=synchronous](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[updates.type, updates.rank]("updates")
+            ](updates),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
         )
 
 
@@ -1706,10 +1764,18 @@ struct ScatterNDMul:
         ctx: MojoCallContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
 
         @always_inline
         @parameter
@@ -1744,9 +1810,15 @@ struct ScatterNDMul:
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=synchronous](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[updates.type, updates.rank]("updates")
+            ](updates),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
         )
 
 
@@ -1764,10 +1836,18 @@ struct ScatterNDMin:
         ctx: MojoCallContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
 
         @always_inline
         @parameter
@@ -1802,9 +1882,15 @@ struct ScatterNDMin:
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=synchronous](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[updates.type, updates.rank]("updates")
+            ](updates),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
         )
 
 
@@ -1822,10 +1908,18 @@ struct ScatterNDMax:
         ctx: MojoCallContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
 
         @always_inline
         @parameter
@@ -1860,9 +1954,15 @@ struct ScatterNDMax:
         indices: ManagedTensorSlice,
     ) raises -> IndexList[input.rank]:
         return scatter_nd_shape[single_thread_blocking_override=synchronous](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(updates),
-            managed_tensor_slice_to_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[updates.type, updates.rank]("updates")
+            ](updates),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
         )
 
 
@@ -1885,7 +1985,9 @@ struct Scatter:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
+        var scalar_axis = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)[0]
 
         @always_inline
         @parameter
@@ -1909,10 +2011,18 @@ struct Scatter:
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
+        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)
         return scatter_elements_shape[
             input.rank,
             input.type,
@@ -1936,7 +2046,9 @@ struct ScatterAdd:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
+        var scalar_axis = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)[0]
 
         @always_inline
         @parameter
@@ -1960,10 +2072,18 @@ struct ScatterAdd:
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
+        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)
         return scatter_elements_shape[
             input.rank,
             input.type,
@@ -1987,7 +2107,9 @@ struct ScatterMax:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
+        var scalar_axis = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)[0]
 
         @always_inline
         @parameter
@@ -2011,10 +2133,18 @@ struct ScatterMax:
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
+        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)
         return scatter_elements_shape[
             input.rank,
             input.type,
@@ -2038,7 +2168,9 @@ struct ScatterMin:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
+        var scalar_axis = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)[0]
 
         @always_inline
         @parameter
@@ -2062,10 +2194,18 @@ struct ScatterMin:
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
+        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)
         return scatter_elements_shape[
             input.rank,
             input.type,
@@ -2090,7 +2230,9 @@ struct ScatterMul:
         ctx: MojoCallContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        var scalar_axis = managed_tensor_slice_to_ndbuffer(axis)[0]
+        var scalar_axis = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)[0]
 
         @always_inline
         @parameter
@@ -2114,10 +2256,18 @@ struct ScatterMul:
         indices: ManagedTensorSlice[rank = input.rank],
         axis: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
-        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer(updates)
-        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer(axis)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
+        var updates_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[updates.type, updates.rank]("updates")
+        ](updates)
+        var axis_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[axis.type, axis.rank]("axis")
+        ](axis)
         return scatter_elements_shape[
             input.rank,
             input.type,
@@ -2389,7 +2539,10 @@ struct StaticReshape:
         ctx: MojoCallContextPtr,
     ):
         var view_buffer = reshape(
-            managed_tensor_slice_to_ndbuffer(input), shape
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            shape,
         )
         var view_tensor = ManagedTensorSlice[type, output_rank](
             view_buffer.data, shape, view_buffer.get_strides()
@@ -2424,8 +2577,12 @@ struct Reshape:
         return reshape_shape[
             output_rank=output_rank, single_thread_blocking_override=True
         ](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(shape),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[shape.type, shape.rank]("shape")
+            ](shape),
         )
 
 
@@ -2560,10 +2717,18 @@ struct Slice:
         ctx: MojoCallContextPtr,
     ):
         var view_buffer = slice_as_view(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(starts),
-            managed_tensor_slice_to_ndbuffer(stops),
-            managed_tensor_slice_to_ndbuffer(steps),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[starts.type, starts.rank]("starts")
+            ](starts),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[stops.type, stops.rank]("stops")
+            ](stops),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[steps.type, steps.rank]("steps")
+            ](steps),
         )
         var view_tensor = ManagedTensorSlice[type, rank](
             view_buffer.data,
@@ -2589,10 +2754,18 @@ struct Slice:
         steps: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
         return slice_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(starts),
-            managed_tensor_slice_to_ndbuffer(stops),
-            managed_tensor_slice_to_ndbuffer(steps),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[starts.type, starts.rank]("starts")
+            ](starts),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[stops.type, stops.rank]("stops")
+            ](stops),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[steps.type, steps.rank]("steps")
+            ](steps),
         )
 
 
@@ -2613,11 +2786,21 @@ struct MutableStoreSlice:
         ctx: MojoCallContextPtr,
     ) raises:
         copy_to_slice[target=target](
-            managed_tensor_slice_to_ndbuffer(to_buffer),
-            managed_tensor_slice_to_ndbuffer(in_slice),
-            managed_tensor_slice_to_ndbuffer(starts),
-            managed_tensor_slice_to_ndbuffer(stops),
-            managed_tensor_slice_to_ndbuffer(steps),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[to_buffer.type, to_buffer.rank]("to_buffer")
+            ](to_buffer),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[in_slice.type, in_slice.rank]("in_slice")
+            ](in_slice),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[starts.type, starts.rank]("starts")
+            ](starts),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[stops.type, stops.rank]("stops")
+            ](stops),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[steps.type, steps.rank]("steps")
+            ](steps),
             ctx,
         )
 
@@ -2661,7 +2844,9 @@ struct SliceDim:
         ctx: MojoCallContextPtr,
     ):
         var view_buffer = slice_dim_as_view[dim=axis](
-            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
             int(starts),
             int(stops),
             int(steps),
@@ -2710,12 +2895,14 @@ struct ArgMax:
         with Trace[TraceLevel.OP, target=target]("argmax"):
 
             @parameter
-            if is_cpu[target]():
-                var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
-                    static_shape=output_shape
-                ](output)
-                var input_ndbuffer = managed_tensor_slice_to_ndbuffer[
-                    static_shape=input_shape
+            if target == "cpu":
+                var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+                    spec = compiler.specsof[output.type, output.rank]("output")
+                ](
+                    output
+                )
+                var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+                    spec = compiler.specsof[input.type, input.rank]("input")
                 ](input)
 
                 argmax(input_ndbuffer, axis_val, output_ndbuffer)
@@ -2724,8 +2911,14 @@ struct ArgMax:
                     raise Error("axis other than -1 not supported on GPU")
 
                 # Has no static shape info
-                var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-                var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+                var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[output.type, output.rank]("output")
+                ](
+                    output
+                )
+                var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[input.type, input.rank]("input")
+                ](input)
 
                 # TODO(KERN-1045): Add support for taking advantage of static_shapes
                 var cuda_ctx = ctx.get_device_context()
@@ -2747,24 +2940,19 @@ struct ArgMin:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        alias output_shape = compiler.specsof[output.type, output.rank](
-            "output"
-        ).shape
-        alias axis_shape = compiler.specsof[axis.type, axis.rank]("axis").shape
-        alias input_shape = compiler.specsof[input.type, input.rank](
-            "input"
-        ).shape
         var axis_val = int(normalize_neg_index(axis[0], rank))
 
         with Trace[TraceLevel.OP, target=target]("argmin"):
 
             @parameter
-            if is_cpu[target]():
-                var output_ndbuffer = managed_tensor_slice_to_ndbuffer[
-                    static_shape=output_shape
-                ](output)
-                var input_ndbuffer = managed_tensor_slice_to_ndbuffer[
-                    static_shape=input_shape
+            if target == "cpu":
+                var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+                    spec = compiler.specsof[output.type, output.rank]("output")
+                ](
+                    output
+                )
+                var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+                    spec = compiler.specsof[input.type, input.rank]("input")
                 ](input)
 
                 argmin(input_ndbuffer, axis_val, output_ndbuffer)
@@ -2773,8 +2961,14 @@ struct ArgMin:
                     raise Error("axis other than -1 not supported on GPU")
 
                 # Has no static shape info
-                var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-                var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
+                var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[output.type, output.rank]("output")
+                ](
+                    output
+                )
+                var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[input.type, input.rank]("input")
+                ](input)
 
                 # TODO(KERN-1045): Add support for taking advantage of static_shapes
                 var cuda_ctx = ctx.get_device_context()
@@ -2792,8 +2986,16 @@ struct ArgNonZero:
         output_buffer: ManagedTensorSlice[rank=2],
         input_buffer: ManagedTensorSlice,
     ):
-        var out_ndbuffer = managed_tensor_slice_to_ndbuffer(output_buffer)
-        var in_ndbuffer = managed_tensor_slice_to_ndbuffer(input_buffer)
+        var out_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output_buffer.type, output_buffer.rank](
+                "output_buffer"
+            )
+        ](output_buffer)
+        var in_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input_buffer.type, input_buffer.rank](
+                "input_buffer"
+            )
+        ](input_buffer)
 
         arg_nonzero.arg_nonzero(in_ndbuffer, out_ndbuffer)
 
@@ -2801,7 +3003,13 @@ struct ArgNonZero:
     fn shape(input_buffer: ManagedTensorSlice) -> IndexList[2]:
         return arg_nonzero.arg_nonzero_shape[
             single_thread_blocking_override=True
-        ](managed_tensor_slice_to_ndbuffer(input_buffer))
+        ](
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input_buffer.type, input_buffer.rank](
+                    "input_buffer"
+                )
+            ](input_buffer)
+        )
 
 
 @compiler.register("mo.mean")
@@ -3200,12 +3408,24 @@ struct AvgPool:
         paddings: ManagedTensorSlice[int_type, 1],
     ):
         avg_pool[count_boundary=count_boundary](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
             False,
         )
 
@@ -3221,11 +3441,21 @@ struct AvgPool:
         paddings: ManagedTensorSlice[int_type, 1],
     ) raises -> IndexList[input.rank]:
         return pool_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
         )
 
 
@@ -3245,12 +3475,24 @@ struct AvgPoolCeilModeTrue:
         paddings: ManagedTensorSlice[int_type, 1],
     ):
         avg_pool[count_boundary=count_boundary](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
             True,
         )
 
@@ -3267,11 +3509,21 @@ struct AvgPoolCeilModeTrue:
         ctx: MojoCallContextPtr,
     ) raises -> IndexList[input.rank]:
         return pool_shape_ceil[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
         )
 
 
@@ -3290,12 +3542,24 @@ struct MaxPool:
         paddings: ManagedTensorSlice[int_type, 1],
     ):
         max_pool(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
             False,
         )
 
@@ -3311,11 +3575,21 @@ struct MaxPool:
         paddings: ManagedTensorSlice[int_type, 1],
     ) raises -> IndexList[input.rank]:
         return pool_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
         )
 
 
@@ -3334,12 +3608,24 @@ struct MaxPoolCeilModeTrue:
         paddings: ManagedTensorSlice[int_type, 1],
     ):
         max_pool(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
             True,
         )
 
@@ -3355,11 +3641,21 @@ struct MaxPoolCeilModeTrue:
         paddings: ManagedTensorSlice[int_type, 1],
     ) raises -> IndexList[input.rank]:
         return pool_shape_ceil[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
         )
 
 
@@ -3382,8 +3678,12 @@ struct PadConstant:
     ):
         var paddings_ptr = padding._ptr
         var constant_simd = constant._ptr.load(0)
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var input_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
         pad_constant(output_buf, input_buf, paddings_ptr, constant_simd)
 
     @staticmethod
@@ -3395,8 +3695,12 @@ struct PadConstant:
         padding: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(padding),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[padding.type, padding.rank]("padding")
+            ](padding),
         )
 
 
@@ -3412,8 +3716,12 @@ struct PadRepeat:
         padding: ManagedTensorSlice[rank=1],
     ):
         var paddings_ptr = padding._ptr
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var input_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
         pad_repeat(output_buf, input_buf, paddings_ptr)
 
     @staticmethod
@@ -3425,8 +3733,12 @@ struct PadRepeat:
         padding: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(padding),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[padding.type, padding.rank]("padding")
+            ](padding),
         )
 
 
@@ -3442,8 +3754,12 @@ struct PadReflect:
         padding: ManagedTensorSlice[rank=1],
     ):
         var paddings_ptr = padding._ptr
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var input_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
         pad_reflect(output_buf, input_buf, paddings_ptr)
 
     @staticmethod
@@ -3455,8 +3771,12 @@ struct PadReflect:
         padding: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[rank]:
         return pad_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(padding),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[padding.type, padding.rank]("padding")
+            ](padding),
         )
 
 
@@ -3479,9 +3799,15 @@ struct GatherND:
         ctx: MojoCallContextPtr,
     ) raises:
         # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var data_ndbuffer = managed_tensor_slice_to_ndbuffer(data)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
+        var data_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[data.type, data.rank]("data")
+        ](data)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
 
         gather_nd[batch_dims=batchDims, target=target](
             data_ndbuffer, indices_ndbuffer, output_ndbuffer, ctx
@@ -3499,8 +3825,12 @@ struct GatherND:
             output_rank=output_rank,
             single_thread_blocking_override=synchronous,
         ](
-            managed_tensor_slice_to_ndbuffer(data),
-            managed_tensor_slice_to_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[data.type, data.rank]("data")
+            ](data),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
         )
 
 
@@ -3574,9 +3904,15 @@ struct Gather:
             output_rank=output_rank,
             single_thread_blocking_override=True,
         ](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(indices),
-            managed_tensor_slice_to_ndbuffer(axis),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[axis.type, axis.rank]("axis")
+            ](axis),
         )
 
 
@@ -3589,9 +3925,15 @@ struct GatherSum:
         indices: ManagedTensorSlice[DType.int32, *_],
     ) raises:
         # Existing implementations do not require static shape information
-        var output_ndbuffer = managed_tensor_slice_to_ndbuffer(output)
-        var input_ndbuffer = managed_tensor_slice_to_ndbuffer(input)
-        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer(indices)
+        var output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
+        var input_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
+        var indices_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[indices.type, indices.rank]("indices")
+        ](indices)
 
         fn add[
             type: DType, simd_width: Int
@@ -3642,11 +3984,11 @@ struct LayerNorm:
         ](coords: IndexList[_rank]) -> SIMD[type, width]:
             return gamma._fused_load[width=width](rebind[IndexList[1]](coords))
 
-        var beta_buf = managed_tensor_slice_to_ndbuffer(beta)
-        alias output_spec = compiler.specsof[output.type, output.rank]("output")
-        var output_buf = managed_tensor_slice_to_ndbuffer[
-            static_shape = output_spec.shape,
-            static_strides = output_spec.strides,
+        var beta_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[beta.type, beta.rank]("beta")
+        ](beta)
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output)
 
         layer_norm[type, rank, input_fn, gamma_fn, target=target,](
@@ -3671,8 +4013,6 @@ struct LayerNorm:
         return input.shape()
 
 
-# TODO(GEX-1216): This kernel slows down pipeline by 2x for some reason.
-# Likely due to something related to fusion.
 @compiler.register("rms_norm")
 struct RMSNorm:
     @compiler.enable_fusion_for("input")
@@ -3697,8 +4037,12 @@ struct RMSNorm:
                 rebind[IndexList[input.rank]](coords)
             )
 
-        var gamma_buf = managed_tensor_slice_to_ndbuffer(gamma)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var gamma_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[gamma.type, gamma.rank]("gamma")
+        ](gamma)
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
 
         rms_norm[type, rank, input_fn, target=target](
             input.shape(), gamma_buf, epsilon, output_buf, ctx
@@ -3736,12 +4080,18 @@ struct BottomK:
         sorted: Scalar[type = DType.bool],
     ):
         top_k(
-            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
             int(k),
             int(axis),
             False,
-            managed_tensor_slice_to_ndbuffer(values),
-            managed_tensor_slice_to_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[values.type, values.rank]("values")
+            ](values),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
             sorted,
         )
 
@@ -3755,9 +4105,15 @@ struct BottomK:
         sorted: ScalarTensor[type = DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(k),
-            managed_tensor_slice_to_ndbuffer(axis),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[k.type, k.rank]("k")
+            ](k),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[axis.type, axis.rank]("axis")
+            ](axis),
         )
 
 
@@ -3776,12 +4132,18 @@ struct TopK:
         sorted: Scalar[type = DType.bool],
     ):
         top_k(
-            managed_tensor_slice_to_ndbuffer(input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
             int(k),
             int(axis),
             True,
-            managed_tensor_slice_to_ndbuffer(values),
-            managed_tensor_slice_to_ndbuffer(indices),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[values.type, values.rank]("values")
+            ](values),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[indices.type, indices.rank]("indices")
+            ](indices),
             sorted,
         )
 
@@ -3795,9 +4157,15 @@ struct TopK:
         sorted: ScalarTensor[type = DType.bool],
     ) raises -> IndexList[input.rank]:
         return top_k_shape_impl[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(k),
-            managed_tensor_slice_to_ndbuffer(axis),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[k.type, k.rank]("k")
+            ](k),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[axis.type, axis.rank]("axis")
+            ](axis),
         )
 
 
@@ -3824,9 +4192,15 @@ struct NonMaximumSupression:
         var score_threshold_float = score_threshold
 
         non_max_suppression(
-            managed_tensor_slice_to_ndbuffer(boxes),
-            managed_tensor_slice_to_ndbuffer(scores),
-            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[boxes.type, boxes.rank]("boxes")
+            ](boxes),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[scores.type, scores.rank]("scores")
+            ](scores),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
             max_output_boxes_int,
             iou_threshold_float,
             score_threshold_float,
@@ -3847,8 +4221,12 @@ struct NonMaximumSupression:
         var score_threshold_float = score_threshold
 
         return non_max_suppression_shape_func(
-            managed_tensor_slice_to_ndbuffer(boxes),
-            managed_tensor_slice_to_ndbuffer(scores),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[boxes.type, boxes.rank]("boxes")
+            ](boxes),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[scores.type, scores.rank]("scores")
+            ](scores),
             max_output_boxes_int,
             iou_threshold_float,
             score_threshold_float,
@@ -3886,13 +4264,15 @@ struct Matmul:
 
         alias transposed_a = False
 
-        alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
-        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
-        alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
-
-        var a_buffer = managed_tensor_slice_to_ndbuffer[static_shape=a_shape](a)
-        var b_buffer = managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b)
-        var c_buffer = managed_tensor_slice_to_ndbuffer[static_shape=c_shape](c)
+        var a_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            spec = compiler.specsof[a.type, a.rank]("a")
+        ](a)
+        var b_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            spec = compiler.specsof[b.type, b.rank]("b")
+        ](b)
+        var c_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            spec = compiler.specsof[c.type, c.rank]("c")
+        ](c)
 
         alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
 
@@ -3937,9 +4317,15 @@ struct BatchMatmul:
     ) raises:
         alias transpose_a = False
 
-        var a_buffer = managed_tensor_slice_to_ndbuffer(a)
-        var b_buffer = managed_tensor_slice_to_ndbuffer(b)
-        var c_buffer = managed_tensor_slice_to_ndbuffer(c)
+        var a_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[a.type, a.rank]("a")
+        ](a)
+        var b_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[b.type, b.rank]("b")
+        ](b)
+        var c_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[c.type, c.rank]("c")
+        ](c)
 
         alias out_lambda = compiler.specsof[c.type, c.rank]("c").out_lambda
 
@@ -3973,8 +4359,12 @@ struct BatchMatmul:
         a: ManagedTensorSlice[a_type, rank],
         b: ManagedTensorSlice[b_type, rank],
     ) raises -> IndexList[rank]:
-        var a_buffer = managed_tensor_slice_to_ndbuffer(a)
-        var b_buffer = managed_tensor_slice_to_ndbuffer(b)
+        var a_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[a.type, a.rank]("a")
+        ](a)
+        var b_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[b.type, b.rank]("b")
+        ](b)
         return batched_matmul_shape[single_thread_blocking_override=True](
             a_buffer, b_buffer
         )
@@ -3992,9 +4382,15 @@ struct LinalgSolve:
         b: ManagedTensorSlice[type=type],
     ) raises:
         matrix_solve[single_thread_blocking_override=synchronous](
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
-            managed_tensor_slice_to_ndbuffer(x),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[a.type, a.rank]("a")
+            ](a),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[b.type, b.rank]("b")
+            ](b),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[x.type, x.rank]("x")
+            ](x),
         )
 
     @staticmethod
@@ -4006,8 +4402,12 @@ struct LinalgSolve:
         b: ManagedTensorSlice[type=type, rank=rank],
     ) raises -> IndexList[a.rank]:
         return matrix_solve_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(a),
-            managed_tensor_slice_to_ndbuffer(b),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[a.type, a.rank]("a")
+            ](a),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[b.type, b.rank]("b")
+            ](b),
         )
 
 
@@ -4038,10 +4438,18 @@ struct LinalgBandPart:
                 rebind[IndexList[input.rank]](coords)
             )
 
-        var num_lower_buf = managed_tensor_slice_to_ndbuffer(num_lower)
-        var num_upper_buf = managed_tensor_slice_to_ndbuffer(num_upper)
-        var exclude_buf = managed_tensor_slice_to_ndbuffer(exclude)
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var num_lower_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[num_lower.type, num_lower.rank]("num_lower")
+        ](num_lower)
+        var num_upper_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[num_upper.type, num_upper.rank]("num_upper")
+        ](num_upper)
+        var exclude_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[exclude.type, exclude.rank]("exclude")
+        ](exclude)
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
 
         matrix_band_part[
             input_0_fn=input_fn,
@@ -4077,8 +4485,12 @@ struct ResizeNearest:
         size: ManagedTensorSlice[rank=1],
     ):
         resize_nearest_neighbor[coordinate_transform_mode, round_mode](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
         )
 
     @staticmethod
@@ -4109,8 +4521,12 @@ struct ResizeLinear:
         size: ManagedTensorSlice[rank=1],
     ):
         resize_linear[coordinate_transform_mode, antialias](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
         )
 
     @staticmethod
@@ -4148,17 +4564,15 @@ struct ROIAlign:
         spatial_scale: Scalar,
         sampling_ratio: Scalar,
     ):
-        alias input_spec = compiler.specsof[input.type, input.rank]("input")
-        alias rois_spec = compiler.specsof[rois.type, rois.rank]("rois")
         roi_align_nhwc[aligned, mode](
-            managed_tensor_slice_to_ndbuffer(output),
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = input_spec.shape,
-                static_strides = input_spec.strides,
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
             ](input),
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = rois_spec.shape,
-                static_strides = rois_spec.strides,
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[rois.type, rois.rank]("rois")
             ](rois),
             int(output_height),
             int(output_width),
@@ -4203,9 +4617,15 @@ struct Tile:
         repeats: ManagedTensorSlice,
     ) raises:
         tile(
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(repeats),
-            managed_tensor_slice_to_ndbuffer(output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[repeats.type, repeats.rank]("repeats")
+            ](repeats),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
         )
 
     @staticmethod
@@ -4214,8 +4634,12 @@ struct Tile:
         repeats: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
         return tile_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(repeats),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[repeats.type, repeats.rank]("repeats")
+            ](repeats),
         )
 
 
@@ -4292,11 +4716,8 @@ struct Softmax:
         ctx: MojoCallContextPtr,
     ) raises:
         # shape should be the same between the two inputs
-        alias static_shape = compiler.specsof[output.type, output.rank](
-            "output"
-        ).shape
-        output_ndbuffer = managed_tensor_slice_to_ndbuffer[
-            static_shape=static_shape
+        output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output)
 
         # For adapting input fusion lambda required by call
@@ -4313,7 +4734,7 @@ struct Softmax:
             output.type,
             simdwidthof[output.type](),
             output.rank,
-            static_shape,
+            output_ndbuffer.shape,
             input_fn,
             target,
         ](
@@ -4335,11 +4756,8 @@ struct LogSoftmax:
         input: ManagedTensorSlice[output.type, output.rank],
     ) raises:
         # shape should be the same between the two inputs
-        alias static_shape = compiler.specsof[output.type, output.rank](
-            "output"
-        ).shape
-        output_ndbuffer = managed_tensor_slice_to_ndbuffer[
-            static_shape=static_shape
+        output_ndbuffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output)
 
         # For adapting input fusion lambda required by call
@@ -4356,7 +4774,7 @@ struct LogSoftmax:
             output.type,
             simdwidthof[output.type](),
             output.rank,
-            static_shape,
+            output_ndbuffer.shape,
             input_fn,
         ](output.shape(), output_ndbuffer, output.rank - 1)
 
@@ -4380,8 +4798,12 @@ struct CumSum:
         axis: Scalar,
         ctx: MojoCallContextPtr,
     ):
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
+        var input_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
 
         cumsum[rank, type, exclusive, reverse](
             output_buf, input_buf, int(normalize_neg_index(axis, rank))
@@ -4487,7 +4909,9 @@ struct Concat:
         inputs: StaticTuple[ManagedTensorSlice[type, rank], *_],
         ctx: MojoCallContextPtr,
     ) raises:
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
         var axis_val = axis._ptr.load(0)
         var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
 
@@ -4641,7 +5065,9 @@ struct ConcatFromList:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        var output_buf = managed_tensor_slice_to_ndbuffer(output)
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output)
 
         # TODO: convert underlying kernel to accept lists of ManagedTensorSlice
         var input_as_ndbuffer = InlinedFixedVector[NDBuffer[type, rank]](
@@ -4692,7 +5118,9 @@ struct Split:
         axis: ManagedTensorSlice[rank=1],
         ctx: MojoCallContextPtr,
     ) raises:
-        var input_buf = managed_tensor_slice_to_ndbuffer(input)
+        var input_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
+        ](input)
         var axis_val = axis._ptr.load(0)
         var output_bufs = StaticTuple[NDBuffer[type, rank], output.size]()
 
@@ -4855,14 +5283,14 @@ struct Conv:
             ](),  # filter C, RSCF or FRSCf
         )
 
-        var input_buf = managed_tensor_slice_to_ndbuffer[
-            static_shape=input_static_shape
+        var input_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
         ](input)
-        var filter_buf = managed_tensor_slice_to_ndbuffer[
-            static_shape=filter_static_shape
+        var filter_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[filter.type, filter.rank]("filter")
         ](filter)
-        var output_buf = managed_tensor_slice_to_ndbuffer[
-            static_shape=output_static_shape
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output)
 
         @parameter
@@ -4938,12 +5366,24 @@ struct Conv:
         num_groups: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
         return conv_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(num_groups),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[num_groups.type, num_groups.rank]("num_groups")
+            ](num_groups),
         )
 
 
@@ -5033,14 +5473,14 @@ struct ConvTranspose:
                 rebind[SIMD[output.type, _width]](val),
             )
 
-        var input_buf = managed_tensor_slice_to_ndbuffer[
-            static_shape=input_static_shape
+        var input_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input.type, input.rank]("input")
         ](input)
-        var filter_buf = managed_tensor_slice_to_ndbuffer[
-            static_shape=filter_static_shape
+        var filter_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[filter.type, filter.rank]("filter")
         ](filter)
-        var output_buf = managed_tensor_slice_to_ndbuffer[
-            static_shape=output_static_shape
+        var output_buf = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output)
 
         conv_transposed[
@@ -5078,12 +5518,26 @@ struct ConvTranspose:
         output_paddings: ManagedTensorSlice[rank=1],
     ) raises -> IndexList[input.rank]:
         return conv_transpose_shape[single_thread_blocking_override=True](
-            managed_tensor_slice_to_ndbuffer(input),
-            managed_tensor_slice_to_ndbuffer(filter),
-            managed_tensor_slice_to_ndbuffer(strides),
-            managed_tensor_slice_to_ndbuffer(dilations),
-            managed_tensor_slice_to_ndbuffer(paddings),
-            managed_tensor_slice_to_ndbuffer(output_paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[input.type, input.rank]("input")
+            ](input),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter.type, filter.rank]("filter")
+            ](filter),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[strides.type, strides.rank]("strides")
+            ](strides),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[dilations.type, dilations.rank]("dilations")
+            ](dilations),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[paddings.type, paddings.rank]("paddings")
+            ](paddings),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output_paddings.type, output_paddings.rank](
+                    "output_paddings"
+                )
+            ](output_paddings),
         )
 
 
@@ -5152,33 +5606,20 @@ struct MaskedFlashAttentionGPU:
         """
         constrained[is_gpu[target](), "only valid on GPUs"]()
 
-        var output_buffer = managed_tensor_slice_to_ndbuffer[
-            static_shape = compiler.specsof[output.type, output.rank](
-                "output"
-            ).shape,
-            static_strides = compiler.specsof[output.type, output.rank](
-                "output"
-            ).strides,
+        var output_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output)
-        var q_buffer = managed_tensor_slice_to_ndbuffer[
-            static_shape = compiler.specsof[q.type, q.rank]("q").shape,
-            static_strides = compiler.specsof[q.type, q.rank]("q").strides,
+        var q_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q.type, q.rank]("q"),
         ](q)
-        var k_buffer = managed_tensor_slice_to_ndbuffer[
-            static_shape = compiler.specsof[k.type, k.rank]("k").shape,
-            static_strides = compiler.specsof[k.type, k.rank]("k").strides,
+        var k_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[k.type, k.rank]("k"),
         ](k)
-        var v_buffer = managed_tensor_slice_to_ndbuffer[
-            static_shape = compiler.specsof[v.type, v.rank]("v").shape,
-            static_strides = compiler.specsof[v.type, v.rank]("v").strides,
+        var v_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[v.type, v.rank]("v")
         ](v)
-        alias mask_spec = compiler.specsof[mask.type, mask.rank]("mask")
-        var mask_buffer = managed_tensor_slice_to_ndbuffer[
-            static_shape = mask_spec.shape,
-            static_strides = mask_spec.strides,
-            alignment = mask_spec.alignment,
-            address_space = mask_spec.address_space,
-            exclusive = mask_spec.exclusive,
+        var mask_buffer = managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[mask.type, mask.rank]("mask")
         ](mask)
 
         flash_attention[add_attn_mask=True](
@@ -5204,13 +5645,6 @@ struct NoMaskFusedAttentionCPU:
         v: ManagedTensorSlice[rank=rank],
         scale: Scalar[type = DType.float32],
     ) raises:
-        alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
-        alias k_shape = compiler.specsof[k.type, q.rank]("k").shape
-        alias v_shape = compiler.specsof[v.type, q.rank]("v").shape
-        alias output_shape = compiler.specsof[output.type, output.rank](
-            "output"
-        ).shape
-
         # TODO:
         # - no attention mask
         # - no causaul mask
@@ -5234,25 +5668,22 @@ struct NoMaskFusedAttentionCPU:
         var causal_mask: Float32 = 0
 
         fused_attention[
-            rank,
-            q_shape,
-            k_shape,
-            v_shape,
-            mask_shape,
-            output_shape,
-            q.type,
-            k.type,
-            v.type,
-            mask.type,
-            output.type,
             transpose_k=False,
             add_attn_mask=False,
             add_causal_mask=False,
         ](
-            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
-            managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
-            managed_tensor_slice_to_ndbuffer[static_shape=k_shape](k),
-            managed_tensor_slice_to_ndbuffer[static_shape=v_shape](v),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[q.type, q.rank]("q")
+            ](q),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[k.type, q.rank]("k")
+            ](k),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[v.type, q.rank]("v")
+            ](v),
             mask,
             scale_f32,
             causal_mask,
@@ -5315,11 +5746,21 @@ struct WithMAskFusedAttentionCPU:
             add_attn_mask=True,
             add_causal_mask=False,
         ](
-            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
-            managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
-            managed_tensor_slice_to_ndbuffer[static_shape=k_shape](k),
-            managed_tensor_slice_to_ndbuffer[static_shape=v_shape](v),
-            managed_tensor_slice_to_ndbuffer[static_shape=mask_shape](mask),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[q.type, q.rank]("q")
+            ](q),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[k.type, k.rank]("k")
+            ](k),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[v.type, v.rank]("v")
+            ](v),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[mask.type, mask.rank]("mask")
+            ](mask),
             scale_f32,
             causal_mask,
         )
@@ -5339,10 +5780,6 @@ struct NoMaskFlashAttentionCPU:
         v: ManagedTensorSlice[type=type, rank=rank],
         scale: Scalar[type = DType.float32],
     ) raises:
-        alias output_shape = compiler.specsof[output.type, output.rank](
-            "output"
-        ).shape
-
         @parameter
         @always_inline
         fn k_input_fn[
@@ -5365,11 +5802,15 @@ struct NoMaskFlashAttentionCPU:
             return SIMD[type, width](0)
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_fn,](
-            managed_tensor_slice_to_ndbuffer(q),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[q.type, q.rank]("q")
+            ](q),
             k.shape(),
             v.shape(),
             IndexList[0](),
-            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
             scale.cast[DType.float32](),
         )
 
@@ -5443,15 +5884,17 @@ struct WithMaskFlashAttentionSplitKVCPU:
             v_cache_input_fn,
             mask_input_fn,
         ](
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = compiler.specsof[q.type, q.rank]("q").shape
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[q.type, q.rank]("q")
             ](q),
             k.shape(),
             v.shape(),
             k_cache.shape(),
             v_cache.shape(),
             mask.shape(),
-            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
             scale.cast[DType.float32](),
         )
 
@@ -5503,11 +5946,15 @@ struct WithMaskFlashAttentionCPU:
             )
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn,](
-            managed_tensor_slice_to_ndbuffer(q),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[q.type, q.rank]("q")
+            ](q),
             k.shape(),
             v.shape(),
             mask.shape(),
-            managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
+            ](output),
             scale.cast[DType.float32](),
         )
 
@@ -5531,8 +5978,12 @@ struct GGMLQ40Dequantize:
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("ggml_q4_0_dequantize"):
             Q4sym[group_size=32].dequantize_and_write_to_tensor(
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(output),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[input.type, input.rank]("input")
+                ](input),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[output.type, output.rank]("output")
+                ](output),
                 output.shape(),
             )
 
@@ -5558,9 +6009,15 @@ struct VroomQ40Matmul:
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_0_matmul"):
             matmul_qint4[32](
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(c),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[a.type, a.rank]("a")
+                ](a),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[c.type, c.rank]("c")
+                ](c),
             )
 
     @staticmethod
@@ -5582,8 +6039,12 @@ struct VroomQ40RepackWeights:
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_0_matmul"):
             matmul_qint4_pack_b[32](
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b_packed.type, b_packed.rank]("b_packed")
+                ](b_packed),
             )
 
     @staticmethod
@@ -5610,8 +6071,12 @@ struct GGMLQ4KDequantize:
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("ggml_q4_k_dequantize"):
             q4_k_dequantize_impl(
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(output),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[input.type, input.rank]("input")
+                ](input),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[output.type, output.rank]("output")
+                ](output),
             )
 
     @staticmethod
@@ -5641,9 +6106,15 @@ struct VroomQ4KMatmul:
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_k_matmul"):
             matmul_Q4_K(
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(c),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[a.type, a.rank]("a")
+                ](a),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[c.type, c.rank]("c")
+                ](c),
             )
 
     @staticmethod
@@ -5665,8 +6136,12 @@ struct VroomQ4KRepackWeights:
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q4_k_repack_weights"):
             matmul_Q4_K_pack_b(
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b_packed.type, b_packed.rank]("b_packed")
+                ](b_packed),
             )
 
     @staticmethod
@@ -5693,8 +6168,12 @@ struct GGMLQ6KDequantize:
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("ggml_q6_k_dequantize"):
             q6_k_dequantize_impl(
-                managed_tensor_slice_to_ndbuffer(input),
-                managed_tensor_slice_to_ndbuffer(output),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[input.type, input.rank]("input")
+                ](input),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[output.type, output.rank]("output")
+                ](output),
                 output.shape(),
             )
 
@@ -5725,9 +6204,15 @@ struct VroomQ6KMatmul:
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q6_k_matmul"):
             matmul_Q6_K(
-                managed_tensor_slice_to_ndbuffer(a),
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(c),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[a.type, a.rank]("a")
+                ](a),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[c.type, c.rank]("c")
+                ](c),
             )
 
     @staticmethod
@@ -5749,8 +6234,12 @@ struct VroomQ6KRepackWeights:
     ) raises:
         with Trace[TraceLevel.OP, target="cpu"]("vroom_q6_k_repack_weights"):
             matmul_Q6_K_pack_b(
-                managed_tensor_slice_to_ndbuffer(b),
-                managed_tensor_slice_to_ndbuffer(b_packed),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b_packed.type, b_packed.rank]("b_packed")
+                ](b_packed),
             )
 
     @staticmethod
@@ -5786,9 +6275,15 @@ struct QMatmulGPU_b4_g32:
 
         with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g32"):
             matmul_gpu_qint4[32, target](
-                managed_tensor_slice_to_ndbuffer[static_shape=c_shape](c),
-                managed_tensor_slice_to_ndbuffer[static_shape=a_shape](a),
-                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[c.type, c.rank]("c")
+                ](c),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[a.type, a.rank]("a")
+                ](a),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
                 ctx,
             )
 
@@ -5813,16 +6308,19 @@ struct QMatmulGPU_b4_g128:
         b: ManagedTensorSlice[DType.uint8, 2],
         ctx: MojoCallContextPtr,
     ) raises:
-        alias a_shape = compiler.specsof[a.type, a.rank]("a").shape
-        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
-        alias c_shape = compiler.specsof[c.type, c.rank]("c").shape
-        constrained[is_gpu[target](), "only valid on GPUs"]()
+        constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("qmatmul_b4_g128"):
             matmul_gpu_qint4[128, target](
-                managed_tensor_slice_to_ndbuffer[static_shape=c_shape](c),
-                managed_tensor_slice_to_ndbuffer[static_shape=a_shape](a),
-                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[c.type, c.rank]("c")
+                ](c),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[a.type, a.rank]("a")
+                ](a),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
                 ctx,
             )
 
@@ -5846,15 +6344,16 @@ struct QMatmulGPURepackGGUF:
         b: ManagedTensorSlice[DType.uint8, 2],
         ctx: MojoCallContextPtr,
     ) raises:
-        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
-        constrained[is_gpu[target](), "only valid on GPUs"]()
+        constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("GGUF_gpu_repack_q4_0"):
             gpu_qint4_repack_Q4_0[target](
-                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b),
-                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](
-                    b_packed
-                ),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b_packed.type, b_packed.rank]("b_packed")
+                ](b_packed),
                 ctx,
             )
 
@@ -5877,18 +6376,16 @@ struct QMatmulGPURepackGPTQ_b4_g128:
         b: ManagedTensorSlice[DType.uint8, 2],
         ctx: MojoCallContextPtr,
     ) raises:
-        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
-        alias b_packed_shape = compiler.specsof[b_packed.type, b_packed.rank](
-            "b_packed"
-        ).shape
-        constrained[is_gpu[target](), "only valid on GPUs"]()
+        constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
         with Trace[TraceLevel.OP, target=target]("GPTQ_gpu_repack_b4_g128"):
             gpu_qint4_repack_GPTQ[128, target](
-                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b),
-                managed_tensor_slice_to_ndbuffer[static_shape=b_packed_shape](
-                    b_packed
-                ),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b_packed.type, b_packed.rank]("b_packed")
+                ](b_packed),
                 ctx=ctx,
             )
 
@@ -5912,21 +6409,25 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         perm_idx: ManagedTensorSlice[DType.int32, 1],
         ctx: MojoCallContextPtr,
     ) raises:
-        alias b_shape = compiler.specsof[b.type, b.rank]("b").shape
-        alias b_packed_shape = compiler.specsof[b_packed.type, b_packed.rank](
-            "b_packed"
-        ).shape
-        constrained[is_gpu[target](), "only valid on GPUs"]()
+        constrained["cuda" in target, "only valid on CUDA GPUs"]()
 
         with Trace[TraceLevel.OP, target=target](
             "GPTQ_gpu_repack_b4_g128_desc_act"
         ):
             gpu_qint4_repack_GPTQ[128, target](
-                managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b),
-                managed_tensor_slice_to_ndbuffer[static_shape=b_packed_shape](
-                    b_packed
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b.type, b.rank]("b")
+                ](b),
+                managed_tensor_slice_to_ndbuffer_with_spec[
+                    compiler.specsof[b_packed.type, b_packed.rank]("b_packed")
+                ](b_packed),
+                rebind[NDBuffer[DType.int32, 1]](
+                    managed_tensor_slice_to_ndbuffer_with_spec[
+                        compiler.specsof[perm_idx.type, perm_idx.rank](
+                            "perm_idx"
+                        )
+                    ](perm_idx)
                 ),
-                managed_tensor_slice_to_ndbuffer(perm_idx),
                 ctx=ctx,
             )
 
@@ -5977,32 +6478,25 @@ fn generic_fused_qkv_matmul_kv_cache_cont_batch_ragged_kernel_api[
             for the given layer from kv_collection.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    alias output_shape = compiler.specsof[output.type, output.rank](
-        "output"
-    ).shape
-    alias hidden_state_shape = compiler.specsof[
-        hidden_state.type, hidden_state.rank
-    ]("hidden_state").shape
-    alias weight_shape = compiler.specsof[weight.type, weight.rank](
-        "weight"
-    ).shape
-    alias input_row_spec = compiler.specsof[
-        input_row_offsets.type, input_row_offsets.rank
-    ]("input_row_offsets")
-    alias input_row_shape = input_row_spec.shape
-    alias input_row_strides = input_row_spec.strides
-
     generic_fused_qkv_matmul_kv_cache_cont_batch_ragged[target=target](
-        managed_tensor_slice_to_ndbuffer[static_shape=hidden_state_shape](
-            hidden_state
-        ),
-        managed_tensor_slice_to_ndbuffer[
-            static_shape=input_row_shape, static_strides=input_row_strides
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[hidden_state.type, hidden_state.rank](
+                "hidden_state"
+            )
+        ](hidden_state),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input_row_offsets.type, input_row_offsets.rank](
+                "input_row_offsets"
+            )
         ](input_row_offsets),
-        managed_tensor_slice_to_ndbuffer[static_shape=weight_shape](weight),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[weight.type, weight.rank]("weight")
+        ](weight),
         kv_collection,
         layer_idx,
-        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output),
         ctx,
     )
 
@@ -6218,23 +6712,20 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch_kernel_api[
             for the given layer from kv_collection.
         ctx: The call context pointer, passed by the graph compiler.
     """
-    alias output_shape = compiler.specsof[output.type, output.rank](
-        "output"
-    ).shape
-    alias hidden_state_shape = compiler.specsof[
-        hidden_state.type, hidden_state.rank
-    ]("hidden_state").shape
-    alias weight_shape = compiler.specsof[weight.type, weight.rank](
-        "weight"
-    ).shape
     generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[target=target](
-        managed_tensor_slice_to_ndbuffer[static_shape=hidden_state_shape](
-            hidden_state
-        ),
-        managed_tensor_slice_to_ndbuffer[static_shape=weight_shape](weight),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[hidden_state.type, hidden_state.rank](
+                "hidden_state"
+            )
+        ](hidden_state),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[weight.type, weight.rank]("weight")
+        ](weight),
         kv_collection,
         layer_idx,
-        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output),
         ctx,
     )
 
@@ -6264,7 +6755,6 @@ struct Struct_fused_qkv_matmul_kv_cache_h8_d64_bshd:
         ](output, hidden_state, weight, kv_collection, layer_idx, ctx)
 
 
-# TODO(GEX-1216): Under new path, this leads to 50% drop in pipeline throughput
 @compiler.register("fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch")
 struct Struct_fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch:
     @uses_opaque
@@ -6431,27 +6921,18 @@ fn generic_fused_qk_rope_bshd_continuous_batch_kernel_api[
     kernels in the graph definition. Here we fuse the RoPE kernel applied to
     Q_proj with K_proj, so K_proj RoPE is only excuted after QKV completes.
     """
-    alias output_spec = compiler.specsof[output.type, output.rank]("output")
-    alias q_proj_spec = compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
-    alias freqs_cis_spec = compiler.specsof[freqs_cis.type, freqs_cis.rank](
-        "freqs_cis"
-    )
-
     generic_fused_qk_rope_bshd_continuous_batch[target](
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = q_proj_spec.shape,
-            static_strides = q_proj_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
         ](q_proj),
         kv_collection,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = freqs_cis_spec.shape,
-            static_strides = freqs_cis_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[freqs_cis.type, freqs_cis.rank]("freqs_cis")
         ](freqs_cis),
         layer_idx,
         interleaved,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = output_spec.shape,
-            static_strides = output_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output),
         ctx,
     )
@@ -6595,34 +7076,23 @@ fn generic_fused_qk_rope_bshd_continuous_batch_ragged_kernel_api[
     interleaved: Scalar[DType.bool],
     ctx: MojoCallContextPtr,
 ):
-    alias output_spec = compiler.specsof[output.type, output.rank]("output")
-    alias q_proj_spec = compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
-    alias freqs_cis_spec = compiler.specsof[freqs_cis.type, freqs_cis.rank](
-        "freqs_cis"
-    )
-    alias input_row_offsets_spec = compiler.specsof[
-        input_row_offsets.type, input_row_offsets.rank
-    ]("input_row_offsets")
-
     generic_fused_qk_rope_bshd_continous_batch_ragged[target=target](
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = q_proj_spec.shape,
-            static_strides = q_proj_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
         ](q_proj),
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = input_row_offsets_spec.shape,
-            static_strides = input_row_offsets_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input_row_offsets.type, input_row_offsets.rank](
+                "input_row_offsets"
+            )
         ](input_row_offsets),
         kv_collection,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = freqs_cis_spec.shape,
-            static_strides = freqs_cis_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[freqs_cis.type, freqs_cis.rank]("freqs_cis")
         ](freqs_cis),
         layer_idx,
         interleaved,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = output_spec.shape,
-            static_strides = output_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output),
         ctx,
     )
@@ -6884,24 +7354,23 @@ fn generic_flash_attention_kv_cache_continuous_batch_kernel_api[
     scale: Scalar[DType.float32],
     context: MojoCallContextPtr,
 ) raises:
-    alias output_spec = compiler.specsof[output.type, output.rank]("output")
-    alias q_spec = compiler.specsof[q.type, q.rank]("q")
-    alias mask_spec = compiler.specsof[mask.type, mask.rank]("mask")
-
     generic_flash_attention_kv_cache_continuous_batch[target](
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = q_spec.shape, static_strides = q_spec.strides
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q.type, q.rank]("q")
         ](q),
         kv_collection,
         layer_idx,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = mask_spec.shape, static_strides = mask_spec.strides
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[mask.type, mask.rank]("mask")
         ](mask),
-        managed_tensor_slice_to_ndbuffer(valid_lengths),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[valid_lengths.type, valid_lengths.rank](
+                "valid_lengths"
+            )
+        ](valid_lengths),
         scale,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = output_spec.shape,
-            static_strides = output_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output),
         context,
     )
@@ -7116,20 +7585,20 @@ fn generic_flash_attention_kv_cache_causal_mask_continuous_batch_kernel_api[
     scale: Scalar[DType.float32],
     context: MojoCallContextPtr,
 ) raises:
-    alias output_spec = compiler.specsof[output.type, output.rank]("output")
-    alias q_spec = compiler.specsof[q.type, q.rank]("q")
-
     generic_flash_attention_kv_cache_causal_mask_continuous_batch[target](
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = q_spec.shape, static_strides = q_spec.strides
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q.type, q.rank]("q")
         ](q),
         kv_collection,
         layer_idx,
-        managed_tensor_slice_to_ndbuffer(valid_lengths),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[valid_lengths.type, valid_lengths.rank](
+                "valid_lengths"
+            )
+        ](valid_lengths),
         scale,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = output_spec.shape,
-            static_strides = output_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output),
         context,
     )
@@ -7265,23 +7734,21 @@ fn generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged_kernel_api[
     output: ManagedTensorSlice[type, 3],
     context: MojoCallContextPtr,
 ) raises:
-    alias output_shape = compiler.specsof[output.type, output.rank](
-        "output"
-    ).shape
-    alias q_shape = compiler.specsof[q.type, q.rank]("q").shape
-    alias input_row_shape = compiler.specsof[
-        input_row_offsets.type, input_row_offsets.rank
-    ]("input_row_offsets").shape
-
     generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged[target](
-        managed_tensor_slice_to_ndbuffer[static_shape=q_shape](q),
-        managed_tensor_slice_to_ndbuffer[static_shape=input_row_shape](
-            input_row_offsets
-        ),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q.type, q.rank]("q")
+        ](q),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input_row_offsets.type, input_row_offsets.rank](
+                "input_row_offsets"
+            )
+        ](input_row_offsets),
         kv_collection,
         layer_idx,
         scale,
-        managed_tensor_slice_to_ndbuffer[static_shape=output_shape](output),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output),
         context,
     )
 
@@ -7543,10 +8010,22 @@ fn generic_get_continuous_cache_kernel_api[
     kv_params,
 ]:
     return generic_get_continuous_cache[type, kv_params](
-        managed_tensor_slice_to_ndbuffer(blocks),
-        managed_tensor_slice_to_ndbuffer(cache_lengths),
-        managed_tensor_slice_to_ndbuffer(lookup_table),
-        managed_tensor_slice_to_ndbuffer(max_lengths),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[blocks.type, blocks.rank]("blocks")
+        ](blocks),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[cache_lengths.type, cache_lengths.rank](
+                "cache_lengths"
+            )
+        ](cache_lengths),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[lookup_table.type, lookup_table.rank](
+                "lookup_table"
+            )
+        ](lookup_table),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[max_lengths.type, max_lengths.rank]("max_lengths")
+        ](max_lengths),
     )
 
 
@@ -7729,8 +8208,14 @@ fn layout_transform_conv_transpose_filter_common[
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_transpose_filter(
-        managed_tensor_slice_to_ndbuffer(filter),
-        managed_tensor_slice_to_ndbuffer(packed_filter),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[filter.type, filter.rank]("filter")
+        ](filter),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[packed_filter.type, packed_filter.rank](
+                "packed_filter"
+            )
+        ](packed_filter),
         1,
     )
 
@@ -7814,7 +8299,11 @@ struct PackConvFilterShape:
             paddings,
             num_groups,
             synchronous,
-        ](managed_tensor_slice_to_ndbuffer(filter_buf))
+        ](
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter_buf.type, filter_buf.rank]("filter_buf")
+            ](filter_buf)
+        )
 
 
 @compiler.register("pack_conv_transpose_filter_shape")
@@ -7832,7 +8321,10 @@ struct PackConvTransposeFilterShape:
         synchronous: Bool,
     ](filter_buf: NDBuffer[filter_type, rank]) -> IndexList[rank + 1]:
         return pack_filter_shape_conv_transpose(
-            managed_tensor_slice_to_ndbuffer(filter_buf), 1
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[filter_buf.type, filter_buf.rank]("filter_buf")
+            ](filter_buf),
+            1,
         )
 
 
@@ -7846,17 +8338,18 @@ fn layout_transform_conv_filter_common[
     filter: ManagedTensorSlice[type, filter_rank],
 ):
     constrained[packed_rank == filter_rank + 1]()
-    alias packed_filter_shape = compiler.specsof[
-        packed_filter.type, packed_filter.rank
-    ]("packed_filter").shape
 
     # last param is num_groups which is currently not an available
     # arg for the MO level op
     _pack_conv_filter(
-        managed_tensor_slice_to_ndbuffer(filter),
-        managed_tensor_slice_to_ndbuffer[static_shape=packed_filter_shape](
-            packed_filter
-        ),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[filter.type, filter.rank]("filter")
+        ](filter),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[packed_filter.type, packed_filter.rank](
+                "packed_filter"
+            )
+        ](packed_filter),
         num_groups,
     )
 
@@ -7922,7 +8415,11 @@ struct LayoutTransformMatmulKN2KNkni:
             transposed=False,
         ](
             managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b_input),
-            managed_tensor_slice_to_ndbuffer(output_buffer),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output_buffer.type, output_buffer.rank](
+                    "output_buffer"
+                )
+            ](output_buffer),
             kernel_type_m,
         )
 
@@ -7958,7 +8455,11 @@ struct LayoutTransformMatmulNK2KNkni:
             transposed=True,
         ](
             managed_tensor_slice_to_ndbuffer[static_shape=b_shape](b_input),
-            managed_tensor_slice_to_ndbuffer(output_buffer),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output_buffer.type, output_buffer.rank](
+                    "output_buffer"
+                )
+            ](output_buffer),
             kernel_type_m,
         )
 
@@ -8010,16 +8511,15 @@ fn generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch_kernel_ap
     alias output_spec = compiler.specsof[output.type, output.rank]("output")
 
     generic_flash_attention_kv_cache_causal_alibi_mask_continuous_batch[target](
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = q_spec.shape, static_strides = q_spec.strides
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q.type, q.rank]("q")
         ](q),
         kv_collection,
         layer_idx,
         managed_tensor_slice_to_ndbuffer(valid_lengths),
         scale,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = output_spec.shape,
-            static_strides = output_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output),
         context,
     )
@@ -8519,31 +9019,25 @@ fn generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     output: ManagedTensorSlice[type, 2],
     ctx: MojoCallContextPtr,
 ) raises:
-    alias hidden_state_spec = compiler.specsof[
-        hidden_state.type, hidden_state.rank
-    ]("hidden_state")
-    alias input_row_offsets_spec = compiler.specsof[
-        input_row_offsets.type, input_row_offsets.rank
-    ]("input_row_offsets")
-    alias weight_spec = compiler.specsof[weight.type, weight.rank]("weight")
-    alias output_spec = compiler.specsof[output.type, output.rank]("output")
-
     generic_fused_qkv_matmul_kv_cache_paged_ragged[target=target](
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = hidden_state_spec.shape
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[hidden_state.type, hidden_state.rank](
+                "hidden_state"
+            )
         ](hidden_state),
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = input_row_offsets_spec.shape,
-            static_strides = input_row_offsets_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input_row_offsets.type, input_row_offsets.rank](
+                "input_row_offsets"
+            )
         ](input_row_offsets),
-        managed_tensor_slice_to_ndbuffer[static_shape = weight_spec.shape](
-            weight
-        ),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[weight.type, weight.rank]("weight")
+        ](weight),
         kv_collection,
         layer_idx,
-        managed_tensor_slice_to_ndbuffer[static_shape = output_spec.shape](
-            output
-        ),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output),
         ctx,
     )
 
@@ -8832,25 +9326,20 @@ struct Struct_matmul_kv_cache_h8_d128_cont_batch_ragged:
         layer_idx: Scalar[DType.uint32],
         ctx: MojoCallContextPtr,
     ) raises:
-        alias hidden_state_spec = compiler.specsof[
-            hidden_state.type, hidden_state.rank
-        ]("hidden_state")
-        alias input_row_offsets_spec = compiler.specsof[
-            input_row_offsets.type, input_row_offsets.rank
-        ]("input_row_offsets")
-        alias weight_spec = compiler.specsof[weight.type, weight.rank]("weight")
-
         matmul_kv_cache_h8_d128_cont_batch_ragged[target=target](
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = hidden_state_spec.shape
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[hidden_state.type, hidden_state.rank](
+                    "hidden_state"
+                )
             ](hidden_state),
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = input_row_offsets_spec.shape,
-                static_strides = input_row_offsets_spec.strides,
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[
+                    input_row_offsets.type, input_row_offsets.rank
+                ]("input_row_offsets")
             ](input_row_offsets),
-            managed_tensor_slice_to_ndbuffer[static_shape = weight_spec.shape](
-                weight
-            ),
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[weight.type, weight.rank]("weight")
+            ](weight),
             kv_collection,
             layer_idx,
             ctx,
@@ -8884,24 +9373,22 @@ fn generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     alias output_spec = compiler.specsof[output.type, output.rank]("output")
 
     generic_fused_qk_rope_bshd_paged_ragged[target=target](
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = q_proj_spec.shape,
-            static_strides = q_proj_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q_proj.type, q_proj.rank]("q_proj")
         ](q_proj),
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = input_row_offsets_spec.shape,
-            static_strides = input_row_offsets_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input_row_offsets.type, input_row_offsets.rank](
+                "input_row_offsets"
+            )
         ](input_row_offsets),
         kv_collection,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = freqs_cis_spec.shape,
-            static_strides = freqs_cis_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[freqs_cis.type, freqs_cis.rank]("freqs_cis")
         ](freqs_cis),
         layer_idx,
         interleaved,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = output_spec.shape,
-            static_strides = output_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output),
         context,
     )
@@ -9191,19 +9678,19 @@ fn generic_flash_attention_kv_cache_causal_mask_paged_ragged_kernel_api[
     alias output_spec = compiler.specsof[output.type, output.rank]("output")
 
     generic_flash_attention_kv_cache_causal_mask_paged_ragged[target=target](
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = q_spec.shape, static_strides = q_spec.strides
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q.type, q.rank]("q")
         ](q),
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = input_row_offsets_spec.shape,
-            static_strides = input_row_offsets_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[input_row_offsets.type, input_row_offsets.rank](
+                "input_row_offsets"
+            )
         ](input_row_offsets),
         kv_collection,
         layer_idx,
         scale,
-        managed_tensor_slice_to_ndbuffer[
-            static_shape = output_spec.shape,
-            static_strides = output_spec.strides,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
         ](output),
         context,
     )
@@ -9470,28 +9957,22 @@ struct Struct_flash_attention_kv_cache_h8_d32_alibi_mask_cont_batch_ragged:
         scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        alias q_spec = compiler.specsof[q.type, q.rank]("q")
-        alias input_row_offsets_spec = compiler.specsof[
-            input_row_offsets.type, input_row_offsets.rank
-        ]("input_row_offsets")
-        alias output_spec = compiler.specsof[output.type, output.rank]("output")
-
         generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
             target=target
         ](
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = q_spec.shape, static_strides = q_spec.strides
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[q.type, q.rank]("q")
             ](q),
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = input_row_offsets_spec.shape,
-                static_strides = input_row_offsets_spec.strides,
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[
+                    input_row_offsets.type, input_row_offsets.rank
+                ]("input_row_offsets")
             ](input_row_offsets),
             kv_collection,
             layer_idx,
             scale,
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = output_spec.shape,
-                static_strides = output_spec.strides,
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
             ](output),
             context,
         )
@@ -9518,28 +9999,22 @@ struct Struct_flash_attention_kv_cache_h8_d128_alibi_mask_cont_batch_ragged:
         scale: Scalar[DType.float32],
         context: MojoCallContextPtr,
     ) raises:
-        alias q_spec = compiler.specsof[q.type, q.rank]("q")
-        alias input_row_offsets_spec = compiler.specsof[
-            input_row_offsets.type, input_row_offsets.rank
-        ]("input_row_offsets")
-        alias output_spec = compiler.specsof[output.type, output.rank]("output")
-
         generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged[
             target=target
         ](
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = q_spec.shape, static_strides = q_spec.strides
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[q.type, q.rank]("q")
             ](q),
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = input_row_offsets_spec.shape,
-                static_strides = input_row_offsets_spec.strides,
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[
+                    input_row_offsets.type, input_row_offsets.rank
+                ]("input_row_offsets")
             ](input_row_offsets),
             kv_collection,
             layer_idx,
             scale,
-            managed_tensor_slice_to_ndbuffer[
-                static_shape = output_spec.shape,
-                static_strides = output_spec.strides,
+            managed_tensor_slice_to_ndbuffer_with_spec[
+                compiler.specsof[output.type, output.rank]("output")
             ](output),
             context,
         )
