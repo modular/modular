@@ -284,7 +284,7 @@ fn _concat_parallel[
             "amount_traversed != total_output_bytes",
         )
 
-    # The do_chunk closure captures the stack allocated _NDBufferVector,
+    # The do_chunk closure captures the stack allocated Buffer,
     # so this kernel must be run synchronously.
     sync_parallelize[do_chunk](num_chunks)
 
@@ -512,7 +512,7 @@ fn _concat_cpu[
 
     if output_bytes < min_work_for_parallel:
         # The dispatch_serial closure captures the stack allocated
-        # _NDBufferVector, so this kernel must be run synchronously.
+        # Buffer, so this kernel must be run synchronously.
         sync_parallelize[dispatch_serial](1)
     else:
         _concat_parallel[epilogue_fn=epilogue_fn](output, axis, inputs)

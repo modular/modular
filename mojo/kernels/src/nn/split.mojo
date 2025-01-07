@@ -9,7 +9,6 @@ from sys import external_call
 
 from algorithm import sync_parallelize
 from buffer import Buffer, NDBuffer
-from buffer.buffer import DynamicRankBuffer
 from buffer.dimlist import Dim, DimList
 from memory import memcpy
 
@@ -33,17 +32,6 @@ struct _NDBufferVector[type: DType, rank: Int](Sized):
     @implicit
     fn __init__(out self, num_inputs: Int):
         self.storage = Self.StorageType(num_inputs)
-
-    @always_inline
-    @implicit
-    fn __init__(out self, *inputs: DynamicRankBuffer):
-        self = Self(inputs)
-
-    @implicit
-    fn __init__(out self, input_list: VariadicList[DynamicRankBuffer]):
-        self.storage = Self.StorageType(len(input_list))
-        for i in range(len(input_list)):
-            self.storage.append(input_list[i].to_ndbuffer[type, rank]())
 
     @always_inline
     @implicit

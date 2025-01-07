@@ -11,53 +11,6 @@ import math
 from register import register_internal
 from utils.numerics import get_accum_type
 
-
-@value
-@register_passable("trivial")
-struct ActivationType:
-    var value: Int
-    alias IDENTITY = ActivationType(0)
-    alias GELU = ActivationType(1)
-    alias RELU = ActivationType(2)
-
-    @always_inline("nodebug")
-    fn __eq__(self, rhs: ActivationType) -> Bool:
-        return self.value == rhs.value
-
-    @always_inline("nodebug")
-    fn __ne__(self, rhs: ActivationType) -> Bool:
-        return self.value != rhs.value
-
-    @always_inline
-    fn dispatch[
-        func: fn[act: ActivationType] () capturing -> None
-    ](self) raises:
-        if self == ActivationType.IDENTITY:
-            func[ActivationType.IDENTITY]()
-        elif self == ActivationType.RELU:
-            func[ActivationType.RELU]()
-        elif self == ActivationType.GELU:
-            func[ActivationType.GELU]()
-        else:
-            raise Error("Unsupported activation function.")
-
-
-@always_inline
-fn dispatch_activation_fn[
-    activation: ActivationType, type: DType, simd_width: Int
-](val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    @parameter
-    if activation == ActivationType.IDENTITY:
-        return val
-    elif activation == ActivationType.RELU:
-        return relu(val)
-    elif activation == ActivationType.GELU:
-        return gelu(val)
-    else:
-        constrained[False, "unsupported activation"]()
-        return val
-
-
 # ===----------------------------------------------------------------------=== #
 # sign
 # ===----------------------------------------------------------------------=== #
