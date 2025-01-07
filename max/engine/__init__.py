@@ -11,7 +11,6 @@ from .api import (
     InferenceSession,
     Model,
     MojoValue,
-    MultimodalModel,
     TensorSpec,
     TorchInputSpec,
 )
