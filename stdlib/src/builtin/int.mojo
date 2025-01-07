@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections import KeyElement
+from collections import InlineArray, KeyElement
 from collections.string.string import (
     _calc_initial_buffer_size_int32,
     _calc_initial_buffer_size_int64,
@@ -1167,6 +1167,37 @@ struct Int(
                 writer.write(" ")
 
         writer.write(self)
+
+    @staticmethod
+    fn from_bytes[
+        big_endian: Bool = False
+    ](bytes: InlineArray[Byte, DType.int64.sizeof()]) -> Self:
+        """Converts a byte array to an integer.
+
+        Args:
+            bytes: The byte array to convert.
+
+        Parameters:
+            big_endian: Whether the byte array is big-endian.
+
+        Returns:
+            The integer value.
+        """
+        return int(Scalar[DType.int64].from_bytes[big_endian](bytes))
+
+    fn as_bytes[
+        big_endian: Bool = False
+    ](self) -> InlineArray[Byte, DType.int64.sizeof()]:
+        """Convert the integer to a byte array.
+
+        Parameters:
+            big_endian: Whether the byte array should be big-endian.
+
+        Returns:
+            The byte array.
+        """
+        var value = Scalar[DType.int64](self)
+        return value.as_bytes[big_endian]()
 
     @always_inline("nodebug")
     fn __mlir_index__(self) -> __mlir_type.index:
