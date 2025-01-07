@@ -36,9 +36,9 @@ fn _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 @always_inline
 fn slice_dim_as_view[
     type: DType, rank: Int, dim: Int
-](tensor: NDBuffer[type, rank], start: Int, end: Int, step: Int) -> NDBuffer[
-    type, rank
-]:
+](
+    tensor: NDBuffer[type, rank, *_, **_], start: Int, end: Int, step: Int
+) -> NDBuffer[type, rank]:
     var new_shape = tensor.get_shape()
     var new_stride = tensor.get_strides()
 
@@ -64,7 +64,9 @@ fn slice_dim_as_view[
     new_shape[dim] = len(range(clamped_start, clamped_stop, step))
 
     # Create the new view
-    return NDBuffer[type, rank](new_data, new_shape, new_stride)
+    return NDBuffer[type, rank, address_space = tensor.address_space](
+        new_data, new_shape, new_stride
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -80,10 +82,10 @@ fn slice_as_view[
     step_type: DType,
     rank: Int,
 ](
-    tensor: NDBuffer[type, rank],
-    starts: NDBuffer[start_type, 1],
-    ends: NDBuffer[end_type, 1],
-    steps: NDBuffer[step_type, 1],
+    tensor: NDBuffer[type, rank, *_, **_],
+    starts: NDBuffer[start_type, 1, *_, **_],
+    ends: NDBuffer[end_type, 1, *_, **_],
+    steps: NDBuffer[step_type, 1, *_, **_],
 ) -> NDBuffer[type, rank]:
     var new_shape = IndexList[rank]()
     var new_stride = IndexList[rank]()
@@ -116,7 +118,9 @@ fn slice_as_view[
         new_shape[i] = len(range(start, stop, step))
 
     # Create the new view
-    return NDBuffer[type, rank](new_data, new_shape, new_stride)
+    return NDBuffer[type, rank, address_space = tensor.address_space](
+        new_data, new_shape, new_stride
+    )
 
 
 # ===-----------------------------------------------------------------------===#

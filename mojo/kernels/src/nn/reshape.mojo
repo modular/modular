@@ -27,7 +27,7 @@ fn reshape[
     output_rank: Int,
     single_thread_blocking_override: Bool = True,
 ](
-    input: NDBuffer[type, rank, *_],
+    input: NDBuffer[type, rank, *_, **_],
     new_shape: IndexList[output_rank],
 ) -> NDBuffer[type, output_rank]:
     var stride_tuple = __type_of(new_shape)()
@@ -41,7 +41,9 @@ fn reshape[
         stride *= new_shape[i]
 
     # Return the a view with the new shape.
-    return NDBuffer[type, output_rank](input.data, new_shape, stride_tuple)
+    return NDBuffer[type, output_rank, address_space = input.address_space](
+        input.data, new_shape, stride_tuple
+    )
 
 
 @register_internal("ndbuffer_reshape")
