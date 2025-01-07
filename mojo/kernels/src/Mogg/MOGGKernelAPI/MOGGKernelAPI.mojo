@@ -8727,7 +8727,7 @@ fn print_kv_cache_cont_batch_generic_kernel_api[
         )
 
 
-@compiler.register("print_kv_cache_cont_batch_h8_d128")
+@compiler.register("print_kv_cache_cont_batch_h8_d128", num_dps_outputs=0)
 struct Struct_print_kv_cache_cont_batch_h8_d128:
     @uses_opaque
     @always_inline
@@ -8752,7 +8752,7 @@ struct Struct_print_kv_cache_cont_batch_h8_d128:
         )
 
 
-@compiler.register("print_kv_cache_cont_batch_h2_d128")
+@compiler.register("print_kv_cache_cont_batch_h2_d128", num_dps_outputs=0)
 struct Struct_print_kv_cache_cont_batch_h2_d128:
     @uses_opaque
     @always_inline
