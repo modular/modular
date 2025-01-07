@@ -65,16 +65,16 @@ zaz()
 # Will test a multiline alias with imports and a function that uses this alias
 
 from buffer.buffer import (
-  DynamicRankBuffer
+  NDBuffer
 )
 
 from runtime.asyncrt import MojoCallContextPtr
 
 alias unary_fn_type = __mlir_type[
     `(`,
-    DynamicRankBuffer,
+    NDBuffer,
     `, `,
-    DynamicRankBuffer,
+    NDBuffer,
     `, `,
     MojoCallContextPtr,
     `) -> `,
