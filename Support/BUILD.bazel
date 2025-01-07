@@ -110,9 +110,7 @@ modular_cc_library(
     name = "BuildInfo",
     srcs = ["lib/BuildInfo.cpp"],
     hdrs = ["include/Support/BuildInfo.h"],
-    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES + [
-        "LLVM_TARGETS_BUILT=\\\"bazel\\\"",
-    ],
+    local_defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
     deps = [":Base"],
 )
 

@@ -70,7 +70,5 @@ BuildInfo M::getBuildInfo() {
   buildInfo.asyncrtMaxProfilingLevel = MODULAR_ASYNCRT_MAX_PROFILING_LEVEL;
   buildInfo.preferredMemoryAlignment = kPreferredMemoryAlignment;
 
-  StringRef(LLVM_TARGETS_BUILT).split(buildInfo.llvmTargets, " ");
-
   return buildInfo;
 }
