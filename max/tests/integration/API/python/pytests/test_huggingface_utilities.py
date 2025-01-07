@@ -27,6 +27,10 @@ def test_huggingface_repo__formats_available():
     assert WeightsFormat.safetensors in hf_repo.formats_available
     assert WeightsFormat.gguf not in hf_repo.formats_available
 
+    # Test a partially complete Safetensors repo
+    hf_repo = HuggingFaceRepo(repo_id="neubla/tiny-random-LlamaForCausalLM")
+    assert WeightsFormat.safetensors in hf_repo.formats_available
+
 
 def test_huggingface_repo__gguf_architecture():
     # Test a llama based gguf repo.
@@ -58,6 +62,10 @@ def test_huggingface_repo__encodings_supported():
     )
     assert SupportedEncoding.bfloat16 in hf_repo.supported_encodings
     assert SupportedEncoding.q4_k not in hf_repo.supported_encodings
+
+    # Test a partially incomplete repo.
+    hf_repo = HuggingFaceRepo(repo_id="neubla/tiny-random-LlamaForCausalLM")
+    assert SupportedEncoding.float32 in hf_repo.supported_encodings
 
 
 def test_huggingface_repo__file_exists():

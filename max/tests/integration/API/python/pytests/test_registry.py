@@ -368,3 +368,12 @@ def test_registry__update_weight_paths():
     config = PIPELINE_REGISTRY.validate_pipeline_config(config)
     assert config.engine == PipelineEngine.MAX
     assert config.weight_path == [Path("pytorch_model.bin")]
+
+    # Test a partially complete huggingface_repo
+    config = PipelineConfig(
+        huggingface_repo_id="neubla/tiny-random-LlamaForCausalLM",
+    )
+    config = PIPELINE_REGISTRY.validate_pipeline_config(config)
+    assert config.quantization_encoding == SupportedEncoding.float32
+    assert config.engine == PipelineEngine.MAX
+    assert config.weight_path == [Path("model.safetensors")]
