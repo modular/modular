@@ -18,11 +18,6 @@ what we publish.
 
 ### ✨ Highlights
 
-- New `Int.from_bytes()`, `Int.as_bytes()`, `SIMD.from_bytes()` and `SIMD.as_bytes()`
-  functions to convert a list of bytes to an integer and vice versa, accepting the
-  endianess as an argument. Similar to Python `int.from_bytes()` and `int.to_bytes()`
-  functions.
-
 ### Language changes
 
 - Initializers are now treated as static methods that return an instance of

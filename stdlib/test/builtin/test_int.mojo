@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from collections import InlineArray
+from sys.info import bitwidthof
+
 from memory import UnsafePointer
 from python import PythonObject
-from sys.info import bitwidthof
 from testing import assert_equal, assert_false, assert_raises, assert_true
 
 
@@ -245,63 +245,6 @@ def test_conversion_from_python():
     assert_equal(Int.try_from_python(PythonObject(-1)), -1)
 
 
-def test_from_bytes_as_bytes():
-    alias EightBytes = InlineArray[Byte, DType.int64.sizeof()]
-
-    assert_equal(
-        Int.from_bytes[big_endian=True](EightBytes(0, 0, 0, 0, 0, 0, 0, 16)), 16
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=False](EightBytes(0, 0, 0, 0, 0, 0, 1, 0)),
-        281474976710656,
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=False](EightBytes(0, 16, 0, 0, 0, 0, 0, 0)),
-        4096,
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=False](EightBytes(252, 0, 0, 0, 0, 0, 0, 0)),
-        252,
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=True](EightBytes(102, 0, 0, 0, 0, 0, 0, 0)),
-        7349874591868649472,
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=False](EightBytes(252, 0, 0, 0, 0, 0, 0, 0)),
-        252,
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=False](EightBytes(0, 0, 0, 1, 0, 0, 0, 0)),
-        16777216,
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=True](EightBytes(1, 0, 0, 0, 0, 0, 0, 0)),
-        72057594037927936,
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=True](EightBytes(1, 0, 0, 1, 0, 0, 0, 0)),
-        72057598332895232,
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=False](EightBytes(1, 0, 0, 1, 0, 0, 0, 0)),
-        16777217,
-    )
-    assert_equal(
-        Int.from_bytes[big_endian=True](EightBytes(255, 0, 0, 0, 0, 0, 0, 0)),
-        -72057594037927936,
-    )
-    for x_ref in List[Int](10, 100, -12, 0, 1, -1, 1000, -1000):
-        x = x_ref[]
-
-        @parameter
-        for b in range(2):
-            assert_equal(
-                Int.from_bytes[big_endian=b](Int(x).as_bytes[big_endian=b]()),
-                x,
-            )
-
-
 def main():
     test_properties()
     test_add()
@@ -325,4 +268,3 @@ def main():
     test_int_uint()
     test_float_conversion()
     test_conversion_from_python()
-    test_from_bytes_as_bytes()
