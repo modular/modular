@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from inspect import Parameter, Signature
 from pathlib import Path
 from typing import (
@@ -423,96 +422,6 @@ class Model:
         :obj:`Device` objects.
         """
         return [Device(device) for device in self._impl.output_devices]
-
-
-@dataclass
-class MultimodalModel:
-    """A multimodal model that you can execute.
-
-    The current implementation assumes that Model instances are instantiated
-    correctly as specified in the Model class above and this is merely a wrapper
-    around one or more models (modalities) to support multimodal models.
-
-
-    There are some caveats to the overall Multimodal interface:
-    1. This multimodal model does not support direct calls to execute(). The user
-    is expected to call execute() on each modality (Model instance) on their own.
-    2. Some of the overridden properties below defaults to the "last" model, which
-    is typically a text transformer.
-    """
-
-    modalities: tuple[Model, ...]
-
-    @traced
-    def execute(
-        self,
-        *args: InputType,
-        copy_inputs_to_device: bool = True,
-        output_device: Device | None = None,
-    ) -> list[TensorOrMojoType]:
-        """Executes the model with the provided input and returns the outputs."""
-        raise RuntimeError(
-            "Calling execute() on a multimodal model is currently not allowed, "
-            "Please call execute() on each modality and pass them correct input "
-            "tensor(s)."
-        )
-
-    @property
-    def input_metadata(self) -> list[TensorSpec]:
-        """
-        Metadata about the last model's input tensors, as a list of
-        :obj:`TensorSpec` objects.
-
-        For example, you can print the input tensor names, shapes, and dtypes:
-
-        .. code-block:: python
-
-            for tensor in model.input_metadata:
-                print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
-        """
-        return self.modalities[-1].input_metadata
-
-    @property
-    def output_metadata(self) -> list[TensorSpec]:
-        """
-        Metadata about the last model's output tensors, as a list of
-        :obj:`TensorSpec` objects.
-
-        For example, you can print the output tensor names, shapes, and dtypes:
-
-        .. code-block:: python
-
-            for tensor in model.output_metadata:
-                print(f'name: {tensor.name}, shape: {tensor.shape}, dtype: {tensor.dtype}')
-        """
-        return self.modalities[-1].output_metadata
-
-    @property
-    def signature(self) -> Signature:
-        return self.modalities[-1].signature
-
-    @property
-    def devices(self) -> list[Device]:
-        """
-        Returns the device objects used in the last Model.
-        """
-        return self.modalities[-1].devices
-
-    @property
-    def input_devices(self) -> List[Device]:
-        """
-        Device of the last model's input tensors, as a list of
-        :obj:`Device` objects.
-        """
-        return self.modalities[-1].input_devices
-
-    @property
-    def output_devices(self) -> List[Device]:
-        """
-        Device of the last model's output tensors, as a list of
-        :obj:`Device` objects.
-        """
-        return self.modalities[-1].output_devices
 
 
 class TensorSpec:
