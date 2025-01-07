@@ -402,7 +402,7 @@ struct StringLiteral(
         Returns:
             A new representation of the string.
         """
-        return self.__str__().__repr__()
+        return repr(self.as_string_slice())
 
     fn __hash__(self) -> UInt:
         """Hash the underlying buffer using builtin hash.

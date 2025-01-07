@@ -100,6 +100,12 @@ what we publish.
   - `atol()`
   - `atof()`
 
+- Various functionality has moved from `String` and `StringRef` to the more
+  general `StringSlice` type.
+
+  - `StringSlice` now implements `Representable`, and that implementation is now
+    used by `String.__repr__()` and `StringRef.__repr__()`.
+
 - Removed `@implicit` decorator from some standard library initializer methods
   that perform allocation. This reduces places where Mojo code could implicitly
   allocate where the user may not be aware.

@@ -1389,34 +1389,7 @@ struct String(
         Returns:
             A new representation of the string.
         """
-        var result = String()
-        var use_dquote = False
-        for s in self:
-            use_dquote = use_dquote or (s == "'")
-
-            if s == "\\":
-                result += r"\\"
-            elif s == "\t":
-                result += r"\t"
-            elif s == "\n":
-                result += r"\n"
-            elif s == "\r":
-                result += r"\r"
-            else:
-                var codepoint = ord(s)
-                if isprintable(codepoint):
-                    result += s
-                elif codepoint < 0x10:
-                    result += hex(codepoint, prefix=r"\x0")
-                elif codepoint < 0x20 or codepoint == 0x7F:
-                    result += hex(codepoint, prefix=r"\x")
-                else:  # multi-byte character
-                    result += s
-
-        if use_dquote:
-            return '"' + result + '"'
-        else:
-            return "'" + result + "'"
+        return repr(StringSlice(self))
 
     fn __fspath__(self) -> String:
         """Return the file system path representation (just the string itself).

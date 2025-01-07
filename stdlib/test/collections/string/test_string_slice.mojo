@@ -202,6 +202,34 @@ fn test_slice_bool() raises:
     assert_true(not str2.as_string_slice().__bool__())
 
 
+def test_slice_repr():
+    # Standard single-byte characters
+    assert_equal(StringSlice.__repr__("hello"), "'hello'")
+    assert_equal(StringSlice.__repr__(str(0)), "'0'")
+    assert_equal(StringSlice.__repr__("A"), "'A'")
+    assert_equal(StringSlice.__repr__(" "), "' '")
+    assert_equal(StringSlice.__repr__("~"), "'~'")
+
+    # Special single-byte characters
+    assert_equal(StringSlice.__repr__("\0"), r"'\x00'")
+    assert_equal(StringSlice.__repr__("\x06"), r"'\x06'")
+    assert_equal(StringSlice.__repr__("\x09"), r"'\t'")
+    assert_equal(StringSlice.__repr__("\n"), r"'\n'")
+    assert_equal(StringSlice.__repr__("\x0d"), r"'\r'")
+    assert_equal(StringSlice.__repr__("\x0e"), r"'\x0e'")
+    assert_equal(StringSlice.__repr__("\x1f"), r"'\x1f'")
+    assert_equal(StringSlice.__repr__("'"), '"\'"')
+    assert_equal(StringSlice.__repr__("\\"), r"'\\'")
+    assert_equal(StringSlice.__repr__("\x7f"), r"'\x7f'")
+
+    # Multi-byte characters
+    assert_equal(
+        StringSlice.__repr__("Örnsköldsvik"), "'Örnsköldsvik'"
+    )  # 2-byte
+    assert_equal(StringSlice.__repr__("你好!"), "'你好!'")  # 3-byte
+    assert_equal(StringSlice.__repr__("hello 🔥!"), "'hello 🔥!'")  # 4-byte
+
+
 fn test_utf8_validation() raises:
     var text = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nam
     varius tellus quis tincidunt dictum. Donec eros orci, ultricies ac metus non
@@ -681,6 +709,7 @@ def main():
     test_slice_len()
     test_slice_eq()
     test_slice_bool()
+    test_slice_repr()
     test_utf8_validation()
     test_find()
     test_good_utf8_sequences()
