@@ -50,7 +50,7 @@ fn test_tiled_and_vectorized_matmul():
     ].stack_allocation()
     arange(tensor_a)
     arange(tensor_b)
-    tensor_c.fill(0)
+    _ = tensor_c.fill(0)
 
     for bm in range(M // BK):
         for bn in range(N // BN):

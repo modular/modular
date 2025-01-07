@@ -20,7 +20,7 @@ from utils import IndexList
 fn concat(owned lhs: IntTuple, rhs: IntTuple) -> IntTuple:
     for i in range(len(rhs)):
         lhs.append(rhs[i])
-    return lhs
+    return lhs.owned_copy()
 
 
 fn _get_returned_type[bitwidth: Int, unsigned: Bool]() -> DType:
@@ -334,10 +334,10 @@ fn crd2idx[
             @parameter
             for i in range(last_elem_idx):
                 divisor, quotient = divmod(int_crd, product(shape[i]))
-                result += crd2idx(quotient, shape[i], stride[i])
+                result += crd2idx[crd_t](quotient, shape[i], stride[i])
                 int_crd = divisor
             # FIXME(KERN-640): Replace with [-1], currently not giving correct result.
-            return result + crd2idx(
+            return result + crd2idx[crd_t](
                 int_crd, shape[last_elem_idx], stride[last_elem_idx]
             )
         else:  # "int" "int" "int"
@@ -377,7 +377,9 @@ fn shape_div[
             return res
         else:
             var res = RuntimeTuple[shape_div_int_tuple(a_t, b_t)]()
-            var vb = int(to_int(b))
+            # FIXME: this used to be simpler
+            # var vb = int(to_int(b))
+            var vb = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](int(to_int(b)))
 
             @parameter
             for i in range(len(a_t)):
@@ -387,7 +389,18 @@ fn shape_div[
                 for j in range(res_i.scalar_length):
                     res.value[i + j] = res_i.value[j]
 
-                vb = int(to_int(shape_div(vb, product(a[i]))))
+                # FIXME: this used to be simpler
+                # vb = int(to_int(shape_div(vb, product(a[i]))))
+                vb = int(
+                    to_int(
+                        shape_div(
+                            vb,
+                            RuntimeTuple[IntTuple(UNKNOWN_VALUE)](
+                                product(a[i])
+                            ),
+                        )
+                    )
+                )
             return res
     else:
 

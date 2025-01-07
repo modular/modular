@@ -39,10 +39,14 @@ def test_construct():
 # CHECK-LABEL: test_concat
 def test_concat():
     print("== test_concat")
-    var lhs = RuntimeTuple[IntTuple(1, -1, IntTuple(1, -1))](1, 44, 1, 102)
-    var rhs = RuntimeTuple[IntTuple(-1, IntTuple(-1, IntTuple(-1, 202)))](
-        33, 44, 55, 202
-    )
+    var lhs = RuntimeTuple[
+        IntTuple(1, UNKNOWN_VALUE, IntTuple(1, UNKNOWN_VALUE))
+    ](1, 44, 1, 102)
+    var rhs = RuntimeTuple[
+        IntTuple(
+            UNKNOWN_VALUE, IntTuple(UNKNOWN_VALUE, IntTuple(UNKNOWN_VALUE, 202))
+        )
+    ](33, 44, 55, 202)
     print(lhs.concat(rhs))
 
 
@@ -56,7 +60,7 @@ def test_flatten():
 # CHECK-LABEL: test_prefix_product
 def test_prefix_product():
     print("== test_prefix_product")
-    var t1 = RuntimeTuple[IntTuple(-1, IntTuple(2, 4))](8, 2, 4)
+    var t1 = RuntimeTuple[IntTuple(UNKNOWN_VALUE, IntTuple(2, 4))](8, 2, 4)
     var t1_p = prefix_product(t1)
     assert_equal(str(t1_p), "(1, (8, 16))")
     assert_equal(str(t1_p.S), "(1, (-1, -1))")
@@ -68,12 +72,12 @@ def test_idx2crd():
 
     alias tuple = IntTuple(2, IntTuple(2, 4))
 
-    var r_tuple = RuntimeTuple[fill_like(tuple, -1)](2, 2, 4)
+    var r_tuple = RuntimeTuple[fill_like(tuple, UNKNOWN_VALUE)](2, 2, 4)
 
     for i in range(16):
         assert_equal(
             str(idx2crd_int_tuple(i, tuple)),
-            str(idx2crd(RuntimeTuple[-1](i), r_tuple)),
+            str(idx2crd(RuntimeTuple[UNKNOWN_VALUE](i), r_tuple)),
         )
 
 
@@ -82,7 +86,7 @@ def test_crd2idx():
     print("== test_crd2idx")
     alias shape_t = IntTuple(4, 4)
     alias stride_t = IntTuple(4, 1)
-    alias unk_r2_t = IntTuple(-1, -1)
+    alias unk_r2_t = IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)
 
     for i in range(4):
         for j in range(4):

@@ -105,7 +105,7 @@ def test_tiled_layout_indexing_linear_idx():
                 shape,
                 stride,
             ),
-            layout(i),
+            layout(RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)),
         )
 
 
@@ -142,7 +142,10 @@ def test_coalesce():
     )
 
     assert_equal(str(coalesce(layout_2)), "((32, 16, 8):(16, 8, 1))")
-    assert_equal(str(coalesce_layout(layout_t_2)), "((-1, -1, 8):(-1, 8, 1))")
+    assert_equal(
+        str(coalesce_layout(layout_t_2)),
+        "((-1, -1, 8):(-1, 8, 1))",
+    )
 
 
 # CHECK-LABEL: test_make_layout

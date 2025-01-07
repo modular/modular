@@ -22,6 +22,7 @@ from memory.unsafe import bitcast
 from stdlib.builtin.simd import _has_native_f8_support
 
 from utils import IndexList
+from utils.index import Index
 
 
 fn num_matrix_reg[dim_1: Int, dim_2: Int]() -> Int:

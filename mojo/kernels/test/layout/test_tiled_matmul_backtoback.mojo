@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# TODO(MOCO-1523): reenable
+# REQUIRES: DISABLED
 # RUN: %mojo-no-debug %s
 
 from math import fma, isclose

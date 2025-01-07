@@ -69,11 +69,15 @@ fn _project_on_axis[
 ](t: IntTuple) -> IntTuple:
     if not submode_axis:
         var p_t = fill_like(t, 0)
-        p_t[axis] = fill_like(t[axis], 1)
+        # p_t[axis] = fill_like(t[axis], 1)
+        p_t = p_t.replace_entry(axis, fill_like(t[axis], 1))
         return p_t
     var p_t = fill_like(t, 1)
-    p_t[axis] = fill_like(t[axis], 0)
-    p_t[axis][submode_axis.value()] = 1
+    # p_t[axis] = fill_like(t[axis], 0)
+    # p_t[axis][submode_axis.value()] = 1
+    var filled = fill_like(t[axis], 0)
+    filled = filled.replace_entry(submode_axis.value(), 1)
+    p_t = p_t.replace_entry(axis, filled)
     return p_t
 
 
@@ -1021,7 +1025,8 @@ struct LayoutTensor[
             idx: The index to the shape of the tensor.
         """
 
-        alias shape = Self._toStatic[layout.shape]()
+        # FIXME: having to specify the origin is kind of weird
+        alias shape = Self._toStatic[layout.shape.origin, layout.shape]()
         return shape[idx]
 
     @always_inline
@@ -1033,7 +1038,8 @@ struct LayoutTensor[
             idx: The index to the stride of the tensor.
         """
 
-        alias stride = Self._toStatic[layout.stride]()
+        # FIXME: having to specify the origin is kind of weird
+        alias stride = Self._toStatic[layout.stride.origin, layout.stride]()
         return stride[idx]
 
     @always_inline
@@ -1076,7 +1082,10 @@ struct LayoutTensor[
     fn _prop_unknown_shape[idx: Int, src: Layout, target: Layout]() -> Layout:
         """Propagate all unknown dim from target to a new layout."""
         var new_shape = src.shape
-        new_shape[idx] = propagate_unknown(src.shape[idx], target.shape)
+        # new_shape[idx] = propagate_unknown(src.shape[idx], target.shape)
+        new_shape = new_shape.replace_entry(
+            idx, propagate_unknown(src.shape[idx], target.shape)
+        )
         return Layout(new_shape, src.stride)
 
     @staticmethod
@@ -2009,9 +2018,13 @@ struct LayoutTensor[
             )
             return idx
         else:
+            # FIXME: this used to be simpler
+            var rt = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](
+                elem_i * element_size
+            )
             var idx = make_runtime_layout(
                 self.runtime_element_layout, self.runtime_layout
-            )(elem_i * element_size)
+            )(rt)
             return idx
 
     @always_inline
@@ -2183,9 +2196,11 @@ struct LayoutTensor[
                 if src_dims_known:
                     src_idx = src_static_idx
                 else:
+                    # FIXME: this used to be simpler
+                    var rt = RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)
                     src_idx = make_runtime_layout(
                         src.runtime_element_layout, src.runtime_layout
-                    )(i)
+                    )(rt)
 
                 async_copy[4, eviction_policy=eviction_policy](
                     src_ptr.bitcast[Scalar[dtype]]() + src_idx,

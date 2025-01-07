@@ -51,6 +51,11 @@ struct RuntimeLayout[layout: Layout, /, *, bitwidth: Int = bitwidthof[Int]()](
         self.shape = shape
         self.stride = stride
 
+    # FIXME: This should probably better done in the RuntimeTuple constructor
+    @always_inline
+    fn __call__(self, idx: Int) -> Int:
+        return self.__call__(RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx))
+
     @always_inline
     fn __call__[t: IntTuple](self, idx: RuntimeTuple[t, **_]) -> Int:
         return crd2idx(idx, self.shape, self.stride)

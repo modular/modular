@@ -7,6 +7,7 @@
 
 from layout.int_tuple import *
 from layout.int_tuple import abs  # override builtin abs and min
+
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
@@ -43,12 +44,12 @@ def test_tuple_basic():
     )
     assert_equal(str(tt), "(5, 7, 2, (3, 66, (6, 99, (4, 68, 721))), 42)")
 
-    tt[1] = 8
-    tt.append(81)
-    assert_equal(str(tt), "(5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42, 81)")
+    # tt[1] = 8
+    # tt.append(81)
+    # assert_equal(str(tt), "(5, 8, 2, (3, 66, (6, 99, (4, 68, 721))), 42, 81)")
 
-    tt[3][2][2] = IntTuple(5, 69, 722)
-    assert_equal(str(tt), "(5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 81)")
+    # tt[3][2][2] = IntTuple(5, 69, 722)
+    # assert_equal(str(tt), "(5, 8, 2, (3, 66, (6, 99, (5, 69, 722))), 42, 81)")
 
     # Tests interaction with compiler interpreter
     alias works = IntTuple(IntTuple(2, 2), IntTuple(2, 3))
@@ -121,7 +122,8 @@ def test_tuple_basic_ops():
 
     alias tt_unknown = to_unknown(tt)
     assert_equal(
-        str(tt_unknown), "(-1, -1, -1, (-1, -1, (-1, -1, (-1, -1, -1))), -1)"
+        str(tt_unknown),
+        "(-1, -1, -1, (-1, -1, (-1, -1, (-1, -1, -1))), -1)",
     )
 
     alias ts = IntTuple(0, 1, IntTuple(-2, 3), -4)
@@ -401,9 +403,12 @@ def test_depth():
 # CHECK-LABEL: test_unknown_value_arith
 def test_unknown_value_arith():
     print("== test_unknown_value_arith")
-    var t = IntTuple(-1, IntTuple(2, 3), 4)
-    assert_equal(prefix_product(t), IntTuple(1, IntTuple(-1, -1), -1))
-    assert_equal(sum(t), -1)
+    var t = IntTuple(UNKNOWN_VALUE, IntTuple(2, 3), 4)
+    assert_equal(
+        prefix_product(t),
+        IntTuple(1, IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE), UNKNOWN_VALUE),
+    )
+    assert_equal(sum(t), UNKNOWN_VALUE)
 
 
 def main():

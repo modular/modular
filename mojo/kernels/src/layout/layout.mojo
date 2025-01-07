@@ -13,7 +13,6 @@ from buffer.dimlist import DimList
 
 from utils import Writable, Writer
 
-from .dynamic_tuple import *
 from .int_tuple import (
     UNKNOWN_VALUE,
     IntTuple,
@@ -146,16 +145,17 @@ struct Layout(
     @always_inline
     @implicit
     fn __init__(out self, shape: IntTuple):
-        self.shape = shape
+        # FIXME: all these owned_copy() calls are annoying, fix __copyinit__
+        self.shape = shape.owned_copy()
         self.stride = prefix_product(self.shape)
 
     @always_inline
     fn __init__(out self, shape: IntTuple, stride: IntTuple):
-        self.shape = shape
+        self.shape = shape.owned_copy()
         if len(stride) == 0:
             self.stride = prefix_product(self.shape)
         else:
-            self.stride = stride
+            self.stride = stride.owned_copy()
 
     fn __init__(out self, *, other: Self):
         """Explicitly construct a deep copy of the provided value.
@@ -225,8 +225,14 @@ struct Layout(
         if axis == UNKNOWN_VALUE:
             return Layout(to_unknown(self.shape), self.stride)
         else:
-            var shape_with_unknown = self.shape
-            shape_with_unknown[axis] = to_unknown(self.shape[axis])
+            # var shape_with_unknown = self.shape
+            # shape_with_unknown[axis] = to_unknown(self.shape[axis])
+            var shape_with_unknown = IntTuple()
+            for i in range(len(self.shape)):
+                if i != axis:
+                    shape_with_unknown.append(self.shape[i])
+                else:
+                    shape_with_unknown.append(to_unknown(self.shape[i]))
             return Layout(shape_with_unknown, self.stride)
 
     @always_inline
@@ -379,8 +385,15 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
             continue
         # replace our shape-1 with anything
         elif result_shape[-1] == 1:
-            result_shape[-1] = shape
-            result_stride[-1] = stride
+            # result_shape[-1] = shape
+            result_shape = result_shape.replace_entry(
+                len(result_shape) - 1, shape
+            )
+            # result_stride[-1] = stride
+            result_stride = result_stride.replace_entry(
+                len(result_stride) - 1, stride
+            )
+
         # merge modes if the shape*stride match and computable.
         elif to_int(result_shape[-1]) * to_int(
             result_stride[-1]
@@ -390,7 +403,11 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
             to_int(result_shape[-1]),
             to_int(result_stride[-1]),
         ):
-            result_shape[-1] = to_int(result_shape[-1]) * shape
+            # result_shape[-1] = to_int(result_shape[-1]) * shape
+            result_shape = result_shape.replace_entry(
+                len(result_shape) - 1, to_int(result_shape[-1]) * shape
+            )
+
         # append a new mode
         else:
             result_shape.append(shape)
@@ -672,14 +689,20 @@ fn expand_modes_alike(
         return InlineArray[IntTuple, 3](new_shape, new_stride_a, new_stride_b)
     elif shape_a.is_tuple():
         return InlineArray[IntTuple, 3](
-            shape_a, stride_a, expand_strides(shape_a, stride_b.value())
+            shape_a.owned_copy(),
+            stride_a.owned_copy(),
+            expand_strides(shape_a, stride_b.value()),
         )
     elif shape_b.is_tuple():
         return InlineArray[IntTuple, 3](
-            shape_b, expand_strides(shape_b, stride_a.value()), stride_b
+            shape_b.owned_copy(),
+            expand_strides(shape_b.owned_copy(), stride_a.value()),
+            stride_b.owned_copy(),
         )
     else:
-        return InlineArray[IntTuple, 3](shape_b, stride_a, stride_b)
+        return InlineArray[IntTuple, 3](
+            shape_b.owned_copy(), stride_a.owned_copy(), stride_b.owned_copy()
+        )
 
 
 fn expand_modes_alike(

@@ -8,6 +8,7 @@
 from layout import *
 from layout.layout import (
     Layout,
+    UNKNOWN_VALUE,
     MakeLayoutList,
     coalesce,
     complement,
@@ -39,11 +40,16 @@ fn test_layout_basic() raises:
     )
     assert_equal(
         layout.make_shape_unknown[axis=0](),
-        Layout(IntTuple(-1, IntTuple(3, 4)), IntTuple(1, IntTuple(2, 6))),
+        Layout(
+            IntTuple(UNKNOWN_VALUE, IntTuple(3, 4)), IntTuple(1, IntTuple(2, 6))
+        ),
     )
     assert_equal(
         layout.make_shape_unknown[axis=1](),
-        Layout(IntTuple(2, IntTuple(-1, -1)), IntTuple(1, IntTuple(2, 6))),
+        Layout(
+            IntTuple(2, IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)),
+            IntTuple(1, IntTuple(2, 6)),
+        ),
     )
 
     # Row major variadic input
