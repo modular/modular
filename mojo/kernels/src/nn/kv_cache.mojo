@@ -95,11 +95,10 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "fused_qkv_matmul_kv_cache_h"
+        "mo.fused_qkv_matmul.padded.continuous_batching.nhead_"
         + str(kv_collection.kv_params.num_heads)
-        + "_d"
-        + str(kv_collection.kv_params.head_size)
-        + "_bshd_continuous_batch",
+        + ".hdim_"
+        + str(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ):
         return _fused_qkv_matmul_kv_cache[
@@ -107,28 +106,10 @@ fn generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
         ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h8_d64_bshd")
-fn fused_qkv_matmul_kv_cache_h8_d64_bshd[
-    type: DType,
-    target: StringLiteral = "cpu",
-](
-    hidden_state: NDBuffer[type, 3, _],
-    weight: NDBuffer[type, 2, _],
-    kv_collection: ContinuousBatchingKVCacheCollection[
-        type,
-        kv_params_h8_d64_bshd,
-    ],
-    layer_idx: UInt32,
-    output: NDBuffer[type, 3, _],
-    ctx: MojoCallContextPtr,
-) raises:
-    return generic_fused_qkv_matmul_kv_cache_bshd_continuous_batch[
-        target=target
-    ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
-
-
-@register_internal("fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch")
-fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_8.hdim_128"
+)
+fn fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_128[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -147,8 +128,10 @@ fn fused_qkv_matmul_kv_cache_h8_d128_bshd_continuous_batch[
     ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch")
-fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_1.hdim_16"
+)
+fn fused_qkv_matmul_padded_continuous_batching_nhead_1_hdim_16[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -167,8 +150,10 @@ fn fused_qkv_matmul_kv_cache_h1_d16_bshd_continuous_batch[
     ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch")
-fn fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_8.hdim_32"
+)
+fn fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_32[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -187,8 +172,10 @@ fn fused_qkv_matmul_kv_cache_h8_d32_bshd_continuous_batch[
     ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch")
-fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_8.hdim_64"
+)
+fn fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_64[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -207,8 +194,10 @@ fn fused_qkv_matmul_kv_cache_h8_d64_bshd_continuous_batch[
     ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch")
-fn fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_8.hdim_512"
+)
+fn fused_qkv_matmul_padded_continuous_batching_nhead_8_hdim_512[
     type: DType,
     hidden_state_shape: DimList,
     weight_shape: DimList,
@@ -230,8 +219,10 @@ fn fused_qkv_matmul_kv_cache_h8_d512_bshd_continuous_batch[
     ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h2_d128_bshd_continuous_batch")
-fn fused_qkv_matmul_kv_cache_h2_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_2.hdim_128"
+)
+fn fused_qkv_matmul_padded_continuous_batching_nhead_2_hdim_128[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -250,8 +241,10 @@ fn fused_qkv_matmul_kv_cache_h2_d128_bshd_continuous_batch[
     ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch")
-fn fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_16.hdim_128"
+)
+fn fused_qkv_matmul_padded_continuous_batching_nhead_16_hdim_128[
     type: DType,
     target: StringLiteral = "cpu",
 ](
@@ -273,8 +266,10 @@ fn fused_qkv_matmul_kv_cache_h16_d128_bshd_continuous_batch[
     ](hidden_state, weight, kv_collection, layer_idx, output, ctx)
 
 
-@register_internal("fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch")
-fn fused_qkv_matmul_kv_cache_h32_d128_bshd_continuous_batch[
+@register_internal(
+    "mo.fused_qkv_matmul.padded.continuous_batching.nhead_32.hdim_128"
+)
+fn fused_qkv_matmul_padded_continuous_batching_nhead_32_hdim_128[
     type: DType,
     target: StringLiteral = "cpu",
 ](
