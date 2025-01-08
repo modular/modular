@@ -107,6 +107,23 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "BinaryID",
+    srcs = ["lib/BinaryID.cpp"],
+    hdrs = ["include/Support/BinaryID.h"],
+    additional_linker_inputs = select({
+        "@platforms//os:linux": ["//bazel:build-id.ldscript"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "@platforms//os:linux": ["$(location //bazel:build-id.ldscript)"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_library(
     name = "BuildInfo",
     srcs = ["lib/BuildInfo.cpp"],
     hdrs = ["include/Support/BuildInfo.h"],

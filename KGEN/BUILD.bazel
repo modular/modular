@@ -955,19 +955,12 @@ modular_cc_library(
             "include/KGEN/Support/ForceLinkMLIRC.h",
         ],
     ),
-    additional_linker_inputs = select({
-        "@platforms//os:linux": ["//bazel:kgen-build-id.ldscript"],
-        "//conditions:default": [],
-    }),
-    linkopts = select({
-        "@platforms//os:linux": ["$(location //bazel:kgen-build-id.ldscript)"],
-        "//conditions:default": [],
-    }),
     local_defines = CONFIG_SECTION_LOCAL_DEFINES,
     tags = ["no-clang-tidy-headers"],
     deps = [
         "//AsyncRT:Support",
         "//Support:Base",
+        "//Support:BinaryID",
         "//Support:Configuration",
         "//Support:ML",
         "//Support:Profiling",
