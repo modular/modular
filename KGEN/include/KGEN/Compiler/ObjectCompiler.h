@@ -117,6 +117,10 @@ private:
   /// Generate saveTempsPrefix files.
   ErrorOrSuccess emitArchiveSaveTemps(ModuleOp module, StringRef moduleName);
 
+  /// Utility function for creating shared object from buf
+  /// (mostly for AMD GPU kernels)
+  ErrorOr<BufferRef> createSharedObject(BufferRef buf, StringRef moduleName);
+
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
 

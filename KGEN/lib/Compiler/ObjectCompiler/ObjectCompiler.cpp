@@ -1169,36 +1169,15 @@ ErrorOrSuccess ObjectCompiler::emitAssembly(OwningOpRef<ModuleOp> module,
 //===----------------------------------------------------------------------===//
 // emitSharedObject
 //===----------------------------------------------------------------------===//
-ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
-                                                llvm::raw_pwrite_stream &os) {
-  // This function is added to support AMD GPU compilation to hsaco binary.
-  // Generalize to all platforms+formats when needed.
-  if (llvm::Triple(options.targetTriple).getObjectFormat() !=
-          llvm::Triple::ELF &&
-      llvm::Triple(options.targetTriple).getObjectFormat() !=
-          llvm::Triple::MachO)
-    return Error("cannot create shared object binary from target triple that "
-                 "is not ELF or MachO");
 
-  CompilerTimeTraceScope traceScope("emitSharedObj");
-
-  StringRef moduleName = "mojo-sharedobj";
-  if (auto moduleLoc = module->getLoc()->findInstanceOf<FileLineColLoc>())
-    moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
-
-  // Generate .o in memory.
-  ErrorOr<BufferRef> bufOr =
-      ObjectCompiler::emitArchive(std::move(module), /*emitAssembly=*/false);
-
-  if (bufOr.isError())
-    return Error("failed to lower LLVM IR to object binary");
-
+ErrorOr<BufferRef> ObjectCompiler::createSharedObject(BufferRef buf,
+                                                      StringRef moduleName) {
   llvm::StringRef libInExt = ".o";
   llvm::StringRef libOutExt = ".so";
   std::string objName = moduleName.str() + "-%%%%%%%" + libInExt.str();
 
   // Write .o to a file.
-  auto objFileOr = writeTempFile(objName, (*bufOr)->getBuffer());
+  auto objFileOr = writeTempFile(objName, buf->getBuffer());
 
   if (objFileOr.isError())
     return Error("failed to write object binary into a file");
@@ -1280,6 +1259,39 @@ ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
                                 ".so",
                             **sharedObjBufOr)))
     return Error("failed to write shared object binary to saveTemps");
+
+  return sharedObjBufOr;
+}
+
+ErrorOrSuccess ObjectCompiler::emitSharedObject(OwningOpRef<ModuleOp> module,
+                                                llvm::raw_pwrite_stream &os) {
+  // This function is added to support AMD GPU compilation to hsaco binary.
+  // Generalize to all platforms+formats when needed.
+  if (llvm::Triple(options.targetTriple).getObjectFormat() !=
+          llvm::Triple::ELF &&
+      llvm::Triple(options.targetTriple).getObjectFormat() !=
+          llvm::Triple::MachO)
+    return Error("cannot create shared object binary from target triple that "
+                 "is not ELF or MachO");
+
+  CompilerTimeTraceScope traceScope("emitSharedObj");
+
+  StringRef moduleName = "mojo-sharedobj";
+  if (auto moduleLoc = module->getLoc()->findInstanceOf<FileLineColLoc>())
+    moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
+
+  // Generate .o in memory.
+  ErrorOr<BufferRef> bufOr =
+      ObjectCompiler::emitArchive(std::move(module), /*emitAssembly=*/false);
+
+  if (bufOr.isError())
+    return Error("failed to lower LLVM IR to object binary");
+
+  // Create shared object in buffer.
+  ErrorOr<BufferRef> sharedObjBufOr = createSharedObject(*bufOr, moduleName);
+
+  if (sharedObjBufOr.isError())
+    return sharedObjBufOr.takeError();
 
   // Send dynamic library to output stream.
   os << sharedObjBufOr->getPointer()->getBuffer();
