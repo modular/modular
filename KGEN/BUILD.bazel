@@ -456,15 +456,6 @@ gentbl_cc_library(
     ],
 )
 
-td_library(
-    name = "MOGGreElabTdFile",
-    srcs = ["include/KGEN/MOGGPreElab/MOGGPreElabPasses.td"],
-    includes = ["include"],
-    deps = [
-        "@llvm-project//mlir:BuiltinDialectTdFiles",
-    ],
-)
-
 gentbl_modular_passes(
     name = "MOGGreElabIncGen",
     td_file = "include/KGEN/MOGGPreElab/MOGGPreElabPasses.td",

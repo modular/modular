@@ -1,5 +1,3 @@
-load("//bazel:api.bzl", "mojo_library")
-
 exports_files([
     "stdlib/__init__.mojo",
     "stdlib/prelude/__init__.mojo",
@@ -9,9 +7,4 @@ filegroup(
     name = "test-packages",
     srcs = glob(["**/*.mojo"]),
     visibility = ["//visibility:public"],
-)
-
-mojo_library(
-    name = "stdlib",
-    srcs = glob(["**/*.mojo"]),
 )
