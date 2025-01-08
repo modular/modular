@@ -880,8 +880,8 @@ fn _flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[type, simd_width],
     *,
-    transpose_k: Bool = False,
-    layout_bshd: Bool = False,
+    transpose_k: Bool = True,
+    layout_bshd: Bool = True,
 ](
     q: NDBuffer[type, rank, *_],
     k_shape: IndexList[rank],
@@ -965,9 +965,6 @@ fn flash_attention[
     input_mask_fn: fn[simd_width: Int, mask_rank: Int] (
         IndexList[mask_rank]
     ) capturing -> SIMD[type, simd_width],
-    *,
-    transpose_k: Bool = False,
-    layout_bshd: Bool = False,
 ](
     q: NDBuffer[type, rank, *_],
     k_shape: IndexList[rank],
@@ -976,13 +973,7 @@ fn flash_attention[
     output: NDBuffer[type, rank, *_],
     scale: Float32,
 ):
-    _flash_attention[
-        input_k_fn,
-        input_v_fn,
-        input_mask_fn,
-        transpose_k=transpose_k,
-        layout_bshd=layout_bshd,
-    ](
+    _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
         q,
         k_shape,
         v_shape,
@@ -1121,11 +1112,7 @@ fn flash_attention_split_kv[
             v_shape[0], v_shape[1] + v_cache_shape[3], v_shape[2], v_shape[3]
         )
         _flash_attention[
-            input_k_cache_fn_wrapper,
-            input_v_cache_fn_wrapper,
-            input_mask_fn,
-            transpose_k=True,
-            layout_bshd=True,
+            input_k_cache_fn_wrapper, input_v_cache_fn_wrapper, input_mask_fn
         ](
             q,
             combined_k_shape,
