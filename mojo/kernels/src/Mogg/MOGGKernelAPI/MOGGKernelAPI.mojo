@@ -134,6 +134,7 @@ from nn.kv_cache_ragged import (
     generic_flash_attention_kv_cache_causal_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_alibi_mask_cont_batch_ragged,
     generic_flash_attention_kv_cache_null_mask_cont_batch_ragged,
+    generic_cross_attention_kv_cache_null_mask_cont_batch_ragged,
     matmul_kv_cache_h8_d128_cont_batch_ragged,
 )
 from nn.mha import flash_attention
@@ -7775,6 +7776,91 @@ struct Struct_flash_attention_kv_cache_h32_d128_causal_mask_continuous_batch:
             target
         ](
             output, q, kv_collection, layer_idx, valid_lengths, scale, context
+        )
+
+
+# ===-----------------------------------------------------------------------===#
+# cross_attention_kv_cache_*_null_mask_cont_batch_ragged
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+fn generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
+    type: DType, //, target: StringLiteral
+](
+    output: ManagedTensorSlice[type, 3],
+    q: ManagedTensorSlice[type, 3],
+    q_input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    q_max_seq_len: ManagedTensorSlice[DType.uint32, 1],
+    kv_input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+    kv_collection: ContinuousBatchingKVCacheCollection,
+    layer_idx: UInt32,
+    scale: Float32,
+    context: MojoCallContextPtr,
+) raises:
+    generic_cross_attention_kv_cache_null_mask_cont_batch_ragged[target=target](
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q.type, q.rank]("q")
+        ](q),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[
+                q_input_row_offsets.type, q_input_row_offsets.rank
+            ]("q_input_row_offsets")
+        ](q_input_row_offsets),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[q_max_seq_len.type, q_max_seq_len.rank](
+                "q_max_seq_len"
+            )
+        ](q_max_seq_len),
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[
+                kv_input_row_offsets.type, kv_input_row_offsets.rank
+            ]("kv_input_row_offsets")
+        ](kv_input_row_offsets),
+        kv_collection,
+        layer_idx,
+        scale,
+        managed_tensor_slice_to_ndbuffer_with_spec[
+            compiler.specsof[output.type, output.rank]("output")
+        ](output),
+        context,
+    )
+
+
+@compiler.register(
+    "cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged"
+)
+struct Struct_cross_attention_kv_cache_h8_d128_null_mask_cont_batch_ragged:
+    @uses_opaque
+    @always_inline
+    @staticmethod
+    fn execute[
+        type: DType, target: StringLiteral
+    ](
+        output: ManagedTensorSlice[type, 3],
+        q: ManagedTensorSlice[type, 3],
+        q_input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        q_max_seq_len: ManagedTensorSlice[DType.uint32, 1],
+        kv_input_row_offsets: ManagedTensorSlice[DType.uint32, 1],
+        kv_collection: ContinuousBatchingKVCacheCollection[
+            type, kv_params_h8_d128_bshd
+        ],
+        layer_idx: UInt32,
+        scale: Float32,
+        context: MojoCallContextPtr,
+    ) raises:
+        generic_cross_attention_kv_cache_null_mask_cont_batch_ragged_kernel_api[
+            target=target
+        ](
+            output,
+            q,
+            q_input_row_offsets,
+            q_max_seq_len,
+            kv_input_row_offsets,
+            kv_collection,
+            layer_idx,
+            scale,
+            context,
         )
 
 
