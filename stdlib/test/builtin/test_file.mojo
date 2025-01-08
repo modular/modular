@@ -224,7 +224,7 @@ struct Word:
         word.append(self.fourth_letter)
         word.append(self.fith_letter)
         word.append(0)
-        return word
+        return String(word)
 
 
 def test_file_read_to_dtype_pointer():

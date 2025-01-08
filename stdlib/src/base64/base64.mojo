@@ -149,7 +149,8 @@ fn b64decode(str: String) -> String:
         p.append(((c & 0x03) << 6) | d)
 
     p.append(0)
-    return p
+
+    return String(p^)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -231,4 +232,4 @@ fn b16decode(str: String) -> String:
         p.append(decode(hi) << 4 | decode(lo))
 
     p.append(0)
-    return p
+    return String(p)
