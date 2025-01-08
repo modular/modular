@@ -148,7 +148,7 @@ OriginTrackable::OriginTrackable(Value v) {
   auto func = dyn_cast<LIT::FuncOp>(bbArg.getOwner()->getParentOp());
   if (!func)
     return;
-  LITSignatureType signature = func.getSignature();
+  LITSignatureGeneratorType signature = func.getSignatureGenerator();
 
   unsigned argIdx = bbArg.getArgNumber();
   switch (signature.getArgConvention(argIdx)) {

@@ -212,8 +212,8 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       callImplType.getArguments(), callImplType.getArgConventions(),
       callImplType.getArgListAttrs(), fnPtrType.getResultType(),
       SpecialFunctionKind::kNormal, decl.getLoc(), b, fnPtrType.getFnEffects());
-  auto paramDecl = ParamDeclAttr::get(
-      lambdaName, callImpl.getSignature().asSignatureGenerator());
+  auto paramDecl =
+      ParamDeclAttr::get(lambdaName, callImpl.getSignatureGenerator());
   callImpl.setParamDeclAttr(paramDecl);
 
   // Store it into the call field.
@@ -443,7 +443,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Create map from the parent name to the index of the parameter in the
   // closure struct.
   FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
-  wrapperSig = nestedFn.getSignature().asSignatureGenerator();
+  wrapperSig = nestedFn.getSignatureGenerator();
   if (!wrapperSig.getInputParamTypes().empty()) {
     shared.emitError(
         nestedFnDecl.getLoc(),
@@ -574,9 +574,10 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   SyntheticNode loc(nestedFnDecl.getLoc());
   if (hasParamClosureCaptures) {
     // Propagate the 'capturing' bit to the init function.
-    LITSignatureType oldSig = initFunc.getSignature();
-    initFunc.setSignature(
-        oldSig.getWithFnEffects(oldSig.getFnEffects().setCapturing(true)));
+    LITSignatureGeneratorType oldSig = initFunc.getSignatureGenerator();
+    initFunc.setSignatureGenerator(
+        oldSig.getWithBody(oldSig.getBody().getWithFnEffects(
+            oldSig.getFnEffects().setCapturing(true))));
 
     // Declare an extra field to carry the parametric closure captures.
     ASTType clType = shared.getBuiltinCaptureListType(nestedFnDecl.getLoc());

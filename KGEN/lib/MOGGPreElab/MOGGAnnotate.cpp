@@ -81,7 +81,7 @@ LIT::StructType getAsDeclRefOrNull(Type t) {
 
 /// Check if the function is a DPS kernel with by-ref tensor arguments.
 static LogicalResult checkByRefTensorArgs(LIT::FuncOp func) {
-  LIT::LITSignatureType signature = func.getSignature();
+  LIT::LITSignatureGeneratorType signature = func.getSignatureGenerator();
   for (auto [index, litType] : llvm::enumerate(signature.getArguments())) {
     if (LIT::StructType asDeclRef = getAsDeclRefOrNull(litType)) {
       if (isDPSKernel(func) && isDPSTensor(asDeclRef) &&
@@ -154,7 +154,7 @@ static LogicalResult annotateTypes(LIT::FuncOp func) {
     observedParams.push_back(litTypeToParams(litType));
     typeNames.push_back(litTypeToSourceName(litType));
 
-    sourceName.push_back(func.getSignature().getArgName(i));
+    sourceName.push_back(func.getSignatureGenerator().getArgName(i));
   }
 
   // Attach the parameter mapping information to the kernel.

@@ -427,7 +427,7 @@ void printSymbolExport(AsmPrinter &p, Operation *op, ExportKindAttr exportKind);
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
 LogicalResult verifyDeclSignaturesMatch(
-    StringRef originatorName, SignatureType originatorSignature,
+    StringRef originatorName, SignatureGeneratorType originatorSignature,
     Location originatorLoc, StringRef interfaceName,
     SignatureGeneratorType targetSignatureGen, Location targetLoc);
 

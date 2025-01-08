@@ -613,9 +613,9 @@ SymbolConstantAttr::verifySymbolUses(Operation *module,
 
   // Parameter types match exactly.  We could support higher order rebinding
   // if there is a need.
-  return verifyDeclSignaturesMatch("symbol use", getType().asOldSignature(),
-                                   loc, symbol.getLeafReference(),
-                                   declSignature, func->getLoc());
+  return verifyDeclSignaturesMatch("symbol use", getType(), loc,
+                                   symbol.getLeafReference(), declSignature,
+                                   func->getLoc());
 }
 
 ParseResult parseColonTypeSymbolConstant(AsmParser &p,

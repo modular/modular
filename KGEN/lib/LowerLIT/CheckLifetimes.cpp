@@ -117,7 +117,7 @@ insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
 
   // If this argument has address, its needs an initial deref.
   ArgConvention convention =
-      func.getSignature().getArgConvention(arg.getArgNumber());
+      func.getSignatureGenerator().getArgConvention(arg.getArgNumber());
   if (SignatureType::hasAddress(convention)) {
     if (auto argRefType = dyn_cast<RefType>(arg.getType())) {
       diExpr =
@@ -701,7 +701,7 @@ ValueSet::ValueSet(TypeDeclInfo &typeDeclInfo, LIT::FuncOp func,
       });
 
   ArrayRef<PogMetadataAttr> pogList =
-      func.getSignature().getArgListAttrs().getPogs();
+      func.getSignatureGenerator().getArgListAttrs().getPogs();
   OpBuilder debugBuilder = OpBuilder::atBlockBegin(func.getBody());
   for (BlockArgument arg : func.getArguments()) {
     DebugInfo::DILocalVariableAttr debugVariable;
@@ -825,7 +825,8 @@ void ValueSet::dump() const {
     if (auto bbArg = dyn_cast<BlockArgument>(info.value)) {
       if (auto fn =
               dyn_cast_or_null<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
-        os << fn.getSignature().getArgName(bbArg.getArgNumber()) << " ";
+        os << fn.getSignatureGenerator().getArgName(bbArg.getArgNumber())
+           << " ";
     }
 
     os << info.value << "\n";
@@ -2569,7 +2570,7 @@ private:
   ValueSet &valueSet;
 
   /// This is the signature of the current function being analyzed.
-  SignatureType functionSignature;
+  SignatureGeneratorType functionSignature;
 
   /// This is the set of values known to be used below this point, so they
   /// should not be destroyed if there are uses.  Any use of a value /not/ in
@@ -2624,7 +2625,7 @@ private:
 }
 
 void DestructorInsertion::scanFunction(LIT::FuncOp func) {
-  functionSignature = func.getSignature();
+  functionSignature = func.getSignatureGenerator();
 
   consumedValues.resize(valueSet.getNumTotalBits());
   // Slot 0 indicates this block is reachable.  This will be cleared if an
@@ -2643,8 +2644,9 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
   // If any argument values are unconsumed then they must be unused.
   // Emit their destructor calls at the start of the function by acting as
   // though there is a use.
-  for (auto [argValue, conv] : llvm::zip(
-           func.getArguments(), func.getSignature().getArgConventions())) {
+  for (auto [argValue, conv] :
+       llvm::zip(func.getArguments(),
+                 func.getSignatureGenerator().getArgConventions())) {
     // Ignore undef-on-input values.
     if (SignatureType::isResultSlot(conv))
       continue;

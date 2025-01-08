@@ -397,10 +397,10 @@ struct Test::TestDiscovery {
     std::optional<StringRef> name = fn.getSourceName();
     if (!name || !(name->starts_with("test_") || name->ends_with("_test")))
       return false;
-    auto fnSignature = fn.getSignature();
+    auto fnSignature = fn.getSignatureGenerator();
 
     // Validate that the test has the expected signature.
-    if (!fnSignature.getParamTypes().empty() ||
+    if (!fnSignature.getInputParamTypes().empty() ||
         !fnSignature.getResultParamTypes().empty())
       return false;
     ASTType resultType(fn.getUserResultType());

@@ -1127,7 +1127,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   for (ASTDecl *elt : nonemptySet->fnDecls) {
     // TODO: This is really naive: it doesn't account for default arguments,
     // variadic, byref_result, etc etc etc.
-    if (cast<LIT::FuncOp>(*elt).getSignature().getArguments().size() !=
+    if (cast<LIT::FuncOp>(*elt).getSignatureGenerator().getArguments().size() !=
         size_t(/*newValue*/ !isGetterPresent) + /*self*/ 1) {
       shouldBindParameters = false;
       break;
@@ -1252,7 +1252,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // at the first entry of the set to see what it uses and assume the rest use
   // the same name.
   auto firstFnSig =
-      cast<LIT::FuncOp>(*setterSet.fnDecls.front()).getSignature();
+      cast<LIT::FuncOp>(*setterSet.fnDecls.front()).getSignatureGenerator();
 
   // Find the last user declared argument.
   auto argNo = firstFnSig.getNumArguments();

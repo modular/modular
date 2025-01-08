@@ -48,7 +48,7 @@ static void annotateExtensibilityKernels(LIT::FuncOp func,
 
     // Mark any by ref outputs as allocating.
     for (auto [idx, convention] :
-         llvm::enumerate(func.getSignature().getArgConventions())) {
+         llvm::enumerate(func.getSignatureGenerator().getArgConventions())) {
       if (convention == KGEN::ArgConvention::ByRefResult)
         allocs.push_back(idx);
     }

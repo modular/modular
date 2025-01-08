@@ -1618,6 +1618,21 @@ bool LITNewSignatureType::classof(Type type) {
   return false;
 }
 
+LITNewSignatureType LITNewSignatureType::get(MLIRContext *ctx, TypeRange inputs,
+                                             TypeRange results,
+                                             size_t numImplicitOriginDecls) {
+  auto funcType = FunctionType::get(ctx, inputs, results);
+
+  size_t numInputs = funcType.getNumInputs();
+  SmallVector<PogMetadataAttr> argPogs(
+      numInputs,
+      PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
+  auto metadata = FnMetadataAttr::get(PogListAttr::get(ctx, argPogs),
+                                      numImplicitOriginDecls);
+  return NewSignatureType::get(funcType,
+                               /*convs=*/{}, /*effects=*/{}, metadata);
+}
+
 //===----------------------------------------------------------------------===//
 // LITSignatureGeneratorType
 //===----------------------------------------------------------------------===//

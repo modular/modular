@@ -290,9 +290,6 @@ public:
   static LITNewSignatureType get(MLIRContext *ctx, TypeRange inputs,
                                  TypeRange results,
                                  size_t numImplicitOriginDecls);
-  static LITNewSignatureType get(FunctionType values, ArrayRef<Type> paramTypes,
-                                 ArrayRef<ArgConvention> convs,
-                                 FnEffects effects, FnMetadataAttr metadata);
 };
 
 //===----------------------------------------------------------------------===//

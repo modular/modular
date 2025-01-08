@@ -710,7 +710,7 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   }
 
   auto emitter = getEmitter();
-  LITSignatureType declSig = func.getSignature();
+  LITSignatureGeneratorType declSig = func.getSignatureGenerator();
 
   // Next check the forms: We may or may not have a result expression.  If the
   // result expression is missing and we have a named result slot, just emit a

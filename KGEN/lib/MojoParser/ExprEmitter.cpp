@@ -1642,8 +1642,9 @@ MLValue ExprEmitter::findNearestErrorSlot() {
 
   // In a raising function, the error slot is always the second last argument.
   if (auto func = dyn_cast<LIT::FuncOp>(opForRaise)) {
-    return func.getArguments()[func.getNumArguments() -
-                               func.getSignature().getErrorSlotOffset()];
+    return func
+        .getArguments()[func.getNumArguments() -
+                        func.getSignatureGenerator().getErrorSlotOffset()];
   }
   // Otherwise, the error slot is carried by the surrounding try op.
   return cast<LIT::TryOp>(opForRaise).getErr();
@@ -1657,7 +1658,7 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
   // If we're missing a value, then we either have a memory result that has
   // already been emitted to its slot, or a function that returns None. Either
   // way, generate a None or i1 to return with lit.return.
-  auto signature = func.getSignature();
+  auto signature = func.getSignatureGenerator();
   if (!value) {
     // If the function returns a None type value by-reference, fill it in.  This
     // happens in throwing functions.
@@ -1731,7 +1732,7 @@ void ExprEmitter::emitNormalReturn(Location loc, Value value,
   if (!value) {
     auto func = getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock());
     if (func.getNamedResultAttr() &&
-        !func.getSignature().hasMemoryOnlyResult()) {
+        !func.getSignatureGenerator().hasMemoryOnlyResult()) {
       auto *funcDecl = declScope.getNearestDeclOfType<LIT::FuncOp>();
       assert(funcDecl && "must be in a function");
       ArrayRef<ASTDecl *> declList =

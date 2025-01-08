@@ -165,7 +165,8 @@ SingletonTypeHelper::lookupStructFields(SymbolRefAttr ref, StructDeclOp decl) {
 /// This processes a `lit.func` and returns the param declarations for the
 /// normal input parameters, ignoring the origin parameters.
 static ArrayRef<ParamDeclAttr> extractImplicitOriginParams(LIT::FuncOp func) {
-  size_t numImplicitOrigins = func.getSignature().getNumImplicitOriginDecls();
+  size_t numImplicitOrigins =
+      func.getSignatureGenerator().getNumImplicitOriginDecls();
   return func.getInputParams().drop_back(numImplicitOrigins);
 }
 
@@ -348,7 +349,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
 
   lowerLITOps(func);
 
-  LITSignatureType signature = func.getSignature();
+  LITSignatureGeneratorType signature = func.getSignatureGenerator();
 
   // Build the parameter list of the new function, prepending the parameters
   // from the parent decl if present.
@@ -358,8 +359,8 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
     llvm::append_range(inputParams, parentInputParams);
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
-    signature = LITSignatureType::prependParams(signature, parentInputParams,
-                                                parentVariadicMask);
+    signature = LITSignatureGeneratorType::prependParams(
+        signature, parentInputParams, parentVariadicMask);
   }
   llvm::append_range(inputParams, extractImplicitOriginParams(func));
 
@@ -376,7 +377,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
 
   OpBuilder b(func->getContext());
   auto inputParamsArr = ParamDeclArrayAttr::get(b.getContext(), inputParams);
-  auto sigAttr = TypeAttr::get(signature.asSignatureGenerator());
+  auto sigAttr = TypeAttr::get(signature);
 
   // Directly lower since these operations are exactly identical right now.
   OperationState state(func.getLoc(), GeneratorOp::getOperationName());
@@ -416,8 +417,8 @@ void LITLowerer::lowerNestedFunction(LIT::FuncOp func) {
   removeSingletonParamDecls(singletonTypeHelper, inputParams);
 
   auto region = b.create<ParamDeclareRegionOp>(
-      decl, func.getSignature().asSignatureGenerator(), func.getFunctionType(),
-      inputParams, func.getInlineLevel(), func.getLLVMMetadata());
+      decl, func.getSignatureGenerator(), func.getFunctionType(), inputParams,
+      func.getInlineLevel(), func.getLLVMMetadata());
   region.getBodyRegion().takeBody(func.getBodyRegion());
   func.erase();
 }
@@ -790,9 +791,12 @@ orderAndLowerGlobalVariables(ModuleOp module,
     }
 
     // Outline the constructor and destructor into functions.
-    auto sig = LITSignatureType::get(b.getContext(), /*inputs=*/TypeRange{},
-                                     /*results=*/TypeRange{},
-                                     /*numImplicitOriginDecls=*/0);
+    auto sig = LITGeneratorType::get(
+        /*inputParamTypes=*/{},
+        LITNewSignatureType::get(b.getContext(), /*inputs=*/TypeRange{},
+                                 /*results=*/TypeRange{},
+                                 /*numImplicitOriginDecls=*/0),
+        PogListAttr::get(b.getContext()));
     auto makeXtor = [&](Location xtorLoc, StringAttr xtorName, Region &body) {
       b.setInsertionPoint(op);
       auto fn = b.create<LIT::FuncOp>(xtorLoc, xtorName, StringAttr(), sig);
