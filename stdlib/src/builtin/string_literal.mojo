@@ -17,11 +17,16 @@ These are Mojo built-ins, so you don't need to import them.
 
 from collections import List
 from collections.string.format import _CurlyEntryFormattable, _FormatCurlyEntry
-from collections.string.string_slice import _StringSliceIter, _to_string_list
+from collections.string.string_slice import (
+    StringSlice,
+    StaticString,
+    _StringSliceIter,
+    _to_string_list,
+)
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from memory import UnsafePointer, memcpy, Span
 from sys.ffi import c_char
-from utils import StaticString, StringRef, StringSlice, Writable, Writer
+from utils import Writable, Writer
 from utils._visualizers import lldb_formatter_wrapping_type
 
 
@@ -240,7 +245,7 @@ struct StringLiteral(
         Returns:
             True if they are not equal.
         """
-        return StringRef(self) != StringRef(rhs)
+        return self.as_string_slice() != rhs.as_string_slice()
 
     @always_inline("nodebug")
     fn __eq__(self, rhs: StringSlice) -> Bool:
@@ -276,7 +281,7 @@ struct StringLiteral(
         Returns:
             True if this StringLiteral is strictly less than the RHS StringLiteral and False otherwise.
         """
-        return StringRef(self) < StringRef(rhs)
+        return self.as_string_slice() < rhs.as_string_slice()
 
     @always_inline("nodebug")
     fn __le__(self, rhs: StringLiteral) -> Bool:
@@ -323,7 +328,7 @@ struct StringLiteral(
         Returns:
           True if the string contains the substring.
         """
-        return substr in StringRef(self)
+        return substr in self.as_string_slice()
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -603,7 +608,7 @@ struct StringLiteral(
         Returns:
           The offset of `substr` relative to the beginning of the string.
         """
-        return StringRef(self).find(substr, start=start)
+        return self.as_string_slice().find(substr, start=start)
 
     fn rfind(self, substr: StringLiteral, start: Int = 0) -> Int:
         """Finds the offset of the last occurrence of `substr` starting at
@@ -616,7 +621,7 @@ struct StringLiteral(
         Returns:
           The offset of `substr` relative to the beginning of the string.
         """
-        return StringRef(self).rfind(substr, start=start)
+        return self.as_string_slice().rfind(substr, start=start)
 
     fn replace(self, old: StringLiteral, new: StringLiteral) -> StringLiteral:
         """Return a copy of the string with all occurrences of substring `old`
